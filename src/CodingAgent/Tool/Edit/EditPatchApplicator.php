@@ -40,7 +40,7 @@ final class EditPatchApplicator
                         throw $this->ambiguous($chunkIndex, $hint);
                     }
 
-                    throw $this->stale($chunkIndex, $hint, $lines, $lineIndex);
+                    throw $this->stale($chunkIndex, $hint, $lines, $lineIndex, $chunk->endOfFile);
                 }
 
                 $lastHintIndex = $hintIndex;
@@ -62,7 +62,7 @@ final class EditPatchApplicator
 
             $match = $this->findOldBlock($lines, $chunk->oldLines, $lineIndex, $chunk->endOfFile, $chunkIndex);
             if (null === $match) {
-                throw $this->stale($chunkIndex, implode("\n", \array_slice($chunk->oldLines, 0, 3)), $lines, $lineIndex);
+                throw $this->stale($chunkIndex, implode("\n", \array_slice($chunk->oldLines, 0, 3)), $lines, $lineIndex, $chunk->endOfFile);
             }
 
             [$matchIndex, $matchedOldLength] = $match;
@@ -136,14 +136,23 @@ final class EditPatchApplicator
     /**
      * @param list<string> $lines
      */
-    private function stale(int $chunkIndex, string $needle, array $lines, int $lineIndex): ToolCallException
+    private function stale(int $chunkIndex, string $needle, array $lines, int $lineIndex, bool $endOfFile = false): ToolCallException
     {
         $contextLine = min(max(1, $lineIndex + 1), max(1, \count($lines)));
+
+        // Session-37 recovery: surface determinable grammar mistakes from chunk index / EOF flag only.
+        $grammar = '';
+        if ($endOfFile) {
+            $grammar .= ' This hunk is EOF-constrained (`*** End of File`): the old block must match the actual end of the file. For mid-file edits, omit `*** End of File`.';
+        }
+        if ($chunkIndex > 0) {
+            $grammar .= ' Each plain or seek-hinted `@@` starts a new sequential, non-overlapping hunk applied after earlier hunks; overlapping changes must be combined into one hunk.';
+        }
 
         return new ToolCallException(
             \sprintf('[E_PATCH_STALE] Hunk #%d context not found in file.', $chunkIndex + 1),
             retryable: true,
-            hint: \sprintf('Could not locate: "%s". Seek hints are literal source-text anchors, not line numbers. Use read with offset/limit around line %d, then regenerate the patch with exact current context lines (or omit the seek hint).', $this->preview($needle), $contextLine),
+            hint: \sprintf('Could not locate: "%s".%s Seek hints are literal source-text anchors, not line numbers. Use read with offset/limit around line %d, then regenerate the patch with exact current context lines (or omit the seek hint).', $this->preview($needle), $grammar, $contextLine),
         );
     }
 

@@ -68,7 +68,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                     ],
                     'patch' => [
                         'type' => 'string',
-                        'description' => 'Hunk body only: starts with @@ [optional seek hint], then body lines each prefixed with one leading space (unchanged context), `-` (removal), or `+` (addition). Unchanged source or documentation lines are context and still need the leading space. Empty physical lines inside a hunk are accepted as unchanged blank context lines (a line with only a leading space is equivalent). Seek hints are literal source-text anchors, not line numbers; use nearby unique source text or leave the hint blank and include exact context lines. Optional stacked @@ hints and *** End of File.',
+                        'description' => 'Hunk body only: starts with @@ [optional seek hint], then body lines each prefixed with one leading space (unchanged context), `-` (removal), or `+` (addition). Unchanged source or documentation lines are context and still need the leading space. Empty physical lines inside a hunk are accepted as unchanged blank context lines (a line with only a leading space is equivalent). Seek hints are literal source-text anchors, not line numbers; use nearby unique source text or leave the hint blank and include exact context lines. Each plain/seek-hinted @@ after body lines starts a new sequential non-overlapping hunk; optional stacked @@ headers before body lines narrow one hunk. *** End of File only when the old block must match the actual file end.',
                     ],
                 ],
                 'required' => ['path', 'patch'],
@@ -80,12 +80,12 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             promptGuidelines: [
                 'Use the latest exact file context you already have. For a first edit on a file, or when your context is missing/stale, use a targeted `read` with both `offset` and `limit` for the relevant region.',
                 'Patches are hunk bodies only — no ---/+++ headers, no numbered @@ -N,M +N,M @@ headers, and no *** Begin Patch envelope.',
-                'Each hunk starts with `@@` or `@@ <literal source-text anchor>` as a seek hint (not a line number). Stacked `@@` lines narrow ambiguous locations.',
+                'Each plain or seek-hinted `@@` begins a new sequential, non-overlapping hunk applied after earlier hunks. Stacked `@@` headers (multiple headers before body lines) narrow one hunk; a later `@@` after body lines starts a separate hunk. Overlapping changes must be combined into one hunk.',
                 'Seek hints are literal source-text anchors, not line numbers. Do not use `@@ line N`; use nearby unique source text or omit the hint and rely on exact context lines.',
                 'Use 3 lines above and 3 lines below unchanged context by default. Share context between adjacent edits in one patch.',
                 'Every hunk body line after `@@` must start with one diff prefix: leading space for unchanged context, `-` to remove, `+` to add. Unchanged source or documentation lines are still context and need the leading space. Empty physical lines inside a hunk are unchanged blank context; a single leading-space line is equivalent.',
                 'Compact example: `@@\n unchanged context\n-old line\n+new line` — the first character of each body line must be space, `-`, or `+`.',
-                'Use `*** End of File` inside a hunk when anchoring an append-to-end edit.',
+                'Use `*** End of File` only when the hunk\'s old block must match the actual end of the file (append/replace at EOF). Omit it for mid-file edits.',
                 'The target file must already exist — use the write tool to create new files.',
                 'Make ONE edit call at a time per file and wait for the result before another edit on the same file.',
                 'On success, the tool returns stats and bounded updated-file context around changed lines.',

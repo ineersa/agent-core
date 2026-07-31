@@ -72,6 +72,8 @@ final class EditFileToolTest extends TestCase
         $this->assertStringContainsString('no ---/+++', strtolower($guidelines));
         $this->assertStringNotContainsString('cat -n', $guidelines);
         $this->assertStringContainsString('numbered @@', strtolower($guidelines));
+        $this->assertStringContainsString('sequential, non-overlapping', strtolower($guidelines));
+        $this->assertStringContainsString('omit it for mid-file', strtolower($guidelines));
     }
 
     public function testEditAppliesSingleHunkPatch(): void
@@ -473,5 +475,78 @@ PATCH;
 
         ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
         $this->assertSame("alpha\n-1 something\nBETA\n", file_get_contents($targetPath));
+    }
+
+    /**
+     * Session 37: second plain @@ after body starts a sequential hunk; overlapping context
+     * consumed by hunk #1 fails as stale without partial writes.
+     */
+    public function testOverlappingSecondHunkFailsAtomicallyWithSequentialGuidance(): void
+    {
+        $targetPath = $this->tmpDir.'/overlap_hunks.txt';
+        $original = "alpha\nbeta\ngamma\ndelta\n";
+        file_put_contents($targetPath, $original);
+
+        // Hunk #1 would match alpha/beta; hunk #2 reuses beta (already past lineIndex) → stale.
+        $patch = <<<'PATCH'
+@@
+ alpha
+-beta
++BETA
+ gamma
+@@
+ beta
+-gamma
++GAMMA
+PATCH;
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('E_PATCH_STALE', $e->getMessage());
+            $this->assertStringContainsString('Hunk #2', $e->getMessage());
+            $this->assertStringContainsString('No changes from this attempt were applied', $e->getMessage());
+            $hint = $e->hint() ?? '';
+            $this->assertStringContainsString('sequential, non-overlapping', $hint);
+            $this->assertStringContainsString('combined into one hunk', $hint);
+            $this->assertStringContainsString('regenerate the patch', $hint);
+        }
+
+        $this->assertSame($original, file_get_contents($targetPath));
+    }
+
+    /**
+     * Session 37: mid-file hunk with *** End of File forces EOF-only matching and must fail
+     * without writing, while explaining to omit the marker for mid-file edits.
+     */
+    public function testMidFileHunkWithEndOfFileMarkerFailsAtomicallyWithEofGuidance(): void
+    {
+        $targetPath = $this->tmpDir.'/mid_eof.txt';
+        $original = "keep\nmiddle\ntail\n";
+        file_put_contents($targetPath, $original);
+
+        $patch = <<<'PATCH'
+@@
+ keep
+-middle
++MIDDLE
+*** End of File
+PATCH;
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('E_PATCH_STALE', $e->getMessage());
+            $this->assertStringContainsString('No changes from this attempt were applied', $e->getMessage());
+            $hint = $e->hint() ?? '';
+            $this->assertStringContainsString('EOF-constrained', $hint);
+            $this->assertStringContainsString('*** End of File', $hint);
+            $this->assertStringContainsString('mid-file', $hint);
+            $this->assertStringContainsString('regenerate the patch', $hint);
+        }
+
+        $this->assertSame($original, file_get_contents($targetPath));
     }
 }
