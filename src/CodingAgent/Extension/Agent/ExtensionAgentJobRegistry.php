@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension\Agent;
 
+use Ineersa\CodingAgent\Extension\ExtensionRegistrationContext;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
 
 /**
@@ -14,7 +15,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
  */
 final class ExtensionAgentJobRegistry
 {
-    /** @var array<string, ExtensionAgentJobHandlerInterface> */
+    /** @var array<string, array{handler: ExtensionAgentJobHandlerInterface, owner: ?string}> */
     private array $handlers = [];
 
     public function register(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
@@ -28,12 +29,20 @@ final class ExtensionAgentJobRegistry
             throw new \InvalidArgumentException(\sprintf('Extension agent job handler "%s" is already registered.', $handlerId));
         }
 
-        $this->handlers[$handlerId] = $handler;
+        $this->handlers[$handlerId] = [
+            'handler' => $handler,
+            'owner' => ExtensionRegistrationContext::currentOwnerClass(),
+        ];
     }
 
     public function get(string $handlerId): ?ExtensionAgentJobHandlerInterface
     {
-        return $this->handlers[$handlerId] ?? null;
+        return $this->handlers[$handlerId]['handler'] ?? null;
+    }
+
+    public function ownerClass(string $handlerId): ?string
+    {
+        return $this->handlers[$handlerId]['owner'] ?? null;
     }
 
     /**

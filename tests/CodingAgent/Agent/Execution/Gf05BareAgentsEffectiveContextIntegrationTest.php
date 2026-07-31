@@ -166,6 +166,8 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             'lifecycleListener' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener::class),
             'forkLaunchInputBuilder' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder::class),
             'forkToolPolicyResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver::class),
+            'childExtensionSelection' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\ChildExtensionSelectionService::class),
+            'toolRegistry' => self::getContainer()->get(ToolRegistryInterface::class),
         ]);
     }
 

@@ -1204,6 +1204,53 @@ Body
         $this->parser->parseContent($raw, '/test/mcp-tools-map.md');
     }
 
+    // -----------------------------------------------------------------
+    //  Valid definitions
+    // -----------------------------------------------------------------
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function testExtensionsListIsParsedAndOmittedMeansNull(): void
+    {
+        $with = $this->validFrontmatter();
+        $with['extensions'] = [
+            'Ineersa\\HatfieldExt\\TaskWorkflow\\TaskWorkflowExtension',
+            'Ineersa\\HatfieldExt\\CastorLlmMode\\CastorLlmModeExtension',
+        ];
+        $dto = $this->rawParse($this->wrapContent($with, "body\n"));
+        $this->assertSame([
+            'Ineersa\\HatfieldExt\\TaskWorkflow\\TaskWorkflowExtension',
+            'Ineersa\\HatfieldExt\\CastorLlmMode\\CastorLlmModeExtension',
+        ], $dto->extensions);
+
+        $minimal = $this->rawParse($this->wrapContent([
+            'name' => 'bare',
+            'description' => 'Bare agent',
+        ], "body\n"));
+        $this->assertNull($minimal->extensions);
+    }
+
+    public function testExtensionsRejectsBlankAndNonStringEntries(): void
+    {
+        $fm = $this->validFrontmatter();
+        $fm['extensions'] = ['Valid\\Class', ''];
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/extensions/');
+        $this->rawParse($this->wrapContent($fm, "body\n"));
+    }
+
+    public function testExtensionsRejectsAssociativeMap(): void
+    {
+        $fm = $this->validFrontmatter();
+        $fm['extensions'] = ['a' => 'Valid\\Class'];
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/extensions/');
+        $this->rawParse($this->wrapContent($fm, "body\n"));
+    }
+
     /**
      * @param array<string, mixed> $frontmatter
      */
@@ -1285,13 +1332,6 @@ Body
         return $this->parser->parseContent($raw, $path);
     }
 
-    // -----------------------------------------------------------------
-    //  Valid definitions
-    // -----------------------------------------------------------------
-
-    /**
-     * @return array<string, mixed>
-     */
     private function validFrontmatter(): array
     {
         return [

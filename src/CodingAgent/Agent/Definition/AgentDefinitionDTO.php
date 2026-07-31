@@ -17,8 +17,9 @@ namespace Ineersa\CodingAgent\Agent\Definition;
 final readonly class AgentDefinitionDTO
 {
     /**
-     * @param list<string>|null $tools  null means inherit all parent-available tools at child launch
+     * @param list<string>|null $tools      null means inherit all parent-available tools at child launch
      * @param list<string>      $skills
+     * @param list<string>|null $extensions null means no optional child extensions (always_on only)
      */
     public function __construct(
         public string $name,
@@ -28,6 +29,7 @@ final readonly class AgentDefinitionDTO
         public ?string $model = null,
         public ?string $thinking = null,
         public array $skills = [],
+        public ?array $extensions = null,
         public bool $inheritProjectContext = true,
         public bool $inheritAgentsMd = true,
         public SystemPromptModeEnum $systemPromptMode = SystemPromptModeEnum::Replace,

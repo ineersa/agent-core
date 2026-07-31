@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
 
 /**
  * Reads agent child metadata from RunStarted events.
@@ -20,7 +21,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
  * array access to avoid drift between the StartRunHandler
  * serialization shape and downstream consumers.
  */
-final readonly class SubagentRunMetadataReader
+final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllowlistReaderInterface
 {
     public function __construct(
         private EventStoreInterface $eventStore,
@@ -106,6 +107,46 @@ final readonly class SubagentRunMetadataReader
 
         /* @var list<string> */
         return $tools;
+    }
+
+    /**
+     * Effective child-run extension allowlist from RunStarted metadata.
+     *
+     * Returns null for parent runs / missing metadata. Returns an empty list
+     * when the child intentionally selected zero extensions.
+     *
+     * @return list<string>|null
+     */
+    public function readAllowedExtensions(string $runId): ?array
+    {
+        $metadata = $this->readRunStartedMetadata($runId);
+        if (null === $metadata) {
+            return null;
+        }
+
+        $session = $metadata['session'] ?? [];
+        if (!\is_array($session) || 'agent_child' !== ($session['kind'] ?? null)) {
+            return null;
+        }
+
+        if (!\array_key_exists('extensions', $metadata)) {
+            // Pre-selection metadata: treat as empty allowlist (fail closed).
+            return [];
+        }
+
+        $extensions = $metadata['extensions'];
+        if (!\is_array($extensions) || !array_is_list($extensions)) {
+            return [];
+        }
+
+        $classes = [];
+        foreach ($extensions as $item) {
+            if (\is_string($item) && '' !== trim($item)) {
+                $classes[] = trim($item);
+            }
+        }
+
+        return $classes;
     }
 
     /**

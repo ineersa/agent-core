@@ -210,9 +210,8 @@ final class AppConfig
     {
         $rawForks = (array) ($data['forks'] ?? []);
 
-        return $denormalizer->denormalize(
-            $rawForks,
-            ForksConfigDTO::class,
-        );
+        // Nested extensions lists need strict list-of-string validation that
+        // ObjectNormalizer will not enforce; parse via fromRaw.
+        return ForksConfigDTO::fromRaw($rawForks);
     }
 }

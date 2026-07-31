@@ -8,13 +8,15 @@ final class CastorCommandRewriter
 {
     public const string CASTOR_COMMAND_PATTERN = '/(^|\s)(?:vendor\/bin\/)?castor(?=\s|$)/';
 
-    public const string LLM_MODE_PATTERN = '/\bLLM_MODE\s*=/';
+    // Require shell-assignment context so quoted diagnostic labels like
+    // printf 'LLM_MODE=%s' do not suppress the export preamble.
+    public const string LLM_MODE_PATTERN = '/(?:^|[\s;|&])(?:export\s+)?LLM_MODE\s*=/m';
 
-    public const string VERSION_CHECK_PATTERN = '/\bCASTOR_DISABLE_VERSION_CHECK\s*=/';
+    public const string VERSION_CHECK_PATTERN = '/(?:^|[\s;|&])(?:export\s+)?CASTOR_DISABLE_VERSION_CHECK\s*=/m';
 
-    public const string NO_COLOR_PATTERN = '/\bNO_COLOR\s*=/';
+    public const string NO_COLOR_PATTERN = '/(?:^|[\s;|&])(?:export\s+)?NO_COLOR\s*=/m';
 
-    public const string CL_COLOR_PATTERN = '/\bCLICOLOR\s*=/';
+    public const string CL_COLOR_PATTERN = '/(?:^|[\s;|&])(?:export\s+)?CLICOLOR\s*=/m';
 
     public const string CASTOR_LIST_PATTERN = '/((?:^|\s|&&\s*|\|\|\s*|;\s*)(?:vendor\/bin\/)?castor\s+list\b)/';
 

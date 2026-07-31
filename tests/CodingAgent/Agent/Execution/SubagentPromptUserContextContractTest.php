@@ -239,6 +239,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
         $resolver = new SubagentToolSetResolver(
             $this->innerToolboxResolver($registry, ['read', 'browser__search', 'fork']),
             new SubagentRunMetadataReader($eventStore),
+            $registry,
         );
         $capture = ProviderBoundaryCaptureSupport::create(
             $this->toolboxFromRegistry($registry),
@@ -355,6 +356,8 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             'lifecycleListener' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener::class),
             'forkLaunchInputBuilder' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder::class),
             'forkToolPolicyResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver::class),
+            'childExtensionSelection' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\ChildExtensionSelectionService::class),
+            'toolRegistry' => self::getContainer()->get(ToolRegistryInterface::class),
         ]);
     }
 

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
+use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
-use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookProviderInterface;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallFailed;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
@@ -42,7 +44,9 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
     public function __construct(
         private ToolRegistryInterface $registry,
         private ?EventDispatcherInterface $eventDispatcher = null,
-        private ?ToolCallRewriteHookProviderInterface $rewriteHookProvider = null,
+        private ?ExtensionHookRegistry $rewriteHookProvider = null,
+        private ?StackToolExecutionContextAccessor $contextAccessor = null,
+        private ?ChildRunExtensionAllowlistReaderInterface $extensionAllowlistReader = null,
     ) {
     }
 
@@ -96,7 +100,10 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
         $arguments = $toolCall->getArguments();
 
         if (null !== $this->rewriteHookProvider) {
-            $rewriteHooks = $this->rewriteHookProvider->rewriteHooksForTool($toolCall->getName());
+            $rewriteHooks = $this->rewriteHookProvider->rewriteHooksForTool(
+                $toolCall->getName(),
+                $this->resolveAllowedExtensionsForCurrentRun(),
+            );
 
             $hookIndex = 0;
             foreach ($rewriteHooks as $hook) {
@@ -162,5 +169,22 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             description: $definition->description,
             parameters: $definition->parametersJsonSchema,
         );
+    }
+
+    /**
+     * @return list<string>|null null = parent/global (no filter)
+     */
+    private function resolveAllowedExtensionsForCurrentRun(): ?array
+    {
+        if (null === $this->extensionAllowlistReader || null === $this->contextAccessor) {
+            return null;
+        }
+
+        $runId = $this->contextAccessor->current()?->runId();
+        if (null === $runId || '' === $runId) {
+            return null;
+        }
+
+        return $this->extensionAllowlistReader->readAllowedExtensions($runId);
     }
 }

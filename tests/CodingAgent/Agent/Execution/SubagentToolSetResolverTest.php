@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver;
+use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -29,7 +30,7 @@ final class SubagentToolSetResolverTest extends TestCase
 
         $eventStore = $this->createStub(EventStoreInterface::class);
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore));
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new ToolRegistry());
         $result = $resolver->resolve('ref');
 
         $this->assertSame(['read', 'write'], $result->toolNames);
@@ -43,12 +44,12 @@ final class SubagentToolSetResolverTest extends TestCase
             ->willReturn(new ActiveToolSet(toolNames: ['read', 'write']));
 
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects($this->once())
+        $eventStore->expects($this->atLeastOnce())
             ->method('allFor')
             ->with('parent-run')
             ->willReturn([]); // No RunStarted event at all
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore));
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'parent-run');
 
         $this->assertSame(['read', 'write'], $result->toolNames);
@@ -71,7 +72,7 @@ final class SubagentToolSetResolverTest extends TestCase
             ));
 
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects($this->once())
+        $eventStore->expects($this->atLeastOnce())
             ->method('allFor')
             ->with('child-run')
             ->willReturn([
@@ -84,7 +85,7 @@ final class SubagentToolSetResolverTest extends TestCase
                 ),
             ]);
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore));
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'child-run');
 
         $this->assertSame(['read', 'bash'], $result->toolNames);
@@ -108,7 +109,7 @@ final class SubagentToolSetResolverTest extends TestCase
             ));
 
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects($this->once())
+        $eventStore->expects($this->atLeastOnce())
             ->method('allFor')
             ->with('child-run')
             ->willReturn([
@@ -121,7 +122,7 @@ final class SubagentToolSetResolverTest extends TestCase
                 ),
             ]);
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore));
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'child-run');
 
         $this->assertSame([], $result->toolNames);
@@ -140,7 +141,7 @@ final class SubagentToolSetResolverTest extends TestCase
             ));
 
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects($this->once())
+        $eventStore->expects($this->atLeastOnce())
             ->method('allFor')
             ->with('child-run')
             ->willReturn([
@@ -153,7 +154,7 @@ final class SubagentToolSetResolverTest extends TestCase
                 ),
             ]);
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore));
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'child-run');
 
         $this->assertNotContains('subagent', $result->toolNames);

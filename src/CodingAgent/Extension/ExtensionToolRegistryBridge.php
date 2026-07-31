@@ -81,6 +81,7 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
             handler: $adapter,
             promptLine: $tool->promptSummary ?? \sprintf('%s: %s', $tool->name, $tool->description),
             promptGuidelines: $tool->promptGuidelines,
+            extensionOwnerClass: ExtensionRegistrationContext::currentOwnerClass(),
         );
     }
 

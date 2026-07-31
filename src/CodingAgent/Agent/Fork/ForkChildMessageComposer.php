@@ -18,6 +18,7 @@ final readonly class ForkChildMessageComposer
     /**
      * @param list<AgentMessage> $inheritedMessages
      * @param list<string>       $allowedToolNames
+     * @param list<string>|null  $allowedExtensions
      *
      * @return array{systemPrompt: string, messages: list<AgentMessage>}
      */
@@ -27,8 +28,9 @@ final readonly class ForkChildMessageComposer
         array $allowedToolNames,
         string $agentsMd,
         string $skillsContext,
+        ?array $allowedExtensions = null,
     ): array {
-        $systemMessageText = $this->buildSystemMessageText($allowedToolNames);
+        $systemMessageText = $this->buildSystemMessageText($allowedToolNames, $allowedExtensions);
         $messages = [];
         if ('' !== trim($systemMessageText)) {
             $messages[] = new AgentMessage(role: 'system', content: [['type' => 'text', 'text' => $systemMessageText]]);
@@ -71,9 +73,10 @@ final readonly class ForkChildMessageComposer
     }
 
     /**
-     * @param list<string> $allowedToolNames
+     * @param list<string>      $allowedToolNames
+     * @param list<string>|null $allowedExtensions
      */
-    private function buildSystemMessageText(array $allowedToolNames): string
+    private function buildSystemMessageText(array $allowedToolNames, ?array $allowedExtensions): string
     {
         $parts = [];
         $base = $this->systemPromptBuilder->buildChildHarnessFragment($allowedToolNames);
@@ -84,7 +87,7 @@ final readonly class ForkChildMessageComposer
         if ('' !== trim($append)) {
             $parts[] = trim($append);
         }
-        $appends = $this->systemPromptBuilder->buildChildAppendsFragment($allowedToolNames);
+        $appends = $this->systemPromptBuilder->buildChildAppendsFragment($allowedToolNames, $allowedExtensions);
         if ('' !== trim($appends)) {
             $parts[] = trim($appends);
         }

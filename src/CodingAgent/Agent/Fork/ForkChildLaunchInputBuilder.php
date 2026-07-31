@@ -7,12 +7,14 @@ namespace Ineersa\CodingAgent\Agent\Fork;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
+use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
+use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 
 final class ForkChildLaunchInputBuilder
 {
@@ -22,6 +24,8 @@ final class ForkChildLaunchInputBuilder
         private readonly SubagentRunMetadataReader $metadataReader,
         private readonly SkillsContextBuilder $skillsContextBuilder,
         private readonly AppConfig $appConfig,
+        private readonly ChildExtensionSelectionService $childExtensionSelection,
+        private readonly ToolRegistryInterface $toolRegistry,
     ) {
     }
 
@@ -48,12 +52,21 @@ final class ForkChildLaunchInputBuilder
             parentReasoning: $this->readParentReasoningFromMetadata($parentMetadata),
         );
 
+        $effectiveExtensions = $this->childExtensionSelection->resolveForFork();
+        $this->childExtensionSelection->assertSelectedAvailable(
+            $effectiveExtensions,
+            'Fork child launch',
+        );
+
+        $allowedTools = $this->filterToolsByExtensions($policy['tools'], $effectiveExtensions);
+
         $composed = $this->messageComposer->compose(
             inheritedMessages: $inherited,
             task: $task->task,
-            allowedToolNames: $policy['tools'],
+            allowedToolNames: $allowedTools,
             agentsMd: $this->extractUserContextFromMessages($inherited, 'agents_context'),
             skillsContext: $this->extractSkillsContext($inherited),
+            allowedExtensions: $effectiveExtensions,
         );
 
         $childMetadata = new RunMetadata(
@@ -68,10 +81,11 @@ final class ForkChildLaunchInputBuilder
             model: $resolved->model,
             reasoning: $resolved->thinking,
             toolsScope: [
-                'allowed_tools' => $policy['tools'],
+                'allowed_tools' => $allowedTools,
                 'mcp' => $policy['mcp'],
             ],
             contextWindow: $this->resolveContextWindowForModel($resolved->model),
+            extensions: $effectiveExtensions,
         );
 
         return new PreparedAgentChildRunDTO(
@@ -147,6 +161,30 @@ final class ForkChildLaunchInputBuilder
         }
 
         return '';
+    }
+
+    /**
+     * @param list<string> $allowedTools
+     * @param list<string> $allowedExtensions
+     *
+     * @return list<string>
+     */
+    private function filterToolsByExtensions(array $allowedTools, array $allowedExtensions): array
+    {
+        $allowed = array_fill_keys($allowedExtensions, true);
+
+        return array_values(array_filter(
+            $allowedTools,
+            function (string $name) use ($allowed): bool {
+                $definition = $this->toolRegistry->toolDefinition($name);
+                if (null === $definition) {
+                    return true;
+                }
+                $owner = $definition->extensionOwnerClass;
+
+                return null === $owner || isset($allowed[$owner]);
+            },
+        ));
     }
 
     /**

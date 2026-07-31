@@ -33,6 +33,7 @@ final readonly class ToolDefinitionDTO
      * @param list<string>         $promptGuidelines     Zero or more guideline strings for the prompt guidelines section
      * @param ToolExecutionMode    $executionMode        Execution mode for this tool (default: Sequential)
      * @param int|null             $timeoutSeconds       Per-tool execution timeout in seconds; null uses tools.execution default
+     * @param string|null          $extensionOwnerClass  Owning extension FQCN when registered by an extension; null for built-ins
      */
     public function __construct(
         public readonly string $name,
@@ -43,6 +44,7 @@ final readonly class ToolDefinitionDTO
         public readonly array $promptGuidelines = [],
         public readonly ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
         public readonly ?int $timeoutSeconds = null,
+        public readonly ?string $extensionOwnerClass = null,
     ) {
     }
 }

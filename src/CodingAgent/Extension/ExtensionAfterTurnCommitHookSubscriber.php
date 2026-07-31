@@ -21,6 +21,7 @@ final readonly class ExtensionAfterTurnCommitHookSubscriber implements HookSubsc
     public function __construct(
         private ExtensionHookRegistry $hookRegistry,
         private \Psr\Log\LoggerInterface $logger,
+        private ?ChildRunExtensionAllowlistReaderInterface $extensionAllowlistReader = null,
     ) {
     }
 
@@ -45,7 +46,9 @@ final readonly class ExtensionAfterTurnCommitHookSubscriber implements HookSubsc
             effectsCount: $context->effectsCount,
         );
 
-        foreach ($this->hookRegistry->afterTurnCommitHooks() as $hook) {
+        $allowed = $this->extensionAllowlistReader?->readAllowedExtensions($context->runId);
+
+        foreach ($this->hookRegistry->afterTurnCommitHooks($allowed) as $hook) {
             try {
                 $hook->onAfterTurnCommit($dto);
             } catch (\Throwable $e) {
