@@ -43,7 +43,6 @@ final class ToolExecutor implements ToolExecutorInterface
      */
     public function __construct(
         string $defaultMode,
-        ?int $defaultTimeoutSeconds,
         int $maxParallelism,
         private readonly ToolExecutionResultStore $resultStore,
         ?ToolboxInterface $toolbox = null,
@@ -52,7 +51,7 @@ final class ToolExecutor implements ToolExecutorInterface
         iterable $toolResultProcessors = [],
         ?ClockInterface $clock = null,
     ) {
-        $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $defaultTimeoutSeconds, $maxParallelism);
+        $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $maxParallelism);
         $this->faultTolerantToolbox = null !== $toolbox ? new FaultTolerantToolbox($toolbox) : null;
         $this->toolResultProcessors = \is_array($toolResultProcessors)
             ? array_values($toolResultProcessors)
@@ -74,7 +73,6 @@ final class ToolExecutor implements ToolExecutorInterface
     ): self {
         return new self(
             defaultMode: $settings->defaultMode(),
-            defaultTimeoutSeconds: $settings->defaultTimeoutSeconds(),
             maxParallelism: $settings->maxParallelism(),
             resultStore: $resultStore,
             toolbox: $toolbox,
@@ -176,8 +174,8 @@ final class ToolExecutor implements ToolExecutorInterface
 
         // Typed human-input suspension is not a completed tool result: skip
         // cancel overwrite and result-store remember. Duration metadata is still attached.
-        // Generic timeoutSeconds is a cooperative budget on ToolContext, not a post-hoc
-        // SLA rewrite: successful handlers that exceed the budget remain successful.
+        // Per-tool timeoutSeconds is cooperative ToolContext metadata only: ToolExecutor
+        // never rewrites a successful handler result based on elapsed duration.
         if ($this->isHumanInputSuspension($result)) {
             return $this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs);
         }
@@ -294,31 +292,20 @@ final class ToolExecutor implements ToolExecutorInterface
 
         return new ToolExecutionPolicy(
             mode: $toolCall->mode ?? $resolved->mode,
-            // Cooperative budget only: per-call timeout from LlmStepResultHandler /
-            // ActiveToolSet wins when set. When null, non-subagent tools inherit
-            // tools.execution.timeout_seconds as ToolContext metadata; subagent keeps
-            // no generic budget (agents.subagent_tool_timeout_seconds is tool-owned).
-            // ToolExecutor never rewrites a successful result based on elapsed duration.
-            timeoutSeconds: $this->resolveTimeoutSeconds($toolCall->toolName, $toolCall->timeoutSeconds, $resolved->timeoutSeconds),
+            // Explicit/per-tool budget only (ToolCall.timeoutSeconds from ActiveToolSet).
+            // Null means no ambient deadline. ToolExecutor never rewrites success by elapsed time.
+            timeoutSeconds: $this->resolveTimeoutSeconds($toolCall->timeoutSeconds),
             maxParallelism: max(1, (int) ($toolCall->context['max_parallelism'] ?? $resolved->maxParallelism)),
         );
     }
 
-    private function resolveTimeoutSeconds(string $toolName, ?int $callTimeout, ?int $resolvedTimeout): ?int
+    private function resolveTimeoutSeconds(?int $callTimeout): ?int
     {
         if (null !== $callTimeout && $callTimeout > 0) {
             return max(1, $callTimeout);
         }
 
-        if ('subagent' === $toolName) {
-            return null;
-        }
-
-        if (null === $resolvedTimeout || $resolvedTimeout <= 0) {
-            return null;
-        }
-
-        return max(1, $resolvedTimeout);
+        return null;
     }
 
     private function rememberAndReturn(

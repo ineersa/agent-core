@@ -452,24 +452,9 @@ tools:
         default_mode: sequential
 ```
 
----
-
-### `tools.execution.timeout_seconds`
-
-Optional cooperative timeout budget (seconds) exposed to tool
-implementations through the current tool execution context
-(`ToolContext::timeoutSeconds()`). Per-tool registration metadata
-(`ToolDefinitionDTO` / extension `ToolRegistrationDTO`) overrides this
-when set.
-
-This is **not** a generic kill guarantee and **not** a post-hoc SLA
-rewrite: `ToolExecutor` does not interrupt arbitrary PHP handlers and
-does not rewrite a successful result after the handler returns. Concrete
-tools that own long-running loops or subprocesses must poll the
-cancellation token and honor the budget themselves (see
-`docs/tool-execution.md`).
-
-**Default:** omitted / `null` (no generic cooperative budget).
+There is **no** global `tools.execution.timeout_seconds` setting. Timeouts are
+tool-owned (Bash, subagent/fork, MCP transport, explicit per-tool registration).
+See `docs/tool-execution.md`.
 
 ---
 
@@ -778,9 +763,8 @@ to split work across multiple tool calls.
 
 Maximum time in seconds that a **foreground** `subagent` tool call waits for child
 run(s) to finish. This is enforced inside `SubagentExecutionService` (poll loop
-deadline), not by the generic `tools.execution.timeout_seconds` cooperative
-budget. The `subagent` tool definition sets **no** generic ToolExecutor budget so
-long child work is not cut off at the generic tool layer.
+deadline). The `subagent` tool definition does not set a generic ToolExecutor
+budget; child work is bounded only by this tool-owned deadline (and cancellation).
 
 **Default:** `1800` (30 minutes). Must be an integer **>= 60**. Values below 60
 are rejected at config load with an error (not silently adjusted).

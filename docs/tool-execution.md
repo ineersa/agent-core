@@ -71,26 +71,37 @@ interface ToolHandlerInterface
 
 Handlers run synchronously inside a Messenger `tool` consumer process. Common concerns:
 
-### Generic timeout / cancellation contract (`ToolExecutor`)
+### Timeout / cancellation contract (`ToolExecutor`)
 
 `ToolExecutor` builds a `ToolContext` for every invocation containing:
 
 - run/turn/tool identity
 - a cooperative `CancellationTokenInterface`
-- an optional cooperative `timeoutSeconds` budget
+- an optional cooperative `timeoutSeconds` budget when the call has an **explicit per-tool** timeout
 
-Budget resolution (first non-null positive value wins for the call):
+There is **no global tool timeout setting**. Ambient `timeoutSeconds` comes only from
+explicit/per-tool registration metadata:
 
-1. Per-call timeout on the `ToolCall` (from `ActiveToolSet` / per-tool registration)
-2. Otherwise, for non-`subagent` tools: `tools.execution.timeout_seconds` when configured
-3. `subagent` never inherits the generic budget (uses `agents.subagent_tool_timeout_seconds`)
+`ToolRegistrationDTO` / `ToolDefinitionDTO` → registry → `ActiveToolSet` → `ToolCall::$timeoutSeconds` → `ToolContext` / public extension context.
+
+Null means no ambient deadline. Tool-owned deadlines remain separate and authoritative:
+
+- **Bash:** `tools.bash.default_timeout_seconds`, per-call timeout arg, process supervision, Escape cancellation
+- **subagent/fork:** `agents.subagent_tool_timeout_seconds` and durable child-run cancellation
+- **MCP:** fixed SDK/transport request timeout (in-flight cooperative cancel is separate work)
+- **ToolRuntime:** explicit `timeoutSeconds` argument or ambient `ToolContext` budget when set
+- **Extensions:** optional `ToolRegistrationDTO::$timeoutSeconds` plus public cancellation token
+
+**Potentially blocking tools MUST own and enforce a timeout/deadline**, poll cancellation
+as applicable, and clean up owned resources/processes/locks before returning cancelled or
+timed-out results. Short finite tools need only before/after cancellation checkpoints.
 
 Important limits:
 
 - **`timeoutSeconds` is cooperative metadata**, not a kill guarantee.
-- **`ToolExecutor` does not rewrite a successful handler result** into a timeout after the handler returns, even when wall-clock duration exceeds the budget.
+- **`ToolExecutor` does not rewrite a successful handler result** into a timeout after the handler returns, even when wall-clock duration exceeds a budget.
 - Cancellation is checked before start and after return (stale/cancelled marking). In-flight interruption requires the tool to poll the token or use a tool-owned process/deadline path.
-- Tool-owned mechanisms remain authoritative where present: Bash/`ToolRuntime`, MCP fixed SDK request timeout, subagent/fork durable deadlines.
+- Arbitrary non-cooperative pure PHP cannot be force-preempted without process isolation; elapsed time alone is never fabricated into a timeout failure.
 - Duration is always recorded as telemetry (`duration_ms`).
 
 ### Accessing run/tool metadata

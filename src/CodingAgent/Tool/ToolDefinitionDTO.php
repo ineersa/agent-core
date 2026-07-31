@@ -32,7 +32,7 @@ final readonly class ToolDefinitionDTO
      * @param string               $promptLine           One-line description for the <available_tools> prompt section
      * @param list<string>         $promptGuidelines     Zero or more guideline strings for the prompt guidelines section
      * @param ToolExecutionMode    $executionMode        Execution mode for this tool (default: Sequential)
-     * @param int|null             $timeoutSeconds       Per-tool cooperative timeout budget in seconds; null uses tools.execution default
+     * @param int|null             $timeoutSeconds       Per-tool cooperative timeout budget in seconds; null means no ambient deadline
      * @param string|null          $extensionOwnerClass  Owning extension FQCN when registered by an extension; null for built-ins
      */
     public function __construct(

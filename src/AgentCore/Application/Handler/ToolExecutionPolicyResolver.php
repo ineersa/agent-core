@@ -14,9 +14,9 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
  * Execution mode is now sourced from tool registration
  * (ToolDefinitionDTO.executionMode) via ActiveToolSet in
  * LlmStepResultHandler. This resolver provides only the
- * global fallback defaults for parallelism and an optional cooperative
- * timeout budget. Tool timeouts are opt-in metadata for ToolContext;
- * ToolExecutor does not rewrite successful results after the handler returns.
+ * global fallback defaults for mode and max parallelism.
+ * Timeout budgets are tool-owned (per-tool registration / ToolCall)
+ * and are never filled from a global settings fallback here.
  */
 final readonly class ToolExecutionPolicyResolver
 {
@@ -24,7 +24,6 @@ final readonly class ToolExecutionPolicyResolver
 
     public function __construct(
         string $defaultMode,
-        private ?int $defaultTimeoutSeconds,
         private int $maxParallelism,
     ) {
         $this->defaultMode = ToolExecutionMode::tryFrom($defaultMode) ?? ToolExecutionMode::Sequential;
@@ -34,7 +33,6 @@ final readonly class ToolExecutionPolicyResolver
     {
         return new self(
             defaultMode: $settings->defaultMode(),
-            defaultTimeoutSeconds: $settings->defaultTimeoutSeconds(),
             maxParallelism: $settings->maxParallelism(),
         );
     }
@@ -43,9 +41,7 @@ final readonly class ToolExecutionPolicyResolver
     {
         return new ToolExecutionPolicy(
             mode: $this->defaultMode,
-            timeoutSeconds: null !== $this->defaultTimeoutSeconds && $this->defaultTimeoutSeconds > 0
-                ? max(1, $this->defaultTimeoutSeconds)
-                : null,
+            timeoutSeconds: null,
             maxParallelism: max(1, $this->maxParallelism),
         );
     }

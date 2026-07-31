@@ -129,12 +129,10 @@ tools:
         # Parallel mode requires TOOLS-R05 / multi-consumer tool dispatch.
         default_mode: sequential
 
-        # Optional cooperative timeout budget for ToolContext (not a kill guarantee).
-        # Opt-in per tool via ToolDefinitionDTO / extension ToolRegistrationDTO, or set
-        # tools.execution.timeout_seconds here as a default budget. ToolExecutor does not
-        # rewrite successful results after the handler returns.
-        # Omit timeout_seconds: no generic default cooperative budget.
-        # Subagent uses agents.subagent_tool_timeout_seconds (tool-owned poll), not this key.
+        # No global tool timeout setting. Potentially blocking tools must own and enforce
+        # their own deadline (Bash tools.bash.*, subagent agents.subagent_tool_timeout_seconds,
+        # MCP transport timeout, per-tool ToolDefinitionDTO/ToolRegistrationDTO budgets).
+        # ToolExecutor never rewrites a successful late result into a timeout failure.
 
         # Maximum parallelism: how many tool calls to run concurrently.
         # Also controls the number of parallel messenger:consume tool
