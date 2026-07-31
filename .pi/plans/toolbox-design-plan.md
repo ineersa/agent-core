@@ -613,7 +613,6 @@ Proposed settings shape (exact names can be refined during implementation):
 tools:
     execution:
         default_mode: sequential
-        timeout_seconds: 300
         max_parallelism: 4
     output_cap:
         path: .hatfield/tmp/output-cap

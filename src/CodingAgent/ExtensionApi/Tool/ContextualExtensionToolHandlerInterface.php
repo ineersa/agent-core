@@ -8,7 +8,9 @@ namespace Ineersa\Hatfield\ExtensionApi\Tool;
  * Extension-facing permanent tool handler that receives ambient session context.
  *
  * Prefer this when a tool must stay session-scoped without exposing run_id to the model.
- * Argument-only {@see ExtensionToolHandlerInterface} handlers remain supported.
+ * The ambient {@see ToolInvocationContextDTO} also carries cooperative cancellation and
+ * an optional timeout budget for long-running work. Argument-only
+ * {@see ExtensionToolHandlerInterface} handlers remain supported.
  */
 interface ContextualExtensionToolHandlerInterface
 {

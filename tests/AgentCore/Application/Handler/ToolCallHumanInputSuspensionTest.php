@@ -55,7 +55,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $store = new ToolExecutionResultStore();
         $bus = new TestMessageBus();
         (new ExecuteToolCallWorker(
-            new ToolExecutor('parallel', 30, 2, $store, toolbox: $toolbox),
+            new ToolExecutor('parallel', 2, $store, toolbox: $toolbox),
             $bus,
             new InMemoryDeferredToolCompletionRepository(),
         ))(new ExecuteToolCall('run-susp', 2, 'turn-2-tools-1', 1, 'idemp', 'call-susp', 'bash', ['command' => 'env'], 0));

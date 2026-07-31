@@ -71,6 +71,39 @@ interface ToolHandlerInterface
 
 Handlers run synchronously inside a Messenger `tool` consumer process. Common concerns:
 
+### Timeout / cancellation contract (`ToolExecutor`)
+
+`ToolExecutor` builds a `ToolContext` for every invocation containing:
+
+- run/turn/tool identity
+- a cooperative `CancellationTokenInterface`
+- an optional cooperative `timeoutSeconds` budget when the call has an **explicit per-tool** timeout
+
+There is **no global tool timeout setting**. Ambient `timeoutSeconds` comes only from
+explicit/per-tool registration metadata:
+
+`ToolRegistrationDTO` / `ToolDefinitionDTO` → registry → `ActiveToolSet` → `ToolCall::$timeoutSeconds` → `ToolContext` / public extension context.
+
+Null means no ambient deadline. Tool-owned deadlines remain separate and authoritative:
+
+- **Bash:** `tools.bash.default_timeout_seconds`, per-call timeout arg, process supervision, Escape cancellation
+- **subagent/fork:** `agents.subagent_tool_timeout_seconds` and durable child-run cancellation
+- **MCP:** fixed SDK/transport request timeout (in-flight cooperative cancel is separate work)
+- **ToolRuntime:** explicit `timeoutSeconds` argument or ambient `ToolContext` budget when set
+- **Extensions:** optional `ToolRegistrationDTO::$timeoutSeconds` plus public cancellation token
+
+**Potentially blocking tools MUST own and enforce a timeout/deadline**, poll cancellation
+as applicable, and clean up owned resources/processes/locks before returning cancelled or
+timed-out results. Short finite tools need only before/after cancellation checkpoints.
+
+Important limits:
+
+- **`timeoutSeconds` is cooperative metadata**, not a kill guarantee.
+- **`ToolExecutor` does not rewrite a successful handler result** into a timeout after the handler returns, even when wall-clock duration exceeds a budget.
+- Cancellation is checked before start and after return (stale/cancelled marking). In-flight interruption requires the tool to poll the token or use a tool-owned process/deadline path.
+- Arbitrary non-cooperative pure PHP cannot be force-preempted without process isolation; elapsed time alone is never fabricated into a timeout failure.
+- Duration is always recorded as telemetry (`duration_ms`).
+
 ### Accessing run/tool metadata
 
 Tools that need run ID, turn number, tool call ID, timeout, or cancellation token inject `StackToolExecutionContextAccessor` and call `requireCurrent()`:
@@ -202,15 +235,122 @@ from the ambient context.
   without process isolation. If a handler blocks in pure PHP (no subprocess)
   and never checks the cancellation token, `ToolExecutor` can only detect
   cancellation before the handler starts or mark the result stale after it
-  returns.
+  returns. A successful late return is still success; elapsed time alone does
+  not become a fabricated timeout failure.
 - **Do not throw `ToolCancelledException` or use `CancellationGuard`.** Return
-  structured results with `cancelled`/`timed_out` flags instead.`
+  structured results with `cancelled`/`timed_out` flags instead.
 
 Key patterns:
 - **No `run()`/`mustRun()`** for cancellable commands.
 - **No `SIGTERM` as the second argument to `stop()`** — `stop($graceSeconds)` already sends SIGTERM then SIGKILL after the grace period.
 - **No shared foreground process registry/runner** — each tool owns its process locally.
 - **No `ToolCancelledException` or `CancellationGuard`** — return structured results on cancellation instead.
+
+### Extension authors — public cancellation / deadline contract
+
+Public extension tools should prefer `ContextualExtensionToolHandlerInterface`
+when they need ambient identity or cooperative control. The public DTO is:
+
+```php
+final readonly class ToolInvocationContextDTO
+{
+    public function __construct(
+        public string $runId,
+        public ?ToolCancellationTokenInterface $cancellationToken = null,
+        public ?int $timeoutSeconds = null,
+    ) {}
+}
+```
+
+Register optional per-tool budgets with `ToolRegistrationDTO::$timeoutSeconds`.
+That value flows through the extension registry bridge into
+`ToolDefinitionDTO` / `ActiveToolSet` and then into the ambient context.
+
+#### Poll cancellation and compute a monotonic deadline
+
+```php
+use Ineersa\Hatfield\ExtensionApi\Tool\ContextualExtensionToolHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
+
+final class LongPollTool implements ContextualExtensionToolHandlerInterface
+{
+    public function __invoke(array $arguments, ToolInvocationContextDTO $context): mixed
+    {
+        $deadline = null;
+        if (null !== $context->timeoutSeconds && $context->timeoutSeconds > 0) {
+            $deadline = hrtime(true) + ($context->timeoutSeconds * 1_000_000_000);
+        }
+
+        while (/* work remaining */) {
+            if ($context->cancellationToken?->isCancellationRequested()) {
+                // release owned resources first
+                return ['cancelled' => true, 'message' => 'Cancelled by user/runtime.'];
+            }
+
+            if (null !== $deadline && hrtime(true) > $deadline) {
+                // release owned resources first
+                return ['timed_out' => true, 'timeout_seconds' => $context->timeoutSeconds];
+            }
+
+            // do one unit of work / short sleep / nonblocking poll
+        }
+
+        return ['ok' => true];
+    }
+}
+```
+
+#### Interruptible Symfony Process
+
+For subprocesses, use `Process::start()` + poll/stop (or host helpers that do).
+Never block on `run()`/`mustRun()` if Escape/timeout must stop the process:
+
+```php
+$process->start();
+while ($process->isRunning()) {
+    if ($context->cancellationToken?->isCancellationRequested()) {
+        $process->stop(5.0); // SIGTERM then SIGKILL after grace
+        return ['cancelled' => true];
+    }
+    if (null !== $deadline && hrtime(true) > $deadline) {
+        $process->stop(5.0);
+        return ['timed_out' => true, 'timeout_seconds' => $context->timeoutSeconds];
+    }
+    usleep(100_000);
+}
+```
+
+#### Cancellable / nonblocking lock loops
+
+Prefer nonblocking acquisition with retry rather than unbounded `flock()`:
+
+```php
+while (true) {
+    if ($context->cancellationToken?->isCancellationRequested()) {
+        return ['cancelled' => true];
+    }
+    if (null !== $deadline && hrtime(true) > $deadline) {
+        return ['timed_out' => true];
+    }
+    if (flock($fh, LOCK_EX | LOCK_NB)) {
+        break;
+    }
+    usleep(50_000);
+}
+// ... work ...
+flock($fh, LOCK_UN);
+```
+
+#### Structured outcomes and cleanup
+
+- Return structured maps with `cancelled` and/or `timed_out` (plus optional
+  `timeout_seconds` / message). Do not rely on exceptions for normal cancel/timeout.
+- Always release owned resources (locks, temp files, child processes) **before**
+  returning a cancelled/timed-out result.
+- Short finite operations (single small file read, pure DTO mapping) need only
+  before/after cancellation checks — do not wrap them in subprocess isolation.
+- Blocking pure PHP that never polls remains non-interruptible; Escape can only
+  mark the eventual result stale after return.
 
 ### Large output
 

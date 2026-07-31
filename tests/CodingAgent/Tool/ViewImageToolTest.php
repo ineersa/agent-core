@@ -419,7 +419,6 @@ final class ViewImageToolTest extends TestCase
         $executor = ToolExecutor::fromSettings(
             settings: new ToolSettings(
                 mode: 'sequential',
-                timeoutSeconds: 30,
                 maxParallelism: 1,
             ),
             resultStore: $resultStore,

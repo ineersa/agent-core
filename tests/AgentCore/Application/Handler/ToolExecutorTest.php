@@ -29,7 +29,6 @@ final class ToolExecutorTest extends TestCase
         $toolbox = new Toolbox([new InterruptTool()]);
         $executor = new ToolExecutor(
             defaultMode: 'sequential',
-            defaultTimeoutSeconds: 30,
             maxParallelism: 2,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
@@ -50,7 +49,7 @@ final class ToolExecutorTest extends TestCase
 
     public function testToolExecutionIsUnavailableWithoutToolbox(): void
     {
-        $executor = new ToolExecutor('parallel', 30, 2, new ToolExecutionResultStore());
+        $executor = new ToolExecutor('parallel', 2, new ToolExecutionResultStore());
 
         $result = $executor->execute(ToolCallBuilder::create('call-1')
             ->withToolName('web_search')
@@ -67,7 +66,6 @@ final class ToolExecutorTest extends TestCase
         $toolbox = new CountingToolbox();
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
-            defaultTimeoutSeconds: 30,
             maxParallelism: 4,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
@@ -98,7 +96,6 @@ final class ToolExecutorTest extends TestCase
         $toolbox = new CountingToolbox();
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
-            defaultTimeoutSeconds: 30,
             maxParallelism: 4,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
@@ -136,7 +133,6 @@ final class ToolExecutorTest extends TestCase
 
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
-            defaultTimeoutSeconds: 30,
             maxParallelism: 4,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
@@ -159,7 +155,6 @@ final class ToolExecutorTest extends TestCase
         $toolbox = new CountingToolbox();
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
-            defaultTimeoutSeconds: 30,
             maxParallelism: 4,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
@@ -200,7 +195,6 @@ final class ToolExecutorTest extends TestCase
         $toolbox = new CountingToolbox();
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
-            defaultTimeoutSeconds: 30,
             maxParallelism: 4,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
@@ -239,7 +233,6 @@ final class ToolExecutorTest extends TestCase
         $toolbox = new CountingToolbox();
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
-            defaultTimeoutSeconds: 30,
             maxParallelism: 4,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
@@ -276,7 +269,6 @@ final class ToolExecutorTest extends TestCase
         $toolbox = new CountingToolbox();
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
-            defaultTimeoutSeconds: 30,
             maxParallelism: 4,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
@@ -301,7 +293,6 @@ final class ToolExecutorTest extends TestCase
         // No toolSetResolver passed.
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
-            defaultTimeoutSeconds: 30,
             maxParallelism: 4,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
@@ -327,7 +318,6 @@ final class ToolExecutorTest extends TestCase
         $toolbox = new ThrowingToolCallExceptionToolbox(false, 'Something went wrong', 'Try again with different input');
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
-            defaultTimeoutSeconds: 30,
             maxParallelism: 4,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
@@ -352,7 +342,6 @@ final class ToolExecutorTest extends TestCase
         $toolbox = new ThrowingToolCallExceptionToolbox(true, 'Temporary failure');
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
-            defaultTimeoutSeconds: 30,
             maxParallelism: 4,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
@@ -375,7 +364,6 @@ final class ToolExecutorTest extends TestCase
         $toolbox = new ThrowingToolCallExceptionToolbox(false, 'Boom!', null, false);
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
-            defaultTimeoutSeconds: 30,
             maxParallelism: 4,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
@@ -402,7 +390,6 @@ final class ToolExecutorTest extends TestCase
         $toolbox = new ContextCheckingToolbox($accessor);
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
-            defaultTimeoutSeconds: 60,
             maxParallelism: 4,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
@@ -427,13 +414,12 @@ final class ToolExecutorTest extends TestCase
         $this->assertNull($accessor->current());
     }
 
-    public function testNoPostHocTimeoutWhenPolicyTimeoutIsNull(): void
+    public function testNoTimeoutMetadataWithoutExplicitPerToolTimeout(): void
     {
         $clock = new MockClock();
         $toolbox = new ClockAdvancingToolbox($clock, 301);
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
-            defaultTimeoutSeconds: null,
             maxParallelism: 2,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
@@ -450,64 +436,16 @@ final class ToolExecutorTest extends TestCase
         $this->assertFalse($result->isError);
         $this->assertSame('clock-ok', $result->content[0]['text']);
         $this->assertNull($result->details['timeout_seconds'] ?? null);
+        $this->assertArrayNotHasKey('timed_out', $result->details ?? []);
+        $this->assertGreaterThanOrEqual(301000, $result->details['duration_ms'] ?? 0);
     }
 
-    public function testNullCallTimeoutIgnoresGlobalDefaultPostHocCap(): void
-    {
-        $clock = new MockClock();
-        $toolbox = new ClockAdvancingToolbox($clock, 301);
-        $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            defaultTimeoutSeconds: 300,
-            maxParallelism: 2,
-            toolbox: $toolbox,
-            resultStore: new ToolExecutionResultStore(),
-            clock: $clock,
-        );
-
-        $result = $executor->execute(ToolCallBuilder::create('call-subagent')
-            ->withToolName('subagent')
-            ->withArguments(['agent' => 'scout', 'task' => 'work'])
-            ->withOrderIndex(0)
-            ->withTimeoutSeconds(null)
-            ->build());
-
-        $this->assertFalse($result->isError);
-        $this->assertSame('clock-ok', $result->content[0]['text']);
-        $this->assertNull($result->details['timeout_seconds'] ?? null);
-    }
-
-    public function testNullCallTimeoutUsesGlobalDefaultForNonSubagentTools(): void
-    {
-        $clock = new MockClock();
-        $toolbox = new ClockAdvancingToolbox($clock, 0);
-        $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            defaultTimeoutSeconds: 30,
-            maxParallelism: 2,
-            toolbox: $toolbox,
-            resultStore: new ToolExecutionResultStore(),
-            clock: $clock,
-        );
-
-        $result = $executor->execute(ToolCallBuilder::create('call-read')
-            ->withToolName('read')
-            ->withArguments(['path' => 'README.md'])
-            ->withOrderIndex(0)
-            ->withTimeoutSeconds(null)
-            ->build());
-
-        $this->assertFalse($result->isError);
-        $this->assertSame(30, $result->details['timeout_seconds'] ?? null);
-    }
-
-    public function testExplicitCallTimeoutStillEnforcesPostHocCap(): void
+    public function testExplicitPerToolTimeoutIsTelemetryOnlyAndLateSuccessRemainsSuccess(): void
     {
         $clock = new MockClock();
         $toolbox = new ClockAdvancingToolbox($clock, 2);
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
-            defaultTimeoutSeconds: 300,
             maxParallelism: 2,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
@@ -521,8 +459,11 @@ final class ToolExecutorTest extends TestCase
             ->withTimeoutSeconds(1)
             ->build());
 
-        $this->assertTrue($result->isError);
-        $this->assertStringContainsString('timed out after 1 second', $result->content[0]['text']);
+        $this->assertFalse($result->isError);
+        $this->assertSame('clock-ok', $result->content[0]['text']);
+        $this->assertSame(1, $result->details['timeout_seconds'] ?? null);
+        $this->assertArrayNotHasKey('timed_out', $result->details ?? []);
+        $this->assertGreaterThanOrEqual(2000, $result->details['duration_ms'] ?? 0);
     }
 }
 

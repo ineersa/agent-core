@@ -16,7 +16,5 @@ interface ToolExecutionSettingsInterface
 {
     public function defaultMode(): string;
 
-    public function defaultTimeoutSeconds(): ?int;
-
     public function maxParallelism(): int;
 }
