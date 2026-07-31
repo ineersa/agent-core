@@ -290,22 +290,17 @@ final class ToolExecutor implements ToolExecutorInterface
     {
         $resolved = $this->policyResolver->resolve($toolCall->toolName);
 
+        $timeoutSeconds = null !== $toolCall->timeoutSeconds && $toolCall->timeoutSeconds > 0
+            ? max(1, $toolCall->timeoutSeconds)
+            : null;
+
         return new ToolExecutionPolicy(
             mode: $toolCall->mode ?? $resolved->mode,
             // Explicit/per-tool budget only (ToolCall.timeoutSeconds from ActiveToolSet).
             // Null means no ambient deadline. ToolExecutor never rewrites success by elapsed time.
-            timeoutSeconds: $this->resolveTimeoutSeconds($toolCall->timeoutSeconds),
+            timeoutSeconds: $timeoutSeconds,
             maxParallelism: max(1, (int) ($toolCall->context['max_parallelism'] ?? $resolved->maxParallelism)),
         );
-    }
-
-    private function resolveTimeoutSeconds(?int $callTimeout): ?int
-    {
-        if (null !== $callTimeout && $callTimeout > 0) {
-            return max(1, $callTimeout);
-        }
-
-        return null;
     }
 
     private function rememberAndReturn(
