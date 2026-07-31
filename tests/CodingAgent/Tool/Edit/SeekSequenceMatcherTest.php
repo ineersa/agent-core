@@ -62,12 +62,23 @@ final class SeekSequenceMatcherTest extends TestCase
         $this->assertSame(1, $this->matcher->findUniqueMatch($lines, $pattern, 0, true));
     }
 
-    public function testEofAmbiguityRejectsWhenPatternAlsoMatchesEarlier(): void
+    public function testEofModePrefersPhysicalEofEvenWhenEarlierDuplicateExists(): void
     {
         $lines = ['block', 'end', 'block', 'end'];
         $pattern = ['block', 'end'];
 
         $this->assertSame(2, $this->matcher->seekSequence($lines, $pattern, 0, true));
+        // Codex-style: physical EOF match wins without uniqueness scan of earlier candidates.
+        $this->assertSame(2, $this->matcher->findUniqueMatch($lines, $pattern, 0, true));
+    }
+
+    public function testEofFallbackRejectsAmbiguousNonEofMatches(): void
+    {
+        // Pattern is not at physical EOF, but appears twice mid-file.
+        $lines = ['block', 'mid', 'block', 'tail'];
+        $pattern = ['block'];
+
+        $this->assertNull($this->matcher->seekSequence($lines, $pattern, 0, true));
         $this->assertNull($this->matcher->findUniqueMatch($lines, $pattern, 0, true));
     }
 

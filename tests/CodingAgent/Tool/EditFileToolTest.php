@@ -72,6 +72,10 @@ final class EditFileToolTest extends TestCase
         $this->assertStringContainsString('no ---/+++', strtolower($guidelines));
         $this->assertStringNotContainsString('cat -n', $guidelines);
         $this->assertStringContainsString('numbered @@', strtolower($guidelines));
+        $this->assertStringContainsString('sequential, non-overlapping', strtolower($guidelines));
+        $this->assertStringContainsString('physical end of the file', strtolower($guidelines));
+        $this->assertStringContainsString('unique forward match', strtolower($guidelines));
+        $this->assertStringNotContainsString('omit it for mid-file', strtolower($guidelines));
     }
 
     public function testEditAppliesSingleHunkPatch(): void
@@ -473,5 +477,114 @@ PATCH;
 
         ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
         $this->assertSame("alpha\n-1 something\nBETA\n", file_get_contents($targetPath));
+    }
+
+    /**
+     * Session 37: second plain @@ after body starts a sequential hunk; overlapping context
+     * consumed by hunk #1 fails as stale without partial writes.
+     */
+    public function testOverlappingSecondHunkFailsAtomicallyWithSequentialGuidance(): void
+    {
+        $targetPath = $this->tmpDir.'/overlap_hunks.txt';
+        $original = "alpha\nbeta\ngamma\ndelta\n";
+        file_put_contents($targetPath, $original);
+
+        // Hunk #1 would match alpha/beta; hunk #2 reuses beta (already past lineIndex) → stale.
+        $patch = <<<'PATCH'
+@@
+ alpha
+-beta
++BETA
+ gamma
+@@
+ beta
+-gamma
++GAMMA
+PATCH;
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('E_PATCH_STALE', $e->getMessage());
+            $this->assertStringContainsString('Hunk #2', $e->getMessage());
+            $this->assertStringContainsString('No changes from this attempt were applied', $e->getMessage());
+            $hint = $e->hint() ?? '';
+            $this->assertStringContainsString('sequential, non-overlapping', $hint);
+            $this->assertStringContainsString('combined into one hunk', $hint);
+            $this->assertStringContainsString('regenerate the patch', $hint);
+        }
+
+        $this->assertSame($original, file_get_contents($targetPath));
+    }
+
+    /**
+     * Session 37 / Codex alignment: mid-file hunk with *** End of File falls back to a unique
+     * forward match when the old block is not at physical EOF.
+     */
+    public function testMidFileHunkWithEndOfFileMarkerFallsBackToUniqueMatch(): void
+    {
+        $targetPath = $this->tmpDir.'/mid_eof.txt';
+        file_put_contents($targetPath, "keep\nmiddle\ntail\n");
+
+        $patch = <<<'PATCH'
+@@
+ keep
+-middle
++MIDDLE
+*** End of File
+PATCH;
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        $this->assertStringContainsString('Applied patch', $result);
+        $this->assertSame("keep\nMIDDLE\ntail\n", file_get_contents($targetPath));
+    }
+
+    /**
+     * *** End of File prefers the physical EOF occurrence even when the same old block
+     * also appears earlier in the file.
+     */
+    public function testEndOfFileMarkerPrefersPhysicalEofOverEarlierDuplicate(): void
+    {
+        $targetPath = $this->tmpDir.'/eof_prefers_end.txt';
+        file_put_contents($targetPath, "block\nend\nnoise\nblock\nend\n");
+
+        $patch = <<<'PATCH'
+@@
+ block
+-end
++END
+*** End of File
+PATCH;
+
+        ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        $this->assertSame("block\nend\nnoise\nblock\nEND\n", file_get_contents($targetPath));
+    }
+
+    /**
+     * EOF-marked hunk with no physical-EOF match still rejects ambiguous non-EOF fallbacks.
+     */
+    public function testEndOfFileFallbackRejectsAmbiguousNonEofMatch(): void
+    {
+        $targetPath = $this->tmpDir.'/eof_ambiguous.txt';
+        $original = "block\nmiddle\nblock\ntail\n";
+        file_put_contents($targetPath, $original);
+
+        $patch = <<<'PATCH'
+@@
+-block
++BLOCK
+*** End of File
+PATCH;
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('E_PATCH_AMBIGUOUS', $e->getMessage());
+            $this->assertStringContainsString('No changes from this attempt were applied', $e->getMessage());
+        }
+
+        $this->assertSame($original, file_get_contents($targetPath));
     }
 }
