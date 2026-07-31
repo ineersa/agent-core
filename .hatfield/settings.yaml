@@ -94,6 +94,10 @@ extensions:
 forks:
     model: openai-codex/gpt-5.6-luna
     thinking_level: high
+    # Project forks: SafeGuard (always_on from defaults) + Castor rewrite only.
+    extensions:
+        enabled:
+            - Ineersa\HatfieldExt\CastorLlmMode\CastorLlmModeExtension
 context_budget_reminders:
     early_input_tokens: 200000
     urgent_remaining_tokens: 25000

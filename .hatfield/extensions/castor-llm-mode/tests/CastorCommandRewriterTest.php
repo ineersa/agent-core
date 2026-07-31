@@ -101,5 +101,24 @@ CMD,
             'castor test',
             self::FOUR_EXPORTS."\ncastor test",
         ];
+
+        // Session 1 diagnostic: quoted VAR=%s labels must not look like shell assignments.
+        yield 'quoted diagnostic labels do not suppress exports' => [
+            <<<'CMD'
+castor list; printf 'LLM_MODE=%s\nCASTOR_DISABLE_VERSION_CHECK=%s\nNO_COLOR=%s\nCLICOLOR=%s\n' "$LLM_MODE" "$CASTOR_DISABLE_VERSION_CHECK" "$NO_COLOR" "$CLICOLOR"
+CMD,
+            self::FOUR_EXPORTS."\n".<<<'CMD'
+castor list --format=md --short --no-ansi; printf 'LLM_MODE=%s\nCASTOR_DISABLE_VERSION_CHECK=%s\nNO_COLOR=%s\nCLICOLOR=%s\n' "$LLM_MODE" "$CASTOR_DISABLE_VERSION_CHECK" "$NO_COLOR" "$CLICOLOR"
+CMD,
+        ];
+
+        yield 'CASTOR_REWRITE diagnostic still injects exports' => [
+            <<<'CMD'
+castor list >/dev/null; printf 'CASTOR_REWRITE=%s\n' "${LLM_MODE:-unset}"
+CMD,
+            self::FOUR_EXPORTS."\n".<<<'CMD'
+castor list --format=md --short --no-ansi >/dev/null; printf 'CASTOR_REWRITE=%s\n' "${LLM_MODE:-unset}"
+CMD,
+        ];
     }
 }

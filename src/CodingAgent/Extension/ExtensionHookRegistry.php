@@ -16,6 +16,10 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 /**
  * Internal registry for tool call/result hooks registered by extensions.
  *
+ * Each registration is tagged with the owning extension class (when known)
+ * so child-run filtering can drop unselected extension surfaces without
+ * mutating process-global registration.
+ *
  * Hooks are stored in registration order. Path A approvals use canonical
  * WaitingHuman + typed resume correlation (hook_class/hook_id embedded in the
  * pending request payload), not this registry for answer routing.
@@ -25,127 +29,164 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 final class ExtensionHookRegistry implements PromptContributorProviderInterface, ToolCallRewriteHookProviderInterface
 {
     /**
-     * Registered tool call hooks, in registration order.
-     *
-     * @var list<ToolCallHookInterface>
+     * @var list<array{hook: ToolCallHookInterface, owner: ?string}>
      */
     private array $toolCallHooks = [];
 
     /**
-     * Registered tool result hooks, in registration order.
-     *
-     * @var list<ToolResultHookInterface>
+     * @var list<array{hook: ToolResultHookInterface, owner: ?string}>
      */
     private array $toolResultHooks = [];
 
     /**
-     * Registered prompt contributors, in registration order.
-     *
-     * @var list<PromptContributorInterface>
+     * @var list<array{hook: PromptContributorInterface, owner: ?string}>
      */
     private array $promptContributors = [];
 
     /**
-     * Registered rewrite hooks, keyed by tool name.
-     *
-     * @var array<string, list<ToolCallRewriteHookInterface>>
+     * @var array<string, list<array{hook: ToolCallRewriteHookInterface, owner: ?string}>>
      */
     private array $rewriteHooks = [];
 
-    /** @var list<AfterTurnCommitHookInterface> */
+    /**
+     * @var list<array{hook: AfterTurnCommitHookInterface, owner: ?string}>
+     */
     private array $afterTurnCommitHooks = [];
 
-    /** @var list<BeforeCompactionHookInterface> */
+    /**
+     * @var list<array{hook: BeforeCompactionHookInterface, owner: ?string}>
+     */
     private array $beforeCompactionHooks = [];
 
     public function addToolCallHook(ToolCallHookInterface $hook): void
     {
-        $this->toolCallHooks[] = $hook;
+        $this->toolCallHooks[] = ['hook' => $hook, 'owner' => ExtensionRegistrationContext::currentOwnerClass()];
     }
 
     /**
+     * @param list<string>|null $allowedOwnerClasses null = no filter (parent/global)
+     *
      * @return list<ToolCallHookInterface>
      */
-    public function toolCallHooks(): array
+    public function toolCallHooks(?array $allowedOwnerClasses = null): array
     {
-        return $this->toolCallHooks;
+        return $this->filterHooks($this->toolCallHooks, $allowedOwnerClasses);
     }
 
     public function addToolResultHook(ToolResultHookInterface $hook): void
     {
-        $this->toolResultHooks[] = $hook;
+        $this->toolResultHooks[] = ['hook' => $hook, 'owner' => ExtensionRegistrationContext::currentOwnerClass()];
     }
 
     /**
+     * @param list<string>|null $allowedOwnerClasses
+     *
      * @return list<ToolResultHookInterface>
      */
-    public function toolResultHooks(): array
+    public function toolResultHooks(?array $allowedOwnerClasses = null): array
     {
-        return $this->toolResultHooks;
+        return $this->filterHooks($this->toolResultHooks, $allowedOwnerClasses);
     }
 
     public function addPromptContributor(PromptContributorInterface $contributor): void
     {
-        $this->promptContributors[] = $contributor;
+        $this->promptContributors[] = ['hook' => $contributor, 'owner' => ExtensionRegistrationContext::currentOwnerClass()];
     }
 
     /**
+     * @param list<string>|null $allowedOwnerClasses
+     *
      * @return list<PromptContributorInterface>
      */
-    public function promptContributors(): array
+    public function promptContributors(?array $allowedOwnerClasses = null): array
     {
-        return $this->promptContributors;
+        return $this->filterHooks($this->promptContributors, $allowedOwnerClasses);
     }
 
     /**
-     * Register a tool-call rewrite hook for a specific tool or wildcard.
-     *
      * @param string $toolName Specific tool name or '*' for all tools
      */
     public function addToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
     {
-        $this->rewriteHooks[$toolName][] = $hook;
+        $this->rewriteHooks[$toolName][] = [
+            'hook' => $hook,
+            'owner' => ExtensionRegistrationContext::currentOwnerClass(),
+        ];
     }
 
     /**
-     * Get rewrite hooks matching the given tool name.
-     *
-     * Returns hooks registered for the exact tool name (registration
-     * order), followed by wildcard hooks ('*', registration order).
-     * Duplicates are possible if the same hook is registered for both
-     * the tool name and wildcard.
+     * @param list<string>|null $allowedOwnerClasses
      *
      * @return list<ToolCallRewriteHookInterface>
      */
-    public function rewriteHooksForTool(string $toolName): array
+    public function rewriteHooksForTool(string $toolName, ?array $allowedOwnerClasses = null): array
     {
-        $specific = $this->rewriteHooks[$toolName] ?? [];
-        $wildcard = $this->rewriteHooks['*'] ?? [];
+        $specific = $this->filterHooks($this->rewriteHooks[$toolName] ?? [], $allowedOwnerClasses);
+        $wildcard = $this->filterHooks($this->rewriteHooks['*'] ?? [], $allowedOwnerClasses);
 
-        // Registration order: specific hooks first, then wildcard.
-        // Within each group, registration order is preserved.
         return [...$specific, ...$wildcard];
     }
 
     public function addAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
     {
-        $this->afterTurnCommitHooks[] = $hook;
+        $this->afterTurnCommitHooks[] = ['hook' => $hook, 'owner' => ExtensionRegistrationContext::currentOwnerClass()];
     }
 
-    /** @return list<AfterTurnCommitHookInterface> */
-    public function afterTurnCommitHooks(): array
+    /**
+     * @param list<string>|null $allowedOwnerClasses
+     *
+     * @return list<AfterTurnCommitHookInterface>
+     */
+    public function afterTurnCommitHooks(?array $allowedOwnerClasses = null): array
     {
-        return $this->afterTurnCommitHooks;
+        return $this->filterHooks($this->afterTurnCommitHooks, $allowedOwnerClasses);
     }
 
     public function addBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
     {
-        $this->beforeCompactionHooks[] = $hook;
+        $this->beforeCompactionHooks[] = ['hook' => $hook, 'owner' => ExtensionRegistrationContext::currentOwnerClass()];
     }
 
-    /** @return list<BeforeCompactionHookInterface> */
-    public function beforeCompactionHooks(): array
+    /**
+     * @param list<string>|null $allowedOwnerClasses
+     *
+     * @return list<BeforeCompactionHookInterface>
+     */
+    public function beforeCompactionHooks(?array $allowedOwnerClasses = null): array
     {
-        return $this->beforeCompactionHooks;
+        return $this->filterHooks($this->beforeCompactionHooks, $allowedOwnerClasses);
+    }
+
+    /**
+     * @template T of object
+     *
+     * @param list<array{hook: T, owner: ?string}> $entries
+     * @param list<string>|null                    $allowedOwnerClasses
+     *
+     * @return list<T>
+     */
+    private function filterHooks(array $entries, ?array $allowedOwnerClasses): array
+    {
+        if (null === $allowedOwnerClasses) {
+            $hooks = [];
+            foreach ($entries as $entry) {
+                $hooks[] = $entry['hook'];
+            }
+
+            return $hooks;
+        }
+
+        $allowed = array_fill_keys($allowedOwnerClasses, true);
+        $hooks = [];
+        foreach ($entries as $entry) {
+            $owner = $entry['owner'];
+            // Ownerless registrations are process infrastructure — keep them.
+            // Extension-owned entries require explicit selection for child runs.
+            if (null === $owner || isset($allowed[$owner])) {
+                $hooks[] = $entry['hook'];
+            }
+        }
+
+        return $hooks;
     }
 }

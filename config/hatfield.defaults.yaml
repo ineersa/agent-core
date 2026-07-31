@@ -388,6 +388,14 @@ agents:
         - settings
         - hatfield_docs
 
+    # Child-run extension selection for subagents.
+    # Effective allowlist = always_on ∪ agent frontmatter `extensions` (stable first-seen).
+    # Omitted frontmatter extensions means no optional child extensions — never inherits
+    # optional entries from global extensions.enabled.
+    extensions:
+        always_on:
+            - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+
     # Bounded output limits for agent_retrieve (optional overrides).
     # retrieve:
     #     default_limit: 20
@@ -578,3 +586,10 @@ agents:
 forks:
     model: null
     thinking_level: null
+    # Child-run extension selection for forks.
+    # Effective allowlist = always_on ∪ enabled (stable first-seen).
+    # Does not inherit optional entries from global extensions.enabled.
+    extensions:
+        always_on:
+            - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+        enabled: []

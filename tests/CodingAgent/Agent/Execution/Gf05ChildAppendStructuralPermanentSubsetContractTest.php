@@ -13,12 +13,12 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
-use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorProviderInterface;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 
@@ -64,45 +64,35 @@ final class Gf05ChildAppendStructuralPermanentSubsetContractTest extends \PHPUni
         $benignContributor = 'GF05_BENIGN_CONTRIBUTOR_PROSE_KEEP_ME';
         $opaqueContributorCatalog = 'GF05_OPAQUE_FORK_CATALOG_DOC fork: parent-only launch';
 
+        $hookRegistry = new ExtensionHookRegistry();
+        $hookRegistry->addPromptContributor(new class($benignContributor) implements PromptContributorInterface {
+            public function __construct(private readonly string $benign)
+            {
+            }
+
+            public function contribute(): string
+            {
+                return $this->benign;
+            }
+        });
+        $hookRegistry->addPromptContributor(new class($opaqueContributorCatalog) implements PromptContributorInterface {
+            public function __construct(private readonly string $opaqueCatalog)
+            {
+            }
+
+            public function contribute(): string
+            {
+                return $this->opaqueCatalog;
+            }
+        });
+
         $systemPromptBuilder = new SystemPromptBuilder(
             toolRegistry: $registry,
             pathResolver: new SettingsPathResolver($this->tmpDir),
             templateRenderer: new StringTemplateRenderer(),
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'test'), logging: new LoggingConfig(), cwd: $this->tmpDir),
             projectDir: \dirname(__DIR__, 4),
-            promptContributorProvider: new class($benignContributor, $opaqueContributorCatalog) implements PromptContributorProviderInterface {
-                public function __construct(
-                    private readonly string $benign,
-                    private readonly string $opaqueCatalog,
-                ) {
-                }
-
-                public function promptContributors(): array
-                {
-                    return [
-                        new class($this->benign) implements PromptContributorInterface {
-                            public function __construct(private readonly string $benign)
-                            {
-                            }
-
-                            public function contribute(): string
-                            {
-                                return $this->benign;
-                            }
-                        },
-                        new class($this->opaqueCatalog) implements PromptContributorInterface {
-                            public function __construct(private readonly string $opaqueCatalog)
-                            {
-                            }
-
-                            public function contribute(): string
-                            {
-                                return $this->opaqueCatalog;
-                            }
-                        },
-                    ];
-                }
-            },
+            promptContributorProvider: $hookRegistry,
         );
 
         $builder = new AgentPromptBuilder($systemPromptBuilder);

@@ -28,6 +28,7 @@ final readonly class ExtensionCompactionHookDispatcher
         private ExtensionHookRegistry $hookRegistry,
         private CompactionHookDispatcher $internalHookDispatcher,
         private LoggerInterface $logger,
+        private ?ChildRunExtensionAllowlistReaderInterface $extensionAllowlistReader = null,
     ) {
     }
 
@@ -91,7 +92,9 @@ final readonly class ExtensionCompactionHookDispatcher
             thinkingLevel: $internalContext->thinkingLevel,
         );
 
-        foreach ($this->hookRegistry->beforeCompactionHooks() as $hook) {
+        $allowed = $this->extensionAllowlistReader?->readAllowedExtensions($internalContext->runId);
+
+        foreach ($this->hookRegistry->beforeCompactionHooks($allowed) as $hook) {
             try {
                 $result = $hook->beforeCompaction($publicContext);
                 $this->mergePublicResult($merged, $result);

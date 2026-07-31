@@ -42,6 +42,8 @@ final class ExtensionManager implements TuiExtensionRegistryInterface
     /** @var list<TuiExtensionInterface> */
     private array $tuiExtensions = [];
 
+    private bool $loaded = false;
+
     public function __construct(
         private readonly AppConfig $config,
         private readonly ExtensionApiInterface $extensionApi,
@@ -81,6 +83,14 @@ final class ExtensionManager implements TuiExtensionRegistryInterface
      */
     public function loadExtensions(): array
     {
+        // Idempotent per process. ExtensionLoaderSubscriber and explicit test
+        // callers must not re-register tools/hooks or wipe load outcomes that
+        // ChildExtensionSelectionService uses for fail-closed validation.
+        if ($this->loaded) {
+            return $this->diagnosticsFromOutcomes();
+        }
+
+        $this->loaded = true;
         $this->loadOutcomes = [];
         $this->tuiExtensions = [];
         $enabled = $this->getEnabledClasses();
@@ -92,6 +102,23 @@ final class ExtensionManager implements TuiExtensionRegistryInterface
         $this->requireExtensionAutoload();
 
         return $this->loadEach($enabled);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function diagnosticsFromOutcomes(): array
+    {
+        $diagnostics = [];
+        foreach ($this->loadOutcomes as $item) {
+            if (!$item->loaded) {
+                $diagnostics[] = '' !== $item->errorMessage
+                    ? $item->errorMessage
+                    : \sprintf('Extension "%s" failed to load.', $item->className);
+            }
+        }
+
+        return $diagnostics;
     }
 
     /**
@@ -185,7 +212,9 @@ final class ExtensionManager implements TuiExtensionRegistryInterface
         }
 
         try {
-            $instance->register($this->extensionApi);
+            ExtensionRegistrationContext::withOwner($className, function () use ($instance): void {
+                $instance->register($this->extensionApi);
+            });
         } catch (\Throwable $e) {
             $msg = \sprintf('Extension "%s" failed to register: %s', $className, $e->getMessage());
             $this->logger->error($msg, [

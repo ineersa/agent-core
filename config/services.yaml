@@ -232,7 +232,12 @@ services:
   Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface:
     alias: Ineersa\Tui\Extension\TuiCommandRegistryAdapter
 
+  # Lazy: ExtensionManager (and thus ChildExtensionSelectionService / fork+
+  # subagent launch builders) must not force-construct the AI Platform graph
+  # when only validating child extension selection. Bridge is only needed when
+  # extensions actually register tools/hooks via loadExtensions().
   Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge:
+    lazy: true
     arguments:
       $appConfig: '@Ineersa\CodingAgent\Config\AppConfig'
       $execBridge: '@Ineersa\CodingAgent\Extension\ExtensionExecBridge'
@@ -257,10 +262,23 @@ services:
     arguments:
       $cwd: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").cwd'
       $logger: '@monolog.logger'
+      $extensionAllowlistReader: '@Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface'
 
   Ineersa\CodingAgent\Extension\ExtensionHookRegistry: ~
 
-  Ineersa\CodingAgent\Extension\ExtensionAfterTurnCommitHookSubscriber: ~
+  Ineersa\CodingAgent\Extension\ExtensionAfterTurnCommitHookSubscriber:
+    arguments:
+      $extensionAllowlistReader: '@Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface'
+
+  Ineersa\CodingAgent\Extension\ExtensionCompactionHookDispatcher:
+    arguments:
+      $extensionAllowlistReader: '@Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface'
+
+  Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobWorker:
+    arguments:
+      $extensionAllowlistReader: '@Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface'
+
+  Ineersa\CodingAgent\Agent\ChildExtensionSelectionService: ~
 
   Ineersa\CodingAgent\Extension\ExtensionManager:
     arguments:
@@ -666,7 +684,10 @@ services:
   # HatfieldModelCatalog service, whose constructor requires non-null AiConfig.
   # Without AI settings (e.g. isolated PHAR list), catalog is null and
   # contextWindow() returns null instead of TypeError during service construction.
+  # Lazy: only needed when an extension calls $api->agent(). Keeps child-launch
+  # selection paths off the PlatformInterface proxy graph.
   Ineersa\CodingAgent\Extension\Agent\ConfiguredModelAgentRunner:
+    lazy: true
     arguments:
       $modelCatalog: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").catalog'
 
@@ -827,11 +848,15 @@ services:
     arguments:
       $inner: '@Ineersa\CodingAgent\Mcp\Tool\McpCatalogRegisteringToolSetResolver'
       $metadataReader: '@Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader'
+      $toolRegistry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
 
   # Shared reader for child RunStarted metadata payloads.
   Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader:
     arguments:
       $eventStore: '@Ineersa\AgentCore\Contract\EventStoreInterface'
+
+  Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface:
+    alias: Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader
 
   Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface:
     alias: Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver
@@ -844,6 +869,8 @@ services:
       $registry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
       $eventDispatcher: '@event_dispatcher'
       $rewriteHookProvider: '@Ineersa\CodingAgent\Extension\ExtensionHookRegistry'
+      $contextAccessor: '@Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor'
+      $extensionAllowlistReader: '@Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface'
 
   Symfony\AI\Agent\Toolbox\ToolboxInterface:
     alias: Ineersa\CodingAgent\Tool\RegistryBackedToolbox

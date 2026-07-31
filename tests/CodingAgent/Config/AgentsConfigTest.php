@@ -210,4 +210,58 @@ final class AgentsConfigTest extends TestCase
 
         AgentsConfig::fromRaw(['subagent_excluded_tools' => $value]);
     }
+
+    public function testFromRawParsesAgentsExtensionsAlwaysOn(): void
+    {
+        $config = AgentsConfig::fromRaw([
+            'extensions' => [
+                'always_on' => [
+                    'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
+                    'Ineersa\\HatfieldExt\\TaskWorkflow\\TaskWorkflowExtension',
+                ],
+            ],
+        ]);
+
+        $this->assertSame([
+            'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
+            'Ineersa\\HatfieldExt\\TaskWorkflow\\TaskWorkflowExtension',
+        ], $config->extensions->alwaysOn);
+    }
+
+    public function testFromRawRejectsMalformedAgentsExtensionsAlwaysOn(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('agents.extensions.always_on');
+
+        AgentsConfig::fromRaw([
+            'extensions' => [
+                'always_on' => ['ok', ''],
+            ],
+        ]);
+    }
+
+    public function testForksFromRawParsesExtensionsLists(): void
+    {
+        $forks = \Ineersa\CodingAgent\Config\ForksConfigDTO::fromRaw([
+            'extensions' => [
+                'always_on' => ['A\\Safe'],
+                'enabled' => ['B\\Castor'],
+            ],
+        ]);
+
+        $this->assertSame(['A\\Safe'], $forks->extensions->alwaysOn);
+        $this->assertSame(['B\\Castor'], $forks->extensions->enabled);
+    }
+
+    public function testForksFromRawRejectsNonListEnabled(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('forks.extensions.enabled');
+
+        \Ineersa\CodingAgent\Config\ForksConfigDTO::fromRaw([
+            'extensions' => [
+                'enabled' => ['x' => 'B\\Castor'],
+            ],
+        ]);
+    }
 }
