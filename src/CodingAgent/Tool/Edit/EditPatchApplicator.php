@@ -40,7 +40,7 @@ final class EditPatchApplicator
                         throw $this->ambiguous($chunkIndex, $hint);
                     }
 
-                    throw $this->stale($chunkIndex, $hint, $lines, $lineIndex, $chunk->endOfFile);
+                    throw $this->stale($chunkIndex, $hint, $lines, $lineIndex);
                 }
 
                 $lastHintIndex = $hintIndex;
@@ -62,7 +62,7 @@ final class EditPatchApplicator
 
             $match = $this->findOldBlock($lines, $chunk->oldLines, $lineIndex, $chunk->endOfFile, $chunkIndex);
             if (null === $match) {
-                throw $this->stale($chunkIndex, implode("\n", \array_slice($chunk->oldLines, 0, 3)), $lines, $lineIndex, $chunk->endOfFile);
+                throw $this->stale($chunkIndex, implode("\n", \array_slice($chunk->oldLines, 0, 3)), $lines, $lineIndex);
             }
 
             [$matchIndex, $matchedOldLength] = $match;
@@ -126,7 +126,9 @@ final class EditPatchApplicator
             return [$unique, \count($oldLines)];
         }
 
-        if (null !== $this->matcher->seekSequence($lines, $oldLines, $startIndex, $eof)) {
+        // Ambiguity is always about forward uniqueness from the cursor. For EOF-marked hunks,
+        // findUniqueMatch already preferred physical EOF; remaining multi-matches are non-EOF fallbacks.
+        if (null !== $this->matcher->seekSequence($lines, $oldLines, $startIndex, false)) {
             throw $this->ambiguous($chunkIndex, $oldLines[0] ?? '');
         }
 
@@ -136,15 +138,12 @@ final class EditPatchApplicator
     /**
      * @param list<string> $lines
      */
-    private function stale(int $chunkIndex, string $needle, array $lines, int $lineIndex, bool $endOfFile = false): ToolCallException
+    private function stale(int $chunkIndex, string $needle, array $lines, int $lineIndex): ToolCallException
     {
         $contextLine = min(max(1, $lineIndex + 1), max(1, \count($lines)));
 
-        // Session-37 recovery: surface determinable grammar mistakes from chunk index / EOF flag only.
+        // Session-37 recovery: surface sequential multi-hunk grammar mistakes from chunk index only.
         $grammar = '';
-        if ($endOfFile) {
-            $grammar .= ' This hunk is EOF-constrained (`*** End of File`): the old block must match the actual end of the file. For mid-file edits, omit `*** End of File`.';
-        }
         if ($chunkIndex > 0) {
             $grammar .= ' Each plain or seek-hinted `@@` starts a new sequential, non-overlapping hunk applied after earlier hunks; overlapping changes must be combined into one hunk.';
         }
