@@ -15,7 +15,7 @@ namespace Ineersa\Hatfield\ExtensionApi\Tool;
  * Dynamic tool management uses separate ToolRegistry APIs and is not exposed
  * through the public Extension API in v1.
  *
- * Handler may be a legacy argument-only handler or a contextual handler that
+ * Handler may be an argument-only handler or a contextual handler that
  * receives {@see ToolInvocationContextDTO}.
  */
 final readonly class ToolRegistrationDTO

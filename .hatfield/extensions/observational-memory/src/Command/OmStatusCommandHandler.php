@@ -6,7 +6,6 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Command;
 
 use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
-use Ineersa\Hatfield\ExtensionApi\Command\MarkdownCommandContextInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmSessionContext;
 use Psr\Log\LoggerInterface;
@@ -26,15 +25,8 @@ final class OmStatusCommandHandler implements ExtensionCommandHandlerInterface
         $runId = null;
         try {
             $runId = $this->sessionContext->requireSessionId();
-            $text = $this->query->formatStatus($runId);
-            if ($context instanceof MarkdownCommandContextInterface) {
-                $context->notifyMarkdown($text);
-
-                return;
-            }
-
-            // Older hosts without MarkdownCommandContextInterface keep plain notify().
-            $context->notify($text, 'info');
+            // Host adapter maps info/success notify to native markdown transcript style.
+            $context->notify($this->query->formatStatus($runId), 'info');
         } catch (\Throwable) {
             // Never surface raw exception text (paths/content). Structured log only.
             // Capture run_id before try so a throwing lazy getSessionId() cannot rethrow in catch.

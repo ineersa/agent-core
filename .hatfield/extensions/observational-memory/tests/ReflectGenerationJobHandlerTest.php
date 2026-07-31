@@ -13,7 +13,6 @@ use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
-use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
@@ -297,7 +296,6 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
             $seen[] = [
                 'model' => $request->model,
                 'maxToolCalls' => $request->maxToolCalls,
-                'thinkingLevel' => $request->thinkingLevel,
                 'tool' => $request->tools[0]->name ?? null,
             ];
             $tool = $request->tools[0] ?? null;
@@ -335,7 +333,6 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
         $this->assertSame(1, $agentCalls, 'only Reflector model call when pool under max');
         $this->assertSame('llama_cpp_test/test', $seen[0]['model']);
         $this->assertSame(16, $seen[0]['maxToolCalls']);
-        $this->assertNull($seen[0]['thinkingLevel']);
         $this->assertSame('record_reflections', $seen[0]['tool']);
 
         $active = (string) $connection->fetchOne(
@@ -400,9 +397,6 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
             }
             if (16 !== $request->maxToolCalls) {
                 throw new \RuntimeException('expected maxToolCalls=16');
-            }
-            if (null !== $request->thinkingLevel) {
-                throw new \RuntimeException('thinkingLevel must be omitted');
             }
             $tool = $request->tools[0] ?? null;
             if (null === $tool) {
@@ -572,10 +566,6 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
             }
 
             public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
-            {
-            }
-
-            public function registerBeforeSnapshotCompactionHook(BeforeSnapshotCompactionHookInterface $hook): void
             {
             }
 

@@ -35,7 +35,7 @@ Threshold (after all observe chunks durable, tokens > 40000)
       → promote om_active_generation once: prior+new reflections, active-minus-drops
 
 CompactRun (run_control, under run lock) — Pi-style instant projection
-  → public OmBeforeCompactionHook (CompactRun watermark path)
+  → public OmBeforeCompactionHook (paired coverage watermark 1..lastSeq)
       → ActiveMemoryProjector (listActiveReflections + listActiveCandidateObservations
         → ActiveMemoryRenderer::render, 12-char display ids)
       → non-empty → replaceSummary(text)
@@ -43,7 +43,7 @@ CompactRun (run_control, under run lock) — Pi-style instant projection
   → no extension_agent dispatch, no model call, no session-event read, no poll/timeout
 
 Snapshot / fork parent (CompactionService::compactMessages, trigger=fork)
-  → public OmBeforeSnapshotCompactionHook (no event watermark; parent run_id only)
+  → same public OmBeforeCompactionHook (coverage watermark null/null; parent run_id)
       → same ActiveMemoryProjector as CompactRun
       → non-empty → replaceSummary into inherited child messages; no compaction model
       → empty / OM not registered → continue → ordinary model snapshot compaction

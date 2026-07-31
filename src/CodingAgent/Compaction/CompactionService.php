@@ -33,10 +33,9 @@ final readonly class CompactionService implements CompactionServiceInterface
         private SessionCompactor $sessionCompactor,
         private AppConfig $appConfig,
         private ModelSelectionService $modelSelectionService,
-        private CompactionHookDispatcher $hookDispatcher,
         private PlatformInterface $platform,
+        private ExtensionCompactionHookDispatcher $extensionHookDispatcher,
         private LoggerInterface $logger = new NullLogger(),
-        private ?ExtensionCompactionHookDispatcher $extensionHookDispatcher = null,
     ) {
     }
 
@@ -196,11 +195,9 @@ final readonly class CompactionService implements CompactionServiceInterface
             resolvedModel: $resolvedModel,
             thinkingLevel: $thinkingLevel,
         );
-        // Snapshot path: internal tagged hooks + public BeforeSnapshotCompactionHook
-        // (not CompactRun watermark hooks). Structural no-op above skips this entirely.
-        $hookResult = null !== $this->extensionHookDispatcher
-            ? $this->extensionHookDispatcher->dispatchForSnapshot($hookContext)
-            : $this->hookDispatcher->dispatch($hookContext);
+        // Snapshot path: same public before-compaction hooks as CompactRun, with
+        // null/null coverage watermark. Structural no-op above skips this entirely.
+        $hookResult = $this->extensionHookDispatcher->dispatchForSnapshot($hookContext);
 
         if ($hookResult->cancels()) {
             $reason = 'hook_cancelled: '.$hookResult->cancelReason;

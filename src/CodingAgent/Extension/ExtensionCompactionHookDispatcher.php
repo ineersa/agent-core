@@ -9,7 +9,6 @@ use Ineersa\CodingAgent\Compaction\CompactionHookDispatcher;
 use Ineersa\CodingAgent\Compaction\CompactionHookResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO;
-use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookContextDTO;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -19,6 +18,9 @@ use Psr\Log\LoggerInterface;
  * best-effort isolation. Public extension hooks fail closed: an exception is
  * converted to an actionable cancel so CompactRun/snapshot never silently falls
  * through to summary-mode LLM compaction after an extension failure.
+ *
+ * One public hook set serves both paths; only the optional coverage watermark
+ * differs (present for CompactRun, null/null for snapshot).
  */
 final readonly class ExtensionCompactionHookDispatcher
 {
@@ -40,6 +42,33 @@ final readonly class ExtensionCompactionHookDispatcher
         CompactionHookContextDTO $internalContext,
         int $requiredStartSeq,
         int $requiredEndSeq,
+    ): CompactionHookResultDTO {
+        return $this->dispatchPublic(
+            $internalContext,
+            requiredStartSeq: $requiredStartSeq,
+            requiredEndSeq: $requiredEndSeq,
+        );
+    }
+
+    /**
+     * Dispatch internal tagged hooks, then public snapshot extension hooks.
+     *
+     * Used by CompactionService::compactMessages (fork/parent snapshots). Same
+     * public hook set and aggregation rules as CompactRun; coverage watermark is null.
+     */
+    public function dispatchForSnapshot(CompactionHookContextDTO $internalContext): CompactionHookResultDTO
+    {
+        return $this->dispatchPublic(
+            $internalContext,
+            requiredStartSeq: null,
+            requiredEndSeq: null,
+        );
+    }
+
+    private function dispatchPublic(
+        CompactionHookContextDTO $internalContext,
+        ?int $requiredStartSeq,
+        ?int $requiredEndSeq,
     ): CompactionHookResultDTO {
         $merged = $this->internalHookDispatcher->dispatch($internalContext);
         if ($merged->cancels()) {
@@ -77,65 +106,7 @@ final readonly class ExtensionCompactionHookDispatcher
                     'turn_no' => $internalContext->turnNo,
                     'hook_class' => $hook::class,
                     'exception_class' => $e::class,
-                ]);
-
-                $merged->cancelReason = 'extension_hook_failed: '.$hook::class;
-                $merged->metadata = [
-                    ...$merged->metadata,
-                    'extension_hook_error' => true,
-                    'extension_hook_class' => $hook::class,
-                ];
-
-                return $merged;
-            }
-        }
-
-        return $merged;
-    }
-
-    /**
-     * Dispatch internal tagged hooks, then public snapshot extension hooks.
-     *
-     * Used by CompactionService::compactMessages (fork/parent snapshots). Same
-     * aggregation and fail-closed rules as CompactRun; CompactRun watermark hooks
-     * are never invoked here.
-     */
-    public function dispatchForSnapshot(CompactionHookContextDTO $internalContext): CompactionHookResultDTO
-    {
-        $merged = $this->internalHookDispatcher->dispatch($internalContext);
-        if ($merged->cancels()) {
-            return $merged;
-        }
-
-        $publicContext = new BeforeSnapshotCompactionHookContextDTO(
-            runId: $internalContext->runId,
-            turnNo: $internalContext->turnNo,
-            trigger: $internalContext->trigger,
-            tokenEstimateBefore: $internalContext->tokenEstimateBefore,
-            messagesCompacted: $internalContext->messagesCompacted,
-            messagesRetained: $internalContext->messagesRetained,
-            firstRetainedIndex: $internalContext->firstRetainedIndex,
-            priorSummaryPresent: $internalContext->priorSummaryPresent,
-            customInstructions: $internalContext->customInstructions,
-            resolvedModel: $internalContext->resolvedModel,
-            thinkingLevel: $internalContext->thinkingLevel,
-        );
-
-        foreach ($this->hookRegistry->beforeSnapshotCompactionHooks() as $hook) {
-            try {
-                $result = $hook->beforeSnapshotCompaction($publicContext);
-                $this->mergePublicResult($merged, $result);
-                if ($merged->cancels()) {
-                    return $merged;
-                }
-            } catch (\Throwable $e) {
-                $this->logger->warning('Public before-snapshot-compaction extension hook failed closed.', [
-                    'component' => 'compaction',
-                    'event_type' => 'compaction.extension_snapshot_hook.error',
-                    'run_id' => $internalContext->runId,
-                    'turn_no' => $internalContext->turnNo,
-                    'hook_class' => $hook::class,
-                    'exception_class' => $e::class,
+                    'has_coverage_watermark' => $publicContext->hasCoverageWatermark(),
                 ]);
 
                 $merged->cancelReason = 'extension_hook_failed: '.$hook::class;

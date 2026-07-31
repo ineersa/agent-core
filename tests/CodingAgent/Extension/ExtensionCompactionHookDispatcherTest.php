@@ -11,8 +11,6 @@ use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO;
-use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookContextDTO;
-use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
@@ -85,30 +83,22 @@ final class ExtensionCompactionHookDispatcherTest extends TestCase
         $this->assertFalse($result->hasReplacementSummary());
     }
 
-    public function testSnapshotHookReceivesNoWatermarkAndCompactRunHookIsNotInvoked(): void
+    public function testSnapshotDispatchUsesNullWatermarkOnSamePublicHookSet(): void
     {
         $registry = new ExtensionHookRegistry();
-        $compactRunCalled = false;
-        $registry->addBeforeCompactionHook(new class($compactRunCalled) implements BeforeCompactionHookInterface {
-            public function __construct(private bool &$compactRunCalled)
+        $captured = null;
+        $seen = [];
+        $registry->addBeforeCompactionHook(new class($captured, $seen) implements BeforeCompactionHookInterface {
+            /**
+             * @param list<bool> $seen
+             */
+            public function __construct(private mixed &$captured, private array &$seen)
             {
             }
 
             public function beforeCompaction(BeforeCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
             {
-                $this->compactRunCalled = true;
-
-                return BeforeCompactionHookResultDTO::replaceSummary('must not run on snapshot');
-            }
-        });
-        $captured = null;
-        $registry->addBeforeSnapshotCompactionHook(new class($captured) implements BeforeSnapshotCompactionHookInterface {
-            public function __construct(private mixed &$captured)
-            {
-            }
-
-            public function beforeSnapshotCompaction(BeforeSnapshotCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
-            {
+                $this->seen[] = $context->hasCoverageWatermark();
                 $this->captured = $context;
 
                 return BeforeCompactionHookResultDTO::replaceSummary('snapshot OM summary');
@@ -123,19 +113,22 @@ final class ExtensionCompactionHookDispatcherTest extends TestCase
 
         $result = $dispatcher->dispatchForSnapshot($this->context(trigger: 'fork'));
 
-        $this->assertFalse($compactRunCalled);
+        $this->assertSame([false], $seen);
         $this->assertTrue($result->hasReplacementSummary());
         $this->assertSame('snapshot OM summary', $result->replacementSummary);
-        $this->assertInstanceOf(BeforeSnapshotCompactionHookContextDTO::class, $captured);
+        $this->assertInstanceOf(BeforeCompactionHookContextDTO::class, $captured);
         $this->assertSame('fork', $captured->trigger);
         $this->assertSame('run-1', $captured->runId);
+        $this->assertNull($captured->requiredStartSeq);
+        $this->assertNull($captured->requiredEndSeq);
+        $this->assertFalse($captured->hasCoverageWatermark());
     }
 
     public function testSnapshotHookExceptionFailsClosedAsCancel(): void
     {
         $registry = new ExtensionHookRegistry();
-        $registry->addBeforeSnapshotCompactionHook(new class implements BeforeSnapshotCompactionHookInterface {
-            public function beforeSnapshotCompaction(BeforeSnapshotCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
+        $registry->addBeforeCompactionHook(new class implements BeforeCompactionHookInterface {
+            public function beforeCompaction(BeforeCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
             {
                 throw new \RuntimeException('boom');
             }

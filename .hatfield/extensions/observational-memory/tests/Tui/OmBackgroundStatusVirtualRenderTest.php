@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Tui\Tests\Screen;
+namespace Ineersa\HatfieldExt\ObservationalMemory\Tests\Tui;
 
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;

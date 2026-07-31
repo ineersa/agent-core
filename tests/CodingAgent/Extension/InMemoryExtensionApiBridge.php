@@ -11,7 +11,6 @@ use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
-use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
@@ -172,10 +171,6 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
     public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
     {
         // Test bridge does not inspect compaction hooks yet.
-    }
-
-    public function registerBeforeSnapshotCompactionHook(BeforeSnapshotCompactionHookInterface $hook): void
-    {
     }
 
     public function agent(): AgentRunnerInterface

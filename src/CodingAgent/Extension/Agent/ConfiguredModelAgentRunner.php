@@ -86,14 +86,8 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
             name: 'extension-agent',
         );
 
-        $platformOptions = ['stream' => true];
-        if (null !== $request->thinkingLevel && '' !== trim($request->thinkingLevel)) {
-            // Reuse existing SessionAwareModelResolver / ReasoningOptionsResolver semantics.
-            $platformOptions['thinking_level'] = trim($request->thinkingLevel);
-        }
-
         $options = PlatformInvocationMetadata::inject(
-            $platformOptions,
+            ['stream' => true],
             new PlatformInvocationMetadata(
                 new ModelInvocationInput(
                     runId: $request->sessionId,

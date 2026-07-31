@@ -13,7 +13,6 @@ use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Command\OmStatusCommandHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Command\OmViewCommandHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\OmBeforeCompactionHook;
-use Ineersa\HatfieldExt\ObservationalMemory\Compaction\OmBeforeSnapshotCompactionHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\ReflectGenerationJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryTerminalHook;
@@ -76,11 +75,9 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
         $api->registerAfterTurnCommitHook(
             new ObserveBoundaryTerminalHook($api, $settings, $this->logger),
         );
+        // One public hook for CompactRun (watermark) and snapshot/fork (null watermark).
         $api->registerBeforeCompactionHook(
             new OmBeforeCompactionHook($api, $settings, $this->logger),
-        );
-        $api->registerBeforeSnapshotCompactionHook(
-            new OmBeforeSnapshotCompactionHook($api, $settings, $this->logger),
         );
 
         $api->registerCommand(

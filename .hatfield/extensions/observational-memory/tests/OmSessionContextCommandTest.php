@@ -11,9 +11,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
-use Ineersa\Hatfield\ExtensionApi\Command\MarkdownCommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
-use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
@@ -36,8 +34,8 @@ use Symfony\Component\Tui\Widget\AbstractWidget;
 
 /**
  * Thesis: session id is resolved lazily from the live TUI context at command
- * invocation; registration-time string caching is forbidden. Markdown hosts use
- * notifyMarkdown(); plain hosts keep notify(); failures surface a fixed safe
+ * invocation; registration-time string caching is forbidden. Hosts use
+ * plain notify(); host maps info to markdown style; failures surface a fixed safe
  * message without exception text.
  */
 final class OmSessionContextCommandTest extends IsolatedKernelTestCase
@@ -101,38 +99,9 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
     }
 
     #[Test]
-    public function markdownHostUsesNotifyMarkdownForStatusAndView(): void
+    public function infoNotifyIsUsedForStatusAndView(): void
     {
-        $runId = 'om-md-host-run';
-        $dbPath = $this->seedObservation($runId);
-        $sessionContext = new OmSessionContext();
-        $sessionContext->bindTui($this->mutableTui($runId));
-
-        $query = new OmQueryService($this->apiWithCwd($this->tmpDir), OmSettings::fromArray([
-            'storage' => ['database' => $dbPath],
-            'model' => 'llama_cpp_test/test',
-            'observer' => [],
-            'reflector' => [],
-        ]));
-
-        $statusMessages = [];
-        (new OmStatusCommandHandler($query, $sessionContext))->handle('', $this->collectingMarkdownContext($statusMessages));
-        $this->assertCount(1, $statusMessages);
-        $this->assertStringStartsWith('md:', $statusMessages[0]);
-        $this->assertStringContainsString('## Observational memory', $statusMessages[0]);
-
-        $viewMessages = [];
-        (new OmViewCommandHandler($query, $sessionContext))->handle('', $this->collectingMarkdownContext($viewMessages));
-        $this->assertCount(1, $viewMessages);
-        $this->assertStringStartsWith('md:', $viewMessages[0]);
-        $this->assertStringContainsString('## Observations', $viewMessages[0]);
-        $this->assertStringContainsString('`[aaaaaaaaaaaa]`', $viewMessages[0]);
-    }
-
-    #[Test]
-    public function plainHostFallsBackToNotifyForStatusAndView(): void
-    {
-        $runId = 'om-plain-host-run';
+        $runId = 'om-status-view-run';
         $dbPath = $this->seedObservation($runId);
         $sessionContext = new OmSessionContext();
         $sessionContext->bindTui($this->mutableTui($runId));
@@ -399,10 +368,6 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
             {
             }
 
-            public function registerBeforeSnapshotCompactionHook(BeforeSnapshotCompactionHookInterface $hook): void
-            {
-            }
-
             public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
             {
             }
@@ -454,31 +419,6 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
             public function notify(string $message, string $level = 'info'): void
             {
                 $this->messages[] = $level.':'.$message;
-            }
-        };
-    }
-
-    /**
-     * @param list<string> $messages
-     */
-    private function collectingMarkdownContext(array &$messages): MarkdownCommandContextInterface
-    {
-        return new class($messages) implements MarkdownCommandContextInterface {
-            /**
-             * @param list<string> $messages
-             */
-            public function __construct(private array &$messages)
-            {
-            }
-
-            public function notify(string $message, string $level = 'info'): void
-            {
-                $this->messages[] = $level.':'.$message;
-            }
-
-            public function notifyMarkdown(string $message): void
-            {
-                $this->messages[] = 'md:'.$message;
             }
         };
     }

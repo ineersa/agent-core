@@ -28,9 +28,9 @@ use Ineersa\CodingAgent\Extension\ExtensionCompactionHookDispatcher;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO;
-use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookContextDTO;
-use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
@@ -77,14 +77,17 @@ final class SnapshotCompactionExtensionHookTest extends TestCase
 
             $marker = 'OM_SNAPSHOT_REPLACEMENT_MARKER_UNIQUE';
             $registry = new ExtensionHookRegistry();
-            $registry->addBeforeSnapshotCompactionHook(new class($marker) implements BeforeSnapshotCompactionHookInterface {
+            $registry->addBeforeCompactionHook(new class($marker) implements BeforeCompactionHookInterface {
                 public function __construct(private string $marker)
                 {
                 }
 
-                public function beforeSnapshotCompaction(BeforeSnapshotCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
+                public function beforeCompaction(BeforeCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
                 {
                     $this->assertSame('fork', $context->trigger);
+                    if (null !== $context->requiredStartSeq || null !== $context->requiredEndSeq) {
+                        throw new \RuntimeException('snapshot path must use null coverage watermark');
+                    }
 
                     return BeforeCompactionHookResultDTO::replaceSummary($this->marker);
                 }
@@ -111,10 +114,9 @@ final class SnapshotCompactionExtensionHookTest extends TestCase
                 $sessionCompactor,
                 $appConfig,
                 $this->createModelSelectionStub(),
-                new CompactionHookDispatcher([]),
                 $platform,
-                new NullLogger(),
                 new ExtensionCompactionHookDispatcher($registry, new CompactionHookDispatcher([]), new NullLogger()),
+                new NullLogger(),
             );
 
             $messages = [];
@@ -189,8 +191,8 @@ final class SnapshotCompactionExtensionHookTest extends TestCase
             );
 
             $registry = new ExtensionHookRegistry();
-            $registry->addBeforeSnapshotCompactionHook(new class implements BeforeSnapshotCompactionHookInterface {
-                public function beforeSnapshotCompaction(BeforeSnapshotCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
+            $registry->addBeforeCompactionHook(new class implements BeforeCompactionHookInterface {
+                public function beforeCompaction(BeforeCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
                 {
                     return BeforeCompactionHookResultDTO::continue();
                 }
@@ -215,10 +217,9 @@ final class SnapshotCompactionExtensionHookTest extends TestCase
                 $sessionCompactor,
                 $appConfig,
                 $this->createModelSelectionStub(),
-                new CompactionHookDispatcher([]),
                 $platform,
-                new NullLogger(),
                 new ExtensionCompactionHookDispatcher($registry, new CompactionHookDispatcher([]), new NullLogger()),
+                new NullLogger(),
             );
 
             $messages = [];

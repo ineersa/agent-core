@@ -16,22 +16,23 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
  * Lives in the AppExtension layer — the only place allowed to depend on both
  * ExtensionApi and CodingAgent tool internals.
  *
- * Legacy {@see ExtensionToolHandlerInterface} handlers keep the argument-only
- * signature. Contextual handlers receive a public {@see ToolInvocationContextDTO}
- * built from the ambient ToolExecutor context (run id only).
+ * Argument-only {@see ExtensionToolHandlerInterface} handlers keep the
+ * argument-only signature. Contextual handlers receive a public
+ * {@see ToolInvocationContextDTO} built from the ambient ToolExecutor context
+ * (run id only).
  */
 final readonly class ExtensionToolHandlerAdapter implements ToolHandlerInterface
 {
     public function __construct(
         private ExtensionToolHandlerInterface|ContextualExtensionToolHandlerInterface $extensionHandler,
-        private ?StackToolExecutionContextAccessor $contextAccessor = null,
+        private StackToolExecutionContextAccessor $contextAccessor,
     ) {
     }
 
     public function __invoke(array $arguments): mixed
     {
         if ($this->extensionHandler instanceof ContextualExtensionToolHandlerInterface) {
-            $runId = $this->contextAccessor?->current()?->runId();
+            $runId = $this->contextAccessor->current()?->runId();
             if (null === $runId || '' === trim($runId)) {
                 throw new \LogicException('A tool execution context with runId is required for contextual extension tools.');
             }

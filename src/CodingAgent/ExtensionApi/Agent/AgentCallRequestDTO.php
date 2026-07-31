@@ -26,7 +26,6 @@ final readonly class AgentCallRequestDTO
      * @param list<AgentToolDTO> $tools         isolated tools available only for this call
      * @param string|null        $correlationId optional extra correlation token for diagnostics
      * @param int|null           $maxToolCalls  optional AgentProcessor tool-loop ceiling (>= 1); null = framework default
-     * @param string|null        $thinkingLevel optional thinking/reasoning level forwarded to Hatfield model options
      */
     public function __construct(
         public string $model,
@@ -36,7 +35,6 @@ final readonly class AgentCallRequestDTO
         public array $tools = [],
         public ?string $correlationId = null,
         public ?int $maxToolCalls = null,
-        public ?string $thinkingLevel = null,
     ) {
         if ('' === trim($this->model)) {
             throw new \InvalidArgumentException('Agent model must be a non-empty exact provider/model reference.');

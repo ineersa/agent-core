@@ -12,8 +12,10 @@ use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Psr\Log\LoggerInterface;
 
 /**
- * CompactRun hook: instant deterministic projection of current durable OM memory.
+ * Instant deterministic projection of current durable OM memory.
  *
+ * Serves CompactRun (paired coverage watermark present) and snapshot/fork
+ * compaction (watermark null/null) via the same public before-compaction hook.
  * Pi-style: no Observer catch-up, Reflector, extension_agent job, poll, fingerprint,
  * or request/result row. Consolidation finishing later affects a later compaction.
  */
@@ -43,6 +45,7 @@ final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInter
             $dto->metadata = [
                 'om_source' => 'observational_memory',
                 'om_projection' => 'active_durable_memory',
+                'om_has_coverage_watermark' => $context->hasCoverageWatermark(),
             ];
 
             return $dto;

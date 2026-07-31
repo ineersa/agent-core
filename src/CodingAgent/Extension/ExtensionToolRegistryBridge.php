@@ -16,7 +16,6 @@ use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
-use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
@@ -54,7 +53,7 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
         private SessionEventReaderInterface $sessionEventReader,
         private ExtensionAgentJobRegistry $extensionAgentJobRegistry,
         private ExtensionAgentJobDispatcher $extensionAgentJobDispatcher,
-        private ?StackToolExecutionContextAccessor $toolContextAccessor = null,
+        private StackToolExecutionContextAccessor $toolContextAccessor,
     ) {
     }
 
@@ -72,7 +71,7 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
      */
     public function registerTool(ToolRegistrationDTO $tool): void
     {
-        // Accepts legacy ExtensionToolHandlerInterface or contextual handlers.
+        // Accepts argument-only ExtensionToolHandlerInterface or contextual handlers.
         $adapter = new ExtensionToolHandlerAdapter($tool->handler, $this->toolContextAccessor);
 
         $this->toolRegistry->registerTool(
@@ -147,11 +146,6 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
     {
         $this->hookRegistry->addBeforeCompactionHook($hook);
-    }
-
-    public function registerBeforeSnapshotCompactionHook(BeforeSnapshotCompactionHookInterface $hook): void
-    {
-        $this->hookRegistry->addBeforeSnapshotCompactionHook($hook);
     }
 
     public function agent(): AgentRunnerInterface

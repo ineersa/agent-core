@@ -210,11 +210,10 @@ Logs carry correlation fields (`run_id`, `session_id`, `component`, `event_type`
 
 ### Before-compaction hooks
 
-There are three related hook surfaces:
+There are two related hook surfaces:
 
 1. **Internal tagged hooks** (`Ineersa\CodingAgent\Compaction\BeforeCompactionHookInterface`) — not exposed through `ExtensionApi`. Used by both CompactRun and snapshot paths. Best-effort isolation: exceptions are logged and other hooks continue.
-2. **Public CompactRun hooks** (`Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface` via `registerBeforeCompactionHook`) — invoked only by `CompactRunHandler` after safe partition preparation, with the session-global coverage watermark (`requiredStartSeq`..`requiredEndSeq`, MVP `1..RunState.lastSeq`). Fail closed on exception (cancel, no silent LLM fallback).
-3. **Public snapshot hooks** (`Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface` via `registerBeforeSnapshotCompactionHook`) — invoked only by `CompactionService::compactMessages` after structural preparation is ready (fork parent snapshots and other in-memory snapshot callers). No event watermark. Fail closed on exception. Structural no-ops (`too_few_messages`, `below_keep_recent_tokens`, …) skip hooks entirely and leave the original messages unchanged.
+2. **Public before-compaction hooks** (`Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface` via `registerBeforeCompactionHook`) — one public hook set for both CompactRun and snapshot/fork. CompactRun supplies the session-global paired coverage watermark (`requiredStartSeq`..`requiredEndSeq`, MVP `1..RunState.lastSeq`). Snapshot/fork (`CompactionService::compactMessages`) supplies `null`/`null`. Fail closed on exception (cancel / hard-fail, no silent LLM fallback). Structural snapshot no-ops (`too_few_messages`, `below_keep_recent_tokens`, …) skip hooks entirely and leave the original messages unchanged.
 
 Internal and public hooks share the same aggregation rules (first cancel wins; first non-empty replacement wins; instructions append; metadata shallow-merges). Each may:
 
@@ -223,7 +222,7 @@ Internal and public hooks share the same aggregation rules (first cancel wins; f
 - **Append additional instructions** to the summarization prompt (merged in order).
 - **Attach sanitized metadata** to the compaction event (CompactRun path).
 
-Internal hooks are dispatched via `CompactionHookDispatcher`. Public CompactRun/snapshot hooks are aggregated by `ExtensionCompactionHookDispatcher` after internal hooks. Hook metadata is sanitized before event/transport persistence — objects, resources, and closures are silently dropped.
+Internal hooks are dispatched via `CompactionHookDispatcher`. Public hooks are aggregated by `ExtensionCompactionHookDispatcher` after internal hooks (`dispatchForCompactRun` / `dispatchForSnapshot` only differ in the optional watermark). Hook metadata is sanitized before event/transport persistence — objects, resources, and closures are silently dropped.
 
 ### After-compaction observation
 

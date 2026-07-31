@@ -2,13 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Tui\Tests\E2E;
+namespace Ineersa\HatfieldExt\ObservationalMemory\Tests\Tui;
 
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
+use Ineersa\Tui\Tests\E2E\TmuxHarness;
+use Ineersa\Tui\Tests\E2E\TmuxPane;
+use Ineersa\Tui\Tests\E2E\TuiE2eDatabaseEnv;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -288,7 +291,7 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
     /**
      * Poll the visible pane only (no scrollback) until the predicate matches.
      *
-     * Transient OM widgets live above the editor; scrollback history would
+     * OM command viewport output live above the editor; scrollback history would
      * false-pass removed widgets still present off-screen.
      */
     private function waitForViewport(

@@ -124,7 +124,6 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
 
         $this->assertInstanceOf(AgentCallRequestDTO::class, $lastRequest);
         $this->assertSame(16, $lastRequest->maxToolCalls);
-        $this->assertNull($lastRequest->thinkingLevel);
         $this->assertStringContainsString('Use feature flags', $lastRequest->input);
         $this->assertStringContainsString('CURRENT REFLECTIONS:', $lastRequest->input);
         $this->assertStringContainsString('Current local time fallback:', $lastRequest->input);
@@ -469,10 +468,6 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
             }
 
             public function registerBeforeCompactionHook(\Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface $hook): void
-            {
-            }
-
-            public function registerBeforeSnapshotCompactionHook(\Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface $hook): void
             {
             }
 
