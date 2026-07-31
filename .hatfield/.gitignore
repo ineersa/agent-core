@@ -11,6 +11,7 @@ sessions/
 tmp/
 cache/
 logs/
+extensions-data/
 state.sqlite
 state.sqlite-journal
 state.sqlite-wal
