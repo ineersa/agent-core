@@ -74,6 +74,7 @@ extensions:
         - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
         - Ineersa\HatfieldExt\FileRewind\FileRewindExtension
         - Ineersa\HatfieldExt\CastorLlmMode\CastorLlmModeExtension
+        - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
     settings:
         task_workflow:
             task_root: /home/ineersa/projects/agent-core-tasks
@@ -83,7 +84,7 @@ extensions:
         observational_memory:
             storage:
                 database: .hatfield/extensions-data/observational-memory/om.sqlite
-            model: llama_cpp_test/test
+            model: llama_cpp/flash
             observer:
                 context_window_ratio: 0.65
             reflector:
