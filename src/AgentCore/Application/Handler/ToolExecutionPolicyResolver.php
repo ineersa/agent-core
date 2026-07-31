@@ -14,7 +14,9 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
  * Execution mode is now sourced from tool registration
  * (ToolDefinitionDTO.executionMode) via ActiveToolSet in
  * LlmStepResultHandler. This resolver provides only the
- * global fallback defaults for parallelism. Tool timeouts are opt-in per tool.
+ * global fallback defaults for parallelism and an optional cooperative
+ * timeout budget. Tool timeouts are opt-in metadata for ToolContext;
+ * ToolExecutor does not rewrite successful results after the handler returns.
  */
 final readonly class ToolExecutionPolicyResolver
 {

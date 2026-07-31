@@ -427,7 +427,7 @@ final class ToolExecutorTest extends TestCase
         $this->assertNull($accessor->current());
     }
 
-    public function testNoPostHocTimeoutWhenPolicyTimeoutIsNull(): void
+    public function testNoTimeoutBudgetWhenPolicyTimeoutIsNull(): void
     {
         $clock = new MockClock();
         $toolbox = new ClockAdvancingToolbox($clock, 301);
@@ -452,7 +452,7 @@ final class ToolExecutorTest extends TestCase
         $this->assertNull($result->details['timeout_seconds'] ?? null);
     }
 
-    public function testNullCallTimeoutIgnoresGlobalDefaultPostHocCap(): void
+    public function testNullCallTimeoutIgnoresGlobalDefaultBudgetForSubagent(): void
     {
         $clock = new MockClock();
         $toolbox = new ClockAdvancingToolbox($clock, 301);
@@ -477,7 +477,7 @@ final class ToolExecutorTest extends TestCase
         $this->assertNull($result->details['timeout_seconds'] ?? null);
     }
 
-    public function testNullCallTimeoutUsesGlobalDefaultForNonSubagentTools(): void
+    public function testNullCallTimeoutUsesGlobalDefaultBudgetForNonSubagentTools(): void
     {
         $clock = new MockClock();
         $toolbox = new ClockAdvancingToolbox($clock, 0);
@@ -501,7 +501,7 @@ final class ToolExecutorTest extends TestCase
         $this->assertSame(30, $result->details['timeout_seconds'] ?? null);
     }
 
-    public function testExplicitCallTimeoutStillEnforcesPostHocCap(): void
+    public function testSuccessfulHandlerPastTimeoutBudgetRemainsSuccessful(): void
     {
         $clock = new MockClock();
         $toolbox = new ClockAdvancingToolbox($clock, 2);
@@ -521,8 +521,11 @@ final class ToolExecutorTest extends TestCase
             ->withTimeoutSeconds(1)
             ->build());
 
-        $this->assertTrue($result->isError);
-        $this->assertStringContainsString('timed out after 1 second', $result->content[0]['text']);
+        $this->assertFalse($result->isError);
+        $this->assertSame('clock-ok', $result->content[0]['text']);
+        $this->assertSame(1, $result->details['timeout_seconds'] ?? null);
+        $this->assertArrayNotHasKey('timed_out', $result->details ?? []);
+        $this->assertGreaterThanOrEqual(2000, $result->details['duration_ms'] ?? 0);
     }
 }
 

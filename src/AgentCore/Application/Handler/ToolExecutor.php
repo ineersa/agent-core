@@ -174,22 +174,12 @@ final class ToolExecutor implements ToolExecutorInterface
 
         $durationMs = ($this->nowMicros() - $startedAt) / 1000;
 
-        // Typed human-input suspension is not a completed tool result: skip timeout
-        // rewrite, cancel overwrite, and result-store remember.
+        // Typed human-input suspension is not a completed tool result: skip
+        // cancel overwrite and result-store remember. Duration metadata is still attached.
+        // Generic timeoutSeconds is a cooperative budget on ToolContext, not a post-hoc
+        // SLA rewrite: successful handlers that exceed the budget remain successful.
         if ($this->isHumanInputSuspension($result)) {
             return $this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs);
-        }
-
-        if (null !== $policy->timeoutSeconds && $durationMs > $policy->timeoutSeconds * 1000) {
-            $result = $this->errorResult(
-                toolCallId: $toolCall->toolCallId,
-                toolName: $toolCall->toolName,
-                message: \sprintf('Tool "%s" timed out after %d second(s).', $toolCall->toolName, $policy->timeoutSeconds),
-                details: [
-                    'timed_out' => true,
-                    'timeout_seconds' => $policy->timeoutSeconds,
-                ],
-            );
         }
 
         if ($this->cancellationToken($toolCall)->isCancellationRequested()) {
@@ -304,9 +294,11 @@ final class ToolExecutor implements ToolExecutorInterface
 
         return new ToolExecutionPolicy(
             mode: $toolCall->mode ?? $resolved->mode,
-            // Per-call timeout from LlmStepResultHandler / ActiveToolSet wins when set.
-            // When null: non-subagent tools keep tools.execution.timeout_seconds post-hoc cap;
-            // subagent has no ToolExecutor cap (agents.subagent_tool_timeout_seconds internal poll).
+            // Cooperative budget only: per-call timeout from LlmStepResultHandler /
+            // ActiveToolSet wins when set. When null, non-subagent tools inherit
+            // tools.execution.timeout_seconds as ToolContext metadata; subagent keeps
+            // no generic budget (agents.subagent_tool_timeout_seconds is tool-owned).
+            // ToolExecutor never rewrites a successful result based on elapsed duration.
             timeoutSeconds: $this->resolveTimeoutSeconds($toolCall->toolName, $toolCall->timeoutSeconds, $resolved->timeoutSeconds),
             maxParallelism: max(1, (int) ($toolCall->context['max_parallelism'] ?? $resolved->maxParallelism)),
         );

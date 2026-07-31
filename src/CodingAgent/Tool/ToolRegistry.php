@@ -74,6 +74,7 @@ final class ToolRegistry implements ToolRegistryInterface
                 promptLine: $definition->promptLine,
                 promptGuidelines: $definition->promptGuidelines,
                 executionMode: $definition->executionMode,
+                timeoutSeconds: $definition->timeoutSeconds,
             );
         }
     }
@@ -86,6 +87,7 @@ final class ToolRegistry implements ToolRegistryInterface
         string $promptLine,
         array $promptGuidelines = [],
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
+        ?int $timeoutSeconds = null,
         ?string $extensionOwnerClass = null,
     ): void {
         if ('' === $name || '' === $description) {
@@ -105,6 +107,7 @@ final class ToolRegistry implements ToolRegistryInterface
             promptLine: $promptLine,
             promptGuidelines: $promptGuidelines,
             executionMode: $executionMode,
+            timeoutSeconds: $timeoutSeconds,
             extensionOwnerClass: $extensionOwnerClass,
         );
         $this->permanentOrder[] = $name;

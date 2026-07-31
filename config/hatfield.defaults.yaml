@@ -129,9 +129,12 @@ tools:
         # Parallel mode requires TOOLS-R05 / multi-consumer tool dispatch.
         default_mode: sequential
 
-        # ToolExecutor post-hoc timeout is opt-in per tool (ToolDefinitionDTO.timeoutSeconds).
-        # Omit timeout_seconds here: no generic default wall-clock cap on tool calls.
-        # Subagent uses agents.subagent_tool_timeout_seconds (internal poll), not this key.
+        # Optional cooperative timeout budget for ToolContext (not a kill guarantee).
+        # Opt-in per tool via ToolDefinitionDTO / extension ToolRegistrationDTO, or set
+        # tools.execution.timeout_seconds here as a default budget. ToolExecutor does not
+        # rewrite successful results after the handler returns.
+        # Omit timeout_seconds: no generic default cooperative budget.
+        # Subagent uses agents.subagent_tool_timeout_seconds (tool-owned poll), not this key.
 
         # Maximum parallelism: how many tool calls to run concurrently.
         # Also controls the number of parallel messenger:consume tool

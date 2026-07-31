@@ -48,6 +48,7 @@ interface ToolRegistryInterface
      * @param string               $promptLine           Single-line description for <available_tools>
      * @param list<string>         $promptGuidelines     Zero or more guideline strings for <guidelines>
      * @param ToolExecutionMode    $executionMode        Execution mode (default: Sequential)
+     * @param int|null             $timeoutSeconds       Optional cooperative timeout budget for this tool; null inherits tools.execution default
      * @param string|null          $extensionOwnerClass  Owning extension FQCN when registered by an extension; null for built-ins
      *
      * @throws \InvalidArgumentException on empty name or description
@@ -60,6 +61,7 @@ interface ToolRegistryInterface
         string $promptLine,
         array $promptGuidelines = [],
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
+        ?int $timeoutSeconds = null,
         ?string $extensionOwnerClass = null,
     ): void;
 

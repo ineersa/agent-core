@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -29,11 +32,13 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ContextualExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
@@ -264,6 +269,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
                 ['Guideline'],
                 $this->anything(),
                 null,
+                null,
             );
 
         $bridge = $this->bridgeFor($mock);
@@ -275,6 +281,83 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             // promptSummary omitted → derived from name + description
             promptGuidelines: ['Guideline'],
         ));
+    }
+
+    public function testRegisterToolPropagatesTimeoutSeconds(): void
+    {
+        $registry = new ToolRegistry();
+        $bridge = $this->bridgeFor($registry);
+
+        $bridge->registerTool(new ToolRegistrationDTO(
+            name: 'timed_ext_tool',
+            description: 'Timed extension tool',
+            parametersJsonSchema: [],
+            handler: new NoOpExtensionToolHandler(),
+            timeoutSeconds: 45,
+        ));
+
+        $def = $registry->toolDefinition('timed_ext_tool');
+        $this->assertNotNull($def);
+        $this->assertSame(45, $def->timeoutSeconds);
+    }
+
+    public function testContextualHandlerReceivesCancellationTokenAndTimeoutBudget(): void
+    {
+        $accessor = new StackToolExecutionContextAccessor();
+        $registry = new ToolRegistry();
+        $bridge = $this->bridgeFor($registry, toolContextAccessor: $accessor);
+
+        $seen = new \stdClass();
+        $seen->context = null;
+        $handler = new class($seen) implements ContextualExtensionToolHandlerInterface {
+            public function __construct(private readonly object $seen)
+            {
+            }
+
+            public function __invoke(array $arguments, ToolInvocationContextDTO $context): mixed
+            {
+                $this->seen->context = $context;
+
+                return ['ok' => true, 'args' => $arguments];
+            }
+        };
+
+        $bridge->registerTool(new ToolRegistrationDTO(
+            name: 'contextual_ext',
+            description: 'Contextual extension tool',
+            parametersJsonSchema: [],
+            handler: $handler,
+            timeoutSeconds: 90,
+        ));
+
+        $def = $registry->toolDefinition('contextual_ext');
+        $this->assertNotNull($def);
+
+        $token = new class implements CancellationTokenInterface {
+            public function isCancellationRequested(): bool
+            {
+                return true;
+            }
+        };
+
+        $result = $accessor->with(new ToolContext(
+            runId: 'run-ext-context',
+            turnNo: 2,
+            toolCallId: 'call-ext-1',
+            toolName: 'contextual_ext',
+            cancellationToken: $token,
+            timeoutSeconds: 90,
+            orderIndex: 0,
+            executionMode: ToolExecutionMode::Sequential,
+            batchToolCallCount: 1,
+        ), static fn () => ($def->handler)(['path' => 'x']));
+
+        $this->assertSame(['ok' => true, 'args' => ['path' => 'x']], $result);
+        $this->assertInstanceOf(ToolInvocationContextDTO::class, $seen->context);
+        $this->assertSame('run-ext-context', $seen->context->runId);
+        $this->assertSame(90, $seen->context->timeoutSeconds);
+        $this->assertNotNull($seen->context->cancellationToken);
+        $this->assertTrue($seen->context->cancellationToken->isCancellationRequested());
     }
 
     // ── Hook registration via ExtensionToolRegistryBridge ──
@@ -596,6 +679,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         ?AppConfig $appConfig = null,
         ?ExecInterface $execBridge = null,
         ?CommandRegistryInterface $commandRegistry = null,
+        ?StackToolExecutionContextAccessor $toolContextAccessor = null,
     ): ExtensionToolRegistryBridge {
         $logger = new \Psr\Log\NullLogger();
 
@@ -614,7 +698,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
                     return new \Symfony\Component\Messenger\Envelope($message);
                 }
             }, $logger, 'in-memory://'),
-            new StackToolExecutionContextAccessor(),
+            $toolContextAccessor ?? new StackToolExecutionContextAccessor(),
         );
     }
 

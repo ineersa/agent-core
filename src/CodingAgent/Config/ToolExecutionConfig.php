@@ -20,12 +20,13 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
 final readonly class ToolExecutionConfig
 {
     public const string DEFAULT_MODE = 'sequential';
-    // No global ToolExecutor post-hoc timeout by default; tools opt in via ToolDefinitionDTO.
+    // No global cooperative timeout budget by default; tools opt in via ToolDefinitionDTO
+    // or tools.execution.timeout_seconds. This is ToolContext metadata, not a kill guarantee.
     public const int DEFAULT_MAX_PARALLELISM = 4;
 
     /**
      * @param string   $defaultMode    Default execution mode ('sequential' or 'parallel')
-     * @param int|null $timeoutSeconds Optional global ToolExecutor timeout; null disables post-hoc timeout
+     * @param int|null $timeoutSeconds Optional cooperative timeout budget for ToolContext; null omits a default budget
      * @param int      $maxParallelism Maximum concurrent tool calls
      */
     public function __construct(

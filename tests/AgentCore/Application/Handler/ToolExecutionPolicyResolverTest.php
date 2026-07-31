@@ -34,7 +34,7 @@ final class ToolExecutionPolicyResolverTest extends TestCase
         $this->assertSame(ToolExecutionMode::Parallel, $policy->mode);
     }
 
-    public function testResolveWithZeroDefaultTimeoutMeansNoPostHocTimeout(): void
+    public function testResolveWithZeroDefaultTimeoutMeansNoBudget(): void
     {
         $resolver = new ToolExecutionPolicyResolver('sequential', 0, 4);
 
