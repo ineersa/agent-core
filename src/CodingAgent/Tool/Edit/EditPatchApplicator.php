@@ -126,7 +126,9 @@ final class EditPatchApplicator
             return [$unique, \count($oldLines)];
         }
 
-        if (null !== $this->matcher->seekSequence($lines, $oldLines, $startIndex, $eof)) {
+        // Ambiguity is always about forward uniqueness from the cursor. For EOF-marked hunks,
+        // findUniqueMatch already preferred physical EOF; remaining multi-matches are non-EOF fallbacks.
+        if (null !== $this->matcher->seekSequence($lines, $oldLines, $startIndex, false)) {
             throw $this->ambiguous($chunkIndex, $oldLines[0] ?? '');
         }
 
@@ -140,10 +142,16 @@ final class EditPatchApplicator
     {
         $contextLine = min(max(1, $lineIndex + 1), max(1, \count($lines)));
 
+        // Session-37 recovery: surface sequential multi-hunk grammar mistakes from chunk index only.
+        $grammar = '';
+        if ($chunkIndex > 0) {
+            $grammar .= ' Each plain or seek-hinted `@@` starts a new sequential, non-overlapping hunk applied after earlier hunks; overlapping changes must be combined into one hunk.';
+        }
+
         return new ToolCallException(
             \sprintf('[E_PATCH_STALE] Hunk #%d context not found in file.', $chunkIndex + 1),
             retryable: true,
-            hint: \sprintf('Could not locate: "%s". Seek hints are literal source-text anchors, not line numbers. Use read with offset/limit around line %d, then regenerate the patch with exact current context lines (or omit the seek hint).', $this->preview($needle), $contextLine),
+            hint: \sprintf('Could not locate: "%s".%s Seek hints are literal source-text anchors, not line numbers. Use read with offset/limit around line %d, then regenerate the patch with exact current context lines (or omit the seek hint).', $this->preview($needle), $grammar, $contextLine),
         );
     }
 

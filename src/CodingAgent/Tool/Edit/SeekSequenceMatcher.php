@@ -8,8 +8,9 @@ namespace Ineersa\CodingAgent\Tool\Edit;
  * Codex-style multi-pass line sequence matcher.
  *
  * Pass order: exact, trim-end, full-trim, unicode-normalize (curly quotes, dashes, ellipsis, NBSP).
- * EOF mode restricts where {@see seekSequence} starts searching; uniqueness is always checked
- * on the full forward scan from {@see $startIndex}.
+ * For {@see findUniqueMatch} with $eof=true (*** End of File): prefer a physical-EOF match first;
+ * if none exists, fall back to a unique forward search from {@see $startIndex}. EOF preference
+ * wins even when earlier identical candidates exist; non-EOF fallback still rejects ambiguity.
  */
 final class SeekSequenceMatcher
 {
@@ -29,6 +30,14 @@ final class SeekSequenceMatcher
             return null;
         }
 
+        // Codex *** End of File: try physical EOF first, then unique normal search from cursor.
+        if ($eof) {
+            $eofMatch = $this->seekSequence($lines, $pattern, $startIndex, true);
+            if (null !== $eofMatch) {
+                return $eofMatch;
+            }
+        }
+
         $first = $this->seekSequence($lines, $pattern, $startIndex, false);
         if (null === $first) {
             return null;
@@ -37,13 +46,6 @@ final class SeekSequenceMatcher
         $second = $this->seekSequence($lines, $pattern, $first + 1, false);
         if (null !== $second) {
             return null;
-        }
-
-        if ($eof) {
-            $eofMatch = $this->seekSequence($lines, $pattern, $startIndex, true);
-            if (null === $eofMatch || $eofMatch !== $first) {
-                return null;
-            }
         }
 
         return $first;
@@ -63,7 +65,10 @@ final class SeekSequenceMatcher
             return null;
         }
 
-        $searchStart = $eof ? max(0, \count($lines) - \count($pattern)) : $startIndex;
+        // EOF mode only probes the physical end; still refuse positions before the sequential cursor.
+        $searchStart = $eof
+            ? max($startIndex, max(0, \count($lines) - \count($pattern)))
+            : $startIndex;
         $searchEnd = \count($lines) - \count($pattern);
 
         for ($pass = 0; $pass < self::MATCH_PASS_COUNT; ++$pass) {
