@@ -8,11 +8,14 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Symfony\Component\Messenger\Exception\ExceptionInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * Handles ExecuteShellToolCall messages on the agent.execution.bus.
@@ -28,6 +31,12 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * tool_exec events, ensuring the EventStore ordering guarantee
  * (tool_exec_start → tool_exec_end → agent_end) is maintained by a single
  * writer — no cross-process race with the controller.
+ *
+ * After that AgentEnd, dispatches AdvanceRun on agent.command.bus so a
+ * follow_up (or other mailbox command) queued while the shell still looked
+ * Running is drained. Without this wake, ApplyCommandHandler can queue the
+ * follow_up under Running without scheduling AdvanceRun, and AgentEnd alone
+ * does not re-enter the command pipeline (issue #183 race window).
  */
 #[AsMessageHandler(bus: 'agent.execution.bus')]
 final readonly class ExecuteShellToolCallWorker
@@ -35,6 +44,7 @@ final readonly class ExecuteShellToolCallWorker
     public function __construct(
         private ToolExecutorInterface $toolExecutor,
         private EventStoreInterface $eventStore,
+        private MessageBusInterface $commandBus,
         private ?LoggerInterface $logger = null,
     ) {
     }
@@ -154,6 +164,32 @@ final readonly class ExecuteShellToolCallWorker
                 'component' => 'tool.shell',
                 'event_type' => 'shell.run_completed',
                 'tool_call_id' => $toolCallId,
+            ]);
+
+            // Wake run_control after AgentEnd only. Safe/idempotent when the
+            // mailbox is empty; required when follow_up was queued while the
+            // shell still held Running (issue #183 tool-end→AgentEnd window).
+            $stepId = \sprintf('shell-standalone-advance-%s', $toolCallId);
+            $idempotencyKey = hash('sha256', \sprintf('%s|%s', $runId, $stepId));
+
+            try {
+                $this->commandBus->dispatch(new AdvanceRun(
+                    runId: $runId,
+                    turnNo: 0,
+                    stepId: $stepId,
+                    attempt: 1,
+                    idempotencyKey: $idempotencyKey,
+                ));
+            } catch (ExceptionInterface $exception) {
+                throw new \RuntimeException('Failed to dispatch AdvanceRun after standalone shell AgentEnd.', previous: $exception);
+            }
+
+            $this->logger?->info('shell.advance_dispatched', [
+                'run_id' => $runId,
+                'component' => 'tool.shell',
+                'event_type' => 'shell.advance_dispatched',
+                'tool_call_id' => $toolCallId,
+                'step_id' => $stepId,
             ]);
         }
     }

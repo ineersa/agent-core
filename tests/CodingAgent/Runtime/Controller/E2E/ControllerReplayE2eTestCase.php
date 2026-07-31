@@ -62,7 +62,9 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
 
         $this->projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
 
-        $this->sessionId = substr(bin2hex(random_bytes(16)), 0, 12);
+        // Ephemeral replay E2E runs must not use all-digit ids: SessionAwareModelResolver treats
+        // ctype_digit session ids as persisted Hatfield sessions and fails when metadata is missing.
+        $this->sessionId = 'e2e-'.substr(bin2hex(random_bytes(16)), 0, 12);
         $this->tempDir = TestDirectoryIsolation::createProjectTempDir($this->tempDirPrefix());
 
         $this->createIsolatedProjectDir();
