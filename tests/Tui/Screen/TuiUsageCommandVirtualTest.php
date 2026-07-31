@@ -53,7 +53,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $state = new TuiSessionState('usage-virtual');
         $state->footerModel = 'openai-codex/gpt-5.6-luna';
         $state->footerReasoning = 'high';
-        $state->contextWindow = 372000;
+        $state->contextWindow = 272000;
         $state->usage->inputTokens = 12345;
         $state->usage->outputTokens = 2100;
         $state->usage->latestInputTokens = 9000;

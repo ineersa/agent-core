@@ -135,7 +135,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     {
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('echo "hello from bg"', self::TEST_SESSION));
 
-        usleep(150_000);
+        $this->waitUntilLogContains($started->logPath, 'hello from bg');
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'log', 'pid' => $started->pid]));
 
@@ -162,7 +162,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     public function testStopAction(): void
     {
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('sleep 30', self::TEST_SESSION));
-        usleep(100_000);
+        // start() persists the row and returns a live PID; stop needs no fixed delay.
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started->pid]));
 
@@ -173,7 +173,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     public function testStopAlreadyFinished(): void
     {
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('echo "quick"', self::TEST_SESSION));
-        usleep(200_000);
+        $this->waitUntilFinished($started->pid);
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started->pid]));
 
@@ -251,7 +251,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $command = 'printf \''.$padding.'\n'.$sentinel.'\n\'';
 
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start($command, self::TEST_SESSION));
-        usleep(100_000);
+        $this->waitUntilLogContains($started->logPath, $sentinel);
 
         $result = $this->withContext(self::TEST_SESSION, static fn (): string => $lowCapTool(['action' => 'log', 'pid' => $started->pid]));
 
@@ -269,6 +269,37 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     }
 
     /* ── Helpers ── */
+
+    private function waitUntilLogContains(string $logPath, string $needle, float $timeoutSeconds = 2.0): void
+    {
+        $deadline = microtime(true) + $timeoutSeconds;
+        while (microtime(true) < $deadline) {
+            if (is_file($logPath)) {
+                $content = (string) @file_get_contents($logPath);
+                if (str_contains($content, $needle)) {
+                    return;
+                }
+            }
+            usleep(10_000);
+        }
+
+        $this->fail(\sprintf('Timed out waiting for log %s to contain %s', $logPath, $needle));
+    }
+
+    private function waitUntilFinished(int $pid, float $timeoutSeconds = 2.0): void
+    {
+        $deadline = microtime(true) + $timeoutSeconds;
+        while (microtime(true) < $deadline) {
+            foreach ($this->manager->list(self::TEST_SESSION) as $entity) {
+                if ($entity->pid === $pid && null !== $entity->finishedAt) {
+                    return;
+                }
+            }
+            usleep(10_000);
+        }
+
+        $this->fail(\sprintf('Timed out waiting for pid %d to finish', $pid));
+    }
 
     /**
      * Execute a callback with a specific session context pushed onto the context stack.

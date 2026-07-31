@@ -114,13 +114,22 @@ BASH);
         $work = TestDirectoryIsolation::createProjectTempDir('dist-script-lock');
         $binDir = $work.'/bin';
         mkdir($binDir, 0755, true);
+        $holdingGate = $work.'/holding';
+        $releaseGate = $work.'/release';
         $fakeCastor = $binDir.'/castor';
-        // First holder keeps the lock while sleeping under the fake Castor task.
-        file_put_contents($fakeCastor, <<<'BASH'
+        // Hold the distribution lock until the test writes $releaseGate.
+        // No wall-clock sleep is the contract — only concurrent lock contention is.
+        $holdingGateQ = escapeshellarg($holdingGate);
+        $releaseGateQ = escapeshellarg($releaseGate);
+        file_put_contents($fakeCastor, <<<BASH
 #!/usr/bin/env bash
 set -euo pipefail
-# Hold long enough for the contender to observe the lock.
-sleep 30
+trap 'exit 0' TERM INT
+echo holding >{$holdingGateQ}
+deadline=\$((SECONDS + 10))
+while [[ ! -f {$releaseGateQ} && \$SECONDS -lt \$deadline ]]; do
+  sleep 0.05
+done
 exit 0
 BASH);
         chmod($fakeCastor, 0755);
@@ -135,19 +144,25 @@ BASH);
                     'HATFIELD_DIST_DIR' => $work.'/dist-first',
                 ],
             );
-            $first->setTimeout(60);
+            $first->setTimeout(12);
             $first->start();
 
-            // Bounded poll until first process marks ownership (no fixed sleep).
+            // Bounded poll until first process marks ownership and enters fake castor hold.
             $deadline = microtime(true) + 5.0;
             $ownerSeen = false;
+            $holdingSeen = false;
             while (microtime(true) < $deadline) {
-                if (is_file($ownerFile)) {
+                if (!$ownerSeen && is_file($ownerFile)) {
                     $owner = trim((string) file_get_contents($ownerFile));
                     if ('' !== $owner && ctype_digit($owner)) {
                         $ownerSeen = true;
-                        break;
                     }
+                }
+                if (is_file($holdingGate)) {
+                    $holdingSeen = true;
+                }
+                if ($ownerSeen && $holdingSeen) {
+                    break;
                 }
                 if (!$first->isRunning()) {
                     break;
@@ -155,8 +170,8 @@ BASH);
                 usleep(20_000);
             }
             $this->assertTrue(
-                $ownerSeen,
-                'First build-distribution.sh did not mark lock ownership within 5s. '.
+                $ownerSeen && $holdingSeen,
+                'First build-distribution.sh did not hold the lock within 5s. '.
                 'stdout='.$first->getOutput().' stderr='.$first->getErrorOutput(),
             );
 
@@ -168,17 +183,26 @@ BASH);
                     'HATFIELD_DIST_DIR' => $work.'/dist-second',
                 ],
             );
-            $second->setTimeout(10);
+            $second->setTimeout(5);
             $second->run();
             $this->assertFalse($second->isSuccessful(), 'Contending build must fail closed');
             $combined = $second->getOutput().$second->getErrorOutput();
             $this->assertStringContainsString('distribution build lock is held', $combined);
             $this->assertStringContainsString($lockDir, $combined);
+
+            // Release the holder via exact file gate (not a wall-clock sleep).
+            file_put_contents($releaseGate, '1');
+            $waitDeadline = microtime(true) + 5.0;
+            while ($first->isRunning() && microtime(true) < $waitDeadline) {
+                usleep(20_000);
+            }
+            $this->assertFalse($first->isRunning(), 'Holder did not exit after release gate');
         } finally {
+            @file_put_contents($releaseGate, '1');
             if (null !== $first && $first->isRunning()) {
                 $first->stop(1.0, \SIGTERM);
             }
-            // Remove only resources this test created (first holder should release on TERM).
+            // Remove only resources this test created (first holder should release on exit).
             $deadline = microtime(true) + 3.0;
             while ((is_dir($lockDir) || is_file($ownerFile)) && microtime(true) < $deadline) {
                 usleep(20_000);

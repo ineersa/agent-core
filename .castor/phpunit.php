@@ -27,7 +27,6 @@ use function CastorTasks\is_llm_mode;
 use function CastorTasks\phar_ensure;
 use function CastorTasks\qa_test_home_shell_prefix;
 use function CastorTasks\report_path;
-use function CastorTasks\run_quiet_command;
 
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
@@ -88,13 +87,14 @@ function test(?string $filter = null, ?string $suite = null): void
         echo "Xdebug is loaded — tests may be significantly slower.\n";
     }
 
-    // Test DB schema readiness.
+    // Test DB schema readiness (bounded setup; session-reaped on hang).
     @mkdir('var/test', 0755, true);
-    $migrate = run_quiet_command(
+    $migrate = run_test_db_migrate_bounded(
         qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
     );
-    if (0 !== $migrate->getExitCode()) {
-        fail_quality('test database migration failed: '.$migrate->getErrorOutput());
+    if (0 !== $migrate['exitCode']) {
+        $detail = '' !== trim($migrate['output']) ? $migrate['output'] : 'exit '.$migrate['exitCode'];
+        fail_quality('test database migration failed: '.$detail);
     }
 
     $pharPath = '';
@@ -123,11 +123,18 @@ function test(?string $filter = null, ?string $suite = null): void
             .' --filter='.escapeshellarg($filter)
             .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay'
             .' '.phpunit_strict_issue_flags();
-        passthru($phpunitCmd, $exitCode);
-        $duration = (hrtime(true) - $start) / 1e9;
-        if (0 !== $exitCode) {
+        $result = run_test_command_bounded('unit-filter', $phpunitCmd, castor_test_runner_max_seconds());
+        if ('' !== $result['output']) {
+            echo $result['output'];
+        }
+        $duration = $result['duration'];
+        if (124 === $result['exitCode']) {
+            echo sprintf("\nTests TIMED OUT after %.1fs (hard cap %ds)\n", $duration, castor_test_runner_max_seconds());
+            exit(124);
+        }
+        if (0 !== $result['exitCode']) {
             echo sprintf("\nTests FAILED (%.1fs)\n", $duration);
-            exit($exitCode);
+            exit($result['exitCode']);
         }
         echo sprintf("\nTests OK (%.1fs)\n", $duration);
         exit(0);
@@ -138,11 +145,18 @@ function test(?string $filter = null, ?string $suite = null): void
     if (!class_exists(ParaTest\ParaTestCommand::class)) {
         echo "ParaTest not installed — falling back to sequential PHPUnit.\n";
         $cmd = build_sequential_phpunit_command($pharEnv);
-        passthru($cmd, $exitCode);
-        $duration = (hrtime(true) - $start) / 1e9;
-        if (0 !== $exitCode) {
+        $result = run_test_command_bounded('unit-sequential', $cmd, castor_test_runner_max_seconds());
+        if ('' !== $result['output']) {
+            echo $result['output'];
+        }
+        $duration = $result['duration'];
+        if (124 === $result['exitCode']) {
+            echo sprintf("\nTests TIMED OUT after %.1fs (hard cap %ds)\n", $duration, castor_test_runner_max_seconds());
+            exit(124);
+        }
+        if (0 !== $result['exitCode']) {
             echo sprintf("\nTests FAILED (%.1fs)\n", $duration);
-            exit($exitCode);
+            exit($result['exitCode']);
         }
         echo sprintf("\nTests OK (%.1fs)\n", $duration);
         exit(0);
@@ -160,12 +174,18 @@ function test(?string $filter = null, ?string $suite = null): void
         .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay --exclude-group=phar --exclude-group=native-artifact'
         .' '.$strictFlags.$llmFlags.$junitFlag;
 
-    passthru($cmd, $exitCode);
-
-    $duration = (hrtime(true) - $start) / 1e9;
-    if (0 !== $exitCode) {
+    $result = run_test_command_bounded('unit-paratest', $cmd, castor_test_runner_max_seconds());
+    if ('' !== $result['output']) {
+        echo $result['output'];
+    }
+    $duration = $result['duration'];
+    if (124 === $result['exitCode']) {
+        echo sprintf("\nTests TIMED OUT after %.1fs (hard cap %ds)\n", $duration, castor_test_runner_max_seconds());
+        exit(124);
+    }
+    if (0 !== $result['exitCode']) {
         echo sprintf("\nTests FAILED (%.1fs)\n", $duration);
-        exit($exitCode);
+        exit($result['exitCode']);
     }
     echo sprintf("\nTests OK (%.1fs)\n", $duration);
     exit(0);

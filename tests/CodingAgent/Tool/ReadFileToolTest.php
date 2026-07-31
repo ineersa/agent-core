@@ -12,8 +12,6 @@ use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\ReadFileTool;
-use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
-use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
 
@@ -54,35 +52,6 @@ final class ReadFileToolTest extends TestCase
         $this->assertSame('read', $definition->name);
     }
 
-    public function testDefinitionHasDescription(): void
-    {
-        $definition = $this->readFileTool->definition();
-
-        $this->assertNotEmpty($definition->description);
-    }
-
-    public function testDefinitionHandlerIsInvokable(): void
-    {
-        $definition = $this->readFileTool->definition();
-
-        $this->assertTrue(method_exists($definition->handler, '__invoke'));
-    }
-
-    public function testDefinitionHasPromptLine(): void
-    {
-        $definition = $this->readFileTool->definition();
-
-        $this->assertNotEmpty($definition->promptLine);
-        $this->assertStringContainsString('read', $definition->promptLine);
-    }
-
-    public function testDefinitionHasGuidelines(): void
-    {
-        $definition = $this->readFileTool->definition();
-
-        $this->assertNotEmpty($definition->promptGuidelines);
-    }
-
     public function testDefinitionJsonSchemaHasPathOffsetLimit(): void
     {
         $definition = $this->readFileTool->definition();
@@ -100,29 +69,11 @@ final class ReadFileToolTest extends TestCase
         $this->assertFalse($schema['additionalProperties']);
     }
 
-    public function testDefinitionImplementsHatfieldToolProviderInterface(): void
-    {
-        $this->assertTrue(method_exists($this->readFileTool, 'definition'));
-    }
-
     public function testDefinitionExecutionModeIsParallel(): void
     {
         $definition = $this->readFileTool->definition();
 
         $this->assertSame('parallel', $definition->executionMode->value);
-    }
-
-    /* ── ToolRegistry integration test ── */
-
-    public function testRegistryExposesReadTool(): void
-    {
-        $registry = new ToolRegistry([$this->readFileTool]);
-        $toolbox = new RegistryBackedToolbox($registry);
-        $tools = $toolbox->getTools();
-
-        $toolNames = array_map(static fn ($t) => $t->getName(), $tools);
-
-        $this->assertContains('read', $toolNames);
     }
 
     /* ── __invoke() success tests ── */

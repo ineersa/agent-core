@@ -473,7 +473,7 @@ class ModelResolverTest extends TestCase
                         'gpt-5.6-luna' => [
                             'id' => 'gpt-5.6-luna',
                             'name' => 'GPT-5.6 Luna',
-                            'context_window' => 372000,
+                            'context_window' => 272000,
                             'max_tokens' => 128000,
                             'input' => ['text', 'image'],
                             'reasoning' => true,

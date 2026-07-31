@@ -105,12 +105,37 @@ if (false === $lock) {
     fwrite(\STDERR, "ParaTest bootstrap (token={$token}): unable to open migrate lock\n");
     exit(1);
 }
-flock($lock, \LOCK_EX);
-exec($cmd, $output, $exitCode);
+
+// Bound lock wait and migrate subprocess independently of the outer 180s runner.
+// flock(LOCK_NB) + poll avoids indefinite wait if another worker dies mid-migrate.
+$lockDeadline = microtime(true) + 60.0;
+$gotLock = false;
+while (microtime(true) < $lockDeadline) {
+    if (flock($lock, \LOCK_EX | \LOCK_NB)) {
+        $gotLock = true;
+        break;
+    }
+    usleep(50_000);
+}
+if (!$gotLock) {
+    fclose($lock);
+    fwrite(\STDERR, "ParaTest bootstrap (token={$token}): migrate lock acquire timed out after 60s\n");
+    exit(1);
+}
+
+// Coreutils timeout bounds the migrate child (no Composer autoload available yet).
+$boundedCmd = 'timeout --kill-after=5s 60s sh -lc '.escapeshellarg($cmd);
+$output = [];
+$exitCode = 1;
+exec($boundedCmd, $output, $exitCode);
 flock($lock, \LOCK_UN);
 fclose($lock);
 
 if (0 !== $exitCode) {
-    fwrite(\STDERR, "ParaTest bootstrap (token={$token}): migration FAILED\n".implode("\n", $output)."\n");
+    $detail = implode("\n", $output);
+    if (124 === $exitCode) {
+        $detail = ('' !== $detail ? $detail."\n" : '').'migration timed out after 60s';
+    }
+    fwrite(\STDERR, "ParaTest bootstrap (token={$token}): migration FAILED\n{$detail}\n");
     exit($exitCode);
 }

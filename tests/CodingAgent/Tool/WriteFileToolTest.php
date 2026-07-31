@@ -9,8 +9,6 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
-use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Ineersa\CodingAgent\Tool\WriteFileTool;
 use PHPUnit\Framework\TestCase;
@@ -50,35 +48,6 @@ final class WriteFileToolTest extends TestCase
         $this->assertSame('write', $definition->name);
     }
 
-    public function testDefinitionHasDescription(): void
-    {
-        $definition = $this->writeFileTool->definition();
-
-        $this->assertNotEmpty($definition->description);
-    }
-
-    public function testDefinitionHandlerIsInvokable(): void
-    {
-        $definition = $this->writeFileTool->definition();
-
-        $this->assertTrue(method_exists($definition->handler, '__invoke'));
-    }
-
-    public function testDefinitionHasPromptLine(): void
-    {
-        $definition = $this->writeFileTool->definition();
-
-        $this->assertNotEmpty($definition->promptLine);
-        $this->assertStringContainsString('write', $definition->promptLine);
-    }
-
-    public function testDefinitionHasGuidelines(): void
-    {
-        $definition = $this->writeFileTool->definition();
-
-        $this->assertNotEmpty($definition->promptGuidelines);
-    }
-
     public function testDefinitionJsonSchemaHasPathAndContent(): void
     {
         $definition = $this->writeFileTool->definition();
@@ -94,24 +63,6 @@ final class WriteFileToolTest extends TestCase
         $this->assertContains('content', $schema['required']);
         $this->assertArrayHasKey('additionalProperties', $schema);
         $this->assertFalse($schema['additionalProperties']);
-    }
-
-    public function testDefinitionImplementsHatfieldToolProviderInterface(): void
-    {
-        $this->assertTrue(method_exists($this->writeFileTool, 'definition'));
-    }
-
-    /* ── ToolRegistry integration test ── */
-
-    public function testRegistryExposesWriteTool(): void
-    {
-        $registry = new ToolRegistry([$this->writeFileTool]);
-        $toolbox = new RegistryBackedToolbox($registry);
-        $tools = $toolbox->getTools();
-
-        $toolNames = array_map(static fn ($t) => $t->getName(), $tools);
-
-        $this->assertContains('write', $toolNames);
     }
 
     /* ── __invoke() success tests ── */

@@ -22,6 +22,7 @@ use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
@@ -56,15 +57,16 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->deleteDirectory($this->basePath);
     }
 
-    public function testSteerCommandsSupersedeWhenDrainModeOneAtATime(): void
+    public function testTurnStartDrainsAllQueuedSteersFifoWithOneLlmContinuation(): void
     {
-        $fixture = $this->createFixture(steerDrainMode: 'one_at_a_time');
-        $runId = 'run-mailbox-steer';
+        $fixture = $this->createFixture();
+        $runId = 'run-mailbox-steer-turn-start';
 
         $fixture->orchestrator->onStartRun($this->startRun($runId));
 
+        // Two distinct steers durably queued before the turn-start boundary snapshot.
         $fixture->orchestrator->onApplyCommand($this->steerCommand($runId, 'steer-1', 'first steer'));
-        $fixture->orchestrator->onApplyCommand($this->steerCommand($runId, 'steer-2', 'latest steer'));
+        $fixture->orchestrator->onApplyCommand($this->steerCommand($runId, 'steer-2', 'second steer'));
 
         $fixture->orchestrator->onAdvanceRun(new AdvanceRun(
             runId: $runId,
@@ -83,24 +85,40 @@ final class CommandMailboxPolicyTest extends TestCase
                 && 'user' === $message->role,
         ));
 
-        $this->assertCount(2, $userMessages);
-        $this->assertSame('latest steer', $userMessages[1]->content[0]['text']);
+        // start_run user + both steers, FIFO queued order.
+        $this->assertCount(3, $userMessages);
+        $this->assertSame('hello', $userMessages[0]->content[0]['text']);
+        $this->assertSame('first steer', $userMessages[1]->content[0]['text']);
+        $this->assertSame('second steer', $userMessages[2]->content[0]['text']);
 
         $events = $fixture->eventStore->allFor($runId);
 
+        $appliedSteerKeys = [];
+        foreach ($events as $event) {
+            if ('agent_command_applied' !== $event->type) {
+                continue;
+            }
+            if ('steer' !== ($event->payload['kind'] ?? null)) {
+                continue;
+            }
+            $appliedSteerKeys[] = (string) ($event->payload['idempotency_key'] ?? '');
+        }
+
+        $this->assertSame(['steer-1', 'steer-2'], $appliedSteerKeys);
+
         $superseded = array_values(array_filter(
             $events,
-            static fn (\Ineersa\AgentCore\Domain\Event\RunEvent $event): bool => 'agent_command_superseded' === $event->type
-                && 'steer-1' === ($event->payload['idempotency_key'] ?? null),
+            static fn (\Ineersa\AgentCore\Domain\Event\RunEvent $event): bool => 'agent_command_superseded' === $event->type,
         ));
-        $applied = array_values(array_filter(
-            $events,
-            static fn (\Ineersa\AgentCore\Domain\Event\RunEvent $event): bool => 'agent_command_applied' === $event->type
-                && 'steer-2' === ($event->payload['idempotency_key'] ?? null),
-        ));
+        $this->assertSame([], $superseded);
 
-        $this->assertCount(1, $superseded);
-        $this->assertCount(1, $applied);
+        $this->assertSame([], $fixture->commandStore->pending($runId));
+
+        $llmSteps = array_values(array_filter(
+            $fixture->executionBus->messages,
+            static fn (object $message): bool => $message instanceof ExecuteLlmStep,
+        ));
+        $this->assertCount(1, $llmSteps, 'Turn-start must schedule exactly one LLM continuation for the drained batch.');
     }
 
     public function testQueueCapRejectsNonCancelCommands(): void
@@ -319,7 +337,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->assertCount(1, $advanceCommands);
     }
 
-    public function testStopBoundaryReturnsShouldContinueTrueWhenSteerApplied(): void
+    public function testStopBoundaryDrainsAllQueuedSteersFifoWithOneAdvanceRun(): void
     {
         $fixture = $this->createFixture();
         $runId = 'run-stop-boundary-steer';
@@ -334,10 +352,10 @@ final class CommandMailboxPolicyTest extends TestCase
             idempotencyKey: 'advance-idemp-1',
         ));
 
-        // Queue a steer command
-        $fixture->orchestrator->onApplyCommand($this->steerCommand($runId, 'stop-steer-1', 'steer at stop boundary'));
+        // Two steers queued during the active LLM turn, before stop-boundary snapshot.
+        $fixture->orchestrator->onApplyCommand($this->steerCommand($runId, 'stop-steer-1', 'first stop steer'));
+        $fixture->orchestrator->onApplyCommand($this->steerCommand($runId, 'stop-steer-2', 'second stop steer'));
 
-        // Send LLM result with stop_reason='stop', no tool calls, no error
         $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
             runId: $runId,
             turnNo: $this->currentTurnNo($fixture, $runId),
@@ -352,25 +370,43 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $state = $fixture->runStore->get($runId);
         $this->assertNotNull($state);
-        // shouldContinue=true keeps the run Running
-        $this->assertSame(RunStatus::Running, $state->status, 'Run should remain Running after steer at stop boundary');
+        $this->assertSame(RunStatus::Running, $state->status, 'Run should remain Running after steers at stop boundary');
 
-        // Verify steer command was applied
-        $events = $fixture->eventStore->allFor($runId);
-        $appliedSteer = array_values(array_filter(
-            $events,
-            static fn (\Ineersa\AgentCore\Domain\Event\RunEvent $event): bool => 'agent_command_applied' === $event->type
-                && 'stop-steer-1' === ($event->payload['idempotency_key'] ?? null),
+        $userMessages = array_values(array_filter(
+            $state->messages,
+            static fn (object $message): bool => $message instanceof AgentMessage
+                && 'user' === $message->role,
         ));
-        $this->assertCount(1, $appliedSteer);
+        $this->assertCount(3, $userMessages);
+        $this->assertSame('first stop steer', $userMessages[1]->content[0]['text']);
+        $this->assertSame('second stop steer', $userMessages[2]->content[0]['text']);
 
-        // Verify follow-up AdvanceRun was dispatched
+        $events = $fixture->eventStore->allFor($runId);
+        $appliedSteerKeys = [];
+        foreach ($events as $event) {
+            if ('agent_command_applied' !== $event->type) {
+                continue;
+            }
+            if ('steer' !== ($event->payload['kind'] ?? null)) {
+                continue;
+            }
+            $appliedSteerKeys[] = (string) ($event->payload['idempotency_key'] ?? '');
+        }
+        $this->assertSame(['stop-steer-1', 'stop-steer-2'], $appliedSteerKeys);
+
+        $superseded = array_values(array_filter(
+            $events,
+            static fn (\Ineersa\AgentCore\Domain\Event\RunEvent $event): bool => 'agent_command_superseded' === $event->type,
+        ));
+        $this->assertSame([], $superseded);
+
+        $this->assertSame([], $fixture->commandStore->pending($runId));
+
         $advanceCommands = array_values(array_filter(
             $fixture->commandBus->messages,
             static fn (object $message): bool => $message instanceof AdvanceRun,
         ));
-        // Only one from stop-boundary shouldContinue (ApplyCommandHandler no
-        // longer dispatches AdvanceRun while the run is active).
+        // Exactly one stop-boundary continuation for the drained batch.
         $this->assertCount(1, $advanceCommands);
     }
 
@@ -445,7 +481,7 @@ final class CommandMailboxPolicyTest extends TestCase
         return $state->turnNo;
     }
 
-    private function createFixture(int $maxPendingCommands = 100, string $steerDrainMode = 'one_at_a_time'): CommandMailboxFixture
+    private function createFixture(int $maxPendingCommands = 100): CommandMailboxFixture
     {
         $runStore = new InMemoryRunStore();
         $eventStore = new InMemoryEventStore();
@@ -461,7 +497,6 @@ final class CommandMailboxPolicyTest extends TestCase
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
-            steerDrainMode: $steerDrainMode,
         );
         $toolBatchCollector = new ToolBatchCollector();
 
@@ -522,7 +557,7 @@ final class CommandMailboxPolicyTest extends TestCase
             runMessageProcessor: $runMessageProcessor,
         );
 
-        return new CommandMailboxFixture($orchestrator, $runStore, $eventStore, $commandStore, $commandBus);
+        return new CommandMailboxFixture($orchestrator, $runStore, $eventStore, $commandStore, $commandBus, $executionBus);
     }
 
     private function startRun(string $runId): StartRun
@@ -600,6 +635,7 @@ final readonly class CommandMailboxFixture
         public InMemoryEventStore $eventStore,
         public InMemoryCommandStore $commandStore,
         public TestMessageBus $commandBus,
+        public TestMessageBus $executionBus,
     ) {
     }
 }

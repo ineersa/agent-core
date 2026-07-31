@@ -162,7 +162,8 @@ final class LlamaCppSmokeTest extends KernelTestCase
             $llamaCppProviderKey,
             [
                 new SanitizedGenericModelClient(new GenericCompletionsModelClient(
-                    HttpClient::create(),
+                    // Direct client bypasses services_test 5s override; 10s bounds a stalled stream under 15s ceiling.
+                    HttpClient::create(['timeout' => 10.0]),
                     $baseUrl,
                     $apiKey,
                     $completionsPath,

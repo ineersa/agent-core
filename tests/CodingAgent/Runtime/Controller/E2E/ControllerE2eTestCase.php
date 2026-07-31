@@ -160,9 +160,10 @@ abstract class ControllerE2eTestCase extends TestCase
 
     /**
      * Wall-clock budget for a single-turn live LLM run (start_run → terminal state).
-     * Under full castor check, ParaTest llm-real (4 workers) competes with other
-     * parallel lanes; 8s can expire after run.started before the first LLM response
-     * reaches stdout (collectEvents exits on run.completed only when seen).
+     * Under full castor check, ParaTest llm-real defaults to 1 worker (standalone full
+     * uses 4); concurrent gate lanes still compete for CPU/proxy, so 8s can expire after
+     * run.started before the first LLM response reaches stdout (collectEvents exits on
+     * run.completed only when seen).
      */
     protected function liveLlmRunWaitTimeout(): float
     {
@@ -183,9 +184,10 @@ abstract class ControllerE2eTestCase extends TestCase
 
     /**
      * Wall-clock budget for controller subprocess to emit runtime.ready.
-     * Under full castor check, ParaTest llm-real (4 workers) competes with
-     * other parallel lanes; 5s flakes while standalone llm-real passes.
-     * Early-exit on event — does not slow passing tests.
+     * Under full castor check, ParaTest llm-real defaults to 1 worker (standalone full
+     * uses 4); concurrent gate load still competes with other parallel lanes, so 5s
+     * flakes while standalone llm-real passes. Early-exit on event — does not slow
+     * passing tests.
      */
     protected function liveControllerReadyTimeout(): float
     {

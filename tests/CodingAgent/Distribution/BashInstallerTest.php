@@ -321,16 +321,31 @@ PHP;
     private function startServer(string $docroot): array
     {
         $port = random_int(18000, 18999);
+        // Absolute lifetime ≤180s so a leaked fixture server cannot outlive the test runner.
+        // PID ownership/cleanup stays with stopServer(); readiness is polled separately.
         $cmd = \sprintf(
-            'php -S 127.0.0.1:%d -t %s >/dev/null 2>&1 & echo $!',
+            'timeout --kill-after=5s 180s php -S 127.0.0.1:%d -t %s >/dev/null 2>&1 & echo $!',
             $port,
             escapeshellarg($docroot),
         );
         $pid = (int) trim((string) shell_exec($cmd));
         $this->assertGreaterThan(0, $pid, 'Failed to start fixture HTTP server');
-        usleep(200_000);
 
-        return ['url' => 'http://127.0.0.1:'.$port, 'pid' => $pid, 'docroot' => $docroot];
+        $url = 'http://127.0.0.1:'.$port;
+        $readyUrl = $url.'/SHA256SUMS';
+        $deadline = microtime(true) + 5.0;
+        $ready = false;
+        while (microtime(true) < $deadline) {
+            $body = @file_get_contents($readyUrl);
+            if (false !== $body && '' !== $body) {
+                $ready = true;
+                break;
+            }
+            usleep(20_000);
+        }
+        $this->assertTrue($ready, 'Fixture HTTP server did not become ready at '.$readyUrl);
+
+        return ['url' => $url, 'pid' => $pid, 'docroot' => $docroot];
     }
 
     /**

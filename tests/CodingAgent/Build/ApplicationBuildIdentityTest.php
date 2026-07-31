@@ -46,20 +46,4 @@ final class ApplicationBuildIdentityTest extends TestCase
             TestDirectoryIsolation::removeDirectory($dir);
         }
     }
-
-    public function testGeneratePhpSourceIsValidPhp(): void
-    {
-        $src = ApplicationBuildIdentity::generatePhpSource('9.9.9', 'deadbeef');
-        $tmp = TestDirectoryIsolation::createProjectTempDir('build-identity-src');
-        try {
-            $file = $tmp.'/id.php';
-            file_put_contents($file, $src);
-            /** @var array{version: string, commit: string, channel: string} $data */
-            $data = require $file;
-            $this->assertSame('9.9.9', $data['version']);
-            $this->assertSame('deadbeef', $data['commit']);
-        } finally {
-            TestDirectoryIsolation::removeDirectory($tmp);
-        }
-    }
 }

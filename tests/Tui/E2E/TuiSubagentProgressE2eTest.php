@@ -60,12 +60,13 @@ final class TuiSubagentProgressE2eTest extends TestCase
             SubagentProgressEventsFixture::write($this->testProjectDir, $sessionId);
 
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
             $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
             $this->tmux->sendKey($pane, 'Enter');
 
             $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            usleep(200_000);
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            // Progress proof is fixture transcript content after resume, not keystroke settle.
+            $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 10.0, 'Resumed transcript must show fixture artifact');
 
             $capture = $this->tmux->capturePlainWithHistory($pane, 2500);
 
@@ -103,7 +104,7 @@ final class TuiSubagentProgressE2eTest extends TestCase
     private function createSessionAndWaitForAssistant(TmuxPane $pane): string
     {
         $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-        usleep(150_000);
+        $this->tmux->waitForTuiReadyAfterLogo($pane);
 
         $this->tmux->sendLiteral($pane, 'hi');
         $this->tmux->sendKey($pane, 'Enter');

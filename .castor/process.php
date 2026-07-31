@@ -49,6 +49,59 @@ require_once __DIR__.'/qa_tmux.php';
 // ── Shared proc_open parallel runner ──────────────────────────
 
 /**
+ * Absolute ceiling for standalone test runners and castor check wall clock.
+ * Non-test tasks (build/packaging/composer/docker/agent) must not use this.
+ */
+function castor_test_runner_max_seconds(): int
+{
+    return 180;
+}
+
+/**
+ * Run a standalone Castor test-suite command with session reaping + hard timeout.
+ *
+ * Replaces uncapped passthru() for test runners so PHPUnit/ParaTest/controller
+ * children cannot hang forever. Timeout is clamped to castor_test_runner_max_seconds().
+ *
+ * @return array{exitCode:int,output:string,duration:float}
+ */
+function run_test_command_bounded(string $step, string $command, int $timeoutSeconds = 180, ?string $logPath = null): array
+{
+    $timeoutSeconds = max(1, min(castor_test_runner_max_seconds(), $timeoutSeconds));
+    $results = run_commands_parallel(
+        [
+            $step => [
+                'cmd' => $command,
+                'log' => $logPath ?? report_path('test-'.$step.'.log'),
+            ],
+        ],
+        [$step => $timeoutSeconds],
+    );
+
+    return $results[$step] ?? ['exitCode' => -1, 'output' => 'no result', 'duration' => 0.0];
+}
+
+/**
+ * Standalone test-task DB migrate with session reaping + hard timeout.
+ *
+ * Caps migrate setup at 60s (well under castor_test_runner_max_seconds).
+ * Used by `castor test` / `test:tui` filtered / `test:controller` /
+ * `test:controller-replay`. Check-lane migration remains separate and
+ * already uses timeout_check_command under the absolute check wall.
+ *
+ * @return array{exitCode:int,output:string,duration:float}
+ */
+function run_test_db_migrate_bounded(string $command, int $timeoutSeconds = 60): array
+{
+    return run_test_command_bounded(
+        'test-db-migrate',
+        $command,
+        max(1, min(60, $timeoutSeconds)),
+        report_path('test-db-migrate.log'),
+    );
+}
+
+/**
  * Run multiple shell commands concurrently via proc_open.
  *
  * Each command is spawned in an isolated process group via setsid -w
@@ -60,9 +113,9 @@ require_once __DIR__.'/qa_tmux.php';
  * poll loop so that surviving grandchildren never cause a blocking
  * stream_get_contents hang after the direct child exits.
  *
- * @param array<string,array{cmd:string,log:string}> $commands
- * @param array<string,int>                          $timeouts Optional per-step timeout in seconds.
- *                                                             Defaults to empty (no Castor-enforced timeout).
+ * @param array<string,array{cmd:string,log?:string|null}> $commands
+ * @param array<string,int>                                $timeouts Optional per-step timeout in seconds.
+ *                                                                   Defaults to empty (no Castor-enforced timeout).
  *
  * @return array<string,array{exitCode:int,output:string,duration:float}>
  */
@@ -525,8 +578,10 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
 
     $preCountB = count_alive_descendants();
 
+    // Explicit short bound: step exits immediately; reaping must still finish.
+    // Nested sleep 120 is the intentional leak proof — Castor must kill it.
     $startB = hrtime(true);
-    $resultsB = run_commands_parallel($commandsB, []);
+    $resultsB = run_commands_parallel($commandsB, ['exit-leak-test' => 5]);
     $durationB = (hrtime(true) - $startB) / 1e9;
 
     $resultB = $resultsB['exit-leak-test'] ?? ['exitCode' => -1, 'output' => 'no result', 'duration' => 0];
@@ -756,8 +811,10 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
 
     $preCountD = count_alive_descendants();
 
+    // Explicit short bound: step exits immediately; session reaping must still finish.
+    // Nested sleep 120 is the intentional separate-PGID leak proof.
     $startD = hrtime(true);
-    $resultsD = run_commands_parallel($commandsD, []);
+    $resultsD = run_commands_parallel($commandsD, ['session-leak-test' => 5]);
     $durationD = (hrtime(true) - $startD) / 1e9;
 
     $resultD = $resultsD['session-leak-test'] ?? ['exitCode' => -1, 'output' => 'no result', 'duration' => 0];
@@ -819,8 +876,9 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
 
     $preCountE = count_alive_descendants();
 
+    // Explicit short bound: simulated PHPUnit exits immediately; reaping must kill PHAR-shaped leak.
     $startE = hrtime(true);
-    $resultsE = run_commands_parallel($commandsE, []);
+    $resultsE = run_commands_parallel($commandsE, ['phpunit-leak-test' => 5]);
     $durationE = (hrtime(true) - $startE) / 1e9;
 
     $resultE = $resultsE['phpunit-leak-test'] ?? ['exitCode' => -1, 'output' => 'no result', 'duration' => 0];
@@ -1143,8 +1201,114 @@ PHPCODE;
     putenv('HATFIELD_QA_RUN_ID');
     unset($_ENV['HATFIELD_QA_RUN_ID']);
 
+    // ── Test I: standalone test runner helper hard-timeout (≈1s, not 180s) ──
+    echo "\n── Test I: run_test_command_bounded hard-timeout ──\n\n";
+    $beforeI = count_alive_descendants();
+    $startI = hrtime(true);
+    $resultI = run_test_command_bounded(
+        'bounded-hang',
+        'sleep 30',
+        1,
+        report_path('check-test-timeout-hardstop-bounded.log'),
+    );
+    $elapsedI = (hrtime(true) - $startI) / 1e9;
+    if ($elapsedI >= 8.0) {
+        echo "FAIL: run_test_command_bounded took {$elapsedI}s (expected ~1s hard timeout)\n";
+        $ok = false;
+    } else {
+        echo "PASS: run_test_command_bounded returned in {$elapsedI}s\n";
+    }
+    if (124 !== $resultI['exitCode'] && 143 !== $resultI['exitCode']) {
+        echo "FAIL: expected exit 124/143, got {$resultI['exitCode']}\n";
+        $ok = false;
+    } else {
+        echo "PASS: exit code {$resultI['exitCode']}\n";
+    }
+    usleep(200000);
+    $afterI = count_alive_descendants();
+    if ($afterI > $beforeI) {
+        echo "FAIL: descendants increased after bounded hang ({$beforeI} -> {$afterI})\n";
+        $ok = false;
+    } else {
+        echo "PASS: no surviving descendants after bounded hang\n";
+    }
+
+    // ── Test J: castor check wall remaining clamps lane timeouts to <=180 ──
+    echo "\n── Test J: check wall remaining clamp math ──\n\n";
+    $shellTimeoutJ = 180;
+    // No +15 pad: pad would exceed the absolute 180s check wall.
+    $castorTimeoutJ = min(castor_test_runner_max_seconds(), $shellTimeoutJ);
+    $remainingJ = 5; // simulate late gate start
+    $effectiveJ = min($castorTimeoutJ, max(1, $remainingJ));
+    if (5 !== $effectiveJ) {
+        echo "FAIL: expected remaining clamp 5, got {$effectiveJ}\n";
+        $ok = false;
+    } else {
+        echo "PASS: remaining wall clamp yields {$effectiveJ}s\n";
+    }
+    if ($castorTimeoutJ > castor_test_runner_max_seconds()) {
+        echo "FAIL: castor timeout {$castorTimeoutJ} exceeds max\n";
+        $ok = false;
+    } else {
+        echo "PASS: shell 180 clamps to {$castorTimeoutJ} (<=180, no pad)\n";
+    }
+
+    // ── Test K: absolute wall starts at check() entry (lock+preflight share budget) ──
+    echo "\n── Test K: check() entry wall accounting (lock + preflight share 180s) ──\n\n";
+    // Simulate: wall starts at entry; lock wait burns 2s of a 5s injected budget.
+    $entryK = hrtime(true) / 1e9;
+    $injectedBudgetK = 5.0;
+    $deadlineK = $entryK + $injectedBudgetK;
+    $lockWaitBurnK = 2.0;
+    $afterLockK = $entryK + $lockWaitBurnK;
+    $lockAcquireCapK = min(60.0, max(0.001, $deadlineK - $entryK)); // default 60s lock, clamped to remaining at entry
+    $remainingAfterLockK = $deadlineK - $afterLockK;
+    $preflightShellK = min(15, max(1, (int) floor($remainingAfterLockK)));
+    $laneRemainingK = max(1, (int) floor($remainingAfterLockK - 1.0)); // after ~1s preflight
+    if (abs($lockAcquireCapK - 5.0) > 0.001) {
+        echo "FAIL: lock acquire at entry should clamp to injected 5s, got {$lockAcquireCapK}\n";
+        $ok = false;
+    } else {
+        echo "PASS: lock acquire timeout clamps to remaining wall at check() entry ({$lockAcquireCapK}s)\n";
+    }
+    if (3.0 !== $remainingAfterLockK) {
+        echo "FAIL: remaining after 2s lock wait expected 3.0, got {$remainingAfterLockK}\n";
+        $ok = false;
+    } else {
+        echo "PASS: after 2s lock wait, 3.0s remains of 5s entry budget\n";
+    }
+    if (3 !== $preflightShellK) {
+        echo "FAIL: preflight shell timeout expected 3, got {$preflightShellK}\n";
+        $ok = false;
+    } else {
+        echo "PASS: preflight subprocess timeout clamps to remaining wall ({$preflightShellK}s)\n";
+    }
+    if (2 !== $laneRemainingK) {
+        echo "FAIL: lane remaining after preflight expected 2, got {$laneRemainingK}\n";
+        $ok = false;
+    } else {
+        echo "PASS: lanes see remaining wall after lock+preflight ({$laneRemainingK}s)\n";
+    }
+    // Expired wall at body start must not invent a 1s lane budget.
+    $expiredRemainingK = (int) floor(($entryK - 1.0) - $entryK); // -1
+    if ($expiredRemainingK > 0) {
+        echo "FAIL: expired wall remaining should be <=0, got {$expiredRemainingK}\n";
+        $ok = false;
+    } else {
+        echo "PASS: expired wall remaining is <=0 (fail-fast, no synthetic 1s lane)\n";
+    }
+    // Body-only wall would exclude lock wait — prove entry accounting is stricter.
+    $bodyOnlyBudgetK = $injectedBudgetK; // wrong model: start wall after lock
+    $bodyOnlyRemainingAfterLockK = $bodyOnlyBudgetK; // still full 5s
+    if ($bodyOnlyRemainingAfterLockK <= $remainingAfterLockK) {
+        echo "FAIL: body-only wall should leave more budget than entry wall after lock wait\n";
+        $ok = false;
+    } else {
+        echo "PASS: entry wall is stricter than body-only wall after lock wait (3s vs {$bodyOnlyRemainingAfterLockK}s)\n";
+    }
+
     if ($ok) {
-        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak + castor-check-lock + lock-acquire-timeout + QA-run-leak + QA-run-tmux assertions passed.\n";
+        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak + castor-check-lock + lock-acquire-timeout + QA-run-leak + QA-run-tmux + bounded-runner + wall-clamp + entry-wall-accounting assertions passed.\n";
     } else {
         echo "\n❌ Some assertions FAILED.\n";
         exit(1);

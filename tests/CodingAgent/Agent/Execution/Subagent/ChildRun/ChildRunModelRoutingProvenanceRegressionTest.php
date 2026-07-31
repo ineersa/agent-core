@@ -198,7 +198,7 @@ final class ChildRunModelRoutingProvenanceRegressionTest extends IsolatedKernelT
                             'gpt-5.6-sol' => [
                                 'id' => 'gpt-5.6-sol',
                                 'name' => 'GPT-5.6 Sol',
-                                'context_window' => 372000,
+                                'context_window' => 272000,
                                 'max_tokens' => 128000,
                                 'input' => ['text', 'image'],
                                 'tool_calling' => true,
@@ -207,7 +207,7 @@ final class ChildRunModelRoutingProvenanceRegressionTest extends IsolatedKernelT
                             'gpt-5.6-luna' => [
                                 'id' => 'gpt-5.6-luna',
                                 'name' => 'GPT-5.6 Luna',
-                                'context_window' => 372000,
+                                'context_window' => 272000,
                                 'max_tokens' => 128000,
                                 'input' => ['text', 'image'],
                                 'tool_calling' => true,

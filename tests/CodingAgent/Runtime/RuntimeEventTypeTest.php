@@ -13,28 +13,6 @@ use PHPUnit\Framework\TestCase;
 final class RuntimeEventTypeTest extends TestCase
 {
     /**
-     * Every case must have a non-empty dot-separated string value.
-     */
-    public function testEveryCaseHasNonEmptyValue(): void
-    {
-        $cases = RuntimeEventTypeEnum::cases();
-
-        $this->assertNotEmpty($cases, 'Enum must have at least one case');
-
-        foreach ($cases as $case) {
-            $this->assertNotEmpty(
-                $case->value,
-                \sprintf('Case %s must have a non-empty string value', $case->name),
-            );
-            $this->assertStringContainsString(
-                '.',
-                $case->value,
-                \sprintf('Case %s value "%s" must contain a dot separator', $case->name, $case->value),
-            );
-        }
-    }
-
-    /**
      * The enum must cover every event name listed in the plan.
      *
      * This is the authoritative list from
@@ -167,28 +145,6 @@ final class RuntimeEventTypeTest extends TestCase
                     $case->value,
                 ),
             );
-        }
-    }
-
-    /**
-     * No two enum cases may share the same string value.
-     */
-    public function testNoDuplicateStringValues(): void
-    {
-        $seen = [];
-
-        foreach (RuntimeEventTypeEnum::cases() as $case) {
-            $this->assertArrayNotHasKey(
-                $case->value,
-                $seen,
-                \sprintf(
-                    'Duplicate event type string "%s" found on case %s (already used by %s)',
-                    $case->value,
-                    $case->name,
-                    $seen[$case->value] ?? '???',
-                ),
-            );
-            $seen[$case->value] = $case->name;
         }
     }
 

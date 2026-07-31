@@ -60,13 +60,22 @@ function llm_fixtures_record(): void
 
     echo "Running recording test (ReplayRecordingTest + TUI fixture methods)...\n\n";
 
-    passthru(
+    $result = run_test_command_bounded(
+        'llm-fixtures-record',
         $env.' '.\PHP_BINARY.' vendor/bin/phpunit'
         .' '.escapeshellarg($recordingTestClass)
         .' --colors=never --no-progress',
-        $exitCode,
+        castor_test_runner_max_seconds(),
     );
+    if ('' !== $result['output']) {
+        echo $result['output'];
+    }
+    $exitCode = $result['exitCode'];
 
+    if (124 === $exitCode) {
+        echo "\n\nRecording TIMED OUT after {$result['duration']}s (hard cap ".castor_test_runner_max_seconds()."s).\n";
+        exit(124);
+    }
     if (0 !== $exitCode) {
         echo "\n\nRecording FAILED (exit code {$exitCode}).\n";
         echo "Check that llama.cpp is running on port 9052 with the 'test' model.\n";
