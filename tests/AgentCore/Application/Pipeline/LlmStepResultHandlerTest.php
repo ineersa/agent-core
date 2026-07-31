@@ -571,7 +571,12 @@ final class LlmStepResultHandlerTest extends TestCase
 
         $this->assertNotNull($result->nextState);
         $this->assertFalse($result->nextState->retryableFailure);
-        $this->assertStringNotContainsString('Will retry automatically', (string) $result->nextState->errorMessage);
+        $this->assertStringContainsString('Automatic LLM retry attempts exhausted after 2 retry attempt(s)', (string) $result->nextState->errorMessage);
+        // Exhausted wording keeps the original actionable transport/provider detail.
+        $this->assertStringContainsString(
+            'LLM provider server error (HTTP 503 — retryable). Will retry automatically.',
+            (string) $result->nextState->errorMessage,
+        );
 
         $failed = null;
         foreach ($result->events as $event) {

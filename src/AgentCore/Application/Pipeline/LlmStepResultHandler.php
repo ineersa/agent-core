@@ -210,9 +210,11 @@ final class LlmStepResultHandler implements RunMessageHandler
             if ($retriesExhausted) {
                 $retryable = false;
                 $error['retryable'] = false;
+                $originalDetail = trim($userMessage);
                 $userMessage = \sprintf(
-                    'Automatic LLM retry attempts exhausted after %d retry attempt(s). Please retry manually or change provider/model.',
+                    'Automatic LLM retry attempts exhausted after %d retry attempt(s)%s. Please retry manually or change provider/model.',
                     $maxAttempts,
+                    '' !== $originalDetail ? ': '.$originalDetail : '',
                 );
                 $errorMessage = $userMessage;
                 $error['user_message'] = $userMessage;

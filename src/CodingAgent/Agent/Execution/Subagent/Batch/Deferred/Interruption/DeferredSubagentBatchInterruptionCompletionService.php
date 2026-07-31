@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interrupti
 
 use Doctrine\ORM\OptimisticLockException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
@@ -19,6 +20,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\DeferredSubagentBatchProgressDeliveryService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelAggregateResultFormatter;
@@ -254,12 +256,27 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         DeferredSubagentInterruptionKindEnum $kind,
         int $timeoutSecs,
     ): ChildRunTerminalOutcomeDTO {
+        // Reuse natural outcome builder so durable child state is attached for partial handoff.
+        $pseudoStatus = DeferredSubagentInterruptionKindEnum::Timeout === $kind
+            ? RunStatus::Failed
+            : RunStatus::Cancelled;
+        $projection = new DeferredChildRunLifecycleProjectionDTO(
+            childStatus: $pseudoStatus,
+            childTurnNo: 0,
+            lastCommittedSeq: 0,
+            errorMessage: DeferredSubagentInterruptionKindEnum::Timeout === $kind
+                ? 'Child run timed out.'
+                : null,
+        );
+        $outcome = $this->outcomeFactory->buildNaturalArtifactOutcome($identity, $projection);
+
         if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
             return new ChildRunTerminalOutcomeDTO(
                 identity: $identity,
                 status: AgentArtifactStatusEnum::Failed,
                 failureReason: 'Child run timed out.',
                 summary: 'Timed out after '.$timeoutSecs.'s.',
+                childState: $outcome->childState,
             );
         }
 
@@ -267,6 +284,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
             identity: $identity,
             status: AgentArtifactStatusEnum::Cancelled,
             summary: 'Cancelled by parent run.',
+            childState: $outcome->childState,
         );
     }
 
@@ -282,18 +300,35 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         }
 
         if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
+            $projection = new DeferredChildRunLifecycleProjectionDTO(
+                childStatus: RunStatus::Failed,
+                childTurnNo: 0,
+                lastCommittedSeq: 0,
+                errorMessage: 'Child run timed out.',
+            );
+            $withState = $this->outcomeFactory->buildNaturalArtifactOutcome($identity, $projection);
+
             return new ChildRunTerminalOutcomeDTO(
                 identity: $identity,
                 status: AgentArtifactStatusEnum::Failed,
                 failureReason: 'Child run timed out.',
                 summary: \sprintf('Timed out after %ds.', $timeoutSecs),
+                childState: $withState->childState,
             );
         }
+
+        $projection = new DeferredChildRunLifecycleProjectionDTO(
+            childStatus: RunStatus::Cancelled,
+            childTurnNo: 0,
+            lastCommittedSeq: 0,
+        );
+        $withState = $this->outcomeFactory->buildNaturalArtifactOutcome($identity, $projection);
 
         return new ChildRunTerminalOutcomeDTO(
             identity: $identity,
             status: AgentArtifactStatusEnum::Cancelled,
             summary: 'Cancelled by parent run.',
+            childState: $withState->childState,
         );
     }
 
