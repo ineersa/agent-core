@@ -599,6 +599,14 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             'message' => mb_substr($exception->getMessage(), 0, 500),
         ];
 
+        // Preserve the causal transport exception for classification/retry (e.g. Amp
+        // WebsocketClosedException behind "request frame could not be sent").
+        $previous = $exception->getPrevious();
+        if (null !== $previous) {
+            $error['previous_exception_class'] = $previous::class;
+            $error['previous_exception_message'] = mb_substr($previous->getMessage(), 0, 300);
+        }
+
         // Include response diagnostics in the error array for downstream logging.
         $responseDiag = $this->extractResponseDiagnostics($deferredResult);
         foreach ($responseDiag as $key => $value) {

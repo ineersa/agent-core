@@ -49,6 +49,7 @@ final readonly class ChildRunTerminalFinalizationRequestDTO
                 status: AgentArtifactStatusEnum::Failed,
                 failureReason: $errorMsg,
                 summary: $errorMsg,
+                childState: $state,
             ),
             childRunState: $state,
         );
