@@ -43,7 +43,6 @@ final class ToolExecutor implements ToolExecutorInterface
      */
     public function __construct(
         string $defaultMode,
-        ?int $defaultTimeoutSeconds,
         int $maxParallelism,
         private readonly ToolExecutionResultStore $resultStore,
         ?ToolboxInterface $toolbox = null,
@@ -52,7 +51,7 @@ final class ToolExecutor implements ToolExecutorInterface
         iterable $toolResultProcessors = [],
         ?ClockInterface $clock = null,
     ) {
-        $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $defaultTimeoutSeconds, $maxParallelism);
+        $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $maxParallelism);
         $this->faultTolerantToolbox = null !== $toolbox ? new FaultTolerantToolbox($toolbox) : null;
         $this->toolResultProcessors = \is_array($toolResultProcessors)
             ? array_values($toolResultProcessors)
@@ -74,7 +73,6 @@ final class ToolExecutor implements ToolExecutorInterface
     ): self {
         return new self(
             defaultMode: $settings->defaultMode(),
-            defaultTimeoutSeconds: $settings->defaultTimeoutSeconds(),
             maxParallelism: $settings->maxParallelism(),
             resultStore: $resultStore,
             toolbox: $toolbox,
@@ -174,22 +172,12 @@ final class ToolExecutor implements ToolExecutorInterface
 
         $durationMs = ($this->nowMicros() - $startedAt) / 1000;
 
-        // Typed human-input suspension is not a completed tool result: skip timeout
-        // rewrite, cancel overwrite, and result-store remember.
+        // Typed human-input suspension is not a completed tool result: skip
+        // cancel overwrite and result-store remember. Duration metadata is still attached.
+        // Per-tool timeoutSeconds is cooperative ToolContext metadata only: ToolExecutor
+        // never rewrites a successful handler result based on elapsed duration.
         if ($this->isHumanInputSuspension($result)) {
             return $this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs);
-        }
-
-        if (null !== $policy->timeoutSeconds && $durationMs > $policy->timeoutSeconds * 1000) {
-            $result = $this->errorResult(
-                toolCallId: $toolCall->toolCallId,
-                toolName: $toolCall->toolName,
-                message: \sprintf('Tool "%s" timed out after %d second(s).', $toolCall->toolName, $policy->timeoutSeconds),
-                details: [
-                    'timed_out' => true,
-                    'timeout_seconds' => $policy->timeoutSeconds,
-                ],
-            );
         }
 
         if ($this->cancellationToken($toolCall)->isCancellationRequested()) {
@@ -302,31 +290,17 @@ final class ToolExecutor implements ToolExecutorInterface
     {
         $resolved = $this->policyResolver->resolve($toolCall->toolName);
 
+        $timeoutSeconds = null !== $toolCall->timeoutSeconds && $toolCall->timeoutSeconds > 0
+            ? max(1, $toolCall->timeoutSeconds)
+            : null;
+
         return new ToolExecutionPolicy(
             mode: $toolCall->mode ?? $resolved->mode,
-            // Per-call timeout from LlmStepResultHandler / ActiveToolSet wins when set.
-            // When null: non-subagent tools keep tools.execution.timeout_seconds post-hoc cap;
-            // subagent has no ToolExecutor cap (agents.subagent_tool_timeout_seconds internal poll).
-            timeoutSeconds: $this->resolveTimeoutSeconds($toolCall->toolName, $toolCall->timeoutSeconds, $resolved->timeoutSeconds),
+            // Explicit/per-tool budget only (ToolCall.timeoutSeconds from ActiveToolSet).
+            // Null means no ambient deadline. ToolExecutor never rewrites success by elapsed time.
+            timeoutSeconds: $timeoutSeconds,
             maxParallelism: max(1, (int) ($toolCall->context['max_parallelism'] ?? $resolved->maxParallelism)),
         );
-    }
-
-    private function resolveTimeoutSeconds(string $toolName, ?int $callTimeout, ?int $resolvedTimeout): ?int
-    {
-        if (null !== $callTimeout && $callTimeout > 0) {
-            return max(1, $callTimeout);
-        }
-
-        if ('subagent' === $toolName) {
-            return null;
-        }
-
-        if (null === $resolvedTimeout || $resolvedTimeout <= 0) {
-            return null;
-        }
-
-        return max(1, $resolvedTimeout);
     }
 
     private function rememberAndReturn(

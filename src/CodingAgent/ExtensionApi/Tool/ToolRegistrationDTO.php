@@ -27,6 +27,7 @@ final readonly class ToolRegistrationDTO
      * @param ExtensionToolHandlerInterface|ContextualExtensionToolHandlerInterface $handler              extension-facing tool execution handler
      * @param string|null                                                           $promptSummary        optional one-line summary for the system prompt available-tools section
      * @param string[]                                                              $promptGuidelines     optional bullet-point guidelines for the system prompt guidelines section
+     * @param int|null                                                              $timeoutSeconds       optional cooperative timeout budget for this tool; null means no ambient deadline
      */
     public function __construct(
         public readonly string $name,
@@ -35,6 +36,10 @@ final readonly class ToolRegistrationDTO
         public readonly ExtensionToolHandlerInterface|ContextualExtensionToolHandlerInterface $handler,
         public readonly ?string $promptSummary = null,
         public readonly array $promptGuidelines = [],
+        public readonly ?int $timeoutSeconds = null,
     ) {
+        if (null !== $this->timeoutSeconds && $this->timeoutSeconds <= 0) {
+            throw new \InvalidArgumentException('ToolRegistrationDTO timeoutSeconds must be null or a positive integer.');
+        }
     }
 }

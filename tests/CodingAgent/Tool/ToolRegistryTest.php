@@ -274,6 +274,23 @@ final class ToolRegistryTest extends TestCase
         $this->assertSame(['type' => 'object'], $def->parametersJsonSchema);
     }
 
+    public function testRegisterToolPreservesTimeoutSeconds(): void
+    {
+        $this->registry->registerTool(
+            name: 'timed_tool',
+            description: 'Timed tool',
+            parametersJsonSchema: [],
+            handler: $this->dummyHandler(),
+            promptLine: 'timed_tool: Timed',
+            timeoutSeconds: 42,
+        );
+
+        $def = $this->registry->toolDefinition('timed_tool');
+
+        $this->assertNotNull($def);
+        $this->assertSame(42, $def->timeoutSeconds);
+    }
+
     public function testToolDefinitionReturnsDtoForDynamicTool(): void
     {
         $handler = $this->dummyHandler();

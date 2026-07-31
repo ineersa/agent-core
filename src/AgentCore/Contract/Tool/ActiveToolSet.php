@@ -13,11 +13,12 @@ namespace Ineersa\AgentCore\Contract\Tool;
  * accept for execution.
  *
  * executionModes maps tool name to its execution mode value string
- * timeoutSeconds maps tool name to per-tool timeout override (seconds); absent keys use global default.
  * (e.g. 'sequential', 'parallel', 'interrupt'), sourced from the
  * tool's ToolDefinitionDTO. LlmStepResultHandler reads this to set
  * the mode on ExecuteToolCall messages, which ToolBatchCollector
  * and ToolExecutor then respect.
+ * timeoutSeconds maps tool name to an explicit per-tool timeout budget
+ * (seconds); absent keys mean no ambient ToolContext deadline.
  */
 final readonly class ActiveToolSet
 {
@@ -25,7 +26,7 @@ final readonly class ActiveToolSet
      * @param list<string>          $toolNames      Provider-visible tool names (schemas sent to LLM)
      * @param list<string>          $allowListNames Execution allowlist names (accepted for execution)
      * @param array<string, string> $executionModes Tool name => mode value map (e.g. 'sequential', 'parallel')
-     * @param array<string, int>    $timeoutSeconds Tool name => timeout seconds override; omit for default
+     * @param array<string, int>    $timeoutSeconds Tool name => explicit per-tool timeout budget; omit for none
      */
     public function __construct(
         public array $toolNames = [],

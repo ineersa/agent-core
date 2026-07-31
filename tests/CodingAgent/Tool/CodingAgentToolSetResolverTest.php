@@ -127,6 +127,38 @@ final class CodingAgentToolSetResolverTest extends TestCase
         );
     }
 
+    public function testResolveIncludesTimeoutSecondsFromToolDefinitions(): void
+    {
+        $registry = $this->createMock(ToolRegistryInterface::class);
+        $registry->expects($this->once())
+            ->method('activeToolNames')
+            ->willReturn(['timed_tool', 'untimed_tool']);
+        $registry->expects($this->once())
+            ->method('activeToolDefinitions')
+            ->willReturn([
+                new ToolDefinitionDTO(
+                    name: 'timed_tool',
+                    description: 'Timed',
+                    parametersJsonSchema: [],
+                    handler: $this->dummyHandler(),
+                    promptLine: 'timed_tool: Timed',
+                    timeoutSeconds: 75,
+                ),
+                new ToolDefinitionDTO(
+                    name: 'untimed_tool',
+                    description: 'Untimed',
+                    parametersJsonSchema: [],
+                    handler: $this->dummyHandler(),
+                    promptLine: 'untimed_tool: Untimed',
+                ),
+            ]);
+
+        $resolver = new CodingAgentToolSetResolver($registry);
+        $result = $resolver->resolve('toolset:run:abc:turn:1');
+
+        $this->assertSame(['timed_tool' => 75], $result->timeoutSeconds);
+    }
+
     private function makeDefinition(string $name): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
