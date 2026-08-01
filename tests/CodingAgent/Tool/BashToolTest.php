@@ -542,10 +542,10 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $totalBytes = 3_000_000;
         $result = $this->withContext(self::TEST_SESSION, function () use ($totalBytes): string {
-            // Write a large deterministic blob via Python so the shell log is multi-MB.
+            // Write a large deterministic blob via PHP (project-contract runtime).
             return ($this->makeBashTool())([
                 'command' => \sprintf(
-                    "python3 -c 'import sys; sys.stdout.write(\"X\" * %d)'",
+                    "php -r 'echo str_repeat(\"X\", %d);'",
                     $totalBytes,
                 ),
             ]);

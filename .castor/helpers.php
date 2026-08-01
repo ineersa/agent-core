@@ -1974,6 +1974,12 @@ function cleanup_exact_qa_run_cache_roots(string $qaRunId, ?string $projectRoot 
         return [];
     }
 
+    // Resolve once — loop-invariant parent guard for every candidate.
+    $hatfieldReal = realpath($hatfieldDir);
+    if (false === $hatfieldReal) {
+        return [];
+    }
+
     $primaryBase = 'cache-'.$segment;
     $workerPrefix = $primaryBase.'-paraT';
     $removed = [];
@@ -2010,14 +2016,14 @@ function cleanup_exact_qa_run_cache_roots(string $qaRunId, ?string $projectRoot 
             // Dangling link or race — still only remove if basename-owned under .hatfield.
             if (is_link($candidate)) {
                 remove_path_checked($candidate);
-                $removed[] = $candidate;
+                // Report absolute path consistently with real-dir removals.
+                $removed[] = $hatfieldReal.\DIRECTORY_SEPARATOR.$entry;
             }
 
             continue;
         }
 
-        $hatfieldReal = realpath($hatfieldDir);
-        if (false === $hatfieldReal || !str_starts_with($candidateReal, $hatfieldReal.\DIRECTORY_SEPARATOR)) {
+        if (!str_starts_with($candidateReal, $hatfieldReal.\DIRECTORY_SEPARATOR)) {
             continue;
         }
 

@@ -59,19 +59,10 @@ final class OutputCapPathResolverTest extends TestCase
      */
     public static function documentClassificationProvider(): iterable
     {
+        // Keep distinct matrix rows only. Successful hatfield_docs read, settings
+        // dotted-key, and successful subagent/fork handoffs are covered by the
+        // end-to-end primary+late proofs below (not re-listed here).
         yield 'markdown read path' => ['read', ['path' => 'docs/settings.md'], false, 'docs/settings.md'];
-        yield 'settings dotted key ending .md is not a file path' => [
-            'settings',
-            ['operation' => 'read', 'path' => 'docs.example.md'],
-            false,
-            null,
-        ];
-        yield 'hatfield_docs read is document' => [
-            'hatfield_docs',
-            ['operation' => 'read', 'id' => 'settings'],
-            false,
-            'hatfield-docs-read.md',
-        ];
         yield 'hatfield_docs list is default' => [
             'hatfield_docs',
             ['operation' => 'list'],
@@ -84,8 +75,6 @@ final class OutputCapPathResolverTest extends TestCase
             true,
             null,
         ];
-        yield 'fork handoff is document' => ['fork', ['task' => 'x'], false, 'handoff-report.md'];
-        yield 'subagent handoff is document' => ['subagent', ['task' => 'x'], false, 'handoff-report.md'];
         yield 'agent_retrieve handoff is document' => [
             'agent_retrieve',
             ['artifact_id' => 'agent_abc'],

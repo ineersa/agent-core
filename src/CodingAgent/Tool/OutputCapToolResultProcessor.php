@@ -38,7 +38,11 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
             return $result;
         }
 
-        $path = $this->resolveCapPath($toolCall, $result);
+        $path = OutputCapPathResolver::resolveCapPath(
+            $toolCall->toolName,
+            $toolCall->arguments,
+            $result->isError,
+        );
         $cap = $this->outputCap->capForPath($path);
         $charCount = u($text)->length();
 
@@ -182,18 +186,6 @@ STRING;
         }
 
         return implode("\n", $parts);
-    }
-
-    /**
-     * Resolve the path used for cap selection via the shared resolver.
-     */
-    private function resolveCapPath(ToolCall $toolCall, ToolResult $result): ?string
-    {
-        return OutputCapPathResolver::resolveCapPath(
-            $toolCall->toolName,
-            $toolCall->arguments,
-            $result->isError,
-        );
     }
 
     /**
