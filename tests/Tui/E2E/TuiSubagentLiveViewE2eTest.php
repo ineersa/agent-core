@@ -110,6 +110,209 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
         }
     }
 
+    /**
+     * Replay-backed proof: /agents-live with three parallel children keeps a single
+     * native SelectListWidget highlight that moves on Down (no stale Accent on row 1).
+     */
+    public function testAgentsLivePickerArrowMovesSingleNativeHighlight(): void
+    {
+        $pane = $this->tmux->startDetached(
+            command: $this->agentCommand(),
+            prefix: 'tui-subagent-live-picker-highlight',
+            width: 140,
+            height: 50,
+            cwd: $this->testProjectDir,
+        );
+
+        $snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
+        if (!is_dir($snapshotDir) && !mkdir($snapshotDir, 0o777, true) && !is_dir($snapshotDir)) {
+            throw new \RuntimeException('Failed to create snapshot dir: '.$snapshotDir);
+        }
+
+        try {
+            $sessionId = $this->createSessionAndWaitForAssistant($pane);
+            SubagentProgressEventsFixture::writeThreeCompletedChildren($this->testProjectDir, $sessionId);
+
+            $this->tmux->sendKey($pane, 'C-u');
+            $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
+            $this->tmux->sendKey($pane, 'Enter');
+            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForCaptureContains($pane, 'agent_e2e_alpha_pick', 12.0, 'Resumed transcript must show alpha artifact');
+
+            $this->tmux->sendKey($pane, 'C-u');
+            $this->tmux->sendLiteral($pane, '/agents-live');
+            $this->tmux->sendKey($pane, 'Enter');
+            $this->tmux->waitForCaptureContains($pane, 'Agents live', 10.0, 'Agents live picker must open');
+            $this->tmux->waitForCaptureContains($pane, 'agent_e2e_bravo_pick', 10.0, 'Picker must list bravo child');
+            $this->tmux->waitForCaptureContains($pane, 'agent_e2e_charlie_pick', 10.0, 'Picker must list charlie child');
+
+            $ids = ['agent_e2e_alpha_pick', 'agent_e2e_bravo_pick', 'agent_e2e_charlie_pick'];
+            $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-picker-before-down');
+
+            $initial = $this->waitForPickerRowStyles($pane, $ids, static function (array $rows): bool {
+                return $rows['agent_e2e_alpha_pick']['native']
+                    && !$rows['agent_e2e_bravo_pick']['native']
+                    && !$rows['agent_e2e_charlie_pick']['native']
+                    && 1 === self::countNativePickerRows($rows);
+            }, 'Initial picker must show exactly one native highlight on row 1');
+
+            $this->assertFalse($initial['agent_e2e_alpha_pick']['accent'], 'Row 1 must not carry manual Accent');
+            $this->assertFalse($initial['agent_e2e_bravo_pick']['accent']);
+            $this->assertFalse($initial['agent_e2e_charlie_pick']['accent']);
+            $this->assertPickerRowCount($pane, $ids, 3);
+
+            $this->tmux->sendKey($pane, 'Down');
+            $afterDown = $this->waitForPickerRowStyles($pane, $ids, static function (array $rows): bool {
+                return !$rows['agent_e2e_alpha_pick']['native']
+                    && $rows['agent_e2e_bravo_pick']['native']
+                    && !$rows['agent_e2e_charlie_pick']['native']
+                    && 1 === self::countNativePickerRows($rows);
+            }, 'After Down, exactly one native highlight must move to row 2');
+            $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-picker-after-down');
+
+            $this->assertFalse($afterDown['agent_e2e_alpha_pick']['accent'], 'Row 1 must lose any Accent/style after Down');
+            $this->assertFalse($afterDown['agent_e2e_bravo_pick']['accent']);
+            $this->assertFalse($afterDown['agent_e2e_charlie_pick']['accent']);
+            $this->assertTrue(
+                str_contains($afterDown['agent_e2e_bravo_pick']['line'], '→')
+                && str_contains($afterDown['agent_e2e_bravo_pick']['line'], "\x1b[1m"),
+                'Row 2 must use shared native selected-row marker/style',
+            );
+            $this->assertPickerRowCount($pane, $ids, 3);
+
+            $this->tmux->sendKey($pane, 'C-d');
+        } catch (\Throwable $e) {
+            try {
+                $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-picker-failure');
+            } catch (\Throwable) {
+            }
+            try {
+                $this->tmux->sendKey($pane, 'C-d');
+            } catch (\Throwable) {
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * @param list<string>                                                                   $artifactIds
+     * @param callable(array<string, array{line: string, native: bool, accent: bool}>): bool $predicate
+     *
+     * @return array<string, array{line: string, native: bool, accent: bool}>
+     */
+    private function waitForPickerRowStyles(TmuxPane $pane, array $artifactIds, callable $predicate, string $message): array
+    {
+        $last = [];
+        $this->tmux->waitForCallback(
+            $pane,
+            function (string $_cap) use ($pane, $artifactIds, $predicate, &$last): bool {
+                $last = $this->pickerRowStylesFromAnsi($this->tmux->captureAnsi($pane), $artifactIds);
+                if (\count($last) !== \count($artifactIds)) {
+                    return false;
+                }
+
+                return $predicate($last);
+            },
+            timeout: 10.0,
+            message: $message,
+            history: 0,
+        );
+
+        return $last;
+    }
+
+    /**
+     * @param list<string> $artifactIds
+     *
+     * @return array<string, array{line: string, native: bool, accent: bool}>
+     */
+    private function pickerRowStylesFromAnsi(string $ansi, array $artifactIds): array
+    {
+        $out = [];
+        $lines = explode("\n", $ansi);
+
+        // Prefer the Agents-live list region over earlier transcript artifact cards.
+        $start = 0;
+        foreach ($lines as $i => $line) {
+            if (str_contains($line, 'Agents live')) {
+                $start = $i;
+                break;
+            }
+        }
+
+        for ($i = $start, $n = \count($lines); $i < $n; ++$i) {
+            $line = $lines[$i];
+            foreach ($artifactIds as $artifactId) {
+                if (!str_contains($line, $artifactId) || isset($out[$artifactId])) {
+                    continue;
+                }
+                // Picker rows are SelectList lines (→ selected / two-space unselected), not transcript cards.
+                if (!preg_match('/(?:→| {2})\s*\S+\s*\[/', $line)) {
+                    continue;
+                }
+                $hasBold = (bool) preg_match('/\x1b\[(?:\d+;)*1m/', $line);
+                $hasArrow = str_contains($line, '→');
+                // Manual Accent is a foreground color on the label without the native selected bold+arrow pair.
+                $hasFgColor = (bool) preg_match('/\x1b\[(?:38;5;\d+|3[0-7]|9[0-7]|38;2;\d+;\d+;\d+)m/', $line);
+                $out[$artifactId] = [
+                    'line' => $line,
+                    'native' => $hasArrow && $hasBold,
+                    'accent' => $hasFgColor && !($hasArrow && $hasBold),
+                ];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, array{line: string, native: bool, accent: bool}> $rows
+     */
+    private static function countNativePickerRows(array $rows): int
+    {
+        return (int) array_sum(array_column($rows, 'native'));
+    }
+
+    /**
+     * @param list<string> $artifactIds
+     */
+    private function assertPickerRowCount(TmuxPane $pane, array $artifactIds, int $expected): void
+    {
+        $plain = $this->tmux->capturePlain($pane);
+        $pickerRegion = $plain;
+        $marker = strrpos($plain, 'Agents live');
+        if (false !== $marker) {
+            $pickerRegion = substr($plain, $marker);
+        }
+
+        $pickerRowCount = 0;
+        foreach (explode("\n", $pickerRegion) as $line) {
+            if (!preg_match('/(?:→| {2})\s*\S+\s*\[/', $line)) {
+                continue;
+            }
+            foreach ($artifactIds as $artifactId) {
+                if (str_contains($line, $artifactId)) {
+                    ++$pickerRowCount;
+                    break;
+                }
+            }
+        }
+
+        $this->assertSame(
+            $expected,
+            $pickerRowCount,
+            'Agents-live picker region must show exactly '.$expected.' unique child rows (no duplicates)',
+        );
+    }
+
+    private function saveAnsiSnapshot(TmuxPane $pane, string $snapshotDir, string $tag): void
+    {
+        $ansi = $this->tmux->captureAnsi($pane);
+        $path = \sprintf('%s/%s-%s.ansi', $snapshotDir, $tag, (new \DateTimeImmutable())->format('Ymd-His-u'));
+        file_put_contents($path, $ansi);
+    }
+
     private function createSessionAndWaitForAssistant(TmuxPane $pane): string
     {
         $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
