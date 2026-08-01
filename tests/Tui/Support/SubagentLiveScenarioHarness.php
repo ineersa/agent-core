@@ -340,7 +340,7 @@ final class SubagentLiveScenarioHarness
     public function pickerLabels(): array
     {
         $children = $this->state->subagentLiveCatalog->all();
-        $items = SubagentLivePickerController::buildItems($children, $this->screen->theme());
+        $items = SubagentLivePickerController::buildItems($children);
 
         return array_map(static fn (array $row): string => $row['label'], $items);
     }
