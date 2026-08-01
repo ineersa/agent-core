@@ -16,7 +16,6 @@ use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
-use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
@@ -132,14 +131,16 @@ final class SubagentLivePickerController
     }
 
     /**
+     * Plain labels only — {@see SelectListWidget} owns selected-row marker/style.
+     *
      * @param list<SubagentLiveChildDTO> $children
      *
      * @return list<array{value: string, label: string}>
      */
-    public static function buildItems(array $children, TuiTheme $theme, int $selectedIndex = -1): array
+    public static function buildItems(array $children): array
     {
         $items = [];
-        foreach ($children as $i => $child) {
+        foreach ($children as $child) {
             $task = $child->taskSummary;
             if (\strlen($task) > 48) {
                 $task = substr($task, 0, 45).'...';
@@ -154,9 +155,6 @@ final class SubagentLivePickerController
                     $suffix .= ' '.FooterStateInitializer::shortModelName($child->model);
                 }
                 $label .= ' · '.$suffix;
-            }
-            if ($i === $selectedIndex) {
-                $label = $theme->color(ThemeColorEnum::Accent, $label);
             }
             $items[] = [
                 'value' => $child->artifactId,
@@ -202,7 +200,7 @@ final class SubagentLivePickerController
             'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
         ]);
 
-        $items = self::buildItems($children, $theme, selectedIndex: 0);
+        $items = self::buildItems($children);
         $listWidget = new SelectListWidget(
             items: $items,
             maxVisible: 10,
@@ -212,8 +210,7 @@ final class SubagentLivePickerController
         $picker = $this;
 
         // Arrow navigation uses SelectListWidget native highlight only.
-        // Rebuilding items via setItems() on every SelectionChangeEvent leaves stale
-        // overlay rows (incremental render) and was reported as growing duplicate rows.
+        // Do not bake Accent into labels or rebuild items on SelectionChangeEvent.
 
         $listWidget->onSelect(static function (SelectEvent $event) use ($picker, $screen, $state): void {
             $item = $event->getItem();
@@ -233,7 +230,7 @@ final class SubagentLivePickerController
             $picker->closePicker();
         });
 
-        $listWidget->onInput(static function (string $data) use ($picker, $listWidget, &$children, $theme, $screen, $state): bool {
+        $listWidget->onInput(static function (string $data) use ($picker, $listWidget, &$children, $screen, $state): bool {
             if ('e' === $data || 'E' === $data) {
                 $picker->exportSelected($listWidget, $screen, $state);
 
@@ -244,7 +241,7 @@ final class SubagentLivePickerController
                 return false;
             }
 
-            $picker->dismissSelected($listWidget, $children, $theme, $screen, $state);
+            $picker->dismissSelected($listWidget, $children, $screen, $state);
 
             return true;
         });
@@ -359,7 +356,6 @@ final class SubagentLivePickerController
     private function dismissSelected(
         SelectListWidget $listWidget,
         array &$children,
-        TuiTheme $theme,
         ChatScreen $screen,
         TuiSessionState $state,
     ): void {
@@ -410,17 +406,9 @@ final class SubagentLivePickerController
             return;
         }
 
-        $idx = 0;
-        $selectedValue = (string) ($selected['value'] ?? '');
-        foreach ($children as $i => $remainingChild) {
-            if ($remainingChild->artifactId === $selectedValue) {
-                $idx = $i;
-                break;
-            }
-        }
-        $idx = min($idx, \count($children) - 1);
-        $listWidget->setItems(self::buildItems($children, $theme, selectedIndex: $idx));
-        $listWidget->setSelectedIndex($idx);
+        // Selected artifact was just removed; previous dead search always resolved to 0.
+        $listWidget->setItems(self::buildItems($children));
+        $listWidget->setSelectedIndex(0);
 
         $this->showPickerFeedback(\sprintf('Removed %s from /agents-live.', $removed->agentName));
     }
