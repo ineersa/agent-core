@@ -461,6 +461,18 @@ final class LlmStepResultHandlerTest extends TestCase
             retryAttempts: 0,
             model: 'test-model');
 
+        // Session 5 regression path: no-status structured stream overload classified
+        // by LlmProviderErrorClassifier (not a hand-written HTTP 503 payload).
+        $classifiedError = $classifier->classify([
+            'type' => 'RuntimeException',
+            'message' => '[server_is_overloaded/service_unavailable_error]',
+        ]);
+        $this->assertTrue($classifiedError['retryable'] ?? false);
+        $this->assertSame(
+            \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier::CATEGORY_SERVER,
+            $classifiedError['error_category'] ?? null,
+        );
+
         $message = new LlmStepResult(
             runId: 'run-auto-retry-1',
             turnNo: 1,
@@ -470,13 +482,7 @@ final class LlmStepResultHandlerTest extends TestCase
             assistantMessage: null,
             usage: [],
             stopReason: null,
-            error: [
-                'type' => 'RuntimeException',
-                'message' => 'Server Error',
-                'http_status_code' => 503,
-                'retryable' => true,
-                'user_message' => 'LLM provider server error (HTTP 503 — retryable). Will retry automatically.',
-            ],
+            error: $classifiedError,
         );
 
         $result = $handler->handle($message, $state);
@@ -493,6 +499,7 @@ final class LlmStepResultHandlerTest extends TestCase
             }
         }
         $this->assertNotNull($failed);
+        $this->assertTrue($failed->payload['retryable'] ?? false);
         $this->assertSame(1, $failed->payload['retry_attempt'] ?? null);
         $this->assertSame(2, $failed->payload['max_retries'] ?? null);
 
