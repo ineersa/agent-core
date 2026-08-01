@@ -1,0 +1,49 @@
+{
+    "$schema": "Replay fixture for visible thinking multi-row / wrap proof in real tmux",
+    "model": "llama_cpp_test/test",
+    "provider_id": "llama_cpp_test",
+    "reasoning": "off",
+    "recorded_at": "2026-08-01T00:00:00+00:00",
+    "recording_source": "Manual",
+    "input": {
+        "messages": [
+            {
+                "role": "user",
+                "content": "visible-thinking-wrap-probe"
+            }
+        ]
+    },
+    "usage": {
+        "input_tokens": 8,
+        "output_tokens": 40,
+        "total_tokens": 48
+    },
+    "stop_reason": "stop",
+    "expected_text": "done",
+    "deltas": [
+        {
+            "type": "thinking",
+            "content": "**THINKWRAP-A session-37-shaped bold summary about stale websocket reuse and non-retryable classification.**"
+        },
+        {
+            "type": "thinking",
+            "content": " "
+        },
+        {
+            "type": "thinking",
+            "content": "**THINKWRAP-B second bold summary segment arrives as a streaming delta with no newline between spans.**"
+        },
+        {
+            "type": "thinking",
+            "content": "\nTHINKWRAP-C explicit second thinking paragraph must occupy another terminal row.\n"
+        },
+        {
+            "type": "thinking",
+            "content": "THINKWRAP-D third explicit thinking line for multi-row proof."
+        },
+        {
+            "type": "text",
+            "content": "done"
+        }
+    ]
+}
