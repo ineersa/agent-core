@@ -524,6 +524,57 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringNotContainsString('Output capped', $result);
     }
 
+    /**
+     * Thesis: multi-megabyte completed bash output is never fully loaded into
+     * the model-facing result. BashTool uses bounded log-tail reads and returns
+     * a compact notice with exact total bytes + existing background log path.
+     * The full log remains only at that path (no output-cap duplication).
+     */
+    public function testOversizedCompletedOutputReturnsBoundedNoticeWithoutLoadingFullLog(): void
+    {
+        $this->bashConfig = new BashToolConfig(
+            defaultTimeoutSeconds: 30,
+            backgroundPromptThresholdSeconds: 60,
+            pollIntervalMicros: 50_000,
+            logTailChars: 1024,
+        );
+        $this->createManager();
+
+        $totalBytes = 3_000_000;
+        $result = $this->withContext(self::TEST_SESSION, function () use ($totalBytes): string {
+            // Write a large deterministic blob via Python so the shell log is multi-MB.
+            return ($this->makeBashTool())([
+                'command' => \sprintf(
+                    "python3 -c 'import sys; sys.stdout.write(\"X\" * %d)'",
+                    $totalBytes,
+                ),
+            ]);
+        });
+
+        $this->assertStringContainsString('Bash output truncated:', $result);
+        $this->assertStringContainsString($totalBytes.' bytes', $result);
+        $this->assertStringContainsString('Full output remains at the background log:', $result);
+        $this->assertStringContainsString('Do not rerun the original command', $result);
+        $this->assertStringNotContainsString('tokens', $result, 'Bounded bash notice must not invent token estimates');
+        // Notice itself must stay compact (well under generic OutputCap default).
+        $this->assertLessThan(2000, \strlen($result), 'Bounded notice must remain compact');
+
+        // Full log exists on disk and is not copied into output-cap storage.
+        if (preg_match('/Full output remains at the background log:\n(.+)/', $result, $matches)) {
+            $logPath = trim($matches[1]);
+            $this->assertFileExists($logPath);
+            $this->assertSame($totalBytes, filesize($logPath));
+        } else {
+            $this->fail('Expected background log path in bounded notice');
+        }
+
+        $outputCapDir = $this->tmpDir.'/output-cap';
+        if (is_dir($outputCapDir)) {
+            $capFiles = glob($outputCapDir.'/*.txt') ?: [];
+            $this->assertSame([], $capFiles, 'Bash must not duplicate oversized logs into output-cap storage');
+        }
+    }
+
     public function testParallelBatchStillInvokesBackgroundPromptAdapter(): void
     {
         $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);

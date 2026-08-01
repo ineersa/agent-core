@@ -26,32 +26,6 @@ use function Symfony\Component\String\u;
  */
 final readonly class OutputCapToolResultProcessor implements ToolResultProcessorInterface
 {
-    /**
-     * Conventional tool argument keys used to determine path-specific caps.
-     *
-     * When a tool call carries one of these argument keys, its value is used
-     * to select the applicable cap: doc-like extensions (.md, .txt, .toon)
-     * get the higher docCap; everything else gets defaultCap.
-     *
-     * New tools with a different path argument name should either adopt one
-     * of these conventional keys or extend this list in the processor.
-     *
-     * @var list<string>
-     */
-    private const array PATH_ARGUMENT_KEYS = ['path', 'file_path', 'file'];
-
-    /**
-     * Tools whose successful result is a dense document-style report/handoff.
-     *
-     * These tools have no path argument, so path-based cap selection would
-     * otherwise fall back to defaultCap (20k). Classify them as doc-like so
-     * they use docCap (50k) without raising the global default for code/tool
-     * output. Keep this list narrow: handoff/report tools only.
-     *
-     * @var list<string>
-     */
-    private const array DOCUMENT_REPORT_TOOL_NAMES = ['fork', 'subagent'];
-
     public function __construct(
         private OutputCap $outputCap,
     ) {
@@ -163,7 +137,7 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
             return $capResult->noticeText;
         }
 
-        $originalPath = $this->extractPathFromArguments($toolCall->arguments);
+        $originalPath = OutputCapPathResolver::extractPathFromArguments($toolCall->arguments);
 
         // Only produce read-specific notice when we have the original path.
         // Without it, fall back to the generic saved-artifact notice (head/grep).
@@ -211,50 +185,15 @@ STRING;
     }
 
     /**
-     * Resolve the path used for cap selection.
-     *
-     * Preference order:
-     * 1. Explicit path-like tool argument (read/bash file context).
-     * 2. Synthetic .md path for successful document-report tools (fork/subagent)
-     *    so OutputCap::capForPath applies docCap without changing defaultCap.
-     * 3. null → defaultCap.
-     *
-     * Error results from report tools keep defaultCap (null path): failed
-     * envelopes are short status text, not handoff documents.
+     * Resolve the path used for cap selection via the shared resolver.
      */
     private function resolveCapPath(ToolCall $toolCall, ToolResult $result): ?string
     {
-        $path = $this->extractPathFromArguments($toolCall->arguments);
-        if (null !== $path) {
-            return $path;
-        }
-
-        if (!$result->isError && \in_array($toolCall->toolName, self::DOCUMENT_REPORT_TOOL_NAMES, true)) {
-            // Virtual doc path: only used for extension-based docCap selection.
-            return 'handoff-report.md';
-        }
-
-        return null;
-    }
-
-    /**
-     * Find a file-path value from tool call arguments.
-     *
-     * Checks known path-carrying argument keys and returns the first
-     * string value found.  Returns null when no path argument exists.
-     *
-     * @param array<string, mixed> $arguments
-     */
-    private function extractPathFromArguments(array $arguments): ?string
-    {
-        foreach (self::PATH_ARGUMENT_KEYS as $key) {
-            $value = $arguments[$key] ?? null;
-            if (\is_string($value) && '' !== $value) {
-                return $value;
-            }
-        }
-
-        return null;
+        return OutputCapPathResolver::resolveCapPath(
+            $toolCall->toolName,
+            $toolCall->arguments,
+            $result->isError,
+        );
     }
 
     /**

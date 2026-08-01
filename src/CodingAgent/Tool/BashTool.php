@@ -344,24 +344,50 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
     }
 
     /**
-     * Read the full log for the exact immutable background-process record (completed foreground process).
+     * Read bounded output for the exact immutable background-process record.
+     *
+     * Foreground completion must never materialize multi-megabyte logs into PHP
+     * strings. Use the existing log tail bound (bash.log_tail_chars). When the
+     * log exceeds that bound, return a compact notice that points at the live
+     * background log path (the full artifact) instead of duplicating into
+     * output-cap storage.
      *
      * @param int         $recordId  Immutable background-process record ID
      * @param string|null $sessionId Session ownership filter
      *
-     * @return string The log content, or empty string on failure
+     * @return string The log content, or a compact oversized-output notice
      */
     private function readOutput(int $recordId, ?string $sessionId): string
     {
         try {
-            // Read full log content for completed foreground commands so the
-            // central OutputCapToolResultProcessor sees the actual command output
-            // and produces the primary cap / compact ToolResult.  Tail-only reads
-            // hide the true output size and force late-hook double-capping.
             // Use the immutable DB record ID — never re-resolve by OS PID.
-            $result = $this->manager->readLogFullForRecord($recordId, $sessionId);
+            $result = $this->manager->readLogTailForRecord(
+                $recordId,
+                $this->config->logTailChars,
+                $sessionId,
+            );
 
-            return $result->content;
+            if (!$result->truncated) {
+                return $result->content;
+            }
+
+            // Keep this notice well under the generic OutputCap default so the
+            // central processor does not re-cap it or copy the background log.
+            return \sprintf(
+                "[Bash output truncated: %d bytes > %d-byte read bound]\n".
+                "Full output remains at the background log:\n%s\n".
+                "\n".
+                "Next: inspect the log with a bound, e.g.\n".
+                "- bash(command: \"tail -c %d %s\")\n".
+                "- bash(command: \"grep -n -- 'PATTERN' %s | head -50\")\n".
+                'Do not rerun the original command or load the full log unbound.',
+                $result->totalBytes,
+                $this->config->logTailChars,
+                $result->logPath,
+                $this->config->logTailChars,
+                escapeshellarg($result->logPath),
+                escapeshellarg($result->logPath),
+            );
         } catch (\RuntimeException $e) {
             $this->logger->warning('bash_tool.read_output_failed', [
                 'component' => 'tool.bash',

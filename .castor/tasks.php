@@ -67,6 +67,7 @@ use function CastorTasks\assert_castor_check_run_no_process_leaks;
 use function CastorTasks\begin_castor_check_llama_proxy_cache_guard;
 use function CastorTasks\castor_check_lock_enabled;
 use function CastorTasks\check_llm_generation_ready;
+use function CastorTasks\cleanup_exact_qa_run_cache_roots;
 use function CastorTasks\finalize_qa_run_tui_tmux_sessions;
 use function CastorTasks\initialize_qa_check_run;
 use function CastorTasks\is_llm_mode;
@@ -296,7 +297,12 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
 function finalize_castor_check_run(string $qaRunId, array $failures, array $timings, array $laneSteps): void
 {
     assert_castor_check_lane_artifacts_integrity($laneSteps);
-    assert_castor_check_run_no_process_leaks($qaRunId);
+    // Only delete exact-run cache roots after process/tmux leak assertion succeeds.
+    // On leak failure assert_castor_check_run_no_process_leaks exits via fail_quality
+    // and never returns true, so caches remain for diagnosis.
+    if (assert_castor_check_run_no_process_leaks($qaRunId)) {
+        cleanup_exact_qa_run_cache_roots($qaRunId);
+    }
 
     if ([] !== $failures) {
         fail_quality('quality failed:'.\PHP_EOL.format_step_failures($failures));
