@@ -59,6 +59,18 @@ final class LlmProviderErrorClassifier
     ];
 
     /**
+     * Exact structured provider signals for transient server overload / unavailability.
+     *
+     * Matched only as whole allowlisted tokens (e.g. from bounded `[code/type]` stream
+     * text or response_error_code / response_error_type). Do not broaden to prose like
+     * "overloaded" or "service unavailable".
+     */
+    private const array TRANSIENT_SERVER_STRUCTURED_SIGNALS = [
+        'server_is_overloaded',
+        'service_unavailable_error',
+    ];
+
+    /**
      * Context-overflow indicator patterns found in provider error messages
      * when the request exceeds the model's context window.
      */
@@ -113,10 +125,13 @@ final class LlmProviderErrorClassifier
             \is_string($previousExceptionMessage) ? $previousExceptionMessage : '',
         ], static fn (string $v): bool => '' !== $v));
 
-        // Priority-based classification using composite text and structured fields
+        // Priority-based classification using composite text and structured fields.
+        // Structured overload/service-unavailable signals run after auth/status and
+        // after message-pattern billing so terminal quota text remains non-retryable.
         [$category, $retryable, $userMessage] = $this->classifyByExceptionType($errorType, $allErrorText, $statusCode)
             ?? $this->classifyByStatusCode($statusCode, $allErrorText, $responseErrorCode, $responseErrorType, $retryAfterMs)
             ?? $this->classifyByMessagePattern($allErrorText)
+            ?? $this->classifyByStructuredServerSignal($responseErrorCode, $responseErrorType, $errorMessage)
             ?? [self::CATEGORY_PROVIDER, false, \sprintf('LLM provider error: %s', self::truncate($errorMessage, 200))];
 
         $result = $error + [
@@ -255,6 +270,48 @@ final class LlmProviderErrorClassifier
         // Terminal billing/quota from message
         if (self::matchesAny($errorMessage, self::TERMINAL_BILLING_PATTERNS)) {
             return [self::CATEGORY_QUOTA_BILLING, false, 'LLM provider quota or billing limit reached. Try switching provider/model or updating your quota.'];
+        }
+
+        return null;
+    }
+
+    /**
+     * Classify allowlisted structured overload / service-unavailable signals.
+     *
+     * Matches exact response_error_code / response_error_type tokens and whole
+     * slash-separated segments inside a bounded bracketed stream message such as
+     * `[server_is_overloaded/service_unavailable_error]`. Substring prose is ignored.
+     *
+     * @return array{string, bool, string}|null
+     */
+    private function classifyByStructuredServerSignal(mixed $responseErrorCode, mixed $responseErrorType, string $errorMessage): ?array
+    {
+        $candidates = [];
+        if (\is_string($responseErrorCode) && '' !== $responseErrorCode) {
+            $candidates[] = $responseErrorCode;
+        }
+        if (\is_string($responseErrorType) && '' !== $responseErrorType) {
+            $candidates[] = $responseErrorType;
+        }
+
+        // Bounded stream form from ResultConverter::generateErrorMessage(): [code/type/param]
+        if (1 === preg_match('/\[([^\]]+)\]/', $errorMessage, $matches)) {
+            foreach (explode('/', $matches[1]) as $segment) {
+                $segment = trim($segment);
+                if ('' !== $segment) {
+                    $candidates[] = $segment;
+                }
+            }
+        }
+
+        foreach ($candidates as $candidate) {
+            if (\in_array(strtolower($candidate), self::TRANSIENT_SERVER_STRUCTURED_SIGNALS, true)) {
+                return [
+                    self::CATEGORY_SERVER,
+                    true,
+                    'LLM provider server temporarily unavailable (retryable). Will retry automatically.',
+                ];
+            }
         }
 
         return null;

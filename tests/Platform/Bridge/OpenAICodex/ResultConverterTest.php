@@ -765,6 +765,9 @@ final class ResultConverterTest extends TestCase
      * Regression test: 'error' events during streaming must throw immediately
      * instead of being silently ignored (which caused a null assistant message
      * and HTTP 400 on the next turn).
+     *
+     * Session 5 signal: Codex emits structured overload/service-unavailable codes
+     * that normalize to a privacy-safe bracketed `[code/type]` message only.
      */
     public function testStreamErrorEventThrowsRuntimeException(): void
     {
@@ -772,18 +775,26 @@ final class ResultConverterTest extends TestCase
         $httpResponse = $this->createStub(ResponseInterface::class);
         $httpResponse->method('getStatusCode')->willReturn(200);
 
+        $secret = 'LEAKED_STREAM_OVERLOAD_SECRET_MARKER_4b91e2d7';
         $events = [
             ['type' => 'response.output_text.delta', 'delta' => 'Partial'],
-            ['type' => 'error', 'error' => ['code' => 'server_error', 'message' => 'Internal error']],
+            ['type' => 'error', 'error' => [
+                'code' => 'server_is_overloaded',
+                'type' => 'service_unavailable_error',
+                'message' => $secret,
+            ]],
         ];
 
         $raw = new InMemoryRawResult([], $events, $httpResponse);
 
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('[server_error]');
-
-        $streamResult = $converter->convert($raw, ['stream' => true]);
-        iterator_to_array($streamResult->getContent());
+        try {
+            $streamResult = $converter->convert($raw, ['stream' => true]);
+            iterator_to_array($streamResult->getContent());
+            $this->fail('Expected stream error');
+        } catch (RuntimeException $e) {
+            $this->assertSame('[server_is_overloaded/service_unavailable_error]', $e->getMessage());
+            $this->assertStringNotContainsString($secret, $e->getMessage());
+        }
     }
 
     /**
