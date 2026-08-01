@@ -9,11 +9,13 @@ use Symfony\AI\Platform\Message\AssistantMessage;
 final readonly class LlmStepResult extends AbstractAgentBusMessage
 {
     /**
-     * @param array<string, int|float>   $usage
-     * @param array<string, mixed>|null  $error
-     * @param list<array<string, mixed>> $modelNotifications generic model notifications
-     *                                                       produced by transform context hooks
-     *                                                       during this LLM step
+     * @param array<string, int|float>                   $usage
+     * @param array<string, mixed>|null                  $error
+     * @param list<array<string, mixed>>                 $modelNotifications                 generic model notifications
+     *                                                                                       produced by transform context hooks
+     *                                                                                       during this LLM step
+     * @param list<array{name: string, server?: string}> $availableTools                     compact final provider-visible tools for this request
+     * @param int                                        $availableToolsSchemaTokensEstimate approximate schema token cost for the final tool set
      */
     public function __construct(
         string $runId,
@@ -27,6 +29,8 @@ final readonly class LlmStepResult extends AbstractAgentBusMessage
         public ?array $error = null,
         public ?string $toolsRef = null,
         public array $modelNotifications = [],
+        public array $availableTools = [],
+        public int $availableToolsSchemaTokensEstimate = 0,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
     }

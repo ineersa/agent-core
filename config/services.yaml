@@ -942,6 +942,13 @@ services:
       $hooks: !tagged_iterator coding_agent.before_compaction_hook
 
   # LlmPlatformAdapter hooks — ImageGatingConvertHook registers as a convert_to_llm hook.
+  # Keep toolbox/toolSetResolver required: nullable ctor defaults would otherwise
+  # leave processInput() with name-string tools and empty available-tools snapshots.
+  Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor:
+    arguments:
+      $toolbox: '@Symfony\AI\Agent\Toolbox\ToolboxInterface'
+      $toolSetResolver: '@Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface'
+
   Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter:
     arguments:
       $transformContextHooks: !tagged_iterator agent_core.transform_context_hook

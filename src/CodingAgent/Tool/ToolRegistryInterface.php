@@ -78,6 +78,7 @@ interface ToolRegistryInterface
      * @param array<string, mixed> $parametersJsonSchema JSON Schema for tool parameters
      * @param ToolHandlerInterface $handler              Typed execution handler
      * @param ToolExecutionMode    $executionMode        Execution mode (default: Sequential)
+     * @param string|null          $mcpServer            Authoritative MCP server name when this dynamic tool is MCP-backed
      *
      * @throws \InvalidArgumentException on name conflict with permanent tool
      */
@@ -87,6 +88,7 @@ interface ToolRegistryInterface
         array $parametersJsonSchema,
         ToolHandlerInterface $handler,
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
+        ?string $mcpServer = null,
     ): void;
 
     /**

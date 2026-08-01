@@ -135,6 +135,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                         'stop_reason' => $message->stopReason ?? 'aborted',
                         'usage' => $message->usage,
                         'aborted_assistant' => $abortedAssistantPayload,
+                        ...$this->availableToolsPayload($message),
                     ],
                 ],
                 [
@@ -232,6 +233,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 'step_id' => $message->stepId(),
                 'retry_attempt' => $canAutoRetry || $retriesExhausted ? $nextRetryAttempt : $currentAttempts,
                 'max_retries' => $maxAttempts,
+                ...$this->availableToolsPayload($message),
             ];
             if ($retriesExhausted) {
                 $eventPayload['retries_exhausted'] = true;
@@ -343,6 +345,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 'tool_calls_count' => \count($toolCalls),
                 'assistant_message' => $assistantMessagePayload,
                 'text' => $assistantMessage->asText(),
+                ...$this->availableToolsPayload($message),
             ],
         ]];
 
@@ -595,6 +598,26 @@ final class LlmStepResultHandler implements RunMessageHandler
                 throw new \RuntimeException('Failed to dispatch follow-up AdvanceRun command.', previous: $exception);
             }
         };
+    }
+
+    /**
+     * Compact privacy-safe available-tools snapshot for canonical LLM events.
+     *
+     * Omitted entirely when the request had no provider-visible tools so old
+     * sessions and no-tool calls stay free of empty noise.
+     *
+     * @return array{available_tools?: list<array{name: string, server?: string}>, available_tools_schema_tokens_estimate?: int}
+     */
+    private function availableToolsPayload(LlmStepResult $message): array
+    {
+        if ([] === $message->availableTools) {
+            return [];
+        }
+
+        return [
+            'available_tools' => $message->availableTools,
+            'available_tools_schema_tokens_estimate' => $message->availableToolsSchemaTokensEstimate,
+        ];
     }
 
     /**

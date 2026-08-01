@@ -91,6 +91,17 @@ final class McpToolRegistrarTest extends TestCase
         $this->assertInstanceOf(McpToolHandler::class, $def->handler);
         $this->assertSame('my-server', $def->handler->serverName);
         $this->assertSame('read', $def->handler->mcpName);
+        $this->assertSame('my-server', $def->mcpServer, 'Authoritative catalog server must be preserved on the definition');
+
+        $toolbox = new \Ineersa\CodingAgent\Tool\RegistryBackedToolbox($this->registry);
+        $tools = $toolbox->getTools();
+        $this->assertCount(1, $tools);
+        $this->assertSame('my_server_read', $tools[0]->getName());
+        $this->assertSame(
+            'my-server',
+            $tools[0]->getMetadataValue('mcp_server'),
+            'Authoritative MCP server must reach Symfony Tool metadata via RegistryBackedToolbox',
+        );
     }
 
     public function testHandlerThrowsStructuredToolCallException(): void

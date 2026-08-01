@@ -34,6 +34,7 @@ final readonly class ToolDefinitionDTO
      * @param ToolExecutionMode    $executionMode        Execution mode for this tool (default: Sequential)
      * @param int|null             $timeoutSeconds       Per-tool cooperative timeout budget in seconds; null means no ambient deadline
      * @param string|null          $extensionOwnerClass  Owning extension FQCN when registered by an extension; null for built-ins
+     * @param string|null          $mcpServer            Authoritative MCP server name for dynamic MCP tools; null for non-MCP tools
      */
     public function __construct(
         public readonly string $name,
@@ -45,6 +46,7 @@ final readonly class ToolDefinitionDTO
         public readonly ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
         public readonly ?int $timeoutSeconds = null,
         public readonly ?string $extensionOwnerClass = null,
+        public readonly ?string $mcpServer = null,
     ) {
     }
 }

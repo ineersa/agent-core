@@ -10,11 +10,13 @@ use Symfony\AI\Platform\Result\Stream\Delta\DeltaInterface;
 final readonly class PlatformInvocationResult
 {
     /**
-     * @param list<DeltaInterface>       $deltas
-     * @param array<string, int|float>   $usage
-     * @param array<string, mixed>|null  $error
-     * @param list<array<string, mixed>> $modelNotifications generic model notifications
-     *                                                       produced by transform context hooks
+     * @param list<DeltaInterface>                       $deltas
+     * @param array<string, int|float>                   $usage
+     * @param array<string, mixed>|null                  $error
+     * @param list<array<string, mixed>>                 $modelNotifications                 generic model notifications
+     *                                                                                       produced by transform context hooks
+     * @param list<array{name: string, server?: string}> $availableTools                     compact final provider-visible tools for this request
+     * @param int                                        $availableToolsSchemaTokensEstimate approximate schema token cost for the final tool set
      */
     public function __construct(
         public ?AssistantMessage $assistantMessage,
@@ -23,6 +25,8 @@ final readonly class PlatformInvocationResult
         public ?string $stopReason = null,
         public ?array $error = null,
         public array $modelNotifications = [],
+        public array $availableTools = [],
+        public int $availableToolsSchemaTokensEstimate = 0,
     ) {
     }
 

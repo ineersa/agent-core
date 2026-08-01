@@ -358,6 +358,11 @@ HTML;
             $html .= $readable;
         }
 
+        // Available tools for LLM request events (absence-tolerant).
+        if (\in_array($type, ['llm_step_completed', 'llm_step_failed', 'llm_step_aborted'], true)) {
+            $html .= $this->renderAvailableTools($payload);
+        }
+
         // Full event JSON in collapsible details block.
         $html .= '    <details class="event-raw">'."\n";
         $html .= '      <summary>Raw event</summary>'."\n";
@@ -461,6 +466,65 @@ HTML;
         }
 
         $html .= "  </div>\n";
+
+        return $html;
+    }
+
+    /**
+     * Render the compact available-tools audit snapshot when present.
+     *
+     * Absence-tolerant: missing/malformed snapshots produce no section so old
+     * sessions export unchanged. Never reconstructs tools from catalogs.
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function renderAvailableTools(array $payload): string
+    {
+        $rawTools = $payload['available_tools'] ?? null;
+        if (!\is_array($rawTools) || [] === $rawTools) {
+            return '';
+        }
+
+        $items = [];
+        foreach ($rawTools as $entry) {
+            if (!\is_array($entry)) {
+                continue;
+            }
+            $name = self::strFromArray($entry, 'name');
+            if ('' === $name) {
+                continue;
+            }
+            $server = self::strFromArray($entry, 'server');
+            $label = self::escapeHtml($name);
+            if ('' !== $server) {
+                $label .= ' <span class="tool-server">(MCP server: '.self::escapeHtml($server).')</span>';
+            }
+            $items[] = $label;
+        }
+
+        if ([] === $items) {
+            return '';
+        }
+
+        $estimate = $payload['available_tools_schema_tokens_estimate'] ?? null;
+        $estimateInt = \is_int($estimate)
+            ? $estimate
+            : (is_numeric($estimate) ? (int) $estimate : 0);
+        $count = \count($items);
+        $summary = \sprintf(
+            'Available tools (%d · ~%s schema tokens)',
+            $count,
+            number_format($estimateInt),
+        );
+
+        $html = '    <details class="available-tools" open>'."\n";
+        $html .= '      <summary>'.self::escapeHtml($summary)."</summary>\n";
+        $html .= "      <ul class=\"available-tools-list\">\n";
+        foreach ($items as $item) {
+            $html .= '        <li>'.$item."</li>\n";
+        }
+        $html .= "      </ul>\n";
+        $html .= "    </details>\n";
 
         return $html;
     }
@@ -1052,6 +1116,27 @@ body {
 .event .tool-call:last-child,
 .event .tool-result:last-child {
     border-bottom: none;
+}
+.available-tools {
+    margin: 0.5rem 1rem 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.85rem;
+}
+.available-tools summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+.available-tools-list {
+    margin: 0.4rem 0 0 1.1rem;
+    color: var(--text);
+}
+.available-tools-list .tool-server {
+    color: var(--text-muted);
+    font-size: 0.8rem;
 }
 .event-raw summary {
     font-size: 0.72rem;
