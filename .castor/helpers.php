@@ -1891,6 +1891,9 @@ function collect_qa_check_run_leaked_processes(string $runId): array
 
 /**
  * Fail the QA gate if processes tagged with this run id remain (no auto-kill).
+ *
+ * Returns normally when no exact-run process/tmux leaks remain. On leaks, calls
+ * fail_quality() and never returns, so subsequent cleanup is skipped.
  */
 function assert_castor_check_run_no_process_leaks(string $runId): void
 {
@@ -1935,6 +1938,106 @@ function assert_castor_check_run_no_process_leaks(string $runId): void
     }
 
     fail_quality(implode("\n", $lines));
+}
+
+/**
+ * Delete only the exact-run Symfony/QA cache roots for this castor check.
+ *
+ * Removes `.hatfield/cache-$qaRunId` and sibling worker roots
+ * `.hatfield/cache-$qaRunId-paraT*` under the project root. Preserves the
+ * persistent `.hatfield/cache`, generic `.hatfield/cache-paraT*`, other QA
+ * run ids, absolute/external HATFIELD_CACHE_DIR values, and anything whose
+ * basename is not an exact match for this run.
+ *
+ * Must only be called after exact-run process/tmux leak assertion succeeds.
+ *
+ * @return list<string> absolute paths that were removed
+ */
+function cleanup_exact_qa_run_cache_roots(string $qaRunId, ?string $projectRoot = null): array
+{
+    $segment = sanitize_qa_run_id_segment($qaRunId);
+    // Refuse empty/collapsed ids that would match too broadly.
+    if ('' === $segment || ('qa-run' === $segment && 'qa-run' !== $qaRunId)) {
+        return [];
+    }
+
+    $root = $projectRoot ?? project_root_dir();
+    $rootReal = realpath($root);
+    if (false === $rootReal || !is_dir($rootReal)) {
+        return [];
+    }
+
+    $hatfieldDir = $rootReal.'/.hatfield';
+    if (!is_dir($hatfieldDir)) {
+        return [];
+    }
+
+    // Resolve once — loop-invariant parent guard for every candidate.
+    $hatfieldReal = realpath($hatfieldDir);
+    if (false === $hatfieldReal) {
+        return [];
+    }
+
+    $primaryBase = 'cache-'.$segment;
+    $workerPrefix = $primaryBase.'-paraT';
+    $removed = [];
+
+    $entries = @scandir($hatfieldDir);
+    if (false === $entries) {
+        return [];
+    }
+
+    foreach ($entries as $entry) {
+        if ('.' === $entry || '..' === $entry) {
+            continue;
+        }
+
+        $isPrimary = $entry === $primaryBase;
+        $isWorker = str_starts_with($entry, $workerPrefix);
+        if (!$isPrimary && !$isWorker) {
+            continue;
+        }
+
+        // Worker roots must be exactly cache-<id>-paraT<token>, not a prefix of another id.
+        if ($isWorker && !preg_match('/^'.preg_quote($primaryBase, '/').'-paraT[A-Za-z0-9._-]+$/', $entry)) {
+            continue;
+        }
+
+        $candidate = $hatfieldDir.'/'.$entry;
+        if (!is_dir($candidate) && !is_link($candidate)) {
+            continue;
+        }
+
+        // Refuse paths that escape the project .hatfield tree (symlink escapes).
+        $candidateReal = realpath($candidate);
+        if (false === $candidateReal) {
+            // Dangling link or race — still only remove if basename-owned under .hatfield.
+            if (is_link($candidate)) {
+                remove_path_checked($candidate);
+                // Report absolute path consistently with real-dir removals.
+                $removed[] = $hatfieldReal.\DIRECTORY_SEPARATOR.$entry;
+            }
+
+            continue;
+        }
+
+        if (!str_starts_with($candidateReal, $hatfieldReal.\DIRECTORY_SEPARATOR)) {
+            continue;
+        }
+
+        if (basename($candidateReal) !== $entry) {
+            continue;
+        }
+
+        remove_path_checked($candidateReal);
+        $removed[] = $candidateReal;
+    }
+
+    if ([] !== $removed) {
+        echo 'QA run cache cleanup: removed '.\count($removed)." exact-run cache root(s) for HATFIELD_QA_RUN_ID={$segment}\n";
+    }
+
+    return $removed;
 }
 
 /**

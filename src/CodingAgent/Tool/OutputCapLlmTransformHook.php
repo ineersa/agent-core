@@ -105,15 +105,16 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
             return $message;
         }
 
-        // Extract a file path from the tool call arguments when available
-        // so the late hook applies the same docCap/defaultCap decision as the
-        // primary OutputCapToolResultProcessor.  Without path context, read results
-        // for .md/.txt files under docCap (50k) but over defaultCap (20k) are
-        // incorrectly capped at the lower default cap.
-        $path = $this->extractPathFromArguments(
-            \is_array($message->details['arguments'] ?? null)
-                ? $message->details['arguments']
-                : [],
+        // Apply the same path/category decision as the primary processor so
+        // document-style tools (read .md, hatfield_docs read, fork/subagent/
+        // agent_retrieve) are not recapped at the lower defaultCap.
+        $arguments = \is_array($message->details['arguments'] ?? null)
+            ? $message->details['arguments']
+            : [];
+        $path = OutputCapPathResolver::resolveCapPath(
+            $message->toolName,
+            $arguments,
+            $message->isError,
         );
 
         // Apply capping with a structured result.
@@ -209,26 +210,6 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
     }
 
     /**
-     * Find a file-path value from tool call arguments.
-     *
-     * Checks known path-carrying argument keys and returns the first
-     * string value found.  Returns null when no path argument exists.
-     *
-     * @param array<string, mixed> $arguments
-     */
-    private function extractPathFromArguments(array $arguments): ?string
-    {
-        foreach (['path', 'file_path', 'file'] as $key) {
-            $value = $arguments[$key] ?? null;
-            if (\is_string($value) && '' !== $value) {
-                return $value;
-            }
-        }
-
-        return null;
-    }
-
-    /**
      * Check whether any notification in the list uses delivery=tool_result_replace.
      *
      * @param list<array<string, mixed>>|null $notifications
@@ -267,7 +248,7 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
             return $capResult->noticeText;
         }
 
-        $originalPath = $this->extractPathFromArguments($arguments);
+        $originalPath = OutputCapPathResolver::extractPathFromArguments($arguments);
 
         // Only produce read-specific notice when we have the original path.
         // Without it, fall back to the generic saved-artifact notice (head/grep).
