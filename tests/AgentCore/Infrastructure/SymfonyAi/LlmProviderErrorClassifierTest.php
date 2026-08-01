@@ -220,6 +220,29 @@ final class LlmProviderErrorClassifierTest extends TestCase
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_SERVER, $result['error_category']);
     }
 
+    /**
+     * Session 5: Codex mid-stream structured overload arrives as a bounded
+     * `[code/type]` RuntimeException message with no HTTP status. Must classify
+     * as retryable server error without copying arbitrary provider text.
+     */
+    public function testClassifyNoStatusStructuredServerOverloadIsRetryable(): void
+    {
+        $result = $this->classifier->classify([
+            'type' => 'RuntimeException',
+            'message' => '[server_is_overloaded/service_unavailable_error]',
+            // No http_status_code — WebSocket/SSE stream error path.
+        ]);
+
+        $this->assertTrue($result['retryable']);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_SERVER, $result['error_category']);
+        $this->assertSame(
+            'LLM provider server temporarily unavailable (retryable). Will retry automatically.',
+            $result['user_message'],
+        );
+        $this->assertStringNotContainsString('server_is_overloaded', $result['user_message']);
+        $this->assertStringNotContainsString('service_unavailable_error', $result['user_message']);
+    }
+
     #[DataProvider('retryableServerStatusCodes')]
     public function testClassifyServerErrors(int $statusCode): void
     {
