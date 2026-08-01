@@ -300,8 +300,9 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
  * 1. lane artifact integrity
  * 2. exact-run process/tmux leak assertion (fail_quality never returns on failure)
  * 3. delete exact current QA cache roots (only after leak assertion returns)
- * 4. absolute wall + llama-proxy cache guard + lane-failure quality result
- * 5. quality ok only when all prior steps passed
+ * 4. absolute wall check (post-cleanup)
+ * 5. llama-proxy cache guard
+ * 6. lane-failure quality result or quality ok
  *
  * @param array<string, string>    $failures
  * @param array<string, float|int> $timings
@@ -325,7 +326,7 @@ function finalize_castor_check_run(
 
     // Post-lane quality guards after cleanup: wall/cache growth must still fail the
     // gate, but must not strand exact-run cache trees when those guards fire.
-    castor_check_fail_if_wall_exceeded($checkWallDeadline, 'before post-lane finalizers');
+    castor_check_fail_if_wall_exceeded($checkWallDeadline, 'during post-lane finalizers (after exact-run cache cleanup)');
     assert_castor_check_llama_proxy_cache_unchanged($llamaProxyCacheBaseline, $checkWallDeadline);
 
     if ([] !== $failures) {
