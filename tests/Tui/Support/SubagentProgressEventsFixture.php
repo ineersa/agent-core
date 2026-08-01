@@ -263,22 +263,6 @@ final class SubagentProgressEventsFixture
             $jsonl .= json_encode($event, \JSON_THROW_ON_ERROR)."\n";
         }
         file_put_contents($sessionDir.'/events.jsonl', $jsonl);
-
-        foreach ($children as $child) {
-            ChildAgentExportEventsFixture::write(
-                $projectDir,
-                $sessionId,
-                $child['artifact_id'],
-                [
-                    ChildAgentExportEventsFixture::childEvent(
-                        $child['agent_run_id'],
-                        1,
-                        'run_started',
-                        ['user_messages' => [['role' => 'user', 'content' => 'Child-only export marker '.$child['agent_name']]]],
-                    ),
-                ],
-            );
-        }
     }
 
     /**

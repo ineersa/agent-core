@@ -664,14 +664,7 @@ final class SubagentLivePickerControllerTest extends TestCase
      */
     private function countNativeRows(array $rows): int
     {
-        $count = 0;
-        foreach ($rows as $row) {
-            if ($row['native']) {
-                ++$count;
-            }
-        }
-
-        return $count;
+        return (int) array_sum(array_column($rows, 'native'));
     }
 
     private function exportPicker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController

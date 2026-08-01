@@ -271,14 +271,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
      */
     private static function countNativePickerRows(array $rows): int
     {
-        $count = 0;
-        foreach ($rows as $row) {
-            if ($row['native']) {
-                ++$count;
-            }
-        }
-
-        return $count;
+        return (int) array_sum(array_column($rows, 'native'));
     }
 
     /**
