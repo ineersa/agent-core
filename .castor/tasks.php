@@ -297,12 +297,11 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
 function finalize_castor_check_run(string $qaRunId, array $failures, array $timings, array $laneSteps): void
 {
     assert_castor_check_lane_artifacts_integrity($laneSteps);
-    // Only delete exact-run cache roots after process/tmux leak assertion succeeds.
+    // Only delete exact-run cache roots after process/tmux leak assertion returns.
     // On leak failure assert_castor_check_run_no_process_leaks exits via fail_quality
-    // and never returns true, so caches remain for diagnosis.
-    if (assert_castor_check_run_no_process_leaks($qaRunId)) {
-        cleanup_exact_qa_run_cache_roots($qaRunId);
-    }
+    // and never returns, so cleanup below is skipped and caches remain for diagnosis.
+    assert_castor_check_run_no_process_leaks($qaRunId);
+    cleanup_exact_qa_run_cache_roots($qaRunId);
 
     if ([] !== $failures) {
         fail_quality('quality failed:'.\PHP_EOL.format_step_failures($failures));

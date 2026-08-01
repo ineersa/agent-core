@@ -1892,9 +1892,10 @@ function collect_qa_check_run_leaked_processes(string $runId): array
 /**
  * Fail the QA gate if processes tagged with this run id remain (no auto-kill).
  *
- * @return bool true when no exact-run process/tmux leaks remain
+ * Returns normally when no exact-run process/tmux leaks remain. On leaks, calls
+ * fail_quality() and never returns, so subsequent cleanup is skipped.
  */
-function assert_castor_check_run_no_process_leaks(string $runId): bool
+function assert_castor_check_run_no_process_leaks(string $runId): void
 {
     $processLeaks = collect_qa_check_run_leaked_processes($runId);
     $tmuxLeaks = collect_qa_check_run_leaked_tmux_sessions($runId);
@@ -1902,7 +1903,7 @@ function assert_castor_check_run_no_process_leaks(string $runId): bool
     if ([] === $processLeaks && [] === $tmuxLeaks) {
         echo "QA run leak check: ok (no processes or tmux sessions owned by HATFIELD_QA_RUN_ID={$runId})\n";
 
-        return true;
+        return;
     }
 
     $lines = [
@@ -1936,10 +1937,7 @@ function assert_castor_check_run_no_process_leaks(string $runId): bool
         }
     }
 
-    // fail_quality exits; return false is for static analyzers / non-exit test doubles.
     fail_quality(implode("\n", $lines));
-
-    return false;
 }
 
 /**
