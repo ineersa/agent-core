@@ -31,7 +31,9 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         );
 
         // Session-shaped: LlmStepResultHandler commits retryable failure as
-        // llm_step_failed(retryable=true) + committedStatus Failed in the same tail.
+        // llm_step_failed(retryable=true) then trailing ModelNotification specs in the
+        // same tail, with committedStatus Failed. Pending-retry must survive the
+        // ignored notification (literal last-summary checks would wrongly terminalize).
         $retryPending = $projector->apply(
             $current,
             [
@@ -47,6 +49,10 @@ final class DeferredChildRunEventProjectorTest extends TestCase
                     'retry_attempt' => 1,
                     'max_retries' => 2,
                 ]),
+                new AfterTurnCommitEventSummary(2, RunEventTypeEnum::ModelNotification->value, [
+                    'source' => 'transform_hook',
+                    'message' => 'provider diagnostic notification',
+                ]),
             ],
             definitionModel: 'openai-codex/gpt-5.6-sol',
             committedStatus: RunStatus::Failed,
@@ -57,16 +63,22 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertFalse($retryPending->childStatus->isTerminal());
         $this->assertSame(47, $retryPending->childTurnNo);
         $this->assertSame(1, $retryPending->llmStepCount);
+        $this->assertSame(2, $retryPending->lastCommittedSeq);
         $this->assertSame(
             'LLM provider network error (retryable). Will retry automatically.',
             $retryPending->errorMessage,
         );
 
-        // Exhausted/non-retryable failure in the same commit remains terminal Failed.
+        // Later exhausted/non-retryable failure in a batched tail clears pending-retry
+        // and remains terminal Failed (forgotten flag reset would leave Running).
         $exhausted = $projector->apply(
-            $current,
+            $retryPending,
             [
-                new AfterTurnCommitEventSummary(2, RunEventTypeEnum::LlmStepFailed->value, [
+                new AfterTurnCommitEventSummary(3, RunEventTypeEnum::ModelNotification->value, [
+                    'source' => 'transform_hook',
+                    'message' => 'ignored between attempts',
+                ]),
+                new AfterTurnCommitEventSummary(4, RunEventTypeEnum::LlmStepFailed->value, [
                     'error' => [
                         'message' => 'Codex WebSocket request frame could not be sent.',
                         'user_message' => 'Automatic LLM retry attempts exhausted after 2 retry attempt(s).',
@@ -88,7 +100,8 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertSame(RunStatus::Failed, $exhausted->childStatus);
         $this->assertTrue($exhausted->childStatus->isTerminal());
         $this->assertSame(48, $exhausted->childTurnNo);
-        $this->assertSame(1, $exhausted->llmStepCount);
+        $this->assertSame(2, $exhausted->llmStepCount);
+        $this->assertSame(4, $exhausted->lastCommittedSeq);
         $this->assertSame(
             'Automatic LLM retry attempts exhausted after 2 retry attempt(s).',
             $exhausted->errorMessage,

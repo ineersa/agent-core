@@ -57,6 +57,10 @@ final class DeferredChildRunEventProjector
 
         // When the processed tail ends on a still-retryable llm_step_failed, child lifecycle
         // must stay nonterminal even though RunCommit also writes committedStatus=Failed.
+        // Track a flag rather than re-inspecting the literal last summary: LlmStepResultHandler
+        // appends ModelNotification events after LlmStepFailed, so the last summary may be a
+        // non-status event while retry is still pending. The flag survives ignored/non-status
+        // events and clears only on later recognized status-setting events.
         $endsWithRetryPendingLlmFailure = false;
 
         foreach ($summaries as $summary) {
@@ -203,8 +207,10 @@ final class DeferredChildRunEventProjector
         if (null !== $committedStatus) {
             // Same commit that records a still-retryable llm_step_failed also writes
             // committedStatus=Failed. Do not let that override the nonterminal projection.
-            // Later tails (retry start/success/exhausted failure) clear the pending flag and
-            // apply committed status normally.
+            // Rely on endsWithRetryPendingLlmFailure (not "last summary is LlmStepFailed"):
+            // trailing ModelNotification specs keep the flag set without being status events.
+            // Later tails (retry start/success/exhausted failure) clear the flag and apply
+            // committed status normally.
             if (!(RunStatus::Failed === $committedStatus && $endsWithRetryPendingLlmFailure)) {
                 $status = $committedStatus;
             }
