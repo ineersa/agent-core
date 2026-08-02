@@ -7,8 +7,14 @@ namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationOptions;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
+use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
 
 /**
  * @covers \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter
@@ -40,6 +46,50 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertSame('low', $options['thinking_level']);
         $this->assertSame(0.2, $options['temperature']);
         $this->assertSame([], $options['tools'], 'toolsEnabled:false must override any tools key from generic extra options.');
+    }
+
+    public function testSynchronousPlatformInvokeExceptionReturnsRetryableNetworkErrorResult(): void
+    {
+        $platform = $this->createStub(SymfonyPlatformInterface::class);
+        $platform->method('invoke')->willThrowException(
+            new \RuntimeException('Codex WebSocket request frame could not be sent.'),
+        );
+
+        $adapter = new LlmPlatformAdapter(
+            runStore: new InMemoryRunStore(),
+            messageConverter: new AgentMessageConverter(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            platform: $platform,
+            transformContextHooks: [],
+            convertToLlmHooks: [],
+            streamObserver: null,
+            costCalculator: null,
+            logger: new NullLogger(),
+        );
+
+        $result = $adapter->invoke(new ModelInvocationRequest(
+            model: 'openai-codex/gpt-5.6-sol',
+            input: new ModelInvocationInput(
+                runId: 'run-sync-ws-send-failure',
+                turnNo: 1,
+                stepId: 'advance-after-tools-sync',
+                messages: [],
+            ),
+        ));
+
+        $this->assertSame('error', $result->stopReason);
+        $this->assertNull($result->assistantMessage);
+        $this->assertSame([], $result->deltas);
+        $this->assertSame([], $result->usage);
+        $this->assertIsArray($result->error);
+        $this->assertTrue($result->error['retryable'] ?? false);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_NETWORK, $result->error['error_category'] ?? null);
+        $this->assertSame(\RuntimeException::class, $result->error['type'] ?? null);
+        $this->assertSame(
+            'Codex WebSocket request frame could not be sent.',
+            $result->error['message'] ?? null,
+        );
+        $this->assertSame('openai-codex/gpt-5.6-sol', $result->error['request_model'] ?? null);
     }
 
     public function testExtractResponseDiagnosticsOmitsProviderControlledFreeText(): void

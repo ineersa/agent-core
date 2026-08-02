@@ -16,9 +16,98 @@ use PHPUnit\Framework\TestCase;
  * never raw secrets or full arg blobs, while preserving assistant result text and
  * honoring parent-committed status/turn overrides. Completed and failed LLM steps
  * each increment one durable llm_step_count that round-trips through DTO serialization.
+ * Retryable llm_step_failed stays nonterminal so deferred child/fork completion cannot
+ * hand off failure before the bounded auto-retry runs.
  */
 final class DeferredChildRunEventProjectorTest extends TestCase
 {
+    public function testRetryableLlmStepFailedStaysRunningWhileExhaustedFailureIsTerminal(): void
+    {
+        $projector = new DeferredChildRunEventProjector();
+        $current = new DeferredChildRunLifecycleProjectionDTO(
+            childStatus: RunStatus::Running,
+            childTurnNo: 0,
+            lastCommittedSeq: 0,
+        );
+
+        // Session-shaped: LlmStepResultHandler commits retryable failure as
+        // llm_step_failed(retryable=true) then trailing ModelNotification specs in the
+        // same tail, with committedStatus Failed. Pending-retry must survive the
+        // ignored notification (literal last-summary checks would wrongly terminalize).
+        $retryPending = $projector->apply(
+            $current,
+            [
+                new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepFailed->value, [
+                    'error' => [
+                        'message' => 'Codex WebSocket request frame could not be sent.',
+                        'user_message' => 'LLM provider network error (retryable). Will retry automatically.',
+                        'retryable' => true,
+                        'error_category' => 'network',
+                    ],
+                    'retryable' => true,
+                    'step_id' => 'advance-after-tools-sync',
+                    'retry_attempt' => 1,
+                    'max_retries' => 2,
+                ]),
+                new AfterTurnCommitEventSummary(2, RunEventTypeEnum::ModelNotification->value, [
+                    'source' => 'transform_hook',
+                    'message' => 'provider diagnostic notification',
+                ]),
+            ],
+            definitionModel: 'openai-codex/gpt-5.6-sol',
+            committedStatus: RunStatus::Failed,
+            committedTurnNo: 47,
+        );
+
+        $this->assertSame(RunStatus::Running, $retryPending->childStatus);
+        $this->assertFalse($retryPending->childStatus->isTerminal());
+        $this->assertSame(47, $retryPending->childTurnNo);
+        $this->assertSame(1, $retryPending->llmStepCount);
+        $this->assertSame(2, $retryPending->lastCommittedSeq);
+        $this->assertSame(
+            'LLM provider network error (retryable). Will retry automatically.',
+            $retryPending->errorMessage,
+        );
+
+        // Later exhausted/non-retryable failure in a batched tail clears pending-retry
+        // and remains terminal Failed (forgotten flag reset would leave Running).
+        $exhausted = $projector->apply(
+            $retryPending,
+            [
+                new AfterTurnCommitEventSummary(3, RunEventTypeEnum::ModelNotification->value, [
+                    'source' => 'transform_hook',
+                    'message' => 'ignored between attempts',
+                ]),
+                new AfterTurnCommitEventSummary(4, RunEventTypeEnum::LlmStepFailed->value, [
+                    'error' => [
+                        'message' => 'Codex WebSocket request frame could not be sent.',
+                        'user_message' => 'Automatic LLM retry attempts exhausted after 2 retry attempt(s).',
+                        'retryable' => false,
+                        'error_category' => 'network',
+                    ],
+                    'retryable' => false,
+                    'retries_exhausted' => true,
+                    'step_id' => 'advance-after-tools-sync',
+                    'retry_attempt' => 2,
+                    'max_retries' => 2,
+                ]),
+            ],
+            definitionModel: 'openai-codex/gpt-5.6-sol',
+            committedStatus: RunStatus::Failed,
+            committedTurnNo: 48,
+        );
+
+        $this->assertSame(RunStatus::Failed, $exhausted->childStatus);
+        $this->assertTrue($exhausted->childStatus->isTerminal());
+        $this->assertSame(48, $exhausted->childTurnNo);
+        $this->assertSame(2, $exhausted->llmStepCount);
+        $this->assertSame(4, $exhausted->lastCommittedSeq);
+        $this->assertSame(
+            'Automatic LLM retry attempts exhausted after 2 retry attempt(s).',
+            $exhausted->errorMessage,
+        );
+    }
+
     public function testApplyEnforcesPrivacyStatusOverridesAndMalformedArgumentSafety(): void
     {
         $projector = new DeferredChildRunEventProjector();
