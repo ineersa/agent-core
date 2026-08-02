@@ -185,7 +185,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         }
 
         $json = json_encode($schemaRecords, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-        $estimate = false === $json ? 0 : (int) max(0, (int) ceil(\strlen($json) / 4));
+        $estimate = false === $json ? 0 : (int) ceil(\strlen($json) / 4);
 
         return [
             'tools' => $tools,
