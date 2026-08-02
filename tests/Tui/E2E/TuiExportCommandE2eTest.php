@@ -119,13 +119,11 @@ final class TuiExportCommandE2eTest extends TestCase
             $this->assertArrayHasKey('available_tools', $payload);
             $this->assertIsArray($payload['available_tools']);
             $this->assertNotEmpty($payload['available_tools']);
-            $names = [];
-            foreach ($payload['available_tools'] as $entry) {
-                if (\is_array($entry) && \is_string($entry['name'] ?? null) && '' !== $entry['name']) {
-                    $names[] = $entry['name'];
-                }
-            }
-            $this->assertContains('read', $names, 'Compact snapshot must include stable built-in tool name read');
+            $this->assertContains(
+                'read',
+                $payload['available_tools'],
+                'Compact list<string> snapshot must include stable built-in tool name read',
+            );
             $this->assertArrayHasKey('available_tools_schema_tokens_estimate', $payload);
             $this->assertIsInt($payload['available_tools_schema_tokens_estimate']);
             $this->assertGreaterThan(0, $payload['available_tools_schema_tokens_estimate']);

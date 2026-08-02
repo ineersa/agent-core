@@ -201,7 +201,6 @@ final class McpToolRegistrar
                 parametersJsonSchema: $toolDef->inputSchema,
                 handler: $handler,
                 executionMode: ToolExecutionMode::Sequential,
-                mcpServer: $serverName,
             );
 
             // Track as MCP-owned so future stale-removal cleans it up.

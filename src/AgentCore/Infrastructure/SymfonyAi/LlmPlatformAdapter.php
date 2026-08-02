@@ -142,12 +142,13 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     /**
      * Capture the exact final provider-visible tool set after description processing.
      *
-     * Privacy-safe: names + optional MCP server + one aggregate approximate schema
-     * token estimate only. Never includes descriptions, schemas, handlers, or secrets.
+     * Privacy-safe: tool names + one aggregate approximate schema token estimate only.
+     * Never includes descriptions, schemas, handlers, secrets, or separate MCP server labels.
+     * MCP affiliation is conveyed by the model-visible prefixed tool name itself.
      *
      * @param array<string, mixed> $inputOptions
      *
-     * @return array{tools: list<array{name: string, server?: string}>, schema_tokens_estimate: int}
+     * @return array{tools: list<string>, schema_tokens_estimate: int}
      */
     private function captureAvailableToolsSnapshot(array $inputOptions): array
     {
@@ -163,12 +164,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 continue;
             }
 
-            $entry = ['name' => $tool->getName()];
-            $server = $tool->getMetadataValue('mcp_server');
-            if (\is_string($server) && '' !== $server) {
-                $entry['server'] = $server;
-            }
-            $tools[] = $entry;
+            $tools[] = $tool->getName();
 
             $schemaRecords[] = [
                 'type' => 'function',
@@ -405,10 +401,10 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
-     * @param array<string, mixed>                       $requestSummary     Privacy-safe request summary for error diagnostics
-     * @param list<array<string, mixed>>                 $modelNotifications generic model notifications
-     *                                                                       produced by transform context hooks
-     * @param list<array{name: string, server?: string}> $availableTools
+     * @param array<string, mixed>       $requestSummary     Privacy-safe request summary for error diagnostics
+     * @param list<array<string, mixed>> $modelNotifications generic model notifications
+     *                                                       produced by transform context hooks
+     * @param list<string>               $availableTools
      */
     private function consumeStream(
         DeferredResult $deferredResult,
@@ -659,11 +655,11 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
-     * @param list<DeltaInterface>                       $deltas
-     * @param array<string, mixed>                       $requestSummary     Privacy-safe request summary
-     * @param list<array<string, mixed>>                 $modelNotifications generic model notifications
-     *                                                                       from transform context hooks
-     * @param list<array{name: string, server?: string}> $availableTools
+     * @param list<DeltaInterface>       $deltas
+     * @param array<string, mixed>       $requestSummary     Privacy-safe request summary
+     * @param list<array<string, mixed>> $modelNotifications generic model notifications
+     *                                                       from transform context hooks
+     * @param list<string>               $availableTools
      */
     private function errorResult(
         array $deltas,

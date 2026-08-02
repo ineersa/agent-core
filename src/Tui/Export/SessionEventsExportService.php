@@ -475,6 +475,7 @@ HTML;
      *
      * Absence-tolerant: missing/malformed snapshots produce no section so old
      * sessions export unchanged. Never reconstructs tools from catalogs.
+     * Accepts list<string> names; MCP affiliation is the model-visible name prefix.
      *
      * @param array<string, mixed> $payload
      */
@@ -487,19 +488,10 @@ HTML;
 
         $items = [];
         foreach ($rawTools as $entry) {
-            if (!\is_array($entry)) {
+            if (!\is_string($entry) || '' === $entry) {
                 continue;
             }
-            $name = self::strFromArray($entry, 'name');
-            if ('' === $name) {
-                continue;
-            }
-            $server = self::strFromArray($entry, 'server');
-            $label = self::escapeHtml($name);
-            if ('' !== $server) {
-                $label .= ' <span class="tool-server">(MCP server: '.self::escapeHtml($server).')</span>';
-            }
-            $items[] = $label;
+            $items[] = self::escapeHtml($entry);
         }
 
         if ([] === $items) {
@@ -1133,10 +1125,6 @@ body {
 .available-tools-list {
     margin: 0.4rem 0 0 1.1rem;
     color: var(--text);
-}
-.available-tools-list .tool-server {
-    color: var(--text-muted);
-    font-size: 0.8rem;
 }
 .event-raw summary {
     font-size: 0.72rem;

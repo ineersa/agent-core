@@ -119,7 +119,6 @@ final class ToolRegistry implements ToolRegistryInterface
         array $parametersJsonSchema,
         ToolHandlerInterface $handler,
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
-        ?string $mcpServer = null,
     ): void {
         if ('' === $name || '' === $description) {
             throw new \InvalidArgumentException(\sprintf('Dynamic tool name and description must be non-empty strings, got name="%s" description="%s".', $name, $description));
@@ -142,7 +141,6 @@ final class ToolRegistry implements ToolRegistryInterface
             promptLine: '',  // dynamic tools have no prompt metadata
             promptGuidelines: [],
             executionMode: $executionMode,
-            mcpServer: $mcpServer,
         );
     }
 

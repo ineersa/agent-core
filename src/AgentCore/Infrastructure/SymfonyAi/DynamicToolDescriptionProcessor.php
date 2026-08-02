@@ -83,8 +83,6 @@ final readonly class DynamicToolDescriptionProcessor implements InputProcessorIn
                         ? $descriptionOverrides[$tool->getName()]
                         : $tool->getDescription(),
                     parameters: $tool->getParameters(),
-                    // Preserve audit-only metadata (e.g. mcp_server) across description rewrites.
-                    metadata: $tool->getMetadata(),
                 ),
                 $tools,
             );

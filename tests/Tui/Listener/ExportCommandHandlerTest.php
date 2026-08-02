@@ -211,9 +211,9 @@ final class ExportCommandHandlerTest extends TestCase
                 'text' => 'Tools are available.',
                 'stop_reason' => 'end_turn',
                 'available_tools' => [
-                    ['name' => 'read'],
-                    ['name' => 'websearch_search', 'server' => 'websearch'],
-                    ['name' => 'evil<script>', 'server' => 'srv"x'],
+                    'read',
+                    'websearch_search',
+                    'evil<script>',
                 ],
                 'available_tools_schema_tokens_estimate' => 1234,
             ]),
@@ -235,10 +235,10 @@ final class ExportCommandHandlerTest extends TestCase
         $this->assertStringContainsString('class="available-tools"', $html);
         $this->assertStringContainsString('~1,234 schema tokens', $html);
         $this->assertStringContainsString('<li>read</li>', $html);
-        $this->assertStringContainsString('websearch_search', $html);
-        $this->assertStringContainsString('MCP server: websearch', $html);
-        $this->assertStringContainsString('evil&lt;script&gt;', $html);
-        $this->assertStringContainsString('MCP server: srv&quot;x', $html);
+        $this->assertStringContainsString('<li>websearch_search</li>', $html);
+        $this->assertStringContainsString('<li>evil&lt;script&gt;</li>', $html);
+        $this->assertStringNotContainsString('MCP server:', $html);
+        $this->assertStringNotContainsString('tool-server', $html);
 
         $llmCardStart = strpos($html, 'class="event event-llm_step_completed"');
         $this->assertNotFalse($llmCardStart, 'llm_step_completed event card must be present');

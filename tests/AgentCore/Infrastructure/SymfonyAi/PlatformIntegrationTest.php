@@ -145,7 +145,6 @@ final class PlatformIntegrationTest extends TestCase
                         ],
                         'required' => ['query'],
                     ],
-                    metadata: ['mcp_server' => 'websearch'],
                 )];
             }
 
@@ -209,9 +208,9 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame(3, $response->usage['output_tokens']);
         $this->assertSame(10, $response->usage['total_tokens']);
         $this->assertSame(
-            [['name' => 'web_search', 'server' => 'websearch']],
+            ['web_search'],
             $response->availableTools,
-            'Final provider-visible tools must keep authoritative MCP server metadata after description override',
+            'Final provider-visible tool names must be captured after description override',
         );
         $this->assertGreaterThan(
             0,

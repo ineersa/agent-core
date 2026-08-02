@@ -606,7 +606,7 @@ final class LlmStepResultHandler implements RunMessageHandler
      * Omitted entirely when the request had no provider-visible tools so old
      * sessions and no-tool calls stay free of empty noise.
      *
-     * @return array{available_tools?: list<array{name: string, server?: string}>, available_tools_schema_tokens_estimate?: int}
+     * @return array{available_tools?: list<string>, available_tools_schema_tokens_estimate?: int}
      */
     private function availableToolsPayload(LlmStepResult $message): array
     {

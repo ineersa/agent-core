@@ -160,11 +160,6 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
 
     private function toSymfonyTool(ToolDefinitionDTO $definition): Tool
     {
-        $metadata = [];
-        if (null !== $definition->mcpServer && '' !== $definition->mcpServer) {
-            $metadata['mcp_server'] = $definition->mcpServer;
-        }
-
         return new Tool(
             reference: new ExecutionReference(
                 class: $definition->handler::class,
@@ -173,7 +168,6 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             name: $definition->name,
             description: $definition->description,
             parameters: $definition->parametersJsonSchema,
-            metadata: $metadata,
         );
     }
 
