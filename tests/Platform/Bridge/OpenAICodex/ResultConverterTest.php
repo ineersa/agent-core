@@ -956,6 +956,77 @@ final class ResultConverterTest extends TestCase
     }
 
     /**
+     * Codex streams distinct reasoning summary parts without embedded newlines.
+     * Ignoring response.reasoning_summary_part.added glues adjacent bold markers
+     * into "****" (live: "**Planning...fork****Evaluating...edits**").
+     *
+     * Thesis: two summary parts with multi-token first part yield one synthetic
+     * newline at the semantic boundary; intra-part token chunks stay concatenated.
+     */
+    public function testStreamInsertsNewlineBetweenReasoningSummaryParts(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createStub(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
+
+        $events = [
+            ['type' => 'response.output_item.added', 'item' => [
+                'type' => 'reasoning',
+                'id' => 'rs_1',
+                'status' => 'in_progress',
+            ]],
+            ['type' => 'response.reasoning_summary_part.added', 'part' => [
+                'type' => 'summary_text',
+                'text' => '',
+            ]],
+            ['type' => 'response.reasoning_summary_text.delta', 'delta' => '**Planning user-level commit correction via '],
+            ['type' => 'response.reasoning_summary_text.delta', 'delta' => 'fork**'],
+            ['type' => 'response.reasoning_summary_text.done'],
+            ['type' => 'response.reasoning_summary_part.done'],
+            ['type' => 'response.reasoning_summary_part.added', 'part' => [
+                'type' => 'summary_text',
+                'text' => '',
+            ]],
+            ['type' => 'response.reasoning_summary_text.delta', 'delta' => '**Evaluating fork approach for home directory edits**'],
+            ['type' => 'response.reasoning_summary_text.done'],
+            ['type' => 'response.reasoning_summary_part.done'],
+            ['type' => 'response.output_item.done', 'item' => [
+                'type' => 'reasoning',
+                'id' => 'rs_1',
+                'summary' => [
+                    ['type' => 'summary_text', 'text' => '**Planning user-level commit correction via fork**'],
+                    ['type' => 'summary_text', 'text' => '**Evaluating fork approach for home directory edits**'],
+                ],
+                'status' => 'completed',
+            ]],
+            ['type' => 'response.completed', 'response' => ['output' => []]],
+        ];
+
+        $raw = new InMemoryRawResult([], $events, $httpResponse);
+        $streamResult = $converter->convert($raw, ['stream' => true]);
+        $this->assertInstanceOf(StreamResult::class, $streamResult);
+
+        $chunks = iterator_to_array($streamResult->getContent());
+
+        $this->assertInstanceOf(ThinkingStart::class, $chunks[0]);
+        $this->assertInstanceOf(ThinkingDelta::class, $chunks[1]);
+        $this->assertSame('**Planning user-level commit correction via ', $chunks[1]->getThinking());
+        $this->assertInstanceOf(ThinkingDelta::class, $chunks[2]);
+        $this->assertSame('fork**', $chunks[2]->getThinking());
+        // Semantic part boundary — not between ordinary token deltas.
+        $this->assertInstanceOf(ThinkingDelta::class, $chunks[3]);
+        $this->assertSame("\n", $chunks[3]->getThinking());
+        $this->assertInstanceOf(ThinkingDelta::class, $chunks[4]);
+        $this->assertSame('**Evaluating fork approach for home directory edits**', $chunks[4]->getThinking());
+        $this->assertInstanceOf(ThinkingComplete::class, $chunks[5]);
+        $this->assertSame(
+            "**Planning user-level commit correction via fork**\n**Evaluating fork approach for home directory edits**",
+            $chunks[5]->getThinking(),
+        );
+        $this->assertStringNotContainsString('****', $chunks[5]->getThinking());
+    }
+
+    /**
      * 'response.done' is used by some Codex API versions instead of
      * 'response.completed'.  It must be normalized so downstream consumers
      * (usage extraction, tool call emission) treat them identically.

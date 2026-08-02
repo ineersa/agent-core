@@ -273,6 +273,10 @@ final class ResultConverter implements ResultConverterInterface
     {
         $currentThinking = null;
         $currentThinkingSignature = null;
+        // Codex emits semantic response.reasoning_summary_part.added boundaries;
+        // summary_text.delta chunks within a part stay concatenated, but adjacent
+        // parts need a synthetic newline or bold markers glue into "****".
+        $pendingThinkingPartSeparator = false;
         /** @var array<string, ToolCall> $toolCalls */
         $toolCalls = [];
         $sawResponseEvent = false;
@@ -325,6 +329,15 @@ final class ResultConverter implements ResultConverterInterface
                 yield new TextDelta($event['delta']);
             }
 
+            // Semantic summary-part boundary. First part never needs a leading
+            // separator; empty parts do not emit content so they must not invent
+            // blank lines — pending is only consumed by the next reasoning delta.
+            if ('response.reasoning_summary_part.added' === $type) {
+                if (null !== $currentThinking && '' !== $currentThinking) {
+                    $pendingThinkingPartSeparator = true;
+                }
+            }
+
             // Reasoning text deltas (both summary and raw variants).
             // Summary: reasoning_summary_text.delta — the common path.
             // Raw: reasoning_text.delta — when summary:none or the
@@ -335,6 +348,13 @@ final class ResultConverter implements ResultConverterInterface
                 if (null === $currentThinking) {
                     $currentThinking = '';
                     yield new ThinkingStart();
+                }
+                if ($pendingThinkingPartSeparator) {
+                    $pendingThinkingPartSeparator = false;
+                    if (!str_ends_with($currentThinking, "\n")) {
+                        $currentThinking .= "\n";
+                        yield new ThinkingDelta("\n");
+                    }
                 }
                 $currentThinking .= $event['delta'];
                 yield new ThinkingDelta($event['delta']);
@@ -362,6 +382,7 @@ final class ResultConverter implements ResultConverterInterface
                     yield new ThinkingComplete($currentThinking ?? '', $currentThinkingSignature);
                     $currentThinking = null;
                     $currentThinkingSignature = null;
+                    $pendingThinkingPartSeparator = false;
                 } elseif ('function_call' === ($item['type'] ?? null)) {
                     $toolCall = $this->convertFunctionCall($item);
                     $toolCalls[$toolCall->getId()] = $toolCall;
