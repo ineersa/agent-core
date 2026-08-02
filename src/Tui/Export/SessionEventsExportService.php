@@ -499,9 +499,7 @@ HTML;
         }
 
         $estimate = $payload['available_tools_schema_tokens_estimate'] ?? null;
-        $estimateInt = \is_int($estimate)
-            ? $estimate
-            : (is_numeric($estimate) ? (int) $estimate : 0);
+        $estimateInt = \is_int($estimate) ? $estimate : 0;
         $count = \count($items);
         $summary = \sprintf(
             'Available tools (%d · ~%s schema tokens)',
