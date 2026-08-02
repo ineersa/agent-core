@@ -186,7 +186,7 @@ final class TuiExportCommandE2eTest extends TestCase
         $paths = TuiE2eDatabaseEnv::allocatePaths('tui-export-tools-');
 
         return \sprintf(
-            'APP_ENV=test %sHOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
+            'APP_ENV=test %sHOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --model=llama_cpp_test/test 2>&1',
             TuiE2eDatabaseEnv::shellPrefix($paths['app'], $paths['transport']),
             escapeshellarg($this->testProjectDir.'/home'),
             escapeshellarg($fixturePath),
