@@ -116,15 +116,31 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             )->model;
         }
 
-        return $this->consumeStream(
-            $this->platform->invoke(
+        // Provider transport can fail synchronously during invoke (e.g. Codex WS
+        // send_failure before asStream()). Classify here so bounded LLM retry sees
+        // a retryable PlatformInvocationResult instead of a generic worker exception.
+        try {
+            $deferredResult = $this->platform->invoke(
                 $input->getModel(),
                 $input->getMessageBag(),
                 PlatformInvocationMetadata::inject(
                     array_replace($inputOptions, ['stream' => true]),
                     new PlatformInvocationMetadata($request->input, $cancelToken),
                 ),
-            ),
+            );
+        } catch (\Throwable $exception) {
+            return $this->errorResult(
+                deltas: [],
+                exception: $exception,
+                deferredResult: null,
+                modelName: $effectiveModel,
+                requestSummary: $requestSummary,
+                modelNotifications: $modelNotifications,
+            );
+        }
+
+        return $this->consumeStream(
+            $deferredResult,
             $cancelToken,
             $request->input->runId ?? '',
             $request->input->stepId,
@@ -592,7 +608,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      * @param list<array<string, mixed>> $modelNotifications generic model notifications
      *                                                       from transform context hooks
      */
-    private function errorResult(array $deltas, \Throwable $exception, DeferredResult $deferredResult, string $modelName = '', array $requestSummary = [], array $modelNotifications = []): PlatformInvocationResult
+    private function errorResult(array $deltas, \Throwable $exception, ?DeferredResult $deferredResult, string $modelName = '', array $requestSummary = [], array $modelNotifications = []): PlatformInvocationResult
     {
         $error = [
             'type' => $exception::class,
@@ -607,11 +623,14 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $error['previous_exception_message'] = mb_substr($previous->getMessage(), 0, 300);
         }
 
-        // Include response diagnostics in the error array for downstream logging.
-        $responseDiag = $this->extractResponseDiagnostics($deferredResult);
-        foreach ($responseDiag as $key => $value) {
-            if (null !== $value) {
-                $error[$key] = $value;
+        // Include response diagnostics when a DeferredResult exists (stream-time failures).
+        // Synchronous platform->invoke() failures have no DeferredResult/HTTP body.
+        if (null !== $deferredResult) {
+            $responseDiag = $this->extractResponseDiagnostics($deferredResult);
+            foreach ($responseDiag as $key => $value) {
+                if (null !== $value) {
+                    $error[$key] = $value;
+                }
             }
         }
 
@@ -626,7 +645,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         return new PlatformInvocationResult(
             assistantMessage: $this->buildAssistantMessage($deltas),
             deltas: $deltas,
-            usage: $this->extractUsage($deferredResult, $modelName),
+            usage: null !== $deferredResult ? $this->extractUsage($deferredResult, $modelName) : [],
             stopReason: 'error',
             error: $error,
             modelNotifications: $modelNotifications,
