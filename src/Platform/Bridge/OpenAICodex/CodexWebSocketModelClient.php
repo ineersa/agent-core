@@ -288,7 +288,8 @@ final class CodexWebSocketModelClient implements ModelClientInterface
         $wireBody = $fullBody;
         $wireBody['previous_response_id'] = $delta['previous_response_id'];
         $wireBody['input'] = $delta['input'];
-        unset($wireBody['prompt_cache_key']);
+        // Keep the already-resolved prompt_cache_key: Responses accepts it with
+        // previous_response_id and it identifies the same reusable prompt family.
 
         $this->logger->info('codex.websocket.continuation.delta', [
             'event_type' => 'codex.websocket.continuation.delta',
