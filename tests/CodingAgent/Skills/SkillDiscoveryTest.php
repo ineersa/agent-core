@@ -301,6 +301,42 @@ final class SkillDiscoveryTest extends TestCase
         $discovery->discover();
     }
 
+    public function testFindBySkillFilePathMatchesAbsoluteAndRelativeWinnerOnly(): void
+    {
+        $winnerDir = $this->tmpDir.'/.hatfield/skills/testing';
+        mkdir($winnerDir, 0777, true);
+        file_put_contents($winnerDir.'/SKILL.md', "---\nname: testing\ndescription: Winner\n---\n\nWinner body");
+
+        $loserDir = $this->tmpDir.'/.agents/skills/testing';
+        mkdir($loserDir, 0777, true);
+        file_put_contents($loserDir.'/SKILL.md', "---\nname: testing\ndescription: Loser\n---\n\nLoser body");
+
+        $unrelatedDir = $this->tmpDir.'/docs/unrelated';
+        mkdir($unrelatedDir, 0777, true);
+        file_put_contents($unrelatedDir.'/SKILL.md', "---\nname: not-a-skill\ndescription: Unrelated\n---\n\nUnrelated body");
+
+        $discovery = $this->createDiscovery(cwd: $this->tmpDir);
+        $skills = $discovery->discover();
+        $this->assertCount(1, $skills);
+        $this->assertSame('testing', $skills[0]->name);
+
+        $absolute = $winnerDir.'/SKILL.md';
+        $byAbsolute = $discovery->findBySkillFilePath($absolute);
+        $this->assertNotNull($byAbsolute);
+        $this->assertSame('testing', $byAbsolute->name);
+        $this->assertSame($skills[0]->skillFile, $byAbsolute->skillFile);
+
+        $relative = '.hatfield/skills/testing/SKILL.md';
+        $byRelative = $discovery->findBySkillFilePath($relative);
+        $this->assertNotNull($byRelative);
+        $this->assertSame('testing', $byRelative->name);
+
+        $this->assertNull($discovery->findBySkillFilePath($loserDir.'/SKILL.md'));
+        $this->assertNull($discovery->findBySkillFilePath($unrelatedDir.'/SKILL.md'));
+        $this->assertNull($discovery->findBySkillFilePath(''));
+        $this->assertNull($discovery->findBySkillFilePath('README.md'));
+    }
+
     /* ───────── Private helpers ───────── */
 
     private function createDiscovery(

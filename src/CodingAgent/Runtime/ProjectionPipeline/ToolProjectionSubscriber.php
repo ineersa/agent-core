@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
@@ -18,6 +19,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
 {
     public function __construct(
         private readonly SubagentProgressDisplayFormatter $subagentProgressFormatter = new SubagentProgressDisplayFormatter(),
+        private readonly ?SkillDiscovery $skillDiscovery = null,
     ) {
     }
 
@@ -111,6 +113,12 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             // Tool call block was never started — create a completed snapshot.
             $toolName = (string) ($p['tool_name'] ?? '');
             $text = '' !== $toolName ? $toolName.$argumentsText : $argumentsText;
+            $meta = [
+                'tool_call_id' => $toolCallId,
+                'tool_name' => $toolName,
+                'arguments' => $arguments,
+            ];
+            $this->annotateSkillReadMeta($meta, $toolName, $arguments);
 
             $state->addBlock(new TranscriptBlock(
                 id: $blockId,
@@ -118,11 +126,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
                 runId: $event->runId(),
                 seq: $state->nextSeq(),
                 text: $text,
-                meta: [
-                    'tool_call_id' => $toolCallId,
-                    'tool_name' => $toolName,
-                    'arguments' => $arguments,
-                ],
+                meta: $meta,
                 streaming: false,
             ));
 
@@ -136,6 +140,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $text = '' !== $toolName ? $toolName.$argumentsText : $argumentsText;
         $meta = $block->meta;
         $meta['arguments'] = $arguments;
+        $this->annotateSkillReadMeta($meta, $toolName, $arguments);
 
         $state->updateBlock($blockId, $block->with(
             text: $text,
@@ -369,5 +374,31 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
     public function onRunCancelled(TranscriptProjectionEvent $event): void
     {
         $event->state->removeOrphanedToolCallBlocks();
+    }
+
+    /**
+     * Annotate completed read tool-call meta with skill_name when the path is an
+     * exact winning discovered skill file. Presentation-only; no protocol change.
+     *
+     * @param array<string, mixed> $meta
+     * @param array<mixed>         $arguments
+     */
+    private function annotateSkillReadMeta(array &$meta, string $toolName, array $arguments): void
+    {
+        if ('read' !== $toolName || null === $this->skillDiscovery) {
+            return;
+        }
+
+        $path = $arguments['path'] ?? null;
+        if (!\is_string($path) || '' === $path) {
+            return;
+        }
+
+        $skill = $this->skillDiscovery->findBySkillFilePath($path);
+        if (null === $skill) {
+            return;
+        }
+
+        $meta['skill_name'] = $skill->name;
     }
 }

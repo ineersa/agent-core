@@ -647,6 +647,7 @@ parameters:
     AppRuntimeProjectionPipeline:
       - AppRuntimeProjection
       - AppRuntimeContract
+      - AppSkills
       - SymfonyEventDispatcher
 
     AppRuntimeProjection: ~

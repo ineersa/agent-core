@@ -150,6 +150,80 @@ final class SkillDiscovery
     }
 
     /**
+     * Look up the winning discovered skill whose SKILL.md matches $path.
+     *
+     * Accepts absolute paths (as emitted in skills context) and relative paths
+     * resolved against AppConfig::$cwd. Only exact canonical winners from
+     * {@see discover()} match — unrelated SKILL.md files and collision losers
+     * return null.
+     */
+    public function findBySkillFilePath(string $path): ?SkillDefinition
+    {
+        $canonical = $this->canonicalizeSkillFilePath($path);
+        if (null === $canonical) {
+            return null;
+        }
+
+        foreach ($this->discover() as $skill) {
+            $skillCanonical = $this->canonicalizeSkillFilePath($skill->skillFile);
+            if (null !== $skillCanonical && $skillCanonical === $canonical) {
+                return $skill;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve a skill-file path to a comparable absolute form.
+     *
+     * Prefers realpath() when the file exists; otherwise normalizes against CWD.
+     * Invalid/empty paths return null (do not classify).
+     */
+    private function canonicalizeSkillFilePath(string $path): ?string
+    {
+        $path = trim($path);
+        if ('' === $path || str_contains($path, "\0")) {
+            return null;
+        }
+
+        try {
+            $cwd = $this->resolveCwd();
+        } catch (\RuntimeException) {
+            return null;
+        }
+
+        if ('/' !== $path[0]) {
+            $path = $cwd.'/'.$path;
+        }
+
+        $real = realpath($path);
+        if (false !== $real) {
+            return $real;
+        }
+
+        // File may not exist (failed read) — still normalize for winner comparison.
+        return $this->normalizeAbsolutePath($path);
+    }
+
+    private function normalizeAbsolutePath(string $path): string
+    {
+        $parts = [];
+        foreach (explode('/', $path) as $segment) {
+            if ('' === $segment || '.' === $segment) {
+                continue;
+            }
+            if ('..' === $segment) {
+                array_pop($parts);
+                continue;
+            }
+            $parts[] = $segment;
+        }
+
+        return '/'.implode('/', $parts);
+    }
+
+    /**
      * Recursively scan a directory for skill roots (directories containing SKILL.md).
      *
      * @return list<string> Absolute paths to skill root directories

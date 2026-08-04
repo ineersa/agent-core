@@ -155,6 +155,10 @@ final readonly class TranscriptBlockWidgetFactory
             $arguments = [];
         }
 
+        if ($this->isSkillReadToolCall($callBlock)) {
+            return $this->buildSkillReadToolExchangeWidget($callBlock, $resultBlock, $theme, $arguments);
+        }
+
         if ($this->isEditToolCall($callBlock, $arguments)) {
             return $this->buildEditToolExchangeWidget($callBlock, $resultBlock, $theme, $arguments);
         }
@@ -444,13 +448,18 @@ final readonly class TranscriptBlockWidgetFactory
 
     private function buildToolCallWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
     {
-        $header = $this->toolCallHeaderLabel($block);
-        $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
-        $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
         $arguments = $block->meta['arguments'] ?? null;
         if (!\is_array($arguments)) {
             $arguments = [];
         }
+
+        if ($this->isSkillReadToolCall($block)) {
+            return $this->buildSkillReadToolCallWidget($block, $theme, $arguments);
+        }
+
+        $header = $this->toolCallHeaderLabel($block);
+        $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
+        $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
 
         if ($this->isEditToolCall($block, $arguments)) {
             return $this->buildEditToolCallWidget($block, $theme, $headerLine, $arguments);
@@ -480,6 +489,102 @@ final readonly class TranscriptBlockWidgetFactory
         $body = \array_slice($lines, 1);
 
         return new TextWidget(implode("\n", array_merge([$coloredHeader], $body)));
+    }
+
+    private function isSkillReadToolCall(TranscriptBlock $block): bool
+    {
+        if ('read' !== ($block->meta['tool_name'] ?? null)) {
+            return false;
+        }
+
+        $skillName = $block->meta['skill_name'] ?? null;
+
+        return \is_string($skillName) && '' !== $skillName;
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function buildSkillReadToolCallWidget(TranscriptBlock $block, TuiTheme $theme, array $arguments): TextWidget
+    {
+        $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
+        $headerLine = $this->skillReadHeaderLabel($block, $arguments).$suffix;
+
+        return new TextWidget($this->colorSkillReadHeader($theme, $headerLine));
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function buildSkillReadToolExchangeWidget(
+        TranscriptBlock $callBlock,
+        TranscriptBlock $resultBlock,
+        TuiTheme $theme,
+        array $arguments,
+    ): TextWidget {
+        $headerLine = $this->skillReadHeaderLabel($callBlock, $arguments);
+        $fullRender = $this->toolResultIsFullRender($resultBlock);
+        $expanded = $this->displayState->previewableBlocksExpanded;
+
+        // Collapsed successful skill reads hide args/result; keep only the compact header + expand hint.
+        // Errors/cancel/timeout always show the diagnostic body (even when previews are collapsed).
+        if (!$fullRender && !$expanded) {
+            $hint = $theme->color(ThemeColorEnum::Dim, ' (Ctrl+O to expand)');
+
+            return new TextWidget($this->colorSkillReadHeader($theme, $headerLine).$hint);
+        }
+
+        $lines = [$this->colorSkillReadHeader($theme, $headerLine)];
+        foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
+            $lines[] = $theme->color($this->toolExchangeBodyColor($resultBlock), '    '.$bodyLine);
+        }
+
+        return new TextWidget(implode("\n", $lines));
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function skillReadHeaderLabel(TranscriptBlock $block, array $arguments): string
+    {
+        $skillName = (string) ($block->meta['skill_name'] ?? '');
+        $range = $this->formatReadLineRange($arguments);
+
+        return \sprintf('[skill] %s%s', $skillName, $range);
+    }
+
+    /**
+     * Pi-compatible line range: offset defaults to 1 when limit is present;
+     * end is emitted only when limit exists (start + limit - 1).
+     *
+     * @param array<string, mixed> $arguments
+     */
+    private function formatReadLineRange(array $arguments): string
+    {
+        $offset = $arguments['offset'] ?? null;
+        $limit = $arguments['limit'] ?? null;
+
+        $hasOffset = null !== $offset && '' !== $offset && is_numeric($offset);
+        $hasLimit = null !== $limit && '' !== $limit && is_numeric($limit);
+
+        if (!$hasOffset && !$hasLimit) {
+            return '';
+        }
+
+        $start = $hasOffset ? (int) $offset : 1;
+        if ($hasLimit) {
+            $end = $start + (int) $limit - 1;
+
+            return \sprintf(':%d-%d', $start, $end);
+        }
+
+        return \sprintf(':%d', $start);
+    }
+
+    private function colorSkillReadHeader(TuiTheme $theme, string $headerLine): string
+    {
+        // Keep the whole compact label on ToolTitle so skill cards read as one colored unit.
+        return $theme->color(ThemeColorEnum::ToolTitle, $headerLine);
     }
 
     /**
