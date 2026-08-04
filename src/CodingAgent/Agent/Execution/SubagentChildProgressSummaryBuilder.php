@@ -112,7 +112,8 @@ final class SubagentChildProgressSummaryBuilder
             if (RunEventTypeEnum::RunStarted->value === $event->type) {
                 $inner = \is_array($payload['payload'] ?? null) ? $payload['payload'] : [];
                 $metadata = \is_array($inner['metadata'] ?? null) ? $inner['metadata'] : [];
-                if (null === $model && \is_string($metadata['model'] ?? null) && '' !== $metadata['model']) {
+                // Canonical launch model from run_started must override definitionModel fallback.
+                if (\is_string($metadata['model'] ?? null) && '' !== $metadata['model']) {
                     $model = $metadata['model'];
                 }
                 if (\is_string($metadata['provider'] ?? null) && '' !== $metadata['provider']) {

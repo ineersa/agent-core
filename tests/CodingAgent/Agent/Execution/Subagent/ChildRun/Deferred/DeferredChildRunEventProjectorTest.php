@@ -18,9 +18,73 @@ use PHPUnit\Framework\TestCase;
  * each increment one durable llm_step_count that round-trips through DTO serialization.
  * Retryable llm_step_failed stays nonterminal so deferred child/fork completion cannot
  * hand off failure before the bounded auto-retry runs.
+ * Canonical run_started.metadata.model always overrides a stale definition/current model
+ * and must survive later incremental apply without run_started (resume/failed-child).
  */
 final class DeferredChildRunEventProjectorTest extends TestCase
 {
+    public function testCanonicalRunStartedModelOverridesStaleDefinitionAndSurvivesResume(): void
+    {
+        $projector = new DeferredChildRunEventProjector();
+        $current = new DeferredChildRunLifecycleProjectionDTO(
+            childStatus: RunStatus::Running,
+            childTurnNo: 0,
+            lastCommittedSeq: 0,
+            // Stale projected model from a previous definition snapshot (session-shaped).
+            model: 'deepseek/deepseek-v4-flash',
+        );
+
+        $failed = $projector->apply(
+            $current,
+            [
+                new AfterTurnCommitEventSummary(1, RunEventTypeEnum::RunStarted->value, [
+                    'payload' => ['metadata' => [
+                        'model' => 'openai-codex/gpt-5.6-sol',
+                        'provider' => 'openai-codex',
+                    ]],
+                ]),
+                new AfterTurnCommitEventSummary(2, RunEventTypeEnum::LlmStepFailed->value, [
+                    'error' => [
+                        'message' => 'provider overloaded',
+                        'user_message' => 'LLM provider network error.',
+                        'retryable' => false,
+                    ],
+                    'retryable' => false,
+                ]),
+            ],
+            // Stale definition snapshot that differs from immutable launch metadata.
+            definitionModel: 'deepseek/deepseek-v4-flash',
+            committedStatus: RunStatus::Failed,
+            committedTurnNo: 3,
+        );
+
+        $this->assertSame(RunStatus::Failed, $failed->childStatus);
+        $this->assertSame('openai-codex/gpt-5.6-sol', $failed->model);
+        $this->assertSame('openai-codex', $failed->provider);
+        $this->assertSame(1, $failed->llmStepCount);
+
+        // Recovery/resume apply without another run_started must keep launch model.
+        $resumed = $projector->apply(
+            $failed,
+            [
+                new AfterTurnCommitEventSummary(3, RunEventTypeEnum::LlmStepCompleted->value, [
+                    'usage' => ['input_tokens' => 5, 'output_tokens' => 1, 'total_tokens' => 6],
+                    'assistant_message' => [
+                        'role' => 'assistant',
+                        'content' => [['type' => 'text', 'text' => 'partial recovery']],
+                    ],
+                ]),
+            ],
+            definitionModel: 'deepseek/deepseek-v4-flash',
+            committedStatus: RunStatus::Running,
+            committedTurnNo: 4,
+        );
+
+        $this->assertSame('openai-codex/gpt-5.6-sol', $resumed->model);
+        $this->assertSame(2, $resumed->llmStepCount);
+        $this->assertSame(4, $resumed->childTurnNo);
+    }
+
     public function testRetryableLlmStepFailedStaysRunningWhileExhaustedFailureIsTerminal(): void
     {
         $projector = new DeferredChildRunEventProjector();
