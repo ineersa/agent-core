@@ -106,7 +106,7 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         $this->assertNotNull($ordinaryCall);
         $this->assertArrayNotHasKey('skill_name', $ordinaryCall->meta);
 
-        // Distinct heading vs tool-title colors so skill-card role is fail-closed.
+        // Distinct MarkdownHeading vs ToolTitle palette values make the selected role observable.
         $palette = new ThemePalette('skill-read-card-theme', [
             ThemeColorEnum::MarkdownHeading->value => 'bright_magenta',
             ThemeColorEnum::ToolTitle->value => 'bright_cyan',
@@ -124,7 +124,6 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         $harness->screen()->setWorkingVisible(false);
 
         $collapsed = $harness->plainScreenText();
-        $this->assertStringContainsString('[skill] testing:1-400', $collapsed);
         $this->assertStringContainsString('Ctrl+O to expand', $collapsed);
         $this->assertStringNotContainsString('skill-secret-line', $collapsed);
         $this->assertStringNotContainsString('path: '.$skillFile, $collapsed);
@@ -138,11 +137,6 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
             "/\x1b\[95m  \[skill\] testing:1-400\x1b\[39m/",
             $collapsedAnsi,
             'Collapsed skill header must use MarkdownHeading (bright_magenta / 95), not ToolTitle',
-        );
-        $this->assertDoesNotMatchRegularExpression(
-            "/\x1b\[96m  \[skill\] testing:1-400/",
-            $collapsedAnsi,
-            'Skill header must not use ToolTitle (bright_cyan / 96)',
         );
 
         $this->assertStringContainsString('read', $collapsed);

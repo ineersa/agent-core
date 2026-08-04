@@ -550,7 +550,8 @@ final readonly class TranscriptBlockWidgetFactory
         $skillName = (string) ($block->meta['skill_name'] ?? '');
         $range = $this->formatReadLineRange($arguments);
 
-        // Two-space transcript inset (same convention as markdown widget left padding).
+        // Two-space flat-text inset matching the transcript's 2-column left padding
+        // (not widget Style padding — skill cards are plain TextWidget lines).
         return \sprintf('  [skill] %s%s', $skillName, $range);
     }
 
