@@ -17,6 +17,8 @@ use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\LockInterface;
 
 /**
  * Non-blocking headless controller using Revolt event loop.
@@ -31,6 +33,13 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  *   stream mapped RuntimeEvent JSONL on stdout; ConsumerStdoutPoller forwards to TUI.
  * - Transient streaming deltas: LLM consumer stream subscribers on the same stdout pipe.
  * - events.jsonl is durable replay/recovery/export only — not the live 50ms event bus.
+ *
+ * Single-owner lock:
+ * - Before orphan reaping / consumer launch, acquires a process-lifetime flock keyed by
+ *   canonical runtime CWD + session ID so two live controllers never share session queues.
+ * - Store is a dedicated FlockStore under %app.cwd%/.hatfield/tmp/controller-locks so
+ *   source/worktree/PHAR controllers with the same project CWD converge (not kernel.project_dir).
+ * - Lock is released only after consumers shut down (graceful path) or when the process dies.
  *
  * Command protocol:
  *   TUI → stdin JSONL → controller parses → emits command.ack → dispatches event
@@ -54,6 +63,9 @@ final class HeadlessController
      */
     private readonly string $sessionId;
 
+    /** Held for the controller process lifetime after successful acquire. */
+    private ?LockInterface $sessionOwnerLock = null;
+
     public function __construct(
         private readonly ConsumerSupervisor $consumerSupervisor,
         private readonly EventDispatcherInterface $dispatcher,
@@ -61,6 +73,9 @@ final class HeadlessController
         private readonly ToolExecutionSettingsInterface $toolExecutionSettings,
         private readonly RuntimeExceptionBoundary $boundary,
         private readonly RuntimeEventEmitter $emitter,
+        /** Project-scoped factory (not FrameworkBundle default LockFactory). */
+        private readonly LockFactory $sessionOwnerLockFactory,
+        private readonly string $runtimeCwd,
         private readonly RuntimeConfig $runtimeConfig = new RuntimeConfig(),
         /**
          * Optional override for parallel tool messenger consumers.
@@ -110,6 +125,13 @@ final class HeadlessController
         $this->emitter->setFatalShutdownHandler(function (): void {
             $this->shutdown();
         });
+
+        // Single live owner for this project+session before reaping or launching
+        // consumers. Fail before runtime.ready so a second controller never shares
+        // session Doctrine queues with a healthy first owner.
+        if (!$this->acquireSessionOwnerLock()) {
+            return Command::FAILURE;
+        }
 
         // Reap orphaned messenger:consume processes left behind by SIGKILL'd
         // previous runs. Only kills processes whose parent is init (ppid=1)
@@ -446,6 +468,61 @@ final class HeadlessController
 
         $this->consumerSupervisor->shutdown();
         $this->bgProcessManager?->shutdownCleanup($this->sessionId);
+        // Release only after consumers are stopped so a replacement controller
+        // cannot race mid-shutdown and attach to half-closed workers.
+        $this->releaseSessionOwnerLock();
+    }
+
+    /**
+     * Non-blocking process-lifetime flock for one controller per project CWD + session.
+     * TTL null keeps the lock until explicit release or process death (flock auto-release).
+     * Unexpected lock-store failures propagate; only a held lock returns false.
+     */
+    private function acquireSessionOwnerLock(): bool
+    {
+        $lock = $this->sessionOwnerLockFactory->createLock($this->sessionOwnerLockResource(), ttl: null, autoRelease: true);
+
+        if (!$lock->acquire(blocking: false)) {
+            $this->logger->error('Controller session already owned by another live process', [
+                'component' => 'HeadlessController',
+                'event_type' => 'controller.session_owner_lock_conflict',
+                'session_id' => $this->sessionId,
+            ]);
+
+            return false;
+        }
+
+        $this->sessionOwnerLock = $lock;
+        $this->logger->info('Controller acquired session owner lock', [
+            'component' => 'HeadlessController',
+            'event_type' => 'controller.session_owner_lock_acquired',
+            'session_id' => $this->sessionId,
+        ]);
+
+        return true;
+    }
+
+    private function releaseSessionOwnerLock(): void
+    {
+        $lock = $this->sessionOwnerLock;
+        $this->sessionOwnerLock = null;
+        if (null === $lock) {
+            return;
+        }
+
+        if ($lock->isAcquired()) {
+            $lock->release();
+        }
+    }
+
+    private function sessionOwnerLockResource(): string
+    {
+        $canonicalCwd = realpath($this->runtimeCwd);
+        if (false === $canonicalCwd) {
+            $canonicalCwd = $this->runtimeCwd;
+        }
+
+        return 'hatfield.controller.session.'.hash('sha256', $canonicalCwd."\0".$this->sessionId);
     }
 
     /**

@@ -528,12 +528,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             // Controller/worker mode must use real async queues. The parent
             // TUI process defaults to sync:// so --transport=in-process remains
             // usable without a consumer pool.
-            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=run_control_{$queueSuffix}",
-            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=llm_{$queueSuffix}",
-            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=tool_{$queueSuffix}",
-            'HATFIELD_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=agent_{$queueSuffix}",
-            'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=mcp_{$queueSuffix}",
-            'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=extension_agent_{$queueSuffix}",
+            // redeliver_timeout=60 + ConsumerSupervisor --keepalive=5: abandoned
+            // delivered rows reclaim after worker death; live handlers keep the lease.
+            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=run_control_{$queueSuffix}&redeliver_timeout=60",
+            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=llm_{$queueSuffix}&redeliver_timeout=60",
+            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=tool_{$queueSuffix}&redeliver_timeout=60",
+            'HATFIELD_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=agent_{$queueSuffix}&redeliver_timeout=60",
+            'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=mcp_{$queueSuffix}&redeliver_timeout=60",
+            'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=extension_agent_{$queueSuffix}&redeliver_timeout=60",
             // Pass session ID so the controller can identify and reap its own
             // orphaned consumers when a previous session was SIGKILL'd.
             'HATFIELD_SESSION_ID' => $this->sessionId ?? 'unknown',

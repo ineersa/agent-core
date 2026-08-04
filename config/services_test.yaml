@@ -40,6 +40,13 @@ services:
     alias: Ineersa\CodingAgent\Config\SettingsValueResolver
     public: true
 
+  # TEST-ONLY public alias for project-scoped controller owner lock factory.
+  # Production service stays private; proves FlockStore is under %app.cwd%, not
+  # kernel.project_dir-partitioned FrameworkBundle default flock.
+  test.hatfield.controller.session_owner.lock_factory:
+    alias: hatfield.controller.session_owner.lock_factory
+    public: true
+
   # Test HTTP client for LLM requests.  Two modes:
   #
   #  1. Replay  (HATFIELD_LLM_REPLAY_FIXTURE_PATH set):

@@ -25,6 +25,10 @@ parameters:
     # to avoid path duplication.
     app.file_mention_index_path: '%app.cwd%/.hatfield/cache/file-mentions/index.jsonl'
 
+    # Controller single-owner flock root. Must follow %app.cwd% (project), not
+    # kernel.project_dir, so source/worktree/PHAR installs share one OS lock path.
+    hatfield.controller.session_owner_lock_dir: '%app.cwd%/.hatfield/tmp/controller-locks'
+
 services:
   _defaults:
     autowire: true
@@ -553,10 +557,26 @@ services:
     arguments:
       $eventClient: '@Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient'
 
+  # Dedicated FlockStore for controller single-owner locks. Default FrameworkBundle
+  # flock is partitioned by kernel.project_dir and would diverge across installs.
+  hatfield.controller.session_owner.lock_store:
+    class: Symfony\Component\Lock\Store\FlockStore
+    arguments:
+      - '%hatfield.controller.session_owner_lock_dir%'
+
+  hatfield.controller.session_owner.lock_factory:
+    class: Symfony\Component\Lock\LockFactory
+    arguments:
+      - '@hatfield.controller.session_owner.lock_store'
+
   Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
     arguments:
       $dispatcher: '@event_dispatcher'
       $runtimeConfig: '@Ineersa\CodingAgent\Config\RuntimeConfig'
+      # Canonical project CWD for single-owner session lock key (not process getcwd()).
+      $runtimeCwd: '%app.cwd%'
+      # Project-scoped factory only — not the global default LockFactory.
+      $sessionOwnerLockFactory: '@hatfield.controller.session_owner.lock_factory'
 
   Ineersa\CodingAgent\Config\RuntimeConfig:
     factory: ['Ineersa\CodingAgent\Config\RuntimeConfig', 'fromAppConfig']
