@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Skills;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\Path\PathResolver;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Yaml\Yaml;
 
@@ -147,6 +148,52 @@ final class SkillDiscovery
         $this->discover();
 
         return $this->collisions;
+    }
+
+    /**
+     * Look up the winning discovered skill whose SKILL.md matches $path.
+     *
+     * Accepts absolute paths (as emitted in skills context) and relative paths
+     * resolved against AppConfig::$cwd via PathResolver. Only exact canonical
+     * winners from {@see discover()} match — unrelated SKILL.md files,
+     * collision losers, empty paths, and nonexistent paths return null.
+     */
+    public function findBySkillFilePath(string $path): ?SkillDefinition
+    {
+        $path = trim($path);
+        if ('' === $path) {
+            return null;
+        }
+
+        try {
+            $resolved = PathResolver::resolve($path, $this->resolveCwd());
+        } catch (\InvalidArgumentException|\RuntimeException $e) {
+            // Intentional local degradation: invalid path input or missing CWD
+            // means ordinary-read presentation, not a hard projection failure.
+            if (null !== $this->logger) {
+                $this->logger->warning('Skill path classification skipped', [
+                    'component' => 'skills.discovery',
+                    'event_type' => 'skill_path_classification_skipped',
+                    'exception_class' => $e::class,
+                ]);
+            }
+
+            return null;
+        }
+
+        $canonical = realpath($resolved);
+        if (false === $canonical) {
+            return null;
+        }
+
+        // skillFile is already absolute from discover()'s realpath()'d skill roots.
+        foreach ($this->discover() as $skill) {
+            if ($skill->skillFile === $canonical) {
+                return $skill;
+            }
+        }
+
+        return null;
     }
 
     /**

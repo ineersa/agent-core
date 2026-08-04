@@ -40,6 +40,7 @@ colors:
     tool_argument_value: "text"
     tool_title: "nord8"
     tool_output: ""
+    skill: "nord12"
     tool: "nord8"
 
     markdown_heading: "nord12"

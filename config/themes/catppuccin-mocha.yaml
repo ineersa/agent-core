@@ -47,6 +47,7 @@ colors:
     tool_argument_value: "text"
     tool_title: "mauve"
     tool_output: ""
+    skill: "peach"
     tool: "mauve"
 
     markdown_heading: "peach"
