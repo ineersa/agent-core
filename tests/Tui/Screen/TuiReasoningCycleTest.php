@@ -109,8 +109,8 @@ final class TuiReasoningCycleTest extends TestCase
             }
 
             $state->footerReasoning = $nextLevel;
-            $screen->registry()->setStatus('reasoning', $nextLevel);
-            $screen->refresh();
+            $screen->setStatus('reasoning', $nextLevel);
+            $screen->refreshFooter();
             $screen->applyEditorBorderColor($nextLevel);
         }, priority: 95);
     }

@@ -203,9 +203,7 @@ class QuestionControllerTest extends TestCase
         );
         $this->controller->open($request);
 
-        $chatRef = new \ReflectionClass(ChatScreen::class);
-        $footerProp = $chatRef->getProperty('footerDataProvider');
-        $entries = $footerProp->getValue($screen)->getStatusEntries();
+        $entries = $screen->registry()->getStatusEntries();
         $this->assertArrayNotHasKey('action', $entries);
         $this->assertTrue($this->controller->isOpen());
     }

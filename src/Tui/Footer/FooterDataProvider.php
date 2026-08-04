@@ -17,9 +17,6 @@ final class FooterDataProvider
     /** @var array<string, FooterSegmentProvider> */
     private array $providers = [];
 
-    /** @var array<string, string> Extension-set status key-value pairs */
-    private array $statusEntries = [];
-
     /**
      * Add a provider with an auto-generated key.
      *
@@ -69,26 +66,5 @@ final class FooterDataProvider
         usort($segments, static fn (FooterSegment $a, FooterSegment $b) => $a->priority <=> $b->priority);
 
         return $segments;
-    }
-
-    public function setStatus(string $key, ?string $text): void
-    {
-        if (null === $text) {
-            unset($this->statusEntries[$key]);
-        } else {
-            $this->statusEntries[$key] = $text;
-        }
-    }
-
-    /** @param array<string, string> $entries */
-    public function setStatusEntries(array $entries): void
-    {
-        $this->statusEntries = $entries;
-    }
-
-    /** @return array<string, string> */
-    public function getStatusEntries(): array
-    {
-        return $this->statusEntries;
     }
 }

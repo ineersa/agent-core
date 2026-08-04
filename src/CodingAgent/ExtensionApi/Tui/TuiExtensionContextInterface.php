@@ -21,6 +21,12 @@ interface TuiExtensionContextInterface
 
     public function requestRender(bool $force = false): void;
 
+    /**
+     * Set or remove a keyed status-panel row.
+     *
+     * Pass null to clear. Statuses are panel-only; footer content uses explicit
+     * footer widget/segment-provider APIs, not this method.
+     */
     public function setStatus(string $key, ?string $text): void;
 
     /**

@@ -72,9 +72,6 @@ final class AgentsMainCommandHandlerTest extends TestCase
     /** @return array<string, string> */
     private function allStatusEntries(ChatScreen $screen): array
     {
-        $ref = new \ReflectionClass(ChatScreen::class);
-        $prop = $ref->getProperty('footerDataProvider');
-
-        return $prop->getValue($screen)->getStatusEntries();
+        return $screen->registry()->getStatusEntries();
     }
 }
