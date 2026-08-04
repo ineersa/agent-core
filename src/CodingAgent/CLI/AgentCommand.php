@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\Tui\Application\InteractiveMode;
 use Psr\Log\LoggerInterface;
@@ -55,6 +56,7 @@ final class AgentCommand
         private HatfieldSessionStore $sessionStore,
         private SkillsConfig $skillsConfig,
         private PromptTemplatesRuntimeConfig $promptTemplatesConfig,
+        private ToolFilterRuntimeConfig $toolFilterConfig,
         private LoggerInterface $logger,
         private readonly ?StartupDatabaseMigrator $startupDatabaseMigrator = null,
         private ?HeadlessController $controller = null,
@@ -150,7 +152,9 @@ final class AgentCommand
 
             // Apply tool filtering before any session/client starts so the
             // system prompt and toolbox reflect CLI-specified allowlist/denylist.
-            $this->applyToolFilters($tools, $toolsExcluded);
+            // Canonical state is also stored for process-transport controller/worker
+            // propagation (argv + dedicated internal env).
+            $this->toolFilterConfig->applyFromCli($tools, $toolsExcluded, $this->toolRegistry);
 
             // Run pending database migrations once on agent startup.
             // StartupDatabaseMigrator is idempotent per process lifetime and
@@ -378,51 +382,6 @@ final class AgentCommand
             runId: $runId,
             seq: 0,
         )));
-    }
-
-    /**
-     * Apply --tools and --tools-excluded CLI options to the tool registry.
-     *
-     * --tools is an allowlist: only these tools are visible to the model.
-     * --tools-excluded is a denylist: these tools are hidden.
-     * Both can be combined: final set = (allowlist or all) minus exclusions.
-     *
-     * Unknown tool names are rejected with a clear diagnostic before the
-     * agent session starts.
-     */
-    private function applyToolFilters(string $tools, string $toolsExcluded): void
-    {
-        if (null === $this->toolRegistry) {
-            if ('' !== $tools || '' !== $toolsExcluded) {
-                throw new \RuntimeException('--tools and --tools-excluded require ToolRegistry to be wired.');
-            }
-
-            return;
-        }
-
-        if ('' !== $tools) {
-            $this->toolRegistry->setAllowedToolNames(self::parseToolNameList($tools));
-        }
-
-        if ('' !== $toolsExcluded) {
-            $this->toolRegistry->setExcludedToolNames(self::parseToolNameList($toolsExcluded));
-        }
-    }
-
-    /**
-     * Parse a comma-separated tool name list into a deduplicated array.
-     *
-     * Trims whitespace around each entry, drops empty tokens, and
-     * preserves insertion order. Empty input yields an empty list.
-     *
-     * @return list<string>
-     */
-    private static function parseToolNameList(string $raw): array
-    {
-        return array_values(array_filter(
-            array_map('\trim', explode(',', $raw)),
-            static fn (string $n): bool => '' !== $n,
-        ));
     }
 
     private function resolveClient(string $transport): AgentSessionClient

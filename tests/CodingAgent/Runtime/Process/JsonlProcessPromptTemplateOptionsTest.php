@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -167,6 +168,7 @@ PHP);
         $client = new JsonlProcessAgentSessionClient(
             runtimeConfig: $runtimeConfig,
             promptTemplatesConfig: $promptConfig,
+            toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: new TestLogger(),
         );
 

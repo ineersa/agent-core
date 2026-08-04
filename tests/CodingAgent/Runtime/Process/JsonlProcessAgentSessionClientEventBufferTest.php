@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -561,6 +562,7 @@ PHP);
         return new JsonlProcessAgentSessionClient(
             runtimeConfig: new RuntimeProcessConfig($locator, $this->tmpDir),
             promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
+            toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: $logger ?? new TestLogger(),
         );
     }

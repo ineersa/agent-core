@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -125,6 +126,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     public function __construct(
         private readonly RuntimeProcessConfig $runtimeConfig,
         private readonly PromptTemplatesRuntimeConfig $promptTemplatesConfig,
+        private readonly ToolFilterRuntimeConfig $toolFilterConfig,
         private readonly LoggerInterface $logger,
     ) {
         $this->compactEventBuffer = new RuntimeEventPerRunCompactBuffer();
@@ -539,6 +541,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             // capable extensions) can prompt instead of auto-blocking. The
             // controller and its messenger consumers inherit this env var.
             'HATFIELD_APPROVAL_CHANNEL' => 'controller',
+            // Dedicated tool-filter env so messenger:consume workers (fresh
+            // containers) reapply the same allowlist/denylist after extension
+            // registration. ConsumerSupervisor inherits controller $_ENV.
+            ...$this->toolFilterConfig->processEnv(),
         ]);
 
         $pipes = [];
@@ -547,6 +553,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 ...$this->runtimeConfig->executableCommand(),
                 'agent', '--controller', '--cwd='.$runtimeCwd,
                 ...$this->promptTemplatesConfig->controllerArgs(),
+                ...$this->toolFilterConfig->controllerArgs(),
             ],
             $descriptors,
             $pipes,
