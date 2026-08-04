@@ -15,8 +15,10 @@ use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
 use Ineersa\HatfieldExt\TaskWorkflow\Pr\PrManager;
 use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowSettings;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardStore;
+use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskInfo;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskMarkdown;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskStatusEnum;
+use Ineersa\HatfieldExt\TaskWorkflow\Tool\InvocationControl;
 use Ineersa\HatfieldExt\TaskWorkflow\Tool\MoveTaskHandler;
 use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorktreeManager;
 use PHPUnit\Framework\Attributes\Test;
@@ -527,6 +529,62 @@ final class MoveTaskHandlerTest extends TestCase
         $this->assertStringContainsString('Moved task', $r);
         $composerCalls = $this->findCallsByCommand($recording, 'composer');
         $this->assertEmpty($composerCalls, 'must not call composer when extensions dir is missing');
+    }
+
+    #[Test]
+    public function cleanupPartialPreservesIdeaExclusionsWhenWorktreeRemoveFails(): void
+    {
+        // Thesis: interrupted worktree create must not strip IDEA exclusions unless
+        // `git worktree remove` succeeds (same fail-closed ordering as safe cleanup).
+        $slug = '2026-01-01-partial-cleanup';
+        $worktree = $this->worktreesBase.'/'.$slug;
+
+        mkdir($this->worktreesBase.'/.idea', 0o755, true);
+        $iml = $this->worktreesBase.'/.idea/'.basename($this->worktreesBase).'.iml';
+        file_put_contents($iml, "<?xml version=\"1.0\"?>\n<module>\n  <component name=\"NewModuleRootManager\">\n    <content url=\"file://\$MODULE_DIR$\">\n    </content>\n  </component>\n</module>\n");
+
+        $token = new class($iml, $slug) implements ToolCancellationTokenInterface {
+            public function __construct(
+                private string $iml,
+                private string $slug,
+            ) {
+            }
+
+            public function isCancellationRequested(): bool
+            {
+                return is_file($this->iml)
+                    && str_contains((string) file_get_contents($this->iml), 'pi-task-workflow:start '.$this->slug);
+            }
+        };
+
+        $inner = new StubExec(function (string $command, array $args, ?ExecOptionsDTO $options): ExecResultDTO {
+            if ('git' === $command && ($args[0] ?? null) === 'worktree' && ($args[1] ?? null) === 'remove') {
+                return new ExecResultDTO('', 'simulated worktree remove failure', 1);
+            }
+
+            return $this->gitStub($command, $args, $options);
+        });
+        $git = new GitExecutor($inner);
+        $manager = new WorktreeManager($git, $inner);
+
+        $task = new TaskInfo(
+            status: TaskStatusEnum::TODO,
+            file: $slug.'.md',
+            path: $this->boardRoot.'/TODO/'.$slug.'.md',
+            title: 'Partial cleanup',
+        );
+        $control = InvocationControl::fromContext($this->ctx(cancellationToken: $token));
+
+        $result = $manager->createWorktreeForTask($this->repoRoot, $task, $this->worktreesBase, $control);
+
+        $this->assertInstanceOf(ExecResultDTO::class, $result);
+        $this->assertTrue($result->cancelled);
+        $this->assertDirectoryExists($worktree);
+        $this->assertStringContainsString(
+            'pi-task-workflow:start '.$slug,
+            (string) file_get_contents($iml),
+            'IDEA exclusions must remain when git worktree remove fails',
+        );
     }
 
     public function gitStubForCodeReview(int $timeoutExitCode): callable

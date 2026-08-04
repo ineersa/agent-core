@@ -250,6 +250,8 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         $notes[] = 'Running deterministic castor check in worktree (timeout '.$checkTimeout.'s)...';
 
         $checkStart = microtime(true);
+        // +45s outer Process budget: covers timeout(1) startup plus --kill-after=30s
+        // grace after the castor check wall, so the host can stop a stuck tree cleanly.
         $checkResult = $this->exec->exec(
             'timeout',
             ['--kill-after=30s', (string) $checkTimeout.'s', 'env', 'LLM_MODE=true', 'castor', 'check'],

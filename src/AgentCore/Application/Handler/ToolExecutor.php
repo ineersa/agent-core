@@ -181,12 +181,12 @@ final class ToolExecutor implements ToolExecutorInterface
         }
 
         if ($this->cancellationToken($toolCall)->isCancellationRequested()) {
-            // Don't overwrite a structured cancelled result.
+            // Don't overwrite handler-owned documented control outcomes.
             $details = $result->details;
-            $cancelled = \is_array($details) ? ($details['cancelled'] ?? false) : false;
-            $alreadyCancelled = true === $cancelled;
+            $alreadyControlled = \is_array($details)
+                && (true === ($details['cancelled'] ?? false) || true === ($details['timed_out'] ?? false));
 
-            if (!$alreadyCancelled) {
+            if (!$alreadyControlled) {
                 $errorType = \is_array($details) ? ($details['error_type'] ?? null) : null;
                 if (ToolCallException::class === $errorType) {
                     $details['cancelled'] = true;

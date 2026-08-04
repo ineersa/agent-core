@@ -16,9 +16,9 @@ final class GitExecutor
     ) {
     }
 
-    public function repoRoot(string $cwd, ?InvocationControl $control = null): string
+    public function repoRoot(string $cwd): string
     {
-        $result = $this->git(['rev-parse', '--show-toplevel'], $cwd, 120.0, $control);
+        $result = $this->git(['rev-parse', '--show-toplevel'], $cwd, 120.0);
         if ($result->cancelled || $result->timedOut || 0 !== $result->exitCode) {
             return $cwd;
         }

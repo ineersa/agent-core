@@ -66,14 +66,16 @@ final readonly class ExtensionExecBridge implements ExecInterface
         try {
             while ($process->isRunning()) {
                 if (null !== $options->cancellationToken && $options->cancellationToken->isCancellationRequested()) {
-                    $process->stop(self::DEFAULT_GRACE_SECONDS);
+                    // Record reason before stop(): signaling failures must not erase it.
                     $cancelled = true;
+                    $process->stop(self::DEFAULT_GRACE_SECONDS);
                     break;
                 }
 
                 if (null !== $deadlineNs && hrtime(true) >= $deadlineNs) {
-                    $process->stop(self::DEFAULT_GRACE_SECONDS);
+                    // Record reason before stop(): signaling failures must not erase it.
                     $timedOut = true;
+                    $process->stop(self::DEFAULT_GRACE_SECONDS);
                     break;
                 }
 
@@ -84,8 +86,8 @@ final readonly class ExtensionExecBridge implements ExecInterface
                 stdout: $this->safeOutput($process),
                 stderr: $this->safeErrorOutput($process).$e->getMessage(),
                 exitCode: -1,
-                timedOut: false,
-                cancelled: false,
+                timedOut: $timedOut,
+                cancelled: $cancelled,
             );
         }
 

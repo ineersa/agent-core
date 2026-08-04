@@ -527,13 +527,22 @@ final class WorktreeManager
     /**
      * Best-effort cleanup of a worktree created during this interrupted transition.
      * Uses existing non-forced git worktree remove + IDEA exclusion cleanup ordering.
+     * IDEA exclusions are removed only when git worktree remove succeeds (exit 0),
+     * matching cleanupWorktreeAndIdeaExclusions fail-closed ordering.
      */
     private function cleanupPartialWorktree(string $codeRoot, string $worktree, string $slug, string $base): void
     {
-        if (is_dir($worktree)) {
-            $this->git->git(['worktree', 'remove', $worktree], $codeRoot);
+        if (!is_dir($worktree)) {
+            // Directory already gone — still clear IDEA markers that point at it.
+            $this->removeWorktreeExclusions($slug, $base);
+
+            return;
         }
-        $this->removeWorktreeExclusions($slug, $base);
+
+        $remove = $this->git->git(['worktree', 'remove', $worktree], $codeRoot);
+        if (0 === $remove->exitCode) {
+            $this->removeWorktreeExclusions($slug, $base);
+        }
     }
 
     /**

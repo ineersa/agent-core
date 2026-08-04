@@ -558,6 +558,63 @@ final class ToolExecutorTest extends TestCase
         $this->assertSame(12, $result->details['timeout_seconds'] ?? null);
         $this->assertSame('Deadline hit.', $result->details['message'] ?? null);
     }
+
+    public function testDocumentedTimedOutMapIsPreservedWhenCancelTokenFlipsDuringExecution(): void
+    {
+        // Thesis: handler-owned timed_out must survive concurrent run cancel the same way
+        // cancelled does; otherwise deadline outcomes become stale_due_to_cancel.
+        $token = new class implements CancellationTokenInterface {
+            public bool $cancelled = false;
+
+            public function isCancellationRequested(): bool
+            {
+                return $this->cancelled;
+            }
+        };
+
+        $toolbox = new class($token) implements ToolboxInterface {
+            public function __construct(private object $token)
+            {
+            }
+
+            public function getTools(): array
+            {
+                return [];
+            }
+
+            public function execute(SymfonyToolCall $toolCall): SymfonyToolResult
+            {
+                $this->token->cancelled = true;
+
+                return new SymfonyToolResult($toolCall, [
+                    'timed_out' => true,
+                    'timeout_seconds' => 12,
+                    'message' => 'Deadline hit during cancel race.',
+                ]);
+            }
+        };
+
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            maxParallelism: 2,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+        );
+
+        $result = $executor->execute(ToolCallBuilder::create('call-timeout-cancel-race')
+            ->withToolName('ext_tool')
+            ->withArguments([])
+            ->withOrderIndex(0)
+            ->withContext(['cancel_token' => $token])
+            ->build());
+
+        $this->assertFalse($result->isError);
+        $this->assertTrue($result->details['timed_out'] ?? false);
+        $this->assertSame(12, $result->details['timeout_seconds'] ?? null);
+        $this->assertSame('Deadline hit during cancel race.', $result->details['message'] ?? null);
+        $this->assertArrayNotHasKey('stale_due_to_cancel', $result->details ?? []);
+        $this->assertArrayHasKey('raw_result', $result->details ?? []);
+    }
 }
 
 #[AsTool(name: 'human_gate', description: 'Ask for human input.')]
