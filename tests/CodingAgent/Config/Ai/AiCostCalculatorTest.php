@@ -25,7 +25,7 @@ final class AiCostCalculatorTest extends TestCase
         // Build a minimal catalog with a single priced model.
         $modelDef = new AiModelDefinition(
             id: 'anthropic/claude-sonnet-4',
-            cost: new AiCost(input: 3.0, output: 15.0, cacheRead: 3.75, cacheWrite: 0.0),
+            cost: new AiCost(input: 3.0, output: 15.0, cacheRead: 3.75, cacheWrite: 6.0),
         );
 
         $providerConfig = new \Ineersa\CodingAgent\Config\Ai\AiProviderConfig(
@@ -70,19 +70,41 @@ final class AiCostCalculatorTest extends TestCase
         $this->assertEqualsWithDelta(1.50, $cost, 0.01);
     }
 
-    public function testCalculateCostWithCachedTokens(): void
+    public function testCalculateCostPartitionsCacheReadAndWrite(): void
     {
         $cost = $this->calculator->calculateCost('anthropic/claude-sonnet-4', [
             'input_tokens' => 1_000_000,
             'output_tokens' => 500_000,
+            'cache_read_tokens' => 200_000,
+            'cache_creation_tokens' => 100_000,
+            // Legacy alias must not double-count when cache_read_tokens is present.
             'cached_tokens' => 200_000,
         ]);
 
-        // input: 1M × $3/M = $3.00
-        // output: 500k × $15/M = $7.50
-        // cached: 200k × $3.75/M = $0.75
-        // total: $11.25
-        $this->assertEqualsWithDelta(11.25, $cost, 0.01);
+        // Partition: total input includes read+write classes, each billed once.
+        // uncached: (1_000_000 - 200_000 - 100_000) × $3/M = $2.10
+        // cache read: 200_000 × $3.75/M = $0.75
+        // cache write: 100_000 × $6/M = $0.60
+        // output: 500_000 × $15/M = $7.50
+        // total: $10.95
+        // Old double-billing charged full input ($3.00) + read again ($0.75) = $11.25+
+        $this->assertEqualsWithDelta(10.95, $cost, 0.01);
+    }
+
+    public function testCalculateCostFallsBackToCachedTokensAlias(): void
+    {
+        // When only the legacy/provider-normalized cached_tokens alias is present,
+        // it is partitioned out of total input and billed once at cache_read price.
+        $cost = $this->calculator->calculateCost('anthropic/claude-sonnet-4', [
+            'input_tokens' => 1_000_000,
+            'output_tokens' => 0,
+            'cached_tokens' => 200_000,
+        ]);
+
+        // uncached: 800_000 × $3/M = $2.40
+        // cache read (from cached_tokens): 200_000 × $3.75/M = $0.75
+        // total: $3.15 (not $3.00 + $0.75 double-billing)
+        $this->assertEqualsWithDelta(3.15, $cost, 0.01);
     }
 
     public function testCalculateCostNoPricingReturnsZero(): void
