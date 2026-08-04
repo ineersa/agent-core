@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\TaskWorkflow\Tool;
 
-use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ContextualExtensionToolHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardLock;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardStore;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskMarkdown;
 
-final readonly class CreateTaskHandler implements ExtensionToolHandlerInterface
+final readonly class CreateTaskHandler implements ContextualExtensionToolHandlerInterface
 {
     public function __construct(
         private TaskBoardStore $store,
@@ -19,8 +20,13 @@ final readonly class CreateTaskHandler implements ExtensionToolHandlerInterface
     /**
      * @param array<string, mixed> $arguments
      */
-    public function __invoke(array $arguments): string
+    public function __invoke(array $arguments, ToolInvocationContextDTO $context): mixed
     {
+        $control = InvocationControl::fromContext($context);
+        if (null !== ($interrupt = $control->interrupted('Cancelled before create_task started.'))) {
+            return $interrupt;
+        }
+
         $title = $arguments['title'] ?? null;
         if (!\is_string($title) || '' === trim($title)) {
             throw new \InvalidArgumentException('title is required');
@@ -37,21 +43,36 @@ final readonly class CreateTaskHandler implements ExtensionToolHandlerInterface
         $this->store->ensureTaskDirs($taskRoot);
         $lock = new TaskBoardLock(TaskBoardLock::lockPathForRoot($taskRoot));
 
-        return $lock->withLock(function () use ($taskRoot, $title, $body, $acceptance, $id): string {
-            $slug = TaskMarkdown::slugify($id ?? (TaskMarkdown::today().'-'.$title));
-            $path = $taskRoot.'/TODO/'.$slug.'.md';
-            if (is_file($path)) {
-                throw new \RuntimeException('Task already exists: '.$this->store->rel($taskRoot, $path));
-            }
+        $locked = $lock->withLock(
+            function () use ($taskRoot, $title, $body, $acceptance, $id, $control): mixed {
+                if (null !== ($interrupt = $control->interrupted('Cancelled before writing task file.'))) {
+                    return $interrupt;
+                }
 
-            $content = TaskMarkdown::renderTask($title, $body, $acceptance);
-            if (false === file_put_contents($path, $content)) {
-                throw new \RuntimeException('Failed to write task file: '.$path);
-            }
+                $slug = TaskMarkdown::slugify($id ?? (TaskMarkdown::today().'-'.$title));
+                $path = $taskRoot.'/TODO/'.$slug.'.md';
+                if (is_file($path)) {
+                    throw new \RuntimeException('Task already exists: '.$this->store->rel($taskRoot, $path));
+                }
 
-            // NOTE: No git commit to code repo. Task board is external.
+                $content = TaskMarkdown::renderTask($title, $body, $acceptance);
+                if (false === file_put_contents($path, $content)) {
+                    throw new \RuntimeException('Failed to write task file: '.$path);
+                }
 
-            return ToolResult::text('Created '.$this->store->rel($taskRoot, $path), ['path' => $path]);
-        });
+                // NOTE: No git commit to code repo. Task board is external.
+
+                return ToolResult::text('Created '.$this->store->rel($taskRoot, $path), ['path' => $path]);
+            },
+            $control->cancellationToken,
+            $control->deadlineNs,
+            $control->timeoutSeconds,
+        );
+
+        if (InvocationControl::isInterruptMap($locked)) {
+            return $locked;
+        }
+
+        return $locked;
     }
 }

@@ -6,8 +6,10 @@ namespace Ineersa\HatfieldExt\TaskWorkflow\Worktree;
 
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskInfo;
+use Ineersa\HatfieldExt\TaskWorkflow\Tool\InvocationControl;
 
 final class WorktreeManager
 {
@@ -80,8 +82,12 @@ final class WorktreeManager
         ]);
     }
 
-    public function createWorktreeForTask(string $codeRoot, TaskInfo $task, ?string $worktreeBase): WorktreeCreateResult
-    {
+    public function createWorktreeForTask(
+        string $codeRoot,
+        TaskInfo $task,
+        ?string $worktreeBase,
+        ?InvocationControl $control = null,
+    ): WorktreeCreateResult|ExecResultDTO {
         $slug = preg_replace('/\.md$/', '', $task->file) ?? $task->file;
         $branch = 'task/'.$slug;
         $base = (null !== $worktreeBase && '' !== $worktreeBase)
@@ -95,16 +101,59 @@ final class WorktreeManager
             throw new \RuntimeException('Worktree path already exists: '.$worktree);
         }
 
-        $exists = $this->git->branchExists($codeRoot, $branch);
+        if (null !== ($interrupt = $control?->interrupted('Cancelled before worktree creation.'))) {
+            return $this->interruptResult($interrupt);
+        }
+
+        $exists = $this->git->branchExists($codeRoot, $branch, $control);
+        if (null !== ($interrupt = $control?->interrupted('Interrupted while checking branch existence.'))) {
+            return $this->interruptResult($interrupt);
+        }
+
         $args = $exists
             ? ['worktree', 'add', $worktree, $branch]
             : ['worktree', 'add', '-b', $branch, $worktree, 'HEAD'];
-        $result = $this->git->gitOk($args, $codeRoot);
+        $result = $this->git->gitOk($args, $codeRoot, 120.0, $control);
+        if ($result->cancelled || $result->timedOut) {
+            // git worktree add may leave a partial path; clean reversible owned resources.
+            $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
 
-        $vendorCopied = $this->copyTreeIfMissing($codeRoot.'/vendor', $worktree.'/vendor');
-        $veraCopied = $this->copyTreeIfMissing($codeRoot.'/.vera', $worktree.'/.vera');
+            return $result;
+        }
+
+        if (null !== ($interrupt = $control?->interrupted('Interrupted after worktree create.'))) {
+            $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
+
+            return $this->interruptResult($interrupt);
+        }
+
+        $vendorCopied = $this->copyTreeIfMissing($codeRoot.'/vendor', $worktree.'/vendor', $control);
+        if (null !== ($interrupt = $control?->interrupted('Interrupted while copying vendor.'))) {
+            $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
+
+            return $this->interruptResult($interrupt);
+        }
+
+        $veraCopied = $this->copyTreeIfMissing($codeRoot.'/.vera', $worktree.'/.vera', $control);
+        if (null !== ($interrupt = $control?->interrupted('Interrupted while copying .vera.'))) {
+            $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
+
+            return $this->interruptResult($interrupt);
+        }
+
         $exclusion = $this->addWorktreeExclusions($slug, $base);
-        $extensionsVendorInstalled = $this->installExtensionsVendor($worktree);
+        if (null !== ($interrupt = $control?->interrupted('Interrupted after IDEA exclusion update.'))) {
+            $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
+
+            return $this->interruptResult($interrupt);
+        }
+
+        $extensionsVendorInstalled = $this->installExtensionsVendor($worktree, $control);
+        if ($extensionsVendorInstalled instanceof ExecResultDTO) {
+            $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
+
+            return $extensionsVendorInstalled;
+        }
 
         return new WorktreeCreateResult(
             branch: $branch,
@@ -121,9 +170,9 @@ final class WorktreeManager
     /**
      * @param array{cleanupWorktree: bool, deleteBranch: bool, requireCleanMain: bool, cleanupStaleIndexEntries: bool} $options
      *
-     * @return list<string>
+     * @return list<string>|ExecResultDTO
      */
-    public function mergeTaskBranch(string $codeRoot, TaskInfo $task, array $options): array
+    public function mergeTaskBranch(string $codeRoot, TaskInfo $task, array $options, ?InvocationControl $control = null): array|ExecResultDTO
     {
         $branch = $task->branch;
         $worktree = $task->worktree;
@@ -133,13 +182,22 @@ final class WorktreeManager
 
         $notes = [];
         if ($options['requireCleanMain']) {
-            $mainStatus = $this->git->gitOk(['status', '--porcelain'], $codeRoot);
+            $mainStatus = $this->git->gitOk(['status', '--porcelain'], $codeRoot, 120.0, $control);
+            if ($mainStatus->cancelled || $mainStatus->timedOut) {
+                return $mainStatus;
+            }
             if ('' !== trim($mainStatus->stdout) && $options['cleanupStaleIndexEntries']) {
                 $stalePaths = self::staleAddedDeletedPaths($mainStatus->stdout);
                 if ([] !== $stalePaths) {
-                    $this->git->gitOk(array_merge(['reset', 'HEAD', '--'], $stalePaths), $codeRoot);
+                    $reset = $this->git->gitOk(array_merge(['reset', 'HEAD', '--'], $stalePaths), $codeRoot, 120.0, $control);
+                    if ($reset->cancelled || $reset->timedOut) {
+                        return $reset;
+                    }
                     $notes[] = 'Reset stale staged entries: '.implode(', ', $stalePaths).'.';
-                    $mainStatus = $this->git->gitOk(['status', '--porcelain'], $codeRoot);
+                    $mainStatus = $this->git->gitOk(['status', '--porcelain'], $codeRoot, 120.0, $control);
+                    if ($mainStatus->cancelled || $mainStatus->timedOut) {
+                        return $mainStatus;
+                    }
                 }
             }
             if ('' !== trim($mainStatus->stdout)) {
@@ -147,14 +205,27 @@ final class WorktreeManager
             }
         }
 
-        $wtStatus = $this->git->gitOk(['status', '--porcelain'], $worktree);
+        if (null !== ($interrupt = $control?->interrupted('Interrupted before worktree status check.'))) {
+            return $this->interruptResult($interrupt);
+        }
+
+        $wtStatus = $this->git->gitOk(['status', '--porcelain'], $worktree, 120.0, $control);
+        if ($wtStatus->cancelled || $wtStatus->timedOut) {
+            return $wtStatus;
+        }
         if ('' !== trim($wtStatus->stdout)) {
             throw new \RuntimeException("Worktree has uncommitted changes; commit them before moving to DONE.\n{$worktree}\n{$wtStatus->stdout}");
         }
 
-        $merge = $this->git->git(['merge', '--no-ff', '--no-edit', $branch], $codeRoot);
+        $merge = $this->git->git(['merge', '--no-ff', '--no-edit', $branch], $codeRoot, 120.0, $control);
+        if ($merge->cancelled || $merge->timedOut) {
+            return $merge;
+        }
         if (0 !== $merge->exitCode) {
-            $conflicts = $this->git->git(['diff', '--name-only', '--diff-filter=U'], $codeRoot);
+            $conflicts = $this->git->git(['diff', '--name-only', '--diff-filter=U'], $codeRoot, 120.0, $control);
+            if ($conflicts->cancelled || $conflicts->timedOut) {
+                return $conflicts;
+            }
             throw new \RuntimeException("Merge of {$branch} failed. Resolve conflicts in integration checkout, then retry move_task.\nConflicts:\n".('' !== trim($conflicts->stdout) ? $conflicts->stdout : '(none reported)')."\n\n".trim('' !== $merge->stderr ? $merge->stderr : $merge->stdout));
         }
 
@@ -164,17 +235,27 @@ final class WorktreeManager
         if ($options['cleanupWorktree']) {
             // Shared non-forced cleanup: remove worktree first, then IDEA exclusions only
             // after a successful remove so a dirty/failed worktree keeps its markers.
-            array_push($notes, ...$this->cleanupWorktreeAndIdeaExclusions($codeRoot, $task, failClosed: false));
+            $cleanup = $this->cleanupWorktreeAndIdeaExclusions($codeRoot, $task, failClosed: false, control: $control);
+            if ($cleanup instanceof ExecResultDTO) {
+                return $cleanup;
+            }
+            array_push($notes, ...$cleanup);
         }
 
         if ($options['deleteBranch']) {
-            $del = $this->git->git(['branch', '-d', $branch], $codeRoot);
+            $del = $this->git->git(['branch', '-d', $branch], $codeRoot, 120.0, $control);
+            if ($del->cancelled || $del->timedOut) {
+                return $del;
+            }
             $notes[] = 0 === $del->exitCode
                 ? 'Deleted branch '.$branch.'.'
                 : 'Branch deletion failed: '.trim('' !== $del->stderr ? $del->stderr : $del->stdout);
         }
 
-        $pull = $this->git->git(['pull'], $codeRoot);
+        $pull = $this->git->git(['pull'], $codeRoot, 120.0, $control);
+        if ($pull->cancelled || $pull->timedOut) {
+            return $pull;
+        }
         if (0 === $pull->exitCode) {
             $notes[] = 'Pulled integration checkout: '.trim('' !== $pull->stdout ? $pull->stdout : $pull->stderr).'.';
         } else {
@@ -192,9 +273,9 @@ final class WorktreeManager
      * Leave the git branch intact. Historical Branch/Worktree metadata is left
      * for the caller to preserve in the task Markdown.
      *
-     * @return list<string>
+     * @return list<string>|ExecResultDTO
      */
-    public function removeTaskWorktreeSafely(string $codeRoot, TaskInfo $task): array
+    public function removeTaskWorktreeSafely(string $codeRoot, TaskInfo $task, ?InvocationControl $control = null): array|ExecResultDTO
     {
         $worktree = $task->worktree;
         if (null === $worktree || '' === $worktree) {
@@ -218,7 +299,7 @@ final class WorktreeManager
             return $notes;
         }
 
-        return $this->cleanupWorktreeAndIdeaExclusions($codeRoot, $task, failClosed: true);
+        return $this->cleanupWorktreeAndIdeaExclusions($codeRoot, $task, failClosed: true, control: $control);
     }
 
     /** @return array{updated: bool, note?: string} */
@@ -311,10 +392,14 @@ final class WorktreeManager
      * Ordering invariant: never strip IDEA exclusions until `git worktree remove`
      * succeeds. Never force-delete or recursively delete a dirty worktree.
      *
-     * @return list<string>
+     * @return list<string>|ExecResultDTO
      */
-    private function cleanupWorktreeAndIdeaExclusions(string $codeRoot, TaskInfo $task, bool $failClosed): array
-    {
+    private function cleanupWorktreeAndIdeaExclusions(
+        string $codeRoot,
+        TaskInfo $task,
+        bool $failClosed,
+        ?InvocationControl $control = null,
+    ): array|ExecResultDTO {
         $worktree = $task->worktree;
         if (null === $worktree || '' === $worktree) {
             return [];
@@ -325,7 +410,10 @@ final class WorktreeManager
         $notes = [];
 
         // Non-forced remove only. Dirty trees must fail rather than be deleted.
-        $remove = $this->git->git(['worktree', 'remove', $worktree], $codeRoot);
+        $remove = $this->git->git(['worktree', 'remove', $worktree], $codeRoot, 120.0, $control);
+        if ($remove->cancelled || $remove->timedOut) {
+            return $remove;
+        }
         if (0 !== $remove->exitCode) {
             $detail = trim('' !== $remove->stderr ? $remove->stderr : $remove->stdout);
             if ($failClosed) {
@@ -359,13 +447,13 @@ final class WorktreeManager
         return rtrim($codeRoot, '/').'/'.ltrim($worktreeBase, '/');
     }
 
-    private function copyTreeIfMissing(string $source, string $dest): bool
+    private function copyTreeIfMissing(string $source, string $dest, ?InvocationControl $control = null): bool
     {
         if (!is_dir($source) || is_dir($dest)) {
             return false;
         }
         try {
-            $this->recursiveCopy($source, $dest);
+            $this->recursiveCopy($source, $dest, $control);
 
             return true;
         } catch (\Throwable) {
@@ -375,7 +463,7 @@ final class WorktreeManager
         }
     }
 
-    private function installExtensionsVendor(string $worktree): bool
+    private function installExtensionsVendor(string $worktree, ?InvocationControl $control = null): bool|ExecResultDTO
     {
         $extensionsDir = $worktree.'/.hatfield/extensions';
         if (!is_dir($extensionsDir) || !is_file($extensionsDir.'/composer.json')) {
@@ -385,8 +473,15 @@ final class WorktreeManager
             $result = $this->exec->exec(
                 'composer',
                 ['install', '-d', $extensionsDir, '--no-interaction', '--no-progress'],
-                new ExecOptionsDTO(cwd: $worktree, timeout: 120.0),
+                new ExecOptionsDTO(
+                    cwd: $worktree,
+                    timeout: $control?->remainingTimeoutSeconds(120.0) ?? 120.0,
+                    cancellationToken: $control?->cancellationToken,
+                ),
             );
+            if ($result->cancelled || $result->timedOut) {
+                return $result;
+            }
             if (0 !== $result->exitCode) {
                 return false;
             }
@@ -399,7 +494,7 @@ final class WorktreeManager
         }
     }
 
-    private function recursiveCopy(string $source, string $dest): void
+    private function recursiveCopy(string $source, string $dest, ?InvocationControl $control = null): void
     {
         if (!is_dir($dest)) {
             mkdir($dest, 0o755, true);
@@ -409,6 +504,9 @@ final class WorktreeManager
             \RecursiveIteratorIterator::SELF_FIRST
         );
         foreach ($iterator as $item) {
+            if (null !== $control && $control->isInterrupted()) {
+                throw new \RuntimeException('Copy interrupted.');
+            }
             $target = $dest.\DIRECTORY_SEPARATOR.$iterator->getSubPathname();
             if ($item->isDir()) {
                 if (!is_dir($target)) {
@@ -418,6 +516,41 @@ final class WorktreeManager
                 throw new \RuntimeException('Copy failed: '.$item->getPathname());
             }
         }
+    }
+
+    /**
+     * Best-effort cleanup of a worktree created during this interrupted transition.
+     * Uses existing non-forced git worktree remove + IDEA exclusion cleanup ordering.
+     * IDEA exclusions are removed only when git worktree remove succeeds (exit 0),
+     * matching cleanupWorktreeAndIdeaExclusions fail-closed ordering.
+     */
+    private function cleanupPartialWorktree(string $codeRoot, string $worktree, string $slug, string $base): void
+    {
+        if (!is_dir($worktree)) {
+            // Directory already gone — still clear IDEA markers that point at it.
+            $this->removeWorktreeExclusions($slug, $base);
+
+            return;
+        }
+
+        $remove = $this->git->git(['worktree', 'remove', $worktree], $codeRoot);
+        if (0 === $remove->exitCode) {
+            $this->removeWorktreeExclusions($slug, $base);
+        }
+    }
+
+    /**
+     * @param array{cancelled?: true, timed_out?: true, timeout_seconds?: int, message?: string} $interrupt
+     */
+    private function interruptResult(array $interrupt): ExecResultDTO
+    {
+        return new ExecResultDTO(
+            stdout: '',
+            stderr: (string) ($interrupt['message'] ?? 'Interrupted.'),
+            exitCode: -1,
+            timedOut: true === ($interrupt['timed_out'] ?? false),
+            cancelled: true === ($interrupt['cancelled'] ?? false),
+        );
     }
 
     private function findParentIdeaModule(string $worktreeBase): ?string

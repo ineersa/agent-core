@@ -7,6 +7,7 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 use HelgeSverre\Toon\Toon;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\CodingAgent\Extension\ExtensionToolHandlerAdapter;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -483,6 +484,96 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
             $this->assertIsString($seen);
             $this->assertSame('5', $seen);
         }
+    }
+
+    #[Test]
+    public function recallReturnsStructuredCancelledBeforeHydrationWhenTokenAlreadySet(): void
+    {
+        // Thesis: cooperative cancel must return a structured cancelled map without TOON encoding
+        // and without reading session events once cancellation is already requested.
+        $dbPath = $this->tmpDir.'/om-cancel.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
+        $obs = new ObservationRepository($connection);
+
+        $obsId = str_repeat('a', 64);
+        $obs->commitChunkPartCoverage(
+            coverageKey: 'cov-cancel',
+            runId: 'run-cancel',
+            boundaryKey: 'b-cancel',
+            sourceStartSeq: 1,
+            sourceEndSeq: 2,
+            chunkKey: 'chunk-cancel',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'd-cancel',
+            partDigest: 'p-cancel',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [[
+                'observation_id' => $obsId,
+                'content' => 'Should not hydrate events when cancelled',
+                'content_hash' => hash('sha256', 'Should not hydrate events when cancelled'),
+                'relevance' => 'medium',
+                'timestamp' => '2026-07-28 13:00',
+                'token_count' => 10,
+                'source_refs_json' => json_encode([
+                    ['run_id' => 'run-cancel', 'seq' => 1],
+                ], \JSON_THROW_ON_ERROR),
+            ]],
+            coveredAt: '2026-07-28T13:00:00+00:00',
+        );
+
+        $reader = new class implements SessionEventReaderInterface {
+            public int $reads = 0;
+
+            public function readRange(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                ++$this->reads;
+                yield new SessionEventDTO(
+                    runId: $runId,
+                    seq: 1,
+                    turnNo: 1,
+                    type: 'message',
+                    payload: ['seq' => 1],
+                    createdAt: '2026-07-28T13:00:00+00:00',
+                );
+            }
+        };
+
+        $api = $this->api($this->tmpDir, $reader);
+        $settings = OmSettings::fromArray([
+            'storage' => ['database' => $dbPath],
+            'model' => 'llama_cpp_test/test',
+            'observer' => [],
+            'reflector' => [],
+        ]);
+        $handler = new RecallToolHandler(new OmQueryService($api, $settings));
+        $accessor = new StackToolExecutionContextAccessor();
+        $adapter = new ExtensionToolHandlerAdapter($handler, $accessor);
+
+        $cancelToken = new class implements CancellationTokenInterface {
+            public function isCancellationRequested(): bool
+            {
+                return true;
+            }
+        };
+
+        $result = $accessor->with(
+            new ToolContext(
+                runId: 'run-cancel',
+                turnNo: 1,
+                toolCallId: 'tc-cancel',
+                toolName: 'recall',
+                cancellationToken: $cancelToken,
+                timeoutSeconds: null,
+            ),
+            static fn (): mixed => $adapter(['id' => $obsId]),
+        );
+
+        $this->assertIsArray($result);
+        $this->assertTrue($result['cancelled'] ?? false);
+        $this->assertSame(0, $reader->reads, 'cancelled recall must not hydrate session events');
     }
 
     private function api(string $cwd, SessionEventReaderInterface $reader): ExtensionApiInterface

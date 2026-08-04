@@ -320,6 +320,12 @@ while ($process->isRunning()) {
 }
 ```
 
+Prefer the host exec helper when available: `$api->exec()` accepts optional
+`ExecOptionsDTO::$cancellationToken` and returns `ExecResultDTO::$cancelled` /
+`$timedOut` after stopping the owned child. Effective timeout is the options
+`timeout` value; combine with remaining invocation budget in the caller when
+both apply.
+
 #### Cancellable / nonblocking lock loops
 
 Prefer nonblocking acquisition with retry rather than unbounded `flock()`:
