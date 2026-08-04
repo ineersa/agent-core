@@ -519,11 +519,6 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // Build session-scoped queue names so no cross-session message
         // stealing can occur. Falls back to 'default' before start().
         $queueSuffix = $this->sessionId ?? 'default';
-        // Fixed redeliver_timeout=60 pairs with ConsumerSupervisor --keepalive=5:
-        // delivered-but-unacked rows become receivable again after worker death
-        // without reclaiming live long-running handlers that keep refreshing
-        // delivered_at. Not a user setting — production recovery semantics.
-        $sessionTransportDsns = $this->sessionScopedDoctrineTransportDsns($queueSuffix);
 
         $env = array_merge(\is_array($currentEnv) ? $currentEnv : $_ENV, [
             'APP_ENV' => $_SERVER['APP_ENV'] ?? $_ENV['APP_ENV'] ?? 'prod',
@@ -531,12 +526,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             // Controller/worker mode must use real async queues. The parent
             // TUI process defaults to sync:// so --transport=in-process remains
             // usable without a consumer pool.
-            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => $sessionTransportDsns['run_control'],
-            'HATFIELD_LLM_TRANSPORT_DSN' => $sessionTransportDsns['llm'],
-            'HATFIELD_TOOL_TRANSPORT_DSN' => $sessionTransportDsns['tool'],
-            'HATFIELD_AGENT_TRANSPORT_DSN' => $sessionTransportDsns['agent'],
-            'HATFIELD_MCP_TRANSPORT_DSN' => $sessionTransportDsns['mcp'],
-            'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN' => $sessionTransportDsns['extension_agent'],
+            // redeliver_timeout=60 + ConsumerSupervisor --keepalive=5: abandoned
+            // delivered rows reclaim after worker death; live handlers keep the lease.
+            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=run_control_{$queueSuffix}&redeliver_timeout=60",
+            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=llm_{$queueSuffix}&redeliver_timeout=60",
+            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=tool_{$queueSuffix}&redeliver_timeout=60",
+            'HATFIELD_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=agent_{$queueSuffix}&redeliver_timeout=60",
+            'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=mcp_{$queueSuffix}&redeliver_timeout=60",
+            'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=extension_agent_{$queueSuffix}&redeliver_timeout=60",
             // Pass session ID so the controller can identify and reap its own
             // orphaned consumers when a previous session was SIGKILL'd.
             'HATFIELD_SESSION_ID' => $this->sessionId ?? 'unknown',
@@ -885,39 +882,6 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             '' !== $stderr ? $stderr : '<empty>',
             '' !== $stdout ? $stdout : '<empty>',
         );
-    }
-
-    /**
-     * Session-scoped Doctrine Messenger DSNs for controller + consumers.
-     *
-     * redeliver_timeout=60 is fixed recovery semantics (not user-configurable):
-     * abandoned delivered rows reclaim after lease age; ConsumerSupervisor
-     * keepalive keeps live workers from matching that threshold.
-     *
-     * @return array{
-     *     run_control: string,
-     *     llm: string,
-     *     tool: string,
-     *     agent: string,
-     *     mcp: string,
-     *     extension_agent: string
-     * }
-     */
-    private function sessionScopedDoctrineTransportDsns(string $queueSuffix): array
-    {
-        $build = static fn (string $queue): string => \sprintf(
-            'doctrine://messenger_transport?queue_name=%s&redeliver_timeout=60',
-            $queue,
-        );
-
-        return [
-            'run_control' => $build('run_control_'.$queueSuffix),
-            'llm' => $build('llm_'.$queueSuffix),
-            'tool' => $build('tool_'.$queueSuffix),
-            'agent' => $build('agent_'.$queueSuffix),
-            'mcp' => $build('mcp_'.$queueSuffix),
-            'extension_agent' => $build('extension_agent_'.$queueSuffix),
-        ];
     }
 
     /**

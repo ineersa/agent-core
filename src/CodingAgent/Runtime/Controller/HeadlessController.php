@@ -17,8 +17,6 @@ use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
-use Symfony\Component\Lock\Exception\LockAcquiringException;
-use Symfony\Component\Lock\Exception\LockConflictedException;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\LockInterface;
 
@@ -474,31 +472,18 @@ final class HeadlessController
 
     /**
      * Non-blocking process-lifetime flock for one controller per project CWD + session.
-     *
-     * Key is hashed so lock resource names stay short and privacy-safe (no raw paths).
      * TTL null keeps the lock until explicit release or process death (flock auto-release).
+     * Unexpected lock-store failures propagate; only a held lock returns false.
      */
     private function acquireSessionOwnerLock(): bool
     {
-        $resource = $this->sessionOwnerLockResource();
-        $lock = $this->lockFactory->createLock($resource, ttl: null, autoRelease: true);
+        $lock = $this->lockFactory->createLock($this->sessionOwnerLockResource(), ttl: null, autoRelease: true);
 
-        try {
-            if (!$lock->acquire(blocking: false)) {
-                $this->logger->error('Controller session already owned by another live process', [
-                    'component' => 'HeadlessController',
-                    'event_type' => 'controller.session_owner_lock_conflict',
-                    'session_id' => $this->sessionId,
-                ]);
-
-                return false;
-            }
-        } catch (LockConflictedException|LockAcquiringException $e) {
-            $this->logger->error('Controller session owner lock acquire failed', [
+        if (!$lock->acquire(blocking: false)) {
+            $this->logger->error('Controller session already owned by another live process', [
                 'component' => 'HeadlessController',
-                'event_type' => 'controller.session_owner_lock_error',
+                'event_type' => 'controller.session_owner_lock_conflict',
                 'session_id' => $this->sessionId,
-                'error' => $e->getMessage(),
             ]);
 
             return false;
