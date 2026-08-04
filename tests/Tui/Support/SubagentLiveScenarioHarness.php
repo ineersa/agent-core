@@ -327,11 +327,7 @@ final class SubagentLiveScenarioHarness
 
     public function statusText(string $key): ?string
     {
-        $ref = new \ReflectionClass($this->screen);
-        $providerProp = $ref->getProperty('footerDataProvider');
-        $data = $providerProp->getValue($this->screen);
-        /** @var array<string, string> $entries */
-        $entries = $data->getStatusEntries();
+        $entries = $this->screen->registry()->getStatusEntries();
 
         return $entries[$key] ?? null;
     }

@@ -7,6 +7,7 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Tests\Tui;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\HatfieldExt\ObservationalMemory\Storage\ActivityRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
 use Ineersa\Tui\Tests\E2E\TmuxHarness;
@@ -129,6 +130,77 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
             $this->saveAnsiSnapshot($pane, 'om-commands-smoke-FAILURE');
+            try {
+                $this->tmux->sendKey($pane, 'C-d');
+            } catch (\Throwable) {
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Thesis: OM background activity status is visible once in the current viewport
+     * status panel via the real poller path, not duplicated on the footer line.
+     */
+    public function testOmBackgroundStatusAppearsOnceNotInFooter(): void
+    {
+        $activityText = 'Observational memory: reflector running (~2,500 tokens)';
+
+        $pane = $this->tmux->startDetached(
+            command: $this->agentCommand(),
+            prefix: 'tui-om-status',
+            width: 140,
+            height: 60,
+            cwd: $this->testProjectDir,
+        );
+
+        try {
+            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
+
+            $this->tmux->sendKey($pane, 'C-u');
+            $this->tmux->sendLiteral($pane, 'om e2e status seed');
+            $this->tmux->sendKey($pane, 'Enter');
+            $sessionId = $this->waitForLiveSessionId();
+
+            $this->tmux->sendKey($pane, 'Escape');
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, '◆') || str_contains($cap, 'idle') || str_contains($cap, '█'),
+                timeout: 8.0,
+                message: 'TUI did not settle after cancel',
+                history: 2000,
+            );
+
+            $this->seedActivityForSession($sessionId);
+
+            $viewport = $this->waitForViewport(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, $activityText)
+                    && str_contains($cap, 'om-background'),
+                timeout: 8.0,
+                message: 'OM background status not visible in current viewport',
+            );
+
+            $this->assertSame(
+                1,
+                substr_count($viewport, $activityText),
+                "activity text must appear exactly once in viewport:\n".$viewport,
+            );
+            $this->assertFooterLineDoesNotContain($viewport, $sessionId, $activityText);
+
+            $this->clearActivityForSession($sessionId);
+            $this->waitForViewport(
+                $pane,
+                static fn (string $cap): bool => !str_contains($cap, $activityText),
+                timeout: 5.0,
+                message: 'OM background status did not clear from viewport',
+            );
+
+            $this->saveAnsiSnapshot($pane, 'om-background-status-once');
+            $this->tmux->sendKey($pane, 'C-d');
+        } catch (\Throwable $e) {
+            $this->saveAnsiSnapshot($pane, 'om-background-status-once-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
@@ -342,6 +414,52 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
             'UPDATE om_observation SET source_refs_json = ? WHERE observation_id = ?',
             [json_encode([['run_id' => $sessionId, 'seq' => 1]], \JSON_THROW_ON_ERROR), $this->observationId],
         );
+    }
+
+    private function seedActivityForSession(string $sessionId): void
+    {
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($this->seedDbPath);
+        $repo = new ActivityRepository($connection);
+        $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+        $repo->upsert(
+            $sessionId,
+            'job-e2e-status',
+            'reflector',
+            2500,
+            null,
+            $now->format(\DateTimeInterface::ATOM),
+        );
+    }
+
+    private function clearActivityForSession(string $sessionId): void
+    {
+        $connection = $this->omDatabaseFactory()->connect($this->seedDbPath);
+        $repo = new ActivityRepository($connection);
+        $repo->clear($sessionId, 'job-e2e-status');
+    }
+
+    private function assertFooterLineDoesNotContain(string $viewport, string $sessionId, string $needle): void
+    {
+        $footerNeedle = 'session '.$sessionId;
+        foreach (explode("\n", $viewport) as $line) {
+            if (str_contains($line, $footerNeedle) || (str_contains($line, '◆') && str_contains($line, 'session'))) {
+                $this->assertStringNotContainsString(
+                    $needle,
+                    $line,
+                    "keyed OM status must not appear on footer line:\n".$line,
+                );
+
+                return;
+            }
+        }
+
+        // Footer may use model/cwd segments without the session label on the same line;
+        // still require the activity string not sit on a ◆ footer-looking line alone.
+        foreach (explode("\n", $viewport) as $line) {
+            if (str_contains($line, '◆') && str_contains($line, $needle)) {
+                $this->fail("keyed OM status appeared on a footer-like line:\n".$line);
+            }
+        }
     }
 
     private function omDatabaseFactory(): OmDatabaseFactoryTestService

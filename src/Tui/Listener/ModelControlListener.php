@@ -178,11 +178,8 @@ final class ModelControlListener implements TuiListenerRegistrar
             // diamond and model name with the appropriate Thinking* token.
             $state->footerReasoning = $nextLevel;
 
-            // Show the new level in the status panel ONLY (not the footer bar).
-            // We set the registry directly so the reasoning key does NOT leak
-            // into FooterDataProvider and its right-side footer text.
-            $screen->registry()->setStatus('reasoning', $nextLevel);
-            $screen->refresh();
+            // Panel-only keyed status (setStatus no longer mirrors into the footer).
+            $screen->setStatus('reasoning', $nextLevel);
 
             // Apply editor border colour matching the new reasoning level.
             $screen->applyEditorBorderColor($nextLevel);

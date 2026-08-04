@@ -461,11 +461,11 @@ final class ChatScreen
             return;
         }
 
+        // Panel-only: keyed statuses never fan out into the footer bar.
+        // Footer content comes from explicit FooterSegmentProvider / setFooter APIs.
         $this->registry->setStatus($key, $text);
         $this->statusPanelRenderable->setEntry($key, $text);
-        $this->footerDataProvider->setStatus($key, $text);
         $this->statusPanelWidget->invalidate();
-        $this->footerWidget->invalidate();
     }
 
     /**
