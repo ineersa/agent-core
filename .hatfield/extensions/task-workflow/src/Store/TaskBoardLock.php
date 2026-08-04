@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\TaskWorkflow\Store;
 
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCancellationTokenInterface;
+
 final class TaskBoardLock
 {
+    private const int POLL_INTERVAL_MICROS = 50_000;
+
     public function __construct(
         private readonly string $lockPath,
     ) {
@@ -14,12 +18,18 @@ final class TaskBoardLock
     /**
      * @template T
      *
-     * @param callable(): T $callback
+     * @param callable(): T                       $callback
+     * @param ToolCancellationTokenInterface|null $cancellationToken Cooperative cancel during lock wait
+     * @param int|null                            $deadlineNs        Absolute hrtime(true) deadline, or null
      *
-     * @return T
+     * @return T|array{cancelled?: true, timed_out?: true, timeout_seconds?: int, message: string}
      */
-    public function withLock(callable $callback): mixed
-    {
+    public function withLock(
+        callable $callback,
+        ?ToolCancellationTokenInterface $cancellationToken = null,
+        ?int $deadlineNs = null,
+        ?int $timeoutSeconds = null,
+    ): mixed {
         $dir = \dirname($this->lockPath);
         if (!is_dir($dir)) {
             mkdir($dir, 0o755, true);
@@ -30,14 +40,54 @@ final class TaskBoardLock
             throw new \RuntimeException('Failed to open task workflow lock: '.$this->lockPath);
         }
 
+        $acquired = false;
         try {
-            if (!flock($handle, \LOCK_EX)) {
-                throw new \RuntimeException('Failed to acquire task workflow lock: '.$this->lockPath);
+            while (true) {
+                if (null !== $cancellationToken && $cancellationToken->isCancellationRequested()) {
+                    return [
+                        'cancelled' => true,
+                        'message' => 'Cancelled while waiting for task board lock.',
+                    ];
+                }
+
+                if (null !== $deadlineNs && hrtime(true) >= $deadlineNs) {
+                    return [
+                        'timed_out' => true,
+                        'timeout_seconds' => $timeoutSeconds ?? 0,
+                        'message' => 'Timed out while waiting for task board lock.',
+                    ];
+                }
+
+                // Nonblocking acquire so Escape/deadline can interrupt waiters.
+                if (flock($handle, \LOCK_EX | \LOCK_NB)) {
+                    $acquired = true;
+                    break;
+                }
+
+                usleep(self::POLL_INTERVAL_MICROS);
+            }
+
+            // Re-check after acquire so a cancel that arrives between wait and
+            // critical section never mutates board state under a held lock.
+            if (null !== $cancellationToken && $cancellationToken->isCancellationRequested()) {
+                return [
+                    'cancelled' => true,
+                    'message' => 'Cancelled after acquiring task board lock.',
+                ];
+            }
+            if (null !== $deadlineNs && hrtime(true) >= $deadlineNs) {
+                return [
+                    'timed_out' => true,
+                    'timeout_seconds' => $timeoutSeconds ?? 0,
+                    'message' => 'Timed out after acquiring task board lock.',
+                ];
             }
 
             return $callback();
         } finally {
-            flock($handle, \LOCK_UN);
+            if ($acquired) {
+                flock($handle, \LOCK_UN);
+            }
             fclose($handle);
         }
     }

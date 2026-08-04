@@ -465,6 +465,99 @@ final class ToolExecutorTest extends TestCase
         $this->assertArrayNotHasKey('timed_out', $result->details ?? []);
         $this->assertGreaterThanOrEqual(2000, $result->details['duration_ms'] ?? 0);
     }
+
+    public function testDocumentedCancelledMapIsPreservedAndNotRewrittenStale(): void
+    {
+        // Thesis: extension handlers returning ['cancelled'=>true] must keep that control
+        // flag in details even when the run cancel token is also set after return.
+        // Token must start false so ToolExecutor does not short-circuit before start.
+        $token = new class implements CancellationTokenInterface {
+            public bool $cancelled = false;
+
+            public function isCancellationRequested(): bool
+            {
+                return $this->cancelled;
+            }
+        };
+
+        $toolbox = new class($token) implements ToolboxInterface {
+            public function __construct(private object $token)
+            {
+            }
+
+            public function getTools(): array
+            {
+                return [];
+            }
+
+            public function execute(SymfonyToolCall $toolCall): SymfonyToolResult
+            {
+                // Simulate cancel becoming true during/after handler-owned stop.
+                $this->token->cancelled = true;
+
+                return new SymfonyToolResult($toolCall, [
+                    'cancelled' => true,
+                    'message' => 'Stopped by handler.',
+                ]);
+            }
+        };
+
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            maxParallelism: 2,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+        );
+
+        $result = $executor->execute(ToolCallBuilder::create('call-cancel')
+            ->withToolName('ext_tool')
+            ->withArguments([])
+            ->withOrderIndex(0)
+            ->withContext(['cancel_token' => $token])
+            ->build());
+
+        $this->assertFalse($result->isError);
+        $this->assertTrue($result->details['cancelled'] ?? false);
+        $this->assertArrayNotHasKey('stale_due_to_cancel', $result->details ?? []);
+        $this->assertSame('Stopped by handler.', $result->details['message'] ?? null);
+    }
+
+    public function testDocumentedTimedOutMapIsPromotedToDetails(): void
+    {
+        $toolbox = new class implements ToolboxInterface {
+            public function getTools(): array
+            {
+                return [];
+            }
+
+            public function execute(SymfonyToolCall $toolCall): SymfonyToolResult
+            {
+                return new SymfonyToolResult($toolCall, [
+                    'timed_out' => true,
+                    'timeout_seconds' => 12,
+                    'message' => 'Deadline hit.',
+                ]);
+            }
+        };
+
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            maxParallelism: 2,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+        );
+
+        $result = $executor->execute(ToolCallBuilder::create('call-timeout')
+            ->withToolName('ext_tool')
+            ->withArguments([])
+            ->withOrderIndex(0)
+            ->build());
+
+        $this->assertFalse($result->isError);
+        $this->assertTrue($result->details['timed_out'] ?? false);
+        $this->assertSame(12, $result->details['timeout_seconds'] ?? null);
+        $this->assertSame('Deadline hit.', $result->details['message'] ?? null);
+    }
 }
 
 #[AsTool(name: 'human_gate', description: 'Ask for human input.')]

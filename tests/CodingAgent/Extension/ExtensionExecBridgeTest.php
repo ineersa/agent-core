@@ -5,14 +5,17 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Ineersa\CodingAgent\Extension\ExtensionExecBridge;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCancellationTokenInterface;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Tests for ExtensionExecBridge — the Symfony Process-backed implementation
  * of ExecInterface exposed to extensions.
  *
- * Covers basic subprocess execution, timeout handling, and exit code capture.
+ * Covers basic subprocess execution, timeout handling, cooperative cancellation,
+ * and exit code capture.
  */
 final class ExtensionExecBridgeTest extends TestCase
 {
@@ -68,7 +71,67 @@ final class ExtensionExecBridgeTest extends TestCase
         );
 
         $this->assertTrue($result->timedOut);
+        $this->assertFalse($result->cancelled);
         // Timeout is implemented by killing the process; exit code may vary
+    }
+
+    public function testExecCancellationStopsSleepingChildBeforeMarker(): void
+    {
+        // Thesis: without cooperative cancel in ExtensionExecBridge, Escape cannot stop
+        // an extension-owned subprocess mid-run, and markers would still be written.
+        $dir = TestDirectoryIsolation::createProjectTempDir('exec-cancel');
+        $marker = $dir.'/marker.txt';
+
+        try {
+            $token = new class implements ToolCancellationTokenInterface {
+                private int $checks = 0;
+
+                public function isCancellationRequested(): bool
+                {
+                    // Flip after the process has had a chance to start.
+                    return ++$this->checks >= 2;
+                }
+            };
+
+            $started = hrtime(true);
+            $result = $this->execBridge->exec(
+                'sh',
+                ['-c', 'sleep 5; echo done > '.escapeshellarg($marker)],
+                new ExecOptionsDTO(cancellationToken: $token, timeout: 10.0),
+            );
+            $elapsedMs = (hrtime(true) - $started) / 1_000_000;
+
+            $this->assertTrue($result->cancelled);
+            $this->assertFalse($result->timedOut);
+            $this->assertFileDoesNotExist($marker);
+            $this->assertLessThan(4000, $elapsedMs, 'cancelled child must stop well before the 5s sleep completes');
+        } finally {
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
+    }
+
+    public function testExecDeadlineStopsSleepingChildBeforeMarker(): void
+    {
+        // Thesis: deadline path must stop owned children and set timedOut distinctly from cancelled.
+        $dir = TestDirectoryIsolation::createProjectTempDir('exec-deadline');
+        $marker = $dir.'/marker.txt';
+
+        try {
+            $started = hrtime(true);
+            $result = $this->execBridge->exec(
+                'sh',
+                ['-c', 'sleep 5; echo done > '.escapeshellarg($marker)],
+                new ExecOptionsDTO(timeout: 0.15),
+            );
+            $elapsedMs = (hrtime(true) - $started) / 1_000_000;
+
+            $this->assertTrue($result->timedOut);
+            $this->assertFalse($result->cancelled);
+            $this->assertFileDoesNotExist($marker);
+            $this->assertLessThan(3000, $elapsedMs);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
     }
 
     public function testExecWithCwd(): void
