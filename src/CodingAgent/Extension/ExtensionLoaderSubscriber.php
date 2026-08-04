@@ -52,8 +52,8 @@ final class ExtensionLoaderSubscriber implements EventSubscriberInterface
 
         $diagnostics = $this->extensionManager->loadExtensions();
 
-        // Workers inherit HATFIELD_TOOLS / HATFIELD_TOOLS_EXCLUDED from the
-        // controller env (ConsumerSupervisor::launch uses $_ENV). Controllers
+        // Symfony Process propagates the controller process environment
+        // (including getenv/default env) on consumer launch/recycle. Controllers
         // also receive the same filters via --tools / --tools-excluded argv.
         $this->toolFilterConfig->hydrateFromEnvironment();
         $this->toolFilterConfig->applyToRegistry($this->toolRegistry);

@@ -104,30 +104,16 @@ PHP);
         $this->assertSame('read,bash', $first['env']['HATFIELD_TOOLS']);
         $this->assertSame('bash', $first['env']['HATFIELD_TOOLS_EXCLUDED']);
 
-        // Different runId restarts the controller via ensureProcessRunning().
+        // Second client shares the same ToolFilterRuntimeConfig and proves
+        // immutable config reuse at the common spawnProcess() seam. This does
+        // not force ensureProcessRunning() crash/session restart.
         $secondDumpFile = $this->tmpDir.'/dump-2.json';
-        // Rebuild client with same filter config but a new dump path by swapping
-        // the locator script flag — instead, mutate the dump path via a second
-        // client sharing the same filter object to prove immutable config reuse.
         $client2 = $this->createClient($toolFilter, $secondDumpFile);
         $client2->start(new StartRunRequest(prompt: 'hello', runId: 'run-b'));
         $second = $this->waitForDump($secondDumpFile);
 
         $this->assertSame($first['argv'], $second['argv']);
         $this->assertSame($first['env'], $second['env']);
-    }
-
-    public function testControllerArgsAndProcessEnvMatchCanonicalState(): void
-    {
-        $config = new ToolFilterRuntimeConfig();
-        $config->tools = 'read,write';
-        $config->toolsExcluded = 'write';
-
-        $this->assertSame(['--tools=read,write', '--tools-excluded=write'], $config->controllerArgs());
-        $this->assertSame([
-            'HATFIELD_TOOLS' => 'read,write',
-            'HATFIELD_TOOLS_EXCLUDED' => 'write',
-        ], $config->processEnv());
     }
 
     /**

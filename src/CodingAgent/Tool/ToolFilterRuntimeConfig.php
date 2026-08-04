@@ -126,18 +126,10 @@ final class ToolFilterRuntimeConfig
      */
     public static function parseToolNameList(string $raw): array
     {
-        $names = [];
-        $seen = [];
-        foreach (explode(',', $raw) as $token) {
-            $name = trim($token);
-            if ('' === $name || isset($seen[$name])) {
-                continue;
-            }
-            $seen[$name] = true;
-            $names[] = $name;
-        }
-
-        return $names;
+        return array_values(array_unique(array_filter(
+            array_map(trim(...), explode(',', $raw)),
+            static fn (string $name): bool => '' !== $name,
+        )));
     }
 
     private function envValue(string $key): ?string
