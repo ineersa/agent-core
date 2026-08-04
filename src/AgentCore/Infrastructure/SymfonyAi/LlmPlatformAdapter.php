@@ -41,6 +41,7 @@ use Symfony\AI\Platform\Result\Stream\Delta\ToolCallStart;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolInputDelta;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
+use Symfony\AI\Platform\Tool\Tool;
 
 final readonly class LlmPlatformAdapter implements PlatformInterface
 {
@@ -90,6 +91,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         // Build a privacy-safe request summary for error diagnostics.
         // This is included in the error array when the request fails.
         $inputOptions = $input->getOptions();
+        $availableToolsSnapshot = $this->captureAvailableToolsSnapshot($inputOptions);
         $requestSummary = [
             'model' => $request->model,
             'input_count' => \count($messageBag->withoutSystemMessage()->getMessages()),
@@ -136,6 +138,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 modelName: $effectiveModel,
                 requestSummary: $requestSummary,
                 modelNotifications: $modelNotifications,
+                availableTools: $availableToolsSnapshot['tools'],
+                availableToolsSchemaTokensEstimate: $availableToolsSnapshot['schema_tokens_estimate'],
             );
         }
 
@@ -148,7 +152,59 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $requestSummary,
             $modelNotifications,
             $request->options->streamObserverEnabled,
+            $availableToolsSnapshot['tools'],
+            $availableToolsSnapshot['schema_tokens_estimate'],
         );
+    }
+
+    /**
+     * Capture the exact final provider-visible tool set after description processing.
+     *
+     * Privacy-safe: tool names + one aggregate approximate schema token estimate only.
+     * Never includes descriptions, schemas, handlers, secrets, or separate MCP server labels.
+     * MCP affiliation is conveyed by the model-visible prefixed tool name itself.
+     *
+     * @param array<string, mixed> $inputOptions
+     *
+     * @return array{tools: list<string>, schema_tokens_estimate: int}
+     */
+    private function captureAvailableToolsSnapshot(array $inputOptions): array
+    {
+        $rawTools = $inputOptions['tools'] ?? null;
+        if (!\is_array($rawTools) || [] === $rawTools) {
+            return ['tools' => [], 'schema_tokens_estimate' => 0];
+        }
+
+        $tools = [];
+        $schemaRecords = [];
+        foreach ($rawTools as $tool) {
+            if (!$tool instanceof Tool) {
+                continue;
+            }
+
+            $tools[] = $tool->getName();
+
+            $schemaRecords[] = [
+                'type' => 'function',
+                'function' => [
+                    'name' => $tool->getName(),
+                    'description' => $tool->getDescription(),
+                    'parameters' => $tool->getParameters() ?? new \stdClass(),
+                ],
+            ];
+        }
+
+        if ([] === $tools) {
+            return ['tools' => [], 'schema_tokens_estimate' => 0];
+        }
+
+        $json = json_encode($schemaRecords, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+        $estimate = false === $json ? 0 : (int) ceil(\strlen($json) / 4);
+
+        return [
+            'tools' => $tools,
+            'schema_tokens_estimate' => $estimate,
+        ];
     }
 
     /**
@@ -366,6 +422,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      * @param array<string, mixed>       $requestSummary     Privacy-safe request summary for error diagnostics
      * @param list<array<string, mixed>> $modelNotifications generic model notifications
      *                                                       produced by transform context hooks
+     * @param list<string>               $availableTools
      */
     private function consumeStream(
         DeferredResult $deferredResult,
@@ -376,6 +433,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         array $requestSummary = [],
         array $modelNotifications = [],
         bool $streamObserverEnabled = true,
+        array $availableTools = [],
+        int $availableToolsSchemaTokensEstimate = 0,
     ): PlatformInvocationResult {
         $aborted = false;
         $deltas = [];
@@ -411,7 +470,16 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $requestSummary,
             ));
 
-            return $this->errorResult($deltas, $exception, $deferredResult, $modelName, $requestSummary, $modelNotifications);
+            return $this->errorResult(
+                $deltas,
+                $exception,
+                $deferredResult,
+                $modelName,
+                $requestSummary,
+                $modelNotifications,
+                $availableTools,
+                $availableToolsSchemaTokensEstimate,
+            );
         }
 
         if ($streamObserverEnabled) {
@@ -431,6 +499,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             stopReason: $aborted ? 'aborted' : $this->resolveStopReason($assistantMessage, $deferredResult),
             error: null,
             modelNotifications: $modelNotifications,
+            availableTools: $availableTools,
+            availableToolsSchemaTokensEstimate: $availableToolsSchemaTokensEstimate,
         );
     }
 
@@ -607,9 +677,18 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      * @param array<string, mixed>       $requestSummary     Privacy-safe request summary
      * @param list<array<string, mixed>> $modelNotifications generic model notifications
      *                                                       from transform context hooks
+     * @param list<string>               $availableTools
      */
-    private function errorResult(array $deltas, \Throwable $exception, ?DeferredResult $deferredResult, string $modelName = '', array $requestSummary = [], array $modelNotifications = []): PlatformInvocationResult
-    {
+    private function errorResult(
+        array $deltas,
+        \Throwable $exception,
+        ?DeferredResult $deferredResult,
+        string $modelName = '',
+        array $requestSummary = [],
+        array $modelNotifications = [],
+        array $availableTools = [],
+        int $availableToolsSchemaTokensEstimate = 0,
+    ): PlatformInvocationResult {
         $error = [
             'type' => $exception::class,
             'message' => mb_substr($exception->getMessage(), 0, 500),
@@ -649,6 +728,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             stopReason: 'error',
             error: $error,
             modelNotifications: $modelNotifications,
+            availableTools: $availableTools,
+            availableToolsSchemaTokensEstimate: $availableToolsSchemaTokensEstimate,
         );
     }
 

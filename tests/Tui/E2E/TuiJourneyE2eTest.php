@@ -74,7 +74,7 @@ final class TuiJourneyE2eTest extends TestCase
      * Shift+Tab reasoning status/border {@see TuiReasoningCycleTest},
      *
      * @ file completion menu/accept {@see TuiFileCompletionRenderTest},
-     * /export confirmation + HTML file {@see TuiExportCommandVirtualTest},
+     * /export local confirmation {@see TuiExportCommandVirtualTest}; available-tools HTML {@see TuiExportCommandE2eTest},
      * model replay assistant block + cache footer {@see TuiModelInteractionVirtualTest},
      * /hotkeys table, !! rejection — {@see TuiVirtualInputTest}.
      *

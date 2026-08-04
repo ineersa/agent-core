@@ -185,6 +185,13 @@ final class PlatformIntegrationTest extends TestCase
                 turnNo: 2,
                 stepId: 'turn-2-llm-1',
             ),
+            options: new ModelInvocationOptions(
+                extraOptions: [
+                    'tool_descriptions' => [
+                        'web_search' => 'Search docs for turn 2 (override)',
+                    ],
+                ],
+            ),
         ));
 
         $this->assertSame(['transform_context', 'convert_to_llm', 'before_provider_request'], $calls);
@@ -192,7 +199,7 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertTrue($modelClient->capturedOptions['stream']);
         $this->assertSame(64, $modelClient->capturedOptions['max_tokens']);
         $this->assertSame(0.2, $modelClient->capturedOptions['temperature']);
-        $this->assertSame('Search docs for turn 2', $modelClient->capturedOptions['tools'][0]['function']['description']);
+        $this->assertSame('Search docs for turn 2 (override)', $modelClient->capturedOptions['tools'][0]['function']['description']);
         $this->assertArrayNotHasKey(PlatformInvocationMetadata::OPTION_KEY, $modelClient->capturedOptions);
 
         $this->assertSame('Hello world', $response->assistantMessage?->asText());
@@ -200,6 +207,16 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame(7, $response->usage['input_tokens']);
         $this->assertSame(3, $response->usage['output_tokens']);
         $this->assertSame(10, $response->usage['total_tokens']);
+        $this->assertSame(
+            ['web_search'],
+            $response->availableTools,
+            'Final provider-visible tool names must be captured after description override',
+        );
+        $this->assertGreaterThan(
+            0,
+            $response->availableToolsSchemaTokensEstimate,
+            'Aggregate schema token estimate must be positive for a non-empty final tool set',
+        );
     }
 
     /**
