@@ -528,6 +528,54 @@ function hatfield_phar_composer_bin(): string
     return $composerBin;
 }
 
+/**
+ * Replace Composer path-repository symlinks under vendor/ with real copies.
+ *
+ * Path packages resolve as symlinks (often outside the staging tree). Box cannot
+ * package those links into the PHAR, which leaves FQCNs unloadable at runtime.
+ */
+function materialize_vendor_path_package_symlinks(string $stagingDir): void
+{
+    $vendorDir = $stagingDir.'/vendor';
+    if (!is_dir($vendorDir)) {
+        return;
+    }
+
+    $iterator = new \RecursiveIteratorIterator(
+        new \RecursiveDirectoryIterator($vendorDir, \FilesystemIterator::SKIP_DOTS),
+        \RecursiveIteratorIterator::SELF_FIRST,
+    );
+
+    foreach ($iterator as $item) {
+        $path = $item->getPathname();
+        if (!is_link($path) || !is_dir($path)) {
+            continue;
+        }
+
+        $target = realpath($path);
+        if (false === $target || !is_dir($target)) {
+            throw new \RuntimeException('Unable to resolve path-package symlink target for: '.$path);
+        }
+
+        // Only materialize package roots under vendor/<vendor>/<package>.
+        $relative = substr($path, \strlen($vendorDir) + 1);
+        if (1 !== substr_count($relative, '/')) {
+            continue;
+        }
+
+        $tmp = $path.'.materialize-tmp-'.bin2hex(random_bytes(4));
+        run_checked('cp -a '.escapeshellarg($target).' '.escapeshellarg($tmp));
+        if (!unlink($path)) {
+            remove_path_checked($tmp);
+            throw new \RuntimeException('Unable to remove path-package symlink: '.$path);
+        }
+        if (!rename($tmp, $path)) {
+            remove_path_checked($tmp);
+            throw new \RuntimeException('Unable to replace path-package symlink with copy: '.$path);
+        }
+    }
+}
+
 // ─── ──────────────────────────────────────────────────────────────────
 
 function is_llm_mode(): bool
@@ -828,6 +876,8 @@ function phar_packaged_inputs(string $root): array
             $root.'/src',
             $root.'/config',
             $root.'/migrations',
+            // Public ExtensionApi package source (path-required by root composer).
+            $root.'/.hatfield/extensions/extension-api',
             $root.'/internal-docs',
             $root.'/.castor',
             $root.'/tools/phar',
@@ -1497,6 +1547,18 @@ function phar_build(): string
         run_checked('cp -a '.escapeshellarg($srcPath).' '.escapeshellarg($stagingDir.'/'));
     }
 
+    // Path package for ineersa/hatfield-extension-api must exist relative to staging
+    // composer.json so `composer install --no-dev` can resolve the package.
+    $extensionApiSrc = $root.'/.hatfield/extensions/extension-api';
+    if (!is_dir($extensionApiSrc)) {
+        throw new \RuntimeException('Required packaging directory missing: '.$extensionApiSrc);
+    }
+    $extensionApiStaging = $stagingDir.'/.hatfield/extensions/extension-api';
+    if (!mkdir($extensionApiStaging, 0755, true) && !is_dir($extensionApiStaging)) {
+        throw new \RuntimeException('Unable to create staging directory: '.$extensionApiStaging);
+    }
+    run_checked('cp -a '.escapeshellarg($extensionApiSrc).'/. '.escapeshellarg($extensionApiStaging.'/'));
+
     // Curated internal docs use source-tree symlinks; Box rejects links, so
     // materialize regular files into the staging tree before compilation.
     $internalDocsPath = $root.'/internal-docs';
@@ -1556,6 +1618,9 @@ function phar_build(): string
     );
     try {
         $composerOutput = run_checked($composerCmd, $stagingDir);
+        // Composer path repos symlink into vendor/. Box/PHAR cannot follow those
+        // links, so materialize every vendor path-package symlink as a real tree.
+        materialize_vendor_path_package_symlinks($stagingDir);
     } catch (\Throwable $e) {
         phar_remove_artifact_and_marker($pharPath);
         throw $e;

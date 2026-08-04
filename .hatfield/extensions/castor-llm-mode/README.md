@@ -2,7 +2,7 @@
 
 Native Hatfield port of the pi `castor-llm-mode` extension. For bash tool calls that invoke Castor, it prepends LLM-friendly environment exports (`LLM_MODE`, `CASTOR_DISABLE_VERSION_CHECK`, `NO_COLOR`, `CLICOLOR`) and normalizes `castor list` to `castor list --format=md --short --no-ansi` (including `vendor/bin/castor list` and list occurrences separated by `&&`, `||`, or `;`).
 
-`ExtensionApi` types (`Ineersa\Hatfield\ExtensionApi\*`) are provided by the host application at runtime and are not duplicated in this package.
+This package requires `ineersa/hatfield-extension-api` for `Ineersa\Hatfield\ExtensionApi\*` contracts. In this monorepo that dependency is a path repository; released consumers install the published API package.
 
 The rewrite hook runs in the host pre-event phase **before** SafeGuard, so SafeGuard evaluates the rewritten bash command.
 

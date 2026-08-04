@@ -5,6 +5,13 @@
     "description": "Monorepo for the agent-core ecosystem, consolidated into a single modular monolith.",
     "repositories": [
         {
+            "type": "path",
+            "url": ".hatfield/extensions/extension-api",
+            "options": {
+                "symlink": true
+            }
+        },
+        {
             "type": "vcs",
             "url": "https://github.com/ineersa/tui"
         }
@@ -24,6 +31,7 @@
         "ext-posix": "*",
         "ext-tokenizer": "*",
         "ext-xml": "*",
+        "ineersa/hatfield-extension-api": "@dev",
         "symfony/console": "^8.1",
         "symfony/dependency-injection": "^8.1",
         "symfony/config": "^8.1",
@@ -39,7 +47,7 @@
         "symfony/ai-platform": "^0.11",
         "symfony/validator": "^8.0",
         "symfony/uid": "^8.0",
-        "symfony/tui": "dev-fix-tui-markdown-inline-html",
+        "symfony/tui": "dev-fix-tui-markdown-inline-html as 8.1.x-dev",
         "symfony/ai-generic-platform": "^0.11",
         "symfony/ai-open-responses-platform": "^0.11",
         "monolog/monolog": "^3.10",
@@ -74,7 +82,6 @@
         "psr-4": {
             "Ineersa\\AgentCore\\": "src/AgentCore/",
             "Ineersa\\CodingAgent\\": "src/CodingAgent/",
-            "Ineersa\\Hatfield\\ExtensionApi\\": "src/CodingAgent/ExtensionApi/",
             "Ineersa\\Tui\\": "src/Tui/",
             "DoctrineMigrations\\": "migrations/",
             "Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\": "src/Platform/Bridge/OpenAICodex/",

@@ -1,11 +1,12 @@
 {
     "name": "ineersa/hatfield-ext-task-workflow",
-    "description": "Task workflow extension for Hatfield (native port of pi task-workflow). ExtensionApi types are provided by the host at runtime — not duplicated here.",
+    "description": "Task workflow extension for Hatfield (native port of pi task-workflow).",
     "type": "hatfield-extension",
     "license": "MIT",
     "require": {
         "php": ">=8.3",
-        "helgesverre/toon": "^3.1"
+        "helgesverre/toon": "^3.1",
+        "ineersa/hatfield-extension-api": "@dev"
     },
     "autoload": {
         "psr-4": {
