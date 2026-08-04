@@ -557,6 +557,8 @@ services:
     arguments:
       $dispatcher: '@event_dispatcher'
       $runtimeConfig: '@Ineersa\CodingAgent\Config\RuntimeConfig'
+      # Canonical project CWD for single-owner session lock key (not process getcwd()).
+      $runtimeCwd: '%app.cwd%'
 
   Ineersa\CodingAgent\Config\RuntimeConfig:
     factory: ['Ineersa\CodingAgent\Config\RuntimeConfig', 'fromAppConfig']

@@ -16,6 +16,8 @@ use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 
 /**
  * Thesis: HeadlessController fails closed on invalid llmWorkerCount constructor
@@ -67,6 +69,8 @@ final class HeadlessControllerLlmWorkerCountResolutionTest extends TestCase
             toolExecutionSettings: new ToolSettings(maxParallelism: 1),
             boundary: $boundary,
             emitter: $emitter,
+            lockFactory: new LockFactory(new InMemoryStore()),
+            runtimeCwd: sys_get_temp_dir(),
             runtimeConfig: new RuntimeConfig(llmWorkerCount: $runtimeCount),
             toolWorkerCount: 0,
             llmWorkerCount: $llmOverride,
