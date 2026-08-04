@@ -52,7 +52,7 @@ interface TuiExtensionContext
     public function setWidget(string $key, ?TuiWidget $content, WidgetPlacementEnum $placement = WidgetPlacementEnum::AboveEditor, int $order = 0): void;
 
     /**
-     * Set or remove a status text entry.
+     * Set or remove a keyed status-panel entry (panel-only; not the footer).
      *
      * @param string      $key  Section identifier
      * @param string|null $text Status text, or null to remove the entry

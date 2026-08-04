@@ -100,19 +100,6 @@ final class FooterBarWidgetTest extends TestCase
         $this->assertStringContainsString('A B', $lines[0]);
     }
 
-    public function testStatusEntriesAppearInFooter(): void
-    {
-        $provider = new FooterDataProvider();
-        $provider->setStatus('cost', '$1.23');
-
-        $widget = new FooterBarWidget($provider);
-        $context = new TuiRenderContext(terminalWidth: 80);
-
-        $lines = $widget->render($context);
-
-        $this->assertStringContainsString('$1.23', $lines[0]);
-    }
-
     public function testFooterRespectsTerminalWidth(): void
     {
         $provider = new FooterDataProvider();
