@@ -273,9 +273,6 @@ final class WorktreeManager
      * Leave the git branch intact. Historical Branch/Worktree metadata is left
      * for the caller to preserve in the task Markdown.
      *
-     * @return list<string>
-     */
-    /**
      * @return list<string>|ExecResultDTO
      */
     public function removeTaskWorktreeSafely(string $codeRoot, TaskInfo $task, ?InvocationControl $control = null): array|ExecResultDTO
@@ -395,9 +392,6 @@ final class WorktreeManager
      * Ordering invariant: never strip IDEA exclusions until `git worktree remove`
      * succeeds. Never force-delete or recursively delete a dirty worktree.
      *
-     * @return list<string>
-     */
-    /**
      * @return list<string>|ExecResultDTO
      */
     private function cleanupWorktreeAndIdeaExclusions(
