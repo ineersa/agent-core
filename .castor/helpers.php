@@ -529,50 +529,33 @@ function hatfield_phar_composer_bin(): string
 }
 
 /**
- * Replace Composer path-repository symlinks under vendor/ with real copies.
+ * Materialize the ExtensionApi path package under vendor/ as a real directory.
  *
- * Path packages resolve as symlinks (often outside the staging tree). Box cannot
- * package those links into the PHAR, which leaves FQCNs unloadable at runtime.
+ * Root path-requires ineersa/hatfield-extension-api; Composer leaves a symlink
+ * (often outside the staging tree). Box cannot package that link into the PHAR.
+ * Copy-before-unlink so a failed rename leaves the symlink intact.
  */
 function materialize_vendor_path_package_symlinks(string $stagingDir): void
 {
-    $vendorDir = $stagingDir.'/vendor';
-    if (!is_dir($vendorDir)) {
+    $path = $stagingDir.'/vendor/ineersa/hatfield-extension-api';
+    if (!is_link($path)) {
         return;
     }
 
-    $iterator = new \RecursiveIteratorIterator(
-        new \RecursiveDirectoryIterator($vendorDir, \FilesystemIterator::SKIP_DOTS),
-        \RecursiveIteratorIterator::SELF_FIRST,
-    );
+    $target = realpath($path);
+    if (false === $target || !is_dir($target)) {
+        throw new \RuntimeException('Unable to resolve path-package symlink target for: '.$path);
+    }
 
-    foreach ($iterator as $item) {
-        $path = $item->getPathname();
-        if (!is_link($path) || !is_dir($path)) {
-            continue;
-        }
-
-        $target = realpath($path);
-        if (false === $target || !is_dir($target)) {
-            throw new \RuntimeException('Unable to resolve path-package symlink target for: '.$path);
-        }
-
-        // Only materialize package roots under vendor/<vendor>/<package>.
-        $relative = substr($path, \strlen($vendorDir) + 1);
-        if (1 !== substr_count($relative, '/')) {
-            continue;
-        }
-
-        $tmp = $path.'.materialize-tmp-'.bin2hex(random_bytes(4));
-        run_checked('cp -a '.escapeshellarg($target).' '.escapeshellarg($tmp));
-        if (!unlink($path)) {
-            remove_path_checked($tmp);
-            throw new \RuntimeException('Unable to remove path-package symlink: '.$path);
-        }
-        if (!rename($tmp, $path)) {
-            remove_path_checked($tmp);
-            throw new \RuntimeException('Unable to replace path-package symlink with copy: '.$path);
-        }
+    $tmp = $path.'.materialize-tmp-'.bin2hex(random_bytes(4));
+    run_checked('cp -a '.escapeshellarg($target).' '.escapeshellarg($tmp));
+    if (!unlink($path)) {
+        remove_path_checked($tmp);
+        throw new \RuntimeException('Unable to remove path-package symlink: '.$path);
+    }
+    if (!rename($tmp, $path)) {
+        remove_path_checked($tmp);
+        throw new \RuntimeException('Unable to replace path-package symlink with copy: '.$path);
     }
 }
 
@@ -1618,8 +1601,8 @@ function phar_build(): string
     );
     try {
         $composerOutput = run_checked($composerCmd, $stagingDir);
-        // Composer path repos symlink into vendor/. Box/PHAR cannot follow those
-        // links, so materialize every vendor path-package symlink as a real tree.
+        // Composer path-requires extension-api as a vendor symlink; Box cannot
+        // package that link, so materialize vendor/ineersa/hatfield-extension-api.
         materialize_vendor_path_package_symlinks($stagingDir);
     } catch (\Throwable $e) {
         phar_remove_artifact_and_marker($pharPath);

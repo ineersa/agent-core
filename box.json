@@ -5,8 +5,7 @@
         "config",
         "internal-docs",
         "vendor",
-        "migrations",
-        ".hatfield/extensions/extension-api"
+        "migrations"
     ],
     "files": [
         "bin/console",
