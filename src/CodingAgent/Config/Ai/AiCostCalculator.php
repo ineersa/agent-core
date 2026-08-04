@@ -14,8 +14,9 @@ use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
  * depending on the CodingAgent layer.
  *
  * Pricing formula (per 1M tokens convention from AiCost).
- * Total input_tokens already includes cache-read and cache-write
- * classes, so each class is partitioned and billed exactly once:
+ * Under the current OpenAI-compatible token convention, total
+ * input_tokens already includes cache-read and cache-write classes,
+ * so each class is partitioned and billed exactly once:
  *   cache_read  = max(0, cache_read_tokens ?? cached_tokens), clamped to input
  *   cache_write = max(0, cache_creation_tokens), clamped to remaining input
  *   uncached    = input - cache_read - cache_write
