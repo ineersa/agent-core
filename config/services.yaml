@@ -195,6 +195,8 @@ services:
 
   Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig: ~
 
+  Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig: ~
+
   # ─── Agent Definitions ───
 
   Ineersa\CodingAgent\Config\AgentsConfig:
