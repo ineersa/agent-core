@@ -18,6 +18,8 @@ use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
+use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
@@ -104,9 +106,17 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         $this->assertNotNull($ordinaryCall);
         $this->assertArrayNotHasKey('skill_name', $ordinaryCall->meta);
 
+        // Distinct heading vs tool-title colors so skill-card role is fail-closed.
+        $palette = new ThemePalette('skill-read-card-theme', [
+            ThemeColorEnum::MarkdownHeading->value => 'bright_magenta',
+            ThemeColorEnum::ToolTitle->value => 'bright_cyan',
+            ThemeColorEnum::Dim->value => 'bright_black',
+        ]);
+
         $displayState = new TranscriptDisplayState(previewableBlocksExpanded: false);
         $harness = new VirtualTuiHarness(
             sessionId: 'skill-read-card-session',
+            palette: $palette,
             displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 2),
             displayState: $displayState,
         );
@@ -119,15 +129,21 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         $this->assertStringNotContainsString('skill-secret-line', $collapsed);
         $this->assertStringNotContainsString('path: '.$skillFile, $collapsed);
 
-        $skillLine = null;
-        foreach (explode("\n", $collapsed) as $line) {
-            if (str_contains($line, '[skill]')) {
-                $skillLine = $line;
-                break;
-            }
-        }
-        $this->assertNotNull($skillLine, 'Expected a rendered [skill] line');
+        $skillLine = $this->skillHeaderPlainLine($collapsed);
+        $this->assertStringStartsWith('  [skill] testing:1-400', $skillLine);
         $this->assertStringNotContainsString(TranscriptGlyphs::GLYPH_TOOL, $skillLine);
+
+        $collapsedAnsi = $harness->ansiOutput();
+        $this->assertMatchesRegularExpression(
+            "/\x1b\[95m  \[skill\] testing:1-400\x1b\[39m/",
+            $collapsedAnsi,
+            'Collapsed skill header must use MarkdownHeading (bright_magenta / 95), not ToolTitle',
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            "/\x1b\[96m  \[skill\] testing:1-400/",
+            $collapsedAnsi,
+            'Skill header must not use ToolTitle (bright_cyan / 96)',
+        );
 
         $this->assertStringContainsString('read', $collapsed);
         // Path may wrap across terminal columns in VirtualTerminal output.
@@ -139,9 +155,29 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         $displayState->previewableBlocksExpanded = true;
         $harness->screen()->setTranscriptBlocks($blocks);
         $expanded = $harness->plainScreenText();
-        $this->assertStringContainsString('[skill] testing:1-400', $expanded);
+        $expandedSkillLine = $this->skillHeaderPlainLine($expanded);
+        $this->assertStringStartsWith('  [skill] testing:1-400', $expandedSkillLine);
+        $this->assertStringNotContainsString(TranscriptGlyphs::GLYPH_TOOL, $expandedSkillLine);
         $this->assertStringContainsString('skill-secret-line', $expanded);
         $this->assertStringNotContainsString('Ctrl+O to expand', $expanded);
+
+        $expandedAnsi = $harness->ansiOutput();
+        $this->assertMatchesRegularExpression(
+            "/\x1b\[95m  \[skill\] testing:1-400\x1b\[39m/",
+            $expandedAnsi,
+            'Expanded skill header must keep MarkdownHeading palette role',
+        );
+    }
+
+    private function skillHeaderPlainLine(string $plainScreenText): string
+    {
+        foreach (explode("\n", $plainScreenText) as $line) {
+            if (str_contains($line, '[skill]')) {
+                return $line;
+            }
+        }
+
+        $this->fail('Expected a rendered [skill] line');
     }
 
     private function createDiscovery(string $cwd): SkillDiscovery

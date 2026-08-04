@@ -510,7 +510,7 @@ final readonly class TranscriptBlockWidgetFactory
         $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
         $headerLine = $this->skillReadHeaderLabel($block, $arguments).$suffix;
 
-        return new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine));
+        return new TextWidget($theme->color(ThemeColorEnum::MarkdownHeading, $headerLine));
     }
 
     /**
@@ -531,10 +531,10 @@ final readonly class TranscriptBlockWidgetFactory
         if (!$fullRender && !$expanded) {
             $hint = $theme->color(ThemeColorEnum::Dim, ' (Ctrl+O to expand)');
 
-            return new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine).$hint);
+            return new TextWidget($theme->color(ThemeColorEnum::MarkdownHeading, $headerLine).$hint);
         }
 
-        $lines = [$theme->color(ThemeColorEnum::ToolTitle, $headerLine)];
+        $lines = [$theme->color(ThemeColorEnum::MarkdownHeading, $headerLine)];
         foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
             $lines[] = $theme->color($this->toolExchangeBodyColor($resultBlock), '    '.$bodyLine);
         }
@@ -550,7 +550,8 @@ final readonly class TranscriptBlockWidgetFactory
         $skillName = (string) ($block->meta['skill_name'] ?? '');
         $range = $this->formatReadLineRange($arguments);
 
-        return \sprintf('[skill] %s%s', $skillName, $range);
+        // Two-space transcript inset (same convention as markdown widget left padding).
+        return \sprintf('  [skill] %s%s', $skillName, $range);
     }
 
     /**
