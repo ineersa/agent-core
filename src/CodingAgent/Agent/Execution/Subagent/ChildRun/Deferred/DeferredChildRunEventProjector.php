@@ -80,7 +80,9 @@ final class DeferredChildRunEventProjector
             if (RunEventTypeEnum::RunStarted->value === $type) {
                 $inner = \is_array($payload['payload'] ?? null) ? $payload['payload'] : [];
                 $metadata = \is_array($inner['metadata'] ?? null) ? $inner['metadata'] : [];
-                if (null === $model && \is_string($metadata['model'] ?? null) && '' !== $metadata['model']) {
+                // Canonical launch model from run_started must override definition/current fallback.
+                // definitionModel remains prelaunch-only; never let a stale snapshot win after start.
+                if (\is_string($metadata['model'] ?? null) && '' !== $metadata['model']) {
                     $model = $metadata['model'];
                 }
                 if (\is_string($metadata['provider'] ?? null) && '' !== $metadata['provider']) {

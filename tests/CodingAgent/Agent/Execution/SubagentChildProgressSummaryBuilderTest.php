@@ -45,6 +45,67 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
         parent::tearDown();
     }
 
+    public function testSummarizePrefersCanonicalRunStartedModelOverStaleDefinitionPerChild(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $childA = 'child-a-'.bin2hex(random_bytes(3));
+        $childB = 'child-b-'.bin2hex(random_bytes(3));
+        $artifactA = 'agent_a_'.bin2hex(random_bytes(3));
+        $artifactB = 'agent_b_'.bin2hex(random_bytes(3));
+
+        $storeA = $this->createChildEventStore($parentRunId, $childA, $artifactA);
+        $storeA->append(new RunEvent($childA, 1, 0, RunEventTypeEnum::RunStarted->value, [
+            'payload' => ['metadata' => ['model' => 'openai-codex/gpt-5.6-sol']],
+        ]));
+        $storeA->append(new RunEvent($childA, 2, 1, RunEventTypeEnum::LlmStepFailed->value, [
+            'error' => ['message' => 'temporary failure'],
+        ]));
+
+        $storeB = $this->createChildEventStore($parentRunId, $childB, $artifactB);
+        $storeB->append(new RunEvent($childB, 1, 0, RunEventTypeEnum::RunStarted->value, [
+            'payload' => ['metadata' => ['model' => 'deepseek/deepseek-v4-flash']],
+        ]));
+        $storeB->append(new RunEvent($childB, 2, 1, RunEventTypeEnum::LlmStepCompleted->value, [
+            'usage' => ['input_tokens' => 1, 'output_tokens' => 1, 'total_tokens' => 2],
+            'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'ok']]],
+        ]));
+
+        $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver(new HatfieldSessionStore(
+            appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->projectDir),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+        )));
+        $factory = new AgentChildRunEventStoreFactory(
+            $pathResolver,
+            new EventPayloadNormalizer(),
+            new LockFactory(new FlockStore()),
+            new NullLogger(),
+            new FileRunSequenceAllocator(),
+        );
+        $builder = new SubagentChildProgressSummaryBuilder($factory);
+
+        // Same stale definition model for both children; scanEvents must keep each launch model.
+        $summaryA = $builder->summarize(
+            $parentRunId,
+            $childA,
+            $artifactA,
+            new RunState(runId: $childA, status: RunStatus::Failed, version: 1, turnNo: 1, lastSeq: 2),
+            'deepseek/deepseek-v4-flash',
+        );
+        $summaryB = $builder->summarize(
+            $parentRunId,
+            $childB,
+            $artifactB,
+            new RunState(runId: $childB, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 2),
+            'deepseek/deepseek-v4-flash',
+        );
+
+        $this->assertSame('openai-codex/gpt-5.6-sol', $summaryA->model);
+        $this->assertSame('deepseek/deepseek-v4-flash', $summaryB->model);
+        $this->assertStringContainsString($artifactA, (string) $summaryA->artifactPath);
+        $this->assertStringContainsString($artifactB, (string) $summaryB->artifactPath);
+        $this->assertNotSame($summaryA->artifactPath, $summaryB->artifactPath);
+    }
+
     public function testSummarizeCountsToolsTokensAndSanitizesToolArgs(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
