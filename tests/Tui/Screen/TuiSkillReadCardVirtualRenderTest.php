@@ -106,9 +106,10 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         $this->assertNotNull($ordinaryCall);
         $this->assertArrayNotHasKey('skill_name', $ordinaryCall->meta);
 
-        // Distinct MarkdownHeading vs ToolTitle palette values make the selected role observable.
+        // Distinct Skill / MarkdownHeading / ToolTitle palette values make the selected role observable.
         $palette = new ThemePalette('skill-read-card-theme', [
-            ThemeColorEnum::MarkdownHeading->value => 'bright_magenta',
+            ThemeColorEnum::Skill->value => 'bright_magenta',
+            ThemeColorEnum::MarkdownHeading->value => 'bright_yellow',
             ThemeColorEnum::ToolTitle->value => 'bright_cyan',
             ThemeColorEnum::Dim->value => 'bright_black',
         ]);
@@ -136,7 +137,7 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         $this->assertMatchesRegularExpression(
             "/\x1b\[95m  \[skill\] testing:1-400\x1b\[39m/",
             $collapsedAnsi,
-            'Collapsed skill header must use MarkdownHeading (bright_magenta / 95), not ToolTitle',
+            'Collapsed skill header must use Skill (bright_magenta / 95)',
         );
 
         $this->assertStringContainsString('read', $collapsed);
@@ -159,7 +160,7 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         $this->assertMatchesRegularExpression(
             "/\x1b\[95m  \[skill\] testing:1-400\x1b\[39m/",
             $expandedAnsi,
-            'Expanded skill header must keep MarkdownHeading palette role',
+            'Expanded skill header must keep Skill palette role',
         );
     }
 

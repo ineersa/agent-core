@@ -39,6 +39,7 @@ colors:
     tool_argument_value: "text"
     tool_title: "blue"
     tool_output: ""
+    skill: "orange"
     tool: "blue"
 
     markdown_heading: "orange"

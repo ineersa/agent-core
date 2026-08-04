@@ -510,7 +510,7 @@ final readonly class TranscriptBlockWidgetFactory
         $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
         $headerLine = $this->skillReadHeaderLabel($block, $arguments).$suffix;
 
-        return new TextWidget($theme->color(ThemeColorEnum::MarkdownHeading, $headerLine));
+        return new TextWidget($theme->color(ThemeColorEnum::Skill, $headerLine));
     }
 
     /**
@@ -531,10 +531,10 @@ final readonly class TranscriptBlockWidgetFactory
         if (!$fullRender && !$expanded) {
             $hint = $theme->color(ThemeColorEnum::Dim, ' (Ctrl+O to expand)');
 
-            return new TextWidget($theme->color(ThemeColorEnum::MarkdownHeading, $headerLine).$hint);
+            return new TextWidget($theme->color(ThemeColorEnum::Skill, $headerLine).$hint);
         }
 
-        $lines = [$theme->color(ThemeColorEnum::MarkdownHeading, $headerLine)];
+        $lines = [$theme->color(ThemeColorEnum::Skill, $headerLine)];
         foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
             $lines[] = $theme->color($this->toolExchangeBodyColor($resultBlock), '    '.$bodyLine);
         }

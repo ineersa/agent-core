@@ -39,6 +39,7 @@ colors:
     tool_argument_value: "text"
     tool_title: "aqua"
     tool_output: ""
+    skill: "orange"
     tool: "aqua"
 
     markdown_heading: "orange"
