@@ -199,6 +199,79 @@ final class ExportCommandHandlerTest extends TestCase
     }
 
     #[Test]
+    public function exportsAvailableToolsSectionOutsideRawEvent(): void
+    {
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'user_messages' => [['role' => 'user', 'content' => 'List tools']],
+            ]),
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'text' => 'Tools are available.',
+                'stop_reason' => 'end_turn',
+                'available_tools' => [
+                    'read',
+                    'websearch_search',
+                    'evil<script>',
+                ],
+                'available_tools_schema_tokens_estimate' => 1234,
+            ]),
+            $this->makeEvent(3, 1, 'agent_end', [
+                'reason' => 'completed',
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/available-tools-export.html';
+        $handler = $this->createHandler('test-session');
+        $result = $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('Session exported', $result->text);
+        $this->assertFileExists($path);
+
+        $html = (string) file_get_contents($path);
+        $this->assertStringContainsString('Available tools', $html);
+        $this->assertStringContainsString('class="available-tools"', $html);
+        $this->assertStringContainsString('~1,234 schema tokens', $html);
+        $this->assertStringContainsString('<li>read</li>', $html);
+        $this->assertStringContainsString('<li>websearch_search</li>', $html);
+        $this->assertStringContainsString('<li>evil&lt;script&gt;</li>', $html);
+        $this->assertStringNotContainsString('MCP server:', $html);
+        $this->assertStringNotContainsString('tool-server', $html);
+
+        $llmCardStart = strpos($html, 'class="event event-llm_step_completed"');
+        $this->assertNotFalse($llmCardStart, 'llm_step_completed event card must be present');
+        $llmCardEnd = strpos($html, 'class="event event-agent_end"', $llmCardStart);
+        $this->assertNotFalse($llmCardEnd);
+        $llmCard = substr($html, $llmCardStart, $llmCardEnd - $llmCardStart);
+        $availablePos = strpos($llmCard, 'class="available-tools"');
+        $rawPos = strpos($llmCard, 'class="event-raw"');
+        $this->assertNotFalse($availablePos);
+        $this->assertNotFalse($rawPos);
+        $this->assertLessThan($rawPos, $availablePos, 'Available tools section must render outside Raw event details');
+
+        // Old-event absence path remains unchanged: events without snapshot still export.
+        $this->setupEventsFile('old-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'user_messages' => [['role' => 'user', 'content' => 'Hi']],
+            ]),
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'text' => 'No tools snapshot.',
+                'stop_reason' => 'end_turn',
+            ]),
+        ]);
+        $oldPath = $this->projectDir.'/old-session-export.html';
+        $oldResult = $this->createHandler('old-session')->handle(new SlashCommand('export', $oldPath, '/export '.$oldPath));
+        $this->assertInstanceOf(TranscriptMessage::class, $oldResult);
+        $oldHtml = (string) file_get_contents($oldPath);
+        $this->assertStringNotContainsString('class="available-tools"', $oldHtml);
+        $this->assertStringContainsString('No tools snapshot.', $oldHtml);
+    }
+
+    #[Test]
     public function exportsHtmlToGivenPath(): void
     {
         $this->setupEventsFile('test-session', [

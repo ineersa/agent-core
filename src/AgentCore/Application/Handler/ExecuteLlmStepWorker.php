@@ -168,6 +168,8 @@ final readonly class ExecuteLlmStepWorker
                         'retryable' => false,
                     ],
                     modelNotifications: $response->modelNotifications,
+                    availableTools: $response->availableTools,
+                    availableToolsSchemaTokensEstimate: $response->availableToolsSchemaTokensEstimate,
                 );
             }
 
@@ -191,6 +193,8 @@ final readonly class ExecuteLlmStepWorker
                     usage: $response->usage,
                     stopReason: $response->stopReason,
                     modelNotifications: $response->modelNotifications,
+                    availableTools: $response->availableTools,
+                    availableToolsSchemaTokensEstimate: $response->availableToolsSchemaTokensEstimate,
                     error: [
                         'type' => 'empty_response',
                         'message' => 'LLM provider returned an empty response.',
@@ -246,6 +250,8 @@ final readonly class ExecuteLlmStepWorker
                 error: $response->error,
                 toolsRef: $message->toolsRef,
                 modelNotifications: $response->modelNotifications,
+                availableTools: $response->availableTools,
+                availableToolsSchemaTokensEstimate: $response->availableToolsSchemaTokensEstimate,
             );
         } catch (\Throwable $exception) {
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
