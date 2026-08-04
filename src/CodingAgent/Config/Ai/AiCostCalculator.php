@@ -13,16 +13,18 @@ use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
  * LlmPlatformAdapter can add cost to usage events without
  * depending on the CodingAgent layer.
  *
- * Pricing formula (per 1M tokens convention from AiCost):
- *   cost = input_tokens / 1_000_000 * input_price
- *        + output_tokens / 1_000_000 * output_price
- *        + thinking_tokens / 1_000_000 * output_price (billed as output)
- *        + cached_tokens / 1_000_000 * cache_read_price
+ * Pricing formula (per 1M tokens convention from AiCost).
+ * Total input_tokens already includes cache-read and cache-write
+ * classes, so each class is partitioned and billed exactly once:
+ *   cache_read  = max(0, cache_read_tokens ?? cached_tokens), clamped to input
+ *   cache_write = max(0, cache_creation_tokens), clamped to remaining input
+ *   uncached    = input - cache_read - cache_write
+ *   cost = uncached / 1_000_000 * input_price
+ *        + cache_read / 1_000_000 * cache_read_price
+ *        + cache_write / 1_000_000 * cache_write_price
+ *        + (output_tokens + thinking_tokens) / 1_000_000 * output_price
  *
  * Thinking tokens are billed at the output rate.
- * Cached tokens are billed at the cache-read rate (the only signal
- * available in standard API responses).  Cache-write attribution is
- * not supported without provider-specific metadata.
  *
  * If the model has no pricing configured (null or all-zero AiCost),
  * returns 0.0 which yields $0.00 in the TUI footer.
@@ -49,15 +51,37 @@ final readonly class AiCostCalculator implements CostCalculatorInterface
             return 0.0;
         }
 
-        $inputTokens = (int) ($usage['input_tokens'] ?? 0);
-        $outputTokens = (int) ($usage['output_tokens'] ?? 0);
-        $thinkingTokens = (int) ($usage['thinking_tokens'] ?? 0);
-        $cachedTokens = (int) ($usage['cached_tokens'] ?? 0);
+        $inputTokens = max(0, (int) ($usage['input_tokens'] ?? 0));
+        $outputTokens = max(0, (int) ($usage['output_tokens'] ?? 0));
+        $thinkingTokens = max(0, (int) ($usage['thinking_tokens'] ?? 0));
+
+        $cacheReadTokens = \array_key_exists('cache_read_tokens', $usage)
+            ? max(0, (int) $usage['cache_read_tokens'])
+            : max(0, (int) ($usage['cached_tokens'] ?? 0));
+        if ($cacheReadTokens > $inputTokens) {
+            $cacheReadTokens = $inputTokens;
+        }
+
+        $cacheWriteTokens = max(0, (int) ($usage['cache_creation_tokens'] ?? 0));
+        $remainingAfterRead = $inputTokens - $cacheReadTokens;
+        if ($cacheWriteTokens > $remainingAfterRead) {
+            $cacheWriteTokens = $remainingAfterRead;
+        }
+
+        $uncachedInputTokens = $inputTokens - $cacheReadTokens - $cacheWriteTokens;
 
         $total = 0.0;
 
-        if ($inputTokens > 0 && $cost->input > 0.0) {
-            $total += ($inputTokens / 1_000_000) * $cost->input;
+        if ($uncachedInputTokens > 0 && $cost->input > 0.0) {
+            $total += ($uncachedInputTokens / 1_000_000) * $cost->input;
+        }
+
+        if ($cacheReadTokens > 0 && $cost->cacheRead > 0.0) {
+            $total += ($cacheReadTokens / 1_000_000) * $cost->cacheRead;
+        }
+
+        if ($cacheWriteTokens > 0 && $cost->cacheWrite > 0.0) {
+            $total += ($cacheWriteTokens / 1_000_000) * $cost->cacheWrite;
         }
 
         // Output tokens: regular output + thinking (billed at output rate)
@@ -65,14 +89,6 @@ final readonly class AiCostCalculator implements CostCalculatorInterface
         if ($billableOutputTokens > 0 && $cost->output > 0.0) {
             $total += ($billableOutputTokens / 1_000_000) * $cost->output;
         }
-
-        // Cached tokens billed at cache-read rate
-        if ($cachedTokens > 0 && $cost->cacheRead > 0.0) {
-            $total += ($cachedTokens / 1_000_000) * $cost->cacheRead;
-        }
-
-        // No cache-write attribution: standard API responses do not
-        // differentiate cache writes from reads.
 
         return $total;
     }

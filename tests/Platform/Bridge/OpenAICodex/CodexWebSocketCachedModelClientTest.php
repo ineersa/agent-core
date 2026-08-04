@@ -87,6 +87,8 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
         $this->assertSame('resp_cached_1', $secondFrame['previous_response_id']);
         $this->assertCount(1, $secondFrame['input']);
         $this->assertSame('second', $secondFrame['input'][0]['content']);
+        // Delta frames must keep the resolved prompt_cache_key with previous_response_id.
+        $this->assertSame($cacheKey, $secondFrame['prompt_cache_key'] ?? null);
     }
 
     /**
