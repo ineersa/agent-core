@@ -181,12 +181,12 @@ final class ToolExecutor implements ToolExecutorInterface
         }
 
         if ($this->cancellationToken($toolCall)->isCancellationRequested()) {
-            // Don't overwrite handler-owned documented control outcomes.
+            // Don't overwrite a structured cancelled result.
             $details = $result->details;
-            $alreadyControlled = \is_array($details)
-                && (true === ($details['cancelled'] ?? false) || true === ($details['timed_out'] ?? false));
+            $cancelled = \is_array($details) ? ($details['cancelled'] ?? false) : false;
+            $alreadyCancelled = true === $cancelled;
 
-            if (!$alreadyControlled) {
+            if (!$alreadyCancelled) {
                 $errorType = \is_array($details) ? ($details['error_type'] ?? null) : null;
                 if (ToolCallException::class === $errorType) {
                     $details['cancelled'] = true;
@@ -350,11 +350,7 @@ final class ToolExecutor implements ToolExecutorInterface
             : ['raw_details' => $result->details];
 
         $details['mode'] = $policy->mode->value;
-        // Preserve handler-owned timeout_seconds from documented timed_out maps when present;
-        // otherwise attach the ambient per-tool budget (may be null).
-        if (!\array_key_exists('timeout_seconds', $details) || null === $details['timeout_seconds']) {
-            $details['timeout_seconds'] = $policy->timeoutSeconds;
-        }
+        $details['timeout_seconds'] = $policy->timeoutSeconds;
         $details['max_parallelism'] = $policy->maxParallelism;
 
         if (null !== $toolIdempotencyKey && '' !== $toolIdempotencyKey) {
@@ -422,15 +418,8 @@ final class ToolExecutor implements ToolExecutorInterface
             $details['sources'] = $sources;
         }
 
-        if (\is_array($rawResult)) {
-            // Promote documented cooperative control flags so post-invoke cancel
-            // logic does not rewrite a handler-owned cancelled/timed_out map as
-            // merely stale_due_to_cancel. kind=interrupt remains for HITL paths.
-            if ('interrupt' === ($rawResult['kind'] ?? null)
-                || true === ($rawResult['cancelled'] ?? false)
-                || true === ($rawResult['timed_out'] ?? false)) {
-                $details = array_replace($details, $rawResult);
-            }
+        if (\is_array($rawResult) && 'interrupt' === ($rawResult['kind'] ?? null)) {
+            $details = array_replace($details, $rawResult);
         }
 
         $result = new ToolResult(
