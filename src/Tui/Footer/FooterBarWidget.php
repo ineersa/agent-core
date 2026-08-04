@@ -22,6 +22,9 @@ use Symfony\Component\Tui\Ansi\AnsiUtils;
  *
  * Truncation delegates to Symfony TUI's {@see AnsiUtils} for accurate
  * visible-width computation and ANSI-preserving truncation.
+ *
+ * Keyed status panel rows are intentionally not rendered here; they live
+ * only in the status panel via ChatScreen::setStatus().
  */
 final class FooterBarWidget implements TuiWidget
 {
@@ -36,9 +39,8 @@ final class FooterBarWidget implements TuiWidget
     public function render(TuiRenderContext $context): array
     {
         $segments = $this->dataProvider->getSegments();
-        $statusEntries = $this->dataProvider->getStatusEntries();
 
-        if ([] === $segments && [] === $statusEntries) {
+        if ([] === $segments) {
             return [$context->theme->color(ThemeColorEnum::Footer, '  ◆ agent-core  |  type /help for commands')];
         }
 
@@ -69,22 +71,8 @@ final class FooterBarWidget implements TuiWidget
             $prevPriority = $segment->priority;
         }
 
-        // ── Build right-side status text ──
-        $right = implode(' ', $statusEntries);
-        $rightSep = '' !== $right ? '  ' : '';
-
         // ── Distribute segments across lines ──
         $available = max(10, $context->terminalWidth - 2);
-
-        // No segments at all: render status on single line
-        if ([] === $structs) {
-            $combined = \sprintf('%s%s', $rightSep, $right);
-            if (AnsiUtils::visibleWidth($combined) > $available) {
-                $combined = AnsiUtils::truncateToWidth($combined, $available);
-            }
-
-            return [\sprintf('  %s', ltrim($combined))];
-        }
 
         $lines = [];   // list of list of structs
         $currentLine = [];
@@ -119,9 +107,8 @@ final class FooterBarWidget implements TuiWidget
 
         // ── Render each line ──
         $output = [];
-        $lineCount = \count($lines);
 
-        foreach ($lines as $lineIdx => $lineStructs) {
+        foreach ($lines as $lineStructs) {
             $parts = [];
             foreach ($lineStructs as $struct) {
                 // Only add separator if not the first element on this line
@@ -132,20 +119,10 @@ final class FooterBarWidget implements TuiWidget
             }
 
             $lineContent = implode('', $parts);
-
-            if ($lineIdx === $lineCount - 1) {
-                // Last line: append right-side status and truncate if needed
-                $combined = \sprintf('%s%s%s', $lineContent, $rightSep, $right);
-                if (AnsiUtils::visibleWidth($combined) > $available) {
-                    $rightVisible = AnsiUtils::visibleWidth($rightSep.$right);
-                    $leftMax = max(0, $available - $rightVisible);
-                    $lineContent = AnsiUtils::truncateToWidth($lineContent, $leftMax);
-                    $combined = \sprintf('%s%s%s', $lineContent, $rightSep, $right);
-                }
-                $output[] = \sprintf('  %s', $combined);
-            } else {
-                $output[] = \sprintf('  %s', $lineContent);
+            if (AnsiUtils::visibleWidth($lineContent) > $available) {
+                $lineContent = AnsiUtils::truncateToWidth($lineContent, $available);
             }
+            $output[] = \sprintf('  %s', $lineContent);
         }
 
         return $output;

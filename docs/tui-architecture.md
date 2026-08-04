@@ -348,7 +348,7 @@ Extensions have two footer integration modes:
 |-----|----------|
 | `setFooter(?TuiWidget)` | Replace the entire footer bar widget |
 | `setFooterProvider(string $key, ?FooterSegmentProvider $provider)` | Add/remove keyed segments in the default footer bar |
-| `setStatus(string $key, ?string $text)` | Add/remove keyed status text shown by the status panel and footer data provider |
+| `setStatus(string $key, ?string $text)` | Add/remove keyed status text shown only by the status panel (not the footer) |
 | `onTick(\Closure $listener): void` | Register an idle-safe tick callback via `TuiTickDispatcher`; return value is discarded so extensions cannot force 100Hz busy ticks |
 
 `FooterDataProvider` stores providers by key, so third-party packages can
@@ -565,7 +565,7 @@ Symfony issue #64941.
 | `editorText(): string` | Read editor content |
 | `setWorkingMessage(?string): void` | Override working indicator |
 | `setWorkingVisible(bool): void` | Show/hide working row |
-| `setStatus(string, ?string): void` | Set/remove status entry |
+| `setStatus(string, ?string): void` | Set/remove keyed status-panel entry (panel-only) |
 | `refresh(): void` | Force full re-render of static sections |
 | `registry(): TuiSlotRegistry` | Get slot registry (for extensions) |
 | `extensionContext(): TuiExtensionContext` | Get extension context facade |
@@ -582,8 +582,8 @@ and throughput) update even when no runtime events arrive.
 setTranscriptBlocks()           → TranscriptMountedWidget::setBlocks() (full reconcile)
 applyTranscriptChangeSet()      → TranscriptMountedWidget::applyChangeSet() (incremental)
 setWorkingMessage()     → registry + workingRenderable + workingWidget.invalidate()
-setStatus()             → registry + statusPanelRenderable + footerDataProvider
-                          + statusPanelWidget.invalidate() + footerWidget.invalidate()
+setStatus()             → registry + statusPanelRenderable + statusPanelWidget.invalidate()
+                          (panel-only; footer uses segment providers / setFooter)
 refresh()               → invalidates mutable LiveText regions (transcript is mounted)
 ```
 

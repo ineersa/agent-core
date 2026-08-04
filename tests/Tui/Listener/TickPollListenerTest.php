@@ -977,10 +977,7 @@ final class TickPollListenerTest extends TestCase
     /** @return array<string, string> */
     private function statusEntries(ChatScreen $screen): array
     {
-        $ref = new \ReflectionClass(ChatScreen::class);
-        $prop = $ref->getProperty('footerDataProvider');
-
-        return $prop->getValue($screen)->getStatusEntries();
+        return $screen->registry()->getStatusEntries();
     }
 
     private function workingMessage(ChatScreen $screen): string

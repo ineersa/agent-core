@@ -19,17 +19,19 @@ use Psr\Log\NullLogger;
 use Symfony\Component\Tui\Event\TickEvent;
 
 /**
- * Thesis: OM activity rows surface on the namespaced status panel via Bridge onTick
- * without forcing busy ticks, and clear independently of working status.
+ * Thesis: keyed OM activity status via real poller → Bridge → ChatScreen is
+ * rendered once in the status panel, never on the footer line, and clears
+ * independently of working status.
  */
 final class OmBackgroundStatusVirtualRenderTest extends IsolatedKernelTestCase
 {
     use TuiRuntimeContextBuilderTrait;
 
     private const string SESSION_ID = 'om-status-virtual-session';
+    private const string ACTIVITY = 'Observational memory: reflector running (~2,500 tokens)';
 
     #[Test]
-    public function testActivityStatusRendersClearsAndTickNeverBusy(): void
+    public function testActivityStatusRendersOnceInPanelNotFooterClearsAndStaysIdleSafe(): void
     {
         $projectDir = TestDirectoryIsolation::createProjectTempDir('om-status-virtual');
         try {
@@ -72,11 +74,13 @@ final class OmBackgroundStatusVirtualRenderTest extends IsolatedKernelTestCase
             $this->assertNull($busyHint, 'extension onTick must not force active cadence');
 
             $text = $harness->plainScreenText();
+            $this->assertSame(1, substr_count($text, self::ACTIVITY), 'activity text must appear exactly once');
             $this->assertStringContainsString('om-background', $text);
-            $this->assertStringContainsString(
-                'Observational memory: reflector running (~2,500 tokens)',
-                $text,
+            $this->assertSame(
+                self::ACTIVITY,
+                $screen->registry()->getStatusEntries()[OmBackgroundStatusPoller::STATUS_KEY] ?? null,
             );
+            $this->assertFooterDoesNotContain($text, self::ACTIVITY);
             $this->assertStringContainsString('Working...', $text);
 
             $activity->clear(self::SESSION_ID, 'job-virtual');
@@ -86,13 +90,33 @@ final class OmBackgroundStatusVirtualRenderTest extends IsolatedKernelTestCase
             $this->assertNull($busyHint);
 
             $cleared = $harness->plainScreenText();
-            $this->assertStringNotContainsString(
-                'Observational memory: reflector running (~2,500 tokens)',
-                $cleared,
+            $this->assertStringNotContainsString(self::ACTIVITY, $cleared);
+            $this->assertArrayNotHasKey(
+                OmBackgroundStatusPoller::STATUS_KEY,
+                $screen->registry()->getStatusEntries(),
             );
             $this->assertStringContainsString('Working...', $cleared, 'working status remains independent');
         } finally {
             TestDirectoryIsolation::removeDirectory($projectDir);
         }
+    }
+
+    private function assertFooterDoesNotContain(string $screenText, string $needle): void
+    {
+        $lines = explode("\n", $screenText);
+        $footerNeedle = 'session '.self::SESSION_ID;
+        foreach ($lines as $line) {
+            if (str_contains($line, $footerNeedle)) {
+                $this->assertStringNotContainsString(
+                    $needle,
+                    $line,
+                    'keyed status must not appear on the footer line',
+                );
+
+                return;
+            }
+        }
+
+        $this->fail('Footer session line missing from virtual screen');
     }
 }

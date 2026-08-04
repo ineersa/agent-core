@@ -30,15 +30,6 @@ final class StatusPanelWidget implements TuiWidget
         $this->entries = $entries;
     }
 
-    public function setEntry(string $key, ?string $text): void
-    {
-        if (null === $text) {
-            unset($this->entries[$key]);
-        } else {
-            $this->entries[$key] = $text;
-        }
-    }
-
     /**
      * Replace all status entries.
      *
