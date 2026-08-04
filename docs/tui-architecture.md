@@ -938,13 +938,14 @@ Notes:
 - `ToolCall` blocks are transient-only (streaming seq=0) and do not appear in
   canonical `events.jsonl` replay; `ToolResult` blocks are the canonical
   persistent projection of tool execution events.
-- Skill-load presentation: when a completed `read` tool call targets an exact
-  winning discovered skill file (`SkillDiscovery::findBySkillFilePath`), projection
-  annotates transcript metadata with `skill_name` (frontmatter name). The widget
-  factory renders a compact skill card instead of the generic read card. Ordinary
-  reads and unrelated/collision-loser `SKILL.md` paths stay normal read cards.
-  Resume reconstructs the same annotation from canonical `assistant.message_completed`
-  tool_calls. No protocol/event field change.
+- Skill-load presentation: `SkillReadProjectionSubscriber` annotates completed
+  `read` ToolCall blocks whose path is an exact winning discovered skill file
+  (`SkillDiscovery::findBySkillFilePath`) with presentation-only `skill_name`
+  (frontmatter name). The widget factory renders a compact skill card instead of
+  the generic read card. Ordinary reads and unrelated/collision-loser `SKILL.md`
+  paths stay normal read cards. Live `tool_call.arguments_completed` and resume
+  `assistant.message_completed` both get the same annotation. No protocol/event
+  field change.
 - HITL blocks (`Question`, `Approval`) are produced by AgentCore interrupt events
   and are distinct from local TUI question overlays. Local TUI questions are
   ephemeral UI state and do not produce transcript blocks.

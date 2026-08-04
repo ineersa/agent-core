@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\SkillReadProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
@@ -67,7 +68,8 @@ final class SkillReadProjectionReplayTest extends TestCase
 
         $dispatcher = new EventDispatcher();
         $state = new TranscriptProjectionState();
-        $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber($discovery));
+        $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
+        $dispatcher->addSubscriber(new SkillReadProjectionSubscriber($discovery));
         $projector = new TranscriptProjector($dispatcher, $state);
 
         $projector->accept([

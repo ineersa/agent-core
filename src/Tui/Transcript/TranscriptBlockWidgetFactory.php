@@ -510,7 +510,7 @@ final readonly class TranscriptBlockWidgetFactory
         $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
         $headerLine = $this->skillReadHeaderLabel($block, $arguments).$suffix;
 
-        return new TextWidget($this->colorSkillReadHeader($theme, $headerLine));
+        return new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine));
     }
 
     /**
@@ -531,10 +531,10 @@ final readonly class TranscriptBlockWidgetFactory
         if (!$fullRender && !$expanded) {
             $hint = $theme->color(ThemeColorEnum::Dim, ' (Ctrl+O to expand)');
 
-            return new TextWidget($this->colorSkillReadHeader($theme, $headerLine).$hint);
+            return new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine).$hint);
         }
 
-        $lines = [$this->colorSkillReadHeader($theme, $headerLine)];
+        $lines = [$theme->color(ThemeColorEnum::ToolTitle, $headerLine)];
         foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
             $lines[] = $theme->color($this->toolExchangeBodyColor($resultBlock), '    '.$bodyLine);
         }
@@ -554,37 +554,30 @@ final readonly class TranscriptBlockWidgetFactory
     }
 
     /**
-     * Pi-compatible line range: offset defaults to 1 when limit is present;
-     * end is emitted only when limit exists (start + limit - 1).
+     * Pi formatReadLineRange compatibility:
+     * no args → no suffix; limit-only → :1-end; offset-only → :start; both → :start-end.
      *
      * @param array<string, mixed> $arguments
      */
     private function formatReadLineRange(array $arguments): string
     {
-        $offset = $arguments['offset'] ?? null;
-        $limit = $arguments['limit'] ?? null;
+        $offset = isset($arguments['offset']) && is_numeric($arguments['offset'])
+            ? (int) $arguments['offset']
+            : null;
+        $limit = isset($arguments['limit']) && is_numeric($arguments['limit'])
+            ? (int) $arguments['limit']
+            : null;
 
-        $hasOffset = null !== $offset && '' !== $offset && is_numeric($offset);
-        $hasLimit = null !== $limit && '' !== $limit && is_numeric($limit);
-
-        if (!$hasOffset && !$hasLimit) {
+        if (null === $offset && null === $limit) {
             return '';
         }
 
-        $start = $hasOffset ? (int) $offset : 1;
-        if ($hasLimit) {
-            $end = $start + (int) $limit - 1;
-
-            return \sprintf(':%d-%d', $start, $end);
+        $start = $offset ?? 1;
+        if (null !== $limit) {
+            return \sprintf(':%d-%d', $start, $start + $limit - 1);
         }
 
         return \sprintf(':%d', $start);
-    }
-
-    private function colorSkillReadHeader(TuiTheme $theme, string $headerLine): string
-    {
-        // Keep the whole compact label on ToolTitle so skill cards read as one colored unit.
-        return $theme->color(ThemeColorEnum::ToolTitle, $headerLine);
     }
 
     /**

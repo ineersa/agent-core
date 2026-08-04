@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\SkillReadProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
@@ -19,6 +20,7 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
+use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -117,6 +119,16 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         $this->assertStringNotContainsString('skill-secret-line', $collapsed);
         $this->assertStringNotContainsString('path: '.$skillFile, $collapsed);
 
+        $skillLine = null;
+        foreach (explode("\n", $collapsed) as $line) {
+            if (str_contains($line, '[skill]')) {
+                $skillLine = $line;
+                break;
+            }
+        }
+        $this->assertNotNull($skillLine, 'Expected a rendered [skill] line');
+        $this->assertStringNotContainsString(TranscriptGlyphs::GLYPH_TOOL, $skillLine);
+
         $this->assertStringContainsString('read', $collapsed);
         // Path may wrap across terminal columns in VirtualTerminal output.
         $this->assertStringContainsString('docs/unrelated', $collapsed);
@@ -153,8 +165,9 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
     {
         $dispatcher = new EventDispatcher();
         $state = new TranscriptProjectionState();
-        $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber($discovery));
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber(skillDiscovery: $discovery));
+        $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber());
+        $dispatcher->addSubscriber(new SkillReadProjectionSubscriber($discovery));
 
         return new TranscriptProjector($dispatcher, $state);
     }

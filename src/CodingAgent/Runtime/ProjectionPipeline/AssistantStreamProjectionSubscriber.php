@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Runtime\ProjectionPipeline;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
@@ -16,11 +15,6 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  */
 final readonly class AssistantStreamProjectionSubscriber implements EventSubscriberInterface
 {
-    public function __construct(
-        private readonly ?SkillDiscovery $skillDiscovery = null,
-    ) {
-    }
-
     public static function getSubscribedEvents(): array
     {
         return [
@@ -253,21 +247,10 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
                 }
                 $toolName = (string) ($tc['name'] ?? '');
                 $arguments = $tc['arguments'] ?? [];
-                if (!\is_array($arguments)) {
-                    $arguments = [];
-                }
-                $argsText = [] !== $arguments
+                $argsText = \is_array($arguments) && [] !== $arguments
                     ? $event->state->argumentsToText($arguments)
                     : '()';
                 $text = '' !== $toolName ? $toolName.$argsText : $argsText;
-
-                $meta = [
-                    'tool_call_id' => $callId,
-                    'tool_name' => $toolName,
-                    'arguments' => $arguments,
-                    'message_id' => $messageId,
-                ];
-                $this->annotateSkillReadMeta($meta, $toolName, $arguments);
 
                 $event->state->addBlock(new TranscriptBlock(
                     id: $toolCallBlockId,
@@ -275,7 +258,12 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
                     runId: $event->runId(),
                     seq: $event->state->nextSeq(),
                     text: $text,
-                    meta: $meta,
+                    meta: [
+                        'tool_call_id' => $callId,
+                        'tool_name' => $toolName,
+                        'arguments' => $arguments,
+                        'message_id' => $messageId,
+                    ],
                     streaming: false,
                 ));
             }
@@ -301,28 +289,5 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
                 'stop_reason' => (string) ($p['stop_reason'] ?? 'error'),
             ],
         ));
-    }
-
-    /**
-     * @param array<string, mixed> $meta
-     * @param array<mixed>         $arguments
-     */
-    private function annotateSkillReadMeta(array &$meta, string $toolName, array $arguments): void
-    {
-        if ('read' !== $toolName || null === $this->skillDiscovery) {
-            return;
-        }
-
-        $path = $arguments['path'] ?? null;
-        if (!\is_string($path) || '' === $path) {
-            return;
-        }
-
-        $skill = $this->skillDiscovery->findBySkillFilePath($path);
-        if (null === $skill) {
-            return;
-        }
-
-        $meta['skill_name'] = $skill->name;
     }
 }
