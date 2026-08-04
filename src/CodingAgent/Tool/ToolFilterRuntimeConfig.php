@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\CodingAgent\Utility\CommaSeparatedListParser;
+use Ineersa\CodingAgent\Utility\EnvironmentVariableReader;
+
 /**
  * Mutable per-invocation tool allowlist/denylist for process-transport propagation.
  *
@@ -47,14 +50,14 @@ final class ToolFilterRuntimeConfig
     public function hydrateFromEnvironment(): void
     {
         if ('' === $this->tools) {
-            $fromEnv = $this->envValue('HATFIELD_TOOLS');
+            $fromEnv = EnvironmentVariableReader::read('HATFIELD_TOOLS');
             if (null !== $fromEnv && '' !== $fromEnv) {
                 $this->tools = $fromEnv;
             }
         }
 
         if ('' === $this->toolsExcluded) {
-            $fromEnv = $this->envValue('HATFIELD_TOOLS_EXCLUDED');
+            $fromEnv = EnvironmentVariableReader::read('HATFIELD_TOOLS_EXCLUDED');
             if (null !== $fromEnv && '' !== $fromEnv) {
                 $this->toolsExcluded = $fromEnv;
             }
@@ -126,23 +129,6 @@ final class ToolFilterRuntimeConfig
      */
     public static function parseToolNameList(string $raw): array
     {
-        return array_values(array_unique(array_filter(
-            array_map(trim(...), explode(',', $raw)),
-            static fn (string $name): bool => '' !== $name,
-        )));
-    }
-
-    private function envValue(string $key): ?string
-    {
-        if (\array_key_exists($key, $_ENV) && \is_string($_ENV[$key])) {
-            return $_ENV[$key];
-        }
-        if (\array_key_exists($key, $_SERVER) && \is_string($_SERVER[$key])) {
-            return $_SERVER[$key];
-        }
-
-        $value = getenv($key);
-
-        return false === $value ? null : $value;
+        return array_values(array_unique(CommaSeparatedListParser::parse($raw)));
     }
 }

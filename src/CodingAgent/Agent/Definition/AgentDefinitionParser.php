@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Definition;
 
+use Ineersa\CodingAgent\Utility\CommaSeparatedListParser;
 use Symfony\Component\Serializer\Exception\ExtraAttributesException;
 use Symfony\Component\Serializer\Exception\MissingConstructorArgumentsException;
 use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
@@ -99,13 +100,13 @@ final class AgentDefinitionParser
     {
         if (\array_key_exists('skill', $frontmatter)) {
             $fromSkill = \is_string($frontmatter['skill'])
-                ? $this->splitCommaSeparatedScalars($frontmatter['skill'])
+                ? CommaSeparatedListParser::parse($frontmatter['skill'])
                 : [];
             unset($frontmatter['skill']);
             $existing = [];
             if (\array_key_exists('skills', $frontmatter)) {
                 if (\is_string($frontmatter['skills'])) {
-                    $existing = $this->splitCommaSeparatedScalars($frontmatter['skills']);
+                    $existing = CommaSeparatedListParser::parse($frontmatter['skills']);
                 } elseif (\is_array($frontmatter['skills']) && array_is_list($frontmatter['skills'])) {
                     $existing = $frontmatter['skills'];
                 }
@@ -114,34 +115,15 @@ final class AgentDefinitionParser
         }
 
         if (\array_key_exists('tools', $frontmatter) && \is_string($frontmatter['tools'])) {
-            $frontmatter['tools'] = $this->splitCommaSeparatedScalars($frontmatter['tools']);
+            $frontmatter['tools'] = CommaSeparatedListParser::parse($frontmatter['tools']);
         }
         // Omitted tools stays absent: child inherits parent-available tools at launch (pi parity).
 
         if (\array_key_exists('skills', $frontmatter) && \is_string($frontmatter['skills'])) {
-            $frontmatter['skills'] = $this->splitCommaSeparatedScalars($frontmatter['skills']);
+            $frontmatter['skills'] = CommaSeparatedListParser::parse($frontmatter['skills']);
         }
 
         return $frontmatter;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function splitCommaSeparatedScalars(string $value): array
-    {
-        $trimmed = trim($value);
-        if ('' === $trimmed) {
-            return [];
-        }
-
-        if (!str_contains($trimmed, ',')) {
-            return [$trimmed];
-        }
-
-        $parts = array_map(trim(...), explode(',', $trimmed));
-
-        return array_values(array_filter($parts, static fn (string $part): bool => '' !== $part));
     }
 
     /**
