@@ -6,6 +6,7 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Query;
 
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCancellationTokenInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
@@ -185,10 +186,19 @@ final class OmQueryService
      * Accepts lowercase hex prefixes of length 12..64. Resolves at most one match
      * across observations and reflections separately; ambiguous or missing ids fail closed.
      *
+     * Cooperative cancellation/deadline checkpoints run between DB stages and during
+     * supporting-observation/event hydration. A single SQLite/DBAL call may still finish
+     * before the next checkpoint; this method does not add process isolation.
+     *
      * @return array<string, mixed>
      */
-    public function recall(string $runId, string $id): array
-    {
+    public function recall(
+        string $runId,
+        string $id,
+        ?ToolCancellationTokenInterface $cancellationToken = null,
+        ?int $timeoutSeconds = null,
+        ?int $deadlineNs = null,
+    ): array {
         $id = strtolower(trim($id));
         if (1 !== preg_match(self::ID_PATTERN, $id)) {
             return [
@@ -198,9 +208,17 @@ final class OmQueryService
             ];
         }
 
+        if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled before database open.'))) {
+            return $interrupt;
+        }
+
         $connection = $this->connect();
         $observations = new ObservationRepository($connection);
         $generations = new MemoryGenerationRepository($connection);
+
+        if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled before observation lookup.'))) {
+            return $interrupt;
+        }
 
         $obsMatches = $observations->findObservationsByIdPrefix($runId, $id);
         if (\count($obsMatches) > 1) {
@@ -211,12 +229,21 @@ final class OmQueryService
             ];
         }
         if (1 === \count($obsMatches)) {
+            if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled before observation event hydration.'))) {
+                return $interrupt;
+            }
+
             $observation = $obsMatches[0];
             $fullId = $observation['observation_id'];
             $refs = $this->currentRunSourceRefs(
                 $runId,
                 $this->decodeSourceRefs($observation['source_refs_json']),
             );
+
+            $events = $this->loadEventsForRefs($runId, $refs, $cancellationToken, $timeoutSeconds, $deadlineNs);
+            if (isset($events['cancelled']) || isset($events['timed_out'])) {
+                return $events;
+            }
 
             return [
                 'ok' => true,
@@ -226,8 +253,12 @@ final class OmQueryService
                 'timestamp' => $observation['timestamp'],
                 'relevance' => $observation['relevance'],
                 'source_refs' => $refs,
-                'events' => $this->loadEventsForRefs($runId, $refs),
+                'events' => $events,
             ];
+        }
+
+        if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled before reflection lookup.'))) {
+            return $interrupt;
         }
 
         $refMatches = $generations->findReflectionsByIdPrefix($runId, $id);
@@ -255,6 +286,9 @@ final class OmQueryService
         );
         $refs = [];
         foreach ($supportIds as $supportId) {
+            if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled while hydrating supporting observations.'))) {
+                return $interrupt;
+            }
             $support = $observations->findObservation($runId, $supportId);
             if (null === $support) {
                 continue;
@@ -277,6 +311,15 @@ final class OmQueryService
             return $a['seq'] <=> $b['seq'];
         });
 
+        if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled before reflection event hydration.'))) {
+            return $interrupt;
+        }
+
+        $events = $this->loadEventsForRefs($runId, $refs, $cancellationToken, $timeoutSeconds, $deadlineNs);
+        if (isset($events['cancelled']) || isset($events['timed_out'])) {
+            return $events;
+        }
+
         return [
             'ok' => true,
             'kind' => 'reflection',
@@ -284,7 +327,7 @@ final class OmQueryService
             'content' => (string) $reflection['content'],
             'supporting_observation_ids' => $supportIds,
             'source_refs' => $refs,
-            'events' => $this->loadEventsForRefs($runId, $refs),
+            'events' => $events,
         ];
     }
 
@@ -298,10 +341,15 @@ final class OmQueryService
     /**
      * @param list<array{run_id: string, seq: int}> $refs
      *
-     * @return list<array{run_id: string, seq: int, type: string, created_at: string, payload: array<string, mixed>}>
+     * @return list<array{run_id: string, seq: int, type: string, created_at: string, payload: array<string, mixed>}>|array{cancelled?: true, timed_out?: true, timeout_seconds?: int, message: string}
      */
-    private function loadEventsForRefs(string $currentRunId, array $refs): array
-    {
+    private function loadEventsForRefs(
+        string $currentRunId,
+        array $refs,
+        ?ToolCancellationTokenInterface $cancellationToken = null,
+        ?int $timeoutSeconds = null,
+        ?int $deadlineNs = null,
+    ): array {
         if ([] === $refs) {
             return [];
         }
@@ -314,6 +362,9 @@ final class OmQueryService
         /** @var array<int, true> $wanted */
         $wanted = [];
         foreach ($refs as $ref) {
+            if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled while collecting event refs.'))) {
+                return $interrupt;
+            }
             $run = (string) $ref['run_id'];
             $seq = (int) $ref['seq'];
             if ($seq < 1) {
@@ -331,10 +382,17 @@ final class OmQueryService
             return [];
         }
 
+        if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled before reading session events.'))) {
+            return $interrupt;
+        }
+
         $events = [];
         $start = min($seqs);
         $end = max($seqs);
         foreach ($this->api->sessionEvents()->readRange($currentRunId, $start, $end) as $event) {
+            if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled while reading session events.'))) {
+                return $interrupt;
+            }
             if (!$event instanceof SessionEventDTO) {
                 continue;
             }
@@ -354,6 +412,33 @@ final class OmQueryService
         usort($events, static fn (array $a, array $b): int => $a['seq'] <=> $b['seq']);
 
         return $events;
+    }
+
+    /**
+     * @return array{cancelled: true, message: string}|array{timed_out: true, timeout_seconds: int, message: string}|null
+     */
+    private function interruptMap(
+        ?ToolCancellationTokenInterface $cancellationToken,
+        ?int $timeoutSeconds,
+        ?int $deadlineNs,
+        string $message,
+    ): ?array {
+        if (null !== $cancellationToken && $cancellationToken->isCancellationRequested()) {
+            return [
+                'cancelled' => true,
+                'message' => $message,
+            ];
+        }
+
+        if (null !== $deadlineNs && hrtime(true) >= $deadlineNs) {
+            return [
+                'timed_out' => true,
+                'timeout_seconds' => $timeoutSeconds ?? 0,
+                'message' => $message,
+            ];
+        }
+
+        return null;
     }
 
     /**

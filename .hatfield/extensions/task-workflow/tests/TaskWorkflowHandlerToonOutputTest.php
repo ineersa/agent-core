@@ -6,6 +6,7 @@ namespace Ineersa\HatfieldExt\TaskWorkflow\Tests;
 
 use HelgeSverre\Toon\Toon;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowSettings;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardStore;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskMarkdown;
@@ -81,7 +82,7 @@ final class TaskWorkflowHandlerToonOutputTest extends TestCase
         $result = ($handler)([
             'title' => 'Created via toon test',
             'id' => '2026-01-01-created-via-toon-test',
-        ]);
+        ], new ToolInvocationContextDTO(runId: 'run-toon-create'));
 
         $decoded = $this->assertTopLevelToon($result);
         $this->assertStringContainsString('Created TODO/2026-01-01-created-via-toon-test.md', (string) $decoded['message']);
@@ -104,7 +105,7 @@ final class TaskWorkflowHandlerToonOutputTest extends TestCase
 
         $store = $this->store();
         $handler = new UpdateTaskHandler($store);
-        $result = ($handler)(['task' => 'noop']);
+        $result = ($handler)(['task' => 'noop'], new ToolInvocationContextDTO(runId: 'run-toon-update'));
 
         $decoded = $this->assertTopLevelToon($result);
         $this->assertSame('No updates to apply (no fields provided).', $decoded['message'] ?? null);

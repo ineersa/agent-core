@@ -20,6 +20,7 @@ final readonly class ExecResultDTO
         public string $stderr,
         public int $exitCode,
         public bool $timedOut = false,
+        public bool $cancelled = false,
     ) {
     }
 }

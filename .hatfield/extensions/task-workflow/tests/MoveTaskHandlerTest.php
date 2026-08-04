@@ -9,12 +9,16 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCancellationTokenInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
 use Ineersa\HatfieldExt\TaskWorkflow\Pr\PrManager;
 use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowSettings;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardStore;
+use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskInfo;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskMarkdown;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskStatusEnum;
+use Ineersa\HatfieldExt\TaskWorkflow\Tool\InvocationControl;
 use Ineersa\HatfieldExt\TaskWorkflow\Tool\MoveTaskHandler;
 use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorktreeManager;
 use PHPUnit\Framework\Attributes\Test;
@@ -76,13 +80,19 @@ final class MoveTaskHandlerTest extends TestCase
         $slug = '2026-01-01-test-task';
         file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Test task'));
 
-        $r1 = ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+        $r1 = ($handler)(
+            ['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase],
+            $this->ctx(),
+        );
         $this->assertStringContainsString('Moved task', $r1);
         $branch = 'task/'.$slug;
         $this->assertTrue($this->branchExists($branch));
         $this->assertDirectoryExists($this->worktreesBase.'/'.$slug);
 
-        ($handler)(['task' => $slug, 'from' => 'IN-PROGRESS', 'to' => 'DONE', 'cleanupWorktree' => true]);
+        ($handler)(
+            ['task' => $slug, 'from' => 'IN-PROGRESS', 'to' => 'DONE', 'cleanupWorktree' => true],
+            $this->ctx(),
+        );
         $this->assertFileExists($this->boardRoot.'/DONE/'.$slug.'.md');
     }
 
@@ -99,14 +109,14 @@ final class MoveTaskHandlerTest extends TestCase
         $handler = $this->makeHandler($recording);
 
         file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('CR happy'));
-        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase], $this->ctx());
 
         $r = ($handler)([
             'task' => $slug,
             'from' => 'IN-PROGRESS',
             'to' => 'CODE-REVIEW',
             'castorCheckTimeoutSeconds' => 60,
-        ]);
+        ], $this->ctx());
 
         $this->assertStringContainsString('Moved task', $r);
         $this->assertFileExists($this->boardRoot.'/CODE-REVIEW/'.$slug.'.md');
@@ -149,7 +159,7 @@ final class MoveTaskHandlerTest extends TestCase
         $handler = $this->makeHandler($recording);
 
         file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('CR fail'));
-        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase], $this->ctx());
 
         try {
             ($handler)([
@@ -157,7 +167,7 @@ final class MoveTaskHandlerTest extends TestCase
                 'from' => 'IN-PROGRESS',
                 'to' => 'CODE-REVIEW',
                 'castorCheckTimeoutSeconds' => 60,
-            ]);
+            ], $this->ctx());
             $this->fail('Expected RuntimeException when castor check fails');
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('Castor check FAILED', $e->getMessage());
@@ -192,7 +202,64 @@ final class MoveTaskHandlerTest extends TestCase
         $handler = new MoveTaskHandler($store, $git, new WorktreeManager($git, $exec), new PrManager($exec), $exec, new TaskWorkflowSettings(), $this->repoRoot);
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Integration checkout is not clean');
-        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase], $this->ctx());
+    }
+
+    #[Test]
+    public function cancellationBeforePushSkipsPushAndPrAndLeavesTaskInProgress(): void
+    {
+        // Thesis: move_task must stop between castor check and push when cancelled, without
+        // rewriting status metadata or opening a PR.
+        $slug = '2026-01-01-cr-cancel';
+        $token = new class implements ToolCancellationTokenInterface {
+            public int $checks = 0;
+
+            public function isCancellationRequested(): bool
+            {
+                // Flip after castor check path has begun polling control.
+                return ++$this->checks >= 8;
+            }
+        };
+
+        $inner = new StubExec(function (string $command, array $args, ?ExecOptionsDTO $options) use ($token): ExecResultDTO {
+            if ('timeout' === $command) {
+                // Force cancel after check succeeds but before push phase.
+                $token->checks = 100;
+
+                return new ExecResultDTO('check ok', '', 0);
+            }
+
+            return ($this->gitStubForCodeReview(timeoutExitCode: 0))($command, $args, $options);
+        });
+        $recording = new RecordingExec($inner);
+        $handler = $this->makeHandler($recording);
+
+        file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('CR cancel'));
+        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase], $this->ctx());
+
+        $result = ($handler)([
+            'task' => $slug,
+            'from' => 'IN-PROGRESS',
+            'to' => 'CODE-REVIEW',
+            'castorCheckTimeoutSeconds' => 60,
+        ], $this->ctx(cancellationToken: $token));
+
+        $this->assertIsArray($result);
+        $this->assertTrue($result['cancelled'] ?? false);
+        $this->assertFileExists($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');
+        $this->assertFileDoesNotExist($this->boardRoot.'/CODE-REVIEW/'.$slug.'.md');
+
+        $gitPush = array_filter(
+            $recording->calls(),
+            static fn (array $c): bool => 'git' === $c['command'] && \in_array('push', $c['args'], true),
+        );
+        $this->assertEmpty($gitPush, 'must not push after cancellation');
+
+        $ghCreate = array_filter(
+            $recording->calls(),
+            static fn (array $c): bool => 'gh' === $c['command'] && \in_array('create', $c['args'], true),
+        );
+        $this->assertEmpty($ghCreate, 'must not create PR after cancellation');
     }
 
     #[Test]
@@ -207,7 +274,7 @@ final class MoveTaskHandlerTest extends TestCase
         $handler = $this->makeHandler($recording);
 
         file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Ext vendor'));
-        $r = ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+        $r = ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase], $this->ctx());
 
         $this->assertStringContainsString('Installed extensions vendor', $r);
 
@@ -241,7 +308,7 @@ final class MoveTaskHandlerTest extends TestCase
         $handler = $this->makeHandler($recording);
 
         file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Ext fail'));
-        $r = ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+        $r = ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase], $this->ctx());
 
         $this->assertStringContainsString('Moved task', $r);
         $this->assertFileExists($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');
@@ -269,7 +336,7 @@ final class MoveTaskHandlerTest extends TestCase
         $recording = new RecordingExec($inner);
         $handler = $this->makeHandler($recording);
 
-        $result = ($handler)(['task' => $slug, 'from' => 'DONE', 'to' => 'ARCHIVE']);
+        $result = ($handler)(['task' => $slug, 'from' => 'DONE', 'to' => 'ARCHIVE'], $this->ctx());
 
         $this->assertFileExists($this->boardRoot.'/ARCHIVE/'.$slug.'.md');
         $this->assertFileDoesNotExist($this->boardRoot.'/DONE/'.$slug.'.md');
@@ -301,7 +368,7 @@ final class MoveTaskHandlerTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('ARCHIVE is only allowed from DONE');
-        ($handler)(['task' => $slug, 'to' => 'ARCHIVE']);
+        ($handler)(['task' => $slug, 'to' => 'ARCHIVE'], $this->ctx());
     }
 
     #[Test]
@@ -311,7 +378,7 @@ final class MoveTaskHandlerTest extends TestCase
         file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Cancel plain'));
         $handler = $this->makeHandler(new StubExec($this->gitStub(...)));
 
-        $result = ($handler)(['task' => $slug, 'to' => 'CANCELLED']);
+        $result = ($handler)(['task' => $slug, 'to' => 'CANCELLED'], $this->ctx());
 
         $this->assertFileExists($this->boardRoot.'/CANCELLED/'.$slug.'.md');
         $this->assertFileDoesNotExist($this->boardRoot.'/TODO/'.$slug.'.md');
@@ -333,11 +400,11 @@ final class MoveTaskHandlerTest extends TestCase
 
         $handler = $this->makeHandler(new StubExec($this->gitStub(...)));
         file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Cancel clean'));
-        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase], $this->ctx());
         $this->assertDirectoryExists($worktree);
         $this->assertStringContainsString('pi-task-workflow:start '.$slug, (string) file_get_contents($iml));
 
-        $result = ($handler)(['task' => $slug, 'from' => 'IN-PROGRESS', 'to' => 'CANCELLED']);
+        $result = ($handler)(['task' => $slug, 'from' => 'IN-PROGRESS', 'to' => 'CANCELLED'], $this->ctx());
 
         $this->assertFileExists($this->boardRoot.'/CANCELLED/'.$slug.'.md');
         $this->assertFileDoesNotExist($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');
@@ -367,11 +434,11 @@ final class MoveTaskHandlerTest extends TestCase
 
         $handler = $this->makeHandler(new StubExec($this->gitStub(...)));
         file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Cancel dirty'));
-        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase], $this->ctx());
         file_put_contents($worktree.'/dirty.txt', 'dirty');
 
         try {
-            ($handler)(['task' => $slug, 'from' => 'IN-PROGRESS', 'to' => 'CANCELLED']);
+            ($handler)(['task' => $slug, 'from' => 'IN-PROGRESS', 'to' => 'CANCELLED'], $this->ctx());
             $this->fail('Expected RuntimeException for dirty worktree cancellation');
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('Safe worktree cleanup failed', $e->getMessage());
@@ -404,7 +471,7 @@ final class MoveTaskHandlerTest extends TestCase
         $recording = new RecordingExec($inner);
         $handler = $this->makeHandler($recording);
         file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Cancel collision'));
-        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase], $this->ctx());
         $this->assertDirectoryExists($worktree);
         $this->assertStringContainsString('pi-task-workflow:start '.$slug, (string) file_get_contents($iml));
 
@@ -412,7 +479,7 @@ final class MoveTaskHandlerTest extends TestCase
         file_put_contents($destination, $destinationBody);
 
         try {
-            ($handler)(['task' => $slug, 'from' => 'IN-PROGRESS', 'to' => 'CANCELLED']);
+            ($handler)(['task' => $slug, 'from' => 'IN-PROGRESS', 'to' => 'CANCELLED'], $this->ctx());
             $this->fail('Expected RuntimeException for CANCELLED destination collision');
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('Target task already exists', $e->getMessage());
@@ -457,11 +524,67 @@ final class MoveTaskHandlerTest extends TestCase
         $handler = $this->makeHandler($recording);
 
         file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Ext missing'));
-        $r = ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+        $r = ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase], $this->ctx());
 
         $this->assertStringContainsString('Moved task', $r);
         $composerCalls = $this->findCallsByCommand($recording, 'composer');
         $this->assertEmpty($composerCalls, 'must not call composer when extensions dir is missing');
+    }
+
+    #[Test]
+    public function cleanupPartialPreservesIdeaExclusionsWhenWorktreeRemoveFails(): void
+    {
+        // Thesis: interrupted worktree create must not strip IDEA exclusions unless
+        // `git worktree remove` succeeds (same fail-closed ordering as safe cleanup).
+        $slug = '2026-01-01-partial-cleanup';
+        $worktree = $this->worktreesBase.'/'.$slug;
+
+        mkdir($this->worktreesBase.'/.idea', 0o755, true);
+        $iml = $this->worktreesBase.'/.idea/'.basename($this->worktreesBase).'.iml';
+        file_put_contents($iml, "<?xml version=\"1.0\"?>\n<module>\n  <component name=\"NewModuleRootManager\">\n    <content url=\"file://\$MODULE_DIR$\">\n    </content>\n  </component>\n</module>\n");
+
+        $token = new class($iml, $slug) implements ToolCancellationTokenInterface {
+            public function __construct(
+                private string $iml,
+                private string $slug,
+            ) {
+            }
+
+            public function isCancellationRequested(): bool
+            {
+                return is_file($this->iml)
+                    && str_contains((string) file_get_contents($this->iml), 'pi-task-workflow:start '.$this->slug);
+            }
+        };
+
+        $inner = new StubExec(function (string $command, array $args, ?ExecOptionsDTO $options): ExecResultDTO {
+            if ('git' === $command && ($args[0] ?? null) === 'worktree' && ($args[1] ?? null) === 'remove') {
+                return new ExecResultDTO('', 'simulated worktree remove failure', 1);
+            }
+
+            return $this->gitStub($command, $args, $options);
+        });
+        $git = new GitExecutor($inner);
+        $manager = new WorktreeManager($git, $inner);
+
+        $task = new TaskInfo(
+            status: TaskStatusEnum::TODO,
+            file: $slug.'.md',
+            path: $this->boardRoot.'/TODO/'.$slug.'.md',
+            title: 'Partial cleanup',
+        );
+        $control = InvocationControl::fromContext($this->ctx(cancellationToken: $token));
+
+        $result = $manager->createWorktreeForTask($this->repoRoot, $task, $this->worktreesBase, $control);
+
+        $this->assertInstanceOf(ExecResultDTO::class, $result);
+        $this->assertTrue($result->cancelled);
+        $this->assertDirectoryExists($worktree);
+        $this->assertStringContainsString(
+            'pi-task-workflow:start '.$slug,
+            (string) file_get_contents($iml),
+            'IDEA exclusions must remain when git worktree remove fails',
+        );
     }
 
     public function gitStubForCodeReview(int $timeoutExitCode): callable
@@ -522,6 +645,15 @@ final class MoveTaskHandlerTest extends TestCase
         }
 
         return new ExecResultDTO('', '', 0);
+    }
+
+    private function ctx(?ToolCancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): ToolInvocationContextDTO
+    {
+        return new ToolInvocationContextDTO(
+            runId: 'run-move-test',
+            cancellationToken: $cancellationToken,
+            timeoutSeconds: $timeoutSeconds,
+        );
     }
 
     private function makeHandler(ExecInterface $exec): MoveTaskHandler

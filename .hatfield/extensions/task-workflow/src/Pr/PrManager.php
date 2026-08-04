@@ -6,6 +6,8 @@ namespace Ineersa\HatfieldExt\TaskWorkflow\Pr;
 
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
+use Ineersa\HatfieldExt\TaskWorkflow\Tool\InvocationControl;
 
 final class PrManager
 {
@@ -14,14 +16,28 @@ final class PrManager
     ) {
     }
 
-    public function pushTaskBranch(string $root, string $branch): string
+    public function pushTaskBranch(string $root, string $branch, ?InvocationControl $control = null): string|ExecResultDTO
     {
-        $remoteResult = $this->exec->exec('git', ['remote', 'get-url', 'origin'], new ExecOptionsDTO(cwd: $root, timeout: 120.0));
+        $remoteResult = $this->exec->exec(
+            'git',
+            ['remote', 'get-url', 'origin'],
+            $this->options($root, 120.0, $control),
+        );
+        if ($remoteResult->cancelled || $remoteResult->timedOut) {
+            return $remoteResult;
+        }
         if (0 !== $remoteResult->exitCode) {
             throw new \RuntimeException("No git remote 'origin' configured. Push requires a remote repository.\n\nSet one with:\n  git remote add origin <url>");
         }
 
-        $pushResult = $this->exec->exec('git', ['push', '-u', 'origin', $branch], new ExecOptionsDTO(cwd: $root, timeout: 120.0));
+        $pushResult = $this->exec->exec(
+            'git',
+            ['push', '-u', 'origin', $branch],
+            $this->options($root, 120.0, $control),
+        );
+        if ($pushResult->cancelled || $pushResult->timedOut) {
+            return $pushResult;
+        }
         if (0 !== $pushResult->exitCode) {
             throw new \RuntimeException('git push failed:'.\PHP_EOL.trim('' !== $pushResult->stderr ? $pushResult->stderr : $pushResult->stdout));
         }
@@ -32,11 +48,18 @@ final class PrManager
     }
 
     /**
-     * @return array{available: bool, reason?: string}
+     * @return array{available: bool, reason?: string}|ExecResultDTO
      */
-    public function ghAvailable(string $root): array
+    public function ghAvailable(string $root, ?InvocationControl $control = null): array|ExecResultDTO
     {
-        $authResult = $this->exec->exec('gh', ['auth', 'status'], new ExecOptionsDTO(cwd: $root, timeout: 120.0));
+        $authResult = $this->exec->exec(
+            'gh',
+            ['auth', 'status'],
+            $this->options($root, 120.0, $control),
+        );
+        if ($authResult->cancelled || $authResult->timedOut) {
+            return $authResult;
+        }
         if (0 === $authResult->exitCode) {
             return ['available' => true];
         }
@@ -48,13 +71,16 @@ final class PrManager
         return ['available' => false, 'reason' => 'gh is not authenticated: '.trim($err)];
     }
 
-    public function findExistingPr(string $root, string $branch): ?string
+    public function findExistingPr(string $root, string $branch, ?InvocationControl $control = null): string|ExecResultDTO|null
     {
         $result = $this->exec->exec(
             'gh',
             ['pr', 'list', '--head', $branch, '--json', 'url', '--jq', '.[0].url', '--state', 'open'],
-            new ExecOptionsDTO(cwd: $root, timeout: 120.0)
+            $this->options($root, 120.0, $control),
         );
+        if ($result->cancelled || $result->timedOut) {
+            return $result;
+        }
         if (0 !== $result->exitCode) {
             return null;
         }
@@ -63,8 +89,14 @@ final class PrManager
         return '' !== $url ? $url : null;
     }
 
-    public function createPr(string $root, string $branch, string $title, string $body, ?string $baseBranch = null): string
-    {
+    public function createPr(
+        string $root,
+        string $branch,
+        string $title,
+        string $body,
+        ?string $baseBranch = null,
+        ?InvocationControl $control = null,
+    ): string|ExecResultDTO {
         $args = ['pr', 'create', '--head', $branch, '--title', $title];
         if ('' !== trim($body)) {
             $args[] = '--body';
@@ -75,11 +107,17 @@ final class PrManager
             $args[] = $baseBranch;
         }
 
-        $result = $this->exec->exec('gh', $args, new ExecOptionsDTO(cwd: $root, timeout: 120.0));
+        $result = $this->exec->exec('gh', $args, $this->options($root, 120.0, $control));
+        if ($result->cancelled || $result->timedOut) {
+            return $result;
+        }
         if (0 !== $result->exitCode) {
             $err = '' !== $result->stderr ? $result->stderr : $result->stdout;
             if (str_contains($err, 'already exists') || str_contains($err, 'pull request already exists')) {
-                $existing = $this->findExistingPr($root, $branch);
+                $existing = $this->findExistingPr($root, $branch, $control);
+                if ($existing instanceof ExecResultDTO) {
+                    return $existing;
+                }
                 if (null !== $existing) {
                     return $existing;
                 }
@@ -92,5 +130,14 @@ final class PrManager
         }
 
         return $url;
+    }
+
+    private function options(string $root, float $timeout, ?InvocationControl $control): ExecOptionsDTO
+    {
+        return new ExecOptionsDTO(
+            cwd: $root,
+            timeout: $control?->remainingTimeoutSeconds($timeout) ?? $timeout,
+            cancellationToken: $control?->cancellationToken,
+        );
     }
 }
