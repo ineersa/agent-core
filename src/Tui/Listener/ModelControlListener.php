@@ -178,8 +178,10 @@ final class ModelControlListener implements TuiListenerRegistrar
             // diamond and model name with the appropriate Thinking* token.
             $state->footerReasoning = $nextLevel;
 
-            // Panel-only keyed status (setStatus no longer mirrors into the footer).
+            // Panel-only keyed status (setStatus does not touch the footer).
             $screen->setStatus('reasoning', $nextLevel);
+            // Footer segments read footerReasoning; invalidate so colour updates this frame.
+            $screen->refreshFooter();
 
             // Apply editor border colour matching the new reasoning level.
             $screen->applyEditorBorderColor($nextLevel);

@@ -441,25 +441,24 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
     private function assertFooterLineDoesNotContain(string $viewport, string $sessionId, string $needle): void
     {
         $footerNeedle = 'session '.$sessionId;
-        foreach (explode("\n", $viewport) as $line) {
-            if (str_contains($line, $footerNeedle) || (str_contains($line, '◆') && str_contains($line, 'session'))) {
-                $this->assertStringNotContainsString(
-                    $needle,
-                    $line,
-                    "keyed OM status must not appear on footer line:\n".$line,
-                );
+        $foundFooter = false;
 
-                return;
+        foreach (explode("\n", $viewport) as $line) {
+            $isFooterCandidate = str_contains($line, $footerNeedle)
+                || (str_contains($line, '◆') && (str_contains($line, 'session') || str_contains($line, $sessionId)));
+            if (!$isFooterCandidate) {
+                continue;
             }
+
+            $foundFooter = true;
+            $this->assertStringNotContainsString(
+                $needle,
+                $line,
+                "keyed OM status must not appear on footer line:\n".$line,
+            );
         }
 
-        // Footer may use model/cwd segments without the session label on the same line;
-        // still require the activity string not sit on a ◆ footer-looking line alone.
-        foreach (explode("\n", $viewport) as $line) {
-            if (str_contains($line, '◆') && str_contains($line, $needle)) {
-                $this->fail("keyed OM status appeared on a footer-like line:\n".$line);
-            }
-        }
+        $this->assertTrue($foundFooter, 'Footer candidate line missing from viewport (session/◆ anchor)');
     }
 
     private function omDatabaseFactory(): OmDatabaseFactoryTestService

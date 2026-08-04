@@ -463,8 +463,8 @@ final class ChatScreen
 
         // Panel-only: keyed statuses never fan out into the footer bar.
         // Footer content comes from explicit FooterSegmentProvider / setFooter APIs.
+        // LiveTextWidget re-reads registry entries on render via setEntries().
         $this->registry->setStatus($key, $text);
-        $this->statusPanelRenderable->setEntry($key, $text);
         $this->statusPanelWidget->invalidate();
     }
 

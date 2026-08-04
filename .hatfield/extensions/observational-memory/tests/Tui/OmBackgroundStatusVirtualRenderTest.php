@@ -31,7 +31,7 @@ final class OmBackgroundStatusVirtualRenderTest extends IsolatedKernelTestCase
     private const string ACTIVITY = 'Observational memory: reflector running (~2,500 tokens)';
 
     #[Test]
-    public function testActivityStatusRendersOnceInPanelNotFooterAndClears(): void
+    public function testActivityStatusRendersOnceInPanelNotFooterClearsAndStaysIdleSafe(): void
     {
         $projectDir = TestDirectoryIsolation::createProjectTempDir('om-status-virtual');
         try {
