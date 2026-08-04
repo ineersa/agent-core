@@ -69,7 +69,7 @@ final class HeadlessControllerLlmWorkerCountResolutionTest extends TestCase
             toolExecutionSettings: new ToolSettings(maxParallelism: 1),
             boundary: $boundary,
             emitter: $emitter,
-            lockFactory: new LockFactory(new InMemoryStore()),
+            sessionOwnerLockFactory: new LockFactory(new InMemoryStore()),
             runtimeCwd: sys_get_temp_dir(),
             runtimeConfig: new RuntimeConfig(llmWorkerCount: $runtimeCount),
             toolWorkerCount: 0,

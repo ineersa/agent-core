@@ -37,6 +37,8 @@ use Symfony\Component\Lock\LockInterface;
  * Single-owner lock:
  * - Before orphan reaping / consumer launch, acquires a process-lifetime flock keyed by
  *   canonical runtime CWD + session ID so two live controllers never share session queues.
+ * - Store is a dedicated FlockStore under %app.cwd%/.hatfield/tmp/controller-locks so
+ *   source/worktree/PHAR controllers with the same project CWD converge (not kernel.project_dir).
  * - Lock is released only after consumers shut down (graceful path) or when the process dies.
  *
  * Command protocol:
@@ -71,7 +73,8 @@ final class HeadlessController
         private readonly ToolExecutionSettingsInterface $toolExecutionSettings,
         private readonly RuntimeExceptionBoundary $boundary,
         private readonly RuntimeEventEmitter $emitter,
-        private readonly LockFactory $lockFactory,
+        /** Project-scoped factory (not FrameworkBundle default LockFactory). */
+        private readonly LockFactory $sessionOwnerLockFactory,
         private readonly string $runtimeCwd,
         private readonly RuntimeConfig $runtimeConfig = new RuntimeConfig(),
         /**
@@ -477,7 +480,7 @@ final class HeadlessController
      */
     private function acquireSessionOwnerLock(): bool
     {
-        $lock = $this->lockFactory->createLock($this->sessionOwnerLockResource(), ttl: null, autoRelease: true);
+        $lock = $this->sessionOwnerLockFactory->createLock($this->sessionOwnerLockResource(), ttl: null, autoRelease: true);
 
         if (!$lock->acquire(blocking: false)) {
             $this->logger->error('Controller session already owned by another live process', [
