@@ -55,6 +55,14 @@ final class DeferredChildRunEventProjector
         /** @var array<string, array{name: string, displayLine: string}> $pendingById */
         $pendingById = $current->pendingToolCalls;
 
+        // When the processed tail ends on a still-retryable llm_step_failed, child lifecycle
+        // must stay nonterminal even though RunCommit also writes committedStatus=Failed.
+        // Track a flag rather than re-inspecting the literal last summary: LlmStepResultHandler
+        // appends ModelNotification events after LlmStepFailed, so the last summary may be a
+        // non-status event while retry is still pending. The flag survives ignored/non-status
+        // events and clears only on later recognized status-setting events.
+        $endsWithRetryPendingLlmFailure = false;
+
         foreach ($summaries as $summary) {
             $lastSeq = $summary->seq;
             $payload = $summary->payload;
@@ -65,6 +73,7 @@ final class DeferredChildRunEventProjector
                     $turnNo = (int) $payload['turn_no'];
                 }
                 $status = RunStatus::Running;
+                $endsWithRetryPendingLlmFailure = false;
                 continue;
             }
 
@@ -84,6 +93,7 @@ final class DeferredChildRunEventProjector
                     }
                 }
                 $status = RunStatus::Running;
+                $endsWithRetryPendingLlmFailure = false;
                 continue;
             }
 
@@ -127,6 +137,7 @@ final class DeferredChildRunEventProjector
                     }
                 }
                 $status = RunStatus::Running;
+                $endsWithRetryPendingLlmFailure = false;
                 continue;
             }
 
@@ -147,6 +158,7 @@ final class DeferredChildRunEventProjector
                     $recentTools = \array_slice($recentTools, -self::MAX_RECENT_TOOLS);
                 }
                 $status = RunStatus::Running;
+                $endsWithRetryPendingLlmFailure = false;
                 continue;
             }
 
@@ -156,12 +168,17 @@ final class DeferredChildRunEventProjector
                 $errorMessage = \is_string($error['user_message'] ?? null)
                     ? $error['user_message']
                     : (\is_string($error['message'] ?? null) ? $error['message'] : 'LLM worker failed.');
-                $status = RunStatus::Failed;
+                // Top-level payload.retryable=true means auto-retry is still pending; keep Running
+                // so deferred child/fork completion does not terminalize before the retry runs.
+                $retryable = true === ($payload['retryable'] ?? false);
+                $status = $retryable ? RunStatus::Running : RunStatus::Failed;
+                $endsWithRetryPendingLlmFailure = $retryable;
                 continue;
             }
 
             if (RunEventTypeEnum::WaitingHuman->value === $type) {
                 $status = RunStatus::WaitingHuman;
+                $endsWithRetryPendingLlmFailure = false;
                 continue;
             }
 
@@ -171,6 +188,7 @@ final class DeferredChildRunEventProjector
                     'cancelled' => RunStatus::Cancelled,
                     default => RunStatus::Completed,
                 };
+                $endsWithRetryPendingLlmFailure = false;
                 continue;
             }
         }
@@ -187,7 +205,15 @@ final class DeferredChildRunEventProjector
         }
 
         if (null !== $committedStatus) {
-            $status = $committedStatus;
+            // Same commit that records a still-retryable llm_step_failed also writes
+            // committedStatus=Failed. Do not let that override the nonterminal projection.
+            // Rely on endsWithRetryPendingLlmFailure (not "last summary is LlmStepFailed"):
+            // trailing ModelNotification specs keep the flag set without being status events.
+            // Later tails (retry start/success/exhausted failure) clear the flag and apply
+            // committed status normally.
+            if (!(RunStatus::Failed === $committedStatus && $endsWithRetryPendingLlmFailure)) {
+                $status = $committedStatus;
+            }
             $turnNo = $committedTurnNo;
         }
 
