@@ -924,6 +924,7 @@ applied at display time by `TranscriptMountedWidget` / `TranscriptBlockWidgetFac
 | `AssistantMessage` | `<response text>` | `◇ ` |
 | `AssistantThinking` | `<thinking text>` | `◇ ` (collapsed by default) |
 | `ToolCall` | Tool call with arguments | `● ` |
+| `ToolCall` (skill read) | Exact discovered skill file `read` | compact `[skill] name[:start-end]` (no `●`; Ctrl+O expands result) |
 | `ToolResult` | Tool execution result/summary | `● ` |
 | `Question` | HITL question (AgentCore interrupt) | `● ` |
 | `Approval` | HITL approval request | `● ` |
@@ -937,6 +938,16 @@ Notes:
 - `ToolCall` blocks are transient-only (streaming seq=0) and do not appear in
   canonical `events.jsonl` replay; `ToolResult` blocks are the canonical
   persistent projection of tool execution events.
+- Skill-load presentation: `SkillReadProjectionSubscriber` annotates completed
+  `read` ToolCall blocks whose path is an exact winning discovered skill file
+  (`SkillDiscovery::findBySkillFilePath`) with presentation-only `skill_name`
+  (frontmatter name). The widget factory renders a compact skill card instead of
+  the generic read card. Skill-card headers use `ThemeColorEnum::Skill`; built-in
+  themes currently map that token to the same concrete color as their Markdown
+  heading, but the semantic role is independent. Ordinary reads and unrelated/
+  collision-loser `SKILL.md` paths stay normal read cards. Live
+  `tool_call.arguments_completed` and resume `assistant.message_completed` both
+  get the same annotation. No protocol/event field change.
 - HITL blocks (`Question`, `Approval`) are produced by AgentCore interrupt events
   and are distinct from local TUI question overlays. Local TUI questions are
   ephemeral UI state and do not produce transcript blocks.

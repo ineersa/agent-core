@@ -33,6 +33,7 @@ colors:
     tool_argument_value: "text"
     tool_title: "electric"
     tool_output: ""
+    skill: "neon"
     tool: "electric"
 
     markdown_heading: "neon"

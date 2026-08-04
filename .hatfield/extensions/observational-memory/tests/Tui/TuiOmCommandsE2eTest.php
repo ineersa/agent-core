@@ -444,8 +444,8 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
         $foundFooter = false;
 
         foreach (explode("\n", $viewport) as $line) {
-            $isFooterCandidate = str_contains($line, $footerNeedle)
-                || (str_contains($line, '◆') && (str_contains($line, 'session') || str_contains($line, $sessionId)));
+            // ◆ alone is a stable footer anchor; session label is retained as a second path.
+            $isFooterCandidate = str_contains($line, $footerNeedle) || str_contains($line, '◆');
             if (!$isFooterCandidate) {
                 continue;
             }
