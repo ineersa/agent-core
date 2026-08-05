@@ -1,6 +1,8 @@
 # Hatfield task-workflow extension
 
-Native Hatfield port of the pi `task-workflow` extension. It registers task board tools, slash commands, and system prompt guidance for the external task workflow.
+Native Hatfield port of the pi `task-workflow` extension. It registers task board tools, slash commands, system prompt guidance, and the package-local `task-workflow` skill for the external task workflow.
+
+When the extension is enabled, `TaskWorkflowExtension` registers its packaged skill directory (`skills/task-workflow/`) through `ExtensionApiInterface::registerSkill()`. No separate skill install step is required.
 
 This package requires `ineersa/hatfield-extension-api` for `Ineersa\Hatfield\ExtensionApi\*` contracts. In this monorepo that dependency is a path repository; released consumers install the published API package.
 

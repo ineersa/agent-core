@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobDispatcher;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
@@ -15,6 +16,9 @@ use Ineersa\CodingAgent\Extension\ExtensionExecBridge;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\Skills\SkillDiscovery;
+use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\HatfieldExt\FileRewind\FileRewindExtension;
@@ -69,6 +73,12 @@ final class FileRewindExtensionIntegrationTest extends TestCase
                 }
             }, new NullLogger(), 'in-memory://'),
             new StackToolExecutionContextAccessor(),
+            new SkillDiscovery(
+                config: new SkillsConfig(),
+                pathResolver: new SettingsPathResolver($appConfig->cwd),
+                appConfig: $appConfig,
+                extractor: new MarkdownFrontmatterExtractor(),
+            ),
         );
 
         $diagnostics = (new ExtensionManager($appConfig, $bridge, new NullLogger(), new \Symfony\Component\EventDispatcher\EventDispatcher()))->loadExtensions();

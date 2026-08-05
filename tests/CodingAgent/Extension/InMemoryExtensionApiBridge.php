@@ -153,6 +153,11 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
         throw new \LogicException('registerPromptContributor is not supported on the InMemoryExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
     }
 
+    public function registerSkill(string $skillDirectory): void
+    {
+        // Test bridge does not inspect skill registrations yet.
+    }
+
     public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
     {
         throw new \LogicException('registerCommand is not supported on the InMemoryExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');

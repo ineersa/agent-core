@@ -665,6 +665,7 @@ parameters:
       - AppRuntimeContract
       - AppConfig
       - AppTool
+      - AppSkills
       - AgentCore
       - SymfonyAiPlatform
       - SymfonyAiAgent
