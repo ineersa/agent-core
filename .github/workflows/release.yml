@@ -254,3 +254,63 @@ jobs:
             var/tmp/dist/SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # One-way monorepo split mirrors for Extension API + four project extensions.
+  # Destination repositories are pre-provisioned outside this workflow; missing
+  # MONOREPO_SPLIT_TOKEN or a missing destination repo must fail the matrix cell.
+  package-split:
+    name: Split ${{ matrix.package.repository }}
+    needs: [publish]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - directory: .hatfield/extensions/extension-api
+            repository: hatfield-extension-api
+          - directory: .hatfield/extensions/task-workflow
+            repository: hatfield-ext-task-workflow
+          - directory: .hatfield/extensions/castor-llm-mode
+            repository: hatfield-ext-castor-llm-mode
+          - directory: .hatfield/extensions/file-rewind
+            repository: hatfield-ext-file-rewind
+          - directory: .hatfield/extensions/observational-memory
+            repository: hatfield-ext-observational-memory
+    steps:
+      - name: Require MONOREPO_SPLIT_TOKEN
+        env:
+          MONOREPO_SPLIT_TOKEN: ${{ secrets.MONOREPO_SPLIT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${MONOREPO_SPLIT_TOKEN}" ]]; then
+            echo "ERROR: secret MONOREPO_SPLIT_TOKEN is missing or empty."
+            echo "Provision a least-privilege token with contents:write on the five split repositories"
+            echo "and add it as repository secret MONOREPO_SPLIT_TOKEN."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag points at exact checked-out commit
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          TAG_SHA="$(git rev-list -n 1 "${TAG}")"
+          test "${TAG_SHA}" = "${GITHUB_SHA}"
+
+      - name: Split package directory to mirror repository
+        # danharrin/monorepo-split-github-action v2.4.5 (immutable commit SHA)
+        uses: danharrin/monorepo-split-github-action@14e42e2437f674b8987c1f50ca3689116aea1893 # v2.4.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.MONOREPO_SPLIT_TOKEN }}
+        with:
+          package_directory: ${{ matrix.package.directory }}
+          repository_organization: ineersa
+          repository_name: ${{ matrix.package.repository }}
+          branch: main
+          tag: ${{ github.ref_name }}
+          user_name: hatfield-release-bot
+          user_email: 41898282+github-actions[bot]@users.noreply.github.com

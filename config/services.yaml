@@ -74,7 +74,6 @@ services:
 
   Ineersa\CodingAgent\:
     resource: '%kernel.project_dir%/src/CodingAgent/**/*.php'
-    exclude: '%kernel.project_dir%/src/CodingAgent/ExtensionApi/**/*.php'
 
   Ineersa\AgentCore\:
     resource: '%kernel.project_dir%/src/AgentCore/**/*.php'

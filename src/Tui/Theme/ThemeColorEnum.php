@@ -57,6 +57,7 @@ enum ThemeColorEnum: string
     case ToolErrorBg = 'tool_error_bg';
     case ToolArgumentKey = 'tool_argument_key';
     case ToolArgumentValue = 'tool_argument_value';
+    case Skill = 'skill';
 
     /* ──────── Diff ──────── */
     case DiffAdded = 'diff_added';

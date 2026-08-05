@@ -203,12 +203,12 @@ TUI talks to runtime only through `src/CodingAgent/Runtime/Contract`, `Protocol`
 
 ### Extension API boundary
 
-- Public extension contracts live under `src/CodingAgent/ExtensionApi/` with namespace `Ineersa\Hatfield\ExtensionApi` until they are split into a standalone Composer package later.
+- Public extension contracts live in Composer package `ineersa/hatfield-extension-api` at `.hatfield/extensions/extension-api/` with namespace `Ineersa\Hatfield\ExtensionApi`. Canonical development stays in this monorepo; release tags publish a read-only repository mirror (see `docs/distribution.md`).
 - `ExtensionApi` code is a public compatibility surface. It must not depend on Hatfield **internals**: CodingAgent implementation packages (loader/registry/runtime wiring beyond the public API), AgentCore, the in-repo TUI layer (`Ineersa\Tui\*`), Symfony DI, Symfony AI, settings, tool registry, runtime adapters, or PHAR packaging code.
 - **Generic TUI extension contracts** (`Ineersa\Hatfield\ExtensionApi\Tui\*`) intentionally depend on **Symfony TUI public widget types** (`Symfony\Component\Tui\Widget\AbstractWidget`, events, input) so project extensions can mount extension-owned overlays without Hatfield leaking feature-specific runtime ports. This is an approved public UI extension API — not an accidental boundary violation.
 - Extension-specific UX (for example file rewind) lives in `.hatfield/extensions/<name>/` and must not add feature-shaped types to `ExtensionApi` or `CodingAgent/Runtime/Contract`.
 - Extension loader/registry/runtime code may depend on `ExtensionApi`; `ExtensionApi` must never depend back on loader, registry, runtime, tools, settings, or packaging code.
-- Preserve the `Ineersa\Hatfield\ExtensionApi` namespace so future extraction to `ineersa/hatfield-extension-api` is a package/CI change, not a downstream extension breaking change.
+- Preserve the `Ineersa\Hatfield\ExtensionApi` namespace across package extraction so downstream extensions keep a stable public API.
 - Enforce with `castor deptrac`: `AppExtensionApi` may depend on `SymfonyTui` only; it must not depend on other project layers.
 
 ## Runtime model

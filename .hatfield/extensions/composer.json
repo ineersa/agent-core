@@ -5,12 +5,17 @@
     "license": "MIT",
     "require": {
         "php": ">=8.3",
+        "ineersa/hatfield-extension-api": "@dev",
         "ineersa/hatfield-ext-task-workflow": "@dev",
         "ineersa/hatfield-ext-castor-llm-mode": "@dev",
         "ineersa/hatfield-ext-file-rewind": "@dev",
         "ineersa/hatfield-ext-observational-memory": "@dev"
     },
     "repositories": [
+        {
+            "type": "path",
+            "url": "extension-api"
+        },
         {
             "type": "path",
             "url": "task-workflow"

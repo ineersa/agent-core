@@ -550,7 +550,7 @@ input.
 
 ### How extensions request approval
 
-Extensions implement `ToolCallHookInterface` (`src/CodingAgent/ExtensionApi/ToolCallHookInterface.php`).
+Extensions implement `ToolCallHookInterface` (`.hatfield/extensions/extension-api/src/Tool/ToolCallHookInterface.php`).
 The `onToolCall(ToolCallContextDTO)` method inspects the tool call and returns a
 `ToolCallDecisionDTO` with one of:
 
@@ -570,7 +570,7 @@ When `RequireApproval` is returned, the extension must also:
 ### How extensions receive answers
 
 Extensions that need to process the human's answer implement
-`ApprovalAnswerHookInterface` (`src/CodingAgent/ExtensionApi/ApprovalAnswerHookInterface.php`):
+`ApprovalAnswerHookInterface` (`.hatfield/extensions/extension-api/src/Approval/ApprovalAnswerHookInterface.php`):
 
 ```php
 interface ApprovalAnswerHookInterface
