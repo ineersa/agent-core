@@ -624,6 +624,7 @@ parameters:
 
     AppCli:
       - AppAuth
+      - AppAgent
       - AppExtension
       - AppExtensionApi
       - AppTool
@@ -689,6 +690,8 @@ parameters:
       - SymfonySerializer
       - SymfonyValidator
       - SymfonyLock
+      - SymfonyAiPlatform
+      - SymfonyEventDispatcher
 
     AppSkills:
       - AppConfig
