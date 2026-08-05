@@ -7,12 +7,16 @@ namespace Ineersa\CodingAgent\Tests\Extension;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobDispatcher;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionRegistrationContext;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\Skills\SkillDiscovery;
+use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
@@ -155,10 +159,12 @@ final class ExtensionOwnerFilteringTest extends TestCase
 
     private function bridge(ToolRegistry $tools, ExtensionHookRegistry $hooks, ExtensionAgentJobRegistry $jobs): ExtensionToolRegistryBridge
     {
+        $appConfig = new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig());
+
         return new ExtensionToolRegistryBridge(
             toolRegistry: $tools,
             hookRegistry: $hooks,
-            appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
+            appConfig: $appConfig,
             execBridge: $this->createStub(ExecInterface::class),
             commandRegistry: $this->createStub(CommandRegistryInterface::class),
             agentRunner: $this->createStub(AgentRunnerInterface::class),
@@ -170,6 +176,12 @@ final class ExtensionOwnerFilteringTest extends TestCase
                 'in-memory://',
             ),
             toolContextAccessor: new StackToolExecutionContextAccessor(),
+            skillDiscovery: new SkillDiscovery(
+                config: new SkillsConfig(),
+                pathResolver: new SettingsPathResolver($appConfig->cwd ?: '/tmp'),
+                appConfig: $appConfig,
+                extractor: new MarkdownFrontmatterExtractor(),
+            ),
         );
     }
 

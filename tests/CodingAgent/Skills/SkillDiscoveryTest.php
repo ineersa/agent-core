@@ -337,6 +337,58 @@ final class SkillDiscoveryTest extends TestCase
         $this->assertNull($discovery->findBySkillFilePath('README.md'));
     }
 
+    public function testRegisteredExtensionSkillIsDiscovered(): void
+    {
+        $extensionSkillDir = $this->tmpDir.'/package/skills/extskill';
+        mkdir($extensionSkillDir, 0777, true);
+        file_put_contents($extensionSkillDir.'/SKILL.md', "---\nname: extskill\ndescription: Extension-owned skill\n---\n\nBody");
+
+        $discovery = $this->createDiscovery(cwd: $this->tmpDir);
+        $discovery->registerSkill($extensionSkillDir);
+
+        $skills = $discovery->discover();
+
+        $this->assertCount(1, $skills);
+        $this->assertSame('extskill', $skills[0]->name);
+        $this->assertSame($extensionSkillDir, $skills[0]->skillDirectory);
+    }
+
+    public function testProjectSkillTakesPrecedenceOverRegisteredExtensionSkill(): void
+    {
+        $projectSkillDir = $this->tmpDir.'/.hatfield/skills/shared';
+        mkdir($projectSkillDir, 0777, true);
+        file_put_contents($projectSkillDir.'/SKILL.md', "---\nname: shared\ndescription: Project skill\n---\n\nProject body");
+
+        $extensionSkillDir = $this->tmpDir.'/package/skills/shared';
+        mkdir($extensionSkillDir, 0777, true);
+        file_put_contents($extensionSkillDir.'/SKILL.md', "---\nname: shared\ndescription: Extension skill\n---\n\nExtension body");
+
+        $discovery = $this->createDiscovery(cwd: $this->tmpDir);
+        $discovery->registerSkill($extensionSkillDir);
+
+        $skills = $discovery->discover();
+
+        $this->assertCount(1, $skills);
+        $this->assertSame('shared', $skills[0]->name);
+        $this->assertStringContainsString('.hatfield', $skills[0]->skillDirectory);
+        $this->assertStringNotContainsString('package/skills', $skills[0]->skillDirectory);
+    }
+
+    public function testNoSkillsSuppressesRegisteredExtensionSkills(): void
+    {
+        $extensionSkillDir = $this->tmpDir.'/package/skills/extskill';
+        mkdir($extensionSkillDir, 0777, true);
+        file_put_contents($extensionSkillDir.'/SKILL.md', "---\nname: extskill\ndescription: Extension-owned skill\n---\n\nBody");
+
+        $config = new SkillsConfig(noSkills: true);
+        $discovery = $this->createDiscovery(cwd: $this->tmpDir, config: $config);
+        $discovery->registerSkill($extensionSkillDir);
+
+        $skills = $discovery->discover();
+
+        $this->assertSame([], $skills);
+    }
+
     /* ───────── Private helpers ───────── */
 
     private function createDiscovery(

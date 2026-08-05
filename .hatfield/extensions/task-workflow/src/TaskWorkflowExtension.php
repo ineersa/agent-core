@@ -38,6 +38,9 @@ final readonly class TaskWorkflowExtension implements HatfieldExtensionInterface
         $taskRoot = $store->resolveTaskRoot();
         $formatter = new TaskListFormatter($store);
 
+        // Package-local skill root: absolute directory containing SKILL.md.
+        $api->registerSkill(\dirname(__DIR__).'/skills/task-workflow');
+
         $api->registerPromptContributor(new WorkflowPrompt($taskRoot));
 
         $statusEnum = ['TODO', 'IN-PROGRESS', 'CODE-REVIEW', 'DONE', 'ARCHIVE', 'CANCELLED'];

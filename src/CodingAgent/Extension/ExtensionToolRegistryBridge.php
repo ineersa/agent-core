@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobDispatcher;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
+use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
@@ -54,6 +55,7 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
         private ExtensionAgentJobRegistry $extensionAgentJobRegistry,
         private ExtensionAgentJobDispatcher $extensionAgentJobDispatcher,
         private StackToolExecutionContextAccessor $toolContextAccessor,
+        private SkillDiscovery $skillDiscovery,
     ) {
     }
 
@@ -128,6 +130,11 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function registerPromptContributor(PromptContributorInterface $contributor): void
     {
         $this->hookRegistry->addPromptContributor($contributor);
+    }
+
+    public function registerSkill(string $skillDirectory): void
+    {
+        $this->skillDiscovery->registerSkill($skillDirectory);
     }
 
     public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void

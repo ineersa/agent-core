@@ -101,6 +101,17 @@ interface ExtensionApiInterface
     public function registerPromptContributor(PromptContributorInterface $contributor): void;
 
     /**
+     * Register one package-local skill directory for discovery.
+     *
+     * $skillDirectory must be an absolute path to a directory that contains
+     * SKILL.md. Relative paths are intentionally unsupported — extensions should
+     * pass package-relative paths via __DIR__/dirname(__DIR__). Registered skills
+     * have lowest precedence after CLI and project/user auto-discovery paths and
+     * are suppressed when skill auto-discovery is disabled (--no-skills).
+     */
+    public function registerSkill(string $skillDirectory): void;
+
+    /**
      * Register a slash command with the TUI command registry.
      *
      * The command definition (name, aliases, description, usage) and handler
