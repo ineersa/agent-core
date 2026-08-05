@@ -52,13 +52,9 @@ Package READMEs: [`task-workflow`](.hatfield/extensions/task-workflow/README.md)
 
 External install under a project `.hatfield/extensions` Composer root (example):
 
-```json
-{
-  "require": {
-    "ineersa/hatfield-ext-task-workflow": "^X.Y",
-    "ineersa/hatfield-extension-api": "^X.Y"
-  }
-}
+```bash
+cd .hatfield/extensions
+composer require ineersa/hatfield-ext-task-workflow
 ```
 
 Enable the extension class in `.hatfield/settings.yaml` (`extensions.enabled`); it takes effect in a **new** session. Details and settings keys live in each package README and [`docs/settings.md`](docs/settings.md). Release/mirror notes: [`docs/distribution.md`](docs/distribution.md).
