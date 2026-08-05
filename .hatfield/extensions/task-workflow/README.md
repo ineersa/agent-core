@@ -2,7 +2,7 @@
 
 Native Hatfield port of the pi `task-workflow` extension. It registers task board tools, slash commands, and system prompt guidance for the external task workflow.
 
-`ExtensionApi` types (`Ineersa\Hatfield\ExtensionApi\*`) are provided by the host application at runtime and are not duplicated in this package.
+This package requires `ineersa/hatfield-extension-api` for `Ineersa\Hatfield\ExtensionApi\*` contracts. In this monorepo that dependency is a path repository; released consumers install the published API package.
 
 ## Runtime loading
 
