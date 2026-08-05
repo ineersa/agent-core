@@ -32,6 +32,32 @@ Local builds: `castor distribution:build`, `scripts/build-distribution.sh`.
 Packaging docs: [`docs/distribution.md`](docs/distribution.md) (release/installer),
 [`docs/phar-packaging.md`](docs/phar-packaging.md), [`docs/static-packaging.md`](docs/static-packaging.md).
 
+## Extensions
+
+Public contracts package (not an extension):
+[`ineersa/hatfield-extension-api`](https://packagist.org/packages/ineersa/hatfield-extension-api)
+([README](.hatfield/extensions/extension-api/README.md)).
+
+| Extension | Purpose | Packagist |
+| --- | --- | --- |
+| task-workflow | External task board tools, slash commands, and prompt guidance | [`ineersa/hatfield-ext-task-workflow`](https://packagist.org/packages/ineersa/hatfield-ext-task-workflow) |
+| castor-llm-mode | LLM-friendly Castor bash rewrites (`LLM_MODE`, normalized `castor list`) | [`ineersa/hatfield-ext-castor-llm-mode`](https://packagist.org/packages/ineersa/hatfield-ext-castor-llm-mode) |
+| file-rewind | Hidden-git file checkpoints and `/rewind` restore picker | [`ineersa/hatfield-ext-file-rewind`](https://packagist.org/packages/ineersa/hatfield-ext-file-rewind) |
+| observational-memory | Observational memory storage + async Observer/Reflector pipeline | [`ineersa/hatfield-ext-observational-memory`](https://packagist.org/packages/ineersa/hatfield-ext-observational-memory) |
+
+Package READMEs: [`task-workflow`](.hatfield/extensions/task-workflow/README.md),
+[`castor-llm-mode`](.hatfield/extensions/castor-llm-mode/README.md),
+[`file-rewind`](.hatfield/extensions/file-rewind/README.md),
+[`observational-memory`](.hatfield/extensions/observational-memory/README.md).
+
+External install under a project `.hatfield/extensions` Composer root (example):
+
+```bash
+cd .hatfield/extensions
+composer require ineersa/hatfield-ext-task-workflow
+```
+
+Enable the extension class in `.hatfield/settings.yaml` (`extensions.enabled`); it takes effect in a **new** session. Details and settings keys live in each package README and [`docs/settings.md`](docs/settings.md). Release/mirror notes: [`docs/distribution.md`](docs/distribution.md).
 
 ## Structure
 
