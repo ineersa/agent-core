@@ -10,7 +10,10 @@
 parameters:
   paths:
     - ./src
+    - .hatfield/extensions/extension-api/src
     - .hatfield/extensions/task-workflow/src
+    - .hatfield/extensions/castor-llm-mode/src
+    - .hatfield/extensions/file-rewind/src
     - .hatfield/extensions/observational-memory/src
   exclude_files:
     - .*\.test\.php$
@@ -135,12 +138,17 @@ parameters:
     - name: AppExtensionApi
       collectors:
         - type: directory
-          value: src/CodingAgent/ExtensionApi/.*
+          value: .hatfield/extensions/extension-api/src/.*
 
     - name: HatfieldExtTaskWorkflow
       collectors:
         - type: classNameRegex
           value: '#^Ineersa\\HatfieldExt\\TaskWorkflow\\#'
+
+    - name: HatfieldExtCastorLlmMode
+      collectors:
+        - type: classNameRegex
+          value: '#^Ineersa\\HatfieldExt\\CastorLlmMode\\#'
 
     - name: HatfieldExtFileRewind
       collectors:
@@ -743,10 +751,13 @@ parameters:
     HatfieldExtTaskWorkflow:
       - AppExtensionApi
       - HatfieldExtTaskWorkflow
+    HatfieldExtCastorLlmMode:
+      - AppExtensionApi
+      - HatfieldExtCastorLlmMode
     HatfieldExtFileRewind:
       - AppExtensionApi
       - SymfonyTui
-    # OM may use ExtensionApi + vendor libs only (Doctrine DBAL, PSR log).
+    # OM may use ExtensionApi + vendor libs only (Doctrine DBAL, PSR log, Toon, Clock).
     # Vendor packages are not Deptrac layers; only forbid project-layer leakage.
     HatfieldExtObservationalMemory:
       - AppExtensionApi

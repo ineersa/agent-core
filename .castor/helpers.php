@@ -528,6 +528,37 @@ function hatfield_phar_composer_bin(): string
     return $composerBin;
 }
 
+/**
+ * Materialize the ExtensionApi path package under vendor/ as a real directory.
+ *
+ * Root path-requires ineersa/hatfield-extension-api; Composer leaves a symlink
+ * (often outside the staging tree). Box cannot package that link into the PHAR.
+ * Copy-before-unlink so a failed rename leaves the symlink intact.
+ */
+function materialize_vendor_path_package_symlinks(string $stagingDir): void
+{
+    $path = $stagingDir.'/vendor/ineersa/hatfield-extension-api';
+    if (!is_link($path)) {
+        return;
+    }
+
+    $target = realpath($path);
+    if (false === $target || !is_dir($target)) {
+        throw new \RuntimeException('Unable to resolve path-package symlink target for: '.$path);
+    }
+
+    $tmp = $path.'.materialize-tmp-'.bin2hex(random_bytes(4));
+    run_checked('cp -a '.escapeshellarg($target).' '.escapeshellarg($tmp));
+    if (!unlink($path)) {
+        remove_path_checked($tmp);
+        throw new \RuntimeException('Unable to remove path-package symlink: '.$path);
+    }
+    if (!rename($tmp, $path)) {
+        remove_path_checked($tmp);
+        throw new \RuntimeException('Unable to replace path-package symlink with copy: '.$path);
+    }
+}
+
 // ─── ──────────────────────────────────────────────────────────────────
 
 function is_llm_mode(): bool
@@ -828,6 +859,8 @@ function phar_packaged_inputs(string $root): array
             $root.'/src',
             $root.'/config',
             $root.'/migrations',
+            // Public ExtensionApi package source (path-required by root composer).
+            $root.'/.hatfield/extensions/extension-api',
             $root.'/internal-docs',
             $root.'/.castor',
             $root.'/tools/phar',
@@ -1497,6 +1530,18 @@ function phar_build(): string
         run_checked('cp -a '.escapeshellarg($srcPath).' '.escapeshellarg($stagingDir.'/'));
     }
 
+    // Path package for ineersa/hatfield-extension-api must exist relative to staging
+    // composer.json so `composer install --no-dev` can resolve the package.
+    $extensionApiSrc = $root.'/.hatfield/extensions/extension-api';
+    if (!is_dir($extensionApiSrc)) {
+        throw new \RuntimeException('Required packaging directory missing: '.$extensionApiSrc);
+    }
+    $extensionApiStaging = $stagingDir.'/.hatfield/extensions/extension-api';
+    if (!mkdir($extensionApiStaging, 0755, true) && !is_dir($extensionApiStaging)) {
+        throw new \RuntimeException('Unable to create staging directory: '.$extensionApiStaging);
+    }
+    run_checked('cp -a '.escapeshellarg($extensionApiSrc).'/. '.escapeshellarg($extensionApiStaging.'/'));
+
     // Curated internal docs use source-tree symlinks; Box rejects links, so
     // materialize regular files into the staging tree before compilation.
     $internalDocsPath = $root.'/internal-docs';
@@ -1556,6 +1601,9 @@ function phar_build(): string
     );
     try {
         $composerOutput = run_checked($composerCmd, $stagingDir);
+        // Composer path-requires extension-api as a vendor symlink; Box cannot
+        // package that link, so materialize vendor/ineersa/hatfield-extension-api.
+        materialize_vendor_path_package_symlinks($stagingDir);
     } catch (\Throwable $e) {
         phar_remove_artifact_and_marker($pharPath);
         throw $e;

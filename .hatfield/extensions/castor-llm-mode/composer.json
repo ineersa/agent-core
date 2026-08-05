@@ -1,10 +1,11 @@
 {
     "name": "ineersa/hatfield-ext-castor-llm-mode",
-    "description": "Castor LLM-mode extension for Hatfield (native port of pi castor-llm-mode). Prepends LLM-friendly env exports and normalizes `castor list` output for bash tool calls. ExtensionApi types are provided by the host at runtime — not duplicated here.",
+    "description": "Castor LLM-mode extension for Hatfield (native port of pi castor-llm-mode). Prepends LLM-friendly env exports and normalizes `castor list` output for bash tool calls.",
     "type": "hatfield-extension",
     "license": "MIT",
     "require": {
-        "php": ">=8.3"
+        "php": ">=8.3",
+        "ineersa/hatfield-extension-api": "@dev"
     },
     "autoload": {
         "psr-4": {
