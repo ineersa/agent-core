@@ -49,8 +49,10 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         $projectDir = getcwd();
         $this->assertNotFalse($projectDir);
         $sessionId = $this->seedSessionRow($projectDir);
-        $sessionsBase = $projectDir.'/.hatfield/sessions';
-        mkdir($sessionsBase.'/'.$sessionId, 0777, true);
+        $sessionDir = $projectDir.'/.hatfield/sessions/'.$sessionId;
+        if (!is_dir($sessionDir)) {
+            mkdir($sessionDir, 0777, true);
+        }
 
         $hatfieldSessionStore = $this->sessionStoreForCwd($projectDir);
         $eventStore = $this->eventStore($hatfieldSessionStore);
@@ -193,6 +195,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
             $eventStore,
             $registry,
             $childFactory,
+            new TestLogger(),
         );
         $tester = new CommandTester(new SessionCacheInspectCommand($service));
         $exit = $tester->execute(['session-id' => $sessionId]);
@@ -226,12 +229,76 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
             $this->eventStore($this->sessionStoreForCwd($projectDir)),
             $this->artifactRegistry($this->sessionStoreForCwd($projectDir)),
             $this->childEventStoreFactory($this->sessionStoreForCwd($projectDir)),
+            new TestLogger(),
         );
         $tester = new CommandTester(new SessionCacheInspectCommand($service));
         $exit = $tester->execute(['session-id' => '999999999']);
 
         $this->assertSame(Command::FAILURE, $exit);
         $this->assertStringContainsString('not found', $tester->getDisplay());
+    }
+
+    #[Test]
+    public function inspectCorruptChildEventsDegradesWithStructuredWarning(): void
+    {
+        $projectDir = getcwd();
+        $this->assertNotFalse($projectDir);
+        $sessionId = $this->seedSessionRow($projectDir);
+        $sessionDir = $projectDir.'/.hatfield/sessions/'.$sessionId;
+        if (!is_dir($sessionDir)) {
+            mkdir($sessionDir, 0777, true);
+        }
+
+        $hatfieldSessionStore = $this->sessionStoreForCwd($projectDir);
+        $eventStore = $this->eventStore($hatfieldSessionStore);
+        $registry = $this->artifactRegistry($hatfieldSessionStore);
+        $childFactory = $this->childEventStoreFactory($hatfieldSessionStore);
+
+        $eventStore->append(RunEvent::forAppend(
+            runId: $sessionId,
+            turnNo: 1,
+            type: 'llm_step_completed',
+            payload: [
+                'step_id' => 'parent-step',
+                'usage' => [
+                    'input_tokens' => 10,
+                    'output_tokens' => 1,
+                    'cost' => 0.01,
+                ],
+            ],
+        ));
+
+        $childRunId = '0194aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee';
+        $artifactId = 'corrupt-child';
+        $registry->create($sessionId, $artifactId, $childRunId, 'scout', AgentArtifactKindEnum::Subagent);
+        $eventsPath = (new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($hatfieldSessionStore)))
+            ->eventsPath($sessionId, $artifactId);
+        file_put_contents($eventsPath, "{not-json\n");
+
+        $logger = new TestLogger();
+        $service = new SessionPromptCacheInspectionService(
+            $hatfieldSessionStore,
+            $eventStore,
+            $registry,
+            $childFactory,
+            $logger,
+        );
+        $tester = new CommandTester(new SessionCacheInspectCommand($service));
+        $exit = $tester->execute(['session-id' => $sessionId]);
+
+        $this->assertSame(Command::SUCCESS, $exit);
+        $this->assertStringContainsString('Per-family summary (not combined)', $tester->getDisplay());
+        $this->assertCount(1, $logger->records);
+        $this->assertSame('warning', $logger->records[0]['level']);
+        $this->assertSame('session.cache_inspect.child_events_unavailable', $logger->records[0]['message']);
+        $this->assertSame([
+            'component' => 'session_prompt_cache_inspection',
+            'event_type' => 'session.cache_inspect.child_events_unavailable',
+            'parent_run_id' => $sessionId,
+            'run_id' => $childRunId,
+            'artifact_id' => $artifactId,
+            'exception_class' => \RuntimeException::class,
+        ], $logger->records[0]['context']);
     }
 
     private function seedSessionRow(string $projectDir): string

@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\Platform\Diagnostics\PromptCacheRequestDiagnosticsRecorder;
+use Psr\Log\LoggerInterface;
 
 /**
  * Builds privacy-safe prompt-cache inspection reports for session:cache:inspect.
@@ -33,6 +34,7 @@ final class SessionPromptCacheInspectionService
         private readonly SessionRunEventStore $parentEventStore,
         private readonly AgentArtifactRegistry $artifactRegistry,
         private readonly AgentChildRunEventStoreFactory $childEventStoreFactory,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -87,8 +89,16 @@ final class SessionPromptCacheInspectionService
                 $entry->artifactId,
             );
             $events = $childStore->allFor($entry->agentRunId);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             // Missing/corrupt child artifact is degraded to no events for that child.
+            $this->logger->warning('session.cache_inspect.child_events_unavailable', [
+                'component' => 'session_prompt_cache_inspection',
+                'event_type' => 'session.cache_inspect.child_events_unavailable',
+                'parent_run_id' => $parentRunId,
+                'run_id' => $entry->agentRunId,
+                'artifact_id' => $entry->artifactId,
+                'exception_class' => $e::class,
+            ]);
             $events = [];
         }
 
