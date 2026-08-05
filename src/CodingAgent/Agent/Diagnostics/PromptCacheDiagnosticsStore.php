@@ -8,7 +8,6 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\Lock\LockFactory;
 
 /**
  * CodingAgent-owned prompt-cache diagnostics sidecar (not canonical RunEvent).
@@ -17,7 +16,7 @@ use Symfony\Component\Lock\LockFactory;
  * Child:   .hatfield/sessions/<parent>/artifacts/agents/<artifactId>/diagnostics/prompt-cache.jsonl
  *
  * Unknown/ephemeral run ids that are neither a parent session nor a registered
- * child artifact are skipped (no global orphan path).
+ * child artifact are skipped (no global orphan path). Append uses FILE_APPEND|LOCK_EX only.
  */
 final class PromptCacheDiagnosticsStore
 {
@@ -27,7 +26,6 @@ final class PromptCacheDiagnosticsStore
         private readonly HatfieldSessionStore $hatfieldSessionStore,
         private readonly AgentChildRunDirectory $childRunDirectory,
         private readonly SessionAgentArtifactPathResolver $artifactPathResolver,
-        private readonly LockFactory $lockFactory,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -37,7 +35,7 @@ final class PromptCacheDiagnosticsStore
      */
     public function append(string $runId, array $record): void
     {
-        $path = $this->resolveWritePath($runId);
+        $path = $this->resolvePath($runId);
         if (null === $path) {
             return;
         }
@@ -48,20 +46,11 @@ final class PromptCacheDiagnosticsStore
         }
 
         $json = json_encode($record, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-        $lock = $this->lockFactory->createLock('hatfield-prompt-cache-diag-'.$runId, ttl: 30.0, autoRelease: true);
-        if (!$lock->acquire(true)) {
-            throw new \RuntimeException(\sprintf('Failed to acquire prompt-cache diagnostics lock for run "%s".', $runId));
+        $written = file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
+        if (false === $written) {
+            throw new \RuntimeException(\sprintf('Failed to append prompt-cache diagnostics for run "%s".', $runId));
         }
-
-        try {
-            $written = file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
-            if (false === $written) {
-                throw new \RuntimeException(\sprintf('Failed to append prompt-cache diagnostics for run "%s".', $runId));
-            }
-            @chmod($path, SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
-        } finally {
-            $lock->release();
-        }
+        @chmod($path, SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
     }
 
     /**
@@ -69,7 +58,7 @@ final class PromptCacheDiagnosticsStore
      */
     public function readForRun(string $runId): array
     {
-        $path = $this->resolveReadPath($runId);
+        $path = $this->resolvePath($runId);
         if (null === $path || !is_readable($path)) {
             return [];
         }
@@ -104,7 +93,7 @@ final class PromptCacheDiagnosticsStore
         return $records;
     }
 
-    private function resolveWritePath(string $runId): ?string
+    private function resolvePath(string $runId): ?string
     {
         if ('' === $runId) {
             return null;
@@ -120,10 +109,5 @@ final class PromptCacheDiagnosticsStore
         }
 
         return $this->artifactPathResolver->resolveArtifactDir($child->parentRunId, $child->artifactId).'/'.self::RELATIVE_FILE;
-    }
-
-    private function resolveReadPath(string $runId): ?string
-    {
-        return $this->resolveWritePath($runId);
     }
 }

@@ -74,17 +74,9 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         }
 
         $hatfieldSessionStore = $this->sessionStoreForCwd($projectDir);
-        $pathResolver = new SessionAgentArtifactPathResolver($hatfieldSessionStore);
-        $lockFactory = new LockFactory(new FlockStore());
         $registry = $this->artifactRegistry($hatfieldSessionStore);
         $childDirectory = new AgentChildRunDirectory($hatfieldSessionStore, $registry, new TestLogger());
-        $diagStore = new PromptCacheDiagnosticsStore(
-            $hatfieldSessionStore,
-            $childDirectory,
-            $pathResolver,
-            $lockFactory,
-            new TestLogger(),
-        );
+        $diagStore = $this->diagStore($hatfieldSessionStore, $registry, $childDirectory);
         $catalog = new HatfieldModelCatalog(new AiConfig(
             providers: [
                 'openai-codex' => new AiProviderConfig(
@@ -100,54 +92,19 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
                 ),
             ],
         ));
-        $subscriber = new PromptCacheDiagnosticsInvocationSubscriber($diagStore, $catalog, new TestLogger());
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber($subscriber);
+        $dispatcher->addSubscriber(new PromptCacheDiagnosticsInvocationSubscriber($diagStore, $catalog, new TestLogger()));
 
         $cacheKey = '0194eeee-bbbb-7ccc-8ddd-eeeeeeeeeeee';
         $secret = 'secret-prompt-SHOULD-NOT-PRINT';
 
-        // Parent step 1: stable system + user + read tool.
-        $event1 = $this->dispatchInvocation(
-            dispatcher: $dispatcher,
-            runId: $sessionId,
-            turnNo: 1,
-            stepId: 'parent-step-1',
-            model: 'openai-codex/gpt-5.6',
-            system: 'stable prologue',
-            user: $secret,
-            toolName: 'read',
-            providerCacheKey: $cacheKey,
-        );
+        $event1 = $this->dispatchInvocation($dispatcher, $sessionId, 1, 'parent-step-1', 'openai-codex/gpt-5.6', 'stable prologue', $secret, 'read', $cacheKey);
         $this->assertSame('stable prologue', $event1->getInput() instanceof MessageBag
             ? (string) ($event1->getInput()->getSystemMessage()?->getContent() ?? '')
             : '');
-
-        // Parent step 2: same system, user follow-up, tool rename (first prefix change on tools).
-        $this->dispatchInvocation(
-            dispatcher: $dispatcher,
-            runId: $sessionId,
-            turnNo: 2,
-            stepId: 'parent-step-2',
-            model: 'openai-codex/gpt-5.6',
-            system: 'stable prologue',
-            user: $secret.' follow-up',
-            toolName: 'bash',
-            providerCacheKey: $cacheKey,
-        );
-
+        $this->dispatchInvocation($dispatcher, $sessionId, 2, 'parent-step-2', 'openai-codex/gpt-5.6', 'stable prologue', $secret.' follow-up', 'bash', $cacheKey);
         // Thinking-only second invoke on same step: usage attaches only to last diagnostic.
-        $this->dispatchInvocation(
-            dispatcher: $dispatcher,
-            runId: $sessionId,
-            turnNo: 2,
-            stepId: 'parent-step-2',
-            model: 'openai-codex/gpt-5.6',
-            system: 'stable prologue',
-            user: $secret.' follow-up again',
-            toolName: 'bash',
-            providerCacheKey: $cacheKey,
-        );
+        $this->dispatchInvocation($dispatcher, $sessionId, 2, 'parent-step-2', 'openai-codex/gpt-5.6', 'stable prologue', $secret.' follow-up again', 'bash', $cacheKey);
 
         $parentRecords = $diagStore->readForRun($sessionId);
         $this->assertCount(3, $parentRecords);
@@ -157,98 +114,49 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         $this->assertStringNotContainsString('Authorization', $serialized);
 
         $eventStore = $this->eventStore($hatfieldSessionStore);
-        $eventStore->append(RunEvent::forAppend(
-            runId: $sessionId,
-            turnNo: 0,
-            type: 'run_started',
-            payload: ['metadata' => ['model' => 'openai-codex/gpt-5.6']],
-        ));
-        $eventStore->append(RunEvent::forAppend(
-            runId: $sessionId,
-            turnNo: 1,
-            type: 'llm_step_completed',
-            payload: [
-                'step_id' => 'parent-step-1',
-                'usage' => [
-                    'input_tokens' => 100,
-                    'output_tokens' => 10,
-                    'thinking_tokens' => 5,
-                    'cache_read_tokens' => 40,
-                    'cache_creation_tokens' => 10,
-                    'cost' => 0.12,
-                ],
+        $eventStore->append(RunEvent::forAppend($sessionId, 0, 'run_started', ['metadata' => ['model' => 'openai-codex/gpt-5.6']]));
+        $eventStore->append(RunEvent::forAppend($sessionId, 1, 'llm_step_completed', [
+            'step_id' => 'parent-step-1',
+            'usage' => [
+                'input_tokens' => 100,
+                'output_tokens' => 10,
+                'thinking_tokens' => 5,
+                'cache_read_tokens' => 40,
+                'cache_creation_tokens' => 10,
+                'cost' => 0.12,
             ],
-        ));
-        $eventStore->append(RunEvent::forAppend(
-            runId: $sessionId,
-            turnNo: 2,
-            type: 'llm_step_completed',
-            payload: [
-                'step_id' => 'parent-step-2',
-                'usage' => [
-                    'input_tokens' => 200,
-                    'output_tokens' => 20,
-                    'thinking_tokens' => 0,
-                    'cached_tokens' => 80,
-                    'cost' => 0.34,
-                ],
+        ]));
+        $eventStore->append(RunEvent::forAppend($sessionId, 2, 'llm_step_completed', [
+            'step_id' => 'parent-step-2',
+            'usage' => [
+                'input_tokens' => 200,
+                'output_tokens' => 20,
+                'thinking_tokens' => 0,
+                'cached_tokens' => 80,
+                'cost' => 0.34,
             ],
-        ));
+        ]));
         // Historical usage-only event (no sidecar diagnostics).
-        $eventStore->append(RunEvent::forAppend(
-            runId: $sessionId,
-            turnNo: 3,
-            type: 'llm_step_completed',
-            payload: [
-                'step_id' => 'parent-step-hist',
-                'usage' => [
-                    'input_tokens' => 50,
-                    'output_tokens' => 5,
-                    'cost' => 0.01,
-                ],
-            ],
-        ));
+        $eventStore->append(RunEvent::forAppend($sessionId, 3, 'llm_step_completed', [
+            'step_id' => 'parent-step-hist',
+            'usage' => ['input_tokens' => 50, 'output_tokens' => 5, 'cost' => 0.01],
+        ]));
 
         $childRunId = '0194ffff-aaaa-7bbb-8ccc-dddddddddddd';
         $artifactId = 'scout-1';
         $entry = $registry->create($sessionId, $artifactId, $childRunId, 'scout', AgentArtifactKindEnum::Subagent);
         $childDirectory->register($entry);
-        $this->dispatchInvocation(
-            dispatcher: $dispatcher,
-            runId: $childRunId,
-            turnNo: 1,
-            stepId: 'child-step-1',
-            model: 'deepseek/deepseek-v4-flash',
-            system: 'child system',
-            user: 'child-secret-SHOULD-NOT-PRINT',
-            toolName: 'read',
-            providerCacheKey: null,
-        );
+        $this->dispatchInvocation($dispatcher, $childRunId, 1, 'child-step-1', 'deepseek/deepseek-v4-flash', 'child system', 'child-secret-SHOULD-NOT-PRINT', 'read', null);
         $childRecords = $diagStore->readForRun($childRunId);
         $this->assertCount(1, $childRecords);
         $this->assertStringNotContainsString('child-secret-SHOULD-NOT-PRINT', json_encode($childRecords, \JSON_THROW_ON_ERROR));
 
         $childStore = $this->childEventStoreFactory($hatfieldSessionStore)->create($sessionId, $childRunId, $artifactId);
-        $childStore->append(RunEvent::forAppend(
-            runId: $childRunId,
-            turnNo: 0,
-            type: 'run_started',
-            payload: ['metadata' => ['model' => 'deepseek/deepseek-v4-flash']],
-        ));
-        $childStore->append(RunEvent::forAppend(
-            runId: $childRunId,
-            turnNo: 1,
-            type: 'llm_step_completed',
-            payload: [
-                'step_id' => 'child-step-1',
-                'usage' => [
-                    'input_tokens' => 80,
-                    'output_tokens' => 8,
-                    'cache_read_tokens' => 60,
-                    'cost' => 0.02,
-                ],
-            ],
-        ));
+        $childStore->append(RunEvent::forAppend($childRunId, 0, 'run_started', ['metadata' => ['model' => 'deepseek/deepseek-v4-flash']]));
+        $childStore->append(RunEvent::forAppend($childRunId, 1, 'llm_step_completed', [
+            'step_id' => 'child-step-1',
+            'usage' => ['input_tokens' => 80, 'output_tokens' => 8, 'cache_read_tokens' => 60, 'cost' => 0.02],
+        ]));
 
         $service = new SessionPromptCacheInspectionService(
             $hatfieldSessionStore,
@@ -287,21 +195,13 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         $projectDir = getcwd();
         $this->assertNotFalse($projectDir);
         $hatfieldSessionStore = $this->sessionStoreForCwd($projectDir);
-        $pathResolver = new SessionAgentArtifactPathResolver($hatfieldSessionStore);
         $registry = $this->artifactRegistry($hatfieldSessionStore);
-        $diagStore = new PromptCacheDiagnosticsStore(
-            $hatfieldSessionStore,
-            new AgentChildRunDirectory($hatfieldSessionStore, $registry, new TestLogger()),
-            $pathResolver,
-            new LockFactory(new FlockStore()),
-            new TestLogger(),
-        );
         $service = new SessionPromptCacheInspectionService(
             $hatfieldSessionStore,
             $this->eventStore($hatfieldSessionStore),
             $registry,
             $this->childEventStoreFactory($hatfieldSessionStore),
-            $diagStore,
+            $this->diagStore($hatfieldSessionStore, $registry),
             new TestLogger(),
         );
         $tester = new CommandTester(new SessionCacheInspectCommand($service));
@@ -326,33 +226,17 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         $eventStore = $this->eventStore($hatfieldSessionStore);
         $registry = $this->artifactRegistry($hatfieldSessionStore);
         $pathResolver = new SessionAgentArtifactPathResolver($hatfieldSessionStore);
-        $diagStore = new PromptCacheDiagnosticsStore(
-            $hatfieldSessionStore,
-            new AgentChildRunDirectory($hatfieldSessionStore, $registry, new TestLogger()),
-            $pathResolver,
-            new LockFactory(new FlockStore()),
-            new TestLogger(),
-        );
+        $diagStore = $this->diagStore($hatfieldSessionStore, $registry);
 
-        $eventStore->append(RunEvent::forAppend(
-            runId: $sessionId,
-            turnNo: 1,
-            type: 'llm_step_completed',
-            payload: [
-                'step_id' => 'parent-step',
-                'usage' => [
-                    'input_tokens' => 10,
-                    'output_tokens' => 1,
-                    'cost' => 0.01,
-                ],
-            ],
-        ));
+        $eventStore->append(RunEvent::forAppend($sessionId, 1, 'llm_step_completed', [
+            'step_id' => 'parent-step',
+            'usage' => ['input_tokens' => 10, 'output_tokens' => 1, 'cost' => 0.01],
+        ]));
 
         $childRunId = '0194aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee';
         $artifactId = 'corrupt-child';
         $registry->create($sessionId, $artifactId, $childRunId, 'scout', AgentArtifactKindEnum::Subagent);
-        $eventsPath = (new AgentArtifactPathResolver($pathResolver))->eventsPath($sessionId, $artifactId);
-        file_put_contents($eventsPath, "{not-json\n");
+        file_put_contents((new AgentArtifactPathResolver($pathResolver))->eventsPath($sessionId, $artifactId), "{not-json\n");
 
         $logger = new TestLogger();
         $service = new SessionPromptCacheInspectionService(
@@ -397,20 +281,14 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         string $toolName,
         ?string $providerCacheKey,
     ): InvocationEvent {
-        $bag = new MessageBag(
-            new SystemMessage($system),
-            new UserMessage(new Text($user)),
-        );
+        $bag = new MessageBag(new SystemMessage($system), new UserMessage(new Text($user)));
         $tool = new Tool(
             new ExecutionReference(self::class, 'noop'),
             $toolName,
             'tool description must not leak',
             ['type' => 'object', 'properties' => new \stdClass()],
         );
-        $options = [
-            'tools' => [$tool],
-            'stream' => true,
-        ];
+        $options = ['tools' => [$tool], 'stream' => true];
         if (null !== $providerCacheKey) {
             $options['provider_cache_key'] = $providerCacheKey;
         }
@@ -452,11 +330,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
     private function sessionStoreForCwd(string $projectDir): HatfieldSessionStore
     {
         return new HatfieldSessionStore(
-            appConfig: new AppConfig(
-                tui: new TuiConfig(theme: 'default'),
-                logging: new LoggingConfig(),
-                cwd: $projectDir,
-            ),
+            appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $projectDir),
             entityManager: static::getContainer()->get('doctrine')->getManager(),
         );
     }
@@ -475,9 +349,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
     private function artifactRegistry(HatfieldSessionStore $sessionStore): AgentArtifactRegistry
     {
         $serializer = new Serializer(
-            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(
-                nameConverter: new CamelCaseToSnakeCaseNameConverter(),
-            )],
+            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter())],
             [new JsonEncoder()],
         );
 
@@ -497,6 +369,19 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
             lockFactory: new LockFactory(new FlockStore()),
             logger: new TestLogger(),
             sequenceAllocator: new FileRunSequenceAllocator(),
+        );
+    }
+
+    private function diagStore(
+        HatfieldSessionStore $sessionStore,
+        AgentArtifactRegistry $registry,
+        ?AgentChildRunDirectory $childDirectory = null,
+    ): PromptCacheDiagnosticsStore {
+        return new PromptCacheDiagnosticsStore(
+            $sessionStore,
+            $childDirectory ?? new AgentChildRunDirectory($sessionStore, $registry, new TestLogger()),
+            new SessionAgentArtifactPathResolver($sessionStore),
+            new TestLogger(),
         );
     }
 }

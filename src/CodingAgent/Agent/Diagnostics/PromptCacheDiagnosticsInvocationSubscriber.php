@@ -11,7 +11,6 @@ use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Event\InvocationEvent;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
-use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\SystemMessage;
 use Symfony\AI\Platform\Message\Template;
@@ -29,18 +28,31 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * Priority -100 observes final MessageBag/tools/options after AgentCore shaping and persists.
  * Never mutates the event. Storage/normalization failures are logged and do not break invoke.
  *
- * Correlation is keyed by spl_object_id for the duration of one dispatch only (capture + record).
+ * Correlation uses WeakMap so an exception between the two priorities cannot leak entries
+ * after the event object is released by the dispatcher.
  */
 final class PromptCacheDiagnosticsInvocationSubscriber implements EventSubscriberInterface
 {
-    /** @var array<int, array{run_id: string, turn_no: ?int, step_id: ?string}> */
-    private array $correlationByEvent = [];
+    /**
+     * Event → correlation for one dual-priority dispatch.
+     *
+     * WeakMap TValue is invariant in PHPStan, so the property uses array<string, mixed>
+     * (not a shape generic). Local @var restores the run_id/step_id shape at use sites.
+     * Entries GC when the InvocationEvent is released if recordDiagnostics never runs.
+     *
+     * @var \WeakMap<InvocationEvent, array<string, mixed>>
+     *
+     * @see https://phpstan.org/blog/whats-up-with-template-covariant
+     */
+    private \WeakMap $correlationByEvent;
 
     public function __construct(
         private readonly PromptCacheDiagnosticsStore $store,
         private readonly HatfieldModelCatalog $modelCatalog,
         private readonly LoggerInterface $logger,
     ) {
+        // Fresh map per subscriber instance; entries GC when InvocationEvent is released.
+        $this->correlationByEvent = new \WeakMap();
     }
 
     public static function getSubscribedEvents(): array
@@ -65,22 +77,23 @@ final class PromptCacheDiagnosticsInvocationSubscriber implements EventSubscribe
             return;
         }
 
-        $this->correlationByEvent[spl_object_id($event)] = [
+        /** @var array{run_id: string, step_id: ?string} $correlation */
+        $correlation = [
             'run_id' => $runId,
-            'turn_no' => $metadata->input->turnNo,
             'step_id' => $metadata->input->stepId,
         ];
+        $this->correlationByEvent[$event] = $correlation;
     }
 
     public function recordDiagnostics(InvocationEvent $event): void
     {
-        $eventId = spl_object_id($event);
-        if (!isset($this->correlationByEvent[$eventId])) {
+        if (!isset($this->correlationByEvent[$event])) {
             return;
         }
 
-        $correlation = $this->correlationByEvent[$eventId];
-        unset($this->correlationByEvent[$eventId]);
+        /** @var array{run_id: string, step_id: ?string} $correlation */
+        $correlation = $this->correlationByEvent[$event];
+        unset($this->correlationByEvent[$event]);
 
         $input = $event->getInput();
         if (!$input instanceof MessageBag) {
@@ -91,31 +104,16 @@ final class PromptCacheDiagnosticsInvocationSubscriber implements EventSubscribe
             $options = $event->getOptions();
             $modelName = $event->getModel()->getName();
             $provider = $this->resolveProvider($modelName);
-            $transport = $this->resolveTransport($provider);
             $hmacKeySource = $this->resolveHmacKeySource($options, $correlation['run_id']);
-            $components = $this->buildComponents($input, $options, $hmacKeySource);
-            $canonical = $this->canonicalJson([
-                'model' => $modelName,
-                'components' => $components,
-            ]);
 
-            $record = [
-                'recorded_at' => (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM),
-                'run_id' => $correlation['run_id'],
-                'turn_no' => $correlation['turn_no'],
+            $this->store->append($correlation['run_id'], [
                 'step_id' => $correlation['step_id'],
                 'model' => $modelName,
                 'provider' => $provider,
-                'transport' => $transport,
-                'prompt_cache_key_present' => \array_key_exists('prompt_cache_key', $options)
-                    || \array_key_exists('provider_cache_key', $options),
+                'transport' => $this->resolveTransport($provider),
                 'cache_family_fp' => $this->hmac($hmacKeySource, $hmacKeySource),
-                'request_hmac' => $this->hmac($canonical, $hmacKeySource),
-                'request_bytes' => \strlen($canonical),
-                'components' => $components,
-            ];
-
-            $this->store->append($correlation['run_id'], $record);
+                'components' => $this->buildComponents($input, $options, $hmacKeySource),
+            ]);
         } catch (\Throwable $e) {
             // Diagnostics must never break provider invocation.
             $this->logger->warning('session.prompt_cache_diagnostics.record_failed', [
@@ -131,14 +129,7 @@ final class PromptCacheDiagnosticsInvocationSubscriber implements EventSubscribe
     /**
      * @param array<string, mixed> $options
      *
-     * @return list<array{
-     *     section: string,
-     *     type: ?string,
-     *     role: ?string,
-     *     name: ?string,
-     *     hmac: string,
-     *     bytes: int
-     * }>
+     * @return list<array{section: string, type: ?string, role: ?string, name: ?string, hmac: string, bytes: int}>
      */
     private function buildComponents(MessageBag $bag, array $options, string $hmacKeySource): array
     {
@@ -146,57 +137,35 @@ final class PromptCacheDiagnosticsInvocationSubscriber implements EventSubscribe
 
         foreach ($bag->getMessages() as $message) {
             if ($message instanceof SystemMessage) {
-                $payload = $this->normalizeSystemContent($message->getContent());
-                $canonical = $this->canonicalJson($payload);
-                $components[] = [
-                    'section' => 'instructions',
-                    'type' => 'system',
-                    'role' => 'system',
-                    'name' => null,
-                    'hmac' => $this->hmac($canonical, $hmacKeySource),
-                    'bytes' => \strlen($canonical),
-                ];
+                $content = $message->getContent();
+                $payload = $content instanceof Template
+                    ? ['kind' => 'template', 'template' => $content->getTemplate(), 'type' => $content->getType()]
+                    : ['kind' => 'text', 'text' => $content];
+                $components[] = $this->component('instructions', 'system', 'system', null, $payload, $hmacKeySource);
                 continue;
             }
 
             if ($message instanceof UserMessage) {
-                $payload = $this->normalizeContentParts($message->getContent());
-                $canonical = $this->canonicalJson($payload);
-                $components[] = [
-                    'section' => 'messages',
-                    'type' => 'user',
-                    'role' => 'user',
-                    'name' => null,
-                    'hmac' => $this->hmac($canonical, $hmacKeySource),
-                    'bytes' => \strlen($canonical),
-                ];
+                $parts = [];
+                foreach ($message->getContent() as $part) {
+                    $parts[] = $part instanceof Text
+                        ? ['kind' => 'text', 'text' => $part->getText()]
+                        : ['kind' => $part::class];
+                }
+                $components[] = $this->component('messages', 'user', 'user', null, $parts, $hmacKeySource);
                 continue;
             }
 
             if ($message instanceof AssistantMessage) {
                 $payload = [
                     'text' => $message->asText(),
-                    'thinking' => array_map(
-                        static fn (Thinking $t): string => $t->getContent(),
-                        $message->getThinking(),
-                    ),
+                    'thinking' => array_map(static fn ($t): string => $t->getContent(), $message->getThinking()),
                     'tool_calls' => array_map(
-                        static fn (ToolCall $c): array => [
-                            'name' => $c->getName(),
-                            'arguments' => $c->getArguments(),
-                        ],
+                        static fn (ToolCall $c): array => ['name' => $c->getName(), 'arguments' => $c->getArguments()],
                         $message->getToolCalls(),
                     ),
                 ];
-                $canonical = $this->canonicalJson($payload);
-                $components[] = [
-                    'section' => 'messages',
-                    'type' => 'assistant',
-                    'role' => 'assistant',
-                    'name' => null,
-                    'hmac' => $this->hmac($canonical, $hmacKeySource),
-                    'bytes' => \strlen($canonical),
-                ];
+                $components[] = $this->component('messages', 'assistant', 'assistant', null, $payload, $hmacKeySource);
                 continue;
             }
 
@@ -207,15 +176,7 @@ final class PromptCacheDiagnosticsInvocationSubscriber implements EventSubscribe
                     'arguments' => $toolCall->getArguments(),
                     'result_text' => $message->asText(),
                 ];
-                $canonical = $this->canonicalJson($payload);
-                $components[] = [
-                    'section' => 'messages',
-                    'type' => 'tool',
-                    'role' => 'tool',
-                    'name' => $toolCall->getName(),
-                    'hmac' => $this->hmac($canonical, $hmacKeySource),
-                    'bytes' => \strlen($canonical),
-                ];
+                $components[] = $this->component('messages', 'tool', 'tool', $toolCall->getName(), $payload, $hmacKeySource);
             }
         }
 
@@ -230,15 +191,7 @@ final class PromptCacheDiagnosticsInvocationSubscriber implements EventSubscribe
                     'description' => $tool->getDescription(),
                     'parameters' => $tool->getParameters(),
                 ];
-                $canonical = $this->canonicalJson($payload);
-                $components[] = [
-                    'section' => 'tools',
-                    'type' => 'function',
-                    'role' => null,
-                    'name' => $tool->getName(),
-                    'hmac' => $this->hmac($canonical, $hmacKeySource),
-                    'bytes' => \strlen($canonical),
-                ];
+                $components[] = $this->component('tools', 'function', null, $tool->getName(), $payload, $hmacKeySource);
             }
         }
 
@@ -246,58 +199,26 @@ final class PromptCacheDiagnosticsInvocationSubscriber implements EventSubscribe
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array{section: string, type: ?string, role: ?string, name: ?string, hmac: string, bytes: int}
      */
-    private function normalizeSystemContent(string|Template $content): array
-    {
-        if ($content instanceof Template) {
-            return [
-                'kind' => 'template',
-                'template' => $content->getTemplate(),
-                'type' => $content->getType(),
-            ];
-        }
+    private function component(
+        string $section,
+        ?string $type,
+        ?string $role,
+        ?string $name,
+        mixed $payload,
+        string $hmacKeySource,
+    ): array {
+        $canonical = $this->canonicalJson($payload);
 
-        return ['kind' => 'text', 'text' => $content];
-    }
-
-    /**
-     * @param list<object> $parts
-     *
-     * @return list<array<string, mixed>>
-     */
-    private function normalizeContentParts(array $parts): array
-    {
-        $normalized = [];
-        foreach ($parts as $part) {
-            if ($part instanceof Text) {
-                $normalized[] = ['kind' => 'text', 'text' => $part->getText()];
-                continue;
-            }
-            if ($part instanceof Thinking) {
-                $normalized[] = ['kind' => 'thinking', 'text' => $part->getContent()];
-                continue;
-            }
-            if ($part instanceof Template) {
-                $normalized[] = [
-                    'kind' => 'template',
-                    'template' => $part->getTemplate(),
-                    'type' => $part->getType(),
-                ];
-                continue;
-            }
-            if ($part instanceof ToolCall) {
-                $normalized[] = [
-                    'kind' => 'tool_call',
-                    'name' => $part->getName(),
-                    'arguments' => $part->getArguments(),
-                ];
-                continue;
-            }
-            $normalized[] = ['kind' => $part::class];
-        }
-
-        return $normalized;
+        return [
+            'section' => $section,
+            'type' => $type,
+            'role' => $role,
+            'name' => $name,
+            'hmac' => $this->hmac($canonical, $hmacKeySource),
+            'bytes' => \strlen($canonical),
+        ];
     }
 
     private function resolveProvider(string $modelName): string
@@ -332,14 +253,11 @@ final class PromptCacheDiagnosticsInvocationSubscriber implements EventSubscribe
      */
     private function resolveHmacKeySource(array $options, string $runId): string
     {
-        $providerCacheKey = $options['provider_cache_key'] ?? null;
-        if (\is_string($providerCacheKey) && '' !== $providerCacheKey) {
-            return $providerCacheKey;
-        }
-
-        $promptCacheKey = $options['prompt_cache_key'] ?? null;
-        if (\is_string($promptCacheKey) && '' !== $promptCacheKey) {
-            return $promptCacheKey;
+        foreach (['provider_cache_key', 'prompt_cache_key'] as $key) {
+            $value = $options[$key] ?? null;
+            if (\is_string($value) && '' !== $value) {
+                return $value;
+            }
         }
 
         return $runId;
@@ -362,20 +280,14 @@ final class PromptCacheDiagnosticsInvocationSubscriber implements EventSubscribe
         }
 
         if (array_is_list($value)) {
-            $out = [];
-            foreach ($value as $item) {
-                $out[] = $this->canonicalize($item);
-            }
-
-            return $out;
+            return array_map($this->canonicalize(...), $value);
         }
 
         ksort($value);
-        $out = [];
         foreach ($value as $key => $item) {
-            $out[$key] = $this->canonicalize($item);
+            $value[$key] = $this->canonicalize($item);
         }
 
-        return $out;
+        return $value;
     }
 }
