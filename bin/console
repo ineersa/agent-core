@@ -138,6 +138,7 @@ $visibleCommands = [
     'log:files' => true,
     'log:search' => true,
     'log:tail' => true,
+    'session:cache:inspect' => true,
     'help' => true,
     'list' => true,
     'completion' => true,
