@@ -356,6 +356,10 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
             {
             }
 
+            public function registerSkill(string $skillDirectory): void
+            {
+            }
+
             public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
             {
             }

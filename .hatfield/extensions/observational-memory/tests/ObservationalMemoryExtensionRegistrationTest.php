@@ -84,6 +84,10 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
             {
             }
 
+            public function registerSkill(string $skillDirectory): void
+            {
+            }
+
             public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
             {
                 $this->commands[] = $definition;

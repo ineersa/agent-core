@@ -346,6 +346,10 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
             {
             }
 
+            public function registerSkill(string $skillDirectory): void
+            {
+            }
+
             public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
             {
             }

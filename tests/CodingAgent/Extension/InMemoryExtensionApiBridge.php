@@ -155,7 +155,7 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
 
     public function registerSkill(string $skillDirectory): void
     {
-        // Test bridge does not inspect skill registrations yet.
+        // Test bridge does not inspect skill registrations.
     }
 
     public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
