@@ -9,7 +9,6 @@ use Amp\Http\HttpStatus;
 use Amp\TimeoutCancellation;
 use Amp\Websocket\Client\WebsocketConnectException;
 use Amp\Websocket\Client\WebsocketConnection;
-use Ineersa\Platform\Diagnostics\PromptCacheRequestDiagnosticsRecorder;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Exception\InvalidArgumentException;
@@ -71,8 +70,6 @@ final class CodexWebSocketModelClient implements ModelClientInterface
             $websocketUrl,
         );
 
-        // Fingerprint the full logical body; wire mode records full_context vs continuation_delta.
-        $this->recordDiagnostics($model, $fullBody, $options, $wireBody);
         $this->logRequestSummary($model, $wireBody, $websocketUrl, $lease);
 
         $frame = json_encode(
@@ -355,44 +352,6 @@ final class CodexWebSocketModelClient implements ModelClientInterface
                 throw $this->toHandshakeRuntimeException($retry);
             }
         }
-    }
-
-    /**
-     * Fingerprint the full logical body; record actual wire mode separately.
-     *
-     * @param array<string, mixed> $fullBody
-     * @param array<string, mixed> $options
-     * @param array<string, mixed> $wireBody
-     */
-    private function recordDiagnostics(Model $model, array $fullBody, array $options, array $wireBody): void
-    {
-        $recorder = $options[PromptCacheRequestDiagnosticsRecorder::OPTION_KEY] ?? null;
-        if (!$recorder instanceof PromptCacheRequestDiagnosticsRecorder) {
-            return;
-        }
-
-        $hmacKeySource = '';
-        if (\is_string($options['provider_cache_key'] ?? null) && '' !== $options['provider_cache_key']) {
-            $hmacKeySource = $options['provider_cache_key'];
-        } elseif (\is_string($options['run_id'] ?? null) && '' !== $options['run_id']) {
-            $hmacKeySource = $options['run_id'];
-        }
-
-        $mode = isset($wireBody['previous_response_id']) ? 'continuation_delta' : 'full_context';
-
-        $recorder->record(
-            logicalBody: $fullBody,
-            provider: $this->providerId,
-            transport: $this->transport->value,
-            hmacKeySource: $hmacKeySource,
-            wireMeta: [
-                'mode' => $mode,
-                'model' => $model->getName(),
-                'wire_input_count' => \is_array($wireBody['input'] ?? null) ? \count($wireBody['input']) : null,
-                'prompt_cache_key_present' => isset($wireBody['prompt_cache_key']) && \is_string($wireBody['prompt_cache_key']) && '' !== $wireBody['prompt_cache_key'],
-                'previous_response_id_present' => isset($wireBody['previous_response_id']) && \is_string($wireBody['previous_response_id']) && '' !== $wireBody['previous_response_id'],
-            ],
-        );
     }
 
     /**

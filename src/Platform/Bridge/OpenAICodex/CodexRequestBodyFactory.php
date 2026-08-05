@@ -26,8 +26,6 @@ final class CodexRequestBodyFactory
     private const array INTERNAL_OPTION_KEYS = [
         '_agent_core_invocation',
         '_hatfield_reasoning',
-        // Dedicated internal diagnostics option; never serialized to Codex wire body.
-        \Ineersa\Platform\Diagnostics\PromptCacheRequestDiagnosticsRecorder::OPTION_KEY,
         'tool_stream',
         'tools_ref',
         'turn_no',

@@ -18,7 +18,6 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
-use Ineersa\Platform\Diagnostics\PromptCacheRequestDiagnosticsRecorder;
 use Ineersa\Platform\Result\CancellableRawResultInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
@@ -119,10 +118,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             )->model;
         }
 
-        // One logical PlatformInterface::invoke() attempt shares one diagnostics recorder.
-        // Model clients append privacy-safe fingerprints; collected after stream completion/failure.
-        $requestDiagnostics = new PromptCacheRequestDiagnosticsRecorder();
-
         // Provider transport can fail synchronously during invoke (e.g. Codex WS
         // send_failure before asStream()). Classify here so bounded LLM retry sees
         // a retryable PlatformInvocationResult instead of a generic worker exception.
@@ -132,7 +127,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $input->getMessageBag(),
                 PlatformInvocationMetadata::inject(
                     array_replace($inputOptions, ['stream' => true]),
-                    new PlatformInvocationMetadata($request->input, $cancelToken, $requestDiagnostics),
+                    new PlatformInvocationMetadata($request->input, $cancelToken),
                 ),
             );
         } catch (\Throwable $exception) {
@@ -145,7 +140,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 modelNotifications: $modelNotifications,
                 availableTools: $availableToolsSnapshot['tools'],
                 availableToolsSchemaTokensEstimate: $availableToolsSnapshot['schema_tokens_estimate'],
-                requestDiagnostics: $requestDiagnostics->records(),
             );
         }
 
@@ -160,7 +154,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $request->options->streamObserverEnabled,
             $availableToolsSnapshot['tools'],
             $availableToolsSnapshot['schema_tokens_estimate'],
-            $requestDiagnostics,
         );
     }
 
@@ -442,7 +435,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         bool $streamObserverEnabled = true,
         array $availableTools = [],
         int $availableToolsSchemaTokensEstimate = 0,
-        ?PromptCacheRequestDiagnosticsRecorder $requestDiagnostics = null,
     ): PlatformInvocationResult {
         $aborted = false;
         $deltas = [];
@@ -487,7 +479,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $modelNotifications,
                 $availableTools,
                 $availableToolsSchemaTokensEstimate,
-                $requestDiagnostics?->records() ?? [],
             );
         }
 
@@ -510,7 +501,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             modelNotifications: $modelNotifications,
             availableTools: $availableTools,
             availableToolsSchemaTokensEstimate: $availableToolsSchemaTokensEstimate,
-            requestDiagnostics: $requestDiagnostics?->records() ?? [],
         );
     }
 
@@ -688,7 +678,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      * @param list<array<string, mixed>> $modelNotifications generic model notifications
      *                                                       from transform context hooks
      * @param list<string>               $availableTools
-     * @param list<array<string, mixed>> $requestDiagnostics privacy-safe structural fingerprints
      */
     private function errorResult(
         array $deltas,
@@ -699,7 +688,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         array $modelNotifications = [],
         array $availableTools = [],
         int $availableToolsSchemaTokensEstimate = 0,
-        array $requestDiagnostics = [],
     ): PlatformInvocationResult {
         $error = [
             'type' => $exception::class,
@@ -742,7 +730,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             modelNotifications: $modelNotifications,
             availableTools: $availableTools,
             availableToolsSchemaTokensEstimate: $availableToolsSchemaTokensEstimate,
-            requestDiagnostics: $requestDiagnostics,
         );
     }
 

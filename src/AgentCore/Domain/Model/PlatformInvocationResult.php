@@ -17,7 +17,6 @@ final readonly class PlatformInvocationResult
      *                                                                       produced by transform context hooks
      * @param list<string>               $availableTools                     compact final provider-visible tool names for this request
      * @param int                        $availableToolsSchemaTokensEstimate approximate schema token cost for the final tool set
-     * @param list<array<string, mixed>> $requestDiagnostics                 privacy-safe structural fingerprints for this logical invoke
      */
     public function __construct(
         public ?AssistantMessage $assistantMessage,
@@ -28,7 +27,6 @@ final readonly class PlatformInvocationResult
         public array $modelNotifications = [],
         public array $availableTools = [],
         public int $availableToolsSchemaTokensEstimate = 0,
-        public array $requestDiagnostics = [],
     ) {
     }
 

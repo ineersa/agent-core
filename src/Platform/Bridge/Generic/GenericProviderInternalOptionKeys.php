@@ -25,8 +25,6 @@ final class GenericProviderInternalOptionKeys
         'provider_cache_key',
         'tools_ref',
         'turn_no',
-        // Hidden diagnostics recorder; never reaches OpenAI-compatible wire JSON.
-        \Ineersa\Platform\Diagnostics\PromptCacheRequestDiagnosticsRecorder::OPTION_KEY,
     ];
 
     private function __construct()

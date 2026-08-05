@@ -10,16 +10,14 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
-use Ineersa\Platform\Diagnostics\PromptCacheRequestDiagnosticsRecorder;
 use Psr\Log\LoggerInterface;
 
 /**
  * Builds privacy-safe prompt-cache inspection reports for session:cache:inspect.
  *
- * Reads the requested parent session plus registered child artifacts from existing
- * stores only. Groups by exact (run_id, model, provider, transport, cache_family_fp)
- * and never aggregates incompatible families. Prefix diffs are local structural
- * inference — never claimed as provider cache invalidation.
+ * Joins CodingAgent diagnostics sidecars with existing parent/child canonical
+ * llm_step_* usage events. Groups by exact (run_id, model, provider, transport,
+ * cache_family_fp) and never aggregates incompatible families.
  */
 final class SessionPromptCacheInspectionService
 {
@@ -34,6 +32,7 @@ final class SessionPromptCacheInspectionService
         private readonly SessionRunEventStore $parentEventStore,
         private readonly AgentArtifactRegistry $artifactRegistry,
         private readonly AgentChildRunEventStoreFactory $childEventStoreFactory,
+        private readonly PromptCacheDiagnosticsStore $diagnosticsStore,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -64,6 +63,7 @@ final class SessionPromptCacheInspectionService
             runId: $sessionId,
             role: 'parent',
             events: $this->parentEventStore->allFor($sessionId),
+            diagnostics: $this->diagnosticsStore->readForRun($sessionId),
         );
 
         foreach ($this->artifactRegistry->list($sessionId) as $entry) {
@@ -90,7 +90,6 @@ final class SessionPromptCacheInspectionService
             );
             $events = $childStore->allFor($entry->agentRunId);
         } catch (\Throwable $e) {
-            // Missing/corrupt child artifact is degraded to no events for that child.
             $this->logger->warning('session.cache_inspect.child_events_unavailable', [
                 'component' => 'session_prompt_cache_inspection',
                 'event_type' => 'session.cache_inspect.child_events_unavailable',
@@ -102,30 +101,45 @@ final class SessionPromptCacheInspectionService
             $events = [];
         }
 
+        try {
+            $diagnostics = $this->diagnosticsStore->readForRun($entry->agentRunId);
+        } catch (\Throwable $e) {
+            $this->logger->warning('session.cache_inspect.child_diagnostics_unavailable', [
+                'component' => 'session_prompt_cache_inspection',
+                'event_type' => 'session.cache_inspect.child_diagnostics_unavailable',
+                'parent_run_id' => $parentRunId,
+                'run_id' => $entry->agentRunId,
+                'artifact_id' => $entry->artifactId,
+                'exception_class' => $e::class,
+            ]);
+            $diagnostics = [];
+        }
+
         $this->collectRun(
             families: $families,
             runId: $entry->agentRunId,
             role: $entry->kind->value,
             events: $events,
+            diagnostics: $diagnostics,
         );
     }
 
     /**
      * @param array<string, array<string, mixed>> $families
      * @param list<RunEvent>                      $events
+     * @param list<array<string, mixed>>          $diagnostics
      */
-    private function collectRun(array &$families, string $runId, string $role, array $events): void
+    private function collectRun(array &$families, string $runId, string $role, array $events, array $diagnostics): void
     {
         $canonicalModel = $this->canonicalModel($events);
+        $joined = $this->joinByStep($events, $diagnostics);
 
-        foreach ($events as $event) {
-            if (!\in_array($event->type, self::LLM_STEP_TYPES, true)) {
-                continue;
-            }
+        foreach ($joined as $row) {
+            $usage = $row['usage'];
+            $record = $row['diagnostic'];
+            $event = $row['event'];
 
-            $usage = $this->normalizeUsage(\is_array($event->payload['usage'] ?? null) ? $event->payload['usage'] : []);
-            $diagnostics = $event->payload['request_diagnostics'] ?? null;
-            if (!\is_array($diagnostics) || !array_is_list($diagnostics) || [] === $diagnostics) {
+            if (null === $record) {
                 $this->appendRequest(
                     families: $families,
                     familyKeyParts: [
@@ -136,71 +150,40 @@ final class SessionPromptCacheInspectionService
                         'cache_family_fp' => 'none',
                     ],
                     role: $role,
-                    request: $this->requestRow(
-                        event: $event,
-                        usage: $usage,
-                        mode: 'unknown',
-                        promptCacheKeyPresent: null,
-                        previousResponseIdPresent: null,
-                        components: [],
-                    ),
+                    request: $this->requestRow($event, $usage, []),
                     hasComponents: false,
                 );
                 continue;
             }
 
-            $lastIndex = \count($diagnostics) - 1;
-            foreach ($diagnostics as $index => $record) {
-                if (!\is_array($record)) {
-                    continue;
-                }
+            $provider = \is_string($record['provider'] ?? null) && '' !== $record['provider']
+                ? $record['provider']
+                : 'unknown';
+            $transport = \is_string($record['transport'] ?? null) && '' !== $record['transport']
+                ? $record['transport']
+                : 'unknown';
+            $cacheFamilyFp = \is_string($record['cache_family_fp'] ?? null) && '' !== $record['cache_family_fp']
+                ? $record['cache_family_fp']
+                : 'none';
+            $model = $canonicalModel
+                ?? (\is_string($record['model'] ?? null) && '' !== $record['model'] ? $record['model'] : 'unknown');
+            $components = \is_array($record['components'] ?? null) && array_is_list($record['components'])
+                ? $record['components']
+                : [];
 
-                $provider = \is_string($record['provider'] ?? null) && '' !== $record['provider']
-                    ? $record['provider']
-                    : 'unknown';
-                $transport = \is_string($record['transport'] ?? null) && '' !== $record['transport']
-                    ? $record['transport']
-                    : 'unknown';
-                $cacheFamilyFp = \is_string($record['cache_family_fp'] ?? null) && '' !== $record['cache_family_fp']
-                    ? $record['cache_family_fp']
-                    : 'none';
-                $model = $canonicalModel
-                    ?? (\is_string($record['model'] ?? null) && '' !== $record['model'] ? $record['model'] : 'unknown');
-                $components = \is_array($record['components'] ?? null) && array_is_list($record['components'])
-                    ? $record['components']
-                    : [];
-
-                // Multi-record steps (thinking-only second invoke) share one provider usage blob.
-                // Attach usage only to the last logical record so family totals are not doubled.
-                $requestUsage = $index === $lastIndex
-                    ? $usage
-                    : $this->normalizeUsage([]);
-
-                $this->appendRequest(
-                    families: $families,
-                    familyKeyParts: [
-                        'run_id' => $runId,
-                        'model' => $model,
-                        'provider' => $provider,
-                        'transport' => $transport,
-                        'cache_family_fp' => $cacheFamilyFp,
-                    ],
-                    role: $role,
-                    request: $this->requestRow(
-                        event: $event,
-                        usage: $requestUsage,
-                        mode: \is_string($record['mode'] ?? null) ? $record['mode'] : 'unknown',
-                        promptCacheKeyPresent: \array_key_exists('prompt_cache_key_present', $record)
-                            ? (bool) $record['prompt_cache_key_present']
-                            : null,
-                        previousResponseIdPresent: \array_key_exists('previous_response_id_present', $record)
-                            ? (bool) $record['previous_response_id_present']
-                            : null,
-                        components: $components,
-                    ),
-                    hasComponents: [] !== $components,
-                );
-            }
+            $this->appendRequest(
+                families: $families,
+                familyKeyParts: [
+                    'run_id' => $runId,
+                    'model' => $model,
+                    'provider' => $provider,
+                    'transport' => $transport,
+                    'cache_family_fp' => $cacheFamilyFp,
+                ],
+                role: $role,
+                request: $this->requestRow($event, $usage, $components),
+                hasComponents: [] !== $components,
+            );
         }
 
         foreach ($families as $key => $family) {
@@ -209,6 +192,102 @@ final class SessionPromptCacheInspectionService
             }
             $families[$key] = $this->finalizeFamily($family);
         }
+    }
+
+    /**
+     * Join sidecar diagnostics to llm_step_* events by exact step_id and append order.
+     * Multiple diagnostics on one step (thinking-only second invoke) attach usage only to the last.
+     *
+     * @param list<RunEvent>             $events
+     * @param list<array<string, mixed>> $diagnostics
+     *
+     * @return list<array{
+     *     event: ?RunEvent,
+     *     diagnostic: ?array<string, mixed>,
+     *     usage: array{
+     *         input_tokens: int,
+     *         output_tokens: int,
+     *         thinking_tokens: int,
+     *         cache_read_tokens: int,
+     *         cache_write_tokens: int,
+     *         uncached_tokens: int,
+     *         uncached_available: bool,
+     *         cache_ratio: ?float,
+     *         cost: float
+     *     }
+     * }>
+     */
+    private function joinByStep(array $events, array $diagnostics): array
+    {
+        /** @var array<string, list<RunEvent>> $eventsByStep */
+        $eventsByStep = [];
+        $orderedStepIds = [];
+        foreach ($events as $event) {
+            if (!\in_array($event->type, self::LLM_STEP_TYPES, true)) {
+                continue;
+            }
+            $stepId = \is_string($event->payload['step_id'] ?? null) ? $event->payload['step_id'] : '';
+            if (!isset($eventsByStep[$stepId])) {
+                $eventsByStep[$stepId] = [];
+                $orderedStepIds[] = $stepId;
+            }
+            $eventsByStep[$stepId][] = $event;
+        }
+
+        /** @var array<string, list<array<string, mixed>>> $diagsByStep */
+        $diagsByStep = [];
+        foreach ($diagnostics as $record) {
+            $stepId = \is_string($record['step_id'] ?? null) ? $record['step_id'] : '';
+            $diagsByStep[$stepId][] = $record;
+        }
+
+        $joined = [];
+        $seenSteps = [];
+
+        foreach ($orderedStepIds as $stepId) {
+            $seenSteps[$stepId] = true;
+            $stepEvents = $eventsByStep[$stepId] ?? [];
+            $stepDiags = $diagsByStep[$stepId] ?? [];
+            $event = $stepEvents[array_key_last($stepEvents)] ?? null;
+            $usage = $this->normalizeUsage(
+                null !== $event && \is_array($event->payload['usage'] ?? null) ? $event->payload['usage'] : [],
+            );
+
+            if ([] === $stepDiags) {
+                $joined[] = [
+                    'event' => $event,
+                    'diagnostic' => null,
+                    'usage' => $usage,
+                ];
+                continue;
+            }
+
+            $lastDiagIndex = \count($stepDiags) - 1;
+            foreach ($stepDiags as $index => $diag) {
+                $joined[] = [
+                    'event' => $event,
+                    'diagnostic' => $diag,
+                    // Multi-record steps share one provider usage blob — attach only to last.
+                    'usage' => $index === $lastDiagIndex ? $usage : $this->normalizeUsage([]),
+                ];
+            }
+        }
+
+        // Diagnostics without matching llm_step events (should be rare) still appear for prefix analysis.
+        foreach ($diagsByStep as $stepId => $stepDiags) {
+            if (isset($seenSteps[$stepId])) {
+                continue;
+            }
+            foreach ($stepDiags as $diag) {
+                $joined[] = [
+                    'event' => null,
+                    'diagnostic' => $diag,
+                    'usage' => $this->normalizeUsage([]),
+                ];
+            }
+        }
+
+        return $joined;
     }
 
     /**
@@ -314,8 +393,9 @@ final class SessionPromptCacheInspectionService
             }
             $components = \is_array($request['components'] ?? null) ? $request['components'] : [];
             if (null !== $previousComponents && [] !== $components) {
-                $compare = PromptCacheRequestDiagnosticsRecorder::compareComponents($previousComponents, $components);
-                $requests[$index]['prefix_diff'] = $this->formatPrefixDiff($compare);
+                $requests[$index]['prefix_diff'] = $this->formatPrefixDiff(
+                    $this->compareComponents($previousComponents, $components),
+                );
             }
             if ([] !== $components) {
                 $previousComponents = $components;
@@ -332,6 +412,79 @@ final class SessionPromptCacheInspectionService
         }
 
         return $family;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $previous
+     * @param list<array<string, mixed>> $current
+     *
+     * @return array{
+     *     common_prefix_len: int,
+     *     first_diff: array{
+     *         index: int,
+     *         kind: 'changed'|'inserted'|'removed',
+     *         previous: ?array<string, mixed>,
+     *         current: ?array<string, mixed>
+     *     }|null
+     * }
+     */
+    private function compareComponents(array $previous, array $current): array
+    {
+        $max = max(\count($previous), \count($current));
+        $common = 0;
+        for ($i = 0; $i < $max; ++$i) {
+            $prev = $previous[$i] ?? null;
+            $curr = $current[$i] ?? null;
+            if (null === $prev && null === $curr) {
+                break;
+            }
+            if (null === $prev) {
+                return [
+                    'common_prefix_len' => $common,
+                    'first_diff' => [
+                        'index' => $i,
+                        'kind' => 'inserted',
+                        'previous' => null,
+                        'current' => $curr,
+                    ],
+                ];
+            }
+            if (null === $curr) {
+                return [
+                    'common_prefix_len' => $common,
+                    'first_diff' => [
+                        'index' => $i,
+                        'kind' => 'removed',
+                        'previous' => $prev,
+                        'current' => null,
+                    ],
+                ];
+            }
+            if (($prev['hmac'] ?? null) === ($curr['hmac'] ?? null)
+                && ($prev['section'] ?? null) === ($curr['section'] ?? null)
+                && ($prev['type'] ?? null) === ($curr['type'] ?? null)
+                && ($prev['role'] ?? null) === ($curr['role'] ?? null)
+                && ($prev['name'] ?? null) === ($curr['name'] ?? null)
+            ) {
+                ++$common;
+                continue;
+            }
+
+            return [
+                'common_prefix_len' => $common,
+                'first_diff' => [
+                    'index' => $i,
+                    'kind' => 'changed',
+                    'previous' => $prev,
+                    'current' => $curr,
+                ],
+            ];
+        }
+
+        return [
+            'common_prefix_len' => $common,
+            'first_diff' => null,
+        ];
     }
 
     /**
@@ -393,21 +546,14 @@ final class SessionPromptCacheInspectionService
      *
      * @return array<string, mixed>
      */
-    private function requestRow(
-        RunEvent $event,
-        array $usage,
-        string $mode,
-        ?bool $promptCacheKeyPresent,
-        ?bool $previousResponseIdPresent,
-        array $components,
-    ): array {
+    private function requestRow(?RunEvent $event, array $usage, array $components): array
+    {
         return [
-            'seq' => $event->seq,
-            'step_id' => \is_string($event->payload['step_id'] ?? null) ? $event->payload['step_id'] : '',
-            'created_at' => $event->createdAt,
-            'mode' => $mode,
-            'prompt_cache_key_present' => $promptCacheKeyPresent,
-            'previous_response_id_present' => $previousResponseIdPresent,
+            'seq' => null === $event ? '' : $event->seq,
+            'step_id' => null !== $event && \is_string($event->payload['step_id'] ?? null)
+                ? $event->payload['step_id']
+                : '',
+            'created_at' => null === $event ? null : $event->createdAt,
             'input_tokens' => $usage['input_tokens'],
             'output_tokens' => $usage['output_tokens'],
             'thinking_tokens' => $usage['thinking_tokens'],
@@ -453,7 +599,6 @@ final class SessionPromptCacheInspectionService
         }
         $cacheWrite = max(0, (int) ($usage['cache_creation_tokens'] ?? 0));
 
-        // Clamp malformed telemetry so uncached never goes negative and totals stay bounded.
         if ($cacheRead > $input) {
             $cacheRead = $input;
         }

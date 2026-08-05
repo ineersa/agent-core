@@ -111,9 +111,6 @@ final class SessionCacheInspectCommand
                     (string) ($request['seq'] ?? ''),
                     (string) ($request['step_id'] ?? ''),
                     $this->timeLabel($request['created_at'] ?? null),
-                    (string) ($request['mode'] ?? 'unknown'),
-                    $this->boolLabel($request['prompt_cache_key_present'] ?? null),
-                    $this->boolLabel($request['previous_response_id_present'] ?? null),
                     (string) ($request['input_tokens'] ?? 0),
                     (string) ($request['output_tokens'] ?? 0),
                     (string) ($request['thinking_tokens'] ?? 0),
@@ -126,7 +123,7 @@ final class SessionCacheInspectCommand
             }
 
             $io->table(
-                ['Seq', 'Step', 'Time', 'Mode', 'Key?', 'Prev?', 'In', 'Out', 'Think', 'CRead', 'CWrite', 'Uncached', 'Ratio', 'Cost'],
+                ['Seq', 'Step', 'Time', 'In', 'Out', 'Think', 'CRead', 'CWrite', 'Uncached', 'Ratio', 'Cost'],
                 $requestRows,
             );
 
@@ -172,15 +169,6 @@ final class SessionCacheInspectCommand
         }
 
         return number_format(((float) $ratio) * 100, 1).'%';
-    }
-
-    private function boolLabel(mixed $value): string
-    {
-        if (null === $value) {
-            return 'n/a';
-        }
-
-        return true === $value ? 'yes' : 'no';
     }
 
     private function timeLabel(mixed $value): string

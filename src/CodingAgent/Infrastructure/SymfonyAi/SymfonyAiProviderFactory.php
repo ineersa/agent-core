@@ -151,15 +151,12 @@ class SymfonyAiProviderFactory
             $completionsPath = $provider->completionsPath ?? '/v1/chat/completions';
             // Strip Hatfield-internal invocation metadata before the vendor client
             // merges options into the OpenAI-compatible wire JSON (cache keys, 400s).
-            $modelClients[] = new SanitizedGenericModelClient(
-                new GenericCompletionsModelClient(
-                    $httpClient,
-                    $provider->baseUrl,
-                    $this->resolveApiKey($provider->apiKey),
-                    $completionsPath,
-                ),
-                provider: $provider->id,
-            );
+            $modelClients[] = new SanitizedGenericModelClient(new GenericCompletionsModelClient(
+                $httpClient,
+                $provider->baseUrl,
+                $this->resolveApiKey($provider->apiKey),
+                $completionsPath,
+            ));
             $resultConverters[] = new DurableResultConverter(
                 onStreamEvent: $this->buildCaptureListener($provider->id),
             );
@@ -167,15 +164,12 @@ class SymfonyAiProviderFactory
 
         if ($provider->supportsEmbeddings) {
             $embeddingsPath = $provider->embeddingsPath ?? '/v1/embeddings';
-            $modelClients[] = new SanitizedGenericModelClient(
-                new GenericEmbeddingsModelClient(
-                    $httpClient,
-                    $provider->baseUrl,
-                    $this->resolveApiKey($provider->apiKey),
-                    $embeddingsPath,
-                ),
-                provider: $provider->id,
-            );
+            $modelClients[] = new SanitizedGenericModelClient(new GenericEmbeddingsModelClient(
+                $httpClient,
+                $provider->baseUrl,
+                $this->resolveApiKey($provider->apiKey),
+                $embeddingsPath,
+            ));
             $resultConverters[] = new GenericEmbeddingsResultConverter();
         }
 

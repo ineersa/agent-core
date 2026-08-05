@@ -15,7 +15,6 @@ use Amp\Websocket\Client\WebsocketConnection;
 use Amp\Websocket\Rfc6455Client;
 use Amp\Websocket\WebsocketMessage;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Ineersa\Platform\Diagnostics\PromptCacheRequestDiagnosticsRecorder;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
@@ -66,11 +65,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             connectionCache: new CodexWebSocketConnectionCache(),
         );
 
-        $diagnostics = new PromptCacheRequestDiagnosticsRecorder();
-        $options = [
-            'provider_cache_key' => $cacheKey,
-            PromptCacheRequestDiagnosticsRecorder::OPTION_KEY => $diagnostics,
-        ];
+        $options = ['provider_cache_key' => $cacheKey];
         $firstPayload = ['input' => [['role' => 'user', 'content' => 'first']]];
         $first = $client->request(new CodexModel('gpt-5.6-luna'), $firstPayload, $options);
         $this->assertInstanceOf(RawWebSocketResult::class, $first);
@@ -94,19 +89,6 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
         $this->assertSame('second', $secondFrame['input'][0]['content']);
         // Delta frames must keep the resolved prompt_cache_key with previous_response_id.
         $this->assertSame($cacheKey, $secondFrame['prompt_cache_key'] ?? null);
-
-        $records = $diagnostics->records();
-        $this->assertCount(2, $records);
-        $this->assertSame('full_context', $records[0]['mode']);
-        $this->assertTrue($records[0]['prompt_cache_key_present']);
-        $this->assertFalse($records[0]['previous_response_id_present']);
-        $this->assertSame('continuation_delta', $records[1]['mode']);
-        $this->assertTrue($records[1]['prompt_cache_key_present']);
-        $this->assertTrue($records[1]['previous_response_id_present']);
-        $this->assertSame(1, $records[1]['wire_input_count']);
-        // Full logical body is fingerprinted even when wire input is delta-only.
-        $this->assertGreaterThan($records[0]['request_bytes'], $records[1]['request_bytes']);
-        $this->assertStringNotContainsString($cacheKey, json_encode($records, \JSON_THROW_ON_ERROR));
     }
 
     /**

@@ -16,7 +16,6 @@ final readonly class LlmStepResult extends AbstractAgentBusMessage
      *                                                                       during this LLM step
      * @param list<string>               $availableTools                     compact final provider-visible tool names for this request
      * @param int                        $availableToolsSchemaTokensEstimate approximate schema token cost for the final tool set
-     * @param list<array<string, mixed>> $requestDiagnostics                 privacy-safe structural fingerprints for this logical invoke
      */
     public function __construct(
         string $runId,
@@ -32,7 +31,6 @@ final readonly class LlmStepResult extends AbstractAgentBusMessage
         public array $modelNotifications = [],
         public array $availableTools = [],
         public int $availableToolsSchemaTokensEstimate = 0,
-        public array $requestDiagnostics = [],
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
     }

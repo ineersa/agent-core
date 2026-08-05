@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Symfony\AI\Platform\Bridge\OpenAICodex;
 
-use Ineersa\Platform\Diagnostics\PromptCacheRequestDiagnosticsRecorder;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Exception\InvalidArgumentException;
@@ -49,7 +48,6 @@ class CodexModelClient implements ModelClientInterface
 
         $resolution = CodexCorrelationRequestId::resolve($options, $payload);
         $jsonBody = $this->requestBodyFactory->build($model, $payload, $resolution->options);
-        $this->recordDiagnostics($model, $jsonBody, $options, $jsonBody);
 
         $requestOptions = [
             'auth_bearer' => $this->accessToken,
@@ -139,40 +137,6 @@ class CodexModelClient implements ModelClientInterface
         $failedResponse->cancel();
 
         return $this->httpClient->request('POST', $this->baseUrl.$this->path, $retryOptions);
-    }
-
-    /**
-     * @param array<string, mixed> $logicalBody
-     * @param array<string, mixed> $options
-     * @param array<string, mixed> $wireBody
-     */
-    private function recordDiagnostics(Model $model, array $logicalBody, array $options, array $wireBody): void
-    {
-        $recorder = $options[PromptCacheRequestDiagnosticsRecorder::OPTION_KEY] ?? null;
-        if (!$recorder instanceof PromptCacheRequestDiagnosticsRecorder) {
-            return;
-        }
-
-        $hmacKeySource = '';
-        if (\is_string($options['provider_cache_key'] ?? null) && '' !== $options['provider_cache_key']) {
-            $hmacKeySource = $options['provider_cache_key'];
-        } elseif (\is_string($options['run_id'] ?? null) && '' !== $options['run_id']) {
-            $hmacKeySource = $options['run_id'];
-        }
-
-        $recorder->record(
-            logicalBody: $logicalBody,
-            provider: 'openai-codex',
-            transport: CodexTransportEnum::Sse->value,
-            hmacKeySource: $hmacKeySource,
-            wireMeta: [
-                'mode' => 'full_context',
-                'model' => $model->getName(),
-                'wire_input_count' => \is_array($wireBody['input'] ?? null) ? \count($wireBody['input']) : null,
-                'prompt_cache_key_present' => isset($wireBody['prompt_cache_key']) && \is_string($wireBody['prompt_cache_key']) && '' !== $wireBody['prompt_cache_key'],
-                'previous_response_id_present' => isset($wireBody['previous_response_id']) && \is_string($wireBody['previous_response_id']) && '' !== $wireBody['previous_response_id'],
-            ],
-        );
     }
 
     /**

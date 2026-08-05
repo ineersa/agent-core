@@ -690,6 +690,8 @@ parameters:
       - SymfonySerializer
       - SymfonyValidator
       - SymfonyLock
+      - SymfonyAiPlatform
+      - SymfonyEventDispatcher
 
     AppSkills:
       - AppConfig
