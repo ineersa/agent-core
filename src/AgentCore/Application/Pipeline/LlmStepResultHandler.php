@@ -136,6 +136,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                         'usage' => $message->usage,
                         'aborted_assistant' => $abortedAssistantPayload,
                         ...$this->availableToolsPayload($message),
+                        ...$this->requestDiagnosticsPayload($message),
                     ],
                 ],
                 [
@@ -234,6 +235,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 'retry_attempt' => $canAutoRetry || $retriesExhausted ? $nextRetryAttempt : $currentAttempts,
                 'max_retries' => $maxAttempts,
                 ...$this->availableToolsPayload($message),
+                ...$this->requestDiagnosticsPayload($message),
             ];
             if ($retriesExhausted) {
                 $eventPayload['retries_exhausted'] = true;
@@ -346,6 +348,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 'assistant_message' => $assistantMessagePayload,
                 'text' => $assistantMessage->asText(),
                 ...$this->availableToolsPayload($message),
+                ...$this->requestDiagnosticsPayload($message),
             ],
         ]];
 
@@ -618,6 +621,22 @@ final class LlmStepResultHandler implements RunMessageHandler
             'available_tools' => $message->availableTools,
             'available_tools_schema_tokens_estimate' => $message->availableToolsSchemaTokensEstimate,
         ];
+    }
+
+    /**
+     * Compact optional request_diagnostics list for canonical LLM-step events.
+     *
+     * Omitted when empty so historical sessions and no-instrumentation paths stay free of noise.
+     *
+     * @return array{request_diagnostics?: list<array<string, mixed>>}
+     */
+    private function requestDiagnosticsPayload(LlmStepResult $message): array
+    {
+        if ([] === $message->requestDiagnostics) {
+            return [];
+        }
+
+        return ['request_diagnostics' => $message->requestDiagnostics];
     }
 
     /**

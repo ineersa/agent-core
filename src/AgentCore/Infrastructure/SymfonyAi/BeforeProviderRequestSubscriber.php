@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface;
+use Ineersa\Platform\Diagnostics\PromptCacheRequestDiagnosticsRecorder;
 use Symfony\AI\Platform\Event\InvocationEvent;
 use Symfony\AI\Platform\Model;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -41,6 +42,11 @@ final readonly class BeforeProviderRequestSubscriber implements EventSubscriberI
     {
         $options = PlatformInvocationMetadata::strip($event->getOptions());
         $metadata = PlatformInvocationMetadata::extract($event->getOptions());
+        // Re-expose the diagnostics recorder as a dedicated internal option so final
+        // model-client seams can record after PlatformInvocationMetadata is stripped.
+        if (null !== $metadata) {
+            $options[PromptCacheRequestDiagnosticsRecorder::OPTION_KEY] = $metadata->requestDiagnostics;
+        }
         $input = $event->getInput();
 
         $isMessageBag = $input instanceof \Symfony\AI\Platform\Message\MessageBag;

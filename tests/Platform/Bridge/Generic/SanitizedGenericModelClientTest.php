@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Platform\Tests\Bridge\Generic;
 
 use Ineersa\Platform\Bridge\Generic\SanitizedGenericModelClient;
+use Ineersa\Platform\Diagnostics\PromptCacheRequestDiagnosticsRecorder;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
 use Symfony\AI\Platform\Capability;
@@ -47,6 +48,35 @@ final class SanitizedGenericModelClientTest extends TestCase
         $this->assertSame($model, $inner->lastModel);
         $this->assertSame($payload, $inner->lastPayload);
         $this->assertSame([], $inner->lastOptions);
+    }
+
+    public function testRecordsHttpDiagnosticsAndStripsRecorderOption(): void
+    {
+        $inner = new RecordingModelClient();
+        $client = new SanitizedGenericModelClient($inner, provider: 'deepseek');
+        $model = new CompletionsModel('m1', [Capability::INPUT_TEXT]);
+        $recorder = new PromptCacheRequestDiagnosticsRecorder();
+
+        $client->request($model, [
+            'messages' => [
+                ['role' => 'system', 'content' => 'sys'],
+                ['role' => 'user', 'content' => 'hi'],
+            ],
+            'tools' => [['type' => 'function', 'function' => ['name' => 'read']]],
+        ], [
+            'run_id' => 'child-run-1',
+            'stream' => true,
+            PromptCacheRequestDiagnosticsRecorder::OPTION_KEY => $recorder,
+        ]);
+
+        $this->assertSame(['stream' => true], $inner->lastOptions);
+        $this->assertArrayNotHasKey(PromptCacheRequestDiagnosticsRecorder::OPTION_KEY, $inner->lastOptions);
+        $records = $recorder->records();
+        $this->assertCount(1, $records);
+        $this->assertSame('http', $records[0]['transport']);
+        $this->assertSame('deepseek', $records[0]['provider']);
+        $this->assertSame('full_context', $records[0]['mode']);
+        $this->assertStringNotContainsString('child-run-1', json_encode($records, \JSON_THROW_ON_ERROR));
     }
 }
 

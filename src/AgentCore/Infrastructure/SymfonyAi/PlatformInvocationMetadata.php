@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
+use Ineersa\Platform\Diagnostics\PromptCacheRequestDiagnosticsRecorder;
 
 final readonly class PlatformInvocationMetadata
 {
@@ -14,6 +15,7 @@ final readonly class PlatformInvocationMetadata
     public function __construct(
         public ModelInvocationInput $input,
         public CancellationTokenInterface $cancelToken,
+        public PromptCacheRequestDiagnosticsRecorder $requestDiagnostics = new PromptCacheRequestDiagnosticsRecorder(),
     ) {
     }
 

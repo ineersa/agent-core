@@ -60,6 +60,7 @@ final class ConsoleEntrypointUxTest extends TestCase
             'log:files',
             'log:search',
             'log:tail',
+            'session:cache:inspect',
             'help',
             'list',
             'completion',

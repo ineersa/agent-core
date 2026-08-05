@@ -616,6 +616,7 @@ parameters:
 
     AppCli:
       - AppAuth
+      - AppAgent
       - AppExtension
       - AppExtensionApi
       - AppTool

@@ -130,6 +130,9 @@ final readonly class ExecuteLlmStepWorker
                     'event_type' => 'llm.request.retrying_thinking_only',
                 ]);
 
+                // First thinking-only attempt remains a distinct logical record.
+                $priorDiagnostics = $response->requestDiagnostics;
+
                 // Retry exactly once (also tracer-wrapped if available).
                 $response = null === $this->tracer
                     ? $invoke()
@@ -140,6 +143,18 @@ final readonly class ExecuteLlmStepWorker
                         'model' => $invocationModel,
                     ], $invoke)
                 ;
+
+                $response = new PlatformInvocationResult(
+                    assistantMessage: $response->assistantMessage,
+                    deltas: $response->deltas,
+                    usage: $response->usage,
+                    stopReason: $response->stopReason,
+                    error: $response->error,
+                    modelNotifications: $response->modelNotifications,
+                    availableTools: $response->availableTools,
+                    availableToolsSchemaTokensEstimate: $response->availableToolsSchemaTokensEstimate,
+                    requestDiagnostics: [...$priorDiagnostics, ...$response->requestDiagnostics],
+                );
             }
 
             // Thinking-only assistant messages (no text content, no
@@ -170,6 +185,7 @@ final readonly class ExecuteLlmStepWorker
                     modelNotifications: $response->modelNotifications,
                     availableTools: $response->availableTools,
                     availableToolsSchemaTokensEstimate: $response->availableToolsSchemaTokensEstimate,
+                    requestDiagnostics: $response->requestDiagnostics,
                 );
             }
 
@@ -195,6 +211,7 @@ final readonly class ExecuteLlmStepWorker
                     modelNotifications: $response->modelNotifications,
                     availableTools: $response->availableTools,
                     availableToolsSchemaTokensEstimate: $response->availableToolsSchemaTokensEstimate,
+                    requestDiagnostics: $response->requestDiagnostics,
                     error: [
                         'type' => 'empty_response',
                         'message' => 'LLM provider returned an empty response.',
@@ -238,6 +255,8 @@ final readonly class ExecuteLlmStepWorker
                 ]);
             }
 
+            // Thinking-only second platform invocation is a separate logical request.
+            // Preserve both diagnostic records when the one-shot retry ran.
             return new LlmStepResult(
                 runId: $message->runId(),
                 turnNo: $message->turnNo(),
@@ -252,6 +271,7 @@ final readonly class ExecuteLlmStepWorker
                 modelNotifications: $response->modelNotifications,
                 availableTools: $response->availableTools,
                 availableToolsSchemaTokensEstimate: $response->availableToolsSchemaTokensEstimate,
+                requestDiagnostics: $response->requestDiagnostics,
             );
         } catch (\Throwable $exception) {
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
