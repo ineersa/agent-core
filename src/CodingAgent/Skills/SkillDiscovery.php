@@ -21,6 +21,7 @@ use Symfony\Component\Yaml\Yaml;
  *        {cwd}/.agents/skills
  *        ~/.hatfield/skills
  *        ~/.agents/skills
+ *   3. Extension-registered skill directories (only when auto-discovery is enabled)
  *
  * Each path is scanned recursively for SKILL.md files. When a directory
  * contains SKILL.md, that directory is treated as a skill root and its
@@ -30,7 +31,9 @@ use Symfony\Component\Yaml\Yaml;
  * are recorded and logged.
  *
  * Discovery is lazy — the first discover() call reads from SkillsConfig,
- * which is populated by AgentCommand after CLI option parsing.
+ * which is populated by AgentCommand after CLI option parsing. Extension
+ * packages may also call registerSkill() during extension load; that
+ * invalidates any cached result so the next discover() includes them.
  */
 final class SkillDiscovery
 {
@@ -47,6 +50,9 @@ final class SkillDiscovery
     /** @var list<array{winner: string, ignored: string, name: string}> */
     private array $collisions = [];
 
+    /** @var list<string> Absolute skill directories registered by enabled extensions */
+    private array $registeredSkillDirectories = [];
+
     public function __construct(
         private readonly SkillsConfig $config,
         private readonly SettingsPathResolver $pathResolver,
@@ -54,6 +60,18 @@ final class SkillDiscovery
         private readonly MarkdownFrontmatterExtractor $extractor,
         private ?LoggerInterface $logger = null,
     ) {
+    }
+
+    /**
+     * Register one absolute skill directory contributed by an enabled extension.
+     *
+     * Directories are scanned after CLI and project/user auto-discovery paths
+     * and only when auto-discovery is enabled (not --no-skills).
+     */
+    public function registerSkill(string $skillDirectory): void
+    {
+        $this->registeredSkillDirectories[] = $skillDirectory;
+        $this->cachedResult = null;
     }
 
     /**
@@ -93,6 +111,11 @@ final class SkillDiscovery
                         $searchPaths[] = $path;
                     }
                 }
+            }
+
+            // Step 3: Extension-registered skill directories (lowest precedence)
+            foreach ($this->registeredSkillDirectories as $directory) {
+                $searchPaths[] = $directory;
             }
         }
 

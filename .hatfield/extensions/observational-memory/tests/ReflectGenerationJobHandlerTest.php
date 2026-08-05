@@ -561,6 +561,10 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
             {
             }
 
+            public function registerSkill(string $skillDirectory): void
+            {
+            }
+
             public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
             {
             }

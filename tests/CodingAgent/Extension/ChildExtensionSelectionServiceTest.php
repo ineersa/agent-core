@@ -170,6 +170,10 @@ final class ChildExtensionSelectionServiceTest extends TestCase
                 {
                 }
 
+                public function registerSkill(string $skillDirectory): void
+                {
+                }
+
                 public function registerCommand(\Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO $definition, \Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface $handler): void
                 {
                 }

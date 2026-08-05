@@ -844,9 +844,14 @@ Composer autoload contexts before starting Hatfield:
    `composer install -d .hatfield/extensions`
    (path repository root for packages under `.hatfield/extensions/`).
 
-Extensions register tools and slash commands during startup. **Start a new
-Hatfield session** (or restart the agent/TUI) after install so enabled
-classes are loaded; an already-running session will not pick up new
+Extensions register tools, slash commands, and optional package-local skills
+during startup. Enabled extensions may call
+`ExtensionApiInterface::registerSkill()` with an absolute skill directory
+(containing `SKILL.md`); those skills are discovered after CLI
+`--skills-path` and project/user auto-discovery paths, so local skills win
+name collisions. Extension-owned skills are suppressed by `--no-skills`.
+**Start a new Hatfield session** (or restart the agent/TUI) after install so
+enabled classes are loaded; an already-running session will not pick up new
 extensions.
 
 **Default:** The built-in SafeGuard extension is enabled by default

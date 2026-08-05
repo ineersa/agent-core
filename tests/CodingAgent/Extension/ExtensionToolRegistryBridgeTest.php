@@ -11,12 +11,16 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobDispatcher;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHandlerAdapter;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\Skills\SkillDiscovery;
+use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
 use Ineersa\CodingAgent\Tests\Extension\Support\RecordingExtensionToolHandler;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
@@ -683,10 +687,12 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
     ): ExtensionToolRegistryBridge {
         $logger = new \Psr\Log\NullLogger();
 
+        $appConfig = $appConfig ?? $this->testAppConfig();
+
         return new ExtensionToolRegistryBridge(
             $toolRegistry,
             $hookRegistry ?? new ExtensionHookRegistry(),
-            $appConfig ?? $this->testAppConfig(),
+            $appConfig,
             $execBridge ?? $this->dummyExecBridge(),
             $commandRegistry ?? $this->dummyCommandRegistry(),
             $this->dummyAgentRunner(),
@@ -699,6 +705,12 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
                 }
             }, $logger, 'in-memory://'),
             $toolContextAccessor ?? new StackToolExecutionContextAccessor(),
+            new SkillDiscovery(
+                config: new SkillsConfig(),
+                pathResolver: new SettingsPathResolver($appConfig->cwd),
+                appConfig: $appConfig,
+                extractor: new MarkdownFrontmatterExtractor(),
+            ),
         );
     }
 
