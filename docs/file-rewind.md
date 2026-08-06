@@ -6,7 +6,7 @@ File rewind is a **project-level Hatfield extension** (`Ineersa\HatfieldExt\File
 
 | Area | Prototype (#249) | This architecture |
 | --- | --- | --- |
-| UX | `/tree` offered file restore | `/tree` stays conversation-only; `/rewind` owns file UX |
+| UX | conversation history offered file restore | `/history` stays conversation-only; `/rewind` owns file UX |
 | Events | AgentCore `file_rewind.*` events | Extension-local JSON ledger under `.hatfield/rewind/` |
 | Hooks | AgentCore `HookSubscriberInterface` in CodingAgent/Rewind | Extension API `AfterTurnCommitHookInterface` + app bridge |
 | Restore locks | `RunLockManager` during capture/restore | No explicit run lock in checkpoint hook; restore on explicit user action |
@@ -20,7 +20,7 @@ File rewind is a **project-level Hatfield extension** (`Ineersa\HatfieldExt\File
 
 ### Discarded from prototype
 
-- `/tree` file restore orchestration, `TreeNavigateToTurnOrchestrator`, runtime `tree_navigate_to_turn`
+- conversation-history file restore orchestration, `TreeNavigateToTurnOrchestrator`, runtime `tree_navigate_to_turn`
 - AgentCore event types for file rewind ledger
 - Run-lock coupled checkpoint service
 
@@ -28,7 +28,7 @@ File rewind is a **project-level Hatfield extension** (`Ineersa\HatfieldExt\File
 
 ## UX (v1)
 
-- `/tree` stays conversation-only.
+- `/history` stays conversation-only.
 - `/rewind` lists **file checkpoint targets only** (turns with a persisted hidden-git checkpoint and a meaningful label). Internal/tool turns without checkpoints are hidden.
 - Checkpoints and restore targets are scoped to the **active session** (`session_id` / `run_id`); older sessions in the same project cwd do not appear in `/rewind` and are not used for restore.
 - Checkpoints are recorded on stable completed turn boundaries:

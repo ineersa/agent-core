@@ -119,6 +119,12 @@ final class TuiSessionState
     public bool $isCompacting = false;
 
     /**
+     * Original user prompt text from /history selection, applied once by TickPollListener
+     * into the editor after RunLeafChanged rebuild. Null when nothing pending.
+     */
+    public ?string $pendingEditorPromptText = null;
+
+    /**
      * Usage/token projection for the TUI footer.
      *
      * Holds both session-level accumulated metrics (inputTokens, outputTokens,

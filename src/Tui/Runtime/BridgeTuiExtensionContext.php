@@ -80,6 +80,7 @@ final readonly class BridgeTuiExtensionContext implements TuiExtensionContextInt
     {
         $tree = $this->runtime->turnTreeProvider->forSession($sessionId);
         $rows = [];
+        // Flat active user-prompt history only (linear model).
         foreach (TreePickerController::flattenTurnOrder($tree) as $turnNo) {
             $node = $tree->nodesByTurnNo[$turnNo] ?? null;
             if (!$node instanceof TurnTreeNodeView) {

@@ -12,11 +12,7 @@ use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 /**
- * Registers /tree slash command in the TUI.
- *
- * Wires TreePickerController with per-iteration runtime refs and
- * the session switch service for actionable rewind.
- * Registers the /tree command idempotently.
+ * Registers /history slash command (replaces /tree).
  */
 final class TreeCommandRegistrar implements TuiListenerRegistrar
 {
@@ -33,23 +29,19 @@ final class TreeCommandRegistrar implements TuiListenerRegistrar
         $screen = $context->screen;
         $state = $context->state;
 
-        // Create picker controller with tree provider + session switch service,
-        // and wire per-iteration runtime refs.
         $picker = new TreePickerController($this->treeProvider, $this->switcher);
         $picker->setRuntimeRefs($tui, $screen, $state);
 
-        // Create handler
         $handler = new TreeCommandHandler($picker);
 
-        // Register /tree command (idempotent)
-        if ($this->commandRegistry->has('tree')) {
-            $this->commandRegistry->setHandler('tree', $handler);
+        if ($this->commandRegistry->has('history')) {
+            $this->commandRegistry->setHandler('history', $handler);
         } else {
             $this->commandRegistry->register(
                 new CommandMetadata(
-                    name: 'tree',
-                    description: 'Show session turn tree — Enter to rewind, Esc to close',
-                    usage: '/tree',
+                    name: 'history',
+                    description: 'Show session user-prompt history — Enter to edit prompt, Esc to close',
+                    usage: '/history',
                     acceptsArguments: false,
                 ),
                 $handler,

@@ -134,7 +134,9 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
         $event = $events[0];
         $this->assertSame(RuntimeEventTypeEnum::RunLeafChanged->value, $event->type);
         $this->assertSame(self::RUN_ID, $event->runId);
-        $this->assertSame(1, $event->payload['turn_no'] ?? null);
+        // Selecting user prompt turn 1 positions before it (retained boundary 0).
+        $this->assertSame(0, $event->payload['turn_no'] ?? null);
+        $this->assertSame(1, $event->payload['selected_prompt_turn_no'] ?? null);
         $this->assertIsInt($event->payload['leaf_set_seq'] ?? null);
     }
 
@@ -160,11 +162,6 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
                 seq: 2,
                 turnNo: 1,
                 type: RunEventTypeEnum::TurnAdvanced->value,
-                // No parent_turn_no — LeafSet in the next event triggers
-                // explicit-tree mode, but without parent_turn_no on the
-                // TurnAdvanced, turn 1 becomes a root (parentTurnNo=null).
-                // This avoids "Dangling parent_turn_no 0" in walkActivePath
-                // because RunStarted (turnNo=0) doesn't create a turnInfo node.
                 payload: ['turn_no' => 1],
                 createdAt: new \DateTimeImmutable('2026-06-29T00:00:01Z'),
             ),
@@ -173,7 +170,7 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
                 seq: 3,
                 turnNo: 1,
                 type: RunEventTypeEnum::LeafSet->value,
-                payload: ['turn_no' => 1, 'previous_turn_no' => 0, 'parent_turn_no' => 0, 'reason' => 'advance'],
+                payload: ['turn_no' => 1, 'previous_turn_no' => 0, 'reason' => 'continue'],
                 createdAt: new \DateTimeImmutable('2026-06-29T00:00:02Z'),
             ),
         ];

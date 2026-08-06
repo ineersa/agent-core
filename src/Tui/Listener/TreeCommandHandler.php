@@ -11,16 +11,10 @@ use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Picker\TreePickerController;
 
 /**
- * Handles the /tree slash command.
+ * Handles the /history slash command (replaces /tree).
  *
- * Opens the read-only turn tree picker.  The picker displays the
- * current session's turn tree from canonical events.jsonl.  Enter
- * closes the picker without mutating state.
- *
- * Lives in TuiListener (not TuiCommand) because it depends on
- * TurnTreeProviderInterface from AppRuntimeContract and
- * TreePickerController from TuiPicker, which TuiCommand cannot
- * import per deptrac rules.
+ * Opens the linear user-prompt history picker. Enter positions context
+ * before the selected prompt and populates the editor.
  */
 final class TreeCommandHandler implements SlashCommandHandler
 {

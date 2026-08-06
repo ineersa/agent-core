@@ -146,7 +146,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
 
         try {
             // Full-stream integrity checks (duplicates + contiguity) on the
-            // canonical stream before branch filtering.
+            // canonical stream before active-history filtering.
             $duplicateSeqs = $this->replayEventPreparer->duplicateSequences($sortedEvents);
             if ([] !== $duplicateSeqs) {
                 $this->logger->error('run_state_replay.duplicate_sequences', [
@@ -159,7 +159,45 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                 throw new RunStateDuplicateSequenceReplayException(\sprintf('Cannot replay run %s for leaf %d: event history contains %d duplicate sequence number(s): %s.', $runId, $targetLeafTurnNo, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
             }
 
-            // Filter to the target leaf's branch path.
+            // Boundary 0 = before first turn: only run-level events (turnNo === 0).
+            if (0 === $targetLeafTurnNo) {
+                $filteredEvents = array_values(array_filter(
+                    $sortedEvents,
+                    static fn (RunEvent $event): bool => 0 === $event->turnNo
+                        || \in_array($event->type, [
+                            RunEventTypeEnum::LeafSet->value,
+                            RunEventTypeEnum::HistoryTailDiscarded->value,
+                            RunEventTypeEnum::TurnBranched->value,
+                        ], true),
+                ));
+                $rebuiltState = $this->runStateReducer->replay($state, $filteredEvents);
+                $rebuiltState = new RunState(
+                    runId: $rebuiltState->runId,
+                    status: $rebuiltState->status,
+                    version: $rebuiltState->version,
+                    turnNo: 0,
+                    lastSeq: $maxEventSeq,
+                    isStreaming: $rebuiltState->isStreaming,
+                    streamingMessage: $rebuiltState->streamingMessage,
+                    pendingToolCalls: $rebuiltState->pendingToolCalls,
+                    errorMessage: $rebuiltState->errorMessage,
+                    messages: $rebuiltState->messages,
+                    activeStepId: $rebuiltState->activeStepId,
+                    retryableFailure: $rebuiltState->retryableFailure,
+                    retryAttempts: $rebuiltState->retryAttempts,
+                    pendingHumanInputRequests: $rebuiltState->pendingHumanInputRequests,
+                    model: $rebuiltState->model,
+                );
+
+                return RunStateReplayResult::rebuilt(
+                    $rebuiltState,
+                    $maxEventSeq,
+                    \count($sortedEvents),
+                    true,
+                );
+            }
+
+            // Filter to the target tip's active retained prefix.
             $filteredEvents = $sortedEvents;
             if (null !== $this->turnTreeReplayFilter) {
                 $branchReplay = $this->turnTreeReplayFilter->filterForLeaf($runId, $sortedEvents, $targetLeafTurnNo);
@@ -173,11 +211,11 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                     'active_branch_turns' => $branchReplay->activePathTurnNos,
                 ]);
 
-                // Rewind replay must not resurrect post-completion follow_up commands
-                // that were queued on the target turn to launch an abandoned child
-                // branch (e.g. pineapple at seq 6–7 after turn-1 agent_end). Those
-                // leave status=Running and suppress ApplyCommandHandler's immediate
-                // AdvanceRun for the next follow_up on the new branch.
+                // History-select replay must not resurrect post-completion follow_up
+                // commands that were queued on the target turn to launch a later turn
+                // (e.g. pineapple after turn-1 agent_end). Those leave status=Running
+                // and suppress ApplyCommandHandler's immediate AdvanceRun for the next
+                // follow_up after a later mutation discard.
                 $filteredEvents = $this->filterAbandonedChildLaunchCommandsOnTargetLeaf(
                     $sortedEvents,
                     $targetLeafTurnNo,
@@ -251,7 +289,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
             $leafTurnNo = (int) ($payload['turn_no'] ?? 0);
             $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : '';
 
-            if ($leafTurnNo !== $targetLeafTurnNo || 'rewind' !== $reason) {
+            if ($leafTurnNo !== $targetLeafTurnNo || !\in_array($reason, ['rewind', 'history_select'], true)) {
                 continue;
             }
 

@@ -69,7 +69,6 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertSame(12, $result->events[1]->payload['turn_no']);
         $this->assertSame('continue', $result->events[1]->payload['reason']);
         $this->assertSame(12, $result->events[0]->payload['turn_no']);
-        $this->assertSame(2, $result->events[0]->payload['parent_turn_no']);
 
         $this->assertCount(1, $result->effects);
         $this->assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
@@ -232,12 +231,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertSame('turn_advanced', $result->events[0]->type);
         $this->assertSame('leaf_set', $result->events[1]->type);
 
-        // parent_turn_no must be null for the root turn (the sparse identity is 4 here).
-        $this->assertArrayHasKey('parent_turn_no', $result->events[0]->payload);
-        $this->assertNull($result->events[0]->payload['parent_turn_no']);
         $this->assertSame(4, $result->events[0]->payload['turn_no']);
         $this->assertSame(4, $result->events[1]->payload['turn_no']);
-        $this->assertNull($result->events[1]->payload['parent_turn_no']);
         $this->assertNull($result->events[1]->payload['previous_turn_no']);
     }
 

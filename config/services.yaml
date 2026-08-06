@@ -681,6 +681,9 @@ services:
   Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface:
     alias: Ineersa\CodingAgent\Session\Rewind\SessionRewindService
 
+  Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface:
+    alias: Ineersa\CodingAgent\Session\History\HistoryTailDiscardService
+
   # ─── Symfony AI Platform wiring ───
   # PlatformInterface reads Hatfield config from autowired AppConfig,
   # so no explicit arguments are needed here.
@@ -943,6 +946,7 @@ services:
     arguments:
       $handlers: !tagged_iterator agent_core.run_message_handler
       $runStateRebuilder: '@Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface'
+      $historyTailDiscard: '@Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface'
 
   Ineersa\AgentCore\Application\Handler\StepDispatcher:
     arguments:

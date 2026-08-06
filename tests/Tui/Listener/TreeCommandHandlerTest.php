@@ -28,51 +28,28 @@ final class TreeCommandHandlerTest extends TestCase
     #[Test]
     public function testHandleReturnsNoOp(): void
     {
-        $tree = new TurnTreeView(
-            runId: 'test',
-            nodesByTurnNo: [
-                1 => new TurnTreeNodeView(
-                    turnNo: 1,
-                    parentTurnNo: null,
-                    childTurnNos: [],
-                    anchorSeq: 2,
-                    title: 'Root turn',
-                    promptPreview: '',
-                    createdAt: null,
-                    isCurrentLeaf: true,
-                ),
-            ],
-            rootTurnNos: [1],
-            currentLeafTurnNo: 1,
-            activePathTurnNos: [1],
-        );
-
-        $provider = $this->createStub(TurnTreeProviderInterface::class);
-        $provider->method('forSession')->willReturn($tree);
-
-        $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
-        $picker = new TreePickerController($provider, $switcher);
-
-        $tui = new Tui();
-        $screen = new ChatScreen(
-            new DefaultTheme(new ThemePalette('test')),
-            'test-session',
-            new PromptEditor(),
-        );
-        $screen->mount($tui);
-        $state = new TuiSessionState(sessionId: 'test-session', resuming: false);
-
-        $picker->setRuntimeRefs($tui, $screen, $state);
+        $picker = $this->openablePicker();
         $handler = new TreeCommandHandler($picker);
 
-        $command = new SlashCommand(name: 'tree', args: '', originalText: '/tree');
+        $command = new SlashCommand(name: 'history', args: '', originalText: '/history');
         $result = $handler->handle($command);
 
         $this->assertInstanceOf(NoOp::class, $result);
     }
 
     #[Test]
-    public function testHandleOpensPickerWithTreeData(): void
+    public function testHandleOpensPickerWithHistoryData(): void
+    {
+        $picker = $this->openablePicker();
+        $handler = new TreeCommandHandler($picker);
+
+        $command = new SlashCommand(name: 'history', args: '', originalText: '/history');
+        $handler->handle($command);
+
+        $this->assertTrue($picker->isOpen(), 'Handler should cause picker to open');
+    }
+
+    private function openablePicker(): TreePickerController
     {
         $tree = new TurnTreeView(
             runId: 'test',
@@ -86,6 +63,8 @@ final class TreeCommandHandlerTest extends TestCase
                     promptPreview: '',
                     createdAt: null,
                     isCurrentLeaf: true,
+                    displayRole: 'user',
+                    fullPromptText: 'Root turn',
                 ),
             ],
             rootTurnNos: [1],
@@ -109,11 +88,7 @@ final class TreeCommandHandlerTest extends TestCase
         $state = new TuiSessionState(sessionId: 'test-session', resuming: false);
 
         $picker->setRuntimeRefs($tui, $screen, $state);
-        $handler = new TreeCommandHandler($picker);
 
-        $command = new SlashCommand(name: 'tree', args: '', originalText: '/tree');
-        $handler->handle($command);
-
-        $this->assertTrue($picker->isOpen(), 'Handler should cause picker to open');
+        return $picker;
     }
 }

@@ -101,18 +101,28 @@ final class RuntimeEventPoller
                 // The applier resets live projector state; projected blocks come from
                 // SessionTranscriptProvider (isolated projector), not TUI local replay.
                 if (RuntimeEventTypeEnum::RunLeafChanged->value === $runtimeEvent->type) {
-                    $leafTurnNo = (int) ($runtimeEvent->payload['turn_no'] ?? 0);
+                    // turn_no is retained boundary tip; 0 means before first turn (valid).
+                    $hasTurnNoKey = \array_key_exists('turn_no', $runtimeEvent->payload);
+                    $leafTurnNo = (int) ($runtimeEvent->payload['turn_no'] ?? -1);
+                    $editorPromptText = \is_string($runtimeEvent->payload['editor_prompt_text'] ?? null)
+                        ? $runtimeEvent->payload['editor_prompt_text']
+                        : '';
                     // Always treat leaf change as wholesale replace so the mounted path
                     // receives an explicit full snapshot (including empty after failure).
                     $hasRunLeafChanged = true;
 
-                    if ($leafTurnNo > 0 && null !== $state->handle) {
+                    if ($hasTurnNoKey && $leafTurnNo >= 0 && null !== $state->handle) {
                         try {
-                            $snapshot = $this->sessionTranscriptProvider->transcriptForLeaf(
-                                $state->handle->runId,
-                                $leafTurnNo,
-                            );
-                            $state->replaceTranscript($snapshot->transcriptBlocks);
+                            if ($leafTurnNo > 0) {
+                                $snapshot = $this->sessionTranscriptProvider->transcriptForLeaf(
+                                    $state->handle->runId,
+                                    $leafTurnNo,
+                                );
+                                $state->replaceTranscript($snapshot->transcriptBlocks);
+                            } else {
+                                // Before first turn: empty conversation transcript.
+                                $state->replaceTranscript([]);
+                            }
                         } catch (\Throwable $e) {
                             $this->logger->warning('runtime_event_poller.leaf_changed_rebuild_failed', [
                                 'run_id' => $state->handle->runId,
@@ -120,13 +130,15 @@ final class RuntimeEventPoller
                                 'exception' => $e->getMessage(),
                             ]);
                             // Intentional degradation: clear transcript rather than show stale
-                            // abandoned-branch content when leaf projection fails.
+                            // discarded-tail content when projection fails.
                             $state->replaceTranscript([]);
                         }
+
+                        if ('' !== $editorPromptText) {
+                            $state->pendingEditorPromptText = $editorPromptText;
+                        }
                     } else {
-                        // Malformed RunLeafChanged: missing or zero turn_no, or no handle.
-                        // Clear the transcript so stale abandoned-branch content is not shown.
-                        // The projector has already been reset by the applier.
+                        // Malformed RunLeafChanged: missing turn_no, or no handle.
                         $this->logger->warning('runtime_event_poller.leaf_changed_malformed', [
                             'run_id' => null !== $state->handle ? $state->handle->runId : 'unknown',
                             'leaf_turn_no' => $leafTurnNo,

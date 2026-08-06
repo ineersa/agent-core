@@ -548,124 +548,87 @@ same ID everywhere will work. Sessions with mismatched IDs will fail on
 validation and can be fixed manually by editing the directory name or rewriting
 embedded IDs.
 
-## Turn tree model
+## Linear history model
 
-Within a single session timeline, the turn tree model enables branching conversation
-paths — rewinding to an earlier turn and continuing in a new direction without
-destroying the original history.
+Within a single session timeline, conversation history is a single ordered list of
+turns with undo/redo positioning. Selecting an earlier user prompt is non-destructive
+until a context-mutating action discards the forward tail. Abandoned events remain
+in `events.jsonl` as audit-only bytes — never as selectable sibling branches.
 
 ### Canonical event stream (append-only)
 
-Turn tree metadata lives in `events.jsonl` alongside all other domain events.
-The stream remains **append-only** — branching never truncates or rewrites
-existing events. Two new event types carry tree structure:
+History metadata lives in `events.jsonl` alongside all other domain events.
+The stream remains **append-only** — navigation and discard never truncate or rewrite
+existing events.
 
 | Event type | Purpose |
 |------------|---------|
-| `turn_advanced` (extended) | Carries `parent_turn_no` (nullable int; null for root turn) to link turn nodes. The existing `turn_no` field remains the stable turn identifier. |
-| `leaf_set` | Marks the current active leaf/head of the conversation. Payload includes `turn_no` (target leaf), `previous_turn_no` (prior leaf, nullable), `parent_turn_no`, and `reason` (e.g. `"continue"`, `"rewind"`, `"fork"`). |
-| `turn_branched` (reserved) | Reserved for explicit branch metadata in future rewind/branch commands. Not emitted by the continue path. |
+| `turn_advanced` | Introduces a new turn with stable `turn_no`. |
+| `leaf_set` | Marks the current selected tip/cursor. Payload includes `turn_no` (retained tip; `0` = before first turn), `previous_turn_no`, optional `selected_prompt_turn_no`, and `reason` (`continue`, `history_select`, `shell_command`, …). |
+| `history_tail_discarded` | Permanently drops every active turn after `after_turn_no` from normal projections. Emitted once before a context-mutating action when forward turns exist. |
+| `turn_branched` (legacy) | No longer emitted; ignored except as audit metadata. |
 
-Each normal turn advance emits a `turn_advanced` event followed immediately by a
-`leaf_set` event confirming the new leaf position. The pair is atomic within the
-same handler execution.
+Each normal turn advance emits `turn_advanced` followed by `leaf_set`.
 
-### Leaf pointer
+### Selected tip (leaf pointer)
 
-`leaf_set` is the canonical current leaf marker. On replay:
-1. Process all `leaf_set` events in seq order — the last one wins.
-2. If no `leaf_set` events exist (old linear stream), the highest turn number
-   is the implicit current leaf.
+`leaf_set` is the canonical current tip marker. On projection:
+1. Process `turn_advanced` to build the active ordered list.
+2. Process `leaf_set` to move the selected tip without discarding.
+3. Process `history_tail_discarded` to slice active turns after `after_turn_no`.
+4. If no `leaf_set` exists, the last active turn is the tip.
 
-### Read model: TurnTreeDTO
+### Read model: TurnTreeDTO (linear)
 
-**Implementation (SESSION-07A):** turn-tree projection and branch replay filtering live under
+Projection and active-history replay filtering live under
 `Ineersa\CodingAgent\Session\TurnTree` and `Ineersa\CodingAgent\Session\Replay`.
-AgentCore replay/rewind handlers consume narrow contracts under
-`Ineersa\AgentCore\Contract\TurnTree` (not the full session DTO shapes).
+AgentCore consumes narrow contracts under `Ineersa\AgentCore\Contract\TurnTree`.
 
-`TurnTreeProjector` builds a `TurnTreeDTO` from the canonical event stream:
-- `nodesByTurnNo` — map from turn number to `TurnTreeNodeDTO` (turnNo, parentTurnNo,
-  childTurnNos, anchorSeq, title, promptPreview, isCurrentLeaf).
-- `activePathTurnNos` — ordered list of turn numbers from root to current leaf.
-- `rootTurnNos` — turn numbers with no parent.
-- `currentLeafTurnNo` — the current active leaf.
+`TurnTreeProjector` builds a linear `TurnTreeDTO`:
+- `nodesByTurnNo` — active turns only (`TurnTreeNodeDTO` with linear previous/next links,
+  title, promptPreview, displayRole, fullPromptText for user rows).
+- `activePathTurnNos` — full active linear order.
+- `currentLeafTurnNo` — selected tip (`null`/absent before first turn).
 
-Titles and previews are best-effort from safe message fields: initial user messages
-in `run_started`, steer/follow-up text in `agent_command_applied`, assistant text in
-`llm_step_completed`. Raw system prompts are excluded.
+### Active-history replay
 
-### Branch-aware replay
+`TurnTreeReplayFilter` includes only:
+- Run-level events (`turnNo === 0`).
+- Events whose `turnNo` is in the retained prefix through the selected tip.
+- History metadata (`leaf_set`, `history_tail_discarded`, legacy `turn_branched`).
+- Excludes discarded turns' message/tool/assistant content.
 
-`TurnTreeReplayFilter` uses the projector to filter the event stream to only events
-on the active branch path:
-- Includes run-level events (`turnNo === 0`, e.g. `run_started`).
-- Includes events whose `turnNo` is in the active path.
-- Includes tree metadata events (`leaf_set`, `turn_branched`).
-- **Excludes** abandoned sibling branch events (message/tool/assistant content
-  for turns not on the active path).
+Integrity checks run on the full canonical stream. Rebuilt `lastSeq` uses the full
+canonical max. `leaf_set` / `history_tail_discarded` are no-op RunState reducers.
 
-**Integrity checks** (duplicate sequences, missing-sequence contiguity) are always
-performed on the **full canonical sorted event stream**, not the filtered active-branch
-stream. Filtered branch paths naturally have sequence gaps because abandoned sibling
-events remain in `events.jsonl`.
+### `/history` semantics (undo/redo)
 
-`RunStateReplayService` and `ReplayService` both integrate `TurnTreeReplayFilter`:
-- State/messages are rebuilt from filtered active-branch events.
-- `lastSeq` in the rebuilt state is set to the full canonical max event sequence
-  so state is current with respect to the append-only stream.
-- `leaf_set` and `turn_branched` are no-op reducers during RunState replay;
-  they do not change status, messages, or turn counters.
+The `/history` UI lists **user prompts only**. Selecting prompt N:
+1. Appends `leaf_set` with `turn_no = parent(N)` (or `0` for the first prompt).
+2. Rebuilds hot state/transcript through that boundary (context **before** N).
+3. Populates the editor with N's original text.
+4. Leaves forward turns retained until mutation.
 
-### Rewind-and-continue semantics
+Any context-affecting action (user message, shell, compact, …) while behind the tip
+first appends `history_tail_discarded { after_turn_no: tip }`, then proceeds. The
+shared choke point is `HistoryTailDiscardService` via `RunMessageProcessor`.
 
-The `/tree` UI provides an actionable turn tree picker. When the user selects a
-non-current leaf and presses Enter, the system performs a **rewind** — resetting
-the conversation context to the selected turn and allowing the user to continue
-in a new direction from that point.
-
-**Leaf-pointer model:** The rewind is implemented as a `leaf_set` event appended
-to the canonical stream. No events are truncated, deleted, or modified. The new
-`leaf_set` changes the current leaf pointer, and all subsequent events are
-appended normally. This is directly analogous to pi-mono's leaf-pointer rewind:
-the leaf ID moves; the history is untouched.
-
-**Turn allocation after rewind:** After a rewind (state.turnNo < globalMaxTurnNo),
-the next `turn_no` allocated is `max(globalMaxTurnNo, state.turnNo) + 1`, NOT the
-old `state.turnNo + 1`. This prevents turn-number collisions with the abandoned
-branch's turns, which would corrupt `nodesByTurnNo`'s int-keyed map in
-`TurnTreeDTO`. For linear sessions with no abandoned branches,
-globalMaxTurnNo === state.turnNo and behavior is unchanged.
+**Turn allocation after discard:** next `turn_no` is `max(lastSeq, state.turnNo) + 1`
+so discarded turn numbers never collide.
 
 **Transcript rebuild:** `RuntimeEventPoller` and `SessionInitializer` call
-`SessionTranscriptProviderInterface::transcriptForLeaf(runId, leafTurnNo)` to fetch
-a snapshot with projected transcript blocks plus active-path replay runtime events.
-TUI assigns transcript blocks wholesale and replays returned events through
-`TuiRuntimeEventApplier` for non-transcript state (usage, queues, activity). The TUI
+`SessionTranscriptProviderInterface::transcriptForLeaf(runId, leafTurnNo)` (boundary `0`
+clears transcript). TUI assigns blocks wholesale and applies `editor_prompt_text` from
+`RunLeafChanged` into the editor. The TUI
 does not filter active-path raw runtime events or replay transcript locally for leaf
-changes. Old abandoned-branch transcript blocks are removed.
+changes. Discarded-tail transcript blocks are removed from the live view.
 
-**No file/workspace rollback:** The rewind affects the message context only.
+**No file/workspace rollback:** History selection affects conversation context only.
 It does not roll back file edits, tool side-effects, or any filesystem changes.
-SESSION-08 (exact file rewind checkpoints) will address selective file restore.
+File restore remains the separate `/rewind` extension (hidden Git checkpoints).
 
-**No branch_summary:** Abandoned branches do not receive an LLM-generated
-summary. The abandoned turn subtree remains browsable in `/tree` and is
-preserved in `events.jsonl` for future reference, but is not injected into
-the model's context on the new branch. A future enhancement may add
-`branch_summary` entries as first-class tree nodes.
-
-### Old / no-tree streams
-
-Sessions without `leaf_set`/`parent_turn_no` are treated as a linear single-branch
-tree. The projector derives parent relationships as `turn_no - 1` and the current
-leaf as the highest turn number. No migration is required.
-
-### Future `/tree` UI
-
-The `TurnTreeDTO` read model provides everything needed for a `/tree` picker
-(render nodes, highlight current leaf, navigate branches). The tree data is
-reusable without destructive truncation or separate tree files.
+Discarded turns stay in `events.jsonl` as audit-only bytes and are not injected into
+the model context or `/history` rows.
 
 ## Open gaps and future work
 
@@ -674,7 +637,7 @@ reusable without destructive truncation or separate tree files.
 | Messenger synchronous bus wiring | High | `config/packages/messenger.yaml` buses have empty middleware arrays. `RunOrchestrator` handlers are registered but messages may not be dispatched. Required for actual run persistence end-to-end. |
 | File-backed CommandStore | Medium | `InMemoryCommandStore` loses pending commands on restart. Step IDs use `hrtime()` so duplicates are unlikely, but file backing would improve durability. |
 | File-backed IdempotencyStoreInterface | Low | In-memory idempotency state is lost on restart. Not critical because step IDs are time-based and won't repeat. |
-| Session listing (`listSessions()`) | **Done** | `HatfieldSessionStore::listSessions()` returns catalog rows with `displayTitle`. Turn tree read model (`TurnTreeDTO`, `TurnTreeProjector`) done (SESSION-05); `/tree` UI picker remains future (SESSION-06/07). |
+| Session listing (`listSessions()`) | **Done** | `HatfieldSessionStore::listSessions()` returns catalog rows with `displayTitle`. Linear history projector + `/history` picker done. |
 | Session pruning/cleanup | Low | No auto-expiry or `session:prune` command. Orphaned sessions accumulate. |
 | Fork command (`session:fork`) | Medium | Planned; storage model is ready. Needs rewrite logic + CLI command. |
 | Attachments storage (`attachments/`) | Low | Directory created in layout docs but not yet used. Will store pasted files, images, diffs. |

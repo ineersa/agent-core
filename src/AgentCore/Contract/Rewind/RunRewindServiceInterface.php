@@ -8,6 +8,15 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 
 interface RunRewindServiceInterface
 {
-    /** @return array{rebuiltState: RunState, leafSetSeq: int} */
+    /**
+     * Position history for selected user prompt turn (non-destructive).
+     *
+     * @return array{
+     *     rebuiltState: RunState,
+     *     leafSetSeq: int,
+     *     selectedPromptTurnNo?: int,
+     *     editorPromptText?: string
+     * }
+     */
     public function rewind(string $runId, int $targetTurnNo): array;
 }

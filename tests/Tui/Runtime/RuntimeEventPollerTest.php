@@ -830,12 +830,12 @@ final class RuntimeEventPollerTest extends TestCase
     }
 
     /**
-     * C1: Malformed RunLeafChanged (missing/zero turn_no) must clear the transcript
+     * C1: Malformed RunLeafChanged (missing turn_no) must clear the transcript
      * and log a structured warning, not silently leave stale abandoned-branch blocks.
      */
     public function testPollHandlesMalformedRunLeafChanged(): void
     {
-        // Thesis: a RunLeafChanged with missing/0 turn_no is malformed; the poller
+        // Thesis: a RunLeafChanged with missing turn_no is malformed; the poller
         // must clear the transcript, log a structured warning, and continue without
         // crashing rather than leaving stale abandoned-branch blocks.
 

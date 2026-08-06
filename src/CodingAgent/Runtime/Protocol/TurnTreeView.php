@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Protocol;
 
 /**
- * AgentCore-free view of a session turn tree for TUI presentation.
+ * AgentCore-free view of a session linear history for TUI presentation.
  *
  * Mirrors {@see \Ineersa\CodingAgent\Session\TurnTree\TurnTreeDTO} but lives in
  * Runtime/Protocol so the TUI layer never imports AgentCore types.
@@ -15,9 +15,9 @@ namespace Ineersa\CodingAgent\Runtime\Protocol;
 final readonly class TurnTreeView
 {
     /**
-     * @param array<int, TurnTreeNodeView> $nodesByTurnNo     Turn number → node map
-     * @param list<int>                    $rootTurnNos       Turn numbers with no parent
-     * @param list<int>                    $activePathTurnNos Root-to-leaf path
+     * @param array<int, TurnTreeNodeView> $nodesByTurnNo     Active turns only
+     * @param list<int>                    $rootTurnNos       First active turn
+     * @param list<int>                    $activePathTurnNos Full active linear order
      */
     public function __construct(
         public string $runId,

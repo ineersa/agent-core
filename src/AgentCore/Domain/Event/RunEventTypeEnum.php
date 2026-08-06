@@ -44,7 +44,11 @@ enum RunEventTypeEnum: string
     case ContextCompactionStarted = 'context_compaction_started';
     case ContextCompacted = 'context_compacted';
     case ContextCompactionFailed = 'context_compaction_failed';
-    // ── Turn tree metadata (append-only canonical) ───────────────────────
+    // ── Linear history metadata (append-only canonical) ───────────────────
+    /** @deprecated Tree branching removed; retained only for audit of old streams. */
     case TurnBranched = 'turn_branched';
+    /** Current selected retained turn (tip / undo cursor). */
     case LeafSet = 'leaf_set';
+    /** Abandons every active turn after after_turn_no; bytes remain audit-only. */
+    case HistoryTailDiscarded = 'history_tail_discarded';
 }

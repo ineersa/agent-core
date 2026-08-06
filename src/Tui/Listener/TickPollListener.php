@@ -128,6 +128,12 @@ final class TickPollListener implements TuiListenerRegistrar
                 $screen->applyTranscriptChangeSet($transcriptChanges);
             }
 
+            // /history selection: populate editor with the selected user prompt once.
+            if (null !== $state->pendingEditorPromptText) {
+                $screen->promptEditor()->replaceText($state->pendingEditorPromptText);
+                $state->pendingEditorPromptText = null;
+            }
+
             // The pending-queue widget (slot 4, above the editor) reflects transient
             // queued steer/follow-up messages. Sync every tick regardless of transcript
             // changes, since a user.message_queued event mutates state without a block.

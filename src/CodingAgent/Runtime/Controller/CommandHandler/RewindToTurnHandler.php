@@ -15,11 +15,11 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 /**
  * Handles rewind_to_turn JSONL commands from the parent TUI process.
  *
- * When the TUI user selects a turn in the /tree picker, the parent sends a
- * rewind_to_turn JSONL command with the target turn number. This handler:
+ * When the TUI user selects a user prompt in /history, the parent sends a
+ * rewind_to_turn JSONL command with the selected prompt turn number. This handler:
  *  - Validates the command
- *  - Delegates to RunRewindServiceInterface (acquires lock, appends LeafSet, rebuilds, persists)
- *  - Emits a RunLeafChanged RuntimeEvent so the TUI observes the leaf change
+ *  - Delegates to RunRewindServiceInterface (lock, leaf_set before prompt, rebuild, persist)
+ *  - Emits a RunLeafChanged RuntimeEvent with editor prompt text for the TUI
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class RewindToTurnHandler
@@ -70,12 +70,21 @@ final readonly class RewindToTurnHandler
             /** @var \Ineersa\AgentCore\Domain\Run\RunState $rebuiltState */
             $rebuiltState = $result['rebuiltState'];
             $leafSetSeq = $result['leafSetSeq'];
+            $selectedPromptTurnNo = (int) ($result['selectedPromptTurnNo'] ?? $targetTurnNo);
+            $editorPromptText = (string) ($result['editorPromptText'] ?? '');
 
-            $event->emit(RunLeafChangedEventFactory::create($runId, $leafSetSeq, $targetTurnNo));
+            $event->emit(RunLeafChangedEventFactory::create(
+                $runId,
+                $leafSetSeq,
+                $rebuiltState->turnNo,
+                $selectedPromptTurnNo,
+                $editorPromptText,
+            ));
 
             $this->logger->info('rewind_handler.completed', [
                 'run_id' => $runId,
-                'target_turn_no' => $targetTurnNo,
+                'selected_prompt_turn_no' => $selectedPromptTurnNo,
+                'retained_boundary_turn_no' => $rebuiltState->turnNo,
                 'leaf_set_seq' => $leafSetSeq,
             ]);
         } catch (\Throwable $e) {

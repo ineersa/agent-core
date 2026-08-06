@@ -10,11 +10,11 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Minimal tmux proof for the /tree rewindable turn tree picker.
+ * Minimal tmux proof for the /history linear user-prompt picker.
  *
- * Tests that typing /tree in a session with at least one turn opens
- * the picker overlay showing the turn tree with a rewindable entry,
- * and that Escape closes the picker without mutating session state.
+ * Selecting user prompt N positions context immediately before N and
+ * fills the editor with N's original text. Forward history remains until
+ * a later context-mutating action discards it.
  *
  * @group tui-e2e-replay
  */
@@ -46,14 +46,14 @@ final class TuiTreeCommandE2eTest extends TestCase
         }
     }
 
-    public function testTreeEnterRewindsTranscriptToEarlierTurn(): void
+    public function testHistorySelectPositionsBeforeSelectedPrompt(): void
     {
         $pane = $this->tmux->startDetached(
             command: $this->agentCommandForFixtureChain(
                 'tui-tree-rewind-turn1-07c.json',
                 'tui-tree-rewind-turn2-07c.json',
             ),
-            prefix: 'tui-tree-rewind-07c',
+            prefix: 'tui-history-select-07c',
             width: 120,
             height: 60,
             cwd: $this->testProjectDir,
@@ -71,41 +71,35 @@ final class TuiTreeCommandE2eTest extends TestCase
             $this->waitAssistantBlock($pane);
             $this->tmux->waitForCaptureContains($pane, 'SECOND_TURN_REPLY_07C', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL);
 
-            // Direct bang commands are canonical transcript content. The unique
-            // marker plus idle status prove the bang completed (user line, shell
-            // output, and terminal tool events settled) before rewind; both must
-            // be absent afterwards. Prompt editor history is intentionally out of
-            // scope for this proof.
+            // Bang is transcript content after turn 2. After selecting the second
+            // user prompt, context is rebuilt before that prompt so bang + second
+            // turn leave the transcript while first turn remains.
             $this->submitPrompt($pane, '!printf BANG_REWIND_07C');
             $this->tmux->waitForCaptureContains($pane, 'BANG_REWIND_07C', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL);
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '● idle'),
                 timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-                message: 'Direct bang command never reached idle after BANG_REWIND_07C (tool events may still be in flight before rewind)',
+                message: 'Direct bang command never reached idle after BANG_REWIND_07C (tool events may still be in flight before history select)',
                 history: 2000,
             );
 
-            $this->runSlashCommand($pane, '/tree');
+            $this->runSlashCommand($pane, '/history');
             $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Session turn tree') && str_contains($cap, 'rewind'),
+                static fn (string $cap): bool => str_contains($cap, 'Session history — Enter to edit prompt'),
                 timeout: 10.0,
-                message: 'Tree picker overlay did not open',
+                message: 'History picker overlay did not open',
                 history: 2000,
             );
 
-            // Open on the shell child. The first Up selects the preceding
-            // conversational turn; the second selects the first conversation
-            // turn that this proof rewinds to.
-            $this->tmux->sendKey($pane, 'Up');
-            $this->tmux->sendKey($pane, 'Up');
-
+            // User-prompt rows only. With tip after the shell turn, initial selection
+            // is the last user prompt (second-turn). Confirm without navigation.
             $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'first-turn-marker-07c'),
+                static fn (string $cap): bool => str_contains($cap, 'second-turn-marker-07c'),
                 timeout: 5.0,
-                message: 'Tree picker selection should highlight the first-turn row',
+                message: 'History picker should list the second-turn user prompt',
                 history: 2000,
             );
 
@@ -114,9 +108,9 @@ final class TuiTreeCommandE2eTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '● idle')
-                    && !str_contains($cap, 'Session turn tree'),
+                    && !str_contains($cap, 'Session history — Enter to edit prompt'),
                 timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-                message: 'Tree picker did not close after Enter rewind',
+                message: 'History picker did not close after Enter',
                 history: 2000,
             );
 
@@ -124,30 +118,30 @@ final class TuiTreeCommandE2eTest extends TestCase
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, 'first-turn-marker-07c')
                     && str_contains($cap, 'FIRST_TURN_REPLY_07C')
-                    && !str_contains($cap, 'second-turn-marker-07c')
-                    && !str_contains($cap, 'SECOND_TURN_REPLY_07C'),
+                    && !str_contains($cap, 'SECOND_TURN_REPLY_07C')
+                    && !str_contains($cap, 'BANG_REWIND_07C'),
                 timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-                message: 'Transcript did not rewind to first-turn leaf (second-turn content still visible)',
+                message: 'Transcript did not rebuild before selected second prompt',
                 history: 500,
             );
 
             $paneCapture = $this->tmux->capturePlain($pane);
             $this->assertStringContainsString('first-turn-marker-07c', $paneCapture,
-                'Rewound transcript should still show the first-turn user marker in the current pane.');
+                'Retained transcript should still show the first-turn user marker.');
             $this->assertStringContainsString('FIRST_TURN_REPLY_07C', $paneCapture,
-                'Rewound transcript should still show the first-turn assistant reply in the current pane.');
-            $this->assertStringNotContainsString('second-turn-marker-07c', $paneCapture,
-                'Abandoned second-turn user marker must disappear from the current pane after rewind.');
+                'Retained transcript should still show the first-turn assistant reply.');
+            $this->assertStringContainsString('second-turn-marker-07c', $paneCapture,
+                'Selected prompt text must be populated into the editor.');
             $this->assertStringNotContainsString('SECOND_TURN_REPLY_07C', $paneCapture,
-                'Abandoned second-turn assistant reply must disappear from the current pane after rewind.');
+                'Second-turn assistant reply must leave the transcript when positioned before that prompt.');
             $this->assertStringNotContainsString('BANG_REWIND_07C', $paneCapture,
-                'Abandoned bang command and output must disappear from the current pane after rewind.');
+                'Forward shell output must leave the transcript when positioned before the selected prompt.');
 
-            $this->saveAnsiSnapshot($pane, 'tree-enter-rewind-07c');
+            $this->saveAnsiSnapshot($pane, 'history-select-before-prompt-07c');
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'tree-enter-rewind-07c-FAILURE');
+            $this->saveAnsiSnapshot($pane, 'history-select-before-prompt-07c-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {

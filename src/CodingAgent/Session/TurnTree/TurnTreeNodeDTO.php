@@ -5,27 +5,19 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session\TurnTree;
 
 /**
- * Read-only representation of a single turn node in the session turn tree.
+ * Read-only representation of a single turn in the session linear history.
  *
- * Each turn_advanced event in the canonical event stream produces one node.
- * Nodes are linked via parentTurnNo / childTurnNos to form the tree.
- *
- * {@see $lastSeq} is the maximum canonical event sequence across all
- * events whose {@see RunEvent::$turnNo} belongs to this turn (including
- * turn_advanced, leaf_set, turn_branched, message, and tool events).
- * Abandoned sibling turns do not claim sequences from later active
- * branches. The canonical stream's overall last sequence is tracked
- * separately by {@see RunState} after replay.
+ * Each turn_advanced event that remains active produces one node.
+ * parentTurnNo / childTurnNos form a pure linear previous/next chain
+ * (not a branch tree).
  */
 final readonly class TurnTreeNodeDTO
 {
     /**
-     * @param list<int> $childTurnNos
-     * @param int       $lastSeq      Max canonical event sequence among all events
-     *                                scoped to this turn (grouped by RunEvent::$turnNo).
-     *                                Includes turn_advanced, leaf_set, turn_branched,
-     *                                message, and tool events belonging to this turn.
-     *                                Abandoned sibling branches do not contribute.
+     * @param list<int> $childTurnNos   Linear next turn only (0 or 1 entry)
+     * @param int       $lastSeq        max canonical event sequence among events
+     *                                  scoped to this turn (RunEvent::$turnNo)
+     * @param string    $fullPromptText Original user prompt text for /history editor population
      */
     public function __construct(
         public int $turnNo,
@@ -39,6 +31,7 @@ final readonly class TurnTreeNodeDTO
         public bool $isCurrentLeaf,
         public ?string $reason = null,
         public string $displayRole = 'assistant',
+        public string $fullPromptText = '',
     ) {
     }
 }

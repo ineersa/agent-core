@@ -73,9 +73,10 @@ final class RuntimeEventTranslator
             RunEventTypeEnum::ToolBatchCommitted->value => $this->drop(...),
             RunEventTypeEnum::AgentCommandQueued->value => $this->onAgentCommandQueued(...),
             RunEventTypeEnum::AgentCommandSuperseded->value => $this->drop(...),
-            // Drop (turn tree metadata — not user-visible)
+            // Drop (history metadata — not user-visible; RunLeafChanged is emitted by rewind handlers)
             RunEventTypeEnum::TurnBranched->value => $this->drop(...),
             RunEventTypeEnum::LeafSet->value => $this->drop(...),
+            RunEventTypeEnum::HistoryTailDiscarded->value => $this->drop(...),
         ];
     }
 

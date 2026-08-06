@@ -503,14 +503,22 @@ final class SessionHotPromptReplayServiceTest extends TestCase
             ],
         ]);
 
-        // Turn 2: follow-up (ABANDONED branch)
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::TurnAdvanced->value, 3, 2, [
-            'turn_no' => 2, 'parent_turn_no' => 1, 'step_id' => 's2',
+        // Turn 1 advance (missing earlier in fixture — needed for linear active list).
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::TurnAdvanced->value, 3, 1, [
+            'turn_no' => 1, 'step_id' => 's1',
         ]);
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LeafSet->value, 4, 2, [
-            'turn_no' => 2, 'parent_turn_no' => 1, 'reason' => 'continue',
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LeafSet->value, 4, 1, [
+            'turn_no' => 1, 'reason' => 'continue',
         ]);
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LlmStepCompleted->value, 5, 2, [
+
+        // Turn 2: follow-up (later discarded)
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::TurnAdvanced->value, 5, 2, [
+            'turn_no' => 2, 'step_id' => 's2',
+        ]);
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LeafSet->value, 6, 2, [
+            'turn_no' => 2, 'reason' => 'continue',
+        ]);
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LlmStepCompleted->value, 7, 2, [
             'step_id' => 's2',
             'stop_reason' => 'end_turn',
             'usage' => ['input_tokens' => 5, 'output_tokens' => 5],
@@ -522,17 +530,20 @@ final class SessionHotPromptReplayServiceTest extends TestCase
             ],
         ]);
 
-        // Rewind to turn 1, branch turn 3 (ACTIVE)
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LeafSet->value, 6, 1, [
-            'turn_no' => 1, 'reason' => 'rewind',
+        // Select tip 1 then discard forward tail; new turn 3 is active.
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LeafSet->value, 8, 1, [
+            'turn_no' => 1, 'reason' => 'history_select',
         ]);
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::TurnAdvanced->value, 7, 3, [
-            'turn_no' => 3, 'parent_turn_no' => 1, 'step_id' => 's3',
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::HistoryTailDiscarded->value, 9, 1, [
+            'after_turn_no' => 1, 'reason' => 'mutate_behind_tip',
         ]);
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LeafSet->value, 8, 3, [
-            'turn_no' => 3, 'parent_turn_no' => 1, 'reason' => 'continue',
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::TurnAdvanced->value, 10, 3, [
+            'turn_no' => 3, 'step_id' => 's3',
         ]);
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LlmStepCompleted->value, 9, 3, [
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LeafSet->value, 11, 3, [
+            'turn_no' => 3, 'reason' => 'continue',
+        ]);
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LlmStepCompleted->value, 12, 3, [
             'step_id' => 's3',
             'stop_reason' => 'end_turn',
             'usage' => ['input_tokens' => 5, 'output_tokens' => 3],
@@ -547,8 +558,8 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
         // Integrity must describe the full canonical stream.
-        $this->assertSame(9, $rebuiltState->eventCount);
-        $this->assertSame(9, $rebuiltState->lastSeq);
+        $this->assertSame(12, $rebuiltState->eventCount);
+        $this->assertSame(12, $rebuiltState->lastSeq);
         $this->assertTrue($rebuiltState->isContiguous, 'Full canonical stream is contiguous');
 
         // Messages must only contain active-branch messages.

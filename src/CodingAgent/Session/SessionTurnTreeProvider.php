@@ -11,10 +11,10 @@ use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 
 /**
- * Session-backed TurnTreeProviderInterface.
+ * Session-backed TurnTreeProviderInterface (linear active history).
  *
- * Reads canonical events.jsonl via SessionRunEventStore, projects the turn
- * tree via TurnTreeProjector, and maps to AgentCore-free Protocol DTOs.
+ * Reads canonical events.jsonl via SessionRunEventStore, projects active
+ * linear history via TurnTreeProjector, and maps to Protocol DTOs.
  *
  * Rebuilds on every call — no caching.
  */
@@ -43,6 +43,7 @@ final readonly class SessionTurnTreeProvider implements TurnTreeProviderInterfac
                 createdAt: $node->createdAt,
                 isCurrentLeaf: $node->isCurrentLeaf,
                 displayRole: $node->displayRole,
+                fullPromptText: $node->fullPromptText,
             );
         }
 

@@ -37,9 +37,9 @@ final class SessionTurnTreeProviderTest extends TestCase
                     ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]],
                 ]],
             ]),
-            $this->turnAdvanced(2, 1, null),
+            $this->turnAdvanced(2, 1),
             $this->runEvent('llm_step_completed', 3, 1, ['text' => 'Response']),
-            $this->turnAdvanced(4, 2, 1),
+            $this->turnAdvanced(4, 2),
             $this->runEvent('llm_step_completed', 5, 2, ['text' => 'Response 2']),
         ];
 
@@ -65,53 +65,42 @@ final class SessionTurnTreeProviderTest extends TestCase
         $this->assertSame(4, $turn2->anchorSeq);
     }
 
-    public function testForSessionMapsBranchedStreamCorrectly(): void
+    /**
+     * Thesis: without history_tail_discarded, abandoned forward turns would remain
+     * active after a mutate-behind-tip path; projection must drop turns after after_turn_no.
+     */
+    public function testForSessionAppliesHistoryTailDiscard(): void
     {
-        // Linear turn 1, branch to turn 2, rewind to turn 1, branch to turn 3
         $events = [
             $this->runEvent('run_started', 1, 0, ['payload' => ['messages' => []]]),
-            $this->turnAdvanced(2, 1, null),
-            $this->leafSetEvent(3, 1, null, null, 'continue'),
+            $this->turnAdvanced(2, 1),
+            $this->leafSet(3, 1, null, 'continue'),
             $this->runEvent('llm_step_completed', 4, 1, ['text' => 'Answer A']),
-            // Turn 2: branch from turn 1
-            $this->turnAdvanced(5, 2, 1),
-            $this->leafSetEvent(6, 2, 1, 1, 'continue'),
+            $this->turnAdvanced(5, 2),
+            $this->leafSet(6, 2, 1, 'continue'),
             $this->runEvent('llm_step_completed', 7, 2, ['text' => 'Answer B']),
-            // Rewind to turn 1
-            $this->leafSetEvent(8, 1, 2, null, 'rewind'),
-            // Turn 3: new branch from turn 1
-            $this->turnAdvanced(9, 3, 1),
-            $this->leafSetEvent(10, 3, 1, 1, 'continue'),
-            $this->runEvent('llm_step_completed', 11, 3, ['text' => 'Answer C']),
+            // Select before turn 2 then discard forward tail (after turn 1).
+            $this->leafSet(8, 1, 2, 'history_select'),
+            $this->historyTailDiscarded(9, 1),
+            $this->turnAdvanced(10, 3),
+            $this->leafSet(11, 3, 1, 'continue'),
+            $this->runEvent('llm_step_completed', 12, 3, ['text' => 'Answer C']),
         ];
 
         $provider = $this->createProvider($events);
         $tree = $provider->forSession($this->runId);
 
-        $this->assertCount(3, $tree->nodesByTurnNo);
-        $this->assertSame([1], $tree->rootTurnNos);
-        $this->assertSame(3, $tree->currentLeafTurnNo);
+        $this->assertCount(2, $tree->nodesByTurnNo);
         $this->assertSame([1, 3], $tree->activePathTurnNos);
+        $this->assertSame(3, $tree->currentLeafTurnNo);
+        $this->assertArrayNotHasKey(2, $tree->nodesByTurnNo);
 
         $turn1 = $tree->nodesByTurnNo[1];
-        $this->assertNull($turn1->parentTurnNo);
-        $this->assertSame([2, 3], $turn1->childTurnNos);
-        $this->assertFalse($turn1->isCurrentLeaf);
-
-        $turn2 = $tree->nodesByTurnNo[2];
-        $this->assertSame(1, $turn2->parentTurnNo);
-        $this->assertFalse($turn2->isCurrentLeaf);
-
-        $turn3 = $tree->nodesByTurnNo[3];
-        $this->assertSame(1, $turn3->parentTurnNo);
-        $this->assertTrue($turn3->isCurrentLeaf);
+        $this->assertSame([3], $turn1->childTurnNos);
+        $this->assertSame(1, $tree->nodesByTurnNo[3]->parentTurnNo);
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
-
     /**
-     * Create a provider with a stub SessionRunEventStore returning the given events.
-     *
      * @param list<RunEvent> $events
      */
     private function createProvider(array $events): SessionTurnTreeProvider
@@ -119,9 +108,7 @@ final class SessionTurnTreeProviderTest extends TestCase
         $store = $this->createStub(EventStoreInterface::class);
         $store->method('allFor')->willReturn($events);
 
-        $projector = new TurnTreeProjector();
-
-        return new SessionTurnTreeProvider($store, $projector);
+        return new SessionTurnTreeProvider($store, new TurnTreeProjector());
     }
 
     /**
@@ -138,30 +125,22 @@ final class SessionTurnTreeProviderTest extends TestCase
         );
     }
 
-    private function turnAdvanced(int $seq, int $turnNo, ?int $parentTurnNo): RunEvent
+    private function turnAdvanced(int $seq, int $turnNo): RunEvent
     {
-        $payload = ['turn_no' => $turnNo, 'step_id' => 'step-'.$turnNo];
-        if (null !== $parentTurnNo) {
-            $payload['parent_turn_no'] = $parentTurnNo;
-        }
-
         return new RunEvent(
             runId: $this->runId,
             seq: $seq,
             turnNo: $turnNo,
             type: RunEventTypeEnum::TurnAdvanced->value,
-            payload: $payload,
+            payload: ['turn_no' => $turnNo, 'step_id' => 'step-'.$turnNo],
         );
     }
 
-    private function leafSetEvent(int $seq, int $turnNo, ?int $previousTurnNo, ?int $parentTurnNo, string $reason): RunEvent
+    private function leafSet(int $seq, int $turnNo, ?int $previousTurnNo, string $reason): RunEvent
     {
         $payload = ['turn_no' => $turnNo, 'reason' => $reason];
         if (null !== $previousTurnNo) {
             $payload['previous_turn_no'] = $previousTurnNo;
-        }
-        if (null !== $parentTurnNo) {
-            $payload['parent_turn_no'] = $parentTurnNo;
         }
 
         return new RunEvent(
@@ -170,6 +149,17 @@ final class SessionTurnTreeProviderTest extends TestCase
             turnNo: $turnNo,
             type: RunEventTypeEnum::LeafSet->value,
             payload: $payload,
+        );
+    }
+
+    private function historyTailDiscarded(int $seq, int $afterTurnNo): RunEvent
+    {
+        return new RunEvent(
+            runId: $this->runId,
+            seq: $seq,
+            turnNo: $afterTurnNo,
+            type: RunEventTypeEnum::HistoryTailDiscarded->value,
+            payload: ['after_turn_no' => $afterTurnNo, 'reason' => 'mutate_behind_tip'],
         );
     }
 }

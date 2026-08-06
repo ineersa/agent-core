@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
 use Ineersa\AgentCore\Contract\IdempotencyStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
@@ -54,6 +55,7 @@ final readonly class RunMessageProcessor
         iterable $handlers,
         private LoggerInterface $logger,
         private ?RunStateRebuilderInterface $runStateRebuilder = null,
+        private ?HistoryTailDiscardInterface $historyTailDiscard = null,
     ) {
         $this->handlers = [...$handlers];
     }
@@ -130,6 +132,31 @@ final readonly class RunMessageProcessor
                     ]);
 
                     throw $replayException;
+                }
+            }
+
+            // Context-mutating actions behind tip discard the forward tail first
+            // (shared choke point — not scattered per-handler guards).
+            if (null !== $this->historyTailDiscard && $this->historyTailDiscard->isContextMutatingMessage($message)) {
+                $discardResult = $this->historyTailDiscard->discardForwardTailIfNeeded($runId, $state);
+                if ($discardResult['discarded'] && $discardResult['lastSeq'] > $state->lastSeq) {
+                    $state = new RunState(
+                        runId: $state->runId,
+                        status: $state->status,
+                        version: $state->version,
+                        turnNo: $state->turnNo,
+                        lastSeq: $discardResult['lastSeq'],
+                        isStreaming: $state->isStreaming,
+                        streamingMessage: $state->streamingMessage,
+                        pendingToolCalls: $state->pendingToolCalls,
+                        errorMessage: $state->errorMessage,
+                        messages: $state->messages,
+                        activeStepId: $state->activeStepId,
+                        retryableFailure: $state->retryableFailure,
+                        retryAttempts: $state->retryAttempts,
+                        pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                        model: $state->model,
+                    );
                 }
             }
 

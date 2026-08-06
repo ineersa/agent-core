@@ -854,8 +854,17 @@ final class SessionRunStateReplayServiceTest extends TestCase
             ],
         ]);
 
-        // Turn 3: new user message branching from turn 1 (ACTIVE branch)
-        $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandApplied->value, 9, 1, [
+        // Select tip 1, discard forward tail (turn 2), then continue as turn 3.
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 9, 1, [
+            'turn_no' => 1,
+            'previous_turn_no' => 2,
+            'reason' => 'history_select',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryTailDiscarded->value, 10, 1, [
+            'after_turn_no' => 1,
+            'reason' => 'mutate_behind_tip',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandApplied->value, 11, 1, [
             'kind' => 'steer',
             'idempotency_key' => 'steer-3',
             'message' => [
@@ -864,24 +873,16 @@ final class SessionRunStateReplayServiceTest extends TestCase
                 'is_error' => false,
             ],
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 10, 1, [
-            'turn_no' => 1,
-            'parent_turn_no' => null,
-            'previous_turn_no' => 2,
-            'reason' => 'rewind',
-        ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 11, 3, [
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 12, 3, [
             'turn_no' => 3,
-            'parent_turn_no' => 1,
             'step_id' => 'step-3',
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 12, 3, [
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 13, 3, [
             'turn_no' => 3,
-            'parent_turn_no' => 1,
             'previous_turn_no' => 1,
             'reason' => 'continue',
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 13, 3, [
+        $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 14, 3, [
             'assistant_message' => [
                 'role' => 'assistant',
                 'content' => [['type' => 'text', 'text' => 'ACTIVE Rust code here...']],
@@ -911,9 +912,9 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertContains('ACTIVE Rust code here...', $assistantTexts, 'Turn 3 assistant must be present');
         $this->assertNotContains('ABANDONED Python code here...', $assistantTexts, 'Turn 2 assistant must be excluded');
 
-        // lastSeq must be the full canonical max (13), not the last filtered event.
-        $this->assertSame(13, $result->rebuiltState->lastSeq);
-        $this->assertSame(3, $result->rebuiltState->turnNo, 'Turn number should be 3 (current leaf)');
+        // lastSeq must be the full canonical max (14), not the last filtered event.
+        $this->assertSame(14, $result->rebuiltState->lastSeq);
+        $this->assertSame(3, $result->rebuiltState->turnNo, 'Turn number should be 3 (current tip)');
     }
 
     public function testBranchReplayThrowsNoExceptionDespiteFilteredGaps(): void

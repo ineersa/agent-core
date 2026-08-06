@@ -131,7 +131,6 @@ final class ApplyShellCommandHandlerTest extends TestCase
 
         if (\count($expectedEventTypes) > 1) {
             $this->assertSame($expectedOwningTurn, $result->events[1]->payload['turn_no'] ?? null);
-            $this->assertSame($turnNo, $result->events[1]->payload['parent_turn_no'] ?? null);
             $this->assertSame($expectedOwningTurn, $result->events[2]->payload['turn_no'] ?? null);
             $this->assertSame('shell_command', $result->events[2]->payload['reason'] ?? null);
         }

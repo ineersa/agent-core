@@ -9,15 +9,13 @@ use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
-use Ineersa\AgentCore\Contract\TurnTree\TurnTreeNodeSnapshotDTO;
-use Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface;
-use Ineersa\AgentCore\Contract\TurnTree\TurnTreeSnapshotDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\CodingAgent\Session\Rewind\SessionRewindService;
+use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -29,8 +27,11 @@ final class SessionRewindServiceDuplicateSequenceTest extends TestCase
     {
         $runId = 'run-dup-seq';
         $events = [
-            new RunEvent($runId, 1, 1, RunEventTypeEnum::RunStarted->value, ['step_id' => 's1']),
-            new RunEvent($runId, 1, 1, 'user.message', ['text' => 'hi']),
+            new RunEvent($runId, 1, 0, RunEventTypeEnum::RunStarted->value, ['step_id' => 's1']),
+            new RunEvent($runId, 1, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]),
+            new RunEvent($runId, 2, 1, RunEventTypeEnum::LeafSet->value, ['turn_no' => 1]),
+            // Duplicate seq 2 forces typed replay failure after target validation.
+            new RunEvent($runId, 2, 1, 'user.message', ['text' => 'hi']),
         ];
 
         $eventStore = new class($events) implements EventStoreInterface {
@@ -54,15 +55,6 @@ final class SessionRewindServiceDuplicateSequenceTest extends TestCase
             }
         };
 
-        $tree = new TurnTreeSnapshotDTO(
-            runId: $runId,
-            nodesByTurnNo: [1 => new TurnTreeNodeSnapshotDTO(turnNo: 1, parentTurnNo: null)],
-            currentLeafTurnNo: 1,
-        );
-
-        $turnTreeProjector = $this->createStub(TurnTreeProjectorInterface::class);
-        $turnTreeProjector->method('build')->willReturn($tree);
-
         $runStore = new InMemoryRunStore();
         $runStore->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 1, model: 'test-model'), 0);
 
@@ -75,7 +67,7 @@ final class SessionRewindServiceDuplicateSequenceTest extends TestCase
             runStore: $runStore,
             lockManager: new RunLockManager(new LockFactory(new FlockStore(sys_get_temp_dir()))),
             logger: new NullLogger(),
-            turnTreeProjector: $turnTreeProjector,
+            sessionProjector: new TurnTreeProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
         );
 

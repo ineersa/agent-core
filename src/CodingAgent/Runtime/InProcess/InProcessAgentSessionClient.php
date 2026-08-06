@@ -338,12 +338,15 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $targetTurnNo = (int) ($command->payload['turn_no'] ?? 0);
 
         $result = $this->runRewindService->rewind($runId, $targetTurnNo);
+        $rebuiltState = $result['rebuiltState'];
 
         if ($this->transientSink instanceof InMemoryRuntimeEventSink) {
             $this->transientSink->emit(RunLeafChangedEventFactory::create(
                 $runId,
                 $result['leafSetSeq'],
-                $targetTurnNo,
+                $rebuiltState->turnNo,
+                (int) ($result['selectedPromptTurnNo'] ?? $targetTurnNo),
+                (string) ($result['editorPromptText'] ?? ''),
             ));
         }
     }
