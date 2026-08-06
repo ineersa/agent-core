@@ -8,6 +8,7 @@ tools:
   - mcp:websearch_open
   - mcp:websearch_find
 model: deepseek/deepseek-v4-flash
+parallelAllowed: false
 ---
 
 You are a specialized WEB-Research agent. 

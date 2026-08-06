@@ -117,12 +117,24 @@ final class AgentsInitCommandTest extends TestCase
     public function bundledDefinitionsAreParserValid(): void
     {
         $parser = $this->createParser();
-        foreach (['scout', 'reviewer', 'researcher', 'architect', 'browser'] as $name) {
+        $expectedParallelAllowed = [
+            'scout' => true,
+            'reviewer' => true,
+            'researcher' => false,
+            'architect' => true,
+            'browser' => false,
+        ];
+        foreach ($expectedParallelAllowed as $name => $parallelAllowed) {
             $path = $this->sourceDir.'/'.$name.'.md';
             $dto = $parser->parseFile($path);
             $this->assertSame($name, $dto->name);
             $this->assertNotSame('', $dto->description);
             $this->assertNotSame('', trim($dto->instructions));
+            $this->assertSame(
+                $parallelAllowed,
+                $dto->parallelAllowed,
+                sprintf('bundled agent "%s" parallelAllowed mismatch', $name),
+            );
         }
     }
 
