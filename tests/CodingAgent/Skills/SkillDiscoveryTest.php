@@ -81,12 +81,38 @@ final class SkillDiscoveryTest extends TestCase
 
         $skills = $discovery->discover();
 
-        // Both should be discovered... no wait, same name, different paths.
-        // First discovered wins. Since auto-discovery scans cwd/.hatfield first,
-        // then cwd/.agents, .hatfield wins.
+        // First-discovered wins. Auto order scans project .hatfield before
+        // project .agents, so .hatfield wins.
         $this->assertCount(1, $skills);
         $this->assertSame('myskill', $skills[0]->name);
         $this->assertStringContainsString('.hatfield', $skills[0]->skillDirectory);
+    }
+
+    public function testUserHatfieldOverridesProjectAgentsSkillsWithCollision(): void
+    {
+        // Cross-middle: project generic .agents/skills vs user Hatfield-specific.
+        $homeDir = $this->tmpDir.'/home';
+        $projectSkillDir = $this->tmpDir.'/.agents/skills/collide';
+        $userHatfieldSkillDir = $homeDir.'/.hatfield/skills/collide';
+
+        mkdir($projectSkillDir, 0777, true);
+        file_put_contents($projectSkillDir.'/SKILL.md', "---\nname: collide\ndescription: Project-agents skill\n---\n\nProject body");
+
+        mkdir($userHatfieldSkillDir, 0777, true);
+        file_put_contents($userHatfieldSkillDir.'/SKILL.md', "---\nname: collide\ndescription: User-hatfield skill\n---\n\nUser body");
+
+        $discovery = $this->createDiscovery(cwd: $this->tmpDir, homeDir: $homeDir);
+        $skills = $discovery->discover();
+
+        $this->assertCount(1, $skills);
+        $this->assertSame('collide', $skills[0]->name);
+        $this->assertSame($userHatfieldSkillDir, $skills[0]->skillDirectory);
+
+        $collisions = $discovery->getCollisions();
+        $this->assertCount(1, $collisions);
+        $this->assertSame($userHatfieldSkillDir, $collisions[0]['winner']);
+        $this->assertSame($projectSkillDir, $collisions[0]['ignored']);
+        $this->assertSame('collide', $collisions[0]['name']);
     }
 
     public function testAdditionalPathsOverrideAutoDiscovery(): void

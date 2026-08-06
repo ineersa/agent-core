@@ -13,8 +13,8 @@ use Psr\Log\LoggerInterface;
  *
  * Discovery load order (lowest to highest — later layers override earlier):
  *   1. User agents under ~/.agents/*.md
- *   2. User agents under ~/.hatfield/agents/*.md
- *   3. Project agents under .agents/*.md
+ *   2. Project agents under .agents/*.md
+ *   3. User agents under ~/.hatfield/agents/*.md
  *   4. Project agents under .hatfield/agents/*.md
  *   5. Configured agents.paths (additional explicit paths, highest precedence)
  *
@@ -80,15 +80,7 @@ final class AgentDefinitionDiscovery
             isAutoDiscovery: true,
         );
 
-        // 2. User ~/.hatfield/agents (overrides same-scope ~/.agents)
-        $this->loadDirectory(
-            $homeDir.'/.hatfield/agents',
-            $definitionsByName,
-            $diagnostics,
-            isAutoDiscovery: true,
-        );
-
-        // 3. Project .agents
+        // 2. Project .agents (generic project overrides generic user)
         $this->loadDirectory(
             $cwd.'/.agents',
             $definitionsByName,
@@ -96,7 +88,15 @@ final class AgentDefinitionDiscovery
             isAutoDiscovery: true,
         );
 
-        // 4. Project .hatfield/agents (overrides same-scope project .agents)
+        // 3. User ~/.hatfield/agents (Hatfield-specific overrides generic scope)
+        $this->loadDirectory(
+            $homeDir.'/.hatfield/agents',
+            $definitionsByName,
+            $diagnostics,
+            isAutoDiscovery: true,
+        );
+
+        // 4. Project .hatfield/agents (highest auto-discovery precedence)
         $this->loadDirectory(
             $cwd.'/.hatfield/agents',
             $definitionsByName,
