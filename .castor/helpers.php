@@ -317,44 +317,6 @@ function qa_test_home_shell_prefix(): string
     return 'HOME='.escapeshellarg($home).' HATFIELD_QA_TEST_HOME='.escapeshellarg($home);
 }
 
-/**
- * Return the most recent modification time among all files in the given directories.
- *
- * Recurses into subdirectories, skips unreadable directories silently,
- * and returns 0.0 if no regular files are found.  Replaces the old
- * `find … | sort -rn | head -1` shell pipeline which polluted stderr
- * with SIGPIPE noise when head(1) closed the pipe.
- *
- * @param list<string> $directories absolute filesystem paths
- */
-function latest_file_mtime(array $directories): float
-{
-    $latest = 0.0;
-
-    foreach ($directories as $dir) {
-        if (!is_dir($dir) || !is_readable($dir)) {
-            continue;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS),
-        );
-
-        foreach ($iterator as $file) {
-            if (!$file->isFile()) {
-                continue;
-            }
-
-            $mtime = $file->getMTime();
-            if ($mtime > $latest) {
-                $latest = $mtime;
-            }
-        }
-    }
-
-    return $latest;
-}
-
 // ─── PHAR packaging constants ──────────────────────────────────────────
 // Centralised so output paths, staging directories, and tooling references
 // have a single source of truth.  Every function that needs the PHAR path

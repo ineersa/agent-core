@@ -8,8 +8,8 @@ namespace Ineersa\CodingAgent\Session;
  * Canonical filesystem path resolver for parent-scoped agent artifacts under session storage.
  *
  * Relative layout matches agent artifact storage ({@code artifacts/agents/<artifactId>/…}).
- * AppAgent {@see \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver} and runtime
- * {@see ChildAgentEventsPathResolver} delegate here so TUI/runtime never depend on AppAgent.
+ * Runtime {@see ChildAgentEventsPathResolver} and AppAgent stores resolve paths via this class
+ * so TUI/runtime never depend on AppAgent-specific path facades.
  *
  * Does NOT create directories — callers mkdir when writing files.
  */

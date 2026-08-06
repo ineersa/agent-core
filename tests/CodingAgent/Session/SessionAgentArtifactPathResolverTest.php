@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -17,7 +16,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Test thesis: canonical session artifact paths are the single source of truth;
- * AppAgent and runtime adapters must resolve identical absolute events paths.
+ * runtime adapters must resolve identical absolute events paths.
  */
 final class SessionAgentArtifactPathResolverTest extends TestCase
 {
@@ -49,10 +48,9 @@ final class SessionAgentArtifactPathResolverTest extends TestCase
     }
 
     #[Test]
-    public function eventsPathMatchesBetweenCanonicalAppAgentAndRuntimeAdapters(): void
+    public function eventsPathMatchesBetweenCanonicalAndRuntimeAdapters(): void
     {
         $canonical = new SessionAgentArtifactPathResolver($this->hatfieldSessionStore);
-        $appAgent = new AgentArtifactPathResolver($canonical);
         $runtime = new ChildAgentEventsPathResolver($canonical);
 
         $parent = 'parent-run-abc';
@@ -61,7 +59,6 @@ final class SessionAgentArtifactPathResolverTest extends TestCase
         $expected = $this->projectDir.'/.hatfield/sessions/'.$parent.'/artifacts/agents/'.$artifact.'/events.jsonl';
 
         $this->assertSame($expected, $canonical->eventsPath($parent, $artifact));
-        $this->assertSame($expected, $appAgent->eventsPath($parent, $artifact));
         $this->assertSame($expected, $runtime->eventsPath($parent, $artifact));
     }
 

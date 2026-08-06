@@ -978,8 +978,6 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
         'APP_DEBUG' => '0',
         'HATFIELD_CWD' => $tmp,
         'HATFIELD_BINARY_PATH' => $artifactPath,
-        // Bound llm/tool worker counts for a deterministic, smaller process set.
-        'HATFIELD_LLM_WORKER_COUNT' => '1',
     ];
     $fullEnv = [];
     foreach (getenv() as $k => $v) {

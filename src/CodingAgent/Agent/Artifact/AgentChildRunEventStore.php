@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Schema\SchemaVersion;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 
@@ -34,12 +35,12 @@ use Symfony\Component\Lock\LockFactory;
  * events for the bound agentRunId; other run IDs return an empty list.
  *
  * Path resolution and validation are delegated to
- * {@see AgentArtifactPathResolver}.
+ * {@see SessionAgentArtifactPathResolver}.
  */
 final class AgentChildRunEventStore implements EventStoreInterface
 {
     public function __construct(
-        private readonly AgentArtifactPathResolver $pathResolver,
+        private readonly SessionAgentArtifactPathResolver $pathResolver,
         private readonly EventPayloadNormalizer $eventPayloadNormalizer,
         private readonly LockFactory $lockFactory,
         private readonly LoggerInterface $logger,
@@ -245,7 +246,7 @@ final class AgentChildRunEventStore implements EventStoreInterface
     {
         $dir = \dirname($path);
         if (!is_dir($dir)) {
-            mkdir($dir, AgentArtifactPathResolver::DIR_PERMISSIONS, true);
+            mkdir($dir, SessionAgentArtifactPathResolver::DIR_PERMISSIONS, true);
         }
 
         $entry = $this->eventPayloadNormalizer->normalizeRunEvent($event);

@@ -85,12 +85,6 @@ services:
   Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface:
     alias: Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository
 
-  Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository:
-    autowire: true
-
-  Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository:
-    autowire: true
-
   Ineersa\AgentCore\Contract\IdempotencyStoreInterface:
     alias: Ineersa\CodingAgent\Session\JsonlIdempotencyStore
 
@@ -196,8 +190,6 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
-  Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig: ~
-
   # ─── Agent Definitions ───
 
   Ineersa\CodingAgent\Config\AgentsConfig:
@@ -225,8 +217,6 @@ services:
     alias: Ineersa\CodingAgent\PromptTemplate\PromptTemplateService
 
   # ─── Extension wiring ───
-
-  Ineersa\CodingAgent\Extension\ExtensionExecBridge: ~
 
   Ineersa\Tui\Extension\TuiCommandRegistryAdapter:
     arguments:
@@ -256,8 +246,6 @@ services:
       $bus: '@agent.execution.bus'
       $transportDsn: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
 
-  Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry: ~
-
   Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface:
     alias: Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge
 
@@ -266,8 +254,6 @@ services:
       $cwd: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").cwd'
       $logger: '@monolog.logger'
       $extensionAllowlistReader: '@Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface'
-
-  Ineersa\CodingAgent\Extension\ExtensionHookRegistry: ~
 
   Ineersa\CodingAgent\Extension\ExtensionAfterTurnCommitHookSubscriber:
     arguments:
@@ -281,8 +267,6 @@ services:
     arguments:
       $extensionAllowlistReader: '@Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface'
 
-  Ineersa\CodingAgent\Agent\ChildExtensionSelectionService: ~
-
   Ineersa\CodingAgent\Extension\ExtensionManager:
     arguments:
       $extensionApi: '@Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface'
@@ -290,17 +274,11 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\TuiExtensionRegistryInterface:
     alias: Ineersa\CodingAgent\Extension\ExtensionManager
 
-  Ineersa\Tui\Listener\TuiProjectExtensionRegistrar:
-    tags: ['app.tui_listener']
-
-
   # LoggingConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\LoggingConfig:
     factory: ['Ineersa\CodingAgent\Config\LoggingConfig', 'fromAppConfig']
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
-
-  Ineersa\CodingAgent\Logging\LogParser: ~
 
   Ineersa\CodingAgent\Logging\LogReader:
     arguments:
@@ -352,12 +330,6 @@ services:
     arguments:
       $promptAdapter: '@Ineersa\CodingAgent\Tool\ToolQuestion\RuntimeBashBackgroundPromptAdapter'
 
-  # Tool question store — cross-process pending tool question persistence.
-  Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStore: ~
-
-  # Runtime bash background prompt adapter — production TUI bridge.
-  Ineersa\CodingAgent\Tool\ToolQuestion\RuntimeBashBackgroundPromptAdapter: ~
-
   # Background process status checker for adapter poll loop.
   Ineersa\CodingAgent\Tool\ToolQuestion\BackgroundProcessStatusCheckerInterface:
     alias: Ineersa\CodingAgent\Tool\ToolQuestion\BackgroundProcessStatusChecker
@@ -365,9 +337,6 @@ services:
   # Autowire the tool question store interface.
   Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface:
     alias: Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStore
-
-  # Controller command handler for tool question answers.
-  Ineersa\CodingAgent\Runtime\Controller\CommandHandler\AnswerToolQuestionHandler: ~
 
   # BackgroundProcess store — uses Doctrine ORM EntityManager,
   # no custom normalizer. Schema is managed by Doctrine migrations.
@@ -492,8 +461,6 @@ services:
   Ineersa\CodingAgent\Runtime\Process\ConfigExecutableLocator:
     arguments:
       $runtimeCwd: '%app.cwd%'
-
-  Ineersa\CodingAgent\Runtime\Process\PharExecutableLocator: ~
 
   Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator:
     arguments:
@@ -656,12 +623,8 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface:
     alias: Ineersa\CodingAgent\Session\ChildRunTranscriptSnapshotProvider
 
-  Ineersa\CodingAgent\Session\ChildAgentEventsPathResolver: ~
-
   Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface:
     alias: Ineersa\CodingAgent\Session\ChildAgentEventsPathResolver
-
-  Ineersa\Tui\Export\SessionEventsExportService: ~
 
   Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface:
     alias: Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjectorContractAdapter
@@ -716,10 +679,6 @@ services:
   Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface:
     alias: Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventReader
 
-  # LLM worker uses only the immutable model carried by ExecuteLlmStep.
-  # Model resolution happens at schedule time in AdvanceRunHandler.
-  Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker: ~
-
   Ineersa\AgentCore\Contract\Model\RunModelResolverInterface:
     alias: Ineersa\CodingAgent\Compaction\ModelSelectionActiveModelResolver
 
@@ -759,8 +718,6 @@ services:
   # Autowiring resolves SessionCompactor, hooks, model selection, and PlatformInterface
   # for synchronous compactMessages; the interface alias lets AgentCore pipeline
   # code depend on the contract.
-  Ineersa\CodingAgent\Compaction\CompactionService: ~
-
   Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface:
     alias: Ineersa\CodingAgent\Compaction\CompactionService
 
@@ -775,19 +732,9 @@ services:
 
   # ─── Compaction auto-trigger (COMP-06) ───
 
-  # Active model resolver: session/default lookup for config surfaces.
-  # Execution identity is RunState.model / ExecuteLlmStep.model, not this resolver.
-  Ineersa\CodingAgent\Compaction\ModelSelectionActiveModelResolver: ~
-
-  # Provider context usage resolver — reads latest llm_step_completed usage
-  # from committed events for auto-compaction trigger policy.
-  Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver: ~
-
   # Pre-LLM guard: CodingAgent implementation of the AgentCore contract.
   # Injected into AdvanceRunHandler (AgentCore) so AgentCore can check
   # auto-compaction policy without depending on CodingAgent internals.
-  Ineersa\CodingAgent\Compaction\CodingAgentPreLlmCompactionGuard: ~
-
   Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface:
     alias: Ineersa\CodingAgent\Compaction\CodingAgentPreLlmCompactionGuard
 
@@ -821,15 +768,10 @@ services:
       $executionServiceLocator: !service_locator
         execution: '@Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService'
 
-  Ineersa\CodingAgent\Agent\Tool\SubagentToolDefinitionProvider:
-    tags: ['hatfield.tool_provider']
   Ineersa\CodingAgent\Agent\Tool\ForkToolHandler:
     arguments:
       $executionServiceLocator: !service_locator
         execution: '@Ineersa\CodingAgent\Agent\Fork\ForkExecutionService'
-
-  Ineersa\CodingAgent\Agent\Tool\ForkToolDefinitionProvider:
-    tags: ['hatfield.tool_provider']
 
   # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.
   # The inner resolver (CodingAgentToolSetResolver) is wrapped by
@@ -847,8 +789,6 @@ services:
       $catalogStore: '@Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface'
       $configLoader: '@Ineersa\CodingAgent\Mcp\Config\McpConfigLoader'
       $availability: '@Ineersa\CodingAgent\Mcp\Tool\McpServerToolAvailability'
-
-  Ineersa\CodingAgent\Mcp\Tool\McpServerToolAvailability: ~
 
   # MCP-aware wrapper: calls registrar before delegate so LLM-visible
   # tool schemas and execution allowlists include catalog-backed MCP tools.
@@ -1009,12 +949,6 @@ services:
   Ineersa\Tui\Completion\CompletionProvider:
     alias: Ineersa\Tui\Completion\CompletionProviderRegistry
 
-  # CLI command for file mention index refresh.
-  # Recurrently invoked by Symfony Scheduler via #[AsPeriodicTask].
-  # Its non-autowire-able string parameters are resolved from
-  # container parameters — no path duplication across config/code.
-  Ineersa\CodingAgent\CLI\CompletionFileIndexRefreshCommand: ~
-
   # File mention index builder — used by CompletionFileIndexRefreshCommand
   # (scheduler-only refresh owner). Not autowireable (string constructor
   # args for cwd and index path).
@@ -1045,17 +979,9 @@ services:
     arguments:
       $catalogStore: '@Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore'
 
-  ## MCP connection manager (broker-owned, one client per run/server)
-  Ineersa\CodingAgent\Mcp\Client\McpConnectionManager: ~
-
   # Alias the interface so handlers depend on the abstraction.
   Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface:
     alias: Ineersa\CodingAgent\Mcp\Client\McpConnectionManager
-  ## MCP SDK client factory
-  Ineersa\CodingAgent\Mcp\Client\McpSdkClientFactory: ~
-
-  ## MCP tool name mapper
-  Ineersa\CodingAgent\Mcp\Catalog\McpToolNameMapper: ~
 
   ## MCP session-file catalog store — needs explicit $projectCwd
   Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore:
@@ -1074,15 +1000,6 @@ services:
   Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface:
     alias: Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore
 
-  # MCP result mapper — maps raw MCP callTool results to tool output / ToolCallException.
-  Ineersa\CodingAgent\Mcp\Tool\McpResultMapper: ~
-
-  # MCP tool invoker — autowired shared runtime that owns the real invocation work.
-  Ineersa\CodingAgent\Mcp\Tool\McpToolInvoker: ~
-
-  # MCP tool handler factory — creates per-tool handler instances with static identity.
-  Ineersa\CodingAgent\Mcp\Tool\McpToolHandlerFactory: ~
-
   # MCP tool registrar — bridges session catalog into ToolRegistry dynamic tools.
   Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar:
     arguments:
@@ -1097,18 +1014,9 @@ services:
   Ineersa\CodingAgent\Mcp\Tool\McpToolHandler:
     autowire: false
 
-  # ─── AGENT-07 Subagent ExecuteToolCall routing middleware ───────────
-
-  # Stamps toolName=subagent with TransportNamesStamp(['agent']) on
-  # agent.execution.bus. Wired in messenger.yaml before MCP middleware.
-  Ineersa\CodingAgent\Agent\Messenger\SubagentExecuteToolCallRoutingMiddleware: ~
-
-  # ─── MCP-05 MCP-aware ExecuteToolCall routing middleware ────────────
-
-  # Intercepts outbound ExecuteToolCall on agent.execution.bus and stamps
-  # MCP-backed tools with TransportNamesStamp(['mcp']) before send_message
-  # routes them.  Wired in messenger.yaml as bus-level middleware.
-  Ineersa\CodingAgent\Mcp\Messenger\McpExecuteToolCallRoutingMiddleware: ~
+  # ─── AGENT-07 / MCP-05 ExecuteToolCall routing middleware ──────────
+  # SubagentExecuteToolCallRoutingMiddleware and McpExecuteToolCallRoutingMiddleware
+  # are resource-discovered and autowired; messenger.yaml wires them on agent.execution.bus.
 
   # ─── AGENT-05 Subagent execution service ──────────────────────────
 
@@ -1134,10 +1042,6 @@ services:
 
   Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface:
     alias: Ineersa\CodingAgent\Session\FileRunSequenceAllocator
-
-  Ineersa\CodingAgent\Session\FileRunSequenceAllocator: ~
-
-  Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader: ~
 
   Ineersa\CodingAgent\Session\CommittedRunEventAppender:
     arguments:

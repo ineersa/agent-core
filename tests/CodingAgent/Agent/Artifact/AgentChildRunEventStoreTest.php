@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStore;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -32,7 +31,7 @@ use Symfony\Component\Lock\Store\FlockStore;
 final class AgentChildRunEventStoreTest extends TestCase
 {
     private string $projectDir;
-    private AgentArtifactPathResolver $pathResolver;
+    private SessionAgentArtifactPathResolver $pathResolver;
 
     protected function setUp(): void
     {
@@ -50,7 +49,7 @@ final class AgentChildRunEventStoreTest extends TestCase
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
-        $this->pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($hatfieldSessionStore));
+        $this->pathResolver = new SessionAgentArtifactPathResolver($hatfieldSessionStore);
     }
 
     protected function tearDown(): void

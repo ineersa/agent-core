@@ -142,7 +142,7 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
 
         $this->assertStringContainsString('read', $collapsed);
         // Path may wrap across terminal columns in VirtualTerminal output.
-        $this->assertStringContainsString('docs/unrelated', $collapsed);
+        $this->assertStringContainsString('docs/unrelated', str_replace("\n", '', $collapsed));
         $this->assertStringContainsString('SKILL.md', $collapsed);
         $this->assertStringContainsString('path:', $collapsed);
         $this->assertStringNotContainsString('[skill] unrelated', $collapsed);

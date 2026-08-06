@@ -47,9 +47,6 @@ final class FileRewindPickerController
         if ($this->overlay?->isOpen() ?? false) {
             return;
         }
-        if (null === $this->tui) {
-            return;
-        }
         if (!$this->service->isEnabled()) {
             $this->tui->setStatus('rewind', 'File rewind is disabled.');
             $this->tui->requestRender();

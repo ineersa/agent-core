@@ -11,7 +11,6 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\PlatformInvocationMetadata;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
@@ -236,7 +235,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         $childRunId = '0194aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee';
         $artifactId = 'corrupt-child';
         $registry->create($sessionId, $artifactId, $childRunId, 'scout', AgentArtifactKindEnum::Subagent);
-        file_put_contents((new AgentArtifactPathResolver($pathResolver))->eventsPath($sessionId, $artifactId), "{not-json\n");
+        file_put_contents($pathResolver->eventsPath($sessionId, $artifactId), "{not-json\n");
 
         $logger = new TestLogger();
         $service = new SessionPromptCacheInspectionService(
@@ -354,7 +353,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         );
 
         return new AgentArtifactRegistry(
-            pathResolver: new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($sessionStore)),
+            pathResolver: new SessionAgentArtifactPathResolver($sessionStore),
             serializer: $serializer,
             validator: (new ValidatorBuilder())->enableAttributeMapping()->getValidator(),
             lockFactory: new LockFactory(new FlockStore()),
@@ -364,7 +363,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
     private function childEventStoreFactory(HatfieldSessionStore $sessionStore): AgentChildRunEventStoreFactory
     {
         return new AgentChildRunEventStoreFactory(
-            pathResolver: new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($sessionStore)),
+            pathResolver: new SessionAgentArtifactPathResolver($sessionStore),
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new TestLogger(),
