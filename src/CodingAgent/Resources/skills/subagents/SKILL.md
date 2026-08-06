@@ -70,8 +70,9 @@ Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<a
 
 ## Workflows
 
-1. **Define agent** — `.hatfield/agents/<name>.md` with frontmatter + instructions.
-2. **Delegate** — parent calls `subagent` with `agent`+`task` or `tasks`.
+1. **Optional starters** — `hatfield agents:init` copies bundled `scout`/`reviewer`/`researcher`/`architect`/`browser` into `~/.hatfield/agents/` (fails on collisions unless `--force`; opinionated model/MCP/skill pins).
+2. **Define agent** — `.hatfield/agents/<name>.md` with frontmatter + instructions.
+3. **Delegate** — parent calls `subagent` with `agent`+`task` or `tasks`.
 3. **Retrieve** — `agent_retrieve` with `artifact_id` and/or `agent_run_id`, optional `mode` / `limit` (1–100, default 20).
 
 ## TUI (parent)

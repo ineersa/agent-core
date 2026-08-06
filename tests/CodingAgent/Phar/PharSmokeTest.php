@@ -286,6 +286,39 @@ final class PharSmokeTest extends TestCase
         $skillBody = (string) file_get_contents('phar://'.$pharPath.'/'.$skillMd);
         $this->assertStringContainsString('name: subagents', $skillBody);
         $this->assertStringContainsString('agent_retrieve', $skillBody);
+
+        $this->assertSame(
+            $locator->getAppRoot().'/src/CodingAgent/Resources/agents',
+            $locator->getBuiltinAgentsPath(),
+        );
+        foreach (['scout', 'reviewer', 'researcher', 'architect', 'browser'] as $name) {
+            $agentEntry = 'src/CodingAgent/Resources/agents/'.$name.'.md';
+            $this->assertTrue(isset($phar[$agentEntry]), 'Missing PHAR entry '.$agentEntry);
+            $this->assertFileExists($locator->getBuiltinAgentsPath().'/'.$name.'.md');
+        }
+
+        $home = $this->createIsolatedHome();
+        $init = new Process(
+            array_merge($cmd, ['agents:init']),
+            cwd: sys_get_temp_dir(),
+            env: [
+                'HOME' => $home,
+                'APP_ENV' => 'prod',
+                'APP_DEBUG' => '0',
+                'PATH' => getenv('PATH') ?: '/usr/bin:/bin',
+            ],
+        );
+        $init->mustRun();
+        $initOut = $init->getOutput().$init->getErrorOutput();
+        $this->assertStringContainsString('Installed 5 bundled agent definition(s)', $initOut);
+        foreach (['scout', 'reviewer', 'researcher', 'architect', 'browser'] as $name) {
+            $installed = $home.'/.hatfield/agents/'.$name.'.md';
+            $this->assertFileExists($installed);
+            $this->assertFileEquals(
+                'phar://'.$pharPath.'/src/CodingAgent/Resources/agents/'.$name.'.md',
+                $installed,
+            );
+        }
     }
 
     public function testPharBundledResourcesAndProjectLocalSettingsExtension(): void

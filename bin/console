@@ -132,6 +132,7 @@ $options['help'] = new InputOption(
 $definition->setOptions($options);
 $visibleCommands = [
     'agent' => true,
+    'agents:init' => true,
     'auth:codex' => true,
     'completion:file-index:refresh' => true,
     'log:clear' => true,

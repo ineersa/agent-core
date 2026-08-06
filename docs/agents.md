@@ -108,6 +108,18 @@ For project-specific agents, add `.md` files under `.hatfield/agents/` or `.agen
 
 For personal agents available across projects, add `.md` files under `~/.hatfield/agents/` or `~/.agents/`. These can be overridden by project definitions with the same name.
 
+### Bundled starter agents
+
+Hatfield ships opinionated starter definitions under `src/CodingAgent/Resources/agents/` (`scout`, `reviewer`, `researcher`, `architect`, `browser`). Install them into the user agents directory with:
+
+```bash
+hatfield agents:init
+```
+
+- Default: if any same-named target already exists under `~/.hatfield/agents/`, the command fails before writing and lists collisions. Rerun with `--force` to overwrite only those bundled filenames.
+- `--force` never deletes unrelated user agent files or subdirectories.
+- These starters pin explicit models, MCP selectors, and external skills; they require matching providers/skills/MCP servers in the install environment.
+
 ## Settings
 
 ```yaml

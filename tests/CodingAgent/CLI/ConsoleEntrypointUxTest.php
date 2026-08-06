@@ -54,6 +54,7 @@ final class ConsoleEntrypointUxTest extends TestCase
 
         foreach ([
             'agent',
+            'agents:init',
             'auth:codex',
             'completion:file-index:refresh',
             'log:clear',
