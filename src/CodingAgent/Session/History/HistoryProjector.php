@@ -7,49 +7,91 @@ namespace Ineersa\CodingAgent\Session\History;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 
-use function Symfony\Component\String\u;
-
 /**
- * Builds ordered retained history from the canonical run event stream.
+ * Builds flat retained history from the canonical run event stream.
  *
- * Model:
- *  - turn_advanced appends a turn and moves position to that turn.
- *  - history_position_set selects 0 or a retained turn without discarding.
- *  - history_tail_discarded(after_turn_no) drops later retained turns.
- *  - Absent position marker defaults to retained tip (or null when empty).
+ * One ordered forward scan:
+ *  - RunStarted supplies the initial human prompt for the first TurnAdvanced
+ *  - Applied human follow_up/steer text is attached to the next TurnAdvanced
+ *  - append_message is excluded (generated context/reminder, not user input)
+ *  - every positive TurnAdvanced is retained (internal tool/shell/assistant included)
+ *  - history_position_set selects 0 or a retained anchor exactly
+ *  - history_tail_discarded slices retained anchors and sparse prompts
+ *  - position is an int; 0 means before first / empty (never null)
  */
 final class HistoryProjector
 {
     /**
      * @param list<RunEvent> $events
      */
-    public function build(string $runId, array $events): HistoryDTO
+    public function build(array $events): HistoryDTO
     {
         if ([] === $events) {
-            return new HistoryDTO(runId: $runId, turns: [], positionTurnNo: null);
+            return new HistoryDTO(retainedTurnNos: [], promptsByTurnNo: [], positionTurnNo: 0);
         }
 
-        $sorted = $this->sortBySeq($events);
-        $activeTurnNos = [];
-        /** @var array<int, array{anchorSeq: int, anchorIndex: int}> $turnInfo */
-        $turnInfo = [];
-        $positionTurnNo = null;
+        $sorted = $events;
+        usort($sorted, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
 
-        foreach ($sorted as $index => $event) {
+        /** @var list<int> $retainedTurnNos */
+        $retainedTurnNos = [];
+        /** @var array<int, string> $promptsByTurnNo */
+        $promptsByTurnNo = [];
+        $positionTurnNo = 0;
+        $initialPrompt = null;
+        $pendingHumanPrompt = null;
+
+        foreach ($sorted as $event) {
+            if (RunEventTypeEnum::RunStarted->value === $event->type) {
+                $text = self::extractInitialUserText($event);
+                if ('' !== $text) {
+                    $initialPrompt = $text;
+                }
+                continue;
+            }
+
+            if (RunEventTypeEnum::AgentCommandApplied->value === $event->type) {
+                $kind = \is_string($event->payload['kind'] ?? null) ? $event->payload['kind'] : null;
+                // Only honest human input seeds a selectable prompt.
+                // append_message is generated (context budget / completion) — not user history.
+                if (!\in_array($kind, ['follow_up', 'steer'], true)) {
+                    continue;
+                }
+                $text = \is_string($event->payload['text'] ?? null) ? $event->payload['text'] : '';
+                if ('' === $text) {
+                    $message = $event->payload['message'] ?? null;
+                    if (\is_array($message)) {
+                        $text = self::extractTextFromContent($message['content'] ?? []);
+                    }
+                }
+                if ('' !== $text) {
+                    // Latest applied human prompt wins when multiple precede one anchor.
+                    $pendingHumanPrompt = $text;
+                }
+                continue;
+            }
+
             if (RunEventTypeEnum::TurnAdvanced->value === $event->type) {
                 $turnNo = (int) ($event->payload['turn_no'] ?? $event->turnNo);
                 if ($turnNo <= 0) {
                     continue;
                 }
 
-                if (!\in_array($turnNo, $activeTurnNos, true)) {
-                    $activeTurnNos[] = $turnNo;
+                if (!\in_array($turnNo, $retainedTurnNos, true)) {
+                    $retainedTurnNos[] = $turnNo;
                 }
 
-                $turnInfo[$turnNo] = [
-                    'anchorSeq' => $event->seq,
-                    'anchorIndex' => $index,
-                ];
+                // Attach pending human prompt (or initial RunStarted prompt for first anchor).
+                if (null !== $pendingHumanPrompt) {
+                    $promptsByTurnNo[$turnNo] = $pendingHumanPrompt;
+                    $pendingHumanPrompt = null;
+                } elseif (null !== $initialPrompt) {
+                    // First retained anchor receives the session-start human prompt once.
+                    $promptsByTurnNo[$turnNo] = $initialPrompt;
+                }
+                // Never re-attach the session-start prompt to later internal anchors.
+                $initialPrompt = null;
+
                 $positionTurnNo = $turnNo;
                 continue;
             }
@@ -57,10 +99,10 @@ final class HistoryProjector
             if (RunEventTypeEnum::HistoryPositionSet->value === $event->type) {
                 $turnNo = (int) ($event->payload['position_turn_no'] ?? $event->turnNo);
                 if (0 === $turnNo) {
-                    $positionTurnNo = null;
+                    $positionTurnNo = 0;
                     continue;
                 }
-                if (\in_array($turnNo, $activeTurnNos, true)) {
+                if (\in_array($turnNo, $retainedTurnNos, true)) {
                     $positionTurnNo = $turnNo;
                 }
                 continue;
@@ -68,283 +110,63 @@ final class HistoryProjector
 
             if (RunEventTypeEnum::HistoryTailDiscarded->value === $event->type) {
                 $after = (int) ($event->payload['after_turn_no'] ?? 0);
-                $activeTurnNos = array_values(array_filter(
-                    $activeTurnNos,
+                $retainedTurnNos = array_values(array_filter(
+                    $retainedTurnNos,
                     static fn (int $t): bool => $t <= $after,
                 ));
-                if (0 === $after || [] === $activeTurnNos) {
-                    $positionTurnNo = null;
-                } elseif (\in_array($after, $activeTurnNos, true)) {
-                    $positionTurnNo = $after;
-                } elseif (null !== $positionTurnNo && $positionTurnNo > $after) {
-                    $positionTurnNo = $activeTurnNos[array_key_last($activeTurnNos)];
+                foreach (array_keys($promptsByTurnNo) as $promptTurn) {
+                    if (!\in_array($promptTurn, $retainedTurnNos, true)) {
+                        unset($promptsByTurnNo[$promptTurn]);
+                    }
                 }
+                $pendingHumanPrompt = null;
+                if (0 === $after || [] === $retainedTurnNos) {
+                    $positionTurnNo = 0;
+                } elseif (\in_array($after, $retainedTurnNos, true)) {
+                    $positionTurnNo = $after;
+                } elseif ($positionTurnNo > $after) {
+                    $positionTurnNo = $retainedTurnNos[array_key_last($retainedTurnNos)];
+                }
+                // Compaction events leave pending human prompt intact (not handled here).
             }
         }
 
-        if (null === $positionTurnNo && [] !== $activeTurnNos) {
-            $positionTurnNo = $activeTurnNos[array_key_last($activeTurnNos)];
-        }
-
-        $turns = [];
-        $count = \count($activeTurnNos);
-        for ($i = 0; $i < $count; ++$i) {
-            $turnNo = $activeTurnNos[$i];
-            $info = $turnInfo[$turnNo] ?? null;
-            if (null === $info) {
-                continue;
-            }
-
-            $previousTurnNo = $i > 0 ? $activeTurnNos[$i - 1] : null;
-            $displayRole = $this->classifyDisplayRole($turnNo, $info['anchorIndex'], $sorted, $previousTurnNo);
-            $rawTitle = $this->titleForTurn($turnNo, $info['anchorIndex'], $sorted, $previousTurnNo);
-            $title = $this->sanitizeTurnTitle($rawTitle);
-            if ('' === $title || preg_match('/^Turn \d+$/', $title)) {
-                $title = $this->placeholderTitleForTurn($turnNo, $displayRole);
-            }
-            $promptText = $this->fullUserPromptForTurn(
-                $turnNo,
-                $info['anchorIndex'],
-                $sorted,
-                $previousTurnNo,
-                $displayRole,
-            );
-
-            $turns[] = new HistoryTurnDTO(
-                turnNo: $turnNo,
-                title: $title,
-                displayRole: $displayRole,
-                promptText: $promptText,
-            );
-        }
-
-        // Drop position if it failed to materialize.
-        $retainedNos = array_map(static fn (HistoryTurnDTO $t): int => $t->turnNo, $turns);
-        if (null !== $positionTurnNo && !\in_array($positionTurnNo, $retainedNos, true)) {
-            $positionTurnNo = [] !== $retainedNos ? $retainedNos[array_key_last($retainedNos)] : null;
+        // Drop invalid position if it failed to materialize as a retained anchor.
+        if (0 !== $positionTurnNo && !\in_array($positionTurnNo, $retainedTurnNos, true)) {
+            $positionTurnNo = [] !== $retainedTurnNos
+                ? $retainedTurnNos[array_key_last($retainedTurnNos)]
+                : 0;
         }
 
         return new HistoryDTO(
-            runId: $runId,
-            turns: $turns,
+            retainedTurnNos: $retainedTurnNos,
+            promptsByTurnNo: $promptsByTurnNo,
             positionTurnNo: $positionTurnNo,
         );
     }
 
-    /**
-     * @param list<RunEvent> $sortedEvents
-     */
-    private function titleForTurn(int $turnNo, int $anchorIndex, array $sortedEvents, ?int $previousTurnNo): string
+    private static function extractInitialUserText(RunEvent $event): string
     {
-        $previousAnchorIndex = $this->previousAnchorIndex($previousTurnNo, $anchorIndex, $sortedEvents);
+        $innerPayload = \is_array($event->payload['payload'] ?? null) ? $event->payload['payload'] : [];
+        $nested = \is_array($innerPayload['messages'] ?? null) ? $innerPayload['messages'] : [];
+        $top = \is_array($event->payload['messages'] ?? null) ? $event->payload['messages'] : [];
 
-        for ($i = $anchorIndex - 1; $i > $previousAnchorIndex; --$i) {
-            $event = $sortedEvents[$i];
-            $text = $this->extractUserVisibleText($event);
-            if ('' !== $text) {
-                return $this->truncate($text, 80);
-            }
-        }
-
-        $anchorEvent = $sortedEvents[$anchorIndex] ?? null;
-        $stepId = \is_array($anchorEvent?->payload) && \is_string($anchorEvent->payload['step_id'] ?? null)
-            ? $anchorEvent->payload['step_id']
-            : '';
-        if (str_starts_with($stepId, 'advance-after-tools')) {
-            $text = $this->assistantTitleAfterAnchor($turnNo, $anchorIndex, $sortedEvents);
-            if ('' !== $text) {
-                return $this->truncate($text, 80);
-            }
-        }
-
-        if (null === $previousTurnNo) {
-            foreach ($sortedEvents as $event) {
-                if (RunEventTypeEnum::RunStarted->value === $event->type) {
-                    $text = $this->extractInitialUserText($event);
-                    if ('' !== $text) {
-                        return $this->truncate($text, 80);
-                    }
-                    break;
+        foreach ([$nested, $top] as $messages) {
+            foreach ($messages as $msg) {
+                if (!\is_array($msg) || 'user' !== (string) ($msg['role'] ?? '')) {
+                    continue;
                 }
-            }
-        }
-
-        return "Turn {$turnNo}";
-    }
-
-    /**
-     * @param list<RunEvent> $sortedEvents
-     */
-    private function fullUserPromptForTurn(
-        int $turnNo,
-        int $anchorIndex,
-        array $sortedEvents,
-        ?int $previousTurnNo,
-        string $displayRole,
-    ): string {
-        if ('user' !== $displayRole) {
-            return '';
-        }
-
-        $previousAnchorIndex = $this->previousAnchorIndex($previousTurnNo, $anchorIndex, $sortedEvents);
-        for ($i = $anchorIndex - 1; $i > $previousAnchorIndex; --$i) {
-            $event = $sortedEvents[$i];
-            if (RunEventTypeEnum::AgentCommandApplied->value !== $event->type) {
-                continue;
-            }
-            $kind = \is_string($event->payload['kind'] ?? null) ? $event->payload['kind'] : null;
-            if (!\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
-                continue;
-            }
-            $text = \is_string($event->payload['text'] ?? null) ? $event->payload['text'] : '';
-            if ('' === $text) {
-                $text = $this->extractTextFromMessagePayload($event->payload['message'] ?? null);
-            }
-            if ('' !== $text) {
-                return $text;
-            }
-        }
-
-        if (null === $previousTurnNo) {
-            foreach ($sortedEvents as $event) {
-                if (RunEventTypeEnum::RunStarted->value === $event->type) {
-                    return $this->extractInitialUserText($event);
-                }
-            }
-        }
-
-        return '';
-    }
-
-    /**
-     * @param list<RunEvent> $sortedEvents
-     */
-    private function previousAnchorIndex(?int $previousTurnNo, int $anchorIndex, array $sortedEvents): int
-    {
-        if (null === $previousTurnNo) {
-            return -1;
-        }
-
-        for ($i = $anchorIndex - 1; $i >= 0; --$i) {
-            $event = $sortedEvents[$i];
-            if (RunEventTypeEnum::TurnAdvanced->value !== $event->type) {
-                continue;
-            }
-            $advancedTurnNo = (int) ($event->payload['turn_no'] ?? $event->turnNo);
-            if ($advancedTurnNo === $previousTurnNo) {
-                return $i;
-            }
-        }
-
-        return -1;
-    }
-
-    /**
-     * @param list<RunEvent> $sortedEvents
-     */
-    private function assistantTitleAfterAnchor(int $turnNo, int $anchorIndex, array $sortedEvents): string
-    {
-        $limit = \count($sortedEvents);
-        for ($i = $anchorIndex + 1; $i < $limit; ++$i) {
-            $event = $sortedEvents[$i];
-            if (RunEventTypeEnum::TurnAdvanced->value === $event->type) {
-                break;
-            }
-            if (RunEventTypeEnum::LlmStepCompleted->value !== $event->type) {
-                continue;
-            }
-            if ($event->turnNo !== $turnNo) {
-                continue;
-            }
-            $payload = $event->payload;
-            $text = \is_string($payload['text'] ?? null) && '' !== $payload['text']
-                ? $payload['text']
-                : $this->extractAssistantText($payload['assistant_message'] ?? null);
-
-            if ('' !== $text) {
-                return $text;
-            }
-        }
-
-        return '';
-    }
-
-    private function extractUserVisibleText(RunEvent $event): string
-    {
-        $payload = $event->payload;
-
-        if (RunEventTypeEnum::AgentCommandApplied->value === $event->type) {
-            $kind = \is_string($payload['kind'] ?? null) ? $payload['kind'] : null;
-            if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
-                $text = \is_string($payload['text'] ?? null) ? $payload['text'] : '';
-                if ('' === $text) {
-                    $text = $this->extractTextFromMessagePayload($payload['message'] ?? null);
-                }
-
+                $text = self::extractTextFromContent($msg['content'] ?? []);
                 if ('' !== $text) {
                     return $text;
                 }
             }
         }
 
-        if (RunEventTypeEnum::LlmStepCompleted->value === $event->type) {
-            $text = \is_string($payload['text'] ?? null) && '' !== $payload['text']
-                ? $payload['text']
-                : $this->extractAssistantText($payload['assistant_message'] ?? null);
-
-            if ('' !== $text) {
-                return $text;
-            }
-        }
-
         return '';
     }
 
-    private function extractInitialUserText(RunEvent $event): string
-    {
-        $innerPayload = \is_array($event->payload['payload'] ?? null) ? $event->payload['payload'] : [];
-        $messages = \is_array($innerPayload['messages'] ?? null) ? $innerPayload['messages'] : [];
-
-        foreach ($messages as $msg) {
-            if (!\is_array($msg)) {
-                continue;
-            }
-            if ('user' !== (string) ($msg['role'] ?? '')) {
-                continue;
-            }
-            $text = $this->extractTextFromContent($msg['content'] ?? []);
-            if ('' !== $text) {
-                return $text;
-            }
-        }
-
-        $topMessages = \is_array($event->payload['messages'] ?? null) ? $event->payload['messages'] : [];
-        foreach ($topMessages as $msg) {
-            if (!\is_array($msg)) {
-                continue;
-            }
-            if ('user' !== (string) ($msg['role'] ?? '')) {
-                continue;
-            }
-            $text = $this->extractTextFromContent($msg['content'] ?? []);
-            if ('' !== $text) {
-                return $text;
-            }
-        }
-
-        return '';
-    }
-
-    private function extractTextFromMessagePayload(mixed $messagePayload): string
-    {
-        if (!\is_array($messagePayload)) {
-            return '';
-        }
-
-        return $this->extractTextFromContent($messagePayload['content'] ?? []);
-    }
-
-    private function extractTextFromContent(mixed $content): string
+    private static function extractTextFromContent(mixed $content): string
     {
         if (!\is_array($content) || [] === $content) {
             return '';
@@ -358,96 +180,5 @@ final class HistoryProjector
         }
 
         return implode('', $parts);
-    }
-
-    private function extractAssistantText(mixed $assistantMessage): string
-    {
-        return \is_array($assistantMessage)
-            ? $this->extractTextFromContent($assistantMessage['content'] ?? null)
-            : '';
-    }
-
-    private function truncate(string $text, int $maxLen): string
-    {
-        return u($text)->truncate($maxLen, '…')->toString();
-    }
-
-    private function sanitizeTurnTitle(string $title): string
-    {
-        $text = str_replace(["\r\n", "\r", "\n"], ' ', $title);
-        $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
-        $text = trim($text);
-        if ('' === $text) {
-            return '';
-        }
-
-        $text = preg_replace('/^>\s*/u', '', $text) ?? $text;
-        $text = preg_replace('/^[-*]\s+/u', '', $text) ?? $text;
-        $text = preg_replace('/^#+\s+/u', '', $text) ?? $text;
-
-        return trim($text);
-    }
-
-    /**
-     * @param list<RunEvent> $sortedEvents
-     */
-    private function classifyDisplayRole(int $turnNo, int $anchorIndex, array $sortedEvents, ?int $previousTurnNo): string
-    {
-        $anchorEvent = $sortedEvents[$anchorIndex] ?? null;
-        $stepId = \is_array($anchorEvent?->payload) && \is_string($anchorEvent->payload['step_id'] ?? null)
-            ? $anchorEvent->payload['step_id']
-            : '';
-
-        $previousAnchorIndex = $this->previousAnchorIndex($previousTurnNo, $anchorIndex, $sortedEvents);
-        for ($i = $anchorIndex - 1; $i > $previousAnchorIndex; --$i) {
-            $event = $sortedEvents[$i];
-            if (RunEventTypeEnum::AgentCommandApplied->value === $event->type) {
-                $kind = \is_string($event->payload['kind'] ?? null) ? $event->payload['kind'] : null;
-                if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
-                    return 'user';
-                }
-            }
-        }
-
-        if (str_starts_with($stepId, 'follow_up') || str_starts_with($stepId, 'steer')) {
-            return 'user';
-        }
-
-        if (null === $previousTurnNo) {
-            foreach ($sortedEvents as $event) {
-                if (RunEventTypeEnum::RunStarted->value === $event->type) {
-                    if ('' !== $this->extractInitialUserText($event)) {
-                        return 'user';
-                    }
-                    break;
-                }
-            }
-        }
-
-        if (str_starts_with($stepId, 'advance-after-tools')) {
-            return 'assistant';
-        }
-
-        return 'assistant';
-    }
-
-    private function placeholderTitleForTurn(int $turnNo, string $displayRole): string
-    {
-        return match ($displayRole) {
-            'user' => 'User message (turn '.$turnNo.')',
-            default => 'Assistant response (turn '.$turnNo.')',
-        };
-    }
-
-    /**
-     * @param list<RunEvent> $events
-     *
-     * @return list<RunEvent>
-     */
-    private function sortBySeq(array $events): array
-    {
-        usort($events, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
-
-        return $events;
     }
 }

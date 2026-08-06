@@ -154,7 +154,12 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
                 seq: 1,
                 turnNo: 0,
                 type: RunEventTypeEnum::RunStarted->value,
-                payload: [],
+                payload: [
+                    'payload' => ['messages' => [[
+                        'role' => 'user',
+                        'content' => [['type' => 'text', 'text' => 'First prompt']],
+                    ]]],
+                ],
                 createdAt: new \DateTimeImmutable('2026-06-29T00:00:00Z'),
             ),
             new RunEvent(

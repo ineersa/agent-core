@@ -39,7 +39,7 @@ final readonly class SessionHotPromptReplayService implements HotPromptStateRebu
             // Filter to retained history. Messages come from filtered events;
             // integrity describes the full canonical stream.
             $canonicalEvents = $resolvedReplayEvents->events;
-            $filteredEvents = $this->historyReplayFilter->filter($runId, $canonicalEvents)->events;
+            $filteredEvents = $this->historyReplayFilter->filter($canonicalEvents);
 
             $messages = $this->promptStateReplayService->replayMessages($filteredEvents);
             $integrity = $this->integrityFromResolvedReplayEvents($runId, $resolvedReplayEvents);

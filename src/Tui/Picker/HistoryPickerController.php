@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Picker;
 
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
-use Ineersa\CodingAgent\Runtime\Protocol\HistoryPromptView;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -22,7 +21,7 @@ use Symfony\Component\Tui\Widget\TextWidget;
 /**
  * Manages the /history picker overlay (linear user-prompt undo/redo).
  *
- * Rows are user prompts only. Selecting prompt N positions conversation context
+ * Rows are human prompts only. Selecting prompt N positions conversation context
  * immediately before N and populates the editor with N's original text.
  * Forward history remains until a context-mutating action discards it.
  */
@@ -62,7 +61,7 @@ final class HistoryPickerController
         $state = $this->state;
 
         $history = $this->historyProvider->forSession($state->sessionId);
-        if ([] === $history->turns) {
+        if ([] === $history->prompts) {
             $screen->setStatus('history', 'Session has no user prompts yet');
             $screen->refresh();
 
@@ -134,16 +133,16 @@ final class HistoryPickerController
     public static function buildItems(HistoryView $history, TuiTheme $theme): array
     {
         $items = [];
-        // SessionHistoryProvider already guarantees user-prompt rows only.
-        foreach ($history->turns as $turn) {
-            $body = PickerListLabelFormatter::sanitizeTitle($turn->title);
-            if ('' === $body || preg_match('/^Turn \d+$/', $body)) {
-                $body = 'User message (turn '.$turn->turnNo.')';
+        $tip = $history->positionTurnNo;
+        foreach ($history->prompts as $prompt) {
+            $body = PickerListLabelFormatter::sanitizeTitle($prompt->promptText);
+            if ('' === $body) {
+                $body = 'User message (turn '.$prompt->turnNo.')';
             }
-            $marker = $turn->isPosition ? '◉ ' : '○ ';
+            $marker = $prompt->turnNo === $tip ? '◉ ' : '○ ';
             $prefix = PickerListLabelFormatter::formatRolePrefix($theme, 'user');
             $items[] = [
-                'value' => (string) $turn->turnNo,
+                'value' => (string) $prompt->turnNo,
                 'label' => $marker.$prefix.' '.$body,
             ];
         }
@@ -152,37 +151,24 @@ final class HistoryPickerController
     }
 
     /**
-     * @return list<int>
-     */
-    public static function userPromptTurnNos(HistoryView $history): array
-    {
-        return array_map(
-            static fn (HistoryPromptView $turn): int => $turn->turnNo,
-            $history->turns,
-        );
-    }
-
-    /**
      * @return int<0, max>
      */
     public static function initialSelectedIndex(HistoryView $history): int
     {
-        $order = self::userPromptTurnNos($history);
-        if ([] === $order) {
+        $prompts = $history->prompts;
+        if ([] === $prompts) {
             return 0;
         }
 
+        // Prefer the first human prompt after the selected tip (tip may equal a prompt
+        // turn when sitting at its completion, or an internal predecessor).
         $tip = $history->positionTurnNo;
-        if (null === $tip) {
-            return 0;
-        }
-
-        foreach ($order as $idx => $turnNo) {
-            if ($turnNo > $tip) {
-                return max(0, $idx);
+        foreach ($prompts as $idx => $prompt) {
+            if ($prompt->turnNo > $tip) {
+                return $idx;
             }
         }
 
-        return max(0, \count($order) - 1);
+        return max(0, \count($prompts) - 1);
     }
 }

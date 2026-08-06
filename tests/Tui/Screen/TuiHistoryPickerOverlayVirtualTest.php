@@ -28,7 +28,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends TestCase
         $sessionId = 'history-overlay-session';
         $harness = new VirtualTuiHarness(sessionId: $sessionId);
         $provider = $this->createStub(HistoryProviderInterface::class);
-        $provider->method('forSession')->willReturn($this->sampleHistory($sessionId));
+        $provider->method('forSession')->willReturn($this->sampleHistory());
         $picker = new HistoryPickerController($provider, $this->createStub(TuiSessionSwitchServiceInterface::class));
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), new TuiSessionState($sessionId));
 
@@ -47,7 +47,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends TestCase
         $sessionId = 'history-remount-session';
         $harness = new VirtualTuiHarness(sessionId: $sessionId);
         $provider = $this->createStub(HistoryProviderInterface::class);
-        $provider->method('forSession')->willReturn($this->sampleHistory($sessionId));
+        $provider->method('forSession')->willReturn($this->sampleHistory());
         $picker = new HistoryPickerController($provider, $this->createStub(TuiSessionSwitchServiceInterface::class));
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), new TuiSessionState($sessionId));
 
@@ -59,14 +59,12 @@ final class TuiHistoryPickerOverlayVirtualTest extends TestCase
         $this->assertSame(1, substr_count($screen, 'hello'));
     }
 
-    private function sampleHistory(string $sessionId): HistoryView
+    private function sampleHistory(): HistoryView
     {
-        // Provider contract: user-prompt rows only.
         return new HistoryView(
-            runId: $sessionId,
-            turns: [
-                new HistoryPromptView(1, 'hello', 'user', 'hello', false),
-                new HistoryPromptView(2, 'Can you create file', 'user', 'Can you create file', true),
+            prompts: [
+                new HistoryPromptView(1, 'hello'),
+                new HistoryPromptView(2, 'Can you create file'),
             ],
             positionTurnNo: 2,
         );

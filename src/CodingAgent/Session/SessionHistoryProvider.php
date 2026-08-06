@@ -13,7 +13,7 @@ use Ineersa\CodingAgent\Session\History\HistoryProjector;
 /**
  * Session-backed HistoryProviderInterface.
  *
- * Rebuilds on every call — no caching.
+ * Rebuilds on every call — no caching. Maps sparse human prompts only.
  */
 final readonly class SessionHistoryProvider implements HistoryProviderInterface
 {
@@ -26,26 +26,18 @@ final readonly class SessionHistoryProvider implements HistoryProviderInterface
     public function forSession(string $runId): HistoryView
     {
         $events = $this->eventStore->allFor($runId);
-        $dto = $this->projector->build($runId, $events);
+        $dto = $this->projector->build($events);
 
-        // Public picker contract: user prompts only (assistant/tool turns stay internal).
-        $turns = [];
-        foreach ($dto->turns as $turn) {
-            if ('user' !== $turn->displayRole) {
-                continue;
-            }
-            $turns[] = new HistoryPromptView(
-                turnNo: $turn->turnNo,
-                title: $turn->title,
-                displayRole: $turn->displayRole,
-                promptText: $turn->promptText,
-                isPosition: $turn->turnNo === $dto->positionTurnNo,
+        $prompts = [];
+        foreach ($dto->promptsByTurnNo as $turnNo => $promptText) {
+            $prompts[] = new HistoryPromptView(
+                turnNo: (int) $turnNo,
+                promptText: $promptText,
             );
         }
 
         return new HistoryView(
-            runId: $dto->runId,
-            turns: $turns,
+            prompts: $prompts,
             positionTurnNo: $dto->positionTurnNo,
         );
     }

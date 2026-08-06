@@ -10,7 +10,6 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\CancellationProjectionSubscriber;
@@ -19,12 +18,15 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscri
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
-use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\History\HistoryProjector;
+use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
+use Ineersa\CodingAgent\Session\SessionHistoryProvider;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use Ineersa\CodingAgent\Session\SessionTranscriptProvider;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
@@ -71,28 +73,21 @@ final class ResumeSessionInitializerTestFactory
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
         $projector = new TranscriptProjector($dispatcher, $projectionState);
 
-        $historyProvider = new class implements HistoryProviderInterface {
-            public function forSession(string $runId): HistoryView
-            {
-                return new HistoryView(runId: $runId, turns: [], positionTurnNo: null);
-            }
-        };
+        $historyProvider = new SessionHistoryProvider($eventStore, new HistoryProjector());
 
         return new SessionInitializer(
             sessionStore: $sessionStore,
             eventStore: $eventStore,
-            eventMapper: $mapper,
-            projector: $projector,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($projector),
             historyProvider: $historyProvider,
-            sessionTranscriptProvider: new class implements \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface {
-                public function transcriptAtPosition(string $runId, int $positionTurnNo): \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO
-                {
-                    return new \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO([], []);
-                }
-            },
+            sessionTranscriptProvider: new SessionTranscriptProvider(
+                eventStore: $eventStore,
+                replayFilter: new HistoryReplayFilter(new HistoryProjector()),
+                eventMapper: $mapper,
+                transcriptProjector: $projector,
+            ),
         );
     }
 }

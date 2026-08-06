@@ -24,6 +24,9 @@ use Psr\Log\LoggerInterface;
  *  - Rebuilds RunState for that boundary (context immediately before N)
  *  - Returns selected_prompt_turn_no = N for editor/picker UX
  *  - Forward turns remain active until a context-mutating action discards them
+ *
+ * Target must be a sparse human prompt; predecessor is computed over ALL retained
+ * anchors so a hidden internal turn can be the correct boundary.
  */
 final readonly class HistorySelectionService implements HistorySelectionServiceInterface
 {
@@ -53,10 +56,9 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
                 throw new \RuntimeException(\sprintf('Cannot select history for run %s: no events found.', $runId));
             }
 
-            $history = $this->historyProjector->build($runId, $events);
-            $turn = $history->turn($targetPromptTurnNo);
-            if (null === $turn) {
-                throw new \RuntimeException(\sprintf('Cannot select history for run %s: target turn %d is not retained.', $runId, $targetPromptTurnNo));
+            $history = $this->historyProjector->build($events);
+            if (!\array_key_exists($targetPromptTurnNo, $history->promptsByTurnNo)) {
+                throw new \RuntimeException(\sprintf('Cannot select history for run %s: target turn %d is not a selectable human prompt.', $runId, $targetPromptTurnNo));
             }
 
             $state = $this->runStore->get($runId);
@@ -71,10 +73,7 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
 
             $previousPosition = $history->positionTurnNo;
             $positionTurnNo = $history->predecessorTurnNo($targetPromptTurnNo);
-            $editorPromptText = $turn->promptText;
-            if ('' === $editorPromptText && 'user' === $turn->displayRole) {
-                $editorPromptText = $turn->title;
-            }
+            $editorPromptText = $history->promptsByTurnNo[$targetPromptTurnNo];
 
             $positionEvent = new RunEvent(
                 runId: $runId,
@@ -100,23 +99,10 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
 
             $rebuiltState = $replayResult->rebuiltState;
             if ($rebuiltState->lastSeq < $newSeq || $rebuiltState->turnNo !== $positionTurnNo) {
-                $rebuiltState = new RunState(
-                    runId: $rebuiltState->runId,
-                    status: $rebuiltState->status,
-                    version: $rebuiltState->version,
-                    turnNo: $positionTurnNo,
-                    lastSeq: max($rebuiltState->lastSeq, $newSeq),
-                    isStreaming: $rebuiltState->isStreaming,
-                    streamingMessage: $rebuiltState->streamingMessage,
-                    pendingToolCalls: $rebuiltState->pendingToolCalls,
-                    errorMessage: $rebuiltState->errorMessage,
-                    messages: $rebuiltState->messages,
-                    activeStepId: $rebuiltState->activeStepId,
-                    retryableFailure: $rebuiltState->retryableFailure,
-                    retryAttempts: $rebuiltState->retryAttempts,
-                    pendingHumanInputRequests: $rebuiltState->pendingHumanInputRequests,
-                    model: $rebuiltState->model,
-                );
+                $rebuiltState = $rebuiltState->with([
+                    'turnNo' => $positionTurnNo,
+                    'lastSeq' => max($rebuiltState->lastSeq, $newSeq),
+                ]);
             }
 
             $this->logger->info('run_history.selected', [

@@ -52,14 +52,10 @@ final class HistoryCommandHandlerTest extends TestCase
     private function openablePicker(): HistoryPickerController
     {
         $history = new HistoryView(
-            runId: 'test',
-            turns: [
+            prompts: [
                 new HistoryPromptView(
                     turnNo: 1,
-                    title: 'Root turn',
-                    displayRole: 'user',
                     promptText: 'Root turn',
-                    isPosition: true,
                 ),
             ],
             positionTurnNo: 1,

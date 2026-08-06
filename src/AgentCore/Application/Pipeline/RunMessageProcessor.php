@@ -140,23 +140,7 @@ final readonly class RunMessageProcessor
             if (null !== $this->historyTailDiscard && $this->historyTailDiscard->isContextMutatingMessage($message)) {
                 $discardResult = $this->historyTailDiscard->discardForwardTailIfNeeded($runId, $state);
                 if ($discardResult['discarded'] && $discardResult['lastSeq'] > $state->lastSeq) {
-                    $state = new RunState(
-                        runId: $state->runId,
-                        status: $state->status,
-                        version: $state->version,
-                        turnNo: $state->turnNo,
-                        lastSeq: $discardResult['lastSeq'],
-                        isStreaming: $state->isStreaming,
-                        streamingMessage: $state->streamingMessage,
-                        pendingToolCalls: $state->pendingToolCalls,
-                        errorMessage: $state->errorMessage,
-                        messages: $state->messages,
-                        activeStepId: $state->activeStepId,
-                        retryableFailure: $state->retryableFailure,
-                        retryAttempts: $state->retryAttempts,
-                        pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                        model: $state->model,
-                    );
+                    $state = $state->with(['lastSeq' => $discardResult['lastSeq']]);
                 }
             }
 

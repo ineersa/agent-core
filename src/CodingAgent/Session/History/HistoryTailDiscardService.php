@@ -66,22 +66,20 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
             return ['discarded' => false, 'lastSeq' => $state->lastSeq];
         }
 
-        $history = $this->projector->build($runId, $events);
-        $active = $history->retainedTurnNos();
+        $history = $this->projector->build($events);
+        $active = $history->retainedTurnNos;
         if ([] === $active) {
             return ['discarded' => false, 'lastSeq' => $state->lastSeq];
         }
 
+        // Invalid / non-retained current state must not fabricate a discard.
         $tip = $state->turnNo;
-        $hasForward = false;
-        foreach ($active as $turnNo) {
-            if ($turnNo > $tip) {
-                $hasForward = true;
-                break;
-            }
+        if (0 !== $tip && !\in_array($tip, $active, true)) {
+            return ['discarded' => false, 'lastSeq' => $state->lastSeq];
         }
 
-        if (!$hasForward) {
+        $orderedTip = $active[array_key_last($active)];
+        if ($tip >= $orderedTip) {
             return ['discarded' => false, 'lastSeq' => $state->lastSeq];
         }
 

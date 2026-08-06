@@ -35,10 +35,10 @@ final readonly class SessionTranscriptProvider implements SessionTranscriptProvi
         }
 
         // Explicit 0 = before first turn (empty retained prefix).
-        $replayDto = $this->replayFilter->filterAtPosition($runId, $events, $positionTurnNo);
+        $filteredEvents = $this->replayFilter->filterAtPosition($events, $positionTurnNo);
 
         $replayEvents = [];
-        foreach ($replayDto->events as $runEvent) {
+        foreach ($filteredEvents as $runEvent) {
             $runtimeEvent = $this->eventMapper->toRuntimeEvent($runEvent);
             if (null !== $runtimeEvent) {
                 $replayEvents[] = $runtimeEvent;

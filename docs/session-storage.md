@@ -577,30 +577,35 @@ Each normal turn advance emits `turn_advanced` followed by `history_position_set
 3. Process `history_tail_discarded` to slice retained turns after `after_turn_no`.
 4. If no `history_position_set` exists, the last retained turn is the tip.
 
-### Read model: HistoryDTO (linear)
+### Read model: HistoryDTO (flat)
 
 Projection and retained-history replay filtering live under
 `Ineersa\CodingAgent\Session\History`.
 AgentCore depends on narrow contracts under `Ineersa\AgentCore\Contract\History`
 (`HistoryTailDiscardInterface`, `HistorySelectionServiceInterface`).
 
-`HistoryProjector` builds a linear `HistoryDTO`:
-- `turns` — ordered retained turns only (`HistoryTurnDTO`: turnNo, title, displayRole, promptText).
-- `positionTurnNo` — selected tip (`null` before first turn / empty history).
+`HistoryProjector` builds a flat `HistoryDTO`:
+- `retainedTurnNos` — every active `turn_advanced` anchor (including internal tool/shell/assistant turns).
+- `promptsByTurnNo` — sparse map of actual selectable human prompts only (`follow_up`/`steer`/`RunStarted` user text; never `append_message` or assistant text).
+- `positionTurnNo` — selected tip as an explicit `int` (`0` = before first turn / empty history; never null).
 
-There is no parent/child/root/path map; order is the model.
+There is no parent/child/root/path map and no presentation DTO per internal turn.
 
 ### Retained-history replay
 
-`HistoryReplayFilter` includes only:
+`HistoryReplayFilter` is a pure event-array API (`filter` / `filterAtPosition`) that includes only:
 - Run-level events (`turnNo === 0`).
 - Events whose `turnNo` is in the retained prefix through the selected tip.
 - History metadata (`history_position_set`, `history_tail_discarded`).
 - Excludes discarded turns' message/tool/assistant content.
 - Suppresses turn-seeding commands whose created turn is outside the retained prefix.
+- Suppresses unmatched post-completion pending commands before `history_select` (crash recovery).
 
 Integrity checks run on the full canonical stream. Rebuilt `lastSeq` uses the full
 canonical max. `history_position_set` / `history_tail_discarded` are no-op RunState reducers.
+
+Resume is fail-closed: `SessionInitializer` always uses retained-prefix transcript at the
+explicit int position (including `0`) and never falls back to replaying the full stream.
 
 ### `/history` semantics (undo/redo)
 

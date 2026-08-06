@@ -75,13 +75,6 @@ final class HistoryPickerControllerTest extends TestCase
     }
 
     #[Test]
-    public function testUserPromptTurnNosMapsHistoryTurns(): void
-    {
-        $history = $this->createUserPromptHistory();
-        $this->assertSame([1, 3], HistoryPickerController::userPromptTurnNos($history));
-    }
-
-    #[Test]
     public function testInitialSelectedIndexPrefersNextUserPromptAfterTip(): void
     {
         // Tip at turn 1 (before second user prompt turn 3).
@@ -92,7 +85,7 @@ final class HistoryPickerControllerTest extends TestCase
     #[Test]
     public function testBuildItemsEmptyHistory(): void
     {
-        $history = new HistoryView(runId: 'r', turns: [], positionTurnNo: null);
+        $history = new HistoryView(prompts: [], positionTurnNo: 0);
         $theme = new DefaultTheme(new ThemePalette('test'));
         $this->assertSame([], HistoryPickerController::buildItems($history, $theme));
     }
@@ -117,7 +110,7 @@ final class HistoryPickerControllerTest extends TestCase
     #[Test]
     public function testOpenShowsStatusWhenEmpty(): void
     {
-        $history = new HistoryView(runId: 'r', turns: [], positionTurnNo: null);
+        $history = new HistoryView(prompts: [], positionTurnNo: 0);
         $provider = $this->createStub(HistoryProviderInterface::class);
         $provider->method('forSession')->willReturn($history);
         $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
@@ -153,24 +146,17 @@ final class HistoryPickerControllerTest extends TestCase
     }
 
     /** Provider contract: HistoryView turns are already user prompts only. */
-    private function createUserPromptHistory(?int $positionTurnNo = 3): HistoryView
+    private function createUserPromptHistory(int $positionTurnNo = 3): HistoryView
     {
         return new HistoryView(
-            runId: 'test-session',
-            turns: [
+            prompts: [
                 new HistoryPromptView(
                     turnNo: 1,
-                    title: 'Hello',
-                    displayRole: 'user',
                     promptText: 'Hello',
-                    isPosition: 1 === $positionTurnNo,
                 ),
                 new HistoryPromptView(
                     turnNo: 3,
-                    title: 'Follow-up',
-                    displayRole: 'user',
                     promptText: 'Follow-up',
-                    isPosition: 3 === $positionTurnNo,
                 ),
             ],
             positionTurnNo: $positionTurnNo,

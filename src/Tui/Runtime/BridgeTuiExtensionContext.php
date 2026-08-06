@@ -78,15 +78,14 @@ final readonly class BridgeTuiExtensionContext implements TuiExtensionContextInt
     {
         $history = $this->runtime->historyProvider->forSession($sessionId);
         $rows = [];
-        // Public ExtensionApi contract: retained user-prompt rows only.
-        // SessionHistoryProvider is the single user-role filter; both /history
-        // and file /rewind consume this contract.
-        foreach ($history->turns as $turn) {
-            $title = trim($turn->title);
-            if ('' === $title || preg_match('/^Turn \d+$/', $title)) {
-                $title = 'Turn '.$turn->turnNo;
+        // Public ExtensionApi contract: sparse human prompts only.
+        // Derive presentation fields here; internal HistoryView is turnNo+promptText.
+        foreach ($history->prompts as $prompt) {
+            $title = PickerListLabelFormatter::sanitizeTitle($prompt->promptText);
+            if ('' === $title) {
+                $title = 'Turn '.$prompt->turnNo;
             }
-            $rows[] = ['turnNo' => $turn->turnNo, 'title' => $title, 'displayRole' => $turn->displayRole];
+            $rows[] = ['turnNo' => $prompt->turnNo, 'title' => $title, 'displayRole' => 'user'];
         }
 
         return $rows;

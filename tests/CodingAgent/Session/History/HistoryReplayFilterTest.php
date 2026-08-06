@@ -37,15 +37,11 @@ final class HistoryReplayFilterTest extends TestCase
             $this->event(11, 3, RunEventTypeEnum::LlmStepCompleted->value, ['text' => 'A3']),
         ];
 
-        $result = $this->filter->filter('run-1', $events);
-        $this->assertSame([1, 3], $result->retainedTurnNos);
-        $this->assertSame(3, $result->positionTurnNo);
-        $this->assertSame(11, $result->canonicalEventCount);
-        $this->assertSame(11, $result->canonicalLastSeq);
+        $filtered = $this->filter->filter($events);
 
         $turnNos = array_values(array_unique(array_map(
             static fn (RunEvent $e): int => $e->turnNo,
-            array_filter($result->events, static fn (RunEvent $e): bool => $e->turnNo > 0
+            array_filter($filtered, static fn (RunEvent $e): bool => $e->turnNo > 0
                 && !\in_array($e->type, [
                     RunEventTypeEnum::HistoryPositionSet->value,
                     RunEventTypeEnum::HistoryTailDiscarded->value,
@@ -53,7 +49,7 @@ final class HistoryReplayFilterTest extends TestCase
         )));
         $this->assertSame([1, 3], $turnNos);
         $texts = [];
-        foreach ($result->events as $event) {
+        foreach ($filtered as $event) {
             if (RunEventTypeEnum::LlmStepCompleted->value === $event->type) {
                 $texts[] = $event->payload['text'] ?? null;
             }
@@ -62,28 +58,28 @@ final class HistoryReplayFilterTest extends TestCase
     }
 
     #[Test]
-    public function testFilterAtPositionKeepsPrefixOnly(): void
+    public function testFilterAtPositionKeepsPrefixOnlyIncludingInternalAnchors(): void
     {
         $events = [
             $this->event(1, 0, RunEventTypeEnum::RunStarted->value),
             $this->event(2, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]),
             $this->event(3, 1, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 1]),
             $this->event(4, 1, RunEventTypeEnum::LlmStepCompleted->value, ['text' => 'A1']),
-            $this->event(5, 2, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2]),
-            $this->event(6, 2, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 2]),
-            $this->event(7, 2, RunEventTypeEnum::LlmStepCompleted->value, ['text' => 'A2']),
+            // Internal retained turn with no human prompt.
+            $this->event(5, 2, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2, 'step_id' => 'advance-after-tools']),
+            $this->event(6, 2, RunEventTypeEnum::LlmStepCompleted->value, ['text' => 'tool cycle']),
+            $this->event(7, 3, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 3]),
+            $this->event(8, 3, RunEventTypeEnum::LlmStepCompleted->value, ['text' => 'A3']),
         ];
 
-        $result = $this->filter->filterAtPosition('run-1', $events, 1);
-        $this->assertSame([1], $result->retainedTurnNos);
-        $this->assertSame(1, $result->positionTurnNo);
+        $filtered = $this->filter->filterAtPosition($events, 2);
         $texts = [];
-        foreach ($result->events as $event) {
+        foreach ($filtered as $event) {
             if (RunEventTypeEnum::LlmStepCompleted->value === $event->type) {
                 $texts[] = $event->payload['text'] ?? null;
             }
         }
-        $this->assertSame(['A1'], $texts);
+        $this->assertSame(['A1', 'tool cycle'], $texts);
     }
 
     #[Test]
@@ -105,9 +101,8 @@ final class HistoryReplayFilterTest extends TestCase
             ]),
         ];
 
-        $result = $this->filter->filterAtPosition('run-1', $events, 1);
-        $this->assertSame([1], $result->retainedTurnNos);
-        foreach ($result->events as $event) {
+        $filtered = $this->filter->filterAtPosition($events, 1);
+        foreach ($filtered as $event) {
             if (RunEventTypeEnum::AgentCommandApplied->value === $event->type) {
                 $this->fail('Seeding command for discarded turn 2 must be excluded from position 1 prefix');
             }
@@ -118,8 +113,6 @@ final class HistoryReplayFilterTest extends TestCase
     /**
      * Thesis: completed position turn → queued/applied follow-up with NO next TurnAdvanced
      * → history_position_set(reason=history_select) must exclude those pending commands.
-     * Covers rebuildIfStale crash recovery and rebuildAtPosition after history select
-     * (compaction/interrupted/CAS) so unmatched launches cannot leave RunState Running.
      */
     #[Test]
     public function testExcludesUnmatchedPendingCommandsAfterCompletionBeforeHistorySelect(): void
@@ -133,7 +126,6 @@ final class HistoryReplayFilterTest extends TestCase
             ]),
             $this->event(4, 1, RunEventTypeEnum::LlmStepCompleted->value, ['text' => 'done']),
             $this->event(5, 1, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
-            // Pending launch after completion — no TurnAdvanced maps these (interrupted/CAS).
             $this->event(6, 1, RunEventTypeEnum::AgentCommandQueued->value, [
                 'kind' => 'follow_up',
                 'text' => 'pending after complete',
@@ -149,11 +141,10 @@ final class HistoryReplayFilterTest extends TestCase
             ]),
         ];
 
-        $result = $this->filter->filterAtPosition('run-1', $events, 1);
-        $this->assertSame([1], $result->retainedTurnNos);
+        $filtered = $this->filter->filterAtPosition($events, 1);
 
         $commandTypes = [];
-        foreach ($result->events as $event) {
+        foreach ($filtered as $event) {
             if (\in_array($event->type, [
                 RunEventTypeEnum::AgentCommandQueued->value,
                 RunEventTypeEnum::AgentCommandApplied->value,

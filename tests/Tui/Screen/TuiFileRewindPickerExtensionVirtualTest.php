@@ -19,7 +19,6 @@ use Ineersa\HatfieldExt\FileRewind\HiddenGitSnapshotBackend;
 use Ineersa\HatfieldExt\FileRewind\RewindPathScope;
 use Ineersa\HatfieldExt\FileRewind\RewindProjectIdentity;
 use Ineersa\HatfieldExt\FileRewind\RewindStoragePaths;
-use Ineersa\Tui\Picker\HistoryPickerController;
 use Ineersa\Tui\Runtime\BridgeTuiExtensionContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
@@ -104,7 +103,7 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
         $this->assertSame([1, 3], array_column($rows, 'turnNo'));
         $this->assertSame(['user', 'user'], array_column($rows, 'displayRole'));
 
-        $historyTurnNos = HistoryPickerController::userPromptTurnNos($history);
+        $historyTurnNos = array_map(static fn ($prompt): int => $prompt->turnNo, $history->prompts);
         $this->assertSame([1, 3], $historyTurnNos);
     }
 
@@ -148,10 +147,9 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
     private function sampleUserPromptHistory(string $sessionId): HistoryView
     {
         return new HistoryView(
-            runId: $sessionId,
-            turns: [
-                new HistoryPromptView(1, 'Create file', 'user', '', false),
-                new HistoryPromptView(3, 'Append line', 'user', '', true),
+            prompts: [
+                new HistoryPromptView(1, 'Create file'),
+                new HistoryPromptView(3, 'Append line'),
             ],
             positionTurnNo: 3,
         );

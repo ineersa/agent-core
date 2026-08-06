@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
@@ -19,7 +18,6 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscri
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
-use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
@@ -155,14 +153,18 @@ final class TuiRuntimeEventApplierTest extends TestCase
     private function canonicalFixtureLines(string $runId): array
     {
         $now = (new \DateTimeImmutable())->format(\DATE_ATOM);
+        // Canonical resume needs TurnAdvanced so HistoryProjector retains tip=1.
+        // Without it, fail-closed resume uses position 0 and drops turn content/usage.
         $rows = [
-            ['seq' => 1, 'type' => 'run_started', 'payload' => ['step_id' => 's1', 'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Resume me']]]]]]],
-            ['seq' => 2, 'type' => 'llm_step_completed', 'payload' => ['step_id' => 's2', 'text' => '', 'tool_calls_count' => 1, 'assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [['id' => 'call_sub_1', 'name' => 'subagent', 'arguments' => ['task' => 'x']]]], 'usage' => ['input_tokens' => 12, 'output_tokens' => 4]]],
-            ['seq' => 3, 'type' => 'tool_execution_start', 'payload' => ['tool_call_id' => 'call_sub_1', 'tool_name' => 'subagent', 'order_index' => 0]],
-            ['seq' => 4, 'type' => 'tool_execution_update', 'payload' => ['tool_call_id' => 'call_sub_1', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => ['mode' => 'single', 'status' => 'running', 'agent' => 'scout', 'task_preview' => 'task']]],
-            ['seq' => 5, 'type' => 'tool_execution_end', 'payload' => ['tool_call_id' => 'call_sub_1', 'order_index' => 0, 'is_error' => false, 'result' => 'Final subagent handoff text']],
-            ['seq' => 6, 'type' => 'agent_command_applied', 'payload' => ['kind' => 'cancel']],
-            ['seq' => 7, 'type' => 'agent_end', 'payload' => ['reason' => 'cancelled']],
+            ['seq' => 1, 'turn_no' => 0, 'type' => 'run_started', 'payload' => ['step_id' => 's1', 'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Resume me']]]]]]],
+            ['seq' => 2, 'turn_no' => 1, 'type' => 'turn_advanced', 'payload' => ['turn_no' => 1]],
+            ['seq' => 3, 'turn_no' => 1, 'type' => 'history_position_set', 'payload' => ['position_turn_no' => 1, 'reason' => 'continue']],
+            ['seq' => 4, 'turn_no' => 1, 'type' => 'llm_step_completed', 'payload' => ['step_id' => 's2', 'text' => '', 'tool_calls_count' => 1, 'assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [['id' => 'call_sub_1', 'name' => 'subagent', 'arguments' => ['task' => 'x']]]], 'usage' => ['input_tokens' => 12, 'output_tokens' => 4]]],
+            ['seq' => 5, 'turn_no' => 1, 'type' => 'tool_execution_start', 'payload' => ['tool_call_id' => 'call_sub_1', 'tool_name' => 'subagent', 'order_index' => 0]],
+            ['seq' => 6, 'turn_no' => 1, 'type' => 'tool_execution_update', 'payload' => ['tool_call_id' => 'call_sub_1', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => ['mode' => 'single', 'status' => 'running', 'agent' => 'scout', 'task_preview' => 'task']]],
+            ['seq' => 7, 'turn_no' => 1, 'type' => 'tool_execution_end', 'payload' => ['tool_call_id' => 'call_sub_1', 'order_index' => 0, 'is_error' => false, 'result' => 'Final subagent handoff text']],
+            ['seq' => 8, 'turn_no' => 1, 'type' => 'agent_command_applied', 'payload' => ['kind' => 'cancel']],
+            ['seq' => 9, 'turn_no' => 1, 'type' => 'agent_end', 'payload' => ['reason' => 'cancelled']],
         ];
         $lines = [];
         foreach ($rows as $row) {
@@ -170,7 +172,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
                 'schema_version' => '1.0',
                 'run_id' => $runId,
                 'seq' => $row['seq'],
-                'turn_no' => 1,
+                'turn_no' => $row['turn_no'],
                 'type' => $row['type'],
                 'payload' => $row['payload'],
                 'ts' => $now,
@@ -190,25 +192,22 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $projector = $this->buildProjector();
         $appConfig = new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->projectDir);
         $sessionStore = new HatfieldSessionStore($appConfig, $this->createStub(\Doctrine\ORM\EntityManagerInterface::class));
-
-        $historyProvider = $this->createStub(HistoryProviderInterface::class);
-        $historyProvider->method('forSession')->willReturn(new HistoryView(runId: 'test', turns: [], positionTurnNo: null));
+        $eventStore = $this->buildEventStore();
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
 
         return new SessionInitializer(
             sessionStore: $sessionStore,
-            eventStore: $this->buildEventStore(),
-            eventMapper: new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher())),
-            projector: $projector,
+            eventStore: $eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($projector),
-            historyProvider: $historyProvider,
-            sessionTranscriptProvider: new class implements \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface {
-                public function transcriptAtPosition(string $runId, int $positionTurnNo): \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO
-                {
-                    return new \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO([], []);
-                }
-            },
+            historyProvider: new \Ineersa\CodingAgent\Session\SessionHistoryProvider($eventStore, new \Ineersa\CodingAgent\Session\History\HistoryProjector()),
+            sessionTranscriptProvider: new \Ineersa\CodingAgent\Session\SessionTranscriptProvider(
+                eventStore: $eventStore,
+                replayFilter: new \Ineersa\CodingAgent\Session\History\HistoryReplayFilter(new \Ineersa\CodingAgent\Session\History\HistoryProjector()),
+                eventMapper: $mapper,
+                transcriptProjector: $projector,
+            ),
         );
     }
 

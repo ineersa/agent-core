@@ -34,39 +34,52 @@ final class HistoryReplayFilter
 
     /**
      * @param list<RunEvent> $events
+     *
+     * @return list<RunEvent>
      */
-    public function filter(string $runId, array $events): HistoryReplayResultDTO
+    public function filter(array $events): array
     {
-        $history = $this->projector->build($runId, $events);
+        $history = $this->projector->build($events);
 
-        return $this->filterAtPosition($runId, $events, $history->positionTurnNo);
+        return $this->filterSortedAtPosition($events, $history, $history->positionTurnNo);
     }
 
     /**
      * @param list<RunEvent> $events
+     *
+     * @return list<RunEvent>
      */
-    public function filterAtPosition(string $runId, array $events, ?int $positionTurnNo = null): HistoryReplayResultDTO
+    public function filterAtPosition(array $events, int $positionTurnNo): array
     {
-        $history = $this->projector->build($runId, $events);
+        $history = $this->projector->build($events);
 
-        // null = current selected position; 0 = before first retained turn.
-        if (null === $positionTurnNo) {
-            $positionTurnNo = $history->positionTurnNo;
-        }
+        return $this->filterSortedAtPosition($events, $history, $positionTurnNo);
+    }
 
+    /**
+     * One projection + one sort per public call. Both issue #183 suppressions apply:
+     * mapped discarded-turn seeding commands, and unmatched post-completion pending launches.
+     *
+     * @param list<RunEvent> $events
+     *
+     * @return list<RunEvent>
+     */
+    private function filterSortedAtPosition(array $events, HistoryDTO $history, int $positionTurnNo): array
+    {
         $retainedTurnNos = $history->retainedTurnNosThrough($positionTurnNo);
-        $commandSeqToCreatedTurn = $this->buildCommandSeqToCreatedTurnMap($events);
+
+        $sorted = $events;
+        usort($sorted, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
+
+        $commandSeqToCreatedTurn = $this->buildCommandSeqToCreatedTurnMap($sorted);
         $unmatchedPendingCommandSeqs = $this->buildUnmatchedPendingCommandSeqs(
-            $events,
+            $sorted,
             $positionTurnNo,
             $commandSeqToCreatedTurn,
         );
 
-        $canonicalEventCount = \count($events);
-        $canonicalLastSeq = $this->maxSeq($events);
-
         $filtered = [];
-        foreach ($events as $event) {
+        foreach ($sorted as $event) {
             if (0 === $event->turnNo) {
                 $filtered[] = $event;
                 continue;
@@ -88,31 +101,20 @@ final class HistoryReplayFilter
             }
         }
 
-        usort($filtered, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
-
-        return new HistoryReplayResultDTO(
-            events: $filtered,
-            canonicalEventCount: $canonicalEventCount,
-            canonicalLastSeq: $canonicalLastSeq,
-            retainedTurnNos: $retainedTurnNos,
-            positionTurnNo: $positionTurnNo,
-        );
+        return $filtered;
     }
 
     /**
-     * @param list<RunEvent> $events
+     * @param list<RunEvent> $sortedEvents already sorted by seq
      *
      * @return array<int, int>
      */
-    private function buildCommandSeqToCreatedTurnMap(array $events): array
+    private function buildCommandSeqToCreatedTurnMap(array $sortedEvents): array
     {
-        $sorted = $events;
-        usort($sorted, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
-
         $pendingCommandSeqs = [];
         $commandSeqToCreatedTurn = [];
 
-        foreach ($sorted as $event) {
+        foreach ($sortedEvents as $event) {
             if ($this->isTurnSeedingCommandEvent($event)) {
                 $pendingCommandSeqs[] = $event->seq;
                 continue;
@@ -141,25 +143,22 @@ final class HistoryReplayFilter
      * history_select marker, with no later TurnAdvanced mapping (discarded launch).
      * Applies to rebuildAtPosition and rebuildIfStale crash recovery alike.
      *
-     * @param list<RunEvent>  $events
+     * @param list<RunEvent>  $sortedEvents            already sorted by seq
      * @param array<int, int> $commandSeqToCreatedTurn
      *
      * @return array<int, true>
      */
     private function buildUnmatchedPendingCommandSeqs(
-        array $events,
-        ?int $positionTurnNo,
+        array $sortedEvents,
+        int $positionTurnNo,
         array $commandSeqToCreatedTurn,
     ): array {
-        if (null === $positionTurnNo || $positionTurnNo <= 0) {
+        if ($positionTurnNo <= 0) {
             return [];
         }
 
-        $sorted = $events;
-        usort($sorted, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
-
         $historySelectSeq = 0;
-        foreach ($sorted as $event) {
+        foreach ($sortedEvents as $event) {
             if (RunEventTypeEnum::HistoryPositionSet->value !== $event->type) {
                 continue;
             }
@@ -180,7 +179,7 @@ final class HistoryReplayFilter
         }
 
         $turnCompletionSeq = 0;
-        foreach ($sorted as $event) {
+        foreach ($sortedEvents as $event) {
             if ($event->turnNo !== $positionTurnNo || $event->seq >= $historySelectSeq) {
                 continue;
             }
@@ -198,7 +197,7 @@ final class HistoryReplayFilter
         }
 
         $exclude = [];
-        foreach ($sorted as $event) {
+        foreach ($sortedEvents as $event) {
             if ($event->turnNo !== $positionTurnNo) {
                 continue;
             }
@@ -254,17 +253,5 @@ final class HistoryReplayFilter
             RunEventTypeEnum::HistoryPositionSet->value,
             RunEventTypeEnum::HistoryTailDiscarded->value,
         ], true);
-    }
-
-    /**
-     * @param list<RunEvent> $events
-     */
-    private function maxSeq(array $events): int
-    {
-        if ([] === $events) {
-            return 0;
-        }
-
-        return (int) max(array_map(static fn (RunEvent $event): int => $event->seq, $events));
     }
 }

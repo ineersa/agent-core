@@ -231,6 +231,66 @@ final class HistorySelectionServiceTest extends TestCase
         $this->assertSame('history_select', $appended[0]->payload['reason']);
     }
 
+    public function testSelectInternalRetainedTurnWithoutPromptIsRejected(): void
+    {
+        $runId = 'run-history-select-internal';
+        $events = [
+            new RunEvent($runId, 1, 0, RunEventTypeEnum::RunStarted->value, [
+                'payload' => ['messages' => [[
+                    'role' => 'user',
+                    'content' => [['type' => 'text', 'text' => 'First prompt']],
+                ]]],
+            ]),
+            new RunEvent($runId, 2, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]),
+            // Internal tool-cycle turn: retained, not selectable.
+            new RunEvent($runId, 3, 2, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2, 'step_id' => 'advance-after-tools']),
+            new RunEvent($runId, 4, 2, RunEventTypeEnum::AgentCommandApplied->value, [
+                'kind' => 'follow_up',
+                'text' => 'After tools',
+            ]),
+            new RunEvent($runId, 5, 3, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 3]),
+        ];
+
+        $eventStore = new class($events) implements EventStoreInterface {
+            /** @param list<RunEvent> $events */
+            public function __construct(private array $events)
+            {
+            }
+
+            public function allFor(string $runId): array
+            {
+                return $this->events;
+            }
+
+            public function append(RunEvent $event): RunEvent
+            {
+                throw new \RuntimeException('append should not be called');
+            }
+
+            public function appendMany(array $events): array
+            {
+                throw new \RuntimeException('appendMany should not be called');
+            }
+        };
+
+        $runStore = new InMemoryRunStore();
+        $runStore->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 5, model: 'test-model'), 0);
+
+        $service = new HistorySelectionService(
+            eventStore: $eventStore,
+            runStateRebuilder: $this->createStub(RunStateRebuilderInterface::class),
+            runStore: $runStore,
+            lockManager: new RunLockManager(new LockFactory(new FlockStore(sys_get_temp_dir()))),
+            logger: new NullLogger(),
+            historyProjector: new HistoryProjector(),
+            replayEventPreparer: new ReplayEventPreparer(),
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('not a selectable human prompt');
+        $service->selectPrompt($runId, 2);
+    }
+
     public function testSelectPromptRejectsDuplicateSequences(): void
     {
         $runId = 'run-history-select-dup';

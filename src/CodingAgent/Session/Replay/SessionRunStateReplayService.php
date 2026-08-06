@@ -71,15 +71,12 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
             // excluded while canonical integrity checks remain on the full stream.
             // HistoryReplayFilter also strips unmatched post-completion launches
             // so crash recovery (rebuildIfStale) matches rebuildAtPosition.
-            $historyReplay = $this->historyReplayFilter->filter($runId, $sortedEvents);
-            $filteredEvents = $historyReplay->events;
+            $filteredEvents = $this->historyReplayFilter->filter($sortedEvents);
 
             $this->logger->info('run_state_replay.history_filtered', [
                 'run_id' => $runId,
-                'canonical_event_count' => $historyReplay->canonicalEventCount,
+                'canonical_event_count' => \count($sortedEvents),
                 'filtered_event_count' => \count($filteredEvents),
-                'position_turn_no' => $historyReplay->positionTurnNo,
-                'retained_turns' => $historyReplay->retainedTurnNos,
             ]);
 
             $rebuiltState = $this->runStateReducer->replay($state, $filteredEvents);
@@ -87,23 +84,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
             // After replay, ensure lastSeq reflects the full canonical stream
             // so state is current with respect to the append-only event log,
             // even when replaying an earlier history position.
-            $rebuiltState = new RunState(
-                runId: $rebuiltState->runId,
-                status: $rebuiltState->status,
-                version: $rebuiltState->version,
-                turnNo: $rebuiltState->turnNo,
-                lastSeq: $maxEventSeq,
-                isStreaming: $rebuiltState->isStreaming,
-                streamingMessage: $rebuiltState->streamingMessage,
-                pendingToolCalls: $rebuiltState->pendingToolCalls,
-                errorMessage: $rebuiltState->errorMessage,
-                messages: $rebuiltState->messages,
-                activeStepId: $rebuiltState->activeStepId,
-                retryableFailure: $rebuiltState->retryableFailure,
-                retryAttempts: $rebuiltState->retryAttempts,
-                pendingHumanInputRequests: $rebuiltState->pendingHumanInputRequests,
-                model: $rebuiltState->model,
-            );
+            $rebuiltState = $rebuiltState->with(['lastSeq' => $maxEventSeq]);
 
             $this->logger->info('run_state_replay.rebuilt', [
                 'run_id' => $runId,
@@ -157,38 +138,23 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
             // Retained prefix at the selected position (0 = before first turn).
             // Unmatched pending-command suppression for history_select recovery is
             // owned by HistoryReplayFilter for both rebuildAtPosition and rebuildIfStale.
-            $historyReplay = $this->historyReplayFilter->filterAtPosition($runId, $sortedEvents, $positionTurnNo);
-            $filteredEvents = $historyReplay->events;
+            $filteredEvents = $this->historyReplayFilter->filterAtPosition($sortedEvents, $positionTurnNo);
 
             $this->logger->info('run_state_replay.rebuild_at_position_filtered', [
                 'run_id' => $runId,
                 'position_turn_no' => $positionTurnNo,
-                'canonical_event_count' => $historyReplay->canonicalEventCount,
+                'canonical_event_count' => \count($sortedEvents),
                 'filtered_event_count' => \count($filteredEvents),
-                'retained_turns' => $historyReplay->retainedTurnNos,
             ]);
 
             $rebuiltState = $this->runStateReducer->replay($state, $filteredEvents);
 
             // Force turnNo to the requested position (boundary 0 stays 0) and lastSeq
             // to the full canonical stream max so the state is current with the log.
-            $rebuiltState = new RunState(
-                runId: $rebuiltState->runId,
-                status: $rebuiltState->status,
-                version: $rebuiltState->version,
-                turnNo: $positionTurnNo,
-                lastSeq: $maxEventSeq,
-                isStreaming: $rebuiltState->isStreaming,
-                streamingMessage: $rebuiltState->streamingMessage,
-                pendingToolCalls: $rebuiltState->pendingToolCalls,
-                errorMessage: $rebuiltState->errorMessage,
-                messages: $rebuiltState->messages,
-                activeStepId: $rebuiltState->activeStepId,
-                retryableFailure: $rebuiltState->retryableFailure,
-                retryAttempts: $rebuiltState->retryAttempts,
-                pendingHumanInputRequests: $rebuiltState->pendingHumanInputRequests,
-                model: $rebuiltState->model,
-            );
+            $rebuiltState = $rebuiltState->with([
+                'turnNo' => $positionTurnNo,
+                'lastSeq' => $maxEventSeq,
+            ]);
 
             $this->logger->info('run_state_replay.rebuilt_at_position', [
                 'run_id' => $runId,
