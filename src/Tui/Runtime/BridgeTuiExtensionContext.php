@@ -7,7 +7,6 @@ namespace Ineersa\Tui\Runtime;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\Tui\Picker\PickerListLabelFormatter;
-use Ineersa\Tui\Picker\TreePickerController;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 
@@ -80,8 +79,9 @@ final readonly class BridgeTuiExtensionContext implements TuiExtensionContextInt
     {
         $tree = $this->runtime->turnTreeProvider->forSession($sessionId);
         $rows = [];
-        // Flat active user-prompt history only (linear model).
-        foreach (TreePickerController::flattenTurnOrder($tree) as $turnNo) {
+        // Public ExtensionApi contract: all active retained turns (user + assistant/tool).
+        // /history filters to user prompts separately; file-rewind needs full checkpoints.
+        foreach ($tree->activePathTurnNos as $turnNo) {
             $node = $tree->nodesByTurnNo[$turnNo] ?? null;
             if (!$node instanceof TurnTreeNodeView) {
                 continue;

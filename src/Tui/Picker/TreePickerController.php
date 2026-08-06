@@ -62,9 +62,7 @@ final class TreePickerController
         $state = $this->state;
 
         $tree = $this->treeProvider->forSession($state->sessionId);
-        $userTurns = self::userPromptTurns($tree);
-
-        if ([] === $userTurns) {
+        if ([] === self::flattenTurnOrder($tree)) {
             $screen->setStatus('history', 'Session has no user prompts yet');
             $screen->refresh();
 
@@ -174,14 +172,6 @@ final class TreePickerController
         }
 
         return max(0, \count($order) - 1);
-    }
-
-    /**
-     * @return list<int>
-     */
-    public static function userPromptTurns(TurnTreeView $tree): array
-    {
-        return self::flattenTurnOrder($tree);
     }
 
     /**

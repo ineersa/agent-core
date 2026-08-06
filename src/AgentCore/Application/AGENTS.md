@@ -74,9 +74,9 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
 Active linear-history projection and filtering live in **CodingAgent session**
 (`CodingAgent\Session\TurnTree`, `CodingAgent\Session\Replay`, `CodingAgent\Session\History`).
 AgentCore emits canonical events (`turn_advanced`, `leaf_set`, `history_tail_discarded`)
-and replays through narrow contracts (`BranchReplayFilterInterface`,
-`TurnTreeProjectorInterface` under `AgentCore\Contract\TurnTree`,
-`HistoryTailDiscardInterface` under `AgentCore\Contract\History`).
+and replays through narrow contracts (`BranchReplayFilterInterface` under
+`AgentCore\Contract\TurnTree`, `HistoryTailDiscardInterface` under
+`AgentCore\Contract\History`). Active-history projection lives in CodingAgent.
 See `docs/session-storage.md` "Linear history model".
 
 Core replay integration:

@@ -61,6 +61,7 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
      */
     public function discardForwardTailIfNeeded(string $runId, RunState $state): array
     {
+        // ponytail: full event-log rebuild O(n) per mutate-behind-tip; cache tip/active if discard checks become hot.
         $events = $this->eventStore->allFor($runId);
         if ([] === $events) {
             return ['discarded' => false, 'lastSeq' => $state->lastSeq];

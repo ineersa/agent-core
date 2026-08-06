@@ -265,9 +265,9 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             );
         }
 
-        // RunMessageProcessor serializes branch creation under the run lock.
+        // RunMessageProcessor serializes turn advancement under the run lock.
         // RunState.lastSeq is rebuilt from the global canonical event high-water,
-        // so abandoned branch turns cannot collide with this child turn.
+        // so discarded-history turn numbers cannot collide with this next turn.
         $nextTurnNo = max($state->lastSeq, $preparedState->turnNo) + 1;
         $nextStepId = $message->stepId();
 

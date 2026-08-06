@@ -19,6 +19,7 @@ use Ineersa\HatfieldExt\FileRewind\HiddenGitSnapshotBackend;
 use Ineersa\HatfieldExt\FileRewind\RewindPathScope;
 use Ineersa\HatfieldExt\FileRewind\RewindProjectIdentity;
 use Ineersa\HatfieldExt\FileRewind\RewindStoragePaths;
+use Ineersa\Tui\Picker\TreePickerController;
 use Ineersa\Tui\Runtime\BridgeTuiExtensionContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
@@ -74,6 +75,39 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
         } finally {
             TestDirectoryIsolation::removeDirectory($projectDir);
         }
+    }
+
+    /**
+     * Thesis: public ExtensionApi turnRowsInDisplayOrder must keep assistant/tool-cycle
+     * turns for file-rewind checkpoints even though /history is user-prompt-only.
+     */
+    #[Test]
+    public function testTurnRowsInDisplayOrderIncludesAssistantTurnsWhileHistoryStaysUserOnly(): void
+    {
+        $sessionId = 'rewind-ext-rows';
+        $tree = $this->sampleTree($sessionId);
+
+        $harness = new VirtualTuiHarness(sessionId: $sessionId);
+        $provider = $this->createStub(TurnTreeProviderInterface::class);
+        $provider->method('forSession')->willReturn($tree);
+
+        $runtime = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withScreen($harness->screen())
+            ->withState(new TuiSessionState($sessionId))
+            ->withTurnTreeProvider($provider)
+            ->build();
+
+        $bridge = new BridgeTuiExtensionContext($runtime);
+        $rows = $bridge->turnRowsInDisplayOrder($sessionId);
+
+        $this->assertSame([1, 2, 3], array_column($rows, 'turnNo'));
+        $this->assertSame(['user', 'assistant', 'user'], array_column($rows, 'displayRole'));
+        $this->assertContains(2, array_column($rows, 'turnNo'), 'assistant/tool-cycle turn must remain a public row');
+
+        $historyTurnNos = TreePickerController::flattenTurnOrder($tree);
+        $this->assertSame([1, 3], $historyTurnNos);
+        $this->assertNotContains(2, $historyTurnNos, '/history must stay user-prompt-only');
     }
 
     private function seedCheckpoint(string $projectDir, string $runId, int $turnNo): void

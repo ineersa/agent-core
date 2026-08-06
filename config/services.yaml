@@ -663,9 +663,6 @@ services:
 
   Ineersa\Tui\Export\SessionEventsExportService: ~
 
-  Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface:
-    alias: Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjectorContractAdapter
-
   Ineersa\AgentCore\Contract\TurnTree\BranchReplayFilterInterface:
     alias: Ineersa\CodingAgent\Session\Replay\BranchReplayFilterContractAdapter
 

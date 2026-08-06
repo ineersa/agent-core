@@ -86,14 +86,13 @@ final class TurnTreeProjector
                     $activeTurnNos,
                     static fn (int $t): bool => $t <= $after,
                 ));
-                if (null !== $currentLeafTurnNo && $currentLeafTurnNo > $after) {
-                    $currentLeafTurnNo = [] === $activeTurnNos ? null : $activeTurnNos[array_key_last($activeTurnNos)];
-                }
-                if (0 === $after) {
+                // Tip stays at retained boundary when that turn survived; otherwise last active or null.
+                if (0 === $after || [] === $activeTurnNos) {
                     $currentLeafTurnNo = null;
                 } elseif (\in_array($after, $activeTurnNos, true)) {
-                    // Keep cursor at retained boundary when discard was emitted from that tip.
                     $currentLeafTurnNo = $after;
+                } elseif (null !== $currentLeafTurnNo && $currentLeafTurnNo > $after) {
+                    $currentLeafTurnNo = $activeTurnNos[array_key_last($activeTurnNos)];
                 }
             }
         }
