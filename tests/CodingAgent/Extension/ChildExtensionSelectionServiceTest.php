@@ -6,8 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
-use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ChildExtensionsConfigDTO;
@@ -222,7 +220,6 @@ final class ChildExtensionSelectionServiceTest extends TestCase
             name: 'scout',
             description: 'scout',
             tools: ['read'],
-            mcp: new McpPolicyDTO(McpAgentModeEnum::None, []),
             extensions: $extensions,
         );
     }

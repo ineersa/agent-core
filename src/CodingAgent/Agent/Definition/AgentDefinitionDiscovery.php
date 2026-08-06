@@ -29,8 +29,8 @@ use Psr\Log\LoggerInterface;
  * missing paths produce an actionable diagnostic. Invalid definition files
  * produce diagnostics; one invalid file does not abort all discovery.
  *
- * Disabled definitions (disabled: true) are still stored in the catalog
- * but excluded from enabled()/requireEnabled() lookups.
+ * Every valid discovered definition is launchable; remove one by deleting
+ * or moving its file. Global agents.enabled still gates discovery entirely.
  *
  * Caches the result for the lifetime of this instance.
  *

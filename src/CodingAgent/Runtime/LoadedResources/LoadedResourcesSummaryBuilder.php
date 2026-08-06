@@ -138,7 +138,6 @@ final readonly class LoadedResourcesSummaryBuilder implements LoadedResourcesSum
             $items[] = new LoadedResourceItemDTO(
                 name: $agent->name,
                 sourcePath: $agent->sourcePath,
-                disabled: $agent->disabled,
             );
         }
 

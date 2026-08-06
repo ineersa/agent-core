@@ -34,6 +34,7 @@ use Ineersa\Tui\Theme\ThemeRegistry;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Tui\Event\TickEvent;
 
 final class LoadedResourcesStartupRegistrarTest extends TestCase
@@ -141,6 +142,8 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
                 pathResolver: new SettingsPathResolver($this->tmpDir),
                 appConfig: $appConfig,
                 extractor: new MarkdownFrontmatterExtractor(),
+                resources: new AppResourceLocator($this->tmpDir),
+                filesystem: new Filesystem(),
                 logger: new NullLogger(),
             ),
             promptTemplateLoader: new PromptTemplateLoader(

@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Skills;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Path\PathResolver;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -19,9 +21,14 @@ use Symfony\Component\Yaml\Yaml;
  *   2. Auto-discovery paths (only when auto-discovery is enabled):
  *        {cwd}/.hatfield/skills
  *        {cwd}/.agents/skills
- *        ~/.hatfield/skills
+ *        ~/.hatfield/skills   (includes materialized built-in skills)
  *        ~/.agents/skills
  *   3. Extension-registered skill directories (only when auto-discovery is enabled)
+ *
+ * Built-in skills shipped under AppResourceLocator::getBuiltinSkillsPath()
+ * are mirrored into ~/.hatfield/skills/<name>/ immediately before scanning
+ * (including when --no-skills suppresses the scan). Hatfield owns those
+ * destinations and rewrites them; sibling user skills are left untouched.
  *
  * Each path is scanned recursively for SKILL.md files. When a directory
  * contains SKILL.md, that directory is treated as a skill root and its
@@ -58,6 +65,8 @@ final class SkillDiscovery
         private readonly SettingsPathResolver $pathResolver,
         private readonly AppConfig $appConfig,
         private readonly MarkdownFrontmatterExtractor $extractor,
+        private readonly AppResourceLocator $resources,
+        private readonly Filesystem $filesystem,
         private ?LoggerInterface $logger = null,
     ) {
     }
@@ -91,6 +100,11 @@ final class SkillDiscovery
 
         $cwd = $this->resolveCwd();
         $homeDir = $this->pathResolver->getHomeDir();
+
+        // Materialize bundled skills into ~/.hatfield/skills before scanning.
+        // Runs even when --no-skills suppresses auto-discovery so the home
+        // copy stays current for later sessions.
+        $this->materializeBuiltinSkills($homeDir);
 
         /** @var list<string> $searchPaths */
         $searchPaths = [];
@@ -217,6 +231,48 @@ final class SkillDiscovery
         }
 
         return null;
+    }
+
+    /**
+     * Mirror every direct bundled skill directory into ~/.hatfield/skills/<name>/.
+     *
+     * Only direct children of the bundled skills root that contain SKILL.md are
+     * treated as built-ins. Nested reference files stay inside those skill trees.
+     * Symfony Filesystem::mirror() overwrites and deletes stale destination files.
+     * Concurrent same-version copies are accepted as idempotent; an interrupted
+     * write is repaired on the next discover().
+     */
+    private function materializeBuiltinSkills(string $homeDir): void
+    {
+        $sourceRoot = $this->resources->getBuiltinSkillsPath();
+        if (!is_dir($sourceRoot)) {
+            return;
+        }
+
+        $entries = scandir($sourceRoot);
+        if (false === $entries) {
+            return;
+        }
+
+        $destinationRoot = rtrim($homeDir, '/').'/.hatfield/skills';
+
+        foreach ($entries as $entry) {
+            if ('.' === $entry || '..' === $entry) {
+                continue;
+            }
+
+            $sourceDir = $sourceRoot.'/'.$entry;
+            if (!is_dir($sourceDir) || !is_file($sourceDir.'/SKILL.md')) {
+                continue;
+            }
+
+            $this->filesystem->mirror(
+                $sourceDir,
+                $destinationRoot.'/'.$entry,
+                null,
+                ['override' => true, 'delete' => true],
+            );
+        }
     }
 
     /**

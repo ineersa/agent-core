@@ -6,7 +6,7 @@ description: Agent definitions, discovery, catalog, and foreground subagent tool
 
 Agent definitions configure named child-agent roles for your project or user environment. For example, you can define agents named `scout`, `reviewer`, `researcher`, `worker`, or any custom name. Each definition lives in a Markdown file with YAML frontmatter.
 
-Agent definitions, discovery, and catalog are implemented. The model-visible `subagent` tool supports single and parallel foreground child execution with parent-scoped artifact storage. Background launch, TUI controls, and interactive child conversations are future work. See [Foreground subagent tool](#foreground-subagent-tool) below.
+Agent definitions, discovery, and catalog are implemented. The model-visible `subagent` tool supports single and parallel foreground child execution with parent-scoped artifact storage. Background launch is not implemented. Parent TUI live view (`/agents-live`) and child HITL routing exist; see [Foreground subagent tool](#foreground-subagent-tool) and [Subagent live view](#subagent-live-view-parent-tui).
 
 ## File format
 
@@ -24,11 +24,7 @@ tools:
 # extensions:
 #   - Ineersa\HatfieldExt\SomeOptional\SomeOptionalExtension
 inheritProjectContext: true
-inheritAgentsMd: true
 systemPromptMode: replace
-maxDepth: 1
-backgroundAllowed: true
-foregroundAllowed: true
 parallelAllowed: true
 ---
 
@@ -41,22 +37,16 @@ You are a scout. Explore the codebase read-only and return dense findings...
 |---|---|---|---|---|
 | `name` | string | yes | — | Unique agent name. Lowercase `[a-z][a-z0-9-]{0,47}`. |
 | `description` | string | yes | — | Human-readable description. |
-| `tools` | list\<string\> | no | inherit all parent-available tools (+ global MCP) | Non-MCP tool allowlist and MCP selectors in one list. Omitted: inherit parent non-MCP tools and MCP from servers with `availability: all` in `.hatfield/mcp.json` (`subagent` always excluded). Explicit lists also inherit all `availability: all` MCP tools unless `mcp:-` is present. Specific servers require explicit `mcp:` selectors. Raw catalog runtime names without `mcp:` are stripped from the explicit non-MCP allowlist; `availability: all` tools remain available through global inheritance, while `availability: specific` tools are not opted in by raw names. MCP selectors: `mcp:*`, `mcp:-`, `mcp:<exposed_name>`, `mcp:<prefix*>` (exactly one terminal `*` is a prefix wildcard; runtime names `{server}_{tool}`). Legacy top-level `mcp.mode` / `mcp.tools` frontmatter is ignored for child policy. Invalid: `tools: []`, blank entries. |
-| `model` | string\|null | no | `null` | Optional model override. |
-| `thinking` | string\|null | no | `null` | Reasoning/thinking override (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). |
-| `skills` | list\<string\> | no | `[]` | Setup skills loaded from start. |
+| `tools` | list\<string\> | no | inherit all parent-available tools (+ global MCP) | Non-MCP tool allowlist and MCP selectors in one list. Omitted: inherit parent non-MCP tools and MCP from servers with `availability: all` in `.hatfield/mcp.json`. Child launch always strips `subagent` and `fork`, then applies `agents.subagent_excluded_tools` (default `settings`, `hatfield_docs`) for both inherit-all and explicit lists. Explicit lists also inherit all `availability: all` MCP tools unless `mcp:-` is present. Specific servers require explicit `mcp:` selectors. Raw catalog runtime names without `mcp:` are stripped from the explicit non-MCP allowlist; `availability: all` tools remain available through global inheritance, while `availability: specific` tools are not opted in by raw names. MCP selectors: `mcp:*`, `mcp:-`, `mcp:<exposed_name>`, `mcp:<prefix*>` (exactly one terminal `*` is a prefix wildcard; runtime names `{server}_{tool}`). Top-level `mcp` frontmatter is rejected as unknown. Invalid: `tools: []`, blank entries. |
+| `model` | string\|null | no | `null` | Optional model override. Null/omitted inherits the exact parent execution model at launch; launch fails if neither override nor parent model exists. |
+| `thinking` | string\|null | no | `null` | Reasoning/thinking override (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). |
+| `skills` | list\<string\> | no | `[]` | Setup skills preloaded into child `user-context`. Singular `skill` is rejected as unknown. |
 | `extensions` | list\<string\> | no | omit = no optional extensions | Optional child extension class names (FQCN). Effective allowlist = `agents.extensions.always_on` ∪ this list (stable first-seen dedup). Omitted means only always-on extensions apply — never inherits optional entries from global `extensions.enabled`. Blank/non-string entries are rejected. |
-| `inheritProjectContext` | bool | no | `true` | Include project context in child system prompt. |
-| `inheritAgentsMd` | bool | no | `true` | Include `AGENTS.md` in child system prompt. |
+| `inheritProjectContext` | bool | no | `true` | When true, copies parent `agents_context` (resolved AGENTS.md hierarchy) into child `user-context` (not system prompt). Does not inherit parent skills or agent catalog. |
 | `systemPromptMode` | enum | no | `replace` | `replace` = harness only; `append` = also include APPEND_SYSTEM.md (+ contributors) with child placeholders. |
-| `maxDepth` | int | no | `1` | Per-agent recursion cap (0–5). |
-| `backgroundAllowed` | bool | no | `true` | Whether background launches are allowed. |
-| `foregroundAllowed` | bool | no | `true` | Whether foreground launches are allowed. |
 | `parallelAllowed` | bool | no | `true` | Whether parallel execution is allowed. Set `false` to opt out. |
-| `disabled` | bool | no | `false` | Disable definition without deleting it. |
-| `handoffFormat` | string\|null | no | `null` | Optional named handoff template. |
 
-**There is no `type` field.** The `type` field was intentionally removed. It is treated as an unknown field and rejected during parsing.
+**There is no `type` field.** The `type` field was intentionally removed. It is treated as an unknown field and rejected during parsing. Per-definition `disabled` is also rejected as unknown — remove an agent by deleting or moving its file.
 
 The body after the closing `---` delimiter is stored as the agent's instructions.
 
@@ -80,9 +70,9 @@ Each directory is scanned non-recursively for `*.md` files (sorted lexicographic
 
 When two definitions have the same `name`, the higher-precedence one wins. An override diagnostic is recorded with winner and loser paths. The overridden definition is not lost — it is still reachable through diagnostics for debugging, but it does not appear in the catalog.
 
-### Disabled definitions
+### Removing definitions
 
-Definitions with `disabled: true` are still loaded into the catalog and appear in `all()` and `disabled()` lookups. They are excluded from `enabled()` and `requireEnabled()` queries. Future launch/execution infrastructure must reject disabled agents.
+Every valid discovered definition is available and launchable. To remove an agent, delete or move its definition file. Per-definition `disabled` frontmatter is rejected as an unknown field.
 
 ### Missing paths
 
@@ -105,7 +95,6 @@ tools:
   - bash
   # availability: all MCP tools are inherited automatically
   - semantic-search
-maxDepth: 1
 ---
 
 Your custom instructions here.
@@ -118,6 +107,18 @@ For project-specific agents, add `.md` files under `.hatfield/agents/` or `.agen
 ### User-level agents
 
 For personal agents available across projects, add `.md` files under `~/.hatfield/agents/` or `~/.agents/`. These can be overridden by project definitions with the same name.
+
+### Bundled starter agents
+
+Hatfield ships opinionated starter definitions under `src/CodingAgent/Resources/agents/` (`scout`, `reviewer`, `researcher`, `architect`, `browser`). Install them into the user agents directory with:
+
+```bash
+hatfield agents:init
+```
+
+- Default: if any same-named target already exists under `~/.hatfield/agents/`, the command fails before writing and lists collisions. Rerun with `--force` to overwrite only those bundled filenames.
+- `--force` never deletes unrelated user agent files or subdirectories.
+- These starters pin explicit models, MCP selectors, and external skills; they require matching providers/skills/MCP servers in the install environment.
 
 ## Settings
 
@@ -144,15 +145,12 @@ agents:
 ## Catalog API
 
 
-On new parent sessions, enabled foreground agent definitions are also injected as a synthetic `user-context` message with `<agents_instructions>` and `<available_agents>` blocks (name and description only — not full agent instructions). The built-in `config/SYSTEM.md` documents this context channel alongside `<available_skills>`.
+On new parent sessions, discovered agent definitions are also injected as a synthetic `user-context` message with `<agents_instructions>` and `<available_agents>` blocks (name and description only — not full agent instructions). The built-in `config/SYSTEM.md` documents this context channel alongside `<available_skills>`.
 The catalog (`AgentDefinitionCatalog`) provides:
 
 - `get(string $name): ?AgentDefinitionDTO` — lookup by name
 - `require(string $name): AgentDefinitionDTO` — lookup, throws if missing
-- `requireEnabled(string $name): AgentDefinitionDTO` — lookup, throws if missing or disabled
-- `all(): list<AgentDefinitionDTO>` — all definitions including disabled
-- `enabled(): list<AgentDefinitionDTO>` — enabled definitions only
-- `disabled(): list<AgentDefinitionDTO>` — disabled definitions only
+- `all(): list<AgentDefinitionDTO>` — all registered definitions
 - `diagnostics(): list<AgentDefinitionDiagnosticDTO>` — discovery diagnostics
 
 ## Foreground subagent tool
@@ -212,13 +210,15 @@ scouts/reviewers:
    overall tool call fails with a report that still lists every child artifact.
 2. **Parent-scoped storage.** Child runs are stored entirely under the parent
    session directory — no top-level session rows or directories are created.
-3. **Inline progress.** While the child runs, compact progress status lines
-   (agent name, turn number, tool count, last tool name) appear inline in the
-   parent's tool result widget. The full child transcript is not duplicated.
-4. **Non-interactive.** Child agents cannot ask the human interactively. If a
-   child enters `WaitingHuman` (should not happen for non-interactive runs), the execution service
-   cancels the child, finalizes the artifact as `Failed`, and
-   returns an explanation to the parent LLM.
+3. **Progress and live view.** Compact progress status lines (agent name, turn
+   number, tool count, last tool name) appear inline in the parent's tool result
+   widget. The parent can also open `/agents-live` for interactive child live
+   view (steer/follow-up, ESC cancel). The full child transcript is not
+   duplicated into the parent tool result.
+4. **Child HITL.** Children are interactive foreground runs: they may enter
+   `WaitingHuman` for `ask_human`/SafeGuard. Parent live view answers those
+   questions on the child run id; outside live view, unanswered child HITL still
+   fails closed. Do not treat children as permanently non-interactive.
 5. **Cancellation.** If the parent run is cancelled while a child is running,
    the child is cancelled and the artifact is finalized as `Cancelled`. The
    parent-visible subagent tool error includes the artifact ID, status, and a
@@ -226,9 +226,11 @@ scouts/reviewers:
    counts, last activity, bounded assistant text). Use `agent_retrieve` with
    modes `metadata`, `events`, or `history` to recover more detail; cancellation
    remains an error/cancelled tool result, not success.
-6. **Timeout.** Foreground `subagent` execution uses an internal poll timeout
-   (`agents.subagent_tool_timeout_seconds`, default **1800** seconds; minimum
-   **60**, invalid lower values fail config load). This is not the generic
+6. **Timeout.** Foreground `subagent` execution uses a durable deferred-batch
+   deadline from `agents.subagent_tool_timeout_seconds` (default **1800**
+   seconds; minimum **60**, invalid lower values fail config load). The batch
+   schedules a timeout interruption (`DelayStamp` +
+   `InterruptDeferredSubagentBatchMessage`). This is not the generic
    ToolExecutor timeout (the subagent tool has no ToolExecutor cap). A timed-out
    child is finalized as `Failed`. See [Settings](settings.md).
 
@@ -279,7 +281,7 @@ debug summary.
 - Provide at least one of `artifact_id` or `agent_run_id` (both must refer to the
   same artifact when both are set).
 - `mode` (default `handoff`): `handoff`, `metadata`, `events`, `history`, `debug`.
-- `limit` (default 20, max 100): bounds `events` and `history` rows.
+- `limit` accepted range **1–100**, default **20**: bounds `events` and `history` rows.
 
 **Privacy and bounds:**
 
@@ -308,9 +310,6 @@ Nested subagents are not supported:
 3. **Global disable** — `HATFIELD_AGENTS_DISABLED=1` blocks all subagent launches
    (subprocess/CLI boundary).
 
-Agent definition `maxDepth` remains in the catalog format for forward compatibility
-but is not used by the v1 foreground subagent launcher.
-
 ### Tool and MCP policy for children
 
 Each child run receives a resolved tool/MCP policy derived from the agent
@@ -335,7 +334,7 @@ definition `tools` list (including `mcp:` selectors) plus hard safety rules:
   Exactly one terminal `*` is
   a prefix wildcard; a selector with no `*` is always exact, even if it ends with
   `_`. Embedded or multiple `*` characters are not globs.
-- The `subagent` tool is **always excluded** from child tool lists in v1.
+- `subagent` and `fork` are **always excluded** from child tool lists in v1, then `agents.subagent_excluded_tools` (default `settings`, `hatfield_docs`) is stripped for every child.
 - Parent/main runs only expose MCP tools from `availability: all` servers in
   the active toolset; `availability: specific` tools stay hidden until a child
   opts in via `mcp:` selectors.
@@ -353,19 +352,18 @@ The child system prompt is built from:
    and `<guidelines>` rendered only for the child's resolved `allowed_tools`,
    plus current date and cwd. This does **not** include parent `<available_agents>`,
    subagent tool guidance, or the full parent `SYSTEM.md`.
-3. Parent AGENTS.md / project context when `inheritAgentsMd: true` **or**
-   `inheritProjectContext: true`, copied from the parent run's `user-context`
-   message with metadata source `agents_context`.
-4. When `systemPromptMode: append`, rendered `APPEND_SYSTEM.md` (home + project)
+3. When `systemPromptMode: append`, rendered `APPEND_SYSTEM.md` (home + project)
    and extension prompt contributors using **child-safe** placeholders — not
    the parent system prompt.
 
-`systemPromptMode: replace` (default) omits step 4.
+`systemPromptMode: replace` (default) omits step 3.
 
 Child `user-context` messages (in order):
 
-1. **Preloaded skills** when the agent definition lists `skills` / `skill`.
-2. **Non-interactive contract** (artifact ID, allowed tools, foreground worker rules).
+1. Parent `agents_context` when `inheritProjectContext: true` (not system prompt).
+2. **Preloaded skills** when the agent definition lists `skills`.
+3. **Interactive foreground contract** (artifact ID; may use `ask_human` /
+   approval flows when necessary).
 
 The task text follows as the `user` message.
 
@@ -376,9 +374,13 @@ The task text follows as the `user` message.
   is managed by the subagent tool's own timeout mechanism.  A future task
   should add child scanning when background/async child modes are introduced.
 
-## Project skill
+## Built-in skill
 
-Tracked quick reference for models and authors: `.hatfield/skills/subagents/SKILL.md` (discovered from `{cwd}/.hatfield/skills` like other Hatfield skills). See also `FRONTMATTER.md` in that directory.
+Hatfield ships a built-in `subagents` skill under
+`src/CodingAgent/Resources/skills/subagents/`. On discovery, each direct
+bundled skill directory is mirrored into `~/.hatfield/skills/<name>/` and
+then discovered with normal home skill precedence (project skills still win).
+See also `FRONTMATTER.md` next to `SKILL.md` in that skill directory.
 
 ## Current limitations
 
@@ -389,8 +391,8 @@ The following features are **not yet implemented**:
 | Background/async launches (`background: true`) | Not implemented | Future |
 | `agent_start`, `agent_status` tools | Not implemented | Future |
 | `/agents` TUI command | Not implemented | Future |
-| Dedicated dock/overlay or structured subagent transcript widget | Not implemented | Future |
-| Interactive child HITL, approvals, or questions | Not supported (WaitingHuman → Failed) | Future |
+| Dedicated dock/overlay beyond current transcript cards / live view | Partial (cards + `/agents-live`) | Future |
+| Interactive child HITL, approvals, or questions | Live view supports child HITL/SafeGuard; non-live WaitingHuman still fails closed | Future |
 | Parallel execution (`tasks` array) | Implemented (cap: `agents.max_agents`) | — |
 | Child artifact retrieval (`agent_retrieve`) | Implemented | — |
 

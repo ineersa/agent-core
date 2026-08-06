@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
@@ -28,6 +29,7 @@ use Ineersa\Tui\Completion\SlashCommandCompletionProvider;
 use Ineersa\Tui\Extension\TuiCommandRegistryAdapter;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Filesystem\Filesystem;
 
 final class FileRewindExtensionIntegrationTest extends TestCase
 {
@@ -78,6 +80,8 @@ final class FileRewindExtensionIntegrationTest extends TestCase
                 pathResolver: new SettingsPathResolver($appConfig->cwd),
                 appConfig: $appConfig,
                 extractor: new MarkdownFrontmatterExtractor(),
+                resources: new AppResourceLocator('' !== $appConfig->cwd ? $appConfig->cwd : '/tmp'),
+                filesystem: new Filesystem(),
             ),
         );
 

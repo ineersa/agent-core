@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Skills;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -13,6 +14,7 @@ use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
 
 /**
  * Tests for SkillDiscovery.
@@ -293,6 +295,8 @@ final class SkillDiscoveryTest extends TestCase
             pathResolver: $pathResolver,
             appConfig: $appConfig,
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
         );
 
         $this->expectException(\RuntimeException::class);
@@ -389,15 +393,110 @@ final class SkillDiscoveryTest extends TestCase
         $this->assertSame([], $skills);
     }
 
+    public function testMaterializesBuiltinSkillsIntoHomeAndRewritesStaleFiles(): void
+    {
+        $appRoot = $this->tmpDir.'/app';
+        $homeDir = $this->tmpDir.'/home';
+        $cwd = $this->tmpDir.'/project';
+        mkdir($cwd, 0777, true);
+
+        $alpha = $appRoot.'/src/CodingAgent/Resources/skills/alpha';
+        $beta = $appRoot.'/src/CodingAgent/Resources/skills/beta';
+        mkdir($alpha, 0777, true);
+        mkdir($beta, 0777, true);
+        file_put_contents($alpha.'/SKILL.md', "---\nname: alpha\ndescription: Alpha built-in\n---\n\nAlpha body");
+        file_put_contents($alpha.'/notes.md', 'alpha notes');
+        file_put_contents($beta.'/SKILL.md', "---\nname: beta\ndescription: Beta built-in\n---\n\nBeta body");
+        // Nested dir without its own skill root must not become a separate built-in.
+        mkdir($alpha.'/nested-not-skill', 0777, true);
+        file_put_contents($alpha.'/nested-not-skill/SKILL.md', "---\nname: nested\ndescription: nested\n---\n");
+
+        $staleDir = $homeDir.'/.hatfield/skills/alpha';
+        mkdir($staleDir, 0777, true);
+        file_put_contents($staleDir.'/SKILL.md', "---\nname: alpha\ndescription: stale\n---\n\nStale body");
+        file_put_contents($staleDir.'/obsolete.txt', 'remove me');
+
+        $userSkillDir = $homeDir.'/.hatfield/skills/user-skill';
+        mkdir($userSkillDir, 0777, true);
+        file_put_contents($userSkillDir.'/SKILL.md', "---\nname: user-skill\ndescription: User owned\n---\n\nUser body");
+
+        $discovery = $this->createDiscovery(cwd: $cwd, homeDir: $homeDir, appRoot: $appRoot);
+        $skills = $discovery->discover();
+        $byName = [];
+        foreach ($skills as $skill) {
+            $byName[$skill->name] = $skill;
+        }
+
+        $this->assertArrayHasKey('alpha', $byName);
+        $this->assertArrayHasKey('beta', $byName);
+        $this->assertArrayHasKey('user-skill', $byName);
+        $this->assertArrayNotHasKey('nested', $byName);
+
+        $this->assertSame($homeDir.'/.hatfield/skills/alpha', $byName['alpha']->skillDirectory);
+        $this->assertSame('Alpha built-in', $byName['alpha']->description);
+        $this->assertFileExists($homeDir.'/.hatfield/skills/alpha/notes.md');
+        $this->assertFileDoesNotExist($homeDir.'/.hatfield/skills/alpha/obsolete.txt');
+        $this->assertSame('User owned', $byName['user-skill']->description);
+        $this->assertSame($userSkillDir, $byName['user-skill']->skillDirectory);
+    }
+
+    public function testMaterializedBuiltinIsSuppressedByNoSkillsButStillRewritten(): void
+    {
+        $appRoot = $this->tmpDir.'/app';
+        $homeDir = $this->tmpDir.'/home';
+        $cwd = $this->tmpDir.'/project';
+        mkdir($cwd, 0777, true);
+
+        $builtin = $appRoot.'/src/CodingAgent/Resources/skills/alpha';
+        mkdir($builtin, 0777, true);
+        file_put_contents($builtin.'/SKILL.md', "---\nname: alpha\ndescription: Alpha built-in\n---\n\nAlpha body");
+
+        $staleDir = $homeDir.'/.hatfield/skills/alpha';
+        mkdir($staleDir, 0777, true);
+        file_put_contents($staleDir.'/SKILL.md', "---\nname: alpha\ndescription: stale\n---\n");
+        file_put_contents($staleDir.'/obsolete.txt', 'remove me');
+
+        $config = new SkillsConfig(noSkills: true);
+        $discovery = $this->createDiscovery(cwd: $cwd, config: $config, homeDir: $homeDir, appRoot: $appRoot);
+        $skills = $discovery->discover();
+
+        $this->assertSame([], $skills);
+        $this->assertStringContainsString('Alpha built-in', (string) file_get_contents($homeDir.'/.hatfield/skills/alpha/SKILL.md'));
+        $this->assertFileDoesNotExist($homeDir.'/.hatfield/skills/alpha/obsolete.txt');
+    }
+
+    public function testBundledSubagentsSkillStaysUnderCharacterBudget(): void
+    {
+        $skillRoot = \dirname(__DIR__, 3).'/src/CodingAgent/Resources/skills/subagents';
+        $this->assertDirectoryExists($skillRoot);
+
+        $total = 0;
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($skillRoot, \FilesystemIterator::SKIP_DOTS),
+        );
+        foreach ($iterator as $file) {
+            if (!$file->isFile()) {
+                continue;
+            }
+            $contents = file_get_contents($file->getPathname());
+            $this->assertNotFalse($contents);
+            $total += \strlen($contents);
+        }
+
+        $this->assertLessThan(20000, $total, \sprintf('Bundled subagents skill is %d characters; budget is <20000.', $total));
+    }
+
     /* ───────── Private helpers ───────── */
 
     private function createDiscovery(
         ?string $cwd = null,
         ?SkillsConfig $config = null,
         ?string $homeDir = null,
+        ?string $appRoot = null,
     ): SkillDiscovery {
         $projectDir = $this->tmpDir;
         $resolvedHomeDir = $homeDir ?? $this->tmpDir.'/home';
+        $resolvedAppRoot = $appRoot ?? $this->tmpDir;
 
         // Create the home directory so SettingsPathResolver doesn't fallback to /tmp
         if (!is_dir($resolvedHomeDir)) {
@@ -413,6 +512,8 @@ final class SkillDiscoveryTest extends TestCase
                 cwd: $cwd ?? $this->tmpDir,
             ),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($resolvedAppRoot),
+            filesystem: new Filesystem(),
         );
     }
 }

@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
 use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -29,6 +30,7 @@ use Ineersa\Tui\CompactHeader\CompactHeaderSnapshotProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
@@ -78,13 +80,15 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
             pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
             appConfig: $this->appConfig(),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
             logger: new NullLogger(),
         );
 
         $agentsDir = $this->tmpDir.'/.hatfield/agents';
         mkdir($agentsDir, 0777, true);
         file_put_contents($agentsDir.'/scout.md', "---\nname: scout\ndescription: Scout\n---\n");
-        file_put_contents($agentsDir.'/worker.md', "---\nname: worker\ndescription: Worker\ndisabled: true\n---\n");
+        file_put_contents($agentsDir.'/worker.md', "---\nname: worker\ndescription: Worker\n---\n");
 
         $agentDiscovery = new AgentDefinitionDiscovery(
             agentsConfig: new AgentsConfig(enabled: true),
@@ -105,7 +109,7 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
 
         $this->assertSame(['plan', 'review'], $snapshot->prompts);
         $this->assertSame(['castor'], $snapshot->skills);
-        $this->assertSame(['scout'], $snapshot->agentNames);
+        $this->assertSame(['scout', 'worker'], $snapshot->agentNames);
         $this->assertCount(2, $snapshot->mcpServers);
         $byName = [];
         foreach ($snapshot->mcpServers as $entry) {
@@ -130,6 +134,8 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
             pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
             appConfig: $this->appConfig(),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
             logger: new NullLogger(),
         );
 
@@ -168,6 +174,8 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
             pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
             appConfig: $this->appConfig(),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
             logger: new NullLogger(),
         );
 
@@ -199,6 +207,8 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
             pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
             appConfig: $this->appConfig(),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
             logger: new NullLogger(),
         );
 
@@ -249,6 +259,8 @@ JSON;
             pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
             appConfig: $this->appConfig(),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
             logger: new NullLogger(),
         );
 

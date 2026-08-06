@@ -88,7 +88,6 @@ final class AgentDefinitionDiscoveryTest extends TestCase
             '---
 name: scout
 description: Scout agent
-inheritProjectContext: true
 ---
 Body
 ',
@@ -96,9 +95,9 @@ Body
 
         $catalog = $this->createDiscovery()->discover();
 
-        $this->assertCount(2, $catalog->enabled());
+        $this->assertCount(2, $catalog->all());
         $byName = [];
-        foreach ($catalog->enabled() as $definition) {
+        foreach ($catalog->all() as $definition) {
             $byName[$definition->name] = $definition;
         }
         $this->assertSame(['read', 'grep', 'bash'], $byName['reviewer']->tools);
@@ -308,25 +307,26 @@ Body
         $this->assertCount(0, $catalog->diagnostics(), 'Auto-discovery missing dirs should not emit diagnostics');
     }
 
-    public function testDisabledDefinitionStillInAllAndDisabled(): void
+    public function testDisabledFrontmatterIsInvalidDefinition(): void
     {
         $this->createValidDefinition(
             $this->cwd.'/.agents/disabled-agent.md',
             'disabled-agent',
-            ['description' => 'Disabled by default', 'disabled' => true],
+            ['description' => 'Legacy disabled flag', 'disabled' => true],
         );
 
         $discovery = $this->createDiscovery();
         $catalog = $discovery->discover();
 
-        $this->assertNotNull($catalog->get('disabled-agent'));
-        $allNames = array_map(static fn ($d) => $d->name, $catalog->all());
-        $disabledNames = array_map(static fn ($d) => $d->name, $catalog->disabled());
-        $enabledNames = array_map(static fn ($d) => $d->name, $catalog->enabled());
-
-        $this->assertContains('disabled-agent', $allNames);
-        $this->assertContains('disabled-agent', $disabledNames);
-        $this->assertNotContains('disabled-agent', $enabledNames);
+        $this->assertNull($catalog->get('disabled-agent'));
+        $hasInvalidDef = false;
+        foreach ($catalog->diagnostics() as $d) {
+            if ('invalid_definition' === $d->type && str_contains($d->message, 'disabled')) {
+                $hasInvalidDef = true;
+                break;
+            }
+        }
+        $this->assertTrue($hasInvalidDef, 'Expected invalid_definition diagnostic for unknown disabled field');
     }
 
     public function testDiscoveryIsCached(): void

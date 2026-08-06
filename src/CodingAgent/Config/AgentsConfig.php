@@ -30,8 +30,6 @@ final readonly class AgentsConfig
     public function __construct(
         public bool $enabled = true,
         public array $paths = [],
-        #[SerializedName('retrieve')]
-        public AgentArtifactRetrievalLimitsConfig $retrieve = new AgentArtifactRetrievalLimitsConfig(),
         #[SerializedName('max_agents')]
         public int $maxAgents = 4,
 
@@ -72,8 +70,6 @@ final readonly class AgentsConfig
             }
         }
 
-        $retrieve = AgentArtifactRetrievalLimitsConfig::fromRaw($raw['retrieve'] ?? []);
-
         $maxAgents = 4;
         if (\array_key_exists('max_agents', $raw) && \is_int($raw['max_agents']) && $raw['max_agents'] > 0) {
             $maxAgents = $raw['max_agents'];
@@ -81,12 +77,11 @@ final readonly class AgentsConfig
 
         $subagentToolTimeoutSeconds = self::resolveSubagentToolTimeoutSeconds($raw);
         $subagentExcludedTools = self::resolveSubagentExcludedTools($raw);
-        $extensions = ChildExtensionsConfigDTO::fromRaw($raw['extensions'] ?? null, 'agents.extensions');
+        $extensions = ChildExtensionsConfigDTO::fromRaw($raw['extensions'] ?? null, 'agents.extensions', acceptEnabled: false);
 
         return new self(
             enabled: $enabled,
             paths: $paths,
-            retrieve: $retrieve,
             maxAgents: $maxAgents,
             subagentToolTimeoutSeconds: $subagentToolTimeoutSeconds,
             subagentExcludedTools: $subagentExcludedTools,

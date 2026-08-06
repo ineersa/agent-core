@@ -25,7 +25,7 @@ final readonly class ChildExtensionsConfigDTO
     ) {
     }
 
-    public static function fromRaw(mixed $raw, string $path): self
+    public static function fromRaw(mixed $raw, string $path, bool $acceptEnabled = true): self
     {
         if (null === $raw) {
             return new self();
@@ -36,6 +36,14 @@ final readonly class ChildExtensionsConfigDTO
         }
 
         $alwaysOn = self::parseClassList($raw, 'always_on', $path.'.always_on');
+        if (!$acceptEnabled) {
+            if (\array_key_exists('enabled', $raw)) {
+                throw new \InvalidArgumentException(\sprintf('Invalid key for %s: "enabled" is not supported (use frontmatter extensions or always_on).', $path));
+            }
+
+            return new self(alwaysOn: $alwaysOn);
+        }
+
         $enabled = \array_key_exists('enabled', $raw)
             ? self::parseClassList($raw, 'enabled', $path.'.enabled')
             : [];

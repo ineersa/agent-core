@@ -18,7 +18,6 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRetrievalService;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsFactory;
-use Ineersa\CodingAgent\Config\AgentArtifactRetrievalLimitsConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -364,7 +363,6 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
             artifactRegistry: $this->registry,
             childRunDirectory: $this->directory,
             argumentsFactory: new AgentRetrieveArgumentsFactory($serializer, $validator),
-            limits: new AgentArtifactRetrievalLimitsConfig(),
             runStore: $runStore ?? $this->createStub(RunStoreInterface::class),
             eventStore: $eventStore ?? $this->createStub(EventStoreInterface::class),
             logger: self::getContainer()->get('logger'),

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\LoadedResources;
 
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiscovery;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\PromptsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
@@ -26,6 +27,7 @@ use Ineersa\Tui\Theme\ThemeRegistry;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Filesystem\Filesystem;
 
 /**
  * Contract tests: skill, prompt, and agent collisions surface winner vs loser paths in summary DTO.
@@ -60,6 +62,8 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
             pathResolver: new SettingsPathResolver($this->tmpDir),
             appConfig: $this->appConfig($this->tmpDir),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
             logger: new NullLogger(),
         );
 
@@ -221,7 +225,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
     private function emptyThemeRegistry(): ThemeRegistry
     {
         $appConfig = $this->appConfig($this->tmpDir);
-        $resources = new \Ineersa\CodingAgent\Config\AppResourceLocator(ProjectDir::get());
+        $resources = new AppResourceLocator(ProjectDir::get());
 
         return new ThemeRegistry($appConfig, $resources, new NullLogger());
     }
@@ -235,6 +239,8 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
             pathResolver: new SettingsPathResolver($this->tmpDir),
             appConfig: $this->appConfig($cwd),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
             logger: new NullLogger(),
         );
     }
@@ -281,7 +287,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
     private function emptyThemeRegistryForCwd(string $cwd): ThemeRegistry
     {
         $appConfig = $this->appConfig($cwd);
-        $resources = new \Ineersa\CodingAgent\Config\AppResourceLocator(ProjectDir::get());
+        $resources = new AppResourceLocator(ProjectDir::get());
 
         return new ThemeRegistry($appConfig, $resources, new NullLogger());
     }

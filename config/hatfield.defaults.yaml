@@ -369,16 +369,14 @@ runtime:
 #
 # Directories are scanned non-recursively for *.md files. Configured paths
 # may be a single .md file or a directory of *.md files.
-#
-# Disabled definitions (disabled: true) are loaded into the catalog but
-# excluded from enabled()/requireEnabled() lookups.
+# Every valid discovered definition is launchable; remove one by deleting/moving its file.
 #
 agents:
     # Whether agent discovery is enabled.
     enabled: true
 
-    # Internal poll timeout (seconds) for foreground subagent tool execution.
-    # SubagentExecutionService waits up to this long for each child run to finish.
+    # Durable deferred-batch deadline (seconds) for foreground subagent tool execution.
+    # Schedules timeout interruption (DelayStamp + InterruptDeferredSubagentBatchMessage).
     # Not the generic ToolExecutor timeout (the subagent tool has no ToolExecutor cap).
     # Default: 1800 (30 minutes). Minimum 60; values below 60 are rejected at load.
     # subagent_tool_timeout_seconds: 2400
@@ -396,12 +394,6 @@ agents:
     extensions:
         always_on:
             - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
-
-    # Bounded output limits for agent_retrieve (optional overrides).
-    # retrieve:
-    #     default_limit: 20
-    #     max_limit: 100
-    #     history_summary_chars: 240
 
     # Additional explicit agent definition file or directory paths.
     # These have the highest precedence (override all auto-discovery).

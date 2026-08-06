@@ -38,8 +38,7 @@ final class CompactHeaderSnapshotProvider
         sort($skills, \SORT_STRING);
 
         $catalog = $this->agentDefinitionDiscovery->discover();
-        $enabled = $catalog->enabled();
-        $agentNames = array_map(static fn ($d) => $d->name, $enabled);
+        $agentNames = array_map(static fn ($d) => $d->name, $catalog->all());
         sort($agentNames, \SORT_STRING);
 
         $mcpServers = [];

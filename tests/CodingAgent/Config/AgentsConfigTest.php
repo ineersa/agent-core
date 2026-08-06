@@ -240,6 +240,19 @@ final class AgentsConfigTest extends TestCase
         ]);
     }
 
+    public function testFromRawRejectsUnusedAgentsExtensionsEnabled(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('agents.extensions');
+
+        AgentsConfig::fromRaw([
+            'extensions' => [
+                'always_on' => ['Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension'],
+                'enabled' => ['Ineersa\\HatfieldExt\\TaskWorkflow\\TaskWorkflowExtension'],
+            ],
+        ]);
+    }
+
     public function testForksFromRawParsesExtensionsLists(): void
     {
         $forks = \Ineersa\CodingAgent\Config\ForksConfigDTO::fromRaw([
