@@ -16,10 +16,10 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Thesis: direct bang shells become canonical branch-owned command+effect
+ * Thesis: direct bang shells become canonical turn-owned command+effect
  * events under RunMessageProcessor semantics. Pre-conversation shells stay
  * turn 0, active shells attach to the current turn, and terminal conversational
- * shells seed a child turn so generic rewind can abandon them.
+ * shells seed a new turn so retained-history discard can abandon them.
  */
 #[CoversClass(ApplyShellCommandHandler::class)]
 final class ApplyShellCommandHandlerTest extends TestCase

@@ -48,7 +48,7 @@ interface TuiSessionSwitchServiceInterface
      * a history_position_set event, rebuilds RunState, and emits run.history_position_changed.
      *
      * Unlike requestResume/requestNewDraft, this does NOT stop the event
-     * loop — the rewind is observed reactively via RuntimeEventPoller.
+     * loop — the history position change is observed reactively via RuntimeEventPoller.
      *
      * @throws \RuntimeException if there is no active session or run handle
      */

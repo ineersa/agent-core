@@ -1,5 +1,5 @@
 {
-  "$schema": "SESSION-07C tree rewind replay fixture",
+  "$schema": "SESSION-07C history-select replay fixture",
   "model": "llama_cpp_test/test",
   "provider_id": "llama_cpp_test",
   "reasoning": "off",

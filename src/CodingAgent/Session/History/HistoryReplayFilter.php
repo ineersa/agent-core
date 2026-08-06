@@ -65,22 +65,6 @@ final class HistoryReplayFilter
         $canonicalEventCount = \count($events);
         $canonicalLastSeq = $this->maxSeq($events);
 
-        // Streams without turn_advanced (unit fixtures / pre-first-turn) have no
-        // projected turns; pass the full ordered stream so hot-prompt rebuild still
-        // sees content. Once any turn_advanced exists, retained-prefix rules apply.
-        if (!$this->streamHasTurnAdvanced($events)) {
-            $sorted = $events;
-            usort($sorted, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
-
-            return new HistoryReplayResultDTO(
-                events: $sorted,
-                canonicalEventCount: $canonicalEventCount,
-                canonicalLastSeq: $canonicalLastSeq,
-                retainedTurnNos: $retainedTurnNos,
-                positionTurnNo: $positionTurnNo,
-            );
-        }
-
         $filtered = [];
         foreach ($events as $event) {
             if (0 === $event->turnNo) {
@@ -233,20 +217,6 @@ final class HistoryReplayFilter
         }
 
         return $exclude;
-    }
-
-    /**
-     * @param list<RunEvent> $events
-     */
-    private function streamHasTurnAdvanced(array $events): bool
-    {
-        foreach ($events as $event) {
-            if (RunEventTypeEnum::TurnAdvanced->value === $event->type) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private function isTurnSeedingCommandEvent(RunEvent $event): bool

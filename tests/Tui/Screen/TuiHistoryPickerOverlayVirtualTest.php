@@ -28,7 +28,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends TestCase
         $sessionId = 'history-overlay-session';
         $harness = new VirtualTuiHarness(sessionId: $sessionId);
         $provider = $this->createStub(HistoryProviderInterface::class);
-        $provider->method('forSession')->willReturn($this->sampleTree($sessionId));
+        $provider->method('forSession')->willReturn($this->sampleHistory($sessionId));
         $picker = new HistoryPickerController($provider, $this->createStub(TuiSessionSwitchServiceInterface::class));
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), new TuiSessionState($sessionId));
 
@@ -47,7 +47,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends TestCase
         $sessionId = 'history-remount-session';
         $harness = new VirtualTuiHarness(sessionId: $sessionId);
         $provider = $this->createStub(HistoryProviderInterface::class);
-        $provider->method('forSession')->willReturn($this->sampleTree($sessionId));
+        $provider->method('forSession')->willReturn($this->sampleHistory($sessionId));
         $picker = new HistoryPickerController($provider, $this->createStub(TuiSessionSwitchServiceInterface::class));
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), new TuiSessionState($sessionId));
 
@@ -59,7 +59,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends TestCase
         $this->assertSame(1, substr_count($screen, 'hello'));
     }
 
-    private function sampleTree(string $sessionId): HistoryView
+    private function sampleHistory(string $sessionId): HistoryView
     {
         // Provider contract: user-prompt rows only.
         return new HistoryView(

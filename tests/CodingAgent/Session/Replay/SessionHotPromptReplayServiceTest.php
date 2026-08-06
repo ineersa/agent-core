@@ -60,6 +60,18 @@ final class SessionHotPromptReplayServiceTest extends TestCase
             runId: $runId,
             seq: 2,
             turnNo: 1,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [
+                'turn_no' => 1,
+                'step_id' => 'ta-1',
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        $eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 3,
+            turnNo: 1,
             type: RunEventTypeEnum::LlmStepCompleted->value,
             payload: [
                 'step_id' => 's1',
@@ -78,7 +90,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
         $this->assertSame('canonical_events', $rebuiltState->source);
-        $this->assertSame(2, $rebuiltState->lastSeq);
+        $this->assertSame(3, $rebuiltState->lastSeq);
         $this->assertCount(2, $rebuiltState->messages);
         $this->assertTrue($rebuiltState->isContiguous);
 
@@ -115,6 +127,18 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $eventStore->append(new RunEvent(
             runId: $runId,
             seq: 2,
+            turnNo: 1,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [
+                'turn_no' => 1,
+                'step_id' => 'ta-1',
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        $eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 3,
             turnNo: 1,
             type: RunEventTypeEnum::LlmStepCompleted->value,
             payload: [
@@ -174,6 +198,18 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $eventStore->append(new RunEvent(
             runId: $runId,
             seq: 2,
+            turnNo: 1,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [
+                'turn_no' => 1,
+                'step_id' => 'ta-1',
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        $eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 3,
             turnNo: 1,
             type: RunEventTypeEnum::LlmStepCompleted->value,
             payload: [
@@ -243,6 +279,18 @@ final class SessionHotPromptReplayServiceTest extends TestCase
             runId: $runId,
             seq: 2,
             turnNo: 1,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [
+                'turn_no' => 1,
+                'step_id' => 'ta-1',
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        $eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 3,
+            turnNo: 1,
             type: RunEventTypeEnum::LlmStepCompleted->value,
             payload: [
                 'step_id' => 's1',
@@ -264,7 +312,19 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         // Uses a documented fixture event type, not a production enum.
         $eventStore->append(new RunEvent(
             runId: $runId,
-            seq: 3,
+            seq: 4,
+            turnNo: 2,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [
+                'turn_no' => 2,
+                'step_id' => 'ta-2',
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        $eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 5,
             turnNo: 2,
             type: 'context_compacted',
             payload: [
@@ -334,6 +394,18 @@ final class SessionHotPromptReplayServiceTest extends TestCase
             runId: $runId,
             seq: 2,
             turnNo: 1,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [
+                'turn_no' => 1,
+                'step_id' => 'ta-1',
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        $eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 3,
+            turnNo: 1,
             type: 'context_compacted',
             payload: [
                 'messages' => [
@@ -354,7 +426,19 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         // New canonical llm_step_completed appends after replacement.
         $eventStore->append(new RunEvent(
             runId: $runId,
-            seq: 3,
+            seq: 4,
+            turnNo: 2,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [
+                'turn_no' => 2,
+                'step_id' => 'ta-2',
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        $eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 5,
             turnNo: 2,
             type: RunEventTypeEnum::LlmStepCompleted->value,
             payload: [
@@ -417,6 +501,18 @@ final class SessionHotPromptReplayServiceTest extends TestCase
             runId: $runId,
             seq: 2,
             turnNo: 1,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [
+                'turn_no' => 1,
+                'step_id' => 'ta-1',
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        $eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 3,
+            turnNo: 1,
             type: RunEventTypeEnum::LlmStepCompleted->value,
             payload: [
                 'step_id' => 's1',
@@ -438,7 +534,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
         $this->assertSame('canonical_events', $rebuiltState->source);
-        $this->assertSame(2, $rebuiltState->lastSeq);
+        $this->assertSame(3, $rebuiltState->lastSeq);
         $this->assertCount(2, $rebuiltState->messages);
         $this->assertNotNull($hotPromptStore->get($runId));
 
@@ -561,7 +657,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $this->assertSame(12, $rebuiltState->lastSeq);
         $this->assertTrue($rebuiltState->isContiguous, 'Full canonical stream is contiguous');
 
-        // Messages must only contain active-branch messages.
+        // Messages must only contain retained-history messages.
         $messageTexts = [];
         foreach ($rebuiltState->messages as $msg) {
             $messageTexts[] = $msg['content'][0]['text'] ?? '';
@@ -570,7 +666,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $this->assertContains('Hello', $messageTexts);
         $this->assertContains('Hi!', $messageTexts);
         $this->assertContains('ACTIVE response', $messageTexts);
-        $this->assertNotContains('ABANDONED response', $messageTexts, 'Abandoned branch messages must be excluded');
+        $this->assertNotContains('ABANDONED response', $messageTexts, 'Discarded-tail messages must be excluded');
     }
 
     // ── Context compaction hot prompt replay ──────────────────────────────────

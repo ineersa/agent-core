@@ -681,13 +681,13 @@ final class AdvanceRunHandlerTest extends TestCase
 
     // ── Retained-history turn allocation ──────────────────────────────────
 
-    public function testTurnAllocationAfterRewindUsesCanonicalSequenceHighWater(): void
+    public function testTurnAllocationAfterHistorySelectUsesCanonicalSequenceHighWater(): void
     {
-        // Thesis: after rewind to turn N, next child turn uses
-        // max(state.lastSeq, state.turnNo)+1 rather than scanning EventStore.
-        // With lastSeq=10 and turnNo=1, next turn is 11.
+        // Thesis: after history-select positions retained history at turn N,
+        // the next turn uses max(state.lastSeq, state.turnNo)+1 rather than
+        // scanning EventStore. With lastSeq=10 and turnNo=1, next turn is 11.
 
-        $runId = 'run-branch-alloc-test';
+        $runId = 'run-history-alloc-test';
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
@@ -704,20 +704,20 @@ final class AdvanceRunHandlerTest extends TestCase
             ->withVersion(8)
             ->withTurnNo(1)
             ->withLastSeq(10)
-            ->withActiveStepId('rewound-step')
+            ->withActiveStepId('history-select-step')
             ->build();
 
         $message = AdvanceRunMessageBuilder::create($runId)
             ->withTurnNo(1)
-            ->withStepId('continue-after-rewind')
-            ->withIdempotencyKey('advance-after-rewind-1')
+            ->withStepId('continue-after-history-select')
+            ->withIdempotencyKey('advance-after-history-select-1')
             ->build();
 
         $result = $handler->handle($message, $state);
 
         $this->assertNotNull($result->nextState);
         $this->assertSame(11, $result->nextState->turnNo,
-            'After rewind, next turn must be max(lastSeq, turnNo)+1.'
+            'After history select, next turn must be max(lastSeq, turnNo)+1.'
         );
         $this->assertSame(11, $result->events[0]->payload['turn_no']);
     }

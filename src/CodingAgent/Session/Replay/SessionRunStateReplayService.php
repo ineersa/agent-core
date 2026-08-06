@@ -10,8 +10,6 @@ use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
@@ -156,45 +154,9 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                 throw new RunStateDuplicateSequenceReplayException(\sprintf('Cannot replay run %s at position %d: event history contains %d duplicate sequence number(s): %s.', $runId, $positionTurnNo, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
             }
 
-            // Boundary 0 = before first turn: only run-level events (turnNo === 0).
-            if (0 === $positionTurnNo) {
-                $filteredEvents = array_values(array_filter(
-                    $sortedEvents,
-                    static fn (RunEvent $event): bool => 0 === $event->turnNo
-                        || \in_array($event->type, [
-                            RunEventTypeEnum::HistoryPositionSet->value,
-                            RunEventTypeEnum::HistoryTailDiscarded->value,
-                        ], true),
-                ));
-                $rebuiltState = $this->runStateReducer->replay($state, $filteredEvents);
-                $rebuiltState = new RunState(
-                    runId: $rebuiltState->runId,
-                    status: $rebuiltState->status,
-                    version: $rebuiltState->version,
-                    turnNo: 0,
-                    lastSeq: $maxEventSeq,
-                    isStreaming: $rebuiltState->isStreaming,
-                    streamingMessage: $rebuiltState->streamingMessage,
-                    pendingToolCalls: $rebuiltState->pendingToolCalls,
-                    errorMessage: $rebuiltState->errorMessage,
-                    messages: $rebuiltState->messages,
-                    activeStepId: $rebuiltState->activeStepId,
-                    retryableFailure: $rebuiltState->retryableFailure,
-                    retryAttempts: $rebuiltState->retryAttempts,
-                    pendingHumanInputRequests: $rebuiltState->pendingHumanInputRequests,
-                    model: $rebuiltState->model,
-                );
-
-                return RunStateReplayResult::rebuilt(
-                    $rebuiltState,
-                    $maxEventSeq,
-                    \count($sortedEvents),
-                    true,
-                );
-            }
-
-            // Filter to the target tip's retained prefix (includes unmatched pending
-            // command suppression for history_select recovery).
+            // Retained prefix at the selected position (0 = before first turn).
+            // Unmatched pending-command suppression for history_select recovery is
+            // owned by HistoryReplayFilter for both rebuildAtPosition and rebuildIfStale.
             $historyReplay = $this->historyReplayFilter->filterAtPosition($runId, $sortedEvents, $positionTurnNo);
             $filteredEvents = $historyReplay->events;
 
@@ -208,13 +170,13 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
 
             $rebuiltState = $this->runStateReducer->replay($state, $filteredEvents);
 
-            // Overwrite lastSeq to the full canonical stream max so the state
-            // is current with respect to the append-only event log.
+            // Force turnNo to the requested position (boundary 0 stays 0) and lastSeq
+            // to the full canonical stream max so the state is current with the log.
             $rebuiltState = new RunState(
                 runId: $rebuiltState->runId,
                 status: $rebuiltState->status,
                 version: $rebuiltState->version,
-                turnNo: $rebuiltState->turnNo,
+                turnNo: $positionTurnNo,
                 lastSeq: $maxEventSeq,
                 isStreaming: $rebuiltState->isStreaming,
                 streamingMessage: $rebuiltState->streamingMessage,

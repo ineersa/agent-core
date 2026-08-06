@@ -40,7 +40,7 @@ final class NewSessionCommandHandlerTest extends TestCase
 
             public function selectHistoryTurn(int $targetTurnNo): void
             {
-                // No-op: this test does not exercise rewind.
+                // No-op: this test does not exercise history selection.
             }
 
             public function hasPendingSwitch(): bool
