@@ -708,19 +708,6 @@ final class RuntimeEventMapperTest extends TestCase
         $this->assertNull($result);
     }
 
-    public function testSkipsTurnBranched(): void
-    {
-        $event = $this->runEvent('turn_branched', [
-            'turn_no' => 1,
-            'parent_turn_no' => null,
-            'reason' => 'rewind',
-        ]);
-
-        $result = $this->mapper->toRuntimeEvent($event);
-
-        $this->assertNull($result, 'turn_branched is tree metadata and must not produce a runtime event');
-    }
-
     public function testSkipsLeafSet(): void
     {
         $event = $this->runEvent('leaf_set', [

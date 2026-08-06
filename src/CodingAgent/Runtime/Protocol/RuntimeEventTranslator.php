@@ -74,7 +74,6 @@ final class RuntimeEventTranslator
             RunEventTypeEnum::AgentCommandQueued->value => $this->onAgentCommandQueued(...),
             RunEventTypeEnum::AgentCommandSuperseded->value => $this->drop(...),
             // Drop (history metadata — not user-visible; RunLeafChanged is emitted by rewind handlers)
-            RunEventTypeEnum::TurnBranched->value => $this->drop(...),
             RunEventTypeEnum::LeafSet->value => $this->drop(...),
             RunEventTypeEnum::HistoryTailDiscarded->value => $this->drop(...),
         ];

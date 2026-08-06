@@ -167,7 +167,6 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                         || \in_array($event->type, [
                             RunEventTypeEnum::LeafSet->value,
                             RunEventTypeEnum::HistoryTailDiscarded->value,
-                            RunEventTypeEnum::TurnBranched->value,
                         ], true),
                 ));
                 $rebuiltState = $this->runStateReducer->replay($state, $filteredEvents);

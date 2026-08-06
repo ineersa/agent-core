@@ -566,7 +566,6 @@ existing events.
 | `turn_advanced` | Introduces a new turn with stable `turn_no`. |
 | `leaf_set` | Marks the current selected tip/cursor. Payload includes `turn_no` (retained tip; `0` = before first turn), `previous_turn_no`, optional `selected_prompt_turn_no`, and `reason` (`continue`, `history_select`, `shell_command`, …). |
 | `history_tail_discarded` | Permanently drops every active turn after `after_turn_no` from normal projections. Emitted once before a context-mutating action when forward turns exist. |
-| `turn_branched` (legacy) | No longer emitted; ignored except as audit metadata. |
 
 Each normal turn advance emits `turn_advanced` followed by `leaf_set`.
 
@@ -595,7 +594,7 @@ AgentCore consumes narrow contracts under `Ineersa\AgentCore\Contract\TurnTree`.
 `TurnTreeReplayFilter` includes only:
 - Run-level events (`turnNo === 0`).
 - Events whose `turnNo` is in the retained prefix through the selected tip.
-- History metadata (`leaf_set`, `history_tail_discarded`, legacy `turn_branched`).
+- History metadata (`leaf_set`, `history_tail_discarded`).
 - Excludes discarded turns' message/tool/assistant content.
 
 Integrity checks run on the full canonical stream. Rebuilt `lastSeq` uses the full

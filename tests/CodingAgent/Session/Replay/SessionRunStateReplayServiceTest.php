@@ -1188,7 +1188,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
             'Assistant response for turn 3 must remain when user message is preserved');
     }
 
-    // ── Leaf_set and turn_branched are no-op reducers ───────────────────────
+    // ── Leaf_set is a no-op reducer ─────────────────────────────────────────
 
     public function testLeafSetIsNoOpDuringReplay(): void
     {
@@ -1196,15 +1196,10 @@ final class SessionRunStateReplayServiceTest extends TestCase
             'step_id' => 's0',
             'payload' => ['messages' => []],
         ]);
-        // leaf_set and turn_branched events must not change RunState.
+        // leaf_set must not change RunState.
         $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 2, 1, [
             'turn_no' => 1,
             'reason' => 'continue',
-        ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::TurnBranched->value, 3, 1, [
-            'turn_no' => 1,
-            'parent_turn_no' => null,
-            'reason' => 'rewind',
         ]);
 
         $state = RunState::queued($this->runId);
@@ -1213,7 +1208,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertTrue($result->rebuilt);
         // Status should remain the same as after run_started (Running)
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status);
-        $this->assertSame(0, $result->rebuiltState->turnNo, 'leaf_set/turn_branched must not advance turn');
+        $this->assertSame(0, $result->rebuiltState->turnNo, 'leaf_set must not advance turn');
     }
 
     // ── Compaction event replay ────────────────────────────────────────────

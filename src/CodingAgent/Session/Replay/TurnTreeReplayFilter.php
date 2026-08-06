@@ -14,7 +14,7 @@ use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
  * Uses {@see TurnTreeProjector} to determine retained active turns, then includes:
  *  - Run-level events (turnNo === 0, e.g. run_started)
  *  - Events whose turnNo is in the active retained list up to the target tip
- *  - History metadata events (leaf_set, history_tail_discarded, legacy turn_branched)
+ *  - History metadata events (leaf_set, history_tail_discarded)
  *
  * Discarded/abandoned turn events stay in events.jsonl but are excluded from
  * hot prompt, transcript, and RunState rebuild.
@@ -162,7 +162,6 @@ final class TurnTreeReplayFilter
         return \in_array($event->type, [
             RunEventTypeEnum::LeafSet->value,
             RunEventTypeEnum::HistoryTailDiscarded->value,
-            RunEventTypeEnum::TurnBranched->value,
         ], true);
     }
 
