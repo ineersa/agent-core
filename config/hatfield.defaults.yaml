@@ -377,8 +377,8 @@ agents:
     # Whether agent discovery is enabled.
     enabled: true
 
-    # Internal poll timeout (seconds) for foreground subagent tool execution.
-    # SubagentExecutionService waits up to this long for each child run to finish.
+    # Durable deferred-batch deadline (seconds) for foreground subagent tool execution.
+    # Schedules timeout interruption (DelayStamp + InterruptDeferredSubagentBatchMessage).
     # Not the generic ToolExecutor timeout (the subagent tool has no ToolExecutor cap).
     # Default: 1800 (30 minutes). Minimum 60; values below 60 are rejected at load.
     # subagent_tool_timeout_seconds: 2400
