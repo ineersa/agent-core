@@ -133,7 +133,7 @@ final class AgentsInitCommandTest extends TestCase
             $this->assertSame(
                 $parallelAllowed,
                 $dto->parallelAllowed,
-                sprintf('bundled agent "%s" parallelAllowed mismatch', $name),
+                \sprintf('bundled agent "%s" parallelAllowed mismatch', $name),
             );
         }
     }
