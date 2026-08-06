@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -21,7 +22,7 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 final readonly class AgentChildRunStoreFactory
 {
     public function __construct(
-        private AgentArtifactPathResolver $pathResolver,
+        private SessionAgentArtifactPathResolver $pathResolver,
         private NormalizerInterface&DenormalizerInterface $serializer,
         private LockFactory $lockFactory,
     ) {

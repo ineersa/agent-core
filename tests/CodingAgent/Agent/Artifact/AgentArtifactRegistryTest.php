@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -39,7 +38,7 @@ use Symfony\Component\Validator\ValidatorBuilder;
 final class AgentArtifactRegistryTest extends TestCase
 {
     private string $projectDir;
-    private AgentArtifactPathResolver $pathResolver;
+    private SessionAgentArtifactPathResolver $pathResolver;
     private AgentArtifactRegistry $registry;
 
     protected function setUp(): void
@@ -67,7 +66,7 @@ final class AgentArtifactRegistryTest extends TestCase
 
         $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
 
-        $this->pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($hatfieldSessionStore));
+        $this->pathResolver = new SessionAgentArtifactPathResolver($hatfieldSessionStore);
 
         $this->registry = new AgentArtifactRegistry(
             pathResolver: $this->pathResolver,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 
 final class ChildAwareToolBatchRunStoragePaths implements ToolBatchRunStoragePathsInterface
@@ -14,7 +15,7 @@ final class ChildAwareToolBatchRunStoragePaths implements ToolBatchRunStoragePat
     public function __construct(
         private readonly HatfieldSessionStore $hatfieldSessionStore,
         private readonly AgentChildRunDirectory $childRunDirectory,
-        private readonly AgentArtifactPathResolver $artifactPathResolver,
+        private readonly SessionAgentArtifactPathResolver $artifactPathResolver,
     ) {
     }
 

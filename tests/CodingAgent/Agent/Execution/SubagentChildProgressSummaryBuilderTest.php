@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
@@ -70,10 +69,10 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'ok']]],
         ]));
 
-        $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver(new HatfieldSessionStore(
+        $pathResolver = new SessionAgentArtifactPathResolver(new HatfieldSessionStore(
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->projectDir),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-        )));
+        ));
         $factory = new AgentChildRunEventStoreFactory(
             $pathResolver,
             new EventPayloadNormalizer(),
@@ -171,10 +170,10 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             ],
             model: 'test-model');
 
-        $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver(new HatfieldSessionStore(
+        $pathResolver = new SessionAgentArtifactPathResolver(new HatfieldSessionStore(
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->projectDir),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-        )));
+        ));
         $factory = new AgentChildRunEventStoreFactory(
             $pathResolver,
             new EventPayloadNormalizer(),
@@ -223,7 +222,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
         );
 
         return new AgentChildRunEventStore(
-            pathResolver: new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($hatfieldSessionStore)),
+            pathResolver: new SessionAgentArtifactPathResolver($hatfieldSessionStore),
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -60,7 +59,7 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
 
         $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
 
-        $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($this->hatfieldSessionStore));
+        $pathResolver = new SessionAgentArtifactPathResolver($this->hatfieldSessionStore);
 
         $this->registry = new AgentArtifactRegistry(
             pathResolver: $pathResolver,
@@ -187,7 +186,7 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
         // This makes AgentArtifactRegistry::list() throw, which the
         // directory's scanAllSessions() catches and skips.  No chmod/permission
         // tricks needed — portable across filesystems and CI environments.
-        $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($this->hatfieldSessionStore));
+        $pathResolver = new SessionAgentArtifactPathResolver($this->hatfieldSessionStore);
         $badRegistryPath = $pathResolver->registryPath($badParentId);
         $badRegistryDir = \dirname($badRegistryPath);
 

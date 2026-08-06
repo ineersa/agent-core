@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 
@@ -23,7 +24,7 @@ use Symfony\Component\Lock\LockFactory;
 final readonly class AgentChildRunEventStoreFactory
 {
     public function __construct(
-        private AgentArtifactPathResolver $pathResolver,
+        private SessionAgentArtifactPathResolver $pathResolver,
         private EventPayloadNormalizer $eventPayloadNormalizer,
         private LockFactory $lockFactory,
         private LoggerInterface $logger,
