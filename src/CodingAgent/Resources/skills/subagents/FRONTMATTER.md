@@ -38,13 +38,13 @@ tools:
 
 | Field | Default | Purpose |
 | --- | --- | --- |
-| `model` | null | Optional override |
+| `model` | null | Null/omitted inherits the exact parent execution model at launch; launch fails if neither override nor parent model exists |
 | `thinking` | null | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | `skills` | `[]` | Preload full skill bodies into child `user-context` |
 | `skill` | — | Alias merged into `skills` (comma-separated OK) |
 | `extensions` | omit = no optional | Optional child extension FQCNs. Effective = `agents.extensions.always_on` ∪ this list. Does **not** inherit optional global `extensions.enabled`. |
-| `inheritProjectContext` | true | Include parent project/`agents_context` in child system prompt |
-| `inheritAgentsMd` | true | Same channel today: parent `agents_context` when true |
+| `inheritProjectContext` | true | Either this or `inheritAgentsMd` true copies parent `agents_context` into child `user-context` (not system prompt) |
+| `inheritAgentsMd` | true | Same channel: either flag enables parent `agents_context` as child `user-context` |
 | `systemPromptMode` | `replace` | `replace` = child harness only (`config/SUBAGENT_SYSTEM.md`); `append` = also rendered `APPEND_SYSTEM.md` + contributors with child tool placeholders |
 
 ## Launch policy
@@ -56,7 +56,7 @@ tools:
 | `backgroundAllowed` | true | Background launch not implemented yet |
 | `parallelAllowed` | **true** | Set `false` to disallow parallel `tasks` |
 | `disabled` | false | Still in catalog; `requireEnabled` fails |
-| `handoffFormat` | null | Optional template name |
+| `handoffFormat` | null | Catalog-only/reserved; no current handoff-rendering effect |
 
 Both `backgroundAllowed` and `foregroundAllowed` cannot be false.
 
@@ -91,7 +91,7 @@ Explore read-only. Return dense bullets and file paths.
 
 - Parent session only. Provide `artifact_id` and/or `agent_run_id` (both must refer to the same artifact when set).
 - Modes: `handoff` (default), `metadata`, `events`, `history`, `debug`.
-- `limit` default 20, max 100 (events/history row bounds).
+- `limit` accepted range **1–100**, default **20** (events/history row bounds).
 - `history` skips system, user-context, and tool roles; bounded text only.
 - `debug` returns **relative** artifact paths under the parent session, not absolute filesystem paths.
 - Default modes omit raw prompts, full tool output, streaming deltas, API keys, and environment values.
@@ -99,6 +99,6 @@ Explore read-only. Return dense bullets and file paths.
 
 ## Timeouts and failure
 
-- Wait deadline: `agents.subagent_tool_timeout_seconds` (default 1800, min 60).
+- Timeout: durable deferred-batch `deadlineAt` from `agents.subagent_tool_timeout_seconds` (default 1800, min 60); schedules timeout interruption (`DelayStamp` + `InterruptDeferredSubagentBatchMessage`).
 - Timeout/failure/cancel tool results still include `Artifact: …` when available so you can retrieve partial context.
 - Cancelled handoffs include bounded partial context only (no raw tool output).

@@ -59,7 +59,7 @@ Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<a
 | `skills` / `skill` | `skill` merges into `skills` (comma-separated OK). Preloads full skill bodies into child `user-context`. |
 | MCP | `availability: all` servers inherit on every child (including explicit `tools`) unless `mcp:-`. `availability: specific` requires exact/prefix `mcp:` selectors. Raw MCP runtime names without `mcp:` are stripped from non-MCP lists. |
 | Parallel cap | `agents.max_agents` default **4**. |
-| Wait timeout | `agents.subagent_tool_timeout_seconds` default **1800** (min **60**; below min fails config load) — tool-owned poll deadline, not ToolExecutor generic timeout. Parent cancel ends waiting children. |
+| Wait timeout | `agents.subagent_tool_timeout_seconds` default **1800** (min **60**; below min fails config load) — durable deferred-batch `deadlineAt` with a scheduled timeout interruption (`DelayStamp` + `InterruptDeferredSubagentBatchMessage`), not ToolExecutor generic timeout. Parent cancel ends waiting children. |
 
 ## Child MCP policy
 
