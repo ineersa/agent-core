@@ -141,9 +141,13 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         );
 
         $this->assertStringContainsString('read', $collapsed);
-        // Path may wrap across terminal columns in VirtualTerminal output.
-        $this->assertStringContainsString('docs/unrelated', $collapsed);
-        $this->assertStringContainsString('SKILL.md', $collapsed);
+        // Path may wrap across terminal columns in VirtualTerminal output
+        // (e.g. docs/un\nrelated/SKILL.md under long worktree paths).
+        $this->assertMatchesRegularExpression(
+            '/docs\/un\s*related\/SKILL\.md/',
+            $collapsed,
+            'Ordinary read card must show docs/unrelated/SKILL.md even when VirtualTerminal wraps the path',
+        );
         $this->assertStringContainsString('path:', $collapsed);
         $this->assertStringNotContainsString('[skill] unrelated', $collapsed);
 
