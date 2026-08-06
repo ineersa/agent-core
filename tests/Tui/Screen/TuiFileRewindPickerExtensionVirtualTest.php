@@ -78,11 +78,11 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
     }
 
     /**
-     * Thesis: public ExtensionApi turnRowsInDisplayOrder must keep assistant/tool-cycle
-     * turns for file-rewind checkpoints even though /history is user-prompt-only.
+     * Thesis: public ExtensionApi turnRowsInDisplayOrder and /history both expose only
+     * retained user-prompt rows; assistant/tool-cycle turns stay internal.
      */
     #[Test]
-    public function testTurnRowsInDisplayOrderIncludesAssistantTurnsWhileHistoryStaysUserOnly(): void
+    public function testTurnRowsInDisplayOrderAndHistoryAreUserPromptOnly(): void
     {
         $sessionId = 'rewind-ext-rows';
         $tree = $this->sampleTree($sessionId);
@@ -101,9 +101,9 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
         $bridge = new BridgeTuiExtensionContext($runtime);
         $rows = $bridge->turnRowsInDisplayOrder($sessionId);
 
-        $this->assertSame([1, 2, 3], array_column($rows, 'turnNo'));
-        $this->assertSame(['user', 'assistant', 'user'], array_column($rows, 'displayRole'));
-        $this->assertContains(2, array_column($rows, 'turnNo'), 'assistant/tool-cycle turn must remain a public row');
+        $this->assertSame([1, 3], array_column($rows, 'turnNo'));
+        $this->assertSame(['user', 'user'], array_column($rows, 'displayRole'));
+        $this->assertNotContains(2, array_column($rows, 'turnNo'), 'assistant/tool-cycle turn must not be a public row');
 
         $historyTurnNos = TreePickerController::flattenTurnOrder($tree);
         $this->assertSame([1, 3], $historyTurnNos);

@@ -28,13 +28,14 @@ File rewind is a **project-level Hatfield extension** (`Ineersa\HatfieldExt\File
 
 ## UX (v1)
 
-- `/history` stays conversation-only.
-- `/rewind` lists **file checkpoint targets only** (turns with a persisted hidden-git checkpoint and a meaningful label). Internal/tool turns without checkpoints are hidden.
+- `/history` stays conversation-only (user-prompt rows).
+- `/rewind` lists **file checkpoint targets on retained user-prompt turns only** (same row contract as `/history`, filtered to turns that also have a persisted hidden-git checkpoint and a meaningful label). Assistant/tool-cycle turns remain internal and are not picker rows even when a checkpoint was captured for them.
 - Checkpoints and restore targets are scoped to the **active session** (`session_id` / `run_id`); older sessions in the same project cwd do not appear in `/rewind` and are not used for restore.
 - Checkpoints are recorded on stable completed turn boundaries:
   - Plain assistant turns (`turn_end` / `agent_end` / post-tool `llm_step_completed` without in-flight tool events in the same commit).
   - **Post-tool file state** on `tool_batch_committed` when that commit is the stable boundary (tool effects applied on disk, `effectsCount === 0`, no `tool_execution_start` in the same commit). The same commit may include `tool_call_result_received` / `message_end`; that is expected.
   - Mid-tool-only commits (`tool_execution_start`, `effectsCount > 0`, or batches without a stable boundary) do not create restore targets.
+  - Capture may still key checkpoints by assistant/tool-cycle turn numbers for audit; the `/rewind` picker only surfaces checkpoints whose turn number is a retained user-prompt row.
 - **Enter** on a checkpoint row restores files to that checkpoint (file-only v1).
 - **Esc** closes the picker. Undo metadata remains internal for safety; there is no undo menu item in v1.
 - No live diff preview in the picker.
