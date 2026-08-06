@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -29,12 +30,12 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
  * agentRunId; other run IDs return null.
  *
  * Path resolution and validation are delegated to
- * {@see AgentArtifactPathResolver}.
+ * {@see SessionAgentArtifactPathResolver}.
  */
 final class AgentChildRunStore implements RunStoreInterface
 {
     public function __construct(
-        private readonly AgentArtifactPathResolver $pathResolver,
+        private readonly SessionAgentArtifactPathResolver $pathResolver,
         private readonly NormalizerInterface&DenormalizerInterface $serializer,
         private readonly LockFactory $lockFactory,
         /** Parent session run ID. */
@@ -115,7 +116,7 @@ final class AgentChildRunStore implements RunStoreInterface
             $path = $this->statePath();
             $dir = \dirname($path);
             if (!is_dir($dir)) {
-                mkdir($dir, AgentArtifactPathResolver::DIR_PERMISSIONS, true);
+                mkdir($dir, SessionAgentArtifactPathResolver::DIR_PERMISSIONS, true);
             }
 
             // Atomic temp-file + rename to avoid partial writes.
@@ -124,7 +125,7 @@ final class AgentChildRunStore implements RunStoreInterface
             if (false === $written) {
                 throw new \RuntimeException(\sprintf('Failed to write state.json for child run "%s".', $this->agentRunId));
             }
-            chmod($tmpPath, AgentArtifactPathResolver::FILE_PERMISSIONS);
+            chmod($tmpPath, SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
             rename($tmpPath, $path);
 
             return true;

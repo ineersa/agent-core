@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
@@ -55,7 +54,7 @@ final class AgentArtifactSessionListingTest extends IsolatedKernelTestCase
         $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
 
         $this->registry = new AgentArtifactRegistry(
-            pathResolver: new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($this->hatfieldSessionStore)),
+            pathResolver: new SessionAgentArtifactPathResolver($this->hatfieldSessionStore),
             serializer: $serializer,
             validator: $validator,
             lockFactory: new LockFactory(new FlockStore()),

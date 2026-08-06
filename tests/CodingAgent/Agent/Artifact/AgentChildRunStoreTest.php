@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunStore;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -39,7 +38,7 @@ use Symfony\Component\Serializer\Serializer;
 final class AgentChildRunStoreTest extends TestCase
 {
     private string $projectDir;
-    private AgentArtifactPathResolver $pathResolver;
+    private SessionAgentArtifactPathResolver $pathResolver;
     private Serializer $serializer;
 
     protected function setUp(): void
@@ -58,7 +57,7 @@ final class AgentChildRunStoreTest extends TestCase
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
-        $this->pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($hatfieldSessionStore));
+        $this->pathResolver = new SessionAgentArtifactPathResolver($hatfieldSessionStore);
 
         $this->serializer = new Serializer(
             [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(

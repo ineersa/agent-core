@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathsDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
@@ -135,7 +134,7 @@ final class SessionToolBatchStoreTest extends TestCase
         $parentDir = $this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$parentRunId;
         mkdir($parentDir.'/artifacts/agents/'.$artifactId, recursive: true);
 
-        $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($this->hatfieldSessionStore));
+        $pathResolver = new SessionAgentArtifactPathResolver($this->hatfieldSessionStore);
         $serializer = new Serializer(
             [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter())],
             [new JsonEncoder()],
@@ -364,7 +363,7 @@ final class SessionToolBatchStoreTest extends TestCase
             $hatfield = new HatfieldSessionStore($appConfig, $entityManager);
         }
 
-        $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($hatfield));
+        $pathResolver = new SessionAgentArtifactPathResolver($hatfield);
         $serializer = new Serializer(
             [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter())],
             [new JsonEncoder()],

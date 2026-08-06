@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -28,7 +29,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  * the write.
  *
  * Path resolution and validation are delegated to
- * {@see AgentArtifactPathResolver}.  Serialization/deserialization
+ * {@see SessionAgentArtifactPathResolver}.  Serialization/deserialization
  * of entries and registry uses Symfony Serializer.
  *
  * No DB row is created for child runs — the registry is entirely
@@ -39,7 +40,7 @@ final class AgentArtifactRegistry
     private const SCHEMA_VERSION = 1;
 
     public function __construct(
-        private readonly AgentArtifactPathResolver $pathResolver,
+        private readonly SessionAgentArtifactPathResolver $pathResolver,
         private readonly NormalizerInterface&DenormalizerInterface $serializer,
         private readonly ValidatorInterface $validator,
         private readonly LockFactory $lockFactory,
@@ -562,7 +563,7 @@ final class AgentArtifactRegistry
         $dir = \dirname($path);
 
         if (!is_dir($dir)) {
-            mkdir($dir, AgentArtifactPathResolver::DIR_PERMISSIONS, true);
+            mkdir($dir, SessionAgentArtifactPathResolver::DIR_PERMISSIONS, true);
         }
 
         $json = json_encode(
@@ -582,7 +583,7 @@ final class AgentArtifactRegistry
         if (false === $written) {
             throw new \RuntimeException(\sprintf('Failed to write registry.json for parent run "%s".', $parentRunId));
         }
-        chmod($tmpPath, AgentArtifactPathResolver::FILE_PERMISSIONS);
+        chmod($tmpPath, SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
         rename($tmpPath, $path);
     }
 
@@ -598,7 +599,7 @@ final class AgentArtifactRegistry
         $path = $this->pathResolver->absolutePath($parentRunId, $entry->paths->metadataPath);
         $dir = \dirname($path);
         if (!is_dir($dir)) {
-            mkdir($dir, AgentArtifactPathResolver::DIR_PERMISSIONS, true);
+            mkdir($dir, SessionAgentArtifactPathResolver::DIR_PERMISSIONS, true);
         }
 
         $json = json_encode($this->normalizeEntry($entry), \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR);
@@ -607,7 +608,7 @@ final class AgentArtifactRegistry
         if (false === $written) {
             throw new \RuntimeException(\sprintf('Failed to write metadata.json for artifact "%s" parent "%s".', $entry->artifactId, $parentRunId));
         }
-        chmod($tmpPath, AgentArtifactPathResolver::FILE_PERMISSIONS);
+        chmod($tmpPath, SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
         rename($tmpPath, $path);
     }
 
@@ -624,7 +625,7 @@ final class AgentArtifactRegistry
         $path = $this->pathResolver->absolutePath($parentRunId, $paths->handoffPath);
         $dir = \dirname($path);
         if (!is_dir($dir)) {
-            mkdir($dir, AgentArtifactPathResolver::DIR_PERMISSIONS, true);
+            mkdir($dir, SessionAgentArtifactPathResolver::DIR_PERMISSIONS, true);
         }
 
         $tmpPath = $path.'.'.bin2hex(random_bytes(4)).'.tmp';
@@ -632,7 +633,7 @@ final class AgentArtifactRegistry
         if (false === $written) {
             throw new \RuntimeException(\sprintf('Failed to write handoff.md for artifact "%s" parent "%s".', $artifactId, $parentRunId));
         }
-        chmod($tmpPath, AgentArtifactPathResolver::FILE_PERMISSIONS);
+        chmod($tmpPath, SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
         rename($tmpPath, $path);
     }
 
@@ -687,7 +688,7 @@ final class AgentArtifactRegistry
     {
         $path = $this->pathResolver->resolveArtifactDir($parentRunId, $artifactId);
         if (!is_dir($path)) {
-            mkdir($path, AgentArtifactPathResolver::DIR_PERMISSIONS, true);
+            mkdir($path, SessionAgentArtifactPathResolver::DIR_PERMISSIONS, true);
         }
     }
 
