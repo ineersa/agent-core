@@ -50,8 +50,8 @@ final class SubagentProgressEventsFixture
                 ],
             ],
         ], $now);
-        $events[] = self::event($sessionId, 2, 1, 'turn_advanced', ['step_id' => 'turn-1', 'turn_no' => 1, 'parent_turn_no' => null], $now);
-        $events[] = self::event($sessionId, 3, 1, 'leaf_set', ['turn_no' => 1, 'previous_turn_no' => null, 'parent_turn_no' => null, 'reason' => 'continue'], $now);
+        $events[] = self::event($sessionId, 2, 1, 'turn_advanced', ['step_id' => 'turn-1', 'turn_no' => 1], $now);
+        $events[] = self::event($sessionId, 3, 1, 'history_position_set', ['position_turn_no' => 1, 'previous_position_turn_no' => null, 'reason' => 'continue'], $now);
         $events[] = self::event($sessionId, 4, 1, 'llm_step_completed', [
             'step_id' => 'turn-1',
             'stop_reason' => 'tool_call',
@@ -108,7 +108,7 @@ final class SubagentProgressEventsFixture
             'is_error' => false,
             'result' => $finalResult,
         ], $now);
-        $events[] = self::event($sessionId, 11, 2, 'turn_advanced', ['step_id' => 'turn-2', 'turn_no' => 2, 'parent_turn_no' => null], $now);
+        $events[] = self::event($sessionId, 11, 2, 'turn_advanced', ['step_id' => 'turn-2', 'turn_no' => 2], $now);
         $events[] = self::event($sessionId, 12, 2, 'llm_step_completed', [
             'step_id' => 'turn-2',
             'stop_reason' => 'stop',
@@ -205,8 +205,8 @@ final class SubagentProgressEventsFixture
                 ],
             ],
         ], $now);
-        $events[] = self::event($sessionId, 2, 1, 'turn_advanced', ['step_id' => 'turn-1', 'turn_no' => 1, 'parent_turn_no' => null], $now);
-        $events[] = self::event($sessionId, 3, 1, 'leaf_set', ['turn_no' => 1, 'previous_turn_no' => null, 'parent_turn_no' => null, 'reason' => 'continue'], $now);
+        $events[] = self::event($sessionId, 2, 1, 'turn_advanced', ['step_id' => 'turn-1', 'turn_no' => 1], $now);
+        $events[] = self::event($sessionId, 3, 1, 'history_position_set', ['position_turn_no' => 1, 'previous_position_turn_no' => null, 'reason' => 'continue'], $now);
         $events[] = self::event($sessionId, 4, 1, 'llm_step_completed', [
             'step_id' => 'turn-1',
             'stop_reason' => 'tool_call',
@@ -247,7 +247,7 @@ final class SubagentProgressEventsFixture
             'is_error' => false,
             'result' => "Parallel subagents completed.\nArtifacts: agent_e2e_alpha_pick, agent_e2e_bravo_pick, agent_e2e_charlie_pick",
         ], $now);
-        $events[] = self::event($sessionId, 8, 2, 'turn_advanced', ['step_id' => 'turn-2', 'turn_no' => 2, 'parent_turn_no' => null], $now);
+        $events[] = self::event($sessionId, 8, 2, 'turn_advanced', ['step_id' => 'turn-2', 'turn_no' => 2], $now);
         $events[] = self::event($sessionId, 9, 2, 'llm_step_completed', [
             'step_id' => 'turn-2',
             'stop_reason' => 'stop',

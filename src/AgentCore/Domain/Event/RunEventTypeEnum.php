@@ -44,7 +44,9 @@ enum RunEventTypeEnum: string
     case ContextCompactionStarted = 'context_compaction_started';
     case ContextCompacted = 'context_compacted';
     case ContextCompactionFailed = 'context_compaction_failed';
-    // ── Turn tree metadata (append-only canonical) ───────────────────────
-    case TurnBranched = 'turn_branched';
-    case LeafSet = 'leaf_set';
+    // ── Linear history metadata (append-only canonical) ───────────────────
+    /** Current selected retained position (tip / undo cursor). */
+    case HistoryPositionSet = 'history_position_set';
+    /** Abandons every active turn after after_turn_no; bytes remain audit-only. */
+    case HistoryTailDiscarded = 'history_tail_discarded';
 }

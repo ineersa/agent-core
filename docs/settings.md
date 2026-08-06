@@ -1663,7 +1663,7 @@ Ownership and UX notes:
 - **Storage gap:** OM SQLite is separate from `events.jsonl`. After worker loss, later
   turn boundaries advance Observer coverage asynchronously; do not treat OM rows as
   a second transcript.
-- **Session-global MVP:** OM is non-branch-aware. Hatfield `/tree` ownership is unchanged
+- **Session-global MVP:** OM is non-history-aware. Hatfield `/history` ownership is unchanged
   and does **not** rewind the external OM pool.
 - **Commands:** `/om-status` (durable OM aggregates only) and `/om-view`
   (active reflections/candidate observations with short display IDs + source event seqs).

@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\InProcess;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface;
+use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
@@ -20,7 +20,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
-use Ineersa\CodingAgent\Runtime\Protocol\RunLeafChangedEventFactory;
+use Ineersa\CodingAgent\Runtime\Protocol\RunHistoryPositionChangedEventFactory;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -47,7 +47,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly AgentRunnerInterface $runner,
         private readonly EventStoreInterface $eventStore,
         private readonly RuntimeEventMapper $mapper,
-        private readonly RunRewindServiceInterface $runRewindService,
+        private readonly HistorySelectionServiceInterface $historySelectionService,
         private readonly SystemPromptBuilder $systemPromptBuilder,
         private readonly AgentsContextDiscovery $agentsContextDiscovery,
         private readonly AgentsContextRenderer $agentsContextRenderer,
@@ -248,7 +248,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             ),
             'answer_tool_question' => $this->handleAnswerToolQuestion($runId, $command),
             'shell_command' => $this->handleShellCommandSend($runId, $command),
-            'rewind_to_turn' => $this->handleInProcessRewind($runId, $command),
+            'select_history_turn' => $this->handleInProcessSelectHistoryTurn($runId, $command),
             'change_model' => $this->runner->changeModel(
                 $runId,
                 (string) ($command->payload['model'] ?? ''),
@@ -333,17 +333,20 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $this->toolQuestionStore->answer($requestId, $answer);
     }
 
-    private function handleInProcessRewind(string $runId, UserCommand $command): void
+    private function handleInProcessSelectHistoryTurn(string $runId, UserCommand $command): void
     {
         $targetTurnNo = (int) ($command->payload['turn_no'] ?? 0);
 
-        $result = $this->runRewindService->rewind($runId, $targetTurnNo);
+        $result = $this->historySelectionService->selectPrompt($runId, $targetTurnNo);
+        $rebuiltState = $result['rebuiltState'];
 
         if ($this->transientSink instanceof InMemoryRuntimeEventSink) {
-            $this->transientSink->emit(RunLeafChangedEventFactory::create(
+            $this->transientSink->emit(RunHistoryPositionChangedEventFactory::create(
                 $runId,
-                $result['leafSetSeq'],
-                $targetTurnNo,
+                $result['positionEventSeq'],
+                $rebuiltState->turnNo,
+                (int) $result['selectedPromptTurnNo'],
+                (string) $result['editorPromptText'],
             ));
         }
     }

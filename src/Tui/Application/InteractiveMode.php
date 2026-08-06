@@ -6,8 +6,8 @@ namespace Ineersa\Tui\Application;
 
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
@@ -72,7 +72,7 @@ final readonly class InteractiveMode
         private TuiSessionSwitchService $switchService,
         private AppConfig $appConfig,
         private TranscriptDisplayConfigMapper $transcriptConfigMapper,
-        private TurnTreeProviderInterface $turnTreeProvider,
+        private HistoryProviderInterface $historyProvider,
     ) {
     }
 
@@ -230,7 +230,7 @@ final readonly class InteractiveMode
                 ticks: $ticks,
                 switch: $this->switchService,
                 lifecycle: $lifecycle,
-                turnTreeProvider: $this->turnTreeProvider,
+                historyProvider: $this->historyProvider,
             );
 
             foreach ($this->listenerRegistrars as $registrar) {

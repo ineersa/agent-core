@@ -236,7 +236,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         // AdvanceRun when the async worker completes, at which point the
         // status will be Running (not Compacting) and turn advancement
         // proceeds normally.  Advancing here would emit turn_advanced and
-        // leaf_set mid-compaction, confusing the event log.
+        // history_position_set mid-compaction, confusing the event log.
         if (RunStatus::Compacting === $preparedState->status) {
             if ([] === $boundaryEventSpecs) {
                 return new HandlerResult();
@@ -265,9 +265,9 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             );
         }
 
-        // RunMessageProcessor serializes branch creation under the run lock.
+        // RunMessageProcessor serializes turn advancement under the run lock.
         // RunState.lastSeq is rebuilt from the global canonical event high-water,
-        // so abandoned branch turns cannot collide with this child turn.
+        // so discarded-history turn numbers cannot collide with this next turn.
         $nextTurnNo = max($state->lastSeq, $preparedState->turnNo) + 1;
         $nextStepId = $message->stepId();
 
@@ -359,7 +359,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 );
 
                 // Emit boundary events only — do NOT emit TurnAdvanced
-                // or LeafSet (compaction does not advance the turn).
+                // or HistoryPositionSet (compaction does not advance the turn).
                 $events = $this->eventFactory->eventsFromSpecs(
                     $runId,
                     $preparedState->turnNo,
@@ -411,7 +411,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             model: $invocationModel,
         );
 
-        $parentTurnNo = $preparedState->turnNo > 0 ? $preparedState->turnNo : null;
+        $previousTurnNo = $preparedState->turnNo > 0 ? $preparedState->turnNo : null;
 
         $eventSpecs = [
             ...$boundaryEventSpecs,
@@ -421,21 +421,14 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 'payload' => [
                     'step_id' => $nextStepId,
                     'turn_no' => $nextTurnNo,
-                    'parent_turn_no' => $parentTurnNo,
                 ],
             ],
             [
-                'type' => RunEventTypeEnum::LeafSet->value,
+                'type' => RunEventTypeEnum::HistoryPositionSet->value,
                 'turn_no' => $nextTurnNo,
                 'payload' => [
-                    'turn_no' => $nextTurnNo,
-                    // In the normal continue path, previous_turn_no and parent_turn_no
-                    // intentionally coincide (both equal the turn we are leaving).
-                    // Future rewind/branch emitters may diverge them:
-                    //   previous_turn_no = the turn being abandoned,
-                    //   parent_turn_no   = the common ancestor for the new branch.
-                    'previous_turn_no' => $parentTurnNo,
-                    'parent_turn_no' => $parentTurnNo,
+                    'position_turn_no' => $nextTurnNo,
+                    'previous_position_turn_no' => $previousTurnNo,
                     'reason' => 'continue',
                 ],
             ],

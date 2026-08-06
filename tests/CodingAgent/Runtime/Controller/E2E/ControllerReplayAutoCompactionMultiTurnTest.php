@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Group;
  * Unlike the rejected one-turn live test, this test builds a proper
  * multi-turn session (2 assistant turns) via replay-backed LLM fixtures,
  * then proves the structural invariant: after auto context_compaction
- * completes, the system MUST NOT emit turn_advanced / leaf_set /
+ * completes, the system MUST NOT emit turn_advanced / history_position_set /
  * llm_step_completed / llm_step_failed until an explicit user command.
  *
  * Replay fixture design:
@@ -24,7 +24,7 @@ use PHPUnit\Framework\Attributes\Group;
  *
  * The test thesis: after the auto compaction lifecycle terminates, no ghost
  * LLM continuation occurs.  The current bug (HEAD da028146d) emits
- * turn_advanced → leaf_set → llm_step_* after context_compacted, which
+ * turn_advanced → history_position_set → llm_step_* after context_compacted, which
  * this test catches.
  *
  * @group controller-replay
@@ -205,7 +205,7 @@ final class ControllerReplayAutoCompactionMultiTurnTest extends ControllerReplay
         //  THE RED ASSERTION
         //
         //  After the auto compaction lifecycle terminal, there must be
-        //  NO turn_advanced, leaf_set, llm_step_completed, or
+        //  NO turn_advanced, history_position_set, llm_step_completed, or
         //  llm_step_failed events.  These indicate the system treated
         //  auto-compaction completion as a reason to continue the
         //  conversation — the bug we want to reproduce.
@@ -218,7 +218,7 @@ final class ControllerReplayAutoCompactionMultiTurnTest extends ControllerReplay
                 continue;
             }
             $type = $evt['type'] ?? '';
-            if (\in_array($type, ['turn_advanced', 'llm_step_completed', 'llm_step_failed', 'leaf_set'], true)) {
+            if (\in_array($type, ['turn_advanced', 'llm_step_completed', 'llm_step_failed', 'history_position_set'], true)) {
                 $err = $evt['payload']['error'] ?? [];
                 $postCompactionForbidden[] = \sprintf(
                     '  seq=%d type=%s trigger=%s error_type=%s message=%s',

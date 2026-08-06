@@ -16,8 +16,9 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
  *   {@see PromptHistoryListener::register()}).
  * - {@see append()} grows the list when the user submits a real prompt or bang
  *   command ({@see SubmitListener}).
- * - Rewind is intentionally a no-op: no rewind-specific rebuild; the list may
- *   stay ahead of a rewound transcript until the next {@see seedFrom()}.
+ * - History position change is intentionally a no-op here: no history-specific
+ *   rebuild; the list may stay ahead of a repositioned transcript until the
+ *   next {@see seedFrom()}.
  *
  * Navigation uses O(1) indexing into {@see prompts()} — no transcript scan per
  * keypress. {@see previous()} walks toward older prompts; {@see next()} toward

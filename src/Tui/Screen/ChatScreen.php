@@ -390,7 +390,7 @@ final class ChatScreen
     }
 
     /**
-     * Full transcript replacement (bootstrap, resume, leaf/branch, preview invalidation).
+     * Full transcript replacement (bootstrap, resume, history position, preview invalidation).
      *
      * @param list<TranscriptBlock> $blocks
      */

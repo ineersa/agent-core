@@ -8,7 +8,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 
 /**
- * One-time canonical replay snapshot for a child run (full event stream, no turn-tree leaf filter).
+ * One-time canonical replay snapshot for a child run (full event stream, no retained-history filter).
  */
 final readonly class ChildRunTranscriptSnapshotDTO
 {

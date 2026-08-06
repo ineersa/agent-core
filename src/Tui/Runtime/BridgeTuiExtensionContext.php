@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Runtime;
 
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\Tui\Picker\PickerListLabelFormatter;
-use Ineersa\Tui\Picker\TreePickerController;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 
@@ -78,21 +76,16 @@ final readonly class BridgeTuiExtensionContext implements TuiExtensionContextInt
 
     public function turnRowsInDisplayOrder(string $sessionId): array
     {
-        $tree = $this->runtime->turnTreeProvider->forSession($sessionId);
+        $history = $this->runtime->historyProvider->forSession($sessionId);
         $rows = [];
-        foreach (TreePickerController::flattenTurnOrder($tree) as $turnNo) {
-            $node = $tree->nodesByTurnNo[$turnNo] ?? null;
-            if (!$node instanceof TurnTreeNodeView) {
-                continue;
+        // Public ExtensionApi contract: sparse human prompts only.
+        // Derive presentation fields here; internal HistoryView is turnNo+promptText.
+        foreach ($history->prompts as $prompt) {
+            $title = PickerListLabelFormatter::sanitizeTitle($prompt->promptText);
+            if ('' === $title) {
+                $title = 'Turn '.$prompt->turnNo;
             }
-            $title = trim($node->title);
-            if ('' === $title || preg_match('/^Turn \d+$/', $title)) {
-                $title = trim($node->promptPreview);
-            }
-            if ('' === $title || preg_match('/^Turn \d+$/', $title)) {
-                $title = 'Turn '.$turnNo;
-            }
-            $rows[] = ['turnNo' => $turnNo, 'title' => $title, 'displayRole' => $node->displayRole];
+            $rows[] = ['turnNo' => $prompt->turnNo, 'title' => $title, 'displayRole' => 'user'];
         }
 
         return $rows;
