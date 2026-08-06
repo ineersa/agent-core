@@ -18,7 +18,7 @@ use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
  *     SystemPromptBuilder — not the parent SYSTEM.md (no available_agents).
  *  3. APPEND_SYSTEM.md (+ contributors) when systemPromptMode is append.
  *
- * Inherited AGENTS.md is injected as user-context (agents_context), not system text.
+ * Inherited project context (parent agents_context / AGENTS.md hierarchy) is injected as user-context, not system text.
  * Messages: system, optional agents_context, optional skills_context,
  * optional agents_definitions_context, agent_child_contract, user task.
  */

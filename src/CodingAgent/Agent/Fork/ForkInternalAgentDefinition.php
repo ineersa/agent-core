@@ -16,7 +16,7 @@ final class ForkInternalAgentDefinition
             tools: null,
             model: $model,
             instructions: '',
-            inheritAgentsMd: true,
+            inheritProjectContext: true,
             parallelAllowed: false,
         );
     }

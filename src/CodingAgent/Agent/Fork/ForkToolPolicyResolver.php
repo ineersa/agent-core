@@ -24,7 +24,7 @@ final class ForkToolPolicyResolver
             description: 'fork child',
             tools: null,
             instructions: '',
-            inheritAgentsMd: true,
+            inheritProjectContext: true,
         );
 
         // Canonical child policy already structurally omits fork/subagent and applies

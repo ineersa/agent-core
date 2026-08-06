@@ -57,7 +57,7 @@ Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<a
 | `tools` | Optional; omitted → inherit parent non-MCP tools + MCP from servers with `availability: all`. Explicit non-empty allowlist recommended for restricted agents. YAML list or comma-separated string; `tools: []` / blank entries fail validation. |
 | `parallelAllowed` | Default **true**. Set `false` to block parallel `tasks`. |
 | `skills` | Preloads full skill bodies into child `user-context`. Singular `skill` is unknown/rejected. |
-| `inheritAgentsMd` | Default **true**. When true, copies parent `agents_context` into child `user-context`. |
+| `inheritProjectContext` | Default **true**. When true, copies parent `agents_context` (AGENTS.md hierarchy) into child `user-context`. Does not inherit parent skills or agent catalog. |
 | MCP | `availability: all` servers inherit on every child (including explicit `tools`) unless `mcp:-`. `availability: specific` requires exact/prefix `mcp:` selectors. Raw MCP runtime names without `mcp:` are stripped from non-MCP lists. Top-level `mcp` frontmatter is rejected. |
 | Parallel cap | `agents.max_agents` default **4**. |
 | Wait timeout | `agents.subagent_tool_timeout_seconds` default **1800** (min **60**; below min fails config load) — durable deferred-batch `deadlineAt` with a scheduled timeout interruption (`DelayStamp` + `InterruptDeferredSubagentBatchMessage`), not ToolExecutor generic timeout. Parent cancel ends waiting children. |

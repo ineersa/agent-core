@@ -90,8 +90,8 @@ final class AgentFrontmatterDTO
         )]
         public readonly ?array $extensions = null,
 
-        #[Assert\Type('bool', '"inheritAgentsMd" must be a boolean.')]
-        public readonly bool $inheritAgentsMd = true,
+        #[Assert\Type('bool', '"inheritProjectContext" must be a boolean.')]
+        public readonly bool $inheritProjectContext = true,
 
         #[Assert\Choice(
             choices: ['replace', 'append'],

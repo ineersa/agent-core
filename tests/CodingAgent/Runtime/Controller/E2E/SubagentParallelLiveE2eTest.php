@@ -125,7 +125,7 @@ name: {$name}
 description: "Deterministic parallel child for live E2E"
 tools:
   - read
-inheritAgentsMd: false
+inheritProjectContext: false
 parallelAllowed: true
 ---
 Reply with exactly {$token} only. Do not call read or any other tool.

@@ -77,7 +77,7 @@ final class AgentDefinitionParserTest extends TestCase
         $this->assertSame('deepseek/deepseek-v4-flash', $dto->model);
         $this->assertSame('low', $dto->thinking);
         $this->assertSame(['testing'], $dto->skills);
-        $this->assertFalse($dto->inheritAgentsMd);
+        $this->assertFalse($dto->inheritProjectContext);
         $this->assertSame(SystemPromptModeEnum::Append, $dto->systemPromptMode);
         $this->assertTrue($dto->parallelAllowed);
         $this->assertSame('You are a scout. Explore and report findings.', $dto->instructions);
@@ -99,7 +99,7 @@ final class AgentDefinitionParserTest extends TestCase
         $this->assertNull($dto->model);
         $this->assertNull($dto->thinking);
         $this->assertSame([], $dto->skills);
-        $this->assertTrue($dto->inheritAgentsMd);
+        $this->assertTrue($dto->inheritProjectContext);
         $this->assertSame(SystemPromptModeEnum::Replace, $dto->systemPromptMode);
         $this->assertTrue($dto->parallelAllowed);
     }
@@ -425,7 +425,7 @@ Body
             'name' => 'string-bool',
             'description' => 'Array for bool',
             'tools' => ['read'],
-            'inheritAgentsMd' => [],
+            'inheritProjectContext' => [],
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
@@ -809,7 +809,7 @@ Body
     //  Coercion rejection: Serializer MUST reject type mismatches
     // -----------------------------------------------------------------
 
-    public function testInheritAgentsMdRejectsQuotedYesString(): void
+    public function testInheritProjectContextRejectsQuotedYesString(): void
     {
         // "yes" in YAML quotes is a string, not the YAML boolean true.
         // Strict type enforcement must reject string for bool.
@@ -817,11 +817,11 @@ Body
             'name' => 'coerce-bool',
             'description' => 'String yes for bool',
             'tools' => ['read'],
-            'inheritAgentsMd' => 'yes',
+            'inheritProjectContext' => 'yes',
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/inheritAgentsMd.*must be of type bool/');
+        $this->expectExceptionMessageMatches('/inheritProjectContext.*must be of type bool/');
 
         $this->parser->parseContent($content, '/test/coerce-bool-yes.md');
     }
@@ -843,19 +843,19 @@ Body
         $this->parser->parseContent($content, '/test/coerce-parallel-false.md');
     }
 
-    public function testRemovedInheritProjectContextIsUnknownField(): void
+    public function testRemovedInheritAgentsMdIsUnknownField(): void
     {
         $content = $this->wrapContent([
-            'name' => 'legacy-inherit-project',
+            'name' => 'legacy-inherit-agents',
             'description' => 'Removed field',
             'tools' => ['read'],
-            'inheritProjectContext' => true,
+            'inheritAgentsMd' => true,
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/unknown field "inheritProjectContext"/');
+        $this->expectExceptionMessageMatches('/unknown field "inheritAgentsMd"/');
 
-        $this->parser->parseContent($content, '/test/legacy-inherit-project.md');
+        $this->parser->parseContent($content, '/test/legacy-inherit-agents.md');
     }
 
     // -----------------------------------------------------------------
@@ -1087,7 +1087,7 @@ Body
             'model' => 'deepseek/deepseek-v4-flash',
             'thinking' => 'low',
             'skills' => ['testing'],
-            'inheritAgentsMd' => false,
+            'inheritProjectContext' => false,
             'systemPromptMode' => 'append',
             'parallelAllowed' => true,
         ];

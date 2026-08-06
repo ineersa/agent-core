@@ -29,7 +29,7 @@ final readonly class AgentDefinitionDTO
         public ?string $thinking = null,
         public array $skills = [],
         public ?array $extensions = null,
-        public bool $inheritAgentsMd = true,
+        public bool $inheritProjectContext = true,
         public SystemPromptModeEnum $systemPromptMode = SystemPromptModeEnum::Replace,
         public bool $parallelAllowed = true,
         public string $instructions = '',

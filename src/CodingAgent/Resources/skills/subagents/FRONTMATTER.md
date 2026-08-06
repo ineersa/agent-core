@@ -42,7 +42,7 @@ tools:
 | `thinking` | null | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | `skills` | `[]` | Preload full skill bodies into child `user-context` (singular `skill` rejected) |
 | `extensions` | omit = no optional | Optional child extension FQCNs. Effective = `agents.extensions.always_on` ∪ this list. Does **not** inherit optional global `extensions.enabled`. |
-| `inheritAgentsMd` | true | When true, copies parent `agents_context` into child `user-context` (not system prompt) |
+| `inheritProjectContext` | true | When true, copies parent `agents_context` (AGENTS.md hierarchy) into child `user-context` (not system prompt). Does not inherit parent skills or agent catalog. |
 | `systemPromptMode` | `replace` | `replace` = child harness only (`config/SUBAGENT_SYSTEM.md`); `append` = also rendered `APPEND_SYSTEM.md` + contributors with child tool placeholders |
 
 ## Launch policy
@@ -64,7 +64,7 @@ tools:
   - bash
   # availability: all MCP tools are inherited automatically
 parallelAllowed: true
-inheritAgentsMd: true
+inheritProjectContext: true
 systemPromptMode: replace
 ---
 

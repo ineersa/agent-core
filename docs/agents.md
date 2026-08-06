@@ -23,7 +23,7 @@ tools:
 # Optional child extensions (always_on still applies from settings):
 # extensions:
 #   - Ineersa\HatfieldExt\SomeOptional\SomeOptionalExtension
-inheritAgentsMd: true
+inheritProjectContext: true
 systemPromptMode: replace
 parallelAllowed: true
 ---
@@ -42,7 +42,7 @@ You are a scout. Explore the codebase read-only and return dense findings...
 | `thinking` | string\|null | no | `null` | Reasoning/thinking override (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). |
 | `skills` | list\<string\> | no | `[]` | Setup skills preloaded into child `user-context`. Singular `skill` is rejected as unknown. |
 | `extensions` | list\<string\> | no | omit = no optional extensions | Optional child extension class names (FQCN). Effective allowlist = `agents.extensions.always_on` ∪ this list (stable first-seen dedup). Omitted means only always-on extensions apply — never inherits optional entries from global `extensions.enabled`. Blank/non-string entries are rejected. |
-| `inheritAgentsMd` | bool | no | `true` | When true, copies parent `agents_context` into child `user-context` (not system prompt). |
+| `inheritProjectContext` | bool | no | `true` | When true, copies parent `agents_context` (resolved AGENTS.md hierarchy) into child `user-context` (not system prompt). Does not inherit parent skills or agent catalog. |
 | `systemPromptMode` | enum | no | `replace` | `replace` = harness only; `append` = also include APPEND_SYSTEM.md (+ contributors) with child placeholders. |
 | `parallelAllowed` | bool | no | `true` | Whether parallel execution is allowed. Set `false` to opt out. |
 
@@ -348,7 +348,7 @@ The child system prompt is built from:
 
 Child `user-context` messages (in order):
 
-1. Parent `agents_context` when `inheritAgentsMd: true` (not system prompt).
+1. Parent `agents_context` when `inheritProjectContext: true` (not system prompt).
 2. **Preloaded skills** when the agent definition lists `skills`.
 3. **Interactive foreground contract** (artifact ID; may use `ask_human` /
    approval flows when necessary).
