@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Screen;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -26,6 +27,7 @@ use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Filesystem\Filesystem;
 
 /**
  * Virtual proof: exact discovered skill reads render as compact skill cards.
@@ -189,6 +191,8 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
                 cwd: $cwd,
             ),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
         );
     }
 

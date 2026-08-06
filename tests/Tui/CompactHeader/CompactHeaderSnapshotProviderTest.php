@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
 use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -29,6 +30,7 @@ use Ineersa\Tui\CompactHeader\CompactHeaderSnapshotProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
@@ -78,6 +80,8 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
             pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
             appConfig: $this->appConfig(),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
             logger: new NullLogger(),
         );
 
@@ -130,6 +134,8 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
             pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
             appConfig: $this->appConfig(),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
             logger: new NullLogger(),
         );
 
@@ -168,6 +174,8 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
             pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
             appConfig: $this->appConfig(),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
             logger: new NullLogger(),
         );
 
@@ -199,6 +207,8 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
             pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
             appConfig: $this->appConfig(),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
             logger: new NullLogger(),
         );
 
@@ -249,6 +259,8 @@ JSON;
             pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
             appConfig: $this->appConfig(),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
             logger: new NullLogger(),
         );
 

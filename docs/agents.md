@@ -43,7 +43,7 @@ You are a scout. Explore the codebase read-only and return dense findings...
 | `description` | string | yes | — | Human-readable description. |
 | `tools` | list\<string\> | no | inherit all parent-available tools (+ global MCP) | Non-MCP tool allowlist and MCP selectors in one list. Omitted: inherit parent non-MCP tools and MCP from servers with `availability: all` in `.hatfield/mcp.json` (`subagent` always excluded). Explicit lists also inherit all `availability: all` MCP tools unless `mcp:-` is present. Specific servers require explicit `mcp:` selectors. Raw catalog runtime names without `mcp:` are stripped from the explicit non-MCP allowlist; `availability: all` tools remain available through global inheritance, while `availability: specific` tools are not opted in by raw names. MCP selectors: `mcp:*`, `mcp:-`, `mcp:<exposed_name>`, `mcp:<prefix*>` (exactly one terminal `*` is a prefix wildcard; runtime names `{server}_{tool}`). Legacy top-level `mcp.mode` / `mcp.tools` frontmatter is ignored for child policy. Invalid: `tools: []`, blank entries. |
 | `model` | string\|null | no | `null` | Optional model override. |
-| `thinking` | string\|null | no | `null` | Reasoning/thinking override (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). |
+| `thinking` | string\|null | no | `null` | Reasoning/thinking override (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). |
 | `skills` | list\<string\> | no | `[]` | Setup skills loaded from start. |
 | `extensions` | list\<string\> | no | omit = no optional extensions | Optional child extension class names (FQCN). Effective allowlist = `agents.extensions.always_on` ∪ this list (stable first-seen dedup). Omitted means only always-on extensions apply — never inherits optional entries from global `extensions.enabled`. Blank/non-string entries are rejected. |
 | `inheritProjectContext` | bool | no | `true` | Include project context in child system prompt. |
@@ -376,9 +376,13 @@ The task text follows as the `user` message.
   is managed by the subagent tool's own timeout mechanism.  A future task
   should add child scanning when background/async child modes are introduced.
 
-## Project skill
+## Built-in skill
 
-Tracked quick reference for models and authors: `.hatfield/skills/subagents/SKILL.md` (discovered from `{cwd}/.hatfield/skills` like other Hatfield skills). See also `FRONTMATTER.md` in that directory.
+Hatfield ships a built-in `subagents` skill under
+`src/CodingAgent/Resources/skills/subagents/`. On discovery, each direct
+bundled skill directory is mirrored into `~/.hatfield/skills/<name>/` and
+then discovered with normal home skill precedence (project skills still win).
+See also `FRONTMATTER.md` next to `SKILL.md` in that skill directory.
 
 ## Current limitations
 
@@ -389,8 +393,8 @@ The following features are **not yet implemented**:
 | Background/async launches (`background: true`) | Not implemented | Future |
 | `agent_start`, `agent_status` tools | Not implemented | Future |
 | `/agents` TUI command | Not implemented | Future |
-| Dedicated dock/overlay or structured subagent transcript widget | Not implemented | Future |
-| Interactive child HITL, approvals, or questions | Not supported (WaitingHuman → Failed) | Future |
+| Dedicated dock/overlay beyond current transcript cards / live view | Partial (cards + `/agents-live`) | Future |
+| Interactive child HITL, approvals, or questions | Live view supports child HITL/SafeGuard; non-live WaitingHuman still fails closed | Future |
 | Parallel execution (`tasks` array) | Implemented (cap: `agents.max_agents`) | — |
 | Child artifact retrieval (`agent_retrieve`) | Implemented | — |
 

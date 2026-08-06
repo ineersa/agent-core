@@ -32,6 +32,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -49,6 +50,7 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\Component\Clock\NativeClock;
+use Symfony\Component\Filesystem\Filesystem;
 
 #[CoversClass(SubagentExecutionService::class)]
 final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
@@ -265,6 +267,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
                 cwd: $cwd,
             ),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($cwd),
+            filesystem: new Filesystem(),
         );
 
         return new SkillsContextBuilder(

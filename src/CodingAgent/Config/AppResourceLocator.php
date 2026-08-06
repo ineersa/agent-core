@@ -48,6 +48,17 @@ final readonly class AppResourceLocator
     }
 
     /**
+     * Absolute path to bundled built-in skill directories.
+     *
+     * Each direct child directory that contains SKILL.md is a built-in skill
+     * root (for example src/CodingAgent/Resources/skills/subagents).
+     */
+    public function getBuiltinSkillsPath(): string
+    {
+        return $this->appRoot.'/src/CodingAgent/Resources/skills';
+    }
+
+    /**
      * The application installation root directory.
      */
     public function getAppRoot(): string

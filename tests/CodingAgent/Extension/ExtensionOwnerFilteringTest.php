@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -40,6 +41,7 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
@@ -181,6 +183,8 @@ final class ExtensionOwnerFilteringTest extends TestCase
                 pathResolver: new SettingsPathResolver($appConfig->cwd ?: '/tmp'),
                 appConfig: $appConfig,
                 extractor: new MarkdownFrontmatterExtractor(),
+                resources: new AppResourceLocator('' !== $appConfig->cwd ? $appConfig->cwd : '/tmp'),
+                filesystem: new Filesystem(),
             ),
         );
     }

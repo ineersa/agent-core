@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
 use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -31,6 +32,7 @@ use Ineersa\Tui\Widget\WidgetPlacementEnum;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
@@ -164,6 +166,8 @@ final class CompactHeaderRegistrarTest extends TestCase
             pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'default', themePaths: []), logging: new LoggingConfig(), cwd: $this->tmpDir),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
             logger: new NullLogger(),
         );
     }
