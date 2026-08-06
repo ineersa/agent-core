@@ -29,7 +29,6 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
         'steer',
         'append_message',
         'compact',
-        'shell_command',
     ];
 
     public function __construct(
