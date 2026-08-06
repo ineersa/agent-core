@@ -12,7 +12,6 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\InterruptDeferredSubagentBatchMessage;
@@ -356,7 +355,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: (string) getcwd()),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
-        $resolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($hatfieldSessionStore));
+        $resolver = new SessionAgentArtifactPathResolver($hatfieldSessionStore);
         $path = $resolver->eventsPath($parentRunId, $artifactId);
         if (!is_dir(\dirname($path))) {
             mkdir(\dirname($path), 0775, true);

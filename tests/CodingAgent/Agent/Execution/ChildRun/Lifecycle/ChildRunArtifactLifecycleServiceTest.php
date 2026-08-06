@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\ChildRun\Lifecycle;
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
@@ -60,7 +59,7 @@ final class ChildRunArtifactLifecycleServiceTest extends IsolatedKernelTestCase
 
         $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
 
-        $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($this->hatfieldSessionStore));
+        $pathResolver = new SessionAgentArtifactPathResolver($this->hatfieldSessionStore);
 
         $this->registry = new AgentArtifactRegistry(
             pathResolver: $pathResolver,
@@ -99,7 +98,7 @@ final class ChildRunArtifactLifecycleServiceTest extends IsolatedKernelTestCase
         $this->assertNotNull($this->childRunDirectory->locate($childRunId));
         $this->assertNotNull($this->registry->get($parentRunId, $artifactId));
 
-        $artifactPathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($this->hatfieldSessionStore));
+        $artifactPathResolver = new SessionAgentArtifactPathResolver($this->hatfieldSessionStore);
         $this->assertDirectoryExists($artifactPathResolver->resolveArtifactDir($parentRunId, $artifactId));
 
         $this->adapter->removePendingReservation($identity);

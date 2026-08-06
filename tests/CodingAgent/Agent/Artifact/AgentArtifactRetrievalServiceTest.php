@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRetrievalService;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
@@ -58,7 +57,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         );
 
         $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
-        $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($this->hatfieldSessionStore));
+        $pathResolver = new SessionAgentArtifactPathResolver($this->hatfieldSessionStore);
 
         $this->registry = new AgentArtifactRegistry(
             pathResolver: $pathResolver,

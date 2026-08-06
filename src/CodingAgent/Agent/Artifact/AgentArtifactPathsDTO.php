@@ -12,7 +12,7 @@ use Symfony\Component\Validator\Constraints as Assert;
  *
  * All paths are relative to the parent session directory
  * (<sessionsBase>/<parentRunId>/).  Callers that need absolute
- * paths should use {@see AgentArtifactPathResolver}.
+ * paths should use {@see \Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver}.
  *
  * Immutable value object assembled during artifact creation.
  */

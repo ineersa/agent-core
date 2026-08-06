@@ -14,7 +14,6 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
@@ -31,6 +30,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
@@ -408,7 +408,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         );
 
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
-        $pathResolver = self::getContainer()->get(AgentArtifactPathResolver::class);
+        $pathResolver = self::getContainer()->get(SessionAgentArtifactPathResolver::class);
         $batchLaunch = $this->buildBatchLaunchService(
             $agentRunner,
             [$def('first-agent'), $def('second-agent'), $def('third-agent')],
