@@ -6,7 +6,7 @@ description: Agent definitions, discovery, catalog, and foreground subagent tool
 
 Agent definitions configure named child-agent roles for your project or user environment. For example, you can define agents named `scout`, `reviewer`, `researcher`, `worker`, or any custom name. Each definition lives in a Markdown file with YAML frontmatter.
 
-Agent definitions, discovery, and catalog are implemented. The model-visible `subagent` tool supports single and parallel foreground child execution with parent-scoped artifact storage. Background launch, TUI controls, and interactive child conversations are future work. See [Foreground subagent tool](#foreground-subagent-tool) below.
+Agent definitions, discovery, and catalog are implemented. The model-visible `subagent` tool supports single and parallel foreground child execution with parent-scoped artifact storage. Background launch is not implemented. Parent TUI live view (`/agents-live`) and child HITL routing exist; see [Foreground subagent tool](#foreground-subagent-tool) and [Subagent live view](#subagent-live-view-parent-tui).
 
 ## File format
 
@@ -41,20 +41,20 @@ You are a scout. Explore the codebase read-only and return dense findings...
 |---|---|---|---|---|
 | `name` | string | yes | — | Unique agent name. Lowercase `[a-z][a-z0-9-]{0,47}`. |
 | `description` | string | yes | — | Human-readable description. |
-| `tools` | list\<string\> | no | inherit all parent-available tools (+ global MCP) | Non-MCP tool allowlist and MCP selectors in one list. Omitted: inherit parent non-MCP tools and MCP from servers with `availability: all` in `.hatfield/mcp.json` (`subagent` always excluded). Explicit lists also inherit all `availability: all` MCP tools unless `mcp:-` is present. Specific servers require explicit `mcp:` selectors. Raw catalog runtime names without `mcp:` are stripped from the explicit non-MCP allowlist; `availability: all` tools remain available through global inheritance, while `availability: specific` tools are not opted in by raw names. MCP selectors: `mcp:*`, `mcp:-`, `mcp:<exposed_name>`, `mcp:<prefix*>` (exactly one terminal `*` is a prefix wildcard; runtime names `{server}_{tool}`). Legacy top-level `mcp.mode` / `mcp.tools` frontmatter is ignored for child policy. Invalid: `tools: []`, blank entries. |
-| `model` | string\|null | no | `null` | Optional model override. |
+| `tools` | list\<string\> | no | inherit all parent-available tools (+ global MCP) | Non-MCP tool allowlist and MCP selectors in one list. Omitted: inherit parent non-MCP tools and MCP from servers with `availability: all` in `.hatfield/mcp.json`. Child launch always strips `subagent` and `fork`, then applies `agents.subagent_excluded_tools` (default `settings`, `hatfield_docs`) for both inherit-all and explicit lists. Explicit lists also inherit all `availability: all` MCP tools unless `mcp:-` is present. Specific servers require explicit `mcp:` selectors. Raw catalog runtime names without `mcp:` are stripped from the explicit non-MCP allowlist; `availability: all` tools remain available through global inheritance, while `availability: specific` tools are not opted in by raw names. MCP selectors: `mcp:*`, `mcp:-`, `mcp:<exposed_name>`, `mcp:<prefix*>` (exactly one terminal `*` is a prefix wildcard; runtime names `{server}_{tool}`). Legacy top-level `mcp.mode` / `mcp.tools` frontmatter is ignored for child policy. Invalid: `tools: []`, blank entries. |
+| `model` | string\|null | no | `null` | Optional model override. Null/omitted inherits the exact parent execution model at launch; launch fails if neither override nor parent model exists. |
 | `thinking` | string\|null | no | `null` | Reasoning/thinking override (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). |
 | `skills` | list\<string\> | no | `[]` | Setup skills loaded from start. |
 | `extensions` | list\<string\> | no | omit = no optional extensions | Optional child extension class names (FQCN). Effective allowlist = `agents.extensions.always_on` ∪ this list (stable first-seen dedup). Omitted means only always-on extensions apply — never inherits optional entries from global `extensions.enabled`. Blank/non-string entries are rejected. |
-| `inheritProjectContext` | bool | no | `true` | Include project context in child system prompt. |
-| `inheritAgentsMd` | bool | no | `true` | Include `AGENTS.md` in child system prompt. |
+| `inheritProjectContext` | bool | no | `true` | Either this or `inheritAgentsMd` true copies parent `agents_context` into child `user-context` (not system prompt). |
+| `inheritAgentsMd` | bool | no | `true` | Same channel: either flag enables parent `agents_context` as child `user-context`. |
 | `systemPromptMode` | enum | no | `replace` | `replace` = harness only; `append` = also include APPEND_SYSTEM.md (+ contributors) with child placeholders. |
-| `maxDepth` | int | no | `1` | Per-agent recursion cap (0–5). |
-| `backgroundAllowed` | bool | no | `true` | Whether background launches are allowed. |
+| `maxDepth` | int | no | `1` | Catalog field (0–5); nested launch is not implemented in the v1 launcher. |
+| `backgroundAllowed` | bool | no | `true` | Catalog field/default only; background launch is not implemented. |
 | `foregroundAllowed` | bool | no | `true` | Whether foreground launches are allowed. |
 | `parallelAllowed` | bool | no | `true` | Whether parallel execution is allowed. Set `false` to opt out. |
 | `disabled` | bool | no | `false` | Disable definition without deleting it. |
-| `handoffFormat` | string\|null | no | `null` | Optional named handoff template. |
+| `handoffFormat` | string\|null | no | `null` | Catalog-only/reserved; no current handoff-rendering effect. |
 
 **There is no `type` field.** The `type` field was intentionally removed. It is treated as an unknown field and rejected during parsing.
 
@@ -212,13 +212,15 @@ scouts/reviewers:
    overall tool call fails with a report that still lists every child artifact.
 2. **Parent-scoped storage.** Child runs are stored entirely under the parent
    session directory — no top-level session rows or directories are created.
-3. **Inline progress.** While the child runs, compact progress status lines
-   (agent name, turn number, tool count, last tool name) appear inline in the
-   parent's tool result widget. The full child transcript is not duplicated.
-4. **Non-interactive.** Child agents cannot ask the human interactively. If a
-   child enters `WaitingHuman` (should not happen for non-interactive runs), the execution service
-   cancels the child, finalizes the artifact as `Failed`, and
-   returns an explanation to the parent LLM.
+3. **Progress and live view.** Compact progress status lines (agent name, turn
+   number, tool count, last tool name) appear inline in the parent's tool result
+   widget. The parent can also open `/agents-live` for interactive child live
+   view (steer/follow-up, ESC cancel). The full child transcript is not
+   duplicated into the parent tool result.
+4. **Child HITL.** Children are interactive foreground runs: they may enter
+   `WaitingHuman` for `ask_human`/SafeGuard. Parent live view answers those
+   questions on the child run id; outside live view, unanswered child HITL still
+   fails closed. Do not treat children as permanently non-interactive.
 5. **Cancellation.** If the parent run is cancelled while a child is running,
    the child is cancelled and the artifact is finalized as `Cancelled`. The
    parent-visible subagent tool error includes the artifact ID, status, and a
@@ -226,9 +228,11 @@ scouts/reviewers:
    counts, last activity, bounded assistant text). Use `agent_retrieve` with
    modes `metadata`, `events`, or `history` to recover more detail; cancellation
    remains an error/cancelled tool result, not success.
-6. **Timeout.** Foreground `subagent` execution uses an internal poll timeout
-   (`agents.subagent_tool_timeout_seconds`, default **1800** seconds; minimum
-   **60**, invalid lower values fail config load). This is not the generic
+6. **Timeout.** Foreground `subagent` execution uses a durable deferred-batch
+   deadline from `agents.subagent_tool_timeout_seconds` (default **1800**
+   seconds; minimum **60**, invalid lower values fail config load). The batch
+   schedules a timeout interruption (`DelayStamp` +
+   `InterruptDeferredSubagentBatchMessage`). This is not the generic
    ToolExecutor timeout (the subagent tool has no ToolExecutor cap). A timed-out
    child is finalized as `Failed`. See [Settings](settings.md).
 
@@ -279,7 +283,7 @@ debug summary.
 - Provide at least one of `artifact_id` or `agent_run_id` (both must refer to the
   same artifact when both are set).
 - `mode` (default `handoff`): `handoff`, `metadata`, `events`, `history`, `debug`.
-- `limit` (default 20, max 100): bounds `events` and `history` rows.
+- `limit` accepted range **1–100**, default **20**: bounds `events` and `history` rows.
 
 **Privacy and bounds:**
 
@@ -335,7 +339,7 @@ definition `tools` list (including `mcp:` selectors) plus hard safety rules:
   Exactly one terminal `*` is
   a prefix wildcard; a selector with no `*` is always exact, even if it ends with
   `_`. Embedded or multiple `*` characters are not globs.
-- The `subagent` tool is **always excluded** from child tool lists in v1.
+- `subagent` and `fork` are **always excluded** from child tool lists in v1, then `agents.subagent_excluded_tools` (default `settings`, `hatfield_docs`) is stripped for every child.
 - Parent/main runs only expose MCP tools from `availability: all` servers in
   the active toolset; `availability: specific` tools stay hidden until a child
   opts in via `mcp:` selectors.
@@ -353,19 +357,20 @@ The child system prompt is built from:
    and `<guidelines>` rendered only for the child's resolved `allowed_tools`,
    plus current date and cwd. This does **not** include parent `<available_agents>`,
    subagent tool guidance, or the full parent `SYSTEM.md`.
-3. Parent AGENTS.md / project context when `inheritAgentsMd: true` **or**
-   `inheritProjectContext: true`, copied from the parent run's `user-context`
-   message with metadata source `agents_context`.
-4. When `systemPromptMode: append`, rendered `APPEND_SYSTEM.md` (home + project)
+3. When `systemPromptMode: append`, rendered `APPEND_SYSTEM.md` (home + project)
    and extension prompt contributors using **child-safe** placeholders — not
    the parent system prompt.
 
-`systemPromptMode: replace` (default) omits step 4.
+`systemPromptMode: replace` (default) omits step 3.
 
 Child `user-context` messages (in order):
 
-1. **Preloaded skills** when the agent definition lists `skills` / `skill`.
-2. **Non-interactive contract** (artifact ID, allowed tools, foreground worker rules).
+1. Parent `agents_context` when `inheritAgentsMd: true` **or**
+   `inheritProjectContext: true` (either flag currently enables the same
+   inherited channel; not system prompt).
+2. **Preloaded skills** when the agent definition lists `skills` / `skill`.
+3. **Interactive foreground contract** (artifact ID; may use `ask_human` /
+   approval flows when necessary).
 
 The task text follows as the `user` message.
 
