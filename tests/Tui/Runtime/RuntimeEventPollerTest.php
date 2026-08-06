@@ -700,15 +700,15 @@ final class RuntimeEventPollerTest extends TestCase
         // Pre-populate transcript with old discarded-tail blocks
         $this->state->transcript = [
             new TranscriptBlock(
-                id: 'old-branch-block-1',
+                id: 'old-discarded-block-1',
                 kind: TranscriptBlockKindEnum::AssistantMessage,
                 runId: 'test-run',
                 seq: 10,
-                text: 'Old abandoned branch content',
+                text: 'Old discarded-tail content',
             ),
         ];
 
-        // Mock turn tree provider to return retained-history RuntimeEvents
+        // Mock history/transcript provider to return retained-history RuntimeEvents
         $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
         $rebuiltBlocks = [
             new TranscriptBlock(
@@ -781,7 +781,7 @@ final class RuntimeEventPollerTest extends TestCase
                 kind: TranscriptBlockKindEnum::AssistantMessage,
                 runId: 'test-run',
                 seq: 10,
-                text: 'Stale abandoned block',
+                text: 'Stale discarded block',
             ),
         ];
 
@@ -846,7 +846,7 @@ final class RuntimeEventPollerTest extends TestCase
                 kind: TranscriptBlockKindEnum::AssistantMessage,
                 runId: 'test-run',
                 seq: 10,
-                text: 'Stale abandoned branch block',
+                text: 'Stale discarded-tail block',
             ),
         ];
 

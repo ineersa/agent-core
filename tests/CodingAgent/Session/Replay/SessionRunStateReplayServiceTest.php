@@ -914,7 +914,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
     public function testHistoryReplayThrowsNoExceptionDespiteFilteredGaps(): void
     {
-        // Verify that branch filtering does NOT trigger a non-contiguous
+        // Verify that retained-history filtering does NOT trigger a non-contiguous
         // exception. Integrity checks run on the full stream which is contiguous.
         $this->appendEventWithTurn('run_started', 1, 0, [
             'step_id' => 's0',
@@ -926,16 +926,16 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 3, 1, [
             'position_turn_no' => 1, 'reason' => 'continue',
         ]);
-        // Turn 2: abandoned
+        // Turn 2: discarded
         $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 4, 2, [
             'turn_no' => 2, 'step_id' => 's2',
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 5, 2, [
             'position_turn_no' => 2, 'reason' => 'continue',
         ]);
-        // Rewind to turn 1 and create turn 3
+        // Select position turn 1 and create turn 3
         $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 6, 1, [
-            'position_turn_no' => 1, 'reason' => 'rewind',
+            'position_turn_no' => 1, 'reason' => 'history_select',
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 7, 3, [
             'turn_no' => 3, 'step_id' => 's3',
@@ -952,11 +952,11 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertSame(3, $result->rebuiltState->turnNo);
     }
 
-    public function testRebuildForLeafAfterRewindExcludesAbandonedFollowUpCommands(): void
+    public function testRebuildAtPositionAfterHistorySelectExcludesAbandonedFollowUpCommands(): void
     {
-        // Mirrors live rewind E2E: turn1 completes, follow_up on turn1 launches
-        // abandoned turn2, rewind to turn1. rebuildAtPosition must NOT replay the
-        // abandoned follow_up (agent_command_*) or status stays Running and blocks
+        // Mirrors live history-select E2E: turn1 completes, follow_up on turn1 launches
+        // discarded turn2, select back to turn1. rebuildAtPosition must NOT replay the
+        // discarded follow_up (agent_command_*) or status stays Running and blocks
         // the next follow_up AdvanceRun.
         $this->appendEventWithTurn('run_started', 1, 0, [
             'step_id' => 's0',
@@ -980,7 +980,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->appendEventWithTurn(RunEventTypeEnum::AgentEnd->value, 5, 1, [
             'reason' => 'completed',
         ]);
-        // Abandoned-branch launch (pineapple) — must be stripped on rewind replay
+        // Discarded-tail launch (pineapple) — must be stripped on history-select replay
         $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandQueued->value, 6, 1, [
             'kind' => 'follow_up',
             'idempotency_key' => 'fu-pineapple',
@@ -1018,7 +1018,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 12, 1, [
             'position_turn_no' => 1,
             'previous_position_turn_no' => 2,
-            'reason' => 'rewind',
+            'reason' => 'history_select',
         ]);
 
         $state = new RunState(
@@ -1035,25 +1035,25 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertTrue($result->rebuilt);
         $this->assertNotNull($result->rebuiltState);
         $this->assertSame(RunStatus::Completed, $result->rebuiltState->status,
-            'Rewind replay must end at Completed (turn1 agent_end), not Running from abandoned follow_up');
+            'History-select replay must end at Completed (turn1 agent_end), not Running from discarded follow_up');
         $this->assertSame(1, $result->rebuiltState->turnNo);
         $this->assertSame(12, $result->rebuiltState->lastSeq);
 
         foreach ($result->rebuiltState->messages as $msg) {
             $this->assertStringNotContainsString('pineapple', $msg->content[0]['text'] ?? '',
-                'Abandoned-branch user message must not leak into rewind replay');
+                'Discarded-tail user message must not leak into history-select replay');
         }
     }
 
-    public function testRebuildForLeafMultiLevelRewindPreservesBranchSeedingCommandOnActivePath(): void
+    public function testRebuildAtPositionMultiLevelSelectPreservesSeedingCommandOnRetainedPrefix(): void
     {
-        // Regression for silent transcript corruption in multi-level rewind: a branch-seeding
-        // follow_up command stamped with an ancestor's turnNo (the established queuing pattern)
-        // must survive rebuildAtPosition when that branch is the rewind target. The obsolete
-        // filterPostRewindSiblingLaunchesOnPath stripped it because seq > rewind-cutoff, dropping
+        // Regression for silent transcript corruption in multi-level history select: a turn-seeding
+        // follow_up command stamped with an earlier turnNo (the established queuing pattern)
+        // must survive rebuildAtPosition when that retained tip is selected. The obsolete
+        // post-select sibling-launch stripper removed it because seq > select-cutoff, dropping
         // the user message while keeping the assistant response. HistoryReplayFilter already
-        // includes the command (createdTurn is on the active path); the post-filter must not
-        // re-strip it.
+        // includes the command (createdTurn is on the retained prefix); unmatched-pending
+        // suppression must not re-strip mapped seeding commands.
         $this->appendEventWithTurn('run_started', 1, 0, [
             'step_id' => 's0',
             'payload' => ['messages' => [
@@ -1114,7 +1114,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 12, 1, [
             'position_turn_no' => 1,
             'previous_position_turn_no' => 2,
-            'reason' => 'rewind',
+            'reason' => 'history_select',
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandQueued->value, 13, 1, [
             'kind' => 'follow_up',
@@ -1181,7 +1181,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
             'Assistant response for turn 3 must remain when user message is preserved');
     }
 
-    // ── Leaf_set is a no-op reducer ─────────────────────────────────────────
+    // ── history_position_set is a no-op reducer ─────────────────────────────
 
     public function testHistoryPositionSetIsNoOpDuringReplay(): void
     {
@@ -1983,7 +1983,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
     }
 
     /**
-     * Append an event with an explicit turn number (for branch replay tests).
+     * Append an event with an explicit turn number (for retained-history replay tests).
      *
      * @param array<string, mixed> $payload
      */

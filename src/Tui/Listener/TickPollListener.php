@@ -123,7 +123,7 @@ final class TickPollListener implements TuiListenerRegistrar
                     }
                 }
             } elseif (null !== $transcriptChanges) {
-                // Incremental projector delta (or explicit full after leaf replace).
+                // Incremental projector delta (or explicit full after history-position replace).
                 // State already applied inside RuntimeEventPoller; screen merges the same set.
                 $screen->applyTranscriptChangeSet($transcriptChanges);
             }

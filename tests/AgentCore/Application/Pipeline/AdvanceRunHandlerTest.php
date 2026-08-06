@@ -679,7 +679,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertSame([], $commandBus->messages);
     }
 
-    // ── Branch-aware turn allocation ─────────────────────────────────────
+    // ── Retained-history turn allocation ──────────────────────────────────
 
     public function testTurnAllocationAfterRewindUsesCanonicalSequenceHighWater(): void
     {

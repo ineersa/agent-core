@@ -34,7 +34,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
 
         $runId = 'run-canonical-llm-step';
 
@@ -94,7 +94,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
 
         $runId = 'run-canonical-tool-calls';
 
@@ -153,7 +153,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
 
         $runId = 'run-canonical-thinking';
 
@@ -220,7 +220,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
 
         $runId = 'run-replacement';
 
@@ -310,7 +310,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
 
         $runId = 'run-append-after-replacement';
 
@@ -392,7 +392,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
 
         $runId = 'run-replay-canonical';
         $eventStore->append(new RunEvent(
@@ -459,7 +459,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
 
         $runId = 'run-no-events';
 
@@ -478,7 +478,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
         $historyFilter = new HistoryReplayFilter(new HistoryProjector());
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), null, null, $historyFilter);
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), $historyFilter);
 
         $runId = 'run-history-replay';
 
@@ -585,7 +585,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
         $runId = 'run-hot-prompt-compacted';
 
         // Original messages (3 user messages).

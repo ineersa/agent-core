@@ -213,7 +213,7 @@ final readonly class SessionInitializer
                 $replayed = true;
             }
         } catch (\Throwable $e) {
-            // Non-fatal: tree/providers may be unavailable (e.g. unreadable
+            // Non-fatal: history/transcript providers may be unavailable (e.g. unreadable
             // events.jsonl). Fall through to full replay below.
             $this->logger->warning('Session transcript replay: history provider unavailable for retained-history filtering', [
                 'component' => 'SessionInitializer',
@@ -226,13 +226,12 @@ final readonly class SessionInitializer
 
         if (!$replayed) {
             // Reset projector to clear any stale state from a partially-failed
-            // branch-aware attempt (the try block may have applied some events
+            // retained-history attempt (the try block may have applied some events
             // before throwing). The full replay below re-feeds ALL events.
             $this->projector->reset();
 
-            // Full replay (original path): linearly replay all events through the
-            // mapper and projector. Used for linear (non-branched) sessions and
-            // as fallback when the turn tree provider fails.
+            // Full replay fallback: linearly replay all events through the
+            // mapper and projector when the retained-history path is unavailable.
             foreach ($runEvents as $runEvent) {
                 $runtimeEvent = $this->eventMapper->toRuntimeEvent($runEvent);
 
@@ -267,8 +266,8 @@ final readonly class SessionInitializer
         }
 
         // When the canonical stream already ended (agent_end) or failed, align
-        // replayed activity with the terminal outcome even if the active-path
-        // replay stopped before the final agent_end (branch rewind / leaf filter).
+        // replayed activity with the terminal outcome even if retained-history
+        // replay stopped before the final agent_end (history position / discard filter).
         $terminalActivity = $this->inferTerminalActivityFromCanonicalEvents($runEvents);
         if (null !== $terminalActivity
             && !$this->shouldSuppressTerminalActivityForInProgressCompaction($runEvents)) {
@@ -296,7 +295,7 @@ final readonly class SessionInitializer
     /**
      * Infer terminal TUI activity from the latest canonical agent_end on the full stream.
      *
-     * Branch-aware replay may omit the terminal agent_end from the active path while
+     * Retained-history replay may omit the terminal agent_end from the position prefix while
      * the hot RunState (and user expectation) is already cancelled/completed/failed.
      * Without this, passive resume can leave activity=Idle while SubmitListener later
      * sets Starting on follow_up, producing a stuck ◐ Working... with no live work.

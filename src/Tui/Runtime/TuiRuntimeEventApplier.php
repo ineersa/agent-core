@@ -12,10 +12,10 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 /**
  * Reduces non-transcript TUI session state from runtime events.
  *
- * Live RuntimeEventPoller and SessionInitializer branch-aware resume call this
- * for each active-path replay event so usage, activity, queued messages, and
- * subagent catalog match live processing. Leaf transcript blocks are assigned
- * wholesale from SessionTranscriptProviderInterface, not from this projector.
+ * Live RuntimeEventPoller and SessionInitializer retained-history resume call this
+ * for each retained-prefix replay event so usage, activity, queued messages, and
+ * subagent catalog match live processing. History-position transcript blocks are
+ * assigned wholesale from SessionTranscriptProviderInterface, not from this projector.
  */
 final readonly class TuiRuntimeEventApplier
 {
@@ -40,15 +40,15 @@ final readonly class TuiRuntimeEventApplier
         }
 
         if (RuntimeEventTypeEnum::RunHistoryPositionChanged->value === $event->type) {
-            // Reset live projector for post-leaf events in the same poll batch.
-            // Leaf transcript blocks are assigned wholesale by RuntimeEventPoller
+            // Reset live projector for post-position events in the same poll batch.
+            // Position transcript blocks are assigned wholesale by RuntimeEventPoller
             // from SessionTranscriptProvider (isolated projector).
             $this->projector->reset();
 
             $state->activity = RunActivityStateEnum::Idle;
             $state->queuedFollowUp = null;
-            // Abandoned-branch queued steer/follow-up commands must not keep rendering
-            // as pending after rewind/resume to an earlier leaf.
+            // Discarded-tail queued steer/follow-up commands must not keep rendering
+            // as pending after history selection/resume to an earlier position.
             $state->queuedUserMessages = [];
 
             return;
@@ -72,7 +72,7 @@ final readonly class TuiRuntimeEventApplier
             RuntimeEventTypeEnum::TurnFailed->value,
         ], true)) {
             // Cancel/fail terminals drop any still-pending queued commands from the
-            // ending turn; they will not be applied on the abandoned path.
+            // ending turn; they will not be applied on the discarded tail.
             $state->queuedUserMessages = [];
         }
 

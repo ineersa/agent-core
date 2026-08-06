@@ -121,7 +121,117 @@ final class HistorySelectionServiceTest extends TestCase
         $this->assertSame(1, $appended[0]->payload['selected_prompt_turn_no']);
     }
 
-    public function testSelectMiddlePromptUsesPredecessorAndRejectsDuplicateSequences(): void
+    public function testSelectMiddlePromptPositionsAtPredecessorAndReturnsEditorText(): void
+    {
+        $runId = 'run-history-select-middle';
+        $events = [
+            new RunEvent($runId, 1, 0, RunEventTypeEnum::RunStarted->value, [
+                'payload' => ['messages' => [[
+                    'role' => 'user',
+                    'content' => [['type' => 'text', 'text' => 'First prompt']],
+                ]]],
+            ]),
+            new RunEvent($runId, 2, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1, 'step_id' => 'follow_up-1']),
+            new RunEvent($runId, 3, 1, RunEventTypeEnum::HistoryPositionSet->value, [
+                'position_turn_no' => 1,
+                'previous_position_turn_no' => null,
+                'reason' => 'continue',
+            ]),
+            new RunEvent($runId, 4, 1, RunEventTypeEnum::AgentCommandApplied->value, [
+                'kind' => 'follow_up',
+                'text' => 'Middle prompt',
+            ]),
+            new RunEvent($runId, 5, 2, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2, 'step_id' => 'follow_up-2']),
+            new RunEvent($runId, 6, 2, RunEventTypeEnum::HistoryPositionSet->value, [
+                'position_turn_no' => 2,
+                'previous_position_turn_no' => 1,
+                'reason' => 'continue',
+            ]),
+            new RunEvent($runId, 7, 2, RunEventTypeEnum::AgentCommandApplied->value, [
+                'kind' => 'follow_up',
+                'text' => 'Third prompt',
+            ]),
+            new RunEvent($runId, 8, 3, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 3, 'step_id' => 'follow_up-3']),
+            new RunEvent($runId, 9, 3, RunEventTypeEnum::HistoryPositionSet->value, [
+                'position_turn_no' => 3,
+                'previous_position_turn_no' => 2,
+                'reason' => 'continue',
+            ]),
+        ];
+
+        $appended = [];
+        $eventStore = new class($events, $appended) implements EventStoreInterface {
+            /** @param list<RunEvent> $events */
+            public function __construct(private array $events, private array &$appended)
+            {
+            }
+
+            public function allFor(string $runId): array
+            {
+                return $this->events;
+            }
+
+            public function append(RunEvent $event): RunEvent
+            {
+                $max = 0;
+                foreach ($this->events as $existing) {
+                    $max = max($max, $existing->seq);
+                }
+                $persisted = new RunEvent($event->runId, $max + 1, $event->turnNo, $event->type, $event->payload, $event->createdAt);
+                $this->events[] = $persisted;
+                $this->appended[] = $persisted;
+
+                return $persisted;
+            }
+
+            public function appendMany(array $events): array
+            {
+                $out = [];
+                foreach ($events as $event) {
+                    $out[] = $this->append($event);
+                }
+
+                return $out;
+            }
+        };
+
+        $runStore = new InMemoryRunStore();
+        $runStore->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 9, model: 'test-model'), 0);
+
+        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
+        $rebuilder->expects($this->once())
+            ->method('rebuildAtPosition')
+            ->with($this->anything(), $runId, 1)
+            ->willReturn(\Ineersa\AgentCore\Application\Dto\RunStateReplayResult::rebuilt(
+                new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 10, model: 'test-model'),
+                10,
+                10,
+                true,
+            ));
+
+        $service = new HistorySelectionService(
+            eventStore: $eventStore,
+            runStateRebuilder: $rebuilder,
+            runStore: $runStore,
+            lockManager: new RunLockManager(new LockFactory(new FlockStore(sys_get_temp_dir()))),
+            logger: new NullLogger(),
+            historyProjector: new HistoryProjector(),
+            replayEventPreparer: new ReplayEventPreparer(),
+        );
+
+        $result = $service->selectPrompt($runId, 2);
+        $this->assertSame(1, $result['rebuiltState']->turnNo);
+        $this->assertSame(2, $result['selectedPromptTurnNo']);
+        $this->assertSame('Middle prompt', $result['editorPromptText']);
+        $this->assertCount(1, $appended);
+        $this->assertSame(RunEventTypeEnum::HistoryPositionSet->value, $appended[0]->type);
+        $this->assertSame(1, $appended[0]->payload['position_turn_no']);
+        $this->assertSame(3, $appended[0]->payload['previous_position_turn_no']);
+        $this->assertSame(2, $appended[0]->payload['selected_prompt_turn_no']);
+        $this->assertSame('history_select', $appended[0]->payload['reason']);
+    }
+
+    public function testSelectPromptRejectsDuplicateSequences(): void
     {
         $runId = 'run-history-select-dup';
         $events = [

@@ -19,6 +19,8 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Session\History\HistoryProjector;
+use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use PHPUnit\Framework\TestCase;
 
@@ -40,6 +42,7 @@ final class RunCommitLoggingTest extends TestCase
             promptStateStore: new InMemoryPromptStateStore(),
             promptStateReplayService: new PromptStateReplayService(),
             replayEventPreparer: new ReplayEventPreparer(),
+            historyReplayFilter: new HistoryReplayFilter(new HistoryProjector()),
         );
 
         $stepDispatcher = new StepDispatcher(new TestMessageBus());
@@ -99,6 +102,7 @@ final class RunCommitLoggingTest extends TestCase
             promptStateStore: new InMemoryPromptStateStore(),
             promptStateReplayService: new PromptStateReplayService(),
             replayEventPreparer: new ReplayEventPreparer(),
+            historyReplayFilter: new HistoryReplayFilter(new HistoryProjector()),
         );
 
         $commit = new RunCommit(
@@ -165,6 +169,7 @@ final class RunCommitLoggingTest extends TestCase
                 promptStateStore: new InMemoryPromptStateStore(),
                 promptStateReplayService: new PromptStateReplayService(),
                 replayEventPreparer: new ReplayEventPreparer(),
+                historyReplayFilter: new HistoryReplayFilter(new HistoryProjector()),
             ),
             stepDispatcher: new StepDispatcher(new TestMessageBus()),
             logger: $logger,

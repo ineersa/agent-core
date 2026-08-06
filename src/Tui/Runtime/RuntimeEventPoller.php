@@ -241,11 +241,11 @@ final class RuntimeEventPoller
             }
 
             if ($hasRunHistoryPositionChanged) {
-                // Wholesale leaf replace already applied; drain projector dirty set for any
-                // post-leaf events in the same batch, then return an explicit full snapshot.
-                $postLeaf = $this->eventApplier->drainProjectedChanges();
-                if (!$postLeaf->isEmpty()) {
-                    $state->applyTranscriptChangeSet($postLeaf);
+                // Wholesale position replace already applied; drain projector dirty set for any
+                // post-position events in the same batch, then return an explicit full snapshot.
+                $postPosition = $this->eventApplier->drainProjectedChanges();
+                if (!$postPosition->isEmpty()) {
+                    $state->applyTranscriptChangeSet($postPosition);
                 }
 
                 return TranscriptChangeSet::full($state->transcript);

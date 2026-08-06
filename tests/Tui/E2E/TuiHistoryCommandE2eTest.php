@@ -50,8 +50,8 @@ final class TuiHistoryCommandE2eTest extends TestCase
     {
         $pane = $this->tmux->startDetached(
             command: $this->agentCommandForFixtureChain(
-                'tui-tree-rewind-turn1-07c.json',
-                'tui-tree-rewind-turn2-07c.json',
+                'tui-history-select-turn1-07c.json',
+                'tui-history-select-turn2-07c.json',
             ),
             prefix: 'tui-history-select-07c',
             width: 120,
@@ -188,7 +188,7 @@ final class TuiHistoryCommandE2eTest extends TestCase
             ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg(implode(';', $paths)).' '
             : '';
 
-        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-tree-rewind-');
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-history-select-');
 
         return \sprintf(
             'APP_ENV=test %sHOME=%s %s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
@@ -202,7 +202,7 @@ final class TuiHistoryCommandE2eTest extends TestCase
 
     private function createIsolatedProjectDir(): string
     {
-        $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-tree');
+        $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-history');
         @mkdir($dir.'/.hatfield', 0o777, true);
 
         $settings = [

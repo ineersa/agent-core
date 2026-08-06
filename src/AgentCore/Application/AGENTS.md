@@ -79,9 +79,9 @@ under `AgentCore\Contract\History`). Replay filtering is CodingAgent-local
 (`HistoryReplayFilter`). See `docs/session-storage.md` "Linear history model".
 
 Core replay integration:
-- `RunStateRebuilderInterface` (`SessionRunStateReplayService` in App) — optional retained-history filter before reducing into `RunState`;
+- `RunStateRebuilderInterface` (`SessionRunStateReplayService` in App) — required retained-history filter before reducing into `RunState`;
   integrity checks use the full canonical stream, not the filtered stream. `rebuildAtPosition()` rebuilds at a selected tip.
-- `HotPromptStateRebuilderInterface (SessionHotPromptReplayService in App)` — optional retained-history filter before replaying prompt messages; integrity from full stream.
+- `HotPromptStateRebuilderInterface (SessionHotPromptReplayService in App)` — required retained-history filter before replaying prompt messages; integrity from full stream.
 - `HistorySelectionServiceInterface` (`HistorySelectionService` in App) — positions before a selected user prompt (`history_position_set` + editor text).
 - `HistoryTailDiscardInterface` (`HistoryTailDiscardService` in App) — shared mutate-behind-tip choke point used by `RunMessageProcessor`.
 

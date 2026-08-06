@@ -61,14 +61,14 @@ final class TuiHistoryPickerOverlayVirtualTest extends TestCase
 
     private function sampleTree(string $sessionId): HistoryView
     {
+        // Provider contract: user-prompt rows only.
         return new HistoryView(
             runId: $sessionId,
             turns: [
                 new HistoryPromptView(1, 'hello', 'user', 'hello', false),
-                new HistoryPromptView(2, 'Can you create file', 'user', 'Can you create file', false),
-                new HistoryPromptView(3, 'Done! Created file', 'assistant', '', true),
+                new HistoryPromptView(2, 'Can you create file', 'user', 'Can you create file', true),
             ],
-            positionTurnNo: 3,
+            positionTurnNo: 2,
         );
     }
 }

@@ -53,15 +53,15 @@ final class TuiRuntimeEventApplierTest extends TestCase
 
     public function testRunHistoryPositionChangedClearsStaleQueuedUserMessages(): void
     {
-        // Thesis: without clearing queuedUserMessages on RunHistoryPositionChanged, rewind/resume
-        // leaves abandoned-branch ⏳ pending lines visible above the editor.
+        // Thesis: without clearing queuedUserMessages on RunHistoryPositionChanged, history select/resume
+        // leaves discarded-tail ⏳ pending lines visible above the editor.
         $applier = $this->buildApplier();
-        $state = new TuiSessionState('run-leaf', true);
-        $state->queuedUserMessages = ['ik-abandoned' => 'Want to test bash in parallel'];
+        $state = new TuiSessionState('run-history-position', true);
+        $state->queuedUserMessages = ['ik-discarded' => 'Want to test bash in parallel'];
 
         $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
             type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::RunHistoryPositionChanged->value,
-            runId: 'run-leaf',
+            runId: 'run-history-position',
             seq: 10,
             payload: ['turn_no' => 2],
         ), replayMode: true);

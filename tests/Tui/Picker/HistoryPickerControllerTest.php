@@ -54,55 +54,55 @@ final class HistoryPickerControllerTest extends TestCase
     }
 
     /**
-     * Thesis: /history must expose user prompts only — assistant/tool turns never appear as rows.
+     * Thesis: /history renders HistoryView turns directly; SessionHistoryProvider is the
+     * single user-prompt filter, so the controller must not re-filter roles.
      */
     #[Test]
-    public function testBuildItemsUserPromptsOnly(): void
+    public function testBuildItemsRendersProviderUserPrompts(): void
     {
-        $tree = $this->createMixedRoleHistory();
+        $history = $this->createUserPromptHistory();
         $theme = new DefaultTheme(new ThemePalette('test'));
-        $items = HistoryPickerController::buildItems($tree, $theme);
+        $items = HistoryPickerController::buildItems($history, $theme);
 
         $this->assertCount(2, $items);
         $this->assertSame(['1', '3'], array_column($items, 'value'));
         $this->assertStringContainsString('Hello', $items[0]['label']);
         $this->assertStringContainsString('Follow-up', $items[1]['label']);
         foreach ($items as $item) {
-            $this->assertStringNotContainsString('Assistant', $item['label']);
             $this->assertStringNotContainsString('├─', $item['label']);
             $this->assertStringNotContainsString('└─', $item['label']);
         }
     }
 
     #[Test]
-    public function testFlattenTurnOrderUserOnly(): void
+    public function testUserPromptTurnNosMapsHistoryTurns(): void
     {
-        $tree = $this->createMixedRoleHistory();
-        $this->assertSame([1, 3], HistoryPickerController::userPromptTurnNos($tree));
+        $history = $this->createUserPromptHistory();
+        $this->assertSame([1, 3], HistoryPickerController::userPromptTurnNos($history));
     }
 
     #[Test]
     public function testInitialSelectedIndexPrefersNextUserPromptAfterTip(): void
     {
         // Tip at turn 1 (before second user prompt turn 3).
-        $tree = $this->createMixedRoleHistory(positionTurnNo: 1);
-        $this->assertSame(1, HistoryPickerController::initialSelectedIndex($tree));
+        $history = $this->createUserPromptHistory(positionTurnNo: 1);
+        $this->assertSame(1, HistoryPickerController::initialSelectedIndex($history));
     }
 
     #[Test]
-    public function testBuildItemsEmptyTree(): void
+    public function testBuildItemsEmptyHistory(): void
     {
-        $tree = new HistoryView(runId: 'r', turns: [], positionTurnNo: null);
+        $history = new HistoryView(runId: 'r', turns: [], positionTurnNo: null);
         $theme = new DefaultTheme(new ThemePalette('test'));
-        $this->assertSame([], HistoryPickerController::buildItems($tree, $theme));
+        $this->assertSame([], HistoryPickerController::buildItems($history, $theme));
     }
 
     #[Test]
     public function testOpenMountsOverlayWithHistory(): void
     {
-        $tree = $this->createMixedRoleHistory();
+        $history = $this->createUserPromptHistory();
         $provider = $this->createStub(HistoryProviderInterface::class);
-        $provider->method('forSession')->willReturn($tree);
+        $provider->method('forSession')->willReturn($history);
         $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
 
         $controller = new HistoryPickerController($provider, $switcher);
@@ -117,9 +117,9 @@ final class HistoryPickerControllerTest extends TestCase
     #[Test]
     public function testOpenShowsStatusWhenEmpty(): void
     {
-        $tree = new HistoryView(runId: 'r', turns: [], positionTurnNo: null);
+        $history = new HistoryView(runId: 'r', turns: [], positionTurnNo: null);
         $provider = $this->createStub(HistoryProviderInterface::class);
-        $provider->method('forSession')->willReturn($tree);
+        $provider->method('forSession')->willReturn($history);
         $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
 
         $controller = new HistoryPickerController($provider, $switcher);
@@ -130,11 +130,11 @@ final class HistoryPickerControllerTest extends TestCase
     }
 
     #[Test]
-    public function testOnSelectCallsRewindToSelectedPromptTurn(): void
+    public function testOnSelectCallsSelectHistoryTurnForSelectedPrompt(): void
     {
-        $tree = $this->createMixedRoleHistory();
+        $history = $this->createUserPromptHistory();
         $provider = $this->createStub(HistoryProviderInterface::class);
-        $provider->method('forSession')->willReturn($tree);
+        $provider->method('forSession')->willReturn($history);
 
         $switcher = $this->createMock(TuiSessionSwitchServiceInterface::class);
         $switcher->expects($this->once())->method('selectHistoryTurn')->with(3);
@@ -152,7 +152,8 @@ final class HistoryPickerControllerTest extends TestCase
         $list->handleInput("\n");
     }
 
-    private function createMixedRoleHistory(?int $positionTurnNo = 3): HistoryView
+    /** Provider contract: HistoryView turns are already user prompts only. */
+    private function createUserPromptHistory(?int $positionTurnNo = 3): HistoryView
     {
         return new HistoryView(
             runId: 'test-session',
@@ -163,12 +164,6 @@ final class HistoryPickerControllerTest extends TestCase
                     displayRole: 'user',
                     promptText: 'Hello',
                     isPosition: 1 === $positionTurnNo,
-                ),
-                new HistoryPromptView(
-                    turnNo: 2,
-                    title: 'Assistant response',
-                    displayRole: 'assistant',
-                    isPosition: 2 === $positionTurnNo,
                 ),
                 new HistoryPromptView(
                     turnNo: 3,

@@ -54,7 +54,7 @@ final class TranscriptMountedWidget extends ContainerWidget
     }
 
     /**
-     * Full replacement path: bootstrap, resume, leaf/branch, preview invalidation,
+     * Full replacement path: bootstrap, resume, history position, preview invalidation,
      * non-tail insertion/reorder.
      *
      * @param list<TranscriptBlock> $blocks

@@ -362,14 +362,14 @@ final class SessionInitializerTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testBranchAwareResumeFiltersOutAbandonedBranchBlocks(): void
+    public function testRetainedHistoryResumeFiltersOutDiscardedTailBlocks(): void
     {
         // Thesis: when the session has a known positionTurnNo (has been
-        // rewound), replayFromEvents filters to the active path, excluding
-        // abandoned-branch blocks from the transcript.  lastSeq is set from
+        // selected earlier), replayFromEvents filters to the retained prefix, excluding
+        // discarded-tail blocks from the transcript.  lastSeq is set from
         // the FULL canonical stream, not regressed.
 
-        $runId = 'run-branch-'.bin2hex(random_bytes(4));
+        $runId = 'run-history-'.bin2hex(random_bytes(4));
         $sessionDir = $this->projectDir.'/.hatfield/sessions/'.$runId;
         mkdir($sessionDir, 0777, true);
         file_put_contents($sessionDir.'/events.jsonl', '');
@@ -396,7 +396,7 @@ final class SessionInitializerTest extends TestCase
             payload: [
                 'kind' => 'steer',
                 'idempotency_key' => 'ik_t2',
-                'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Turn 2 — abandoned']]],
+                'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Turn 2 — discarded']]],
             ],
         ));
         // history_position_set (select T1, seq 12)
@@ -473,8 +473,8 @@ final class SessionInitializerTest extends TestCase
         $state = new TuiSessionState($runId, true);
         $blocks = $sessionInit->buildInitialTranscript($state);
 
-        // Active-path events only: T1 + T3 = 2 blocks
-        $this->assertCount(2, $blocks, 'Only active-path blocks should appear');
+        // Retained-history events only: T1 + T3 = 2 blocks
+        $this->assertCount(2, $blocks, 'Only retained-history blocks should appear');
         $this->assertStringContainsString('Turn 1', $blocks[0]->text);
         $this->assertStringContainsString('Turn 3', $blocks[1]->text);
 
@@ -557,7 +557,7 @@ final class SessionInitializerTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testBranchAwareResumeUsesCanonicalLastSeqNotTranscriptBlockSeq(): void
+    public function testRetainedHistoryResumeUsesCanonicalLastSeqNotTranscriptBlockSeq(): void
     {
         $runId = 'run-lastseq-'.bin2hex(random_bytes(4));
         $sessionDir = $this->projectDir.'/.hatfield/sessions/'.$runId;
@@ -569,7 +569,7 @@ final class SessionInitializerTest extends TestCase
             'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Turn 1']]],
         ]));
         $this->seedCanonicalEvent(new RunEvent(runId: $runId, seq: 99, turnNo: 2, type: 'agent_command_applied', payload: [
-            'kind' => 'steer', 'idempotency_key' => 'ik_abandoned',
+            'kind' => 'steer', 'idempotency_key' => 'ik_discarded',
             'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Abandoned']]],
         ]));
 
@@ -592,7 +592,7 @@ final class SessionInitializerTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testBranchAwareResumeReconstructsUsageFromProviderReplayEvents(): void
+    public function testRetainedHistoryResumeReconstructsUsageFromProviderReplayEvents(): void
     {
         $runId = 'run-usage-'.bin2hex(random_bytes(4));
         $sessionDir = $this->projectDir.'/.hatfield/sessions/'.$runId;

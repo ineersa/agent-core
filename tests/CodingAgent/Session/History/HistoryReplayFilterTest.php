@@ -116,6 +116,55 @@ final class HistoryReplayFilterTest extends TestCase
     }
 
     /**
+     * Thesis: completed position turn → queued/applied follow-up with NO next TurnAdvanced
+     * → history_position_set(reason=history_select) must exclude those pending commands.
+     * Covers rebuildIfStale crash recovery and rebuildAtPosition after history select
+     * (compaction/interrupted/CAS) so unmatched launches cannot leave RunState Running.
+     */
+    #[Test]
+    public function testExcludesUnmatchedPendingCommandsAfterCompletionBeforeHistorySelect(): void
+    {
+        $events = [
+            $this->event(1, 0, RunEventTypeEnum::RunStarted->value),
+            $this->event(2, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]),
+            $this->event(3, 1, RunEventTypeEnum::HistoryPositionSet->value, [
+                'position_turn_no' => 1,
+                'reason' => 'continue',
+            ]),
+            $this->event(4, 1, RunEventTypeEnum::LlmStepCompleted->value, ['text' => 'done']),
+            $this->event(5, 1, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
+            // Pending launch after completion — no TurnAdvanced maps these (interrupted/CAS).
+            $this->event(6, 1, RunEventTypeEnum::AgentCommandQueued->value, [
+                'kind' => 'follow_up',
+                'text' => 'pending after complete',
+            ]),
+            $this->event(7, 1, RunEventTypeEnum::AgentCommandApplied->value, [
+                'kind' => 'follow_up',
+                'text' => 'pending after complete',
+            ]),
+            $this->event(8, 1, RunEventTypeEnum::HistoryPositionSet->value, [
+                'position_turn_no' => 1,
+                'previous_position_turn_no' => 1,
+                'reason' => 'history_select',
+            ]),
+        ];
+
+        $result = $this->filter->filterAtPosition('run-1', $events, 1);
+        $this->assertSame([1], $result->retainedTurnNos);
+
+        $commandTypes = [];
+        foreach ($result->events as $event) {
+            if (\in_array($event->type, [
+                RunEventTypeEnum::AgentCommandQueued->value,
+                RunEventTypeEnum::AgentCommandApplied->value,
+            ], true)) {
+                $commandTypes[] = $event->type;
+            }
+        }
+        $this->assertSame([], $commandTypes, 'Unmatched post-completion commands before history_select must be excluded');
+    }
+
+    /**
      * @param array<string, mixed> $payload
      */
     private function event(int $seq, int $turnNo, string $type, array $payload = []): RunEvent

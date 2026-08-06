@@ -652,7 +652,7 @@ Hatfield exposes three minimal Extension API capabilities for independently owne
 2. **Canonical session event reader** — `SessionEventReaderInterface::readRange()` for recovery and async Observer jobs only. Full-log scans are acceptable here; do not call on every turn/boundary or on CompactRun hooks.
 3. **Agent runner** — `$api->agent()->run(AgentCallRequestDTO)` is publicly blocking. Internally Hatfield streams (`stream=true`) via the configured Symfony AI Platform + Agent + AgentProcessor so Codex WebSocket and HTTP streaming providers complete. Isolated tools only; no ambient Hatfield tools; exact `provider/model` string.
 
-No custom conversation-boundary notifier/projector, no runtime lifecycle APIs in OM-01, and no branch-aware event projection for MVP.
+No custom conversation-boundary notifier/projector, no runtime lifecycle APIs in OM-01, and no discarded-tail event projection for MVP.
 
 ## Related documents
 

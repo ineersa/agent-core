@@ -24,7 +24,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
         private LoggerInterface $logger,
         private RunStateReducer $runStateReducer,
         private ReplayEventPreparer $replayEventPreparer,
-        private ?HistoryReplayFilter $historyReplayFilter = null,
+        private HistoryReplayFilter $historyReplayFilter,
     ) {
     }
 
@@ -69,21 +69,20 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                 'event_count' => \count($sortedEvents),
             ]);
 
-            // Filter to retained history when available. Discarded-turn content is
+            // Always filter to retained history. Discarded-turn content is
             // excluded while canonical integrity checks remain on the full stream.
-            $filteredEvents = $sortedEvents;
-            if (null !== $this->historyReplayFilter) {
-                $historyReplay = $this->historyReplayFilter->filter($runId, $sortedEvents);
-                $filteredEvents = $historyReplay->events;
+            // HistoryReplayFilter also strips unmatched post-completion launches
+            // so crash recovery (rebuildIfStale) matches rebuildAtPosition.
+            $historyReplay = $this->historyReplayFilter->filter($runId, $sortedEvents);
+            $filteredEvents = $historyReplay->events;
 
-                $this->logger->info('run_state_replay.history_filtered', [
-                    'run_id' => $runId,
-                    'canonical_event_count' => $historyReplay->canonicalEventCount,
-                    'filtered_event_count' => \count($filteredEvents),
-                    'position_turn_no' => $historyReplay->positionTurnNo,
-                    'retained_turns' => $historyReplay->retainedTurnNos,
-                ]);
-            }
+            $this->logger->info('run_state_replay.history_filtered', [
+                'run_id' => $runId,
+                'canonical_event_count' => $historyReplay->canonicalEventCount,
+                'filtered_event_count' => \count($filteredEvents),
+                'position_turn_no' => $historyReplay->positionTurnNo,
+                'retained_turns' => $historyReplay->retainedTurnNos,
+            ]);
 
             $rebuiltState = $this->runStateReducer->replay($state, $filteredEvents);
 
@@ -144,7 +143,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
 
         try {
             // Full-stream integrity checks (duplicates + contiguity) on the
-            // canonical stream before active-history filtering.
+            // canonical stream before retained-history filtering.
             $duplicateSeqs = $this->replayEventPreparer->duplicateSequences($sortedEvents);
             if ([] !== $duplicateSeqs) {
                 $this->logger->error('run_state_replay.duplicate_sequences', [
@@ -194,30 +193,18 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                 );
             }
 
-            // Filter to the target tip's active retained prefix.
-            $filteredEvents = $sortedEvents;
-            if (null !== $this->historyReplayFilter) {
-                $historyReplay = $this->historyReplayFilter->filterAtPosition($runId, $sortedEvents, $positionTurnNo);
-                $filteredEvents = $historyReplay->events;
+            // Filter to the target tip's retained prefix (includes unmatched pending
+            // command suppression for history_select recovery).
+            $historyReplay = $this->historyReplayFilter->filterAtPosition($runId, $sortedEvents, $positionTurnNo);
+            $filteredEvents = $historyReplay->events;
 
-                $this->logger->info('run_state_replay.rebuild_at_position_filtered', [
-                    'run_id' => $runId,
-                    'position_turn_no' => $positionTurnNo,
-                    'canonical_event_count' => $historyReplay->canonicalEventCount,
-                    'filtered_event_count' => \count($filteredEvents),
-                    'retained_turns' => $historyReplay->retainedTurnNos,
-                ]);
-
-                // History-select replay must not resurrect post-completion follow_up
-                // commands that were queued on the position turn to launch a later turn.
-                // Those leave status=Running and suppress ApplyCommandHandler's immediate
-                // AdvanceRun for the next follow_up after a later mutation discard.
-                $filteredEvents = $this->filterAbandonedLaunchCommandsAtPosition(
-                    $sortedEvents,
-                    $positionTurnNo,
-                    $filteredEvents,
-                );
-            }
+            $this->logger->info('run_state_replay.rebuild_at_position_filtered', [
+                'run_id' => $runId,
+                'position_turn_no' => $positionTurnNo,
+                'canonical_event_count' => $historyReplay->canonicalEventCount,
+                'filtered_event_count' => \count($filteredEvents),
+                'retained_turns' => $historyReplay->retainedTurnNos,
+            ]);
 
             $rebuiltState = $this->runStateReducer->replay($state, $filteredEvents);
 
@@ -258,82 +245,5 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
         } finally {
             RunLogContext::leave();
         }
-    }
-
-    /**
-     * @param list<RunEvent> $sortedEvents
-     * @param list<RunEvent> $filteredEvents
-     *
-     * @return list<RunEvent>
-     */
-    private function filterAbandonedLaunchCommandsAtPosition(
-        array $sortedEvents,
-        int $positionTurnNo,
-        array $filteredEvents,
-    ): array {
-        // Only relevant when rebuilding immediately after a history_position_set
-        // (HistorySelectionService::selectPrompt → rebuildAtPosition). Strip follow_up
-        // commands queued on the position turn after its last completion but before
-        // the history_select marker — those launched a discarded later turn.
-        $historySelectSeq = 0;
-        foreach ($sortedEvents as $event) {
-            if (RunEventTypeEnum::HistoryPositionSet->value !== $event->type) {
-                continue;
-            }
-
-            $payload = $event->payload;
-            $eventPosition = (int) ($payload['position_turn_no'] ?? 0);
-            $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : '';
-
-            if ($eventPosition !== $positionTurnNo || !\in_array($reason, ['history_select'], true)) {
-                continue;
-            }
-
-            $historySelectSeq = max($historySelectSeq, $event->seq);
-        }
-
-        if (0 === $historySelectSeq) {
-            return $filteredEvents;
-        }
-
-        $turnCompletionSeq = 0;
-        foreach ($sortedEvents as $event) {
-            if ($event->turnNo !== $positionTurnNo || $event->seq >= $historySelectSeq) {
-                continue;
-            }
-
-            if (\in_array($event->type, [
-                RunEventTypeEnum::AgentEnd->value,
-                RunEventTypeEnum::LlmStepCompleted->value,
-            ], true)) {
-                $turnCompletionSeq = max($turnCompletionSeq, $event->seq);
-            }
-        }
-
-        if (0 === $turnCompletionSeq) {
-            return $filteredEvents;
-        }
-
-        return array_values(array_filter(
-            $filteredEvents,
-            static function (RunEvent $event) use ($positionTurnNo, $turnCompletionSeq, $historySelectSeq): bool {
-                if ($event->turnNo !== $positionTurnNo) {
-                    return true;
-                }
-
-                if (!\in_array($event->type, [
-                    RunEventTypeEnum::AgentCommandQueued->value,
-                    RunEventTypeEnum::AgentCommandApplied->value,
-                ], true)) {
-                    return true;
-                }
-
-                if ($event->seq <= $turnCompletionSeq) {
-                    return true;
-                }
-
-                return $event->seq >= $historySelectSeq;
-            },
-        ));
     }
 }

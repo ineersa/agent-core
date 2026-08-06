@@ -27,6 +27,8 @@ use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\History\HistoryProjector;
+use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PromptContractTestSupport;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\ProviderBoundaryCaptureSupport;
@@ -197,6 +199,7 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
                 new InMemoryPromptStateStore(),
                 new PromptStateReplayService(),
                 new ReplayEventPreparer(),
+                new HistoryReplayFilter(new HistoryProjector()),
             ),
             stepDispatcher: new StepDispatcher(new TestMessageBus()),
             logger: new NullLogger(),

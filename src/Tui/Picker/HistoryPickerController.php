@@ -62,7 +62,7 @@ final class HistoryPickerController
         $state = $this->state;
 
         $history = $this->historyProvider->forSession($state->sessionId);
-        if ([] === self::userPromptTurnNos($history)) {
+        if ([] === $history->turns) {
             $screen->setStatus('history', 'Session has no user prompts yet');
             $screen->refresh();
 
@@ -134,7 +134,8 @@ final class HistoryPickerController
     public static function buildItems(HistoryView $history, TuiTheme $theme): array
     {
         $items = [];
-        foreach (self::userPromptRows($history) as $turn) {
+        // SessionHistoryProvider already guarantees user-prompt rows only.
+        foreach ($history->turns as $turn) {
             $body = PickerListLabelFormatter::sanitizeTitle($turn->title);
             if ('' === $body || preg_match('/^Turn \d+$/', $body)) {
                 $body = 'User message (turn '.$turn->turnNo.')';
@@ -157,7 +158,7 @@ final class HistoryPickerController
     {
         return array_map(
             static fn (HistoryPromptView $turn): int => $turn->turnNo,
-            self::userPromptRows($history),
+            $history->turns,
         );
     }
 
@@ -183,21 +184,5 @@ final class HistoryPickerController
         }
 
         return max(0, \count($order) - 1);
-    }
-
-    /**
-     * @return list<HistoryPromptView>
-     */
-    private static function userPromptRows(HistoryView $history): array
-    {
-        $rows = [];
-        foreach ($history->turns as $turn) {
-            if ('user' !== $turn->displayRole) {
-                continue;
-            }
-            $rows[] = $turn;
-        }
-
-        return $rows;
     }
 }

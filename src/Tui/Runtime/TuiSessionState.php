@@ -227,7 +227,7 @@ final class TuiSessionState
     }
 
     /**
-     * Replace the entire ordered transcript (bootstrap, resume, leaf/branch).
+     * Replace the entire ordered transcript (bootstrap, resume, history position).
      *
      * @param list<TranscriptBlock> $blocks
      */

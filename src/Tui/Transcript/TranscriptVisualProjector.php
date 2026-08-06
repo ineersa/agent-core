@@ -13,7 +13,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
  *
  * Owns retained block map/order, tool call/result indexes, and current visual
  * nodes/order. Ordinary tail deltas produce dependency-bounded
- * {@see TranscriptVisualPatch} values; bootstrap/resume/leaf/preview/non-tail
+ * {@see TranscriptVisualPatch} values; bootstrap/resume/history-position/preview/non-tail
  * use explicit full reprojection.
  *
  * Dirty detection is object identity + presentation revision. No text hashing.
@@ -80,7 +80,7 @@ final class TranscriptVisualProjector
     }
 
     /**
-     * Full replacement: bootstrap, resume, leaf/branch, preview, non-tail/reorder.
+     * Full replacement: bootstrap, resume, history position, preview, non-tail/reorder.
      *
      * @param list<TranscriptBlock> $blocks
      */

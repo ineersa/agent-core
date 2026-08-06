@@ -53,7 +53,7 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
 
             $harness = new VirtualTuiHarness(sessionId: $sessionId);
             $provider = $this->createStub(HistoryProviderInterface::class);
-            $provider->method('forSession')->willReturn($this->sampleTree($sessionId));
+            $provider->method('forSession')->willReturn($this->sampleUserPromptHistory($sessionId));
 
             $runtime = $this->buildTuiContext()
                 ->withTui($harness->tui())
@@ -78,18 +78,18 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
     }
 
     /**
-     * Thesis: public ExtensionApi turnRowsInDisplayOrder and /history both expose only
-     * retained user-prompt rows; assistant/tool-cycle turns stay internal.
+     * Thesis: public ExtensionApi turnRowsInDisplayOrder and /history both consume the
+     * provider-filtered HistoryView (user prompts only). Bridge/picker do not re-filter roles.
      */
     #[Test]
     public function testTurnRowsInDisplayOrderAndHistoryAreUserPromptOnly(): void
     {
         $sessionId = 'rewind-ext-rows';
-        $tree = $this->sampleTree($sessionId);
+        $history = $this->sampleUserPromptHistory($sessionId);
 
         $harness = new VirtualTuiHarness(sessionId: $sessionId);
         $provider = $this->createStub(HistoryProviderInterface::class);
-        $provider->method('forSession')->willReturn($tree);
+        $provider->method('forSession')->willReturn($history);
 
         $runtime = $this->buildTuiContext()
             ->withTui($harness->tui())
@@ -103,11 +103,9 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
 
         $this->assertSame([1, 3], array_column($rows, 'turnNo'));
         $this->assertSame(['user', 'user'], array_column($rows, 'displayRole'));
-        $this->assertNotContains(2, array_column($rows, 'turnNo'), 'assistant/tool-cycle turn must not be a public row');
 
-        $historyTurnNos = HistoryPickerController::userPromptTurnNos($tree);
+        $historyTurnNos = HistoryPickerController::userPromptTurnNos($history);
         $this->assertSame([1, 3], $historyTurnNos);
-        $this->assertNotContains(2, $historyTurnNos, '/history must stay user-prompt-only');
     }
 
     private function seedCheckpoint(string $projectDir, string $runId, int $turnNo): void
@@ -147,13 +145,12 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
         );
     }
 
-    private function sampleTree(string $sessionId): HistoryView
+    private function sampleUserPromptHistory(string $sessionId): HistoryView
     {
         return new HistoryView(
             runId: $sessionId,
             turns: [
                 new HistoryPromptView(1, 'Create file', 'user', '', false),
-                new HistoryPromptView(2, 'Edit file', 'assistant', '', false),
                 new HistoryPromptView(3, 'Append line', 'user', '', true),
             ],
             positionTurnNo: 3,
