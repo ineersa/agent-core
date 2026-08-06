@@ -17,7 +17,7 @@ Depends on `ineersa/hatfield-extension-api` for public contracts. In this monore
 - After stable turn boundaries (`AfterTurnCommitHookInterface`), captures worktree state into a **Hatfield-owned hidden git** store (isolated `GIT_DIR`; never the project `.git`).
 - `/rewind` opens an extension-owned Symfony TUI picker of **file checkpoint targets for the active session only** (turns with a persisted checkpoint and a meaningful label). Other sessions in the same project do not appear.
 - **Enter** restores files to that checkpoint (file-only). **Esc** closes the picker. Undo metadata is captured before restore for safety; there is no undo menu item in v1.
-- `/tree` stays conversation-only; file restore is not mixed into conversation rewind.
+- `/history` is conversation-only; file restore stays on `/rewind` and is not mixed into conversation history.
 - Live file-diff preview in the picker is intentionally disabled in v1 (no hidden-git indexing on open/navigation).
 - Ledger and snapshots live under `.hatfield/rewind/` (project-scoped by cwd hash). Retention (`max_retained_turns`) prunes the newest-N checkpoint rows across all sessions in that project ledger.
 

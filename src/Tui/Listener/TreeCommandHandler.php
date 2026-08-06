@@ -11,7 +11,7 @@ use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Picker\TreePickerController;
 
 /**
- * Handles the /history slash command (replaces /tree).
+ * Handles the /history slash command.
  *
  * Opens the linear user-prompt history picker. Enter positions context
  * before the selected prompt and populates the editor.

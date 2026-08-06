@@ -12,7 +12,7 @@ use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 /**
- * Registers /history slash command (replaces /tree).
+ * Registers the /history slash command.
  */
 final class TreeCommandRegistrar implements TuiListenerRegistrar
 {
