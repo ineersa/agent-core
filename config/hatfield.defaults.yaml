@@ -369,9 +369,7 @@ runtime:
 #
 # Directories are scanned non-recursively for *.md files. Configured paths
 # may be a single .md file or a directory of *.md files.
-#
-# Disabled definitions (disabled: true) are loaded into the catalog but
-# excluded from enabled()/requireEnabled() lookups.
+# Every valid discovered definition is launchable; remove one by deleting/moving its file.
 #
 agents:
     # Whether agent discovery is enabled.

@@ -32,7 +32,6 @@ final readonly class AgentDefinitionDTO
         public bool $inheritAgentsMd = true,
         public SystemPromptModeEnum $systemPromptMode = SystemPromptModeEnum::Replace,
         public bool $parallelAllowed = true,
-        public bool $disabled = false,
         public string $instructions = '',
         public string $sourcePath = '',
         public string $sourceDirectory = '',

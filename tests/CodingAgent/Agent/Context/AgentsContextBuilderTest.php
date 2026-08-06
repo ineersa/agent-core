@@ -16,22 +16,21 @@ use PHPUnit\Framework\TestCase;
  */
 final class AgentsContextBuilderTest extends TestCase
 {
-    public function testBuildReturnsAvailableAgentsForEnabledAgents(): void
+    public function testBuildReturnsAvailableAgentsForDiscoveredAgents(): void
     {
         $scout = new AgentDefinitionDTO(
             name: 'scout',
             description: 'Scout agent',
             tools: ['read'],
         );
-        $disabled = new AgentDefinitionDTO(
+        $worker = new AgentDefinitionDTO(
             name: 'worker',
-            description: 'Disabled worker',
+            description: 'Worker agent',
             tools: ['read'],
-            disabled: true,
         );
 
         $builder = new AgentsContextBuilder(
-            new AgentDefinitionCatalog([$scout, $disabled]),
+            new AgentDefinitionCatalog([$scout, $worker]),
             new AgentsConfig(enabled: true),
             new AgentContextRenderer(),
         );
@@ -40,8 +39,8 @@ final class AgentsContextBuilderTest extends TestCase
 
         $this->assertStringContainsString('<available_agents>', $output);
         $this->assertStringContainsString('<name>scout</name>', $output);
-        $this->assertStringNotContainsString('<name>worker</name>', $output);
-        $this->assertStringNotContainsString('Disabled worker', $output);
+        $this->assertStringContainsString('<name>worker</name>', $output);
+        $this->assertStringContainsString('Worker agent', $output);
     }
 
     public function testBuildReturnsEmptyWhenAgentsDisabledInConfig(): void

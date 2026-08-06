@@ -50,9 +50,8 @@ tools:
 | Field | Default | Purpose |
 | --- | --- | --- |
 | `parallelAllowed` | **true** | Set `false` to disallow parallel `tasks` |
-| `disabled` | false | Still in catalog; excluded from launch and `<available_agents>` |
 
-Enabled definitions are foreground-launchable. Background launch is not implemented.
+Every valid discovered definition is foreground-launchable. Background launch is not implemented. Frontmatter `disabled` is rejected as unknown — remove an agent by deleting/moving its file.
 
 ## Example (project scout)
 

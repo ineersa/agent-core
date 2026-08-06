@@ -125,12 +125,8 @@ name: {$name}
 description: "Deterministic parallel child for live E2E"
 tools:
   - read
-mcp:
-  mode: none
-inheritAgentsMd: false
 inheritAgentsMd: false
 parallelAllowed: true
-disabled: false
 ---
 Reply with exactly {$token} only. Do not call read or any other tool.
 MD;

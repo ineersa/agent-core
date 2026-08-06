@@ -40,7 +40,7 @@ Discovery load order (lowest → highest; later overrides earlier on name collis
 2. `.agents/*.md` → `.hatfield/agents/*.md`
 3. `agents.paths` in settings (highest)
 
-Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<available_agents>`** (name + description) when `agents.enabled` is true for each enabled (not `disabled`) definition.
+Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<available_agents>`** (name + description) when `agents.enabled` is true for every valid discovered definition.
 
 ## Child safety (always enforced)
 
@@ -48,7 +48,7 @@ Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<a
 - **`agents.subagent_excluded_tools`** (default: `settings`, `hatfield_docs`) is stripped from every child, inherit-all and explicit lists.
 - Child extensions: effective allowlist = `agents.extensions.always_on` ∪ frontmatter `extensions`. Default `always_on` is **SafeGuard**. Omitted frontmatter `extensions` means **only always_on** — children do **not** inherit optional entries from global `extensions.enabled`.
 - Nested launch is also blocked when parent `session.kind` is `agent_child`.
-- Foreground only: the tool blocks until all children finish. Background launch is not implemented. Launchability is solely `disabled: false`.
+- Foreground only: the tool blocks until all children finish. Background launch is not implemented. Every valid discovered definition is launchable; remove one by deleting/moving its file (frontmatter `disabled` is rejected as unknown).
 
 ## Defaults that bite
 

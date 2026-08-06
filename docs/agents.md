@@ -45,9 +45,8 @@ You are a scout. Explore the codebase read-only and return dense findings...
 | `inheritAgentsMd` | bool | no | `true` | When true, copies parent `agents_context` into child `user-context` (not system prompt). |
 | `systemPromptMode` | enum | no | `replace` | `replace` = harness only; `append` = also include APPEND_SYSTEM.md (+ contributors) with child placeholders. |
 | `parallelAllowed` | bool | no | `true` | Whether parallel execution is allowed. Set `false` to opt out. |
-| `disabled` | bool | no | `false` | Disable definition without deleting it. Enabled definitions are foreground-launchable; disabled definitions are excluded from launch and `<available_agents>`. |
 
-**There is no `type` field.** The `type` field was intentionally removed. It is treated as an unknown field and rejected during parsing.
+**There is no `type` field.** The `type` field was intentionally removed. It is treated as an unknown field and rejected during parsing. Per-definition `disabled` is also rejected as unknown — remove an agent by deleting or moving its file.
 
 The body after the closing `---` delimiter is stored as the agent's instructions.
 
@@ -71,9 +70,9 @@ Each directory is scanned non-recursively for `*.md` files (sorted lexicographic
 
 When two definitions have the same `name`, the higher-precedence one wins. An override diagnostic is recorded with winner and loser paths. The overridden definition is not lost — it is still reachable through diagnostics for debugging, but it does not appear in the catalog.
 
-### Disabled definitions
+### Removing definitions
 
-Definitions with `disabled: true` are still loaded into the catalog and appear in `all()` and `disabled()` lookups. They are excluded from `enabled()` and `requireEnabled()` queries. Future launch/execution infrastructure must reject disabled agents.
+Every valid discovered definition is available and launchable. To remove an agent, delete or move its definition file. Per-definition `disabled` frontmatter is rejected as an unknown field.
 
 ### Missing paths
 
@@ -134,15 +133,12 @@ agents:
 ## Catalog API
 
 
-On new parent sessions, enabled agent definitions are also injected as a synthetic `user-context` message with `<agents_instructions>` and `<available_agents>` blocks (name and description only — not full agent instructions). The built-in `config/SYSTEM.md` documents this context channel alongside `<available_skills>`.
+On new parent sessions, discovered agent definitions are also injected as a synthetic `user-context` message with `<agents_instructions>` and `<available_agents>` blocks (name and description only — not full agent instructions). The built-in `config/SYSTEM.md` documents this context channel alongside `<available_skills>`.
 The catalog (`AgentDefinitionCatalog`) provides:
 
 - `get(string $name): ?AgentDefinitionDTO` — lookup by name
 - `require(string $name): AgentDefinitionDTO` — lookup, throws if missing
-- `requireEnabled(string $name): AgentDefinitionDTO` — lookup, throws if missing or disabled
-- `all(): list<AgentDefinitionDTO>` — all definitions including disabled
-- `enabled(): list<AgentDefinitionDTO>` — enabled definitions only
-- `disabled(): list<AgentDefinitionDTO>` — disabled definitions only
+- `all(): list<AgentDefinitionDTO>` — all registered definitions
 - `diagnostics(): list<AgentDefinitionDiagnosticDTO>` — discovery diagnostics
 
 ## Foreground subagent tool

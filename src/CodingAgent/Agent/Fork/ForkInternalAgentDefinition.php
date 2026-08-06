@@ -18,7 +18,6 @@ final class ForkInternalAgentDefinition
             instructions: '',
             inheritAgentsMd: true,
             parallelAllowed: false,
-            disabled: true,
         );
     }
 }

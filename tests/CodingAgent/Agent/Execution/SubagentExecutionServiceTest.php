@@ -162,50 +162,6 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $this->withToolContext('parent-4', 'call-missing', static fn () => $service->execute('parent-4', 'nonexistent-agent', 'Do something'));
     }
 
-    public function testDisabledAgentThrowsNonRetryable(): void
-    {
-        $def = new AgentDefinitionDTO(
-            name: 'disabled-only',
-            description: 'disabled only',
-            tools: [],
-            instructions: 'disabled.',
-            disabled: true,
-        );
-
-        $catalog = new AgentDefinitionCatalog([$def]);
-        $directory = self::getContainer()->get(AgentChildRunDirectory::class);
-        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
-        $eventStore = $this->createStub(EventStoreInterface::class);
-
-        $service = $this->makeService([
-            'catalog' => $catalog,
-            'depthGuard' => new AgentDepthGuard(),
-            'policyResolver' => $this->defaultPolicyResolver(),
-            'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
-            'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
-            'artifactRegistry' => $registry,
-            'agentRunner' => $this->createStub(AgentRunnerInterface::class),
-            'runStore' => $this->createStub(RunStoreInterface::class),
-            'parentRunStore' => $this->createStub(RunStoreInterface::class),
-            'eventStore' => $eventStore,
-            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class)),
-            'metadataReader' => new SubagentRunMetadataReader($eventStore),
-            'childRunDirectory' => $directory,
-            'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
-            'logger' => self::getContainer()->get('logger'),
-            'agentsConfig' => new AgentsConfig(),
-            'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
-            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
-            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
-            'appConfig' => self::getContainer()->get(AppConfig::class),
-        ]);
-
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('not available');
-
-        $this->withToolContext('parent-5', 'call-disabled', static fn () => $service->execute('parent-5', 'disabled-only', 'Task'));
-    }
-
     /**
      * @template T
      *

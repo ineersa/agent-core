@@ -204,7 +204,6 @@ final class AgentDefinitionParser
             inheritAgentsMd: $dto->inheritAgentsMd,
             systemPromptMode: SystemPromptModeEnum::from($dto->systemPromptMode),
             parallelAllowed: $dto->parallelAllowed,
-            disabled: $dto->disabled,
             instructions: $body,
             sourcePath: $filePath,
             sourceDirectory: \dirname($filePath),

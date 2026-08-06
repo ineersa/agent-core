@@ -20,10 +20,10 @@ final readonly class AgentsContextBuilder
     }
 
     /**
-     * Render enabled agent definitions for the parent model.
+     * Render discovered agent definitions for the parent model.
      *
-     * Returns empty string when agent discovery is disabled or no agents qualify.
-     * Enabled definitions are foreground-launchable; disabled definitions are excluded.
+     * Returns empty string when agent discovery is disabled or no agents are catalogued.
+     * Every valid discovered definition is listed; remove one by deleting/moving its file.
      */
     public function build(): string
     {
@@ -31,6 +31,6 @@ final readonly class AgentsContextBuilder
             return '';
         }
 
-        return $this->renderer->renderAvailableAgents($this->catalog->enabled());
+        return $this->renderer->renderAvailableAgents($this->catalog->all());
     }
 }

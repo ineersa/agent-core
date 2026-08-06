@@ -80,7 +80,6 @@ final class AgentDefinitionParserTest extends TestCase
         $this->assertFalse($dto->inheritAgentsMd);
         $this->assertSame(SystemPromptModeEnum::Append, $dto->systemPromptMode);
         $this->assertTrue($dto->parallelAllowed);
-        $this->assertFalse($dto->disabled);
         $this->assertSame('You are a scout. Explore and report findings.', $dto->instructions);
         $this->assertSame('/test/agent.md', $dto->sourcePath);
         $this->assertSame('/test', $dto->sourceDirectory);
@@ -103,7 +102,6 @@ final class AgentDefinitionParserTest extends TestCase
         $this->assertTrue($dto->inheritAgentsMd);
         $this->assertSame(SystemPromptModeEnum::Replace, $dto->systemPromptMode);
         $this->assertTrue($dto->parallelAllowed);
-        $this->assertFalse($dto->disabled);
     }
 
     public function testThinkingOff(): void
@@ -452,20 +450,19 @@ Body
         $this->parser->parseContent($content, '/test/string-parallel.md');
     }
 
-    public function testDisabledRejectsInt(): void
+    public function testDisabledIsUnknownField(): void
     {
-        // Serializer with strict type enforcement rejects int for bool.
         $content = $this->wrapContent([
-            'name' => 'int-disabled',
-            'description' => 'Int for bool',
+            'name' => 'legacy-disabled',
+            'description' => 'Removed field',
             'tools' => ['read'],
-            'disabled' => 1,
+            'disabled' => true,
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/disabled.*must be of type bool/');
+        $this->expectExceptionMessageMatches('/unknown field "disabled"/');
 
-        $this->parser->parseContent($content, '/test/int-disabled.md');
+        $this->parser->parseContent($content, '/test/legacy-disabled.md');
     }
 
     public function testRemovedForegroundAllowedIsUnknownField(): void
@@ -1093,7 +1090,6 @@ Body
             'inheritAgentsMd' => false,
             'systemPromptMode' => 'append',
             'parallelAllowed' => true,
-            'disabled' => false,
         ];
     }
 }

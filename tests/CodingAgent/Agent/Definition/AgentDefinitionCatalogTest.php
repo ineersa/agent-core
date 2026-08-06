@@ -10,18 +10,15 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Tests for AgentDefinitionCatalog covering lookup, enabled/disabled
- * filtering, and require methods.
+ * Tests for AgentDefinitionCatalog covering lookup and require methods.
  *
  * Test thesis: The catalog protects the stable contract that all() lists
- * everything, enabled() excludes disabled definitions, require()/requireEnabled()
- * throw for missing/disabled agents.
+ * every valid definition and require() throws only for missing agents.
  */
 final class AgentDefinitionCatalogTest extends TestCase
 {
     private AgentDefinitionDTO $scout;
     private AgentDefinitionDTO $reviewer;
-    private AgentDefinitionDTO $workerDisabled;
 
     protected function setUp(): void
     {
@@ -36,20 +33,13 @@ final class AgentDefinitionCatalogTest extends TestCase
             description: 'Reviewer agent',
             tools: ['read', 'ide_find_references'],
         );
-
-        $this->workerDisabled = new AgentDefinitionDTO(
-            name: 'worker',
-            description: 'Worker agent',
-            tools: ['read', 'write', 'edit'],
-            disabled: true,
-        );
     }
 
-    public function testAllIncludesDisabledDefinitions(): void
+    public function testAllListsEveryDefinition(): void
     {
         $catalog = new AgentDefinitionCatalog([
             $this->scout,
-            $this->workerDisabled,
+            $this->reviewer,
         ]);
 
         $all = $catalog->all();
@@ -57,47 +47,7 @@ final class AgentDefinitionCatalogTest extends TestCase
         $this->assertCount(2, $all);
         $names = array_map(static fn (AgentDefinitionDTO $d): string => $d->name, $all);
         $this->assertContains('scout', $names);
-        $this->assertContains('worker', $names);
-    }
-
-    public function testEnabledExcludesDisabled(): void
-    {
-        $catalog = new AgentDefinitionCatalog([
-            $this->scout,
-            $this->reviewer,
-            $this->workerDisabled,
-        ]);
-
-        $enabled = $catalog->enabled();
-
-        $this->assertCount(2, $enabled);
-        $names = array_map(static fn (AgentDefinitionDTO $d): string => $d->name, $enabled);
-        $this->assertContains('scout', $names);
         $this->assertContains('reviewer', $names);
-        $this->assertNotContains('worker', $names);
-    }
-
-    public function testDisabledOnlyDisabledDefinitions(): void
-    {
-        $catalog = new AgentDefinitionCatalog([
-            $this->scout,
-            $this->workerDisabled,
-        ]);
-
-        $disabled = $catalog->disabled();
-
-        $this->assertCount(1, $disabled);
-        $this->assertSame('worker', $disabled[0]->name);
-    }
-
-    public function testDisabledReturnsEmptyWhenNoneDisabled(): void
-    {
-        $catalog = new AgentDefinitionCatalog([
-            $this->scout,
-            $this->reviewer,
-        ]);
-
-        $this->assertCount(0, $catalog->disabled());
     }
 
     public function testGetReturnsDefinitionByName(): void
@@ -120,15 +70,6 @@ final class AgentDefinitionCatalogTest extends TestCase
         $this->assertNull($catalog->get('nonexistent'));
     }
 
-    public function testGetReturnsDisabledDefinition(): void
-    {
-        $catalog = new AgentDefinitionCatalog([$this->workerDisabled]);
-
-        $worker = $catalog->get('worker');
-        $this->assertNotNull($worker);
-        $this->assertTrue($worker->disabled);
-    }
-
     public function testRequireReturnsDefinition(): void
     {
         $catalog = new AgentDefinitionCatalog([$this->scout]);
@@ -146,36 +87,6 @@ final class AgentDefinitionCatalogTest extends TestCase
         $this->expectExceptionMessage('Agent "nonexistent" is not defined.');
 
         $catalog->require('nonexistent');
-    }
-
-    public function testRequireEnabledReturnsEnabledDefinition(): void
-    {
-        $catalog = new AgentDefinitionCatalog([$this->scout]);
-
-        $definition = $catalog->requireEnabled('scout');
-
-        $this->assertSame('scout', $definition->name);
-        $this->assertFalse($definition->disabled);
-    }
-
-    public function testRequireEnabledThrowsForDisabledDefinition(): void
-    {
-        $catalog = new AgentDefinitionCatalog([$this->workerDisabled]);
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Agent "worker" is disabled.');
-
-        $catalog->requireEnabled('worker');
-    }
-
-    public function testRequireEnabledThrowsForMissingDefinition(): void
-    {
-        $catalog = new AgentDefinitionCatalog([$this->scout]);
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Agent "nonexistent" is not defined.');
-
-        $catalog->requireEnabled('nonexistent');
     }
 
     public function testDiagnosticsStored(): void
@@ -202,8 +113,6 @@ final class AgentDefinitionCatalogTest extends TestCase
         $catalog = new AgentDefinitionCatalog([]);
 
         $this->assertCount(0, $catalog->all());
-        $this->assertCount(0, $catalog->enabled());
-        $this->assertCount(0, $catalog->disabled());
         $this->assertCount(0, $catalog->diagnostics());
         $this->assertNull($catalog->get('anything'));
     }

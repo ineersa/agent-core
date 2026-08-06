@@ -88,7 +88,7 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
         $agentsDir = $this->tmpDir.'/.hatfield/agents';
         mkdir($agentsDir, 0777, true);
         file_put_contents($agentsDir.'/scout.md', "---\nname: scout\ndescription: Scout\n---\n");
-        file_put_contents($agentsDir.'/worker.md', "---\nname: worker\ndescription: Worker\ndisabled: true\n---\n");
+        file_put_contents($agentsDir.'/worker.md', "---\nname: worker\ndescription: Worker\n---\n");
 
         $agentDiscovery = new AgentDefinitionDiscovery(
             agentsConfig: new AgentsConfig(enabled: true),
@@ -109,7 +109,7 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
 
         $this->assertSame(['plan', 'review'], $snapshot->prompts);
         $this->assertSame(['castor'], $snapshot->skills);
-        $this->assertSame(['scout'], $snapshot->agentNames);
+        $this->assertSame(['scout', 'worker'], $snapshot->agentNames);
         $this->assertCount(2, $snapshot->mcpServers);
         $byName = [];
         foreach ($snapshot->mcpServers as $entry) {

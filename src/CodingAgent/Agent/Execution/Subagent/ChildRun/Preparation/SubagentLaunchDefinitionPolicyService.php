@@ -43,7 +43,7 @@ final class SubagentLaunchDefinitionPolicyService
     public function requireForegroundDefinition(string $agentName): AgentDefinitionDTO
     {
         try {
-            return $this->catalog->requireEnabled($agentName);
+            return $this->catalog->require($agentName);
         } catch (\RuntimeException $e) {
             throw new ToolCallException(\sprintf('Agent "%s" is not available: %s', $agentName, $e->getMessage()), retryable: false);
         }
