@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
-use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
 use Ineersa\CodingAgent\Config\AgentsConfig;
@@ -183,7 +181,6 @@ final class AgentToolPolicyResolverTest extends TestCase
             name: 'test-agent',
             description: 'Test',
             tools: $tools,
-            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
             instructions: 'x',
         );
     }

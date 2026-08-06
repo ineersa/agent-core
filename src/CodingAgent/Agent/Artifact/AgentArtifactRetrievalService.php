@@ -11,7 +11,6 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\CodingAgent\Config\AgentArtifactRetrievalLimitsConfig;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -20,6 +19,12 @@ use Psr\Log\LoggerInterface;
  */
 final class AgentArtifactRetrievalService
 {
+    public const int DEFAULT_LIMIT = 20;
+
+    public const int MAX_LIMIT = 100;
+
+    public const int HISTORY_SUMMARY_CHARS = 240;
+
     private const string TEMPLATE_HANDOFF_HEADER = <<<'MD'
 # Subagent handoff
 
@@ -85,7 +90,6 @@ MD;
         private readonly AgentArtifactRegistry $artifactRegistry,
         private readonly AgentChildRunDirectory $childRunDirectory,
         private readonly AgentRetrieveArgumentsFactory $argumentsFactory,
-        private readonly AgentArtifactRetrievalLimitsConfig $limits,
         private readonly RunStoreInterface $runStore,
         private readonly EventStoreInterface $eventStore,
         private readonly LoggerInterface $logger,
@@ -105,7 +109,7 @@ MD;
 
         try {
             $mode = $args->resolvedMode();
-            $limit = $args->resolvedLimit($this->limits->defaultLimit, $this->limits->maxLimit);
+            $limit = $args->resolvedLimit(self::DEFAULT_LIMIT, self::MAX_LIMIT);
         } catch (\InvalidArgumentException $e) {
             throw new ToolCallException($e->getMessage(), retryable: false);
         }
@@ -383,7 +387,7 @@ MD;
 
         $text = trim(implode(' ', $parts));
 
-        return $this->truncateLine('' === $text ? '(non-text content omitted)' : $text, $this->limits->historySummaryChars);
+        return $this->truncateLine('' === $text ? '(non-text content omitted)' : $text, self::HISTORY_SUMMARY_CHARS);
     }
 
     private function summarizeEvent(RunEvent $event): string

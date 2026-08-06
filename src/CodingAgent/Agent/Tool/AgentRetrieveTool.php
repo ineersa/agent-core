@@ -69,8 +69,8 @@ final class AgentRetrieveTool implements HatfieldToolProviderInterface, ToolHand
                     'limit' => [
                         'type' => 'integer',
                         'minimum' => 1,
-                        'maximum' => 100,
-                        'description' => 'Max rows for events/history modes (default 20).',
+                        'maximum' => AgentArtifactRetrievalService::MAX_LIMIT,
+                        'description' => \sprintf('Max rows for events/history modes (default %d).', AgentArtifactRetrievalService::DEFAULT_LIMIT),
                     ],
                 ],
                 'required' => [],

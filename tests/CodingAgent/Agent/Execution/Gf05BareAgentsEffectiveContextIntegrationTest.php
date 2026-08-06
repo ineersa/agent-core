@@ -17,8 +17,6 @@ use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
-use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
@@ -141,7 +139,6 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
                     name: 'gf05-scout',
                     description: 'GF05 scout',
                     tools: ['read'],
-                    mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
                     instructions: 'Scout child instructions.',
                 ),
             ]),

@@ -20,8 +20,6 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
-use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
@@ -32,6 +30,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -49,6 +48,7 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\Component\Clock\NativeClock;
+use Symfony\Component\Filesystem\Filesystem;
 
 #[CoversClass(SubagentExecutionService::class)]
 final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
@@ -59,7 +59,6 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             name: 'nested',
             description: 'Nested',
             tools: ['read'],
-            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
             instructions: 'Nested agent.',
         );
 
@@ -163,51 +162,6 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $this->withToolContext('parent-4', 'call-missing', static fn () => $service->execute('parent-4', 'nonexistent-agent', 'Do something'));
     }
 
-    public function testForegroundNotAllowedThrowsNonRetryable(): void
-    {
-        $def = new AgentDefinitionDTO(
-            name: 'background-only',
-            description: 'bg only',
-            tools: [],
-            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
-            instructions: 'bg.',
-            foregroundAllowed: false,
-        );
-
-        $catalog = new AgentDefinitionCatalog([$def]);
-        $directory = self::getContainer()->get(AgentChildRunDirectory::class);
-        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
-        $eventStore = $this->createStub(EventStoreInterface::class);
-
-        $service = $this->makeService([
-            'catalog' => $catalog,
-            'depthGuard' => new AgentDepthGuard(),
-            'policyResolver' => $this->defaultPolicyResolver(),
-            'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
-            'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
-            'artifactRegistry' => $registry,
-            'agentRunner' => $this->createStub(AgentRunnerInterface::class),
-            'runStore' => $this->createStub(RunStoreInterface::class),
-            'parentRunStore' => $this->createStub(RunStoreInterface::class),
-            'eventStore' => $eventStore,
-            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class)),
-            'metadataReader' => new SubagentRunMetadataReader($eventStore),
-            'childRunDirectory' => $directory,
-            'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
-            'logger' => self::getContainer()->get('logger'),
-            'agentsConfig' => new AgentsConfig(),
-            'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
-            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
-            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
-            'appConfig' => self::getContainer()->get(AppConfig::class),
-        ]);
-
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('does not allow foreground');
-
-        $this->withToolContext('parent-5', 'call-bg', static fn () => $service->execute('parent-5', 'background-only', 'Task'));
-    }
-
     /**
      * @template T
      *
@@ -265,6 +219,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
                 cwd: $cwd,
             ),
             extractor: new MarkdownFrontmatterExtractor(),
+            resources: new AppResourceLocator($cwd),
+            filesystem: new Filesystem(),
         );
 
         return new SkillsContextBuilder(

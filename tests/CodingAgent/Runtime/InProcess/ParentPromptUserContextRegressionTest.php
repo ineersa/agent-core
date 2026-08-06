@@ -165,7 +165,7 @@ final class ParentPromptUserContextRegressionTest extends PerMethodIsolatedKerne
 
         file_put_contents(
             $cwd.'/.agents/gf05-test-agent.md',
-            "---\nname: gf05-test-agent\ndescription: GF05 deterministic agents_definitions_context\ntools: read\nforegroundAllowed: true\n---\n\nGF05 agent body.\n",
+            "---\nname: gf05-test-agent\ndescription: GF05 deterministic agents_definitions_context\ntools: read\n---\n\nGF05 agent body.\n",
         );
     }
 }

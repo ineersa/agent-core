@@ -850,6 +850,12 @@ during startup. Enabled extensions may call
 (containing `SKILL.md`); those skills are discovered after CLI
 `--skills-path` and project/user auto-discovery paths, so local skills win
 name collisions. Extension-owned skills are suppressed by `--no-skills`.
+
+Built-in skills shipped under `src/CodingAgent/Resources/skills/<name>/` are
+mirrored into `~/.hatfield/skills/<name>/` immediately before skill discovery
+(Hatfield owns those destinations and rewrites them). Project skills still
+override home/built-in copies. `--no-skills` suppresses discovery of
+materialized built-ins but still refreshes the home mirror.
 **Start a new Hatfield session** (or restart the agent/TUI) after install so
 enabled classes are loaded; an already-running session will not pick up new
 extensions.

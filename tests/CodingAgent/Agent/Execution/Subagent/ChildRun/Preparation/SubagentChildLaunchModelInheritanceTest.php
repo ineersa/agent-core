@@ -6,8 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\ChildRun\Preparatio
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
-use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -80,7 +78,6 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
             name: 'scout',
             description: 'd',
             tools: [],
-            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
             model: $model,
             instructions: 'do work',
         );

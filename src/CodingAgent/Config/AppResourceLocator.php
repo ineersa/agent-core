@@ -48,6 +48,29 @@ final readonly class AppResourceLocator
     }
 
     /**
+     * Absolute path to bundled built-in skill directories.
+     *
+     * Each direct child directory that contains SKILL.md is a built-in skill
+     * root (for example src/CodingAgent/Resources/skills/subagents).
+     */
+    public function getBuiltinSkillsPath(): string
+    {
+        return $this->appRoot.'/src/CodingAgent/Resources/skills';
+    }
+
+    /**
+     * Absolute path to bundled built-in agent definition Markdown files.
+     *
+     * Direct *.md files under this directory are installed into
+     * ~/.hatfield/agents by agents:init (for example
+     * src/CodingAgent/Resources/agents/scout.md).
+     */
+    public function getBuiltinAgentsPath(): string
+    {
+        return $this->appRoot.'/src/CodingAgent/Resources/agents';
+    }
+
+    /**
      * The application installation root directory.
      */
     public function getAppRoot(): string
