@@ -10,8 +10,8 @@ use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
  * Typed corruption signal when duplicate sequence numbers are detected in persisted run event history.
  *
  * Raised by replay rebuilders ({@see RunStateRebuilderInterface} implementations such as session replay)
- * and by rewind preflight ({@see \Ineersa\CodingAgent\Session\Rewind\SessionRewindService::rewind()})
- * before appending a LeafSet event. Use {@see RunStateDuplicateSequenceReplayException} or {@see self::isDuplicateSequences()}
+ * and by history-select preflight ({@see \Ineersa\CodingAgent\Session\History\HistorySelectionService::selectPrompt()})
+ * before appending a HistoryPositionSet event. Use {@see RunStateDuplicateSequenceReplayException} or {@see self::isDuplicateSequences()}
  * to distinguish this case from other failures.
  *
  * Sequence gaps (for example after cursor allocation without JSONL append) are tolerated and do not throw.

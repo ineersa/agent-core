@@ -13,7 +13,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 /**
  * Full-stream child run replay projection using an isolated TranscriptProjector instance.
  *
- * Does not apply turn-tree leaf filtering (unlike SessionTranscriptProvider).
+ * Does not apply retained-history filtering (unlike SessionTranscriptProvider).
  */
 final readonly class ChildRunTranscriptSnapshotProvider implements ChildRunTranscriptSnapshotProviderInterface
 {

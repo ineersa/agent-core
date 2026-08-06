@@ -14,9 +14,9 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
-use Ineersa\CodingAgent\Session\Replay\TurnTreeReplayFilter;
+use Ineersa\CodingAgent\Session\History\HistoryProjector;
+use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\SessionTranscriptProvider;
-use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -27,35 +27,36 @@ final class SessionTranscriptProviderTest extends TestCase
 {
     private string $runId = 'transcript-provider-run';
 
-    public function testTranscriptBlocksForLeafExcludesAbandonedBranchContent(): void
+    public function testTranscriptBlocksAtPositionExcludesDiscardedContent(): void
     {
         $events = [
             $this->runEvent('run_started', 1, 0, ['payload' => ['messages' => []]]),
-            $this->turnAdvanced(2, 1, null),
-            $this->leafSetEvent(3, 1, null, null, 'continue'),
+            $this->turnAdvanced(2, 1),
+            $this->historyPositionSetEvent(3, 1, null, 'continue'),
             $this->runEvent('llm_step_completed', 4, 1, ['text' => 'Answer A']),
-            $this->turnAdvanced(5, 2, 1),
-            $this->leafSetEvent(6, 2, 1, 1, 'continue'),
-            $this->runEvent('llm_step_completed', 7, 2, ['text' => 'Answer B abandoned']),
-            $this->leafSetEvent(8, 1, 2, null, 'rewind'),
-            $this->turnAdvanced(9, 3, 1),
-            $this->leafSetEvent(10, 3, 1, 1, 'continue'),
-            $this->runEvent('llm_step_completed', 11, 3, ['text' => 'Answer C active']),
+            $this->turnAdvanced(5, 2),
+            $this->historyPositionSetEvent(6, 2, 1, 'continue'),
+            $this->runEvent('llm_step_completed', 7, 2, ['text' => 'Answer B discarded']),
+            $this->historyPositionSetEvent(8, 1, 2, 'history_select'),
+            $this->runEvent(RunEventTypeEnum::HistoryTailDiscarded->value, 9, 1, ['after_turn_no' => 1]),
+            $this->turnAdvanced(10, 3),
+            $this->historyPositionSetEvent(11, 3, 1, 'continue'),
+            $this->runEvent('llm_step_completed', 12, 3, ['text' => 'Answer C active']),
         ];
 
         $provider = $this->createProvider($events);
-        $snapshot = $provider->transcriptForLeaf($this->runId, 3);
+        $snapshot = $provider->transcriptAtPosition($this->runId, 3);
         $blocks = $snapshot->transcriptBlocks;
 
         $texts = array_map(static fn (TranscriptBlock $b): string => $b->text, $blocks);
 
-        $this->assertNotEmpty($blocks, 'Active leaf should project transcript blocks');
+        $this->assertNotEmpty($blocks, 'Retained tip should project transcript blocks');
         $joined = implode("\n", $texts);
         $this->assertTrue(
             str_contains($joined, 'Answer A') || str_contains($joined, 'Answer C active'),
-            'Active leaf projection should include active-path assistant text',
+            'Active history projection should include retained assistant text',
         );
-        $this->assertStringNotContainsString('Answer B abandoned', $joined);
+        $this->assertStringNotContainsString('Answer B discarded', $joined);
     }
 
     /** @param list<RunEvent> $events */
@@ -64,8 +65,8 @@ final class SessionTranscriptProviderTest extends TestCase
         $store = $this->createStub(EventStoreInterface::class);
         $store->method('allFor')->willReturn($events);
 
-        $projector = new TurnTreeProjector();
-        $replayFilter = new TurnTreeReplayFilter($projector);
+        $projector = new HistoryProjector();
+        $replayFilter = new HistoryReplayFilter($projector);
         $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
         $translator = new RuntimeEventTranslator($eventDispatcher);
         $eventMapper = new RuntimeEventMapper($translator);
@@ -85,26 +86,21 @@ final class SessionTranscriptProviderTest extends TestCase
         return new RunEvent(runId: $this->runId, seq: $seq, turnNo: $turnNo, type: $type, payload: $payload);
     }
 
-    private function turnAdvanced(int $seq, int $turnNo, ?int $parentTurnNo): RunEvent
+    private function turnAdvanced(int $seq, int $turnNo, ?int $previousTurnNo = null): RunEvent
     {
         $payload = ['turn_no' => $turnNo, 'step_id' => 'step-'.$turnNo];
-        if (null !== $parentTurnNo) {
-            $payload['parent_turn_no'] = $parentTurnNo;
-        }
 
         return new RunEvent(runId: $this->runId, seq: $seq, turnNo: $turnNo, type: RunEventTypeEnum::TurnAdvanced->value, payload: $payload);
     }
 
-    private function leafSetEvent(int $seq, int $turnNo, ?int $previousTurnNo, ?int $parentTurnNo, string $reason): RunEvent
+    private function historyPositionSetEvent(int $seq, int $turnNo, ?int $previousTurnNo, string $reason): RunEvent
     {
-        $payload = ['turn_no' => $turnNo, 'reason' => $reason];
-        if (null !== $previousTurnNo) {
-            $payload['previous_turn_no'] = $previousTurnNo;
-        }
-        if (null !== $parentTurnNo) {
-            $payload['parent_turn_no'] = $parentTurnNo;
-        }
+        $payload = [
+            'position_turn_no' => $turnNo,
+            'previous_position_turn_no' => $previousTurnNo,
+            'reason' => $reason,
+        ];
 
-        return new RunEvent(runId: $this->runId, seq: $seq, turnNo: $turnNo, type: RunEventTypeEnum::LeafSet->value, payload: $payload);
+        return new RunEvent(runId: $this->runId, seq: $seq, turnNo: $turnNo, type: RunEventTypeEnum::HistoryPositionSet->value, payload: $payload);
     }
 }

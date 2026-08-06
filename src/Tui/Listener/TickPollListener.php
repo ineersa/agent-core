@@ -123,9 +123,15 @@ final class TickPollListener implements TuiListenerRegistrar
                     }
                 }
             } elseif (null !== $transcriptChanges) {
-                // Incremental projector delta (or explicit full after leaf replace).
+                // Incremental projector delta (or explicit full after history-position replace).
                 // State already applied inside RuntimeEventPoller; screen merges the same set.
                 $screen->applyTranscriptChangeSet($transcriptChanges);
+            }
+
+            // /history selection: populate editor with the selected user prompt once.
+            if (null !== $state->pendingEditorPromptText) {
+                $screen->promptEditor()->replaceText($state->pendingEditorPromptText);
+                $state->pendingEditorPromptText = null;
             }
 
             // The pending-queue widget (slot 4, above the editor) reflects transient

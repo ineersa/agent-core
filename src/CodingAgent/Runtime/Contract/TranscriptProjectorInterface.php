@@ -21,7 +21,7 @@ interface TranscriptProjectorInterface
     public function accept(array $event): void;
 
     /**
-     * Ordered snapshot for bootstrap/resume/leaf replacement.
+     * Ordered snapshot for bootstrap/resume/history-position replacement.
      *
      * @return list<TranscriptBlock>
      */
@@ -30,7 +30,7 @@ interface TranscriptProjectorInterface
     /**
      * Drain ordinary dirty changes since the previous drain without re-materializing
      * finalized history. Always incremental: live TUI state merges these deltas
-     * into an existing snapshot (resume/leaf). Callers that need a full ordered
+     * into an existing snapshot (resume/history-position). Callers that need a full ordered
      * list use {@see blocks()} and build {@see TranscriptChangeSet::full()} themselves.
      */
     public function drainChanges(): TranscriptChangeSet;

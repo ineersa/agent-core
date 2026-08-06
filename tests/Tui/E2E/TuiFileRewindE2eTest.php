@@ -10,11 +10,11 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Replay-backed tmux journey for file rewind (/rewind) vs conversation-only /tree.
+ * Replay-backed tmux journey for file rewind (/rewind) vs conversation-only /history.
  *
  * Test thesis: after a completed assistant turn captures a checkpoint, a subsequent
  * local file change can be restored and undone via /rewind without coupling file
- * restore into /tree; follow-up turns complete without stuck Working.
+ * restore into /history; follow-up turns complete without stuck Working.
  *
  * @group tui-e2e-replay
  */
@@ -81,12 +81,12 @@ final class TuiFileRewindE2eTest extends TestCase
             $this->waitAssistantBlock($pane);
             $this->assertNotStuckWorking($pane);
 
-            $this->runSlashCommand($pane, '/tree');
+            $this->runSlashCommand($pane, '/history');
             $treeCapture = $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Session turn tree') && str_contains($cap, 'rewind'),
+                static fn (string $cap): bool => str_contains($cap, 'Session history — Enter to edit prompt'),
                 timeout: 10.0,
-                message: '/tree conversation picker did not appear',
+                message: '/history conversation picker did not appear',
                 history: 2000,
             );
             $this->assertStringNotContainsString('Restore files to this turn', $treeCapture);
@@ -150,19 +150,19 @@ final class TuiFileRewindE2eTest extends TestCase
             $this->waitAssistantBlock($pane);
             $this->assertNotStuckWorking($pane);
 
-            $this->runSlashCommand($pane, '/tree');
+            $this->runSlashCommand($pane, '/history');
             $treeCapture = $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Session turn tree') && str_contains($cap, 'rewind'),
+                static fn (string $cap): bool => str_contains($cap, 'Session history — Enter to edit prompt'),
                 timeout: 10.0,
-                message: '/tree conversation picker did not appear after edit journey',
+                message: '/history conversation picker did not appear after edit journey',
                 history: 2000,
             );
             $this->assertStringNotContainsString('Restore files to this turn', $treeCapture);
             $this->assertStringNotContainsString('Undo last file restore', $treeCapture);
             $this->assertStringNotContainsString('File rewind', $treeCapture);
-            $this->assertSame(1, substr_count($treeCapture, 'Session turn tree — Enter to rewind'), 'Tree picker should show a single tree header (no stacked overlay regression)');
-            $this->assertStringContainsString('Session turn tree', $treeCapture, 'Tree picker should open for conversation-only rewind');
+            $this->assertSame(1, substr_count($treeCapture, 'Session history — Enter to edit prompt'), 'History picker should show a single header (no stacked overlay regression)');
+            $this->assertStringContainsString('Session history', $treeCapture, 'History picker should open for conversation-only selection');
 
             $this->saveAnsiSnapshot($pane, 'file-rewind-edit-tool');
             $this->tmux->sendKey($pane, 'Escape');

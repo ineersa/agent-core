@@ -116,8 +116,8 @@ final readonly class RunStateReducer
             RunEventTypeEnum::ContextCompactionStarted->value => $this->applyContextCompactionStarted($payload, $state),
             RunEventTypeEnum::ContextCompacted->value => $this->applyContextCompacted($payload, $state, $messages),
             RunEventTypeEnum::ContextCompactionFailed->value => $this->applyContextCompactionFailed($payload, $state),
-            RunEventTypeEnum::TurnBranched->value,
-            RunEventTypeEnum::LeafSet->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::HistoryPositionSet->value,
+            RunEventTypeEnum::HistoryTailDiscarded->value => $this->applyNoMutation($event, $state),
             default => $this->applyNoMutation($event, $state),
         };
     }

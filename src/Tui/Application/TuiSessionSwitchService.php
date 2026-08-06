@@ -145,10 +145,10 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
         return $this->isPendingDraft || null !== $this->pendingResumeSessionId;
     }
 
-    public function rewindToTurn(int $targetTurnNo): void
+    public function selectHistoryTurn(int $targetTurnNo): void
     {
         if (null === $this->state?->handle || null === $this->client) {
-            throw new \RuntimeException('Cannot rewind: no active session or run handle.');
+            throw new \RuntimeException('Cannot select history: no active session or run handle.');
         }
 
         $runId = $this->state->handle->runId;
@@ -156,16 +156,16 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
         // Cancel the current run, if active.
         $this->cancelCurrentRun();
 
-        // Dispatch the rewind command.
+        // Dispatch the history-select command.
         $this->client->send($runId, new UserCommand(
-            type: 'rewind_to_turn',
+            type: 'select_history_turn',
             payload: ['turn_no' => $targetTurnNo],
         ));
 
         // Do NOT reset local state here — that happens reactively when the
-        // RunLeafChanged RuntimeEvent arrives via RuntimeEventPoller, so we
+        // RunHistoryPositionChanged RuntimeEvent arrives via RuntimeEventPoller, so we
         // rebuild from the authoritative server-side replay, not speculatively.
-        // The poller will clear transcript, reset lastSeq, and update activity.
+        // The poller will replace transcript, reset lastSeq, and update activity.
     }
 
     // ── Private helpers ──

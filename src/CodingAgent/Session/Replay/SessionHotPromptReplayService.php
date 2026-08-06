@@ -14,9 +14,9 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\HotPromptIntegrityVerifierInterface;
 use Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface;
-use Ineersa\AgentCore\Contract\TurnTree\BranchReplayFilterInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\PromptState;
+use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 
 final readonly class SessionHotPromptReplayService implements HotPromptStateRebuilderInterface, HotPromptIntegrityVerifierInterface
 {
@@ -25,9 +25,9 @@ final readonly class SessionHotPromptReplayService implements HotPromptStateRebu
         private PromptStateStoreInterface $promptStateStore,
         private PromptStateReplayService $promptStateReplayService,
         private ReplayEventPreparer $replayEventPreparer,
+        private HistoryReplayFilter $historyReplayFilter,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
-        private ?BranchReplayFilterInterface $turnTreeReplayFilter = null,
     ) {
     }
 
@@ -36,16 +36,10 @@ final readonly class SessionHotPromptReplayService implements HotPromptStateRebu
         $rebuild = function () use ($runId): PromptState {
             $resolvedReplayEvents = $this->eventsForReplay($runId);
 
-            // Filter to active branch when tree metadata is available.
-            // Messages come from filtered branch events; integrity
-            // (eventCount, lastSeq, missingSequences, isContiguous)
-            // describes the full canonical stream so active-branch gaps
-            // are not reported as corruption.
+            // Filter to retained history. Messages come from filtered events;
+            // integrity describes the full canonical stream.
             $canonicalEvents = $resolvedReplayEvents->events;
-            $filteredEvents = $canonicalEvents;
-            if (null !== $this->turnTreeReplayFilter) {
-                $filteredEvents = $this->turnTreeReplayFilter->filter($runId, $canonicalEvents)->events;
-            }
+            $filteredEvents = $this->historyReplayFilter->filter($canonicalEvents);
 
             $messages = $this->promptStateReplayService->replayMessages($filteredEvents);
             $integrity = $this->integrityFromResolvedReplayEvents($runId, $resolvedReplayEvents);

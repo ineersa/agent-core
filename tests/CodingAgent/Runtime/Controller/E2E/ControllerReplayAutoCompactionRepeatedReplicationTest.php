@@ -24,7 +24,7 @@ use PHPUnit\Framework\Attributes\Group;
  *  2. Turn 2: above threshold — first auto-compaction fires and completes
  *  3. Turn 3: above threshold — second auto-compaction fires and completes
  *     (this assertion FAILS on HEAD where compactionResolved blocks it)
- *  4. No ghost turn_advanced / leaf_set / llm_step_* after any after-turn
+ *  4. No ghost turn_advanced / history_position_set / llm_step_* after any after-turn
  *     compaction terminal
  *
  * Replay fixture design:
@@ -176,7 +176,7 @@ final class ControllerReplayAutoCompactionRepeatedReplicationTest extends Contro
             ."Timeline:\n".$timeline,
         );
 
-        // ── Assert: no ghost turn_advanced / leaf_set / llm_step_*
+        // ── Assert: no ghost turn_advanced / history_position_set / llm_step_*
         //    after each auto compaction terminal ──
         $this->assertNoGhostLlmAfterCompactionTerminals($coreEvents, $autoCompactedSeqs, $timeline);
 
@@ -397,7 +397,7 @@ YAML;
     }
 
     /**
-     * Assert no ghost turn_advanced / leaf_set / llm_step_* events
+     * Assert no ghost turn_advanced / history_position_set / llm_step_* events
      * occur after each auto compaction terminal (context_compacted
      * or context_compaction_failed with trigger=auto).
      *
@@ -415,7 +415,7 @@ YAML;
             return;
         }
 
-        $forbiddenTypes = ['turn_advanced', 'llm_step_completed', 'llm_step_failed', 'leaf_set'];
+        $forbiddenTypes = ['turn_advanced', 'llm_step_completed', 'llm_step_failed', 'history_position_set'];
         $violations = [];
         $lastCompacted = $autoCompactedSeqs[\count($autoCompactedSeqs) - 1];
 

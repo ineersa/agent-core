@@ -119,6 +119,12 @@ final class TuiSessionState
     public bool $isCompacting = false;
 
     /**
+     * Original user prompt text from /history selection, applied once by TickPollListener
+     * into the editor after RunHistoryPositionChanged rebuild. Null when nothing pending.
+     */
+    public ?string $pendingEditorPromptText = null;
+
+    /**
      * Usage/token projection for the TUI footer.
      *
      * Holds both session-level accumulated metrics (inputTokens, outputTokens,
@@ -221,7 +227,7 @@ final class TuiSessionState
     }
 
     /**
-     * Replace the entire ordered transcript (bootstrap, resume, leaf/branch).
+     * Replace the entire ordered transcript (bootstrap, resume, history position).
      *
      * @param list<TranscriptBlock> $blocks
      */

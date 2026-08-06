@@ -8,7 +8,7 @@ namespace Ineersa\CodingAgent\Runtime\Projection;
  * Canonical transcript delta for TUI/session application.
  *
  * Ordinary streaming/tool updates emit {@see self::MODE_INCREMENTAL} with only
- * dirty upserts and explicit removals. Bootstrap, resume, rewind/leaf replace,
+ * dirty upserts and explicit removals. Bootstrap, resume, history-position replace,
  * and projector reset use {@see self::MODE_FULL}.
  */
 final readonly class TranscriptChangeSet

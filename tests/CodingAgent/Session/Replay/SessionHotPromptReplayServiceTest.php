@@ -10,10 +10,9 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
-use Ineersa\CodingAgent\Session\Replay\BranchReplayFilterContractAdapter;
+use Ineersa\CodingAgent\Session\History\HistoryProjector;
+use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
-use Ineersa\CodingAgent\Session\Replay\TurnTreeReplayFilter;
-use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 use PHPUnit\Framework\TestCase;
 
 final class SessionHotPromptReplayServiceTest extends TestCase
@@ -35,7 +34,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
 
         $runId = 'run-canonical-llm-step';
 
@@ -61,6 +60,18 @@ final class SessionHotPromptReplayServiceTest extends TestCase
             runId: $runId,
             seq: 2,
             turnNo: 1,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [
+                'turn_no' => 1,
+                'step_id' => 'ta-1',
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        $eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 3,
+            turnNo: 1,
             type: RunEventTypeEnum::LlmStepCompleted->value,
             payload: [
                 'step_id' => 's1',
@@ -79,7 +90,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
         $this->assertSame('canonical_events', $rebuiltState->source);
-        $this->assertSame(2, $rebuiltState->lastSeq);
+        $this->assertSame(3, $rebuiltState->lastSeq);
         $this->assertCount(2, $rebuiltState->messages);
         $this->assertTrue($rebuiltState->isContiguous);
 
@@ -95,7 +106,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
 
         $runId = 'run-canonical-tool-calls';
 
@@ -116,6 +127,18 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $eventStore->append(new RunEvent(
             runId: $runId,
             seq: 2,
+            turnNo: 1,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [
+                'turn_no' => 1,
+                'step_id' => 'ta-1',
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        $eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 3,
             turnNo: 1,
             type: RunEventTypeEnum::LlmStepCompleted->value,
             payload: [
@@ -154,7 +177,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
 
         $runId = 'run-canonical-thinking';
 
@@ -175,6 +198,18 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $eventStore->append(new RunEvent(
             runId: $runId,
             seq: 2,
+            turnNo: 1,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [
+                'turn_no' => 1,
+                'step_id' => 'ta-1',
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        $eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 3,
             turnNo: 1,
             type: RunEventTypeEnum::LlmStepCompleted->value,
             payload: [
@@ -221,7 +256,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
 
         $runId = 'run-replacement';
 
@@ -244,6 +279,18 @@ final class SessionHotPromptReplayServiceTest extends TestCase
             runId: $runId,
             seq: 2,
             turnNo: 1,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [
+                'turn_no' => 1,
+                'step_id' => 'ta-1',
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        $eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 3,
+            turnNo: 1,
             type: RunEventTypeEnum::LlmStepCompleted->value,
             payload: [
                 'step_id' => 's1',
@@ -265,7 +312,19 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         // Uses a documented fixture event type, not a production enum.
         $eventStore->append(new RunEvent(
             runId: $runId,
-            seq: 3,
+            seq: 4,
+            turnNo: 2,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [
+                'turn_no' => 2,
+                'step_id' => 'ta-2',
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        $eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 5,
             turnNo: 2,
             type: 'context_compacted',
             payload: [
@@ -311,7 +370,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
 
         $runId = 'run-append-after-replacement';
 
@@ -335,6 +394,18 @@ final class SessionHotPromptReplayServiceTest extends TestCase
             runId: $runId,
             seq: 2,
             turnNo: 1,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [
+                'turn_no' => 1,
+                'step_id' => 'ta-1',
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        $eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 3,
+            turnNo: 1,
             type: 'context_compacted',
             payload: [
                 'messages' => [
@@ -355,7 +426,19 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         // New canonical llm_step_completed appends after replacement.
         $eventStore->append(new RunEvent(
             runId: $runId,
-            seq: 3,
+            seq: 4,
+            turnNo: 2,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [
+                'turn_no' => 2,
+                'step_id' => 'ta-2',
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        $eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 5,
             turnNo: 2,
             type: RunEventTypeEnum::LlmStepCompleted->value,
             payload: [
@@ -393,7 +476,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
 
         $runId = 'run-replay-canonical';
         $eventStore->append(new RunEvent(
@@ -418,6 +501,18 @@ final class SessionHotPromptReplayServiceTest extends TestCase
             runId: $runId,
             seq: 2,
             turnNo: 1,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [
+                'turn_no' => 1,
+                'step_id' => 'ta-1',
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        $eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 3,
+            turnNo: 1,
             type: RunEventTypeEnum::LlmStepCompleted->value,
             payload: [
                 'step_id' => 's1',
@@ -439,7 +534,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
         $this->assertSame('canonical_events', $rebuiltState->source);
-        $this->assertSame(2, $rebuiltState->lastSeq);
+        $this->assertSame(3, $rebuiltState->lastSeq);
         $this->assertCount(2, $rebuiltState->messages);
         $this->assertNotNull($hotPromptStore->get($runId));
 
@@ -460,7 +555,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
 
         $runId = 'run-no-events';
 
@@ -472,16 +567,16 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $this->assertTrue($rebuiltState->isContiguous);
     }
 
-    // ── Branch-aware prompt replay ──────────────────────────────────────────
+    // ── Linear history prompt replay ─────────────────────────────────────────
 
-    public function testBranchReplayExcludesAbandonedBranchMessages(): void
+    public function testHistoryReplayExcludesDiscardedMessages(): void
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $treeFilter = new BranchReplayFilterContractAdapter(new TurnTreeReplayFilter(new TurnTreeProjector()));
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), null, null, $treeFilter);
+        $historyFilter = new HistoryReplayFilter(new HistoryProjector());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), $historyFilter);
 
-        $runId = 'run-branch-replay';
+        $runId = 'run-history-replay';
 
         // Turn 1: initial
         $this->appendTo($eventStore, $runId, 'run_started', 1, 0, [
@@ -503,14 +598,22 @@ final class SessionHotPromptReplayServiceTest extends TestCase
             ],
         ]);
 
-        // Turn 2: follow-up (ABANDONED branch)
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::TurnAdvanced->value, 3, 2, [
-            'turn_no' => 2, 'parent_turn_no' => 1, 'step_id' => 's2',
+        // Turn 1 advance (missing earlier in fixture — needed for linear active list).
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::TurnAdvanced->value, 3, 1, [
+            'turn_no' => 1, 'step_id' => 's1',
         ]);
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LeafSet->value, 4, 2, [
-            'turn_no' => 2, 'parent_turn_no' => 1, 'reason' => 'continue',
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::HistoryPositionSet->value, 4, 1, [
+            'position_turn_no' => 1, 'reason' => 'continue',
         ]);
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LlmStepCompleted->value, 5, 2, [
+
+        // Turn 2: follow-up (later discarded)
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::TurnAdvanced->value, 5, 2, [
+            'turn_no' => 2, 'step_id' => 's2',
+        ]);
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::HistoryPositionSet->value, 6, 2, [
+            'position_turn_no' => 2, 'reason' => 'continue',
+        ]);
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LlmStepCompleted->value, 7, 2, [
             'step_id' => 's2',
             'stop_reason' => 'end_turn',
             'usage' => ['input_tokens' => 5, 'output_tokens' => 5],
@@ -522,17 +625,20 @@ final class SessionHotPromptReplayServiceTest extends TestCase
             ],
         ]);
 
-        // Rewind to turn 1, branch turn 3 (ACTIVE)
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LeafSet->value, 6, 1, [
-            'turn_no' => 1, 'reason' => 'rewind',
+        // Select tip 1 then discard forward tail; new turn 3 is active.
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::HistoryPositionSet->value, 8, 1, [
+            'position_turn_no' => 1, 'reason' => 'history_select',
         ]);
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::TurnAdvanced->value, 7, 3, [
-            'turn_no' => 3, 'parent_turn_no' => 1, 'step_id' => 's3',
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::HistoryTailDiscarded->value, 9, 1, [
+            'after_turn_no' => 1, 'reason' => 'mutate_behind_tip',
         ]);
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LeafSet->value, 8, 3, [
-            'turn_no' => 3, 'parent_turn_no' => 1, 'reason' => 'continue',
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::TurnAdvanced->value, 10, 3, [
+            'turn_no' => 3, 'step_id' => 's3',
         ]);
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LlmStepCompleted->value, 9, 3, [
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::HistoryPositionSet->value, 11, 3, [
+            'position_turn_no' => 3, 'reason' => 'continue',
+        ]);
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LlmStepCompleted->value, 12, 3, [
             'step_id' => 's3',
             'stop_reason' => 'end_turn',
             'usage' => ['input_tokens' => 5, 'output_tokens' => 3],
@@ -547,11 +653,11 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
         // Integrity must describe the full canonical stream.
-        $this->assertSame(9, $rebuiltState->eventCount);
-        $this->assertSame(9, $rebuiltState->lastSeq);
+        $this->assertSame(12, $rebuiltState->eventCount);
+        $this->assertSame(12, $rebuiltState->lastSeq);
         $this->assertTrue($rebuiltState->isContiguous, 'Full canonical stream is contiguous');
 
-        // Messages must only contain active-branch messages.
+        // Messages must only contain retained-history messages.
         $messageTexts = [];
         foreach ($rebuiltState->messages as $msg) {
             $messageTexts[] = $msg['content'][0]['text'] ?? '';
@@ -560,7 +666,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $this->assertContains('Hello', $messageTexts);
         $this->assertContains('Hi!', $messageTexts);
         $this->assertContains('ACTIVE response', $messageTexts);
-        $this->assertNotContains('ABANDONED response', $messageTexts, 'Abandoned branch messages must be excluded');
+        $this->assertNotContains('ABANDONED response', $messageTexts, 'Discarded-tail messages must be excluded');
     }
 
     // ── Context compaction hot prompt replay ──────────────────────────────────
@@ -575,7 +681,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
         $runId = 'run-hot-prompt-compacted';
 
         // Original messages (3 user messages).

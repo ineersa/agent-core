@@ -7,7 +7,7 @@ namespace Ineersa\Tui\Transcript;
 /**
  * Production visual reconciliation contract for {@see TranscriptMountedWidget}.
  *
- * - {@see self::full()} — complete ordered snapshot (bootstrap/resume/leaf/reorder).
+ * - {@see self::full()} — complete ordered snapshot (bootstrap/resume/history-position/reorder).
  * - {@see self::content()} — non-structural content-only upserts (pure stream/update).
  *   No order payload; consumer applies keyed mutations in O(changes).
  * - {@see self::structural()} — incremental with order (append/remove when survivor

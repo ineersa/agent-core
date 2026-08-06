@@ -69,19 +69,21 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
 - `RunMetrics` tracks active runs by status, turn-duration histogram, LLM/tool latency/error rates, command queue lag, stale-result count, and replay rebuild counters.
 - `HotPromptStateRebuilderInterface (SessionHotPromptReplayService in App)` increments rebuild counters and contributes replay tracing for hot-state rebuild operations.
 
-## Turn tree replay
+## Linear history replay
 
-Branch turn-tree projection and active-path filtering live in **CodingAgent session**
-(`CodingAgent\Session\TurnTree`, `CodingAgent\Session\Replay`). AgentCore emits
-canonical events (`turn_advanced`, `leaf_set`, `parent_turn_no`, etc.) and replays
-through narrow contracts (`BranchReplayFilterInterface`, `TurnTreeProjectorInterface`
-under `AgentCore\Contract\TurnTree`). See `docs/session-storage.md` "Turn tree model".
+Ordered retained-history projection and filtering live in **CodingAgent session**
+(`CodingAgent\Session\History`). AgentCore emits canonical events
+(`turn_advanced`, `history_position_set`, `history_tail_discarded`) and depends on
+narrow history contracts (`HistoryTailDiscardInterface`, `HistorySelectionServiceInterface`
+under `AgentCore\Contract\History`). Replay filtering is CodingAgent-local
+(`HistoryReplayFilter`). See `docs/session-storage.md` "Linear history model".
 
 Core replay integration:
-- `RunStateRebuilderInterface` (`SessionRunStateReplayService` in App) — optional `BranchReplayFilterInterface` before reducing into `RunState`;
-  integrity checks use the full canonical stream, not the filtered stream.
-- `HotPromptStateRebuilderInterface (SessionHotPromptReplayService in App)` — optional branch filter before replaying prompt messages; integrity from full stream.
-- `RunRewindServiceInterface` (`SessionRewindService` in App) — uses `TurnTreeProjectorInterface` to validate rewind targets.
+- `RunStateRebuilderInterface` (`SessionRunStateReplayService` in App) — required retained-history filter before reducing into `RunState`;
+  integrity checks use the full canonical stream, not the filtered stream. `rebuildAtPosition()` rebuilds at a selected tip.
+- `HotPromptStateRebuilderInterface (SessionHotPromptReplayService in App)` — required retained-history filter before replaying prompt messages; integrity from full stream.
+- `HistorySelectionServiceInterface` (`HistorySelectionService` in App) — positions before a selected user prompt (`history_position_set` + editor text).
+- `HistoryTailDiscardInterface` (`HistoryTailDiscardService` in App) — shared mutate-behind-tip choke point used by `RunMessageProcessor`.
 
 ## Maintenance rule
 

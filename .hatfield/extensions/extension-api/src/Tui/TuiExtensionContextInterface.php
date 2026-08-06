@@ -54,7 +54,10 @@ interface TuiExtensionContextInterface
     public function formatRolePrefix(string $displayRole): string;
 
     /**
-     * Conversation turn rows in tree display order for interactive pickers.
+     * Retained user-prompt history rows for interactive pickers (linear order).
+     *
+     * Assistant/tool-cycle turns are internal context and are not included.
+     * Both conversational `/history` and file `/rewind` consume this contract.
      *
      * @return list<array{turnNo:int,title:string,displayRole:string}>
      */

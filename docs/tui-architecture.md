@@ -527,7 +527,7 @@ ID→index map → `ChatScreen::applyTranscriptChangeSet` → stateful
   text/meta hashing on ordinary tail stream/update/remove.
 - **Projector** tracks dirty IDs in first-mark order; `drainChanges()` is
   O(changes), not O(history). `blocks()` remains for bootstrap, resume, and
-  leaf/branch replacement snapshots. Batch removals use an order index (no
+  history-position replacement snapshots. Batch removals use an order index (no
   per-removal `array_filter` of the full order list).
 - **Session list** is a single ordered array of block references (no duplicate
   copies of block objects). Upserts are O(1) via ID→index; batch removals splice
@@ -542,7 +542,7 @@ ID→index map → `ChatScreen::applyTranscriptChangeSet` → stateful
   survivor relative order is stable — a deliberate ponytail ceiling. Replace
   with a per-exchange/neighbor dependency graph only if profiling shows
   structural scans matter. Explicit full visual snapshot remains the defined
-  path for bootstrap, resume, RunLeafChanged/rewind/branch, non-tail
+  path for bootstrap, resume, run.history_position_changed/history-select/position, non-tail
   insert/reorder, ambiguous mid-list tool pairing, and global preview
   invalidation — not a dual renderer.
 - **Mounted memory/layout** is O(number of visual nodes). Symfony's widget
@@ -559,7 +559,7 @@ Symfony issue #64941.
 | Method | Purpose |
 |--------|---------|
 | `mount(Tui): void` | Create and attach all 14 widgets to TUI |
-| `setTranscriptBlocks(TranscriptBlock[]): void` | Full transcript replace (bootstrap/resume/leaf/preview) |
+| `setTranscriptBlocks(TranscriptBlock[]): void` | Full transcript replace (bootstrap/resume/history-position/preview) |
 | `applyTranscriptChangeSet(TranscriptChangeSet): void` | Ordinary live projector delta (upserts/removals) |
 | `clearEditor(): void` | Reset editor to empty |
 | `editorText(): string` | Read editor content |

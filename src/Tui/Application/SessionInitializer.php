@@ -5,12 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Application;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
-use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
@@ -30,22 +28,20 @@ use Psr\Log\LoggerInterface;
  * Extracted from InteractiveMode::run() so the session lifecycle
  * is independently testable and the run() method stays lean.
  *
- * On resume, transcript blocks are rebuilt from events.jsonl through
- * RuntimeEventMapper + TranscriptProjector instead of loading from a
- * separate transcript.jsonl file. This ensures the TUI transcript is
- * always a derived projection of the canonical event stream.
+ * On resume, transcript blocks are rebuilt from the retained-history prefix
+ * at the explicit int position (0 = before first / empty) via HistoryProvider
+ * + SessionTranscriptProvider. Fail-closed: projection failure propagates;
+ * only unreadable events.jsonl degrades locally to a system block.
  */
 final readonly class SessionInitializer
 {
     public function __construct(
         private HatfieldSessionStore $sessionStore,
         private SessionRunEventStore $eventStore,
-        private RuntimeEventMapper $eventMapper,
-        private TranscriptProjectorInterface $projector,
         private TranscriptBlockFactory $blockFactory,
         private LoggerInterface $logger,
         private TuiRuntimeEventApplier $eventApplier,
-        private TurnTreeProviderInterface $turnTreeProvider,
+        private HistoryProviderInterface $historyProvider,
         private SessionTranscriptProviderInterface $sessionTranscriptProvider,
     ) {
     }
@@ -109,9 +105,8 @@ final readonly class SessionInitializer
     /**
      * Build the initial transcript blocks for the session.
      *
-     * On resume, replays canonical events.jsonl through RuntimeEventMapper
-     * and TranscriptProjector to reconstruct the transcript block history.
-     * On fresh session, returns a welcome block.
+     * On resume, rebuilds the retained-history transcript at the current
+     * position. On fresh session, returns a welcome block.
      *
      * Returns plain projection blocks; theme colors/prefixes are applied
      * at display time by ChatScreen/TranscriptMountedWidget.
@@ -137,15 +132,12 @@ final readonly class SessionInitializer
     }
 
     /**
-     * Replay canonical events.jsonl through the projector to rebuild transcript.
+     * Rebuild retained-history transcript for resume (never full-stream fallback).
      *
      * @return list<TranscriptBlock>
      */
     private function replayFromEvents(TuiSessionState $state): array
     {
-        // Reset projector to clear any stale state from previous runs.
-        $this->projector->reset();
-
         // Use the session ID as the run ID (they are the same in Hatfield).
         $runId = $state->sessionId;
 
@@ -179,7 +171,6 @@ final readonly class SessionInitializer
         }
 
         $maxSourceSeq = 0;
-        $maxMappedSeq = 0;
 
         // Compute the full-stream maximum seq first (for lastSeq correctness).
         foreach ($runEvents as $runEvent) {
@@ -188,71 +179,25 @@ final readonly class SessionInitializer
             }
         }
 
-        // Branch-aware resume: if the session has a known current leaf (rewound),
-        // replay only active-path events so abandoned-branch blocks do not appear
-        // in the transcript after resume. This matches the live poller's wholesale-
-        // replace behavior on RunLeafChanged.
-        $replayed = false;
-        $branchAwareBlocks = [];
-        $branchAwareLeafTurnNo = null;
+        // Fail-closed retained-history resume: always use provider + transcript at the
+        // explicit int position (0 = before first / empty). Never fall back to replaying
+        // the full canonical stream — that can resurrect discarded tail content.
+        // Projection/provider failures propagate to outer error handling.
+        $history = $this->historyProvider->forSession($runId);
+        $positionTurnNo = $history->positionTurnNo;
+        $snapshot = $this->sessionTranscriptProvider->transcriptAtPosition(
+            $runId,
+            $positionTurnNo,
+        );
+        $historyAwareBlocks = $snapshot->transcriptBlocks;
 
-        try {
-            $tree = $this->turnTreeProvider->forSession($runId);
-
-            if (null !== $tree->currentLeafTurnNo) {
-                $branchAwareLeafTurnNo = $tree->currentLeafTurnNo;
-                $snapshot = $this->sessionTranscriptProvider->transcriptForLeaf(
-                    $runId,
-                    $branchAwareLeafTurnNo,
-                );
-                $branchAwareBlocks = $snapshot->transcriptBlocks;
-
-                foreach ($snapshot->replayEvents as $runtimeEvent) {
-                    $this->eventApplier->apply($state, $runtimeEvent, replayMode: true);
-                }
-
-                $replayed = true;
-            }
-        } catch (\Throwable $e) {
-            // Non-fatal: tree/providers may be unavailable (e.g. unreadable
-            // events.jsonl). Fall through to full replay below.
-            $this->logger->warning('Session transcript replay: turn tree unavailable for branch-aware filtering', [
-                'component' => 'SessionInitializer',
-                'event_type' => 'replay_turn_tree_unavailable',
-                'session_id' => $runId,
-                'exception_class' => $e::class,
-                'exception_message' => $e->getMessage(),
-            ]);
-        }
-
-        if (!$replayed) {
-            // Reset projector to clear any stale state from a partially-failed
-            // branch-aware attempt (the try block may have applied some events
-            // before throwing). The full replay below re-feeds ALL events.
-            $this->projector->reset();
-
-            // Full replay (original path): linearly replay all events through the
-            // mapper and projector. Used for linear (non-branched) sessions and
-            // as fallback when the turn tree provider fails.
-            foreach ($runEvents as $runEvent) {
-                $runtimeEvent = $this->eventMapper->toRuntimeEvent($runEvent);
-
-                if (null === $runtimeEvent) {
-                    continue; // Dropped/ignored event types
-                }
-
-                if ($runtimeEvent->seq > $maxMappedSeq) {
-                    $maxMappedSeq = $runtimeEvent->seq;
-                }
-
-                $this->eventApplier->apply($state, $runtimeEvent, replayMode: true);
-            }
+        foreach ($snapshot->replayEvents as $runtimeEvent) {
+            $this->eventApplier->apply($state, $runtimeEvent, replayMode: true);
         }
 
         // Set lastSeq so the live poller does not re-process replayed events.
-        // Always derived from the full canonical stream max (RuntimeEvent seq), never
-        // from TranscriptBlock::seq (projection-internal) and never regressed.
-        $state->lastSeq = max($maxMappedSeq, $maxSourceSeq);
+        // Always derived from the full canonical stream max, never regressed.
+        $state->lastSeq = $maxSourceSeq;
 
         if ($state->isShellRun = $this->inferShellOnlySessionFromCanonicalEvents($runEvents)) {
             // Restored for SubmitListener: next normal prompt must start() not follow_up.
@@ -268,8 +213,8 @@ final readonly class SessionInitializer
         }
 
         // When the canonical stream already ended (agent_end) or failed, align
-        // replayed activity with the terminal outcome even if the active-path
-        // replay stopped before the final agent_end (branch rewind / leaf filter).
+        // replayed activity with the terminal outcome even if retained-history
+        // replay stopped before the final agent_end (history position / discard filter).
         $terminalActivity = $this->inferTerminalActivityFromCanonicalEvents($runEvents);
         if (null !== $terminalActivity
             && !$this->shouldSuppressTerminalActivityForInProgressCompaction($runEvents)) {
@@ -277,27 +222,21 @@ final readonly class SessionInitializer
             $state->isCompacting = false;
         }
 
-        if ($replayed && [] !== $branchAwareBlocks) {
-            return $branchAwareBlocks;
+        if ([] !== $historyAwareBlocks) {
+            return $historyAwareBlocks;
         }
 
-        $blocks = $this->projector->blocks();
-
-        if ([] === $blocks) {
-            return [$this->blockFactory->system(
-                runId: $runId,
-                text: 'Session '.$runId.' — no messages yet.',
-                seq: 1,
-            )];
-        }
-
-        return $blocks;
+        return [$this->blockFactory->system(
+            runId: $runId,
+            text: 'Session '.$runId.' — no messages yet.',
+            seq: 1,
+        )];
     }
 
     /**
      * Infer terminal TUI activity from the latest canonical agent_end on the full stream.
      *
-     * Branch-aware replay may omit the terminal agent_end from the active path while
+     * Retained-history replay may omit the terminal agent_end from the position prefix while
      * the hot RunState (and user expectation) is already cancelled/completed/failed.
      * Without this, passive resume can leave activity=Idle while SubmitListener later
      * sets Starting on follow_up, producing a stuck ◐ Working... with no live work.
