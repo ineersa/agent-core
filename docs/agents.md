@@ -23,12 +23,8 @@ tools:
 # Optional child extensions (always_on still applies from settings):
 # extensions:
 #   - Ineersa\HatfieldExt\SomeOptional\SomeOptionalExtension
-inheritProjectContext: true
 inheritAgentsMd: true
 systemPromptMode: replace
-maxDepth: 1
-backgroundAllowed: true
-foregroundAllowed: true
 parallelAllowed: true
 ---
 
@@ -41,20 +37,15 @@ You are a scout. Explore the codebase read-only and return dense findings...
 |---|---|---|---|---|
 | `name` | string | yes | — | Unique agent name. Lowercase `[a-z][a-z0-9-]{0,47}`. |
 | `description` | string | yes | — | Human-readable description. |
-| `tools` | list\<string\> | no | inherit all parent-available tools (+ global MCP) | Non-MCP tool allowlist and MCP selectors in one list. Omitted: inherit parent non-MCP tools and MCP from servers with `availability: all` in `.hatfield/mcp.json`. Child launch always strips `subagent` and `fork`, then applies `agents.subagent_excluded_tools` (default `settings`, `hatfield_docs`) for both inherit-all and explicit lists. Explicit lists also inherit all `availability: all` MCP tools unless `mcp:-` is present. Specific servers require explicit `mcp:` selectors. Raw catalog runtime names without `mcp:` are stripped from the explicit non-MCP allowlist; `availability: all` tools remain available through global inheritance, while `availability: specific` tools are not opted in by raw names. MCP selectors: `mcp:*`, `mcp:-`, `mcp:<exposed_name>`, `mcp:<prefix*>` (exactly one terminal `*` is a prefix wildcard; runtime names `{server}_{tool}`). Legacy top-level `mcp.mode` / `mcp.tools` frontmatter is ignored for child policy. Invalid: `tools: []`, blank entries. |
+| `tools` | list\<string\> | no | inherit all parent-available tools (+ global MCP) | Non-MCP tool allowlist and MCP selectors in one list. Omitted: inherit parent non-MCP tools and MCP from servers with `availability: all` in `.hatfield/mcp.json`. Child launch always strips `subagent` and `fork`, then applies `agents.subagent_excluded_tools` (default `settings`, `hatfield_docs`) for both inherit-all and explicit lists. Explicit lists also inherit all `availability: all` MCP tools unless `mcp:-` is present. Specific servers require explicit `mcp:` selectors. Raw catalog runtime names without `mcp:` are stripped from the explicit non-MCP allowlist; `availability: all` tools remain available through global inheritance, while `availability: specific` tools are not opted in by raw names. MCP selectors: `mcp:*`, `mcp:-`, `mcp:<exposed_name>`, `mcp:<prefix*>` (exactly one terminal `*` is a prefix wildcard; runtime names `{server}_{tool}`). Top-level `mcp` frontmatter is rejected as unknown. Invalid: `tools: []`, blank entries. |
 | `model` | string\|null | no | `null` | Optional model override. Null/omitted inherits the exact parent execution model at launch; launch fails if neither override nor parent model exists. |
 | `thinking` | string\|null | no | `null` | Reasoning/thinking override (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). |
-| `skills` | list\<string\> | no | `[]` | Setup skills loaded from start. |
+| `skills` | list\<string\> | no | `[]` | Setup skills preloaded into child `user-context`. Singular `skill` is rejected as unknown. |
 | `extensions` | list\<string\> | no | omit = no optional extensions | Optional child extension class names (FQCN). Effective allowlist = `agents.extensions.always_on` ∪ this list (stable first-seen dedup). Omitted means only always-on extensions apply — never inherits optional entries from global `extensions.enabled`. Blank/non-string entries are rejected. |
-| `inheritProjectContext` | bool | no | `true` | Either this or `inheritAgentsMd` true copies parent `agents_context` into child `user-context` (not system prompt). |
-| `inheritAgentsMd` | bool | no | `true` | Same channel: either flag enables parent `agents_context` as child `user-context`. |
+| `inheritAgentsMd` | bool | no | `true` | When true, copies parent `agents_context` into child `user-context` (not system prompt). |
 | `systemPromptMode` | enum | no | `replace` | `replace` = harness only; `append` = also include APPEND_SYSTEM.md (+ contributors) with child placeholders. |
-| `maxDepth` | int | no | `1` | Catalog field (0–5); nested launch is not implemented in the v1 launcher. |
-| `backgroundAllowed` | bool | no | `true` | Catalog field/default only; background launch is not implemented. |
-| `foregroundAllowed` | bool | no | `true` | Whether foreground launches are allowed. |
 | `parallelAllowed` | bool | no | `true` | Whether parallel execution is allowed. Set `false` to opt out. |
-| `disabled` | bool | no | `false` | Disable definition without deleting it. |
-| `handoffFormat` | string\|null | no | `null` | Catalog-only/reserved; no current handoff-rendering effect. |
+| `disabled` | bool | no | `false` | Disable definition without deleting it. Enabled definitions are foreground-launchable; disabled definitions are excluded from launch and `<available_agents>`. |
 
 **There is no `type` field.** The `type` field was intentionally removed. It is treated as an unknown field and rejected during parsing.
 
@@ -105,7 +96,6 @@ tools:
   - bash
   # availability: all MCP tools are inherited automatically
   - semantic-search
-maxDepth: 1
 ---
 
 Your custom instructions here.
@@ -144,7 +134,7 @@ agents:
 ## Catalog API
 
 
-On new parent sessions, enabled foreground agent definitions are also injected as a synthetic `user-context` message with `<agents_instructions>` and `<available_agents>` blocks (name and description only — not full agent instructions). The built-in `config/SYSTEM.md` documents this context channel alongside `<available_skills>`.
+On new parent sessions, enabled agent definitions are also injected as a synthetic `user-context` message with `<agents_instructions>` and `<available_agents>` blocks (name and description only — not full agent instructions). The built-in `config/SYSTEM.md` documents this context channel alongside `<available_skills>`.
 The catalog (`AgentDefinitionCatalog`) provides:
 
 - `get(string $name): ?AgentDefinitionDTO` — lookup by name
@@ -312,9 +302,6 @@ Nested subagents are not supported:
 3. **Global disable** — `HATFIELD_AGENTS_DISABLED=1` blocks all subagent launches
    (subprocess/CLI boundary).
 
-Agent definition `maxDepth` remains in the catalog format for forward compatibility
-but is not used by the v1 foreground subagent launcher.
-
 ### Tool and MCP policy for children
 
 Each child run receives a resolved tool/MCP policy derived from the agent
@@ -365,10 +352,8 @@ The child system prompt is built from:
 
 Child `user-context` messages (in order):
 
-1. Parent `agents_context` when `inheritAgentsMd: true` **or**
-   `inheritProjectContext: true` (either flag currently enables the same
-   inherited channel; not system prompt).
-2. **Preloaded skills** when the agent definition lists `skills` / `skill`.
+1. Parent `agents_context` when `inheritAgentsMd: true` (not system prompt).
+2. **Preloaded skills** when the agent definition lists `skills`.
 3. **Interactive foreground contract** (artifact ID; may use `ask_human` /
    approval flows when necessary).
 

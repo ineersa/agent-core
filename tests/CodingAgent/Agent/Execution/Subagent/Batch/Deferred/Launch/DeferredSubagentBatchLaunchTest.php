@@ -19,8 +19,6 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
-use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
@@ -274,7 +272,6 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             name: 'fg-only',
             description: 'Foreground only',
             tools: ['read'],
-            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
             instructions: 'Test.',
             parallelAllowed: false,
         );
@@ -282,7 +279,6 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             name: 'par-only',
             description: 'Parallel only',
             tools: ['read'],
-            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
             instructions: 'Test.',
             parallelAllowed: true,
         );
@@ -402,7 +398,6 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             name: $name,
             description: $name,
             tools: ['read'],
-            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
             instructions: 'x',
             parallelAllowed: true,
         );
@@ -524,7 +519,6 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             name: $name,
             description: 'Parallel worker',
             tools: ['read'],
-            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
             instructions: 'Test.',
             parallelAllowed: true,
         );

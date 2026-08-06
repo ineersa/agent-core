@@ -8,7 +8,6 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionValidationException;
 use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser;
-use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
 use Ineersa\CodingAgent\Agent\Definition\SystemPromptModeEnum;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -52,9 +51,7 @@ final class AgentDefinitionParserTest extends TestCase
             propertyTypeExtractor: $reflectionExtractor,
         );
 
-        // A full Serializer is needed (not a bare ObjectNormalizer) so nested
-        // DTOs (e.g. McpFrontmatterDTO inside AgentFrontmatterDTO) can be
-        // denormalized recursively.
+        // Full Serializer keeps denormalization path identical to production wiring.
         $this->serializer = new Serializer(normalizers: [$objectNormalizer], encoders: []);
 
         $this->validator = Validation::createValidatorBuilder()
@@ -80,17 +77,10 @@ final class AgentDefinitionParserTest extends TestCase
         $this->assertSame('deepseek/deepseek-v4-flash', $dto->model);
         $this->assertSame('low', $dto->thinking);
         $this->assertSame(['testing'], $dto->skills);
-        $this->assertTrue($dto->inheritProjectContext);
         $this->assertFalse($dto->inheritAgentsMd);
         $this->assertSame(SystemPromptModeEnum::Append, $dto->systemPromptMode);
-        $this->assertSame(2, $dto->maxDepth);
-        $this->assertTrue($dto->backgroundAllowed);
-        $this->assertTrue($dto->foregroundAllowed);
         $this->assertTrue($dto->parallelAllowed);
         $this->assertFalse($dto->disabled);
-        $this->assertSame('my-handoff', $dto->handoffFormat);
-        $this->assertSame(McpAgentModeEnum::Specific, $dto->mcp->mode);
-        $this->assertSame(['context7__query-docs', 'websearch__search'], $dto->mcp->tools);
         $this->assertSame('You are a scout. Explore and report findings.', $dto->instructions);
         $this->assertSame('/test/agent.md', $dto->sourcePath);
         $this->assertSame('/test', $dto->sourceDirectory);
@@ -110,30 +100,10 @@ final class AgentDefinitionParserTest extends TestCase
         $this->assertNull($dto->model);
         $this->assertNull($dto->thinking);
         $this->assertSame([], $dto->skills);
-        $this->assertTrue($dto->inheritProjectContext);
         $this->assertTrue($dto->inheritAgentsMd);
         $this->assertSame(SystemPromptModeEnum::Replace, $dto->systemPromptMode);
-        $this->assertSame(1, $dto->maxDepth);
-        $this->assertTrue($dto->backgroundAllowed);
-        $this->assertTrue($dto->foregroundAllowed);
         $this->assertTrue($dto->parallelAllowed);
         $this->assertFalse($dto->disabled);
-        $this->assertNull($dto->handoffFormat);
-        $this->assertSame(McpAgentModeEnum::None, $dto->mcp->mode);
-        $this->assertSame([], $dto->mcp->tools);
-    }
-
-    public function testModesAllWithNoTools(): void
-    {
-        $dto = $this->parse([
-            'name' => 'researcher',
-            'description' => 'MCP all agent',
-            'tools' => ['websearch__search'],
-            'mcp' => ['mode' => 'all'],
-        ]);
-
-        $this->assertSame(McpAgentModeEnum::All, $dto->mcp->mode);
-        $this->assertSame([], $dto->mcp->tools);
     }
 
     public function testThinkingOff(): void
@@ -158,30 +128,6 @@ final class AgentDefinitionParserTest extends TestCase
         ]);
 
         $this->assertSame('xhigh', $dto->thinking);
-    }
-
-    public function testMaxDepthZero(): void
-    {
-        $dto = $this->parse([
-            'name' => 'no-recursion',
-            'description' => 'Cannot recurse',
-            'tools' => ['read'],
-            'maxDepth' => 0,
-        ]);
-
-        $this->assertSame(0, $dto->maxDepth);
-    }
-
-    public function testMaxDepthFive(): void
-    {
-        $dto = $this->parse([
-            'name' => 'deep-recursion',
-            'description' => 'Deep recursion',
-            'tools' => ['read'],
-            'maxDepth' => 5,
-        ]);
-
-        $this->assertSame(5, $dto->maxDepth);
     }
 
     public function testParallelAllowedTrueByDefault(): void
@@ -381,18 +327,6 @@ final class AgentDefinitionParserTest extends TestCase
         $this->assertSame(['read', 'bash', 'grep', 'find', 'ls'], $dto->tools);
     }
 
-    public function testSkillSingularStringMergesIntoSkills(): void
-    {
-        $dto = $this->parse([
-            'name' => 'architect-like',
-            'description' => 'Singular skill alias',
-            'tools' => ['read'],
-            'skill' => 'improve-codebase-architecture',
-        ]);
-
-        $this->assertSame(['improve-codebase-architecture'], $dto->skills);
-    }
-
     public function testSkillsStringIsNormalized(): void
     {
         $dto = $this->parse([
@@ -411,7 +345,6 @@ final class AgentDefinitionParserTest extends TestCase
 name: scout
 description: Fast codebase recon that returns compressed context for handoff
 model: deepseek/deepseek-v4-flash
-inheritProjectContext: true
 ---
 Body
 ', '/home/user/.agents/scout.md');
@@ -487,66 +420,6 @@ Body
         $this->parser->parseContent($content, '/test/bad-think.md');
     }
 
-    public function testInvalidMcpModeEnumThrows(): void
-    {
-        $content = $this->wrapContent([
-            'name' => 'bad-mcp',
-            'description' => 'Bad MCP mode',
-            'tools' => ['read'],
-            'mcp' => ['mode' => 'sometimes'],
-        ]);
-
-        $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/mcp\.mode.*must be one of.*none.*specific.*all/');
-
-        $this->parser->parseContent($content, '/test/bad-mcp.md');
-    }
-
-    public function testMcpSpecificWithoutToolsThrows(): void
-    {
-        $content = $this->wrapContent([
-            'name' => 'specific-no-tools',
-            'description' => 'Specific mode without tools',
-            'tools' => ['read'],
-            'mcp' => ['mode' => 'specific'],
-        ]);
-
-        $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/specific.*empty/');
-
-        $this->parser->parseContent($content, '/test/specific-no-tools.md');
-    }
-
-    public function testMcpToolsWithNoneModeThrows(): void
-    {
-        $content = $this->wrapContent([
-            'name' => 'none-with-tools',
-            'description' => 'None mode with tools',
-            'tools' => ['read'],
-            'mcp' => ['mode' => 'none', 'tools' => ['context7__query-docs']],
-        ]);
-
-        $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/tools.*mode.*none/');
-
-        $this->parser->parseContent($content, '/test/none-with-tools.md');
-    }
-
-    public function testMcpToolsWithAllModeThrows(): void
-    {
-        $content = $this->wrapContent([
-            'name' => 'all-with-tools',
-            'description' => 'All mode with tools',
-            'tools' => ['read'],
-            'mcp' => ['mode' => 'all', 'tools' => ['context7__query-docs']],
-        ]);
-
-        $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/tools.*mode.*all/');
-
-        $this->parser->parseContent($content, '/test/all-with-tools.md');
-    }
-
     public function testBoolFieldRejectsNonCoercibleValue(): void
     {
         // Serializer with strict type enforcement rejects arrays for bool properties.
@@ -554,7 +427,7 @@ Body
             'name' => 'string-bool',
             'description' => 'Array for bool',
             'tools' => ['read'],
-            'inheritProjectContext' => [],
+            'inheritAgentsMd' => [],
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
@@ -595,20 +468,19 @@ Body
         $this->parser->parseContent($content, '/test/int-disabled.md');
     }
 
-    public function testBothLaunchModesFalseThrows(): void
+    public function testRemovedForegroundAllowedIsUnknownField(): void
     {
         $content = $this->wrapContent([
-            'name' => 'unlaunchable',
-            'description' => 'Cannot launch',
+            'name' => 'legacy-foreground',
+            'description' => 'Removed field',
             'tools' => ['read'],
-            'backgroundAllowed' => false,
-            'foregroundAllowed' => false,
+            'foregroundAllowed' => true,
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/cannot both be false/');
+        $this->expectExceptionMessageMatches('/unknown field "foregroundAllowed"/');
 
-        $this->parser->parseContent($content, '/test/unlaunchable.md');
+        $this->parser->parseContent($content, '/test/legacy-foreground.md');
     }
 
     public function testInvalidNameFormatThrows(): void
@@ -667,66 +539,49 @@ Body
         $this->parser->parseContent($content, '/test/long-name.md');
     }
 
-    public function testMaxDepthTooLowThrows(): void
+    public function testRemovedMaxDepthIsUnknownField(): void
     {
         $content = $this->wrapContent([
-            'name' => 'bad-depth',
-            'description' => 'Depth too low',
+            'name' => 'legacy-depth',
+            'description' => 'Removed field',
             'tools' => ['read'],
-            'maxDepth' => -1,
+            'maxDepth' => 1,
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/maxDepth.*between 0 and 5/');
+        $this->expectExceptionMessageMatches('/unknown field "maxDepth"/');
 
-        $this->parser->parseContent($content, '/test/bad-depth.md');
+        $this->parser->parseContent($content, '/test/legacy-depth.md');
     }
 
-    public function testMaxDepthTooHighThrows(): void
+    public function testRemovedLegacyTopLevelMcpIsUnknownField(): void
     {
         $content = $this->wrapContent([
-            'name' => 'bad-depth-high',
-            'description' => 'Depth too high',
+            'name' => 'legacy-mcp',
+            'description' => 'Removed field',
             'tools' => ['read'],
-            'maxDepth' => 6,
+            'mcp' => ['mode' => 'all'],
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/maxDepth.*between 0 and 5/');
+        $this->expectExceptionMessageMatches('/unknown field "mcp"/');
 
-        $this->parser->parseContent($content, '/test/bad-depth-high.md');
+        $this->parser->parseContent($content, '/test/legacy-mcp.md');
     }
 
-    public function testMaxDepthRejectsString(): void
+    public function testSingularSkillAliasIsUnknownField(): void
     {
-        // Serializer with strict type enforcement rejects quoted strings for int,
-        // even numeric strings like "3" that PHP would otherwise coerce.
         $content = $this->wrapContent([
-            'name' => 'string-depth',
-            'description' => 'String depth',
+            'name' => 'legacy-skill',
+            'description' => 'Removed alias',
             'tools' => ['read'],
-            'maxDepth' => '3',
+            'skill' => 'testing',
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/maxDepth.*must be of type int/');
+        $this->expectExceptionMessageMatches('/unknown field "skill"/');
 
-        $this->parser->parseContent($content, '/test/string-depth.md');
-    }
-
-    public function testMcpFieldRejectsStringInsteadOfObject(): void
-    {
-        $content = $this->wrapContent([
-            'name' => 'string-mcp',
-            'description' => 'String instead of MCP object',
-            'tools' => ['read'],
-            'mcp' => 'none',
-        ]);
-
-        $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/mcp/');
-
-        $this->parser->parseContent($content, '/test/string-mcp.md');
+        $this->parser->parseContent($content, '/test/legacy-skill.md');
     }
 
     public function testSkillsStringScalarIsNormalized(): void
@@ -767,21 +622,6 @@ Body
         $this->expectExceptionMessageMatches('/description.*required/');
 
         $this->parser->parseContent($content, '/test/ws-desc.md');
-    }
-
-    public function testUnknownMcpSubFieldThrows(): void
-    {
-        $content = $this->wrapContent([
-            'name' => 'unknown-mcp-field',
-            'description' => 'Unknown MCP sub field',
-            'tools' => ['read'],
-            'mcp' => ['mode' => 'none', 'extraStuff' => true],
-        ]);
-
-        $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/unknown field.*extraStuff/');
-
-        $this->parser->parseContent($content, '/test/unknown-mcp.md');
     }
 
     public function testInvalidSystemPromptModeThrows(): void
@@ -839,34 +679,6 @@ Body
         $this->parser->parseContent($raw, '/test/opening-mid-token.md');
     }
 
-    public function testMcpExplicitNullTreatedAsDefault(): void
-    {
-        $dto = $this->parse([
-            'name' => 'null-mcp',
-            'description' => 'Explicit null MCP',
-            'tools' => ['read'],
-            'mcp' => null,
-        ]);
-
-        $this->assertSame(McpAgentModeEnum::None, $dto->mcp->mode);
-        $this->assertSame([], $dto->mcp->tools);
-    }
-
-    public function testMcpToolsWithoutModeRejected(): void
-    {
-        $content = $this->wrapContent([
-            'name' => 'tools-no-mode',
-            'description' => 'MCP tools without mode',
-            'tools' => ['read'],
-            'mcp' => ['tools' => ['context7__query-docs']],
-        ]);
-
-        $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/tools.*mode.*none/');
-
-        $this->parser->parseContent($content, '/test/tools-no-mode.md');
-    }
-
     public function testParseFileWithRealFilePopulatesPathAndDirectory(): void
     {
         $tmpDir = TestDirectoryIsolation::createProjectTempDir();
@@ -915,39 +727,6 @@ Body
         $this->parser->parseContent($content, '/test/ws-tool-trailing.md');
     }
 
-    public function testMcpToolsEntryWhitespaceOnlyRejected(): void
-    {
-        // Whitespace-only entries trigger the leading/trailing whitespace Regex
-        // (the NotBlank without normalizer:trim lets non-falsy whitespace through).
-        $content = $this->wrapContent([
-            'name' => 'mcp-ws-only',
-            'description' => 'MCP whitespace-only tool',
-            'tools' => ['read'],
-            'mcp' => ['mode' => 'specific', 'tools' => ['   ']],
-        ]);
-
-        $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/mcp\.tools\[0\].*must not have leading or trailing whitespace/');
-
-        $this->parser->parseContent($content, '/test/mcp-ws-only.md');
-    }
-
-    public function testMcpToolsEntryWithSurroundingWhitespaceRejected(): void
-    {
-        // Surrounding whitespace in mcp.tools entries must be rejected.
-        $content = $this->wrapContent([
-            'name' => 'mcp-ws-surround',
-            'description' => 'MCP tool with surrounding whitespace',
-            'tools' => ['read'],
-            'mcp' => ['mode' => 'specific', 'tools' => ['  context7__query-docs  ']],
-        ]);
-
-        $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/mcp\.tools\[0\].*must not have leading or trailing whitespace/');
-
-        $this->parser->parseContent($content, '/test/mcp-ws-surround.md');
-    }
-
     public function testSkillsEntryWhitespaceOnlyRejected(): void
     {
         // Whitespace-only entries trigger the leading/trailing whitespace Regex.
@@ -980,19 +759,6 @@ Body
         $this->parser->parseContent($content, '/test/skills-ws-surround.md');
     }
 
-    public function testMcpModeNullTreatedAsNone(): void
-    {
-        $dto = $this->parse([
-            'name' => 'mcp-mode-null',
-            'description' => 'MCP mode explicit null',
-            'tools' => ['read'],
-            'mcp' => ['mode' => null],
-        ]);
-
-        $this->assertSame(McpAgentModeEnum::None, $dto->mcp->mode);
-        $this->assertSame([], $dto->mcp->tools);
-    }
-
     public function testParseFileThrowsForNonExistentFile(): void
     {
         $this->expectException(AgentDefinitionValidationException::class);
@@ -1018,21 +784,6 @@ Body
         $this->expectExceptionMessageMatches('/unknown field "somethingUnexpected"/');
 
         $this->parser->parseContent($content, '/test/extra.md');
-    }
-
-    public function testSerializerRejectsUnknownMcpSubField(): void
-    {
-        $content = $this->wrapContent([
-            'name' => 'guard-mcp',
-            'description' => 'Guard MCP',
-            'tools' => ['read'],
-            'mcp' => ['mode' => 'specific', 'tools' => ['context7__query-docs'], 'weirdField' => 'nope'],
-        ]);
-
-        $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/unknown field.*weirdField/');
-
-        $this->parser->parseContent($content, '/test/extra-mcp.md');
     }
 
     public function testNameLeadingWhitespaceTrimmed(): void
@@ -1061,7 +812,7 @@ Body
     //  Coercion rejection: Serializer MUST reject type mismatches
     // -----------------------------------------------------------------
 
-    public function testInheritProjectContextRejectsQuotedYesString(): void
+    public function testInheritAgentsMdRejectsQuotedYesString(): void
     {
         // "yes" in YAML quotes is a string, not the YAML boolean true.
         // Strict type enforcement must reject string for bool.
@@ -1069,11 +820,11 @@ Body
             'name' => 'coerce-bool',
             'description' => 'String yes for bool',
             'tools' => ['read'],
-            'inheritProjectContext' => 'yes',
+            'inheritAgentsMd' => 'yes',
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/inheritProjectContext.*must be of type bool/');
+        $this->expectExceptionMessageMatches('/inheritAgentsMd.*must be of type bool/');
 
         $this->parser->parseContent($content, '/test/coerce-bool-yes.md');
     }
@@ -1095,21 +846,19 @@ Body
         $this->parser->parseContent($content, '/test/coerce-parallel-false.md');
     }
 
-    public function testBackgroundAllowedRejectsQuotedTrueString(): void
+    public function testRemovedInheritProjectContextIsUnknownField(): void
     {
-        // "true" in YAML quotes is a string, not the YAML boolean true.
-        // Strict type enforcement must reject string for bool.
         $content = $this->wrapContent([
-            'name' => 'coerce-bg',
-            'description' => 'String true for bool',
+            'name' => 'legacy-inherit-project',
+            'description' => 'Removed field',
             'tools' => ['read'],
-            'backgroundAllowed' => 'true',
+            'inheritProjectContext' => true,
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/backgroundAllowed.*must be of type bool/');
+        $this->expectExceptionMessageMatches('/unknown field "inheritProjectContext"/');
 
-        $this->parser->parseContent($content, '/test/coerce-bg-true.md');
+        $this->parser->parseContent($content, '/test/legacy-inherit-project.md');
     }
 
     // -----------------------------------------------------------------
@@ -1193,13 +942,13 @@ Body
         $this->parser->parseContent($content, '/test/skills-map.md');
     }
 
-    public function testMcpToolsAssociativeMapRejected(): void
+    public function testTopLevelMcpAssociativeMapIsUnknownField(): void
     {
-        // mcp.tools: { read: read } is an associative map, not a list.
+        // Top-level mcp frontmatter is rejected entirely (use tools mcp: selectors).
         $raw = "---\nname: mcp-tools-map\ndescription: MCP tools map\ntools:\n  - read\nmcp:\n  mode: specific\n  tools:\n    read: read\n---\n";
 
         $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/"mcp\.tools".*list.*associative/');
+        $this->expectExceptionMessageMatches('/unknown field "mcp"/');
 
         $this->parser->parseContent($raw, '/test/mcp-tools-map.md');
     }
@@ -1341,19 +1090,10 @@ Body
             'model' => 'deepseek/deepseek-v4-flash',
             'thinking' => 'low',
             'skills' => ['testing'],
-            'inheritProjectContext' => true,
             'inheritAgentsMd' => false,
             'systemPromptMode' => 'append',
-            'maxDepth' => 2,
-            'backgroundAllowed' => true,
-            'foregroundAllowed' => true,
             'parallelAllowed' => true,
             'disabled' => false,
-            'handoffFormat' => 'my-handoff',
-            'mcp' => [
-                'mode' => 'specific',
-                'tools' => ['context7__query-docs', 'websearch__search'],
-            ],
         ];
     }
 }

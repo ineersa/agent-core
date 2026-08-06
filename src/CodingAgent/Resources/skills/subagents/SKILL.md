@@ -40,7 +40,7 @@ Discovery load order (lowest → highest; later overrides earlier on name collis
 2. `.agents/*.md` → `.hatfield/agents/*.md`
 3. `agents.paths` in settings (highest)
 
-Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<available_agents>`** (name + description) when `agents.enabled` is true and the agent has `foregroundAllowed: true` and is not `disabled`.
+Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<available_agents>`** (name + description) when `agents.enabled` is true for each enabled (not `disabled`) definition.
 
 ## Child safety (always enforced)
 
@@ -48,7 +48,7 @@ Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<a
 - **`agents.subagent_excluded_tools`** (default: `settings`, `hatfield_docs`) is stripped from every child, inherit-all and explicit lists.
 - Child extensions: effective allowlist = `agents.extensions.always_on` ∪ frontmatter `extensions`. Default `always_on` is **SafeGuard**. Omitted frontmatter `extensions` means **only always_on** — children do **not** inherit optional entries from global `extensions.enabled`.
 - Nested launch is also blocked when parent `session.kind` is `agent_child`.
-- Foreground only: the tool blocks until all children finish. Background launch is not implemented.
+- Foreground only: the tool blocks until all children finish. Background launch is not implemented. Launchability is solely `disabled: false`.
 
 ## Defaults that bite
 
@@ -56,8 +56,9 @@ Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<a
 | --- | --- |
 | `tools` | Optional; omitted → inherit parent non-MCP tools + MCP from servers with `availability: all`. Explicit non-empty allowlist recommended for restricted agents. YAML list or comma-separated string; `tools: []` / blank entries fail validation. |
 | `parallelAllowed` | Default **true**. Set `false` to block parallel `tasks`. |
-| `skills` / `skill` | `skill` merges into `skills` (comma-separated OK). Preloads full skill bodies into child `user-context`. |
-| MCP | `availability: all` servers inherit on every child (including explicit `tools`) unless `mcp:-`. `availability: specific` requires exact/prefix `mcp:` selectors. Raw MCP runtime names without `mcp:` are stripped from non-MCP lists. |
+| `skills` | Preloads full skill bodies into child `user-context`. Singular `skill` is unknown/rejected. |
+| `inheritAgentsMd` | Default **true**. When true, copies parent `agents_context` into child `user-context`. |
+| MCP | `availability: all` servers inherit on every child (including explicit `tools`) unless `mcp:-`. `availability: specific` requires exact/prefix `mcp:` selectors. Raw MCP runtime names without `mcp:` are stripped from non-MCP lists. Top-level `mcp` frontmatter is rejected. |
 | Parallel cap | `agents.max_agents` default **4**. |
 | Wait timeout | `agents.subagent_tool_timeout_seconds` default **1800** (min **60**; below min fails config load) — durable deferred-batch `deadlineAt` with a scheduled timeout interruption (`DelayStamp` + `InterruptDeferredSubagentBatchMessage`), not ToolExecutor generic timeout. Parent cancel ends waiting children. |
 
@@ -71,7 +72,7 @@ Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<a
 
 1. **Define agent** — `.hatfield/agents/<name>.md` with frontmatter + instructions.
 2. **Delegate** — parent calls `subagent` with `agent`+`task` or `tasks`.
-3. **Retrieve** — `agent_retrieve` with `artifact_id` and/or `agent_run_id`, optional `mode` / `limit`.
+3. **Retrieve** — `agent_retrieve` with `artifact_id` and/or `agent_run_id`, optional `mode` / `limit` (1–100, default 20).
 
 ## TUI (parent)
 

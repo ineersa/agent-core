@@ -88,7 +88,6 @@ final class AgentDefinitionDiscoveryTest extends TestCase
             '---
 name: scout
 description: Scout agent
-inheritProjectContext: true
 ---
 Body
 ',

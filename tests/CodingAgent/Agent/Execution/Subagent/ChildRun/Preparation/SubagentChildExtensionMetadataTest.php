@@ -6,8 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\ChildRun\Preparatio
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
-use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory;
 use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
@@ -44,7 +42,6 @@ final class SubagentChildExtensionMetadataTest extends IsolatedKernelTestCase
                 name: 'scout',
                 description: 'd',
                 tools: ['read'],
-                mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
                 model: 'llama_cpp_test/test',
                 extensions: null,
                 instructions: 'do work',

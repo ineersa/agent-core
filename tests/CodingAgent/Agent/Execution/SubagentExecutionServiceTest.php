@@ -20,8 +20,6 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
-use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
@@ -61,7 +59,6 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             name: 'nested',
             description: 'Nested',
             tools: ['read'],
-            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
             instructions: 'Nested agent.',
         );
 
@@ -165,15 +162,14 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $this->withToolContext('parent-4', 'call-missing', static fn () => $service->execute('parent-4', 'nonexistent-agent', 'Do something'));
     }
 
-    public function testForegroundNotAllowedThrowsNonRetryable(): void
+    public function testDisabledAgentThrowsNonRetryable(): void
     {
         $def = new AgentDefinitionDTO(
-            name: 'background-only',
-            description: 'bg only',
+            name: 'disabled-only',
+            description: 'disabled only',
             tools: [],
-            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
-            instructions: 'bg.',
-            foregroundAllowed: false,
+            instructions: 'disabled.',
+            disabled: true,
         );
 
         $catalog = new AgentDefinitionCatalog([$def]);
@@ -205,9 +201,9 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         ]);
 
         $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('does not allow foreground');
+        $this->expectExceptionMessage('not available');
 
-        $this->withToolContext('parent-5', 'call-bg', static fn () => $service->execute('parent-5', 'background-only', 'Task'));
+        $this->withToolContext('parent-5', 'call-disabled', static fn () => $service->execute('parent-5', 'disabled-only', 'Task'));
     }
 
     /**

@@ -90,9 +90,6 @@ final class AgentFrontmatterDTO
         )]
         public readonly ?array $extensions = null,
 
-        #[Assert\Type('bool', '"inheritProjectContext" must be a boolean.')]
-        public readonly bool $inheritProjectContext = true,
-
         #[Assert\Type('bool', '"inheritAgentsMd" must be a boolean.')]
         public readonly bool $inheritAgentsMd = true,
 
@@ -102,29 +99,11 @@ final class AgentFrontmatterDTO
         )]
         public readonly string $systemPromptMode = 'replace',
 
-        #[Assert\Range(
-            notInRangeMessage: '"maxDepth" must be between 0 and 5.',
-            min: 0,
-            max: 5,
-        )]
-        public readonly int $maxDepth = 1,
-
-        #[Assert\Type('bool', '"backgroundAllowed" must be a boolean.')]
-        public readonly bool $backgroundAllowed = true,
-
-        #[Assert\Type('bool', '"foregroundAllowed" must be a boolean.')]
-        public readonly bool $foregroundAllowed = true,
-
         #[Assert\Type('bool', '"parallelAllowed" must be a boolean.')]
         public readonly bool $parallelAllowed = true,
 
         #[Assert\Type('bool', '"disabled" must be a boolean.')]
         public readonly bool $disabled = false,
-
-        public readonly ?string $handoffFormat = null,
-
-        #[Assert\Valid]
-        public readonly ?McpFrontmatterDTO $mcp = null,
     ) {
     }
 
@@ -147,28 +126,6 @@ final class AgentFrontmatterDTO
             $context->buildViolation('Must be a list (sequential array), got associative array.')
                 ->atPath('extensions')
                 ->addViolation();
-        }
-
-        if (!$this->backgroundAllowed && !$this->foregroundAllowed) {
-            $context->buildViolation('"backgroundAllowed" and "foregroundAllowed" cannot both be false — the agent would never be launchable.')
-                ->atPath('backgroundAllowed')
-                ->addViolation();
-        }
-
-        if (null !== $this->mcp) {
-            $mcpMode = $this->mcp->mode ?? 'none';
-
-            if ('specific' === $mcpMode && [] === $this->mcp->tools) {
-                $context->buildViolation('"mcp.mode" is "specific" but "mcp.tools" is empty — at least one tool must be listed.')
-                    ->atPath('mcp.tools')
-                    ->addViolation();
-            }
-
-            if ('specific' !== $mcpMode && [] !== $this->mcp->tools) {
-                $context->buildViolation(\sprintf('"mcp.tools" is set but "mcp.mode" is "%s". Tools are only meaningful when mode is "specific". Remove "mcp.tools" or set "mcp.mode" to "specific".', $mcpMode))
-                    ->atPath('mcp.tools')
-                    ->addViolation();
-            }
         }
     }
 }

@@ -127,10 +127,8 @@ tools:
   - read
 mcp:
   mode: none
-inheritProjectContext: false
 inheritAgentsMd: false
-foregroundAllowed: true
-backgroundAllowed: false
+inheritAgentsMd: false
 parallelAllowed: true
 disabled: false
 ---

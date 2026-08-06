@@ -6,8 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Agent\Context;
 
 use Ineersa\CodingAgent\Agent\Context\AgentContextRenderer;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
-use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -29,7 +27,6 @@ final class AgentContextRendererTest extends TestCase
                 name: 'scout',
                 description: 'Explore the codebase',
                 tools: ['read'],
-                mcp: new McpPolicyDTO(McpAgentModeEnum::None, []),
             ),
         ];
 
@@ -50,8 +47,8 @@ final class AgentContextRendererTest extends TestCase
     public function testRenderAvailableAgentsSortsByName(): void
     {
         $agents = [
-            new AgentDefinitionDTO(name: 'zeta', description: 'Z', tools: ['read'], mcp: new McpPolicyDTO(McpAgentModeEnum::None, [])),
-            new AgentDefinitionDTO(name: 'alpha', description: 'A', tools: ['read'], mcp: new McpPolicyDTO(McpAgentModeEnum::None, [])),
+            new AgentDefinitionDTO(name: 'zeta', description: 'Z', tools: ['read']),
+            new AgentDefinitionDTO(name: 'alpha', description: 'A', tools: ['read']),
         ];
 
         $output = $this->renderer->renderAvailableAgents($agents);
@@ -65,7 +62,6 @@ final class AgentContextRendererTest extends TestCase
                 name: 'review&er',
                 description: 'Runs "review" for <tasks>',
                 tools: ['read'],
-                mcp: new McpPolicyDTO(McpAgentModeEnum::None, []),
                 instructions: 'SECRET_INSTRUCTIONS',
             ),
         ];

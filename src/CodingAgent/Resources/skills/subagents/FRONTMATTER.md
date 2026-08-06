@@ -7,7 +7,7 @@ Markdown file with YAML frontmatter + instruction body. Unknown keys are rejecte
 | Field | Notes |
 | --- | --- |
 | `name` | `[a-z][a-z0-9-]{0,47}` |
-| `description` | Shown in `<available_agents>` for enabled foreground agents |
+| `description` | Shown in `<available_agents>` for enabled agents |
 
 ## Tools (optional in YAML; omitted means inherit)
 
@@ -32,7 +32,7 @@ tools:
 - Explicit `tools` lists also inherit `availability: all` MCP tools unless `mcp:-` is present. Specific servers require explicit `mcp:` selectors.
 - Raw catalog runtime names without the `mcp:` prefix are stripped from the explicit non-MCP allowlist; globals remain only via inheritance, not raw names.
 - Selector grammar is terminal-star-only: no `*` = exact; exactly one trailing `*` = prefix; embedded/multiple `*` are not globs.
-- Legacy top-level `mcp.mode` / `mcp.tools` frontmatter is not used for child tool exposure.
+- Top-level `mcp` frontmatter is rejected as unknown. Use `tools: [mcp:...]` selectors only.
 
 ## Model, skills, extensions, context
 
@@ -40,25 +40,19 @@ tools:
 | --- | --- | --- |
 | `model` | null | Null/omitted inherits the exact parent execution model at launch; launch fails if neither override nor parent model exists |
 | `thinking` | null | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
-| `skills` | `[]` | Preload full skill bodies into child `user-context` |
-| `skill` | — | Alias merged into `skills` (comma-separated OK) |
+| `skills` | `[]` | Preload full skill bodies into child `user-context` (singular `skill` rejected) |
 | `extensions` | omit = no optional | Optional child extension FQCNs. Effective = `agents.extensions.always_on` ∪ this list. Does **not** inherit optional global `extensions.enabled`. |
-| `inheritProjectContext` | true | Either this or `inheritAgentsMd` true copies parent `agents_context` into child `user-context` (not system prompt) |
-| `inheritAgentsMd` | true | Same channel: either flag enables parent `agents_context` as child `user-context` |
+| `inheritAgentsMd` | true | When true, copies parent `agents_context` into child `user-context` (not system prompt) |
 | `systemPromptMode` | `replace` | `replace` = child harness only (`config/SUBAGENT_SYSTEM.md`); `append` = also rendered `APPEND_SYSTEM.md` + contributors with child tool placeholders |
 
 ## Launch policy
 
 | Field | Default | Purpose |
 | --- | --- | --- |
-| `maxDepth` | 1 | Catalog field (0–5); v1 launcher does not nest subagents |
-| `foregroundAllowed` | true | Must be true to appear in `<available_agents>` and launch |
-| `backgroundAllowed` | true | Background launch not implemented yet |
 | `parallelAllowed` | **true** | Set `false` to disallow parallel `tasks` |
-| `disabled` | false | Still in catalog; `requireEnabled` fails |
-| `handoffFormat` | null | Catalog-only/reserved; no current handoff-rendering effect |
+| `disabled` | false | Still in catalog; excluded from launch and `<available_agents>` |
 
-Both `backgroundAllowed` and `foregroundAllowed` cannot be false.
+Enabled definitions are foreground-launchable. Background launch is not implemented.
 
 ## Example (project scout)
 
@@ -91,8 +85,8 @@ Explore read-only. Return dense bullets and file paths.
 
 - Parent session only. Provide `artifact_id` and/or `agent_run_id` (both must refer to the same artifact when set).
 - Modes: `handoff` (default), `metadata`, `events`, `history`, `debug`.
-- `limit` accepted range **1–100**, default **20** (events/history row bounds).
-- `history` skips system, user-context, and tool roles; bounded text only.
+- `limit` accepted range **1–100**, default **20** (events/history row bounds; fixed constants, not settings).
+- `history` skips system, user-context, and tool roles; bounded text only (summary chars **240**).
 - `debug` returns **relative** artifact paths under the parent session, not absolute filesystem paths.
 - Default modes omit raw prompts, full tool output, streaming deltas, API keys, and environment values.
 - Path traversal in `artifact_id` is rejected. Cross-parent access is rejected.

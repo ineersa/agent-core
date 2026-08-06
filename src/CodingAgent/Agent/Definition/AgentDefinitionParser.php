@@ -98,22 +98,6 @@ final class AgentDefinitionParser
      */
     private function normalizeFrontmatterFields(array $frontmatter): array
     {
-        if (\array_key_exists('skill', $frontmatter)) {
-            $fromSkill = \is_string($frontmatter['skill'])
-                ? CommaSeparatedListParser::parse($frontmatter['skill'])
-                : [];
-            unset($frontmatter['skill']);
-            $existing = [];
-            if (\array_key_exists('skills', $frontmatter)) {
-                if (\is_string($frontmatter['skills'])) {
-                    $existing = CommaSeparatedListParser::parse($frontmatter['skills']);
-                } elseif (\is_array($frontmatter['skills']) && array_is_list($frontmatter['skills'])) {
-                    $existing = $frontmatter['skills'];
-                }
-            }
-            $frontmatter['skills'] = array_values(array_unique(array_merge($existing, $fromSkill)));
-        }
-
         if (\array_key_exists('tools', $frontmatter) && \is_string($frontmatter['tools'])) {
             $frontmatter['tools'] = CommaSeparatedListParser::parse($frontmatter['tools']);
         }
@@ -133,28 +117,12 @@ final class AgentDefinitionParser
      * NOT set — default is false, so type mismatches are rejected).  Unknown
      * fields are rejected via ALLOW_EXTRA_ATTRIBUTES=false.
      *
-     * Nested unknown fields (mcp.*) are checked manually because Symfony
-     * Serializer's ExtraAttributesException from nested objects does not
-     * carry the parent path in its attribute names.
-     *
      * @param array<string, mixed> $frontmatter
      *
      * @throws AgentDefinitionValidationException
      */
     private function denormalizeFrontmatter(array $frontmatter, string $filePath): AgentFrontmatterDTO
     {
-        // Reject unknown MCP sub-fields manually: Serializer's
-        // ALLOW_EXTRA_ATTRIBUTES=false works for top-level but nested-object
-        // ExtraAttributesException does not carry the "mcp." path prefix, so
-        // we check mcp sub-fields before denormalization for clear messages.
-        if (isset($frontmatter['mcp']) && \is_array($frontmatter['mcp'])) {
-            foreach (array_keys($frontmatter['mcp']) as $mcpKey) {
-                if (!\in_array($mcpKey, ['mode', 'tools'], true)) {
-                    throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): unknown field "mcp.%s".', $filePath, $mcpKey));
-                }
-            }
-        }
-
         // Trim name so the regex validation on the DTO sees a clean value.
         if (isset($frontmatter['name']) && \is_string($frontmatter['name'])) {
             $frontmatter['name'] = trim($frontmatter['name']);
@@ -220,33 +188,23 @@ final class AgentDefinitionParser
      * Map the validated frontmatter DTO into the final AgentDefinitionDTO.
      *
      * Handles trimming of string fields and conversion of enum-like strings
-     * into proper enum objects. Tools/skills/mcp.tools are already validated
-     * to have no leading/trailing whitespace, but trimming here is a safety net.
+     * into proper enum objects. Tools/skills are already validated to have no
+     * leading/trailing whitespace, but trimming here is a safety net.
      */
     private function mapToDefinition(AgentFrontmatterDTO $dto, string $body, string $filePath): AgentDefinitionDTO
     {
-        $mcp = $dto->mcp;
-        $mcpMode = null === $mcp ? McpAgentModeEnum::None : McpAgentModeEnum::from($mcp->mode ?? 'none');
-        $mcpTools = null === $mcp ? [] : array_values($mcp->tools);
-
         return new AgentDefinitionDTO(
             name: trim($dto->name),
             description: trim($dto->description),
             tools: null === $dto->tools ? null : array_values($dto->tools),
-            mcp: new McpPolicyDTO(mode: $mcpMode, tools: $mcpTools),
             model: null !== $dto->model ? trim($dto->model) : null,
             thinking: null !== $dto->thinking ? trim($dto->thinking) : null,
             skills: array_values($dto->skills),
             extensions: null === $dto->extensions ? null : array_values($dto->extensions),
-            inheritProjectContext: $dto->inheritProjectContext,
             inheritAgentsMd: $dto->inheritAgentsMd,
             systemPromptMode: SystemPromptModeEnum::from($dto->systemPromptMode),
-            maxDepth: $dto->maxDepth,
-            backgroundAllowed: $dto->backgroundAllowed,
-            foregroundAllowed: $dto->foregroundAllowed,
             parallelAllowed: $dto->parallelAllowed,
             disabled: $dto->disabled,
-            handoffFormat: null !== $dto->handoffFormat ? trim($dto->handoffFormat) : null,
             instructions: $body,
             sourcePath: $filePath,
             sourceDirectory: \dirname($filePath),

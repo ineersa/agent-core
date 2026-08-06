@@ -165,9 +165,7 @@ final class SubagentChildLaunchInputFactory
      */
     private function resolveChildLaunchContext(string $parentRunId, AgentDefinitionDTO $definition, array $allowedTools): AgentChildLaunchContextDTO
     {
-        $inheritProject = $definition->inheritProjectContext;
-        $inheritAgents = $definition->inheritAgentsMd;
-        $agentsMd = ($inheritProject || $inheritAgents)
+        $agentsMd = $definition->inheritAgentsMd
             ? $this->extractUserContextBySource($parentRunId, 'agents_context')
             : '';
 

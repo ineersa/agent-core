@@ -7,8 +7,6 @@ namespace Ineersa\CodingAgent\Tests\Agent\Definition;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiagnosticDTO;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
-use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -31,21 +29,18 @@ final class AgentDefinitionCatalogTest extends TestCase
             name: 'scout',
             description: 'Scout agent',
             tools: ['read'],
-            mcp: new McpPolicyDTO(McpAgentModeEnum::None, []),
         );
 
         $this->reviewer = new AgentDefinitionDTO(
             name: 'reviewer',
             description: 'Reviewer agent',
             tools: ['read', 'ide_find_references'],
-            mcp: new McpPolicyDTO(McpAgentModeEnum::None, []),
         );
 
         $this->workerDisabled = new AgentDefinitionDTO(
             name: 'worker',
             description: 'Worker agent',
             tools: ['read', 'write', 'edit'],
-            mcp: new McpPolicyDTO(McpAgentModeEnum::None, []),
             disabled: true,
         );
     }
@@ -219,13 +214,11 @@ final class AgentDefinitionCatalogTest extends TestCase
             name: 'scout',
             description: 'Scout v1',
             tools: ['read'],
-            mcp: new McpPolicyDTO(McpAgentModeEnum::None, []),
         );
         $scout2 = new AgentDefinitionDTO(
             name: 'scout',
             description: 'Scout v2',
             tools: ['read', 'semantic-search'],
-            mcp: new McpPolicyDTO(McpAgentModeEnum::None, []),
         );
 
         $catalog = new AgentDefinitionCatalog([$scout1, $scout2]);

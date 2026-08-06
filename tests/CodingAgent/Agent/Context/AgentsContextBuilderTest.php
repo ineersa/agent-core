@@ -8,8 +8,6 @@ use Ineersa\CodingAgent\Agent\Context\AgentContextRenderer;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
-use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use PHPUnit\Framework\TestCase;
 
@@ -18,31 +16,22 @@ use PHPUnit\Framework\TestCase;
  */
 final class AgentsContextBuilderTest extends TestCase
 {
-    public function testBuildReturnsAvailableAgentsForEnabledForegroundAgents(): void
+    public function testBuildReturnsAvailableAgentsForEnabledAgents(): void
     {
         $scout = new AgentDefinitionDTO(
             name: 'scout',
             description: 'Scout agent',
             tools: ['read'],
-            mcp: new McpPolicyDTO(McpAgentModeEnum::None, []),
         );
         $disabled = new AgentDefinitionDTO(
             name: 'worker',
             description: 'Disabled worker',
             tools: ['read'],
-            mcp: new McpPolicyDTO(McpAgentModeEnum::None, []),
             disabled: true,
-        );
-        $bgOnly = new AgentDefinitionDTO(
-            name: 'bg-only',
-            description: 'Background only',
-            tools: ['read'],
-            mcp: new McpPolicyDTO(McpAgentModeEnum::None, []),
-            foregroundAllowed: false,
         );
 
         $builder = new AgentsContextBuilder(
-            new AgentDefinitionCatalog([$scout, $disabled, $bgOnly]),
+            new AgentDefinitionCatalog([$scout, $disabled]),
             new AgentsConfig(enabled: true),
             new AgentContextRenderer(),
         );
@@ -52,7 +41,6 @@ final class AgentsContextBuilderTest extends TestCase
         $this->assertStringContainsString('<available_agents>', $output);
         $this->assertStringContainsString('<name>scout</name>', $output);
         $this->assertStringNotContainsString('<name>worker</name>', $output);
-        $this->assertStringNotContainsString('<name>bg-only</name>', $output);
         $this->assertStringNotContainsString('Disabled worker', $output);
     }
 
@@ -62,7 +50,6 @@ final class AgentsContextBuilderTest extends TestCase
             name: 'scout',
             description: 'Scout agent',
             tools: ['read'],
-            mcp: new McpPolicyDTO(McpAgentModeEnum::None, []),
         );
 
         $builder = new AgentsContextBuilder(
@@ -81,13 +68,11 @@ final class AgentsContextBuilderTest extends TestCase
                 name: 'scout',
                 description: 'Fast codebase recon that returns compressed context for handoff',
                 tools: ['read'],
-                mcp: new McpPolicyDTO(McpAgentModeEnum::None, []),
             ),
             new AgentDefinitionDTO(
                 name: 'reviewer',
                 description: 'Senior code reviewer',
                 tools: ['read', 'bash'],
-                mcp: new McpPolicyDTO(McpAgentModeEnum::None, []),
             ),
         ];
 

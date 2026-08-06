@@ -19,8 +19,6 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
-use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
@@ -100,7 +98,6 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
                     name: 'gf05-scout',
                     description: 'GF05 scout',
                     tools: ['read'],
-                    mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
                     instructions: 'Scout child instructions.',
                 ),
             ]),
@@ -210,7 +207,6 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
                     name: 'gf05-mcp',
                     description: 'mcp child',
                     tools: ['read', 'browser__search'],
-                    mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
                     instructions: 'Child with MCP tool.',
                 ),
             ]),
@@ -297,7 +293,6 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
                     name: 'gf05-worker',
                     description: 'worker',
                     tools: ['read'],
-                    mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
                     instructions: 'Worker.',
                 ),
             ]),
