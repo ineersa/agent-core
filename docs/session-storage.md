@@ -430,7 +430,7 @@ poller, both write to the same `events.jsonl` / `state.json`, and the two
 conversations interleave in one event stream. A message sent in one instance is
 picked up by the other instance's poller, and both agents may respond into the
 same session. Individual writes stay atomic (no structural file corruption),
-but the turn tree, transcript projection, and run state become semantically
+but the linear history, transcript projection, and run state become semantically
 incoherent.
 
 Do not attach a second TUI to a session another TUI is actively using. Resume a
@@ -564,46 +564,48 @@ existing events.
 | Event type | Purpose |
 |------------|---------|
 | `turn_advanced` | Introduces a new turn with stable `turn_no`. |
-| `leaf_set` | Marks the current selected tip/cursor. Payload includes `turn_no` (retained tip; `0` = before first turn), `previous_turn_no`, optional `selected_prompt_turn_no`, and `reason` (`continue`, `history_select`, `shell_command`, …). |
+| `history_position_set` | Marks the current selected tip/cursor. Payload includes `position_turn_no` (retained tip; `0` = before first turn), optional `previous_position_turn_no`, optional `selected_prompt_turn_no`, and `reason` (`continue`, `history_select`, `shell_command`, …). |
 | `history_tail_discarded` | Permanently drops every active turn after `after_turn_no` from normal projections. Emitted once before a context-mutating action when forward turns exist. |
 
-Each normal turn advance emits `turn_advanced` followed by `leaf_set`.
+Each normal turn advance emits `turn_advanced` followed by `history_position_set`.
 
-### Selected tip (leaf pointer)
+### Selected position
 
-`leaf_set` is the canonical current tip marker. On projection:
-1. Process `turn_advanced` to build the active ordered list.
-2. Process `leaf_set` to move the selected tip without discarding.
-3. Process `history_tail_discarded` to slice active turns after `after_turn_no`.
-4. If no `leaf_set` exists, the last active turn is the tip.
+`history_position_set` is the canonical current tip marker. On projection:
+1. Process `turn_advanced` to append to the ordered retained list.
+2. Process `history_position_set` to move the selected tip without discarding.
+3. Process `history_tail_discarded` to slice retained turns after `after_turn_no`.
+4. If no `history_position_set` exists, the last retained turn is the tip.
 
-### Read model: TurnTreeDTO (linear)
+### Read model: HistoryDTO (linear)
 
-Projection and active-history replay filtering live under
-`Ineersa\CodingAgent\Session\TurnTree` and `Ineersa\CodingAgent\Session\Replay`.
-AgentCore consumes narrow contracts under `Ineersa\AgentCore\Contract\TurnTree`.
+Projection and retained-history replay filtering live under
+`Ineersa\CodingAgent\Session\History`.
+AgentCore depends on narrow contracts under `Ineersa\AgentCore\Contract\History`
+(`HistoryTailDiscardInterface`, `HistorySelectionServiceInterface`).
 
-`TurnTreeProjector` builds a linear `TurnTreeDTO`:
-- `nodesByTurnNo` — active turns only (`TurnTreeNodeDTO` with linear previous/next links,
-  title, promptPreview, displayRole, fullPromptText for user rows).
-- `activePathTurnNos` — full active linear order.
-- `currentLeafTurnNo` — selected tip (`null`/absent before first turn).
+`HistoryProjector` builds a linear `HistoryDTO`:
+- `turns` — ordered retained turns only (`HistoryTurnDTO`: turnNo, title, displayRole, promptText).
+- `positionTurnNo` — selected tip (`null` before first turn / empty history).
 
-### Active-history replay
+There is no parent/child/root/path map; order is the model.
 
-`TurnTreeReplayFilter` includes only:
+### Retained-history replay
+
+`HistoryReplayFilter` includes only:
 - Run-level events (`turnNo === 0`).
 - Events whose `turnNo` is in the retained prefix through the selected tip.
-- History metadata (`leaf_set`, `history_tail_discarded`).
+- History metadata (`history_position_set`, `history_tail_discarded`).
 - Excludes discarded turns' message/tool/assistant content.
+- Suppresses turn-seeding commands whose created turn is outside the retained prefix.
 
 Integrity checks run on the full canonical stream. Rebuilt `lastSeq` uses the full
-canonical max. `leaf_set` / `history_tail_discarded` are no-op RunState reducers.
+canonical max. `history_position_set` / `history_tail_discarded` are no-op RunState reducers.
 
 ### `/history` semantics (undo/redo)
 
 The `/history` UI lists **user prompts only**. Selecting prompt N:
-1. Appends `leaf_set` with `turn_no = parent(N)` (or `0` for the first prompt).
+1. Appends `history_position_set` with `position_turn_no = predecessor(N)` (or `0` for the first prompt).
 2. Rebuilds hot state/transcript through that boundary (context **before** N).
 3. Populates the editor with N's original text.
 4. Leaves forward turns retained until mutation.
@@ -616,11 +618,10 @@ shared choke point is `HistoryTailDiscardService` via `RunMessageProcessor`.
 so discarded turn numbers never collide.
 
 **Transcript rebuild:** `RuntimeEventPoller` and `SessionInitializer` call
-`SessionTranscriptProviderInterface::transcriptForLeaf(runId, leafTurnNo)` (boundary `0`
+`SessionTranscriptProviderInterface::transcriptAtPosition(runId, positionTurnNo)` (boundary `0`
 clears transcript). TUI assigns blocks wholesale and applies `editor_prompt_text` from
-`RunLeafChanged` into the editor. The TUI
-does not filter active-path raw runtime events or replay transcript locally for leaf
-changes. Discarded-tail transcript blocks are removed from the live view.
+`run.history_position_changed` into the editor. The TUI does not filter raw runtime events
+locally for position changes. Discarded-tail transcript blocks are removed from the live view.
 
 **No file/workspace rollback:** History selection affects conversation context only.
 It does not roll back file edits, tool side-effects, or any filesystem changes.

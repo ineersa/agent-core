@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Runtime;
 
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\Tui\Picker\PickerListLabelFormatter;
-use Ineersa\Tui\Picker\TreePickerController;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 
@@ -78,23 +76,19 @@ final readonly class BridgeTuiExtensionContext implements TuiExtensionContextInt
 
     public function turnRowsInDisplayOrder(string $sessionId): array
     {
-        $tree = $this->runtime->turnTreeProvider->forSession($sessionId);
+        $history = $this->runtime->historyProvider->forSession($sessionId);
         $rows = [];
-        // Retained user-prompt history only — same order as /history. Assistant/tool-cycle
-        // turns are internal and are not extension picker rows.
-        foreach (TreePickerController::flattenTurnOrder($tree) as $turnNo) {
-            $node = $tree->nodesByTurnNo[$turnNo] ?? null;
-            if (!$node instanceof TurnTreeNodeView) {
+        // Public ExtensionApi contract: retained user-prompt rows only.
+        // Both /history and file /rewind consume this contract.
+        foreach ($history->turns as $turn) {
+            if ('user' !== $turn->displayRole) {
                 continue;
             }
-            $title = trim($node->title);
+            $title = trim($turn->title);
             if ('' === $title || preg_match('/^Turn \d+$/', $title)) {
-                $title = trim($node->promptPreview);
+                $title = 'Turn '.$turn->turnNo;
             }
-            if ('' === $title || preg_match('/^Turn \d+$/', $title)) {
-                $title = 'Turn '.$turnNo;
-            }
-            $rows[] = ['turnNo' => $turnNo, 'title' => $title, 'displayRole' => $node->displayRole];
+            $rows[] = ['turnNo' => $turn->turnNo, 'title' => $title, 'displayRole' => $turn->displayRole];
         }
 
         return $rows;

@@ -542,7 +542,7 @@ ID→index map → `ChatScreen::applyTranscriptChangeSet` → stateful
   survivor relative order is stable — a deliberate ponytail ceiling. Replace
   with a per-exchange/neighbor dependency graph only if profiling shows
   structural scans matter. Explicit full visual snapshot remains the defined
-  path for bootstrap, resume, RunLeafChanged/rewind/branch, non-tail
+  path for bootstrap, resume, run.history_position_changed/history-select/position, non-tail
   insert/reorder, ambiguous mid-list tool pairing, and global preview
   invalidation — not a dual renderer.
 - **Mounted memory/layout** is O(number of visual nodes). Symfony's widget

@@ -621,8 +621,8 @@ services:
       $projector: '@tui.subagent_live.transcript_projector'
 
 
-  Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface:
-    alias: Ineersa\CodingAgent\Session\SessionTurnTreeProvider
+  Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface:
+    alias: Ineersa\CodingAgent\Session\SessionHistoryProvider
 
   session.transcript.projection_state:
     class: Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState
@@ -663,8 +663,6 @@ services:
 
   Ineersa\Tui\Export\SessionEventsExportService: ~
 
-  Ineersa\AgentCore\Contract\TurnTree\BranchReplayFilterInterface:
-    alias: Ineersa\CodingAgent\Session\Replay\BranchReplayFilterContractAdapter
 
   Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface:
     alias: Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService
@@ -675,8 +673,8 @@ services:
   Ineersa\AgentCore\Contract\Replay\HotPromptIntegrityVerifierInterface:
     alias: Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService
 
-  Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface:
-    alias: Ineersa\CodingAgent\Session\Rewind\SessionRewindService
+  Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface:
+    alias: Ineersa\CodingAgent\Session\History\HistorySelectionService
 
   Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface:
     alias: Ineersa\CodingAgent\Session\History\HistoryTailDiscardService

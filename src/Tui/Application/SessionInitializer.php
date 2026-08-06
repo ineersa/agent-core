@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Application;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -45,7 +45,7 @@ final readonly class SessionInitializer
         private TranscriptBlockFactory $blockFactory,
         private LoggerInterface $logger,
         private TuiRuntimeEventApplier $eventApplier,
-        private TurnTreeProviderInterface $turnTreeProvider,
+        private HistoryProviderInterface $historyProvider,
         private SessionTranscriptProviderInterface $sessionTranscriptProvider,
     ) {
     }
@@ -188,24 +188,23 @@ final readonly class SessionInitializer
             }
         }
 
-        // Branch-aware resume: if the session has a known current leaf (rewound),
-        // replay only active-path events so abandoned-branch blocks do not appear
-        // in the transcript after resume. This matches the live poller's wholesale-
-        // replace behavior on RunLeafChanged.
+        // History-aware resume: if the session has a known position, replay only
+        // retained-prefix events so discarded-tail blocks do not appear after resume.
+        // Matches the live poller wholesale-replace behavior on run.history_position_changed.
         $replayed = false;
-        $branchAwareBlocks = [];
-        $branchAwareLeafTurnNo = null;
+        $historyAwareBlocks = [];
+        $positionTurnNo = null;
 
         try {
-            $tree = $this->turnTreeProvider->forSession($runId);
+            $history = $this->historyProvider->forSession($runId);
 
-            if (null !== $tree->currentLeafTurnNo) {
-                $branchAwareLeafTurnNo = $tree->currentLeafTurnNo;
-                $snapshot = $this->sessionTranscriptProvider->transcriptForLeaf(
+            if (null !== $history->positionTurnNo) {
+                $positionTurnNo = $history->positionTurnNo;
+                $snapshot = $this->sessionTranscriptProvider->transcriptAtPosition(
                     $runId,
-                    $branchAwareLeafTurnNo,
+                    $positionTurnNo,
                 );
-                $branchAwareBlocks = $snapshot->transcriptBlocks;
+                $historyAwareBlocks = $snapshot->transcriptBlocks;
 
                 foreach ($snapshot->replayEvents as $runtimeEvent) {
                     $this->eventApplier->apply($state, $runtimeEvent, replayMode: true);
@@ -216,9 +215,9 @@ final readonly class SessionInitializer
         } catch (\Throwable $e) {
             // Non-fatal: tree/providers may be unavailable (e.g. unreadable
             // events.jsonl). Fall through to full replay below.
-            $this->logger->warning('Session transcript replay: turn tree unavailable for branch-aware filtering', [
+            $this->logger->warning('Session transcript replay: history provider unavailable for retained-history filtering', [
                 'component' => 'SessionInitializer',
-                'event_type' => 'replay_turn_tree_unavailable',
+                'event_type' => 'replay_history_unavailable',
                 'session_id' => $runId,
                 'exception_class' => $e::class,
                 'exception_message' => $e->getMessage(),
@@ -277,8 +276,8 @@ final readonly class SessionInitializer
             $state->isCompacting = false;
         }
 
-        if ($replayed && [] !== $branchAwareBlocks) {
-            return $branchAwareBlocks;
+        if ($replayed && [] !== $historyAwareBlocks) {
+            return $historyAwareBlocks;
         }
 
         $blocks = $this->projector->blocks();

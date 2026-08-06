@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Picker;
 
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
+use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryPromptView;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -22,11 +22,11 @@ use Symfony\Component\Tui\Widget\TextWidget;
 /**
  * Manages the /history picker overlay (linear user-prompt undo/redo).
  *
- * Rows are user prompts only. Selecting prompt N rewinds conversation context
- * to immediately before N and populates the editor with N's original text.
+ * Rows are user prompts only. Selecting prompt N positions conversation context
+ * immediately before N and populates the editor with N's original text.
  * Forward history remains until a context-mutating action discards it.
  */
-final class TreePickerController
+final class HistoryPickerController
 {
     private ?PickerOverlay $overlay = null;
 
@@ -35,7 +35,7 @@ final class TreePickerController
     private ?TuiSessionState $state = null;
 
     public function __construct(
-        private readonly TurnTreeProviderInterface $treeProvider,
+        private readonly HistoryProviderInterface $historyProvider,
         private readonly TuiSessionSwitchServiceInterface $switcher,
     ) {
     }
@@ -61,8 +61,8 @@ final class TreePickerController
         $screen = $this->screen;
         $state = $this->state;
 
-        $tree = $this->treeProvider->forSession($state->sessionId);
-        if ([] === self::flattenTurnOrder($tree)) {
+        $history = $this->historyProvider->forSession($state->sessionId);
+        if ([] === self::userPromptTurnNos($history)) {
             $screen->setStatus('history', 'Session has no user prompts yet');
             $screen->refresh();
 
@@ -84,8 +84,8 @@ final class TreePickerController
         ]);
 
         $theme = $screen->theme();
-        $initialSelectedIndex = self::initialSelectedIndex($tree);
-        $items = self::buildItems($tree, $theme);
+        $initialSelectedIndex = self::initialSelectedIndex($history);
+        $items = self::buildItems($history, $theme);
 
         $listWidget = new SelectListWidget(
             items: $items,
@@ -102,7 +102,7 @@ final class TreePickerController
         $listWidget->onSelect(static function (SelectEvent $event) use ($picker, $switcher): void {
             $turnNo = (int) $event->getItem()['value'];
             $picker->closePicker();
-            $switcher->rewindToTurn($turnNo);
+            $switcher->selectHistoryTurn($turnNo);
         });
 
         $listWidget->onCancel(static function (CancelEvent $event) use ($picker): void {
@@ -129,42 +129,53 @@ final class TreePickerController
     }
 
     /**
-     * Build picker items: user prompts only, linear order.
-     *
      * @return list<array{value: string, label: string}>
      */
-    public static function buildItems(TurnTreeView $tree, TuiTheme $theme): array
+    public static function buildItems(HistoryView $history, TuiTheme $theme): array
     {
-        return self::walkUserPrompts($tree, $theme)[0];
+        $items = [];
+        foreach (self::userPromptRows($history) as $turn) {
+            $body = PickerListLabelFormatter::sanitizeTitle($turn->title);
+            if ('' === $body || preg_match('/^Turn \d+$/', $body)) {
+                $body = 'User message (turn '.$turn->turnNo.')';
+            }
+            $marker = $turn->isPosition ? '◉ ' : '○ ';
+            $prefix = PickerListLabelFormatter::formatRolePrefix($theme, 'user');
+            $items[] = [
+                'value' => (string) $turn->turnNo,
+                'label' => $marker.$prefix.' '.$body,
+            ];
+        }
+
+        return $items;
     }
 
     /**
      * @return list<int>
      */
-    public static function flattenTurnOrder(TurnTreeView $tree): array
+    public static function userPromptTurnNos(HistoryView $history): array
     {
-        return self::walkUserPrompts($tree)[1];
+        return array_map(
+            static fn (HistoryPromptView $turn): int => $turn->turnNo,
+            self::userPromptRows($history),
+        );
     }
 
     /**
      * @return int<0, max>
      */
-    public static function initialSelectedIndex(TurnTreeView $tree): int
+    public static function initialSelectedIndex(HistoryView $history): int
     {
-        $order = self::flattenTurnOrder($tree);
+        $order = self::userPromptTurnNos($history);
         if ([] === $order) {
             return 0;
         }
 
-        // Cursor sits at the retained tip; highlight the next user prompt after tip
-        // when positioned before a prompt (undo cursor), else the last user row.
-        $tip = $tree->currentLeafTurnNo;
+        $tip = $history->positionTurnNo;
         if (null === $tip) {
             return 0;
         }
 
-        // Prefer the first user prompt whose turnNo is strictly after tip
-        // (context is before that prompt). Fall back to last row at/after tip.
         foreach ($order as $idx => $turnNo) {
             if ($turnNo > $tip) {
                 return max(0, $idx);
@@ -175,42 +186,18 @@ final class TreePickerController
     }
 
     /**
-     * @return array{0: list<array{value:string,label:string}>, 1: list<int>}
+     * @return list<HistoryPromptView>
      */
-    private static function walkUserPrompts(TurnTreeView $tree, ?TuiTheme $theme = null): array
+    private static function userPromptRows(HistoryView $history): array
     {
-        $items = [];
-        $order = [];
-
-        foreach ($tree->activePathTurnNos as $turnNo) {
-            $node = $tree->nodesByTurnNo[$turnNo] ?? null;
-            if (!$node instanceof TurnTreeNodeView) {
+        $rows = [];
+        foreach ($history->turns as $turn) {
+            if ('user' !== $turn->displayRole) {
                 continue;
             }
-            if ('user' !== $node->displayRole) {
-                continue;
-            }
-
-            if (null !== $theme) {
-                $body = PickerListLabelFormatter::sanitizeTitle($node->title);
-                if ('' === $body || preg_match('/^Turn \d+$/', $body)) {
-                    $body = PickerListLabelFormatter::sanitizeTitle($node->promptPreview);
-                }
-                if ('' === $body || preg_match('/^Turn \d+$/', $body)) {
-                    $body = 'User message (turn '.$node->turnNo.')';
-                }
-                $marker = $node->isCurrentLeaf ? '◉ ' : '○ ';
-                $prefix = PickerListLabelFormatter::formatRolePrefix($theme, 'user');
-                $label = $marker.$prefix.' '.$body;
-                $items[] = [
-                    'value' => (string) $node->turnNo,
-                    'label' => $label,
-                ];
-            }
-
-            $order[] = $node->turnNo;
+            $rows[] = $turn;
         }
 
-        return [$items, $order];
+        return $rows;
     }
 }

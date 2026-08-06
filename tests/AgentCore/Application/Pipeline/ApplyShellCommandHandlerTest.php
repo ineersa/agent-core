@@ -70,7 +70,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
             'expectedEventTypes' => [
                 RunEventTypeEnum::AgentCommandApplied->value,
                 RunEventTypeEnum::TurnAdvanced->value,
-                RunEventTypeEnum::LeafSet->value,
+                RunEventTypeEnum::HistoryPositionSet->value,
             ],
             'expectedStatus' => RunStatus::Running,
         ];
@@ -131,7 +131,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
 
         if (\count($expectedEventTypes) > 1) {
             $this->assertSame($expectedOwningTurn, $result->events[1]->payload['turn_no'] ?? null);
-            $this->assertSame($expectedOwningTurn, $result->events[2]->payload['turn_no'] ?? null);
+            $this->assertSame($expectedOwningTurn, $result->events[2]->payload['position_turn_no'] ?? null);
             $this->assertSame('shell_command', $result->events[2]->payload['reason'] ?? null);
         }
 

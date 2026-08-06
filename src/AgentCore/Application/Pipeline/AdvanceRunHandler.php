@@ -236,7 +236,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         // AdvanceRun when the async worker completes, at which point the
         // status will be Running (not Compacting) and turn advancement
         // proceeds normally.  Advancing here would emit turn_advanced and
-        // leaf_set mid-compaction, confusing the event log.
+        // history_position_set mid-compaction, confusing the event log.
         if (RunStatus::Compacting === $preparedState->status) {
             if ([] === $boundaryEventSpecs) {
                 return new HandlerResult();
@@ -359,7 +359,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 );
 
                 // Emit boundary events only — do NOT emit TurnAdvanced
-                // or LeafSet (compaction does not advance the turn).
+                // or HistoryPositionSet (compaction does not advance the turn).
                 $events = $this->eventFactory->eventsFromSpecs(
                     $runId,
                     $preparedState->turnNo,
@@ -424,11 +424,11 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 ],
             ],
             [
-                'type' => RunEventTypeEnum::LeafSet->value,
+                'type' => RunEventTypeEnum::HistoryPositionSet->value,
                 'turn_no' => $nextTurnNo,
                 'payload' => [
-                    'turn_no' => $nextTurnNo,
-                    'previous_turn_no' => $previousTurnNo,
+                    'position_turn_no' => $nextTurnNo,
+                    'previous_position_turn_no' => $previousTurnNo,
                     'reason' => 'continue',
                 ],
             ],

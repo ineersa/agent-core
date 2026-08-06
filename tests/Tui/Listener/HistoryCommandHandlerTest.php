@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
+use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryPromptView;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Editor\PromptEditor;
-use Ineersa\Tui\Listener\TreeCommandHandler;
-use Ineersa\Tui\Picker\TreePickerController;
+use Ineersa\Tui\Listener\HistoryCommandHandler;
+use Ineersa\Tui\Picker\HistoryPickerController;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -22,14 +22,14 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Tui;
 
-#[CoversClass(TreeCommandHandler::class)]
-final class TreeCommandHandlerTest extends TestCase
+#[CoversClass(HistoryCommandHandler::class)]
+final class HistoryCommandHandlerTest extends TestCase
 {
     #[Test]
     public function testHandleReturnsNoOp(): void
     {
         $picker = $this->openablePicker();
-        $handler = new TreeCommandHandler($picker);
+        $handler = new HistoryCommandHandler($picker);
 
         $command = new SlashCommand(name: 'history', args: '', originalText: '/history');
         $result = $handler->handle($command);
@@ -41,7 +41,7 @@ final class TreeCommandHandlerTest extends TestCase
     public function testHandleOpensPickerWithHistoryData(): void
     {
         $picker = $this->openablePicker();
-        $handler = new TreeCommandHandler($picker);
+        $handler = new HistoryCommandHandler($picker);
 
         $command = new SlashCommand(name: 'history', args: '', originalText: '/history');
         $handler->handle($command);
@@ -49,34 +49,27 @@ final class TreeCommandHandlerTest extends TestCase
         $this->assertTrue($picker->isOpen(), 'Handler should cause picker to open');
     }
 
-    private function openablePicker(): TreePickerController
+    private function openablePicker(): HistoryPickerController
     {
-        $tree = new TurnTreeView(
+        $history = new HistoryView(
             runId: 'test',
-            nodesByTurnNo: [
-                1 => new TurnTreeNodeView(
+            turns: [
+                new HistoryPromptView(
                     turnNo: 1,
-                    parentTurnNo: null,
-                    childTurnNos: [],
-                    anchorSeq: 2,
                     title: 'Root turn',
-                    promptPreview: '',
-                    createdAt: null,
-                    isCurrentLeaf: true,
                     displayRole: 'user',
-                    fullPromptText: 'Root turn',
+                    promptText: 'Root turn',
+                    isPosition: true,
                 ),
             ],
-            rootTurnNos: [1],
-            currentLeafTurnNo: 1,
-            activePathTurnNos: [1],
+            positionTurnNo: 1,
         );
 
-        $provider = $this->createStub(TurnTreeProviderInterface::class);
-        $provider->method('forSession')->willReturn($tree);
+        $provider = $this->createStub(HistoryProviderInterface::class);
+        $provider->method('forSession')->willReturn($history);
 
         $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
-        $picker = new TreePickerController($provider, $switcher);
+        $picker = new HistoryPickerController($provider, $switcher);
 
         $tui = new Tui();
         $screen = new ChatScreen(

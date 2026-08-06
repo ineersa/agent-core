@@ -8,18 +8,15 @@ use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
-use Ineersa\Tui\Picker\TreePickerController;
+use Ineersa\Tui\Picker\HistoryPickerController;
 
 /**
  * Handles the /history slash command.
- *
- * Opens the linear user-prompt history picker. Enter positions context
- * before the selected prompt and populates the editor.
  */
-final class TreeCommandHandler implements SlashCommandHandler
+final class HistoryCommandHandler implements SlashCommandHandler
 {
     public function __construct(
-        private readonly TreePickerController $pickerController,
+        private readonly HistoryPickerController $pickerController,
     ) {
     }
 

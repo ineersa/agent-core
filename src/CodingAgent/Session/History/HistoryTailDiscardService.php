@@ -14,7 +14,6 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -35,7 +34,7 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
 
     public function __construct(
         private EventStoreInterface $eventStore,
-        private TurnTreeProjector $projector,
+        private HistoryProjector $projector,
         private LoggerInterface $logger,
     ) {
     }
@@ -67,8 +66,8 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
             return ['discarded' => false, 'lastSeq' => $state->lastSeq];
         }
 
-        $tree = $this->projector->build($runId, $events);
-        $active = $tree->activePathTurnNos;
+        $history = $this->projector->build($runId, $events);
+        $active = $history->retainedTurnNos();
         if ([] === $active) {
             return ['discarded' => false, 'lastSeq' => $state->lastSeq];
         }

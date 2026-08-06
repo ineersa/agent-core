@@ -9,8 +9,8 @@ use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
@@ -20,9 +20,9 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscri
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
@@ -103,14 +103,8 @@ final class SessionInitializerReplayTest extends TestCase
             sequenceAllocator: new FileRunSequenceAllocator(),
         );
 
-        $turnTreeProvider = $this->createStub(TurnTreeProviderInterface::class);
-        $turnTreeProvider->method('forSession')->willReturn(new TurnTreeView(
-            runId: 'test',
-            nodesByTurnNo: [],
-            rootTurnNos: [],
-            currentLeafTurnNo: null,
-            activePathTurnNos: [],
-        ));
+        $historyProvider = $this->createStub(HistoryProviderInterface::class);
+        $historyProvider->method('forSession')->willReturn(new HistoryView(runId: 'test', turns: [], positionTurnNo: null));
 
         $this->sessionInit = new SessionInitializer(
             sessionStore: $hatfieldSessionStore,
@@ -120,9 +114,9 @@ final class SessionInitializerReplayTest extends TestCase
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($this->projector),
-            turnTreeProvider: $turnTreeProvider,
+            historyProvider: $historyProvider,
             sessionTranscriptProvider: new class implements \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface {
-                public function transcriptForLeaf(string $runId, int $leafTurnNo): SessionTranscriptSnapshotDTO
+                public function transcriptAtPosition(string $runId, int $positionTurnNo): SessionTranscriptSnapshotDTO
                 {
                     return new SessionTranscriptSnapshotDTO([], []);
                 }

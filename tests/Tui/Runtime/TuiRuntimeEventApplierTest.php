@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
@@ -19,9 +19,9 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscri
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
@@ -51,16 +51,16 @@ final class TuiRuntimeEventApplierTest extends TestCase
         parent::tearDown();
     }
 
-    public function testRunLeafChangedClearsStaleQueuedUserMessages(): void
+    public function testRunHistoryPositionChangedClearsStaleQueuedUserMessages(): void
     {
-        // Thesis: without clearing queuedUserMessages on RunLeafChanged, rewind/resume
+        // Thesis: without clearing queuedUserMessages on RunHistoryPositionChanged, rewind/resume
         // leaves abandoned-branch ⏳ pending lines visible above the editor.
         $applier = $this->buildApplier();
         $state = new TuiSessionState('run-leaf', true);
         $state->queuedUserMessages = ['ik-abandoned' => 'Want to test bash in parallel'];
 
         $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
-            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::RunLeafChanged->value,
+            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::RunHistoryPositionChanged->value,
             runId: 'run-leaf',
             seq: 10,
             payload: ['turn_no' => 2],
@@ -191,14 +191,8 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $appConfig = new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->projectDir);
         $sessionStore = new HatfieldSessionStore($appConfig, $this->createStub(\Doctrine\ORM\EntityManagerInterface::class));
 
-        $turnTreeProvider = $this->createStub(TurnTreeProviderInterface::class);
-        $turnTreeProvider->method('forSession')->willReturn(new TurnTreeView(
-            runId: 'test',
-            nodesByTurnNo: [],
-            rootTurnNos: [],
-            currentLeafTurnNo: null,
-            activePathTurnNos: [],
-        ));
+        $historyProvider = $this->createStub(HistoryProviderInterface::class);
+        $historyProvider->method('forSession')->willReturn(new HistoryView(runId: 'test', turns: [], positionTurnNo: null));
 
         return new SessionInitializer(
             sessionStore: $sessionStore,
@@ -208,9 +202,9 @@ final class TuiRuntimeEventApplierTest extends TestCase
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($projector),
-            turnTreeProvider: $turnTreeProvider,
+            historyProvider: $historyProvider,
             sessionTranscriptProvider: new class implements \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface {
-                public function transcriptForLeaf(string $runId, int $leafTurnNo): \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO
+                public function transcriptAtPosition(string $runId, int $positionTurnNo): \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO
                 {
                     return new \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO([], []);
                 }

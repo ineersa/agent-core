@@ -136,7 +136,7 @@ final class SessionPickerControllerTest extends TestCase
             ): void {
             }
 
-            public function rewindToTurn(int $targetTurnNo): void
+            public function selectHistoryTurn(int $targetTurnNo): void
             {
                 // No-op: this test does not exercise rewind.
             }

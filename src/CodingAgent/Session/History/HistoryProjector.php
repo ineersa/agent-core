@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Session\TurnTree;
+namespace Ineersa\CodingAgent\Session\History;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -10,42 +10,30 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use function Symfony\Component\String\u;
 
 /**
- * Builds a linear active-history projection from the canonical run event stream.
+ * Builds ordered retained history from the canonical run event stream.
  *
  * Model:
- *  - turn_advanced appends a turn to the active ordered list and sets the tip.
- *  - leaf_set moves the selected tip (undo/redo cursor) without discarding.
- *  - history_tail_discarded(after_turn_no) permanently drops later active turns
- *    from normal projections (events remain audit-only in events.jsonl).
- *  - New turns after a discard use globally unique turn numbers and append
- *    normally to the retained list.
- *
- * parentTurnNo / childTurnNos on nodes form a pure linear chain (previous/next
- * active turn) so existing row consumers keep a flat walk without branch UX.
- *
- * @phpstan-type TurnInfo array<int, array{anchorSeq: int, anchorIndex: int, createdAt: \DateTimeImmutable, reason: string|null}>
+ *  - turn_advanced appends a turn and moves position to that turn.
+ *  - history_position_set selects 0 or a retained turn without discarding.
+ *  - history_tail_discarded(after_turn_no) drops later retained turns.
+ *  - Absent position marker defaults to retained tip (or null when empty).
  */
-final class TurnTreeProjector
+final class HistoryProjector
 {
     /**
      * @param list<RunEvent> $events
      */
-    public function build(string $runId, array $events): TurnTreeDTO
+    public function build(string $runId, array $events): HistoryDTO
     {
         if ([] === $events) {
-            return new TurnTreeDTO(
-                runId: $runId,
-                nodesByTurnNo: [],
-                rootTurnNos: [],
-                currentLeafTurnNo: null,
-                activePathTurnNos: [],
-            );
+            return new HistoryDTO(runId: $runId, turns: [], positionTurnNo: null);
         }
 
         $sorted = $this->sortBySeq($events);
         $activeTurnNos = [];
+        /** @var array<int, array{anchorSeq: int, anchorIndex: int}> $turnInfo */
         $turnInfo = [];
-        $currentLeafTurnNo = null;
+        $positionTurnNo = null;
 
         foreach ($sorted as $index => $event) {
             if (RunEventTypeEnum::TurnAdvanced->value === $event->type) {
@@ -61,21 +49,19 @@ final class TurnTreeProjector
                 $turnInfo[$turnNo] = [
                     'anchorSeq' => $event->seq,
                     'anchorIndex' => $index,
-                    'createdAt' => $event->createdAt,
-                    'reason' => null,
                 ];
-                $currentLeafTurnNo = $turnNo;
+                $positionTurnNo = $turnNo;
                 continue;
             }
 
-            if (RunEventTypeEnum::LeafSet->value === $event->type) {
-                $turnNo = (int) ($event->payload['turn_no'] ?? $event->turnNo);
+            if (RunEventTypeEnum::HistoryPositionSet->value === $event->type) {
+                $turnNo = (int) ($event->payload['position_turn_no'] ?? $event->turnNo);
                 if (0 === $turnNo) {
-                    $currentLeafTurnNo = null;
+                    $positionTurnNo = null;
                     continue;
                 }
                 if (\in_array($turnNo, $activeTurnNos, true)) {
-                    $currentLeafTurnNo = $turnNo;
+                    $positionTurnNo = $turnNo;
                 }
                 continue;
             }
@@ -86,138 +72,73 @@ final class TurnTreeProjector
                     $activeTurnNos,
                     static fn (int $t): bool => $t <= $after,
                 ));
-                // Tip stays at retained boundary when that turn survived; otherwise last active or null.
                 if (0 === $after || [] === $activeTurnNos) {
-                    $currentLeafTurnNo = null;
+                    $positionTurnNo = null;
                 } elseif (\in_array($after, $activeTurnNos, true)) {
-                    $currentLeafTurnNo = $after;
-                } elseif (null !== $currentLeafTurnNo && $currentLeafTurnNo > $after) {
-                    $currentLeafTurnNo = $activeTurnNos[array_key_last($activeTurnNos)];
+                    $positionTurnNo = $after;
+                } elseif (null !== $positionTurnNo && $positionTurnNo > $after) {
+                    $positionTurnNo = $activeTurnNos[array_key_last($activeTurnNos)];
                 }
             }
         }
 
-        // Old streams without leaf_set: tip is last active turn (already set).
-        if (null === $currentLeafTurnNo && [] !== $activeTurnNos) {
-            $currentLeafTurnNo = $activeTurnNos[array_key_last($activeTurnNos)];
+        if (null === $positionTurnNo && [] !== $activeTurnNos) {
+            $positionTurnNo = $activeTurnNos[array_key_last($activeTurnNos)];
         }
 
-        $lastSeqs = $this->computeLastSeqs($turnInfo, $sorted);
-        $nodesByTurnNo = [];
+        $turns = [];
         $count = \count($activeTurnNos);
-
         for ($i = 0; $i < $count; ++$i) {
             $turnNo = $activeTurnNos[$i];
             $info = $turnInfo[$turnNo] ?? null;
             if (null === $info) {
-                // Turn referenced only via leaf/discard without turn_advanced — skip.
                 continue;
             }
 
-            $parentTurnNo = $i > 0 ? $activeTurnNos[$i - 1] : null;
-            $childTurnNos = $i < $count - 1 ? [$activeTurnNos[$i + 1]] : [];
-            $rawTitle = $this->titleForTurn($turnNo, $info['anchorIndex'], $sorted, $parentTurnNo);
+            $previousTurnNo = $i > 0 ? $activeTurnNos[$i - 1] : null;
+            $displayRole = $this->classifyDisplayRole($turnNo, $info['anchorIndex'], $sorted, $previousTurnNo);
+            $rawTitle = $this->titleForTurn($turnNo, $info['anchorIndex'], $sorted, $previousTurnNo);
             $title = $this->sanitizeTurnTitle($rawTitle);
-            $displayRole = $this->classifyDisplayRole($turnNo, $info['anchorIndex'], $sorted, $parentTurnNo);
             if ('' === $title || preg_match('/^Turn \d+$/', $title)) {
                 $title = $this->placeholderTitleForTurn($turnNo, $displayRole);
             }
-            $fullPrompt = $this->fullUserPromptForTurn($turnNo, $info['anchorIndex'], $sorted, $parentTurnNo, $displayRole);
+            $promptText = $this->fullUserPromptForTurn(
+                $turnNo,
+                $info['anchorIndex'],
+                $sorted,
+                $previousTurnNo,
+                $displayRole,
+            );
 
-            $nodesByTurnNo[$turnNo] = new TurnTreeNodeDTO(
+            $turns[] = new HistoryTurnDTO(
                 turnNo: $turnNo,
-                parentTurnNo: $parentTurnNo,
-                childTurnNos: $childTurnNos,
-                anchorSeq: $info['anchorSeq'],
-                lastSeq: $lastSeqs[$turnNo] ?? $info['anchorSeq'],
                 title: $title,
-                promptPreview: $this->truncate($title, 60),
-                createdAt: $info['createdAt'],
-                isCurrentLeaf: $turnNo === $currentLeafTurnNo,
-                reason: $info['reason'],
                 displayRole: $displayRole,
-                fullPromptText: $fullPrompt,
+                promptText: $promptText,
             );
         }
 
-        // Recompute active list from nodes that actually materialized.
-        $activePathTurnNos = array_values(array_filter(
-            $activeTurnNos,
-            static fn (int $t): bool => isset($nodesByTurnNo[$t]),
-        ));
-        $rootTurnNos = [] !== $activePathTurnNos ? [$activePathTurnNos[0]] : [];
+        // Drop position if it failed to materialize.
+        $retainedNos = array_map(static fn (HistoryTurnDTO $t): int => $t->turnNo, $turns);
+        if (null !== $positionTurnNo && !\in_array($positionTurnNo, $retainedNos, true)) {
+            $positionTurnNo = [] !== $retainedNos ? $retainedNos[array_key_last($retainedNos)] : null;
+        }
 
-        return new TurnTreeDTO(
+        return new HistoryDTO(
             runId: $runId,
-            nodesByTurnNo: $nodesByTurnNo,
-            rootTurnNos: $rootTurnNos,
-            currentLeafTurnNo: $currentLeafTurnNo,
-            activePathTurnNos: $activePathTurnNos,
+            turns: $turns,
+            positionTurnNo: $positionTurnNo,
         );
-    }
-
-    /**
-     * Active retained turns from root through target (inclusive).
-     *
-     * @param array<int, TurnTreeNodeDTO> $nodesByTurnNo
-     *
-     * @return list<int>
-     */
-    public static function activePathTo(int $targetTurnNo, array $nodesByTurnNo): array
-    {
-        if (!isset($nodesByTurnNo[$targetTurnNo])) {
-            return [];
-        }
-
-        // Linear chain: walk parents upward then reverse.
-        $path = [];
-        $cursor = $targetTurnNo;
-        $guard = 0;
-        while (null !== $cursor) {
-            if (++$guard > 10000) {
-                throw new \RuntimeException('Cycle detected while walking linear history path.');
-            }
-            if (!isset($nodesByTurnNo[$cursor])) {
-                throw new \RuntimeException(\sprintf('Dangling parent_turn_no %d while walking active turn path.', $cursor));
-            }
-            $path[] = $cursor;
-            $cursor = $nodesByTurnNo[$cursor]->parentTurnNo;
-        }
-
-        return array_reverse($path);
-    }
-
-    /**
-     * @param array<int, array{anchorSeq: int, ...}> $turnInfo
-     * @param list<RunEvent>                         $sortedEvents
-     *
-     * @return array<int, int>
-     */
-    private function computeLastSeqs(array $turnInfo, array $sortedEvents): array
-    {
-        $lastSeqs = [];
-        foreach ($turnInfo as $turnNo => $info) {
-            $lastSeqs[$turnNo] = $info['anchorSeq'];
-        }
-
-        foreach ($sortedEvents as $event) {
-            $eventTurn = $event->turnNo;
-            if (isset($lastSeqs[$eventTurn])) {
-                $lastSeqs[$eventTurn] = max($lastSeqs[$eventTurn], $event->seq);
-            }
-        }
-
-        return $lastSeqs;
     }
 
     /**
      * @param list<RunEvent> $sortedEvents
      */
-    private function titleForTurn(int $turnNo, int $anchorIndex, array $sortedEvents, ?int $parentTurnNo): string
+    private function titleForTurn(int $turnNo, int $anchorIndex, array $sortedEvents, ?int $previousTurnNo): string
     {
-        $parentAnchorIndex = $this->parentAnchorIndex($parentTurnNo, $anchorIndex, $sortedEvents);
+        $previousAnchorIndex = $this->previousAnchorIndex($previousTurnNo, $anchorIndex, $sortedEvents);
 
-        for ($i = $anchorIndex - 1; $i > $parentAnchorIndex; --$i) {
+        for ($i = $anchorIndex - 1; $i > $previousAnchorIndex; --$i) {
             $event = $sortedEvents[$i];
             $text = $this->extractUserVisibleText($event);
             if ('' !== $text) {
@@ -236,7 +157,7 @@ final class TurnTreeProjector
             }
         }
 
-        if (null === $parentTurnNo) {
+        if (null === $previousTurnNo) {
             foreach ($sortedEvents as $event) {
                 if (RunEventTypeEnum::RunStarted->value === $event->type) {
                     $text = $this->extractInitialUserText($event);
@@ -252,23 +173,21 @@ final class TurnTreeProjector
     }
 
     /**
-     * Full original user prompt for editor population (user-role turns only).
-     *
      * @param list<RunEvent> $sortedEvents
      */
     private function fullUserPromptForTurn(
         int $turnNo,
         int $anchorIndex,
         array $sortedEvents,
-        ?int $parentTurnNo,
+        ?int $previousTurnNo,
         string $displayRole,
     ): string {
         if ('user' !== $displayRole) {
             return '';
         }
 
-        $parentAnchorIndex = $this->parentAnchorIndex($parentTurnNo, $anchorIndex, $sortedEvents);
-        for ($i = $anchorIndex - 1; $i > $parentAnchorIndex; --$i) {
+        $previousAnchorIndex = $this->previousAnchorIndex($previousTurnNo, $anchorIndex, $sortedEvents);
+        for ($i = $anchorIndex - 1; $i > $previousAnchorIndex; --$i) {
             $event = $sortedEvents[$i];
             if (RunEventTypeEnum::AgentCommandApplied->value !== $event->type) {
                 continue;
@@ -286,7 +205,7 @@ final class TurnTreeProjector
             }
         }
 
-        if (null === $parentTurnNo) {
+        if (null === $previousTurnNo) {
             foreach ($sortedEvents as $event) {
                 if (RunEventTypeEnum::RunStarted->value === $event->type) {
                     return $this->extractInitialUserText($event);
@@ -300,9 +219,9 @@ final class TurnTreeProjector
     /**
      * @param list<RunEvent> $sortedEvents
      */
-    private function parentAnchorIndex(?int $parentTurnNo, int $anchorIndex, array $sortedEvents): int
+    private function previousAnchorIndex(?int $previousTurnNo, int $anchorIndex, array $sortedEvents): int
     {
-        if (null === $parentTurnNo) {
+        if (null === $previousTurnNo) {
             return -1;
         }
 
@@ -312,7 +231,7 @@ final class TurnTreeProjector
                 continue;
             }
             $advancedTurnNo = (int) ($event->payload['turn_no'] ?? $event->turnNo);
-            if ($advancedTurnNo === $parentTurnNo) {
+            if ($advancedTurnNo === $previousTurnNo) {
                 return $i;
             }
         }
@@ -472,15 +391,15 @@ final class TurnTreeProjector
     /**
      * @param list<RunEvent> $sortedEvents
      */
-    private function classifyDisplayRole(int $turnNo, int $anchorIndex, array $sortedEvents, ?int $parentTurnNo): string
+    private function classifyDisplayRole(int $turnNo, int $anchorIndex, array $sortedEvents, ?int $previousTurnNo): string
     {
         $anchorEvent = $sortedEvents[$anchorIndex] ?? null;
         $stepId = \is_array($anchorEvent?->payload) && \is_string($anchorEvent->payload['step_id'] ?? null)
             ? $anchorEvent->payload['step_id']
             : '';
 
-        $parentAnchorIndex = $this->parentAnchorIndex($parentTurnNo, $anchorIndex, $sortedEvents);
-        for ($i = $anchorIndex - 1; $i > $parentAnchorIndex; --$i) {
+        $previousAnchorIndex = $this->previousAnchorIndex($previousTurnNo, $anchorIndex, $sortedEvents);
+        for ($i = $anchorIndex - 1; $i > $previousAnchorIndex; --$i) {
             $event = $sortedEvents[$i];
             if (RunEventTypeEnum::AgentCommandApplied->value === $event->type) {
                 $kind = \is_string($event->payload['kind'] ?? null) ? $event->payload['kind'] : null;
@@ -494,7 +413,7 @@ final class TurnTreeProjector
             return 'user';
         }
 
-        if (null === $parentTurnNo) {
+        if (null === $previousTurnNo) {
             foreach ($sortedEvents as $event) {
                 if (RunEventTypeEnum::RunStarted->value === $event->type) {
                     if ('' !== $this->extractInitialUserText($event)) {

@@ -115,7 +115,7 @@ enum RuntimeEventTypeEnum: string
     case RuntimeReady = 'runtime.ready';
     case ProtocolError = 'protocol.error';
     case RunResumed = 'run.resumed';
-    case RunLeafChanged = 'run.leaf_changed';
+    case RunHistoryPositionChanged = 'run.history_position_changed';
 
     // ── Compaction ────────────────────────────────────────────────────
 
@@ -140,7 +140,7 @@ enum RuntimeEventTypeEnum: string
             self::RunStarted, self::TurnStarted, self::TurnCompleted,
             self::TurnFailed, self::TurnCancelled, self::RunCompleted,
             self::RunFailed, self::RunCancelled, self::RunResumed,
-            self::RunLeafChanged => 'lifecycle',
+            self::RunHistoryPositionChanged => 'lifecycle',
 
             self::UserMessageSubmitted,
             self::UserMessageQueued => 'user_input',

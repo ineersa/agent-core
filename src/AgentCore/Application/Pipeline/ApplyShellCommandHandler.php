@@ -88,11 +88,11 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
                 ],
             ];
             $eventSpecs[] = [
-                'type' => RunEventTypeEnum::LeafSet->value,
+                'type' => RunEventTypeEnum::HistoryPositionSet->value,
                 'turn_no' => $owningTurnNo,
                 'payload' => [
-                    'turn_no' => $owningTurnNo,
-                    'previous_turn_no' => $previousTurnNo,
+                    'position_turn_no' => $owningTurnNo,
+                    'previous_position_turn_no' => $previousTurnNo,
                     'reason' => 'shell_command',
                 ],
             ];

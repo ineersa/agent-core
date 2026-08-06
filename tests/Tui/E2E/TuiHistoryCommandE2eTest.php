@@ -19,7 +19,7 @@ use PHPUnit\Framework\TestCase;
  * @group tui-e2e-replay
  */
 #[Group('tui-e2e-replay')]
-final class TuiTreeCommandE2eTest extends TestCase
+final class TuiHistoryCommandE2eTest extends TestCase
 {
     private TmuxHarness $tmux;
     private string $projectRoot;

@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Picker;
 
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
+use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryPromptView;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\Tui\Editor\PromptEditor;
-use Ineersa\Tui\Picker\TreePickerController;
+use Ineersa\Tui\Picker\HistoryPickerController;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -19,8 +19,8 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Tui;
 
-#[CoversClass(TreePickerController::class)]
-final class TreePickerControllerTest extends TestCase
+#[CoversClass(HistoryPickerController::class)]
+final class HistoryPickerControllerTest extends TestCase
 {
     private Tui $tui;
     private ChatScreen $screen;
@@ -46,9 +46,9 @@ final class TreePickerControllerTest extends TestCase
     #[Test]
     public function testIsOpenIsFalseInitially(): void
     {
-        $provider = $this->createStub(TurnTreeProviderInterface::class);
+        $provider = $this->createStub(HistoryProviderInterface::class);
         $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
-        $controller = new TreePickerController($provider, $switcher);
+        $controller = new HistoryPickerController($provider, $switcher);
 
         $this->assertFalse($controller->isOpen());
     }
@@ -61,7 +61,7 @@ final class TreePickerControllerTest extends TestCase
     {
         $tree = $this->createMixedRoleHistory();
         $theme = new DefaultTheme(new ThemePalette('test'));
-        $items = TreePickerController::buildItems($tree, $theme);
+        $items = HistoryPickerController::buildItems($tree, $theme);
 
         $this->assertCount(2, $items);
         $this->assertSame(['1', '3'], array_column($items, 'value'));
@@ -78,40 +78,34 @@ final class TreePickerControllerTest extends TestCase
     public function testFlattenTurnOrderUserOnly(): void
     {
         $tree = $this->createMixedRoleHistory();
-        $this->assertSame([1, 3], TreePickerController::flattenTurnOrder($tree));
+        $this->assertSame([1, 3], HistoryPickerController::userPromptTurnNos($tree));
     }
 
     #[Test]
     public function testInitialSelectedIndexPrefersNextUserPromptAfterTip(): void
     {
         // Tip at turn 1 (before second user prompt turn 3).
-        $tree = $this->createMixedRoleHistory(currentLeaf: 1);
-        $this->assertSame(1, TreePickerController::initialSelectedIndex($tree));
+        $tree = $this->createMixedRoleHistory(positionTurnNo: 1);
+        $this->assertSame(1, HistoryPickerController::initialSelectedIndex($tree));
     }
 
     #[Test]
     public function testBuildItemsEmptyTree(): void
     {
-        $tree = new TurnTreeView(
-            runId: 'r',
-            nodesByTurnNo: [],
-            rootTurnNos: [],
-            currentLeafTurnNo: null,
-            activePathTurnNos: [],
-        );
+        $tree = new HistoryView(runId: 'r', turns: [], positionTurnNo: null);
         $theme = new DefaultTheme(new ThemePalette('test'));
-        $this->assertSame([], TreePickerController::buildItems($tree, $theme));
+        $this->assertSame([], HistoryPickerController::buildItems($tree, $theme));
     }
 
     #[Test]
     public function testOpenMountsOverlayWithHistory(): void
     {
         $tree = $this->createMixedRoleHistory();
-        $provider = $this->createStub(TurnTreeProviderInterface::class);
+        $provider = $this->createStub(HistoryProviderInterface::class);
         $provider->method('forSession')->willReturn($tree);
         $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
 
-        $controller = new TreePickerController($provider, $switcher);
+        $controller = new HistoryPickerController($provider, $switcher);
         $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
         $controller->open();
 
@@ -123,18 +117,12 @@ final class TreePickerControllerTest extends TestCase
     #[Test]
     public function testOpenShowsStatusWhenEmpty(): void
     {
-        $tree = new TurnTreeView(
-            runId: 'r',
-            nodesByTurnNo: [],
-            rootTurnNos: [],
-            currentLeafTurnNo: null,
-            activePathTurnNos: [],
-        );
-        $provider = $this->createStub(TurnTreeProviderInterface::class);
+        $tree = new HistoryView(runId: 'r', turns: [], positionTurnNo: null);
+        $provider = $this->createStub(HistoryProviderInterface::class);
         $provider->method('forSession')->willReturn($tree);
         $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
 
-        $controller = new TreePickerController($provider, $switcher);
+        $controller = new HistoryPickerController($provider, $switcher);
         $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
         $controller->open();
 
@@ -145,13 +133,13 @@ final class TreePickerControllerTest extends TestCase
     public function testOnSelectCallsRewindToSelectedPromptTurn(): void
     {
         $tree = $this->createMixedRoleHistory();
-        $provider = $this->createStub(TurnTreeProviderInterface::class);
+        $provider = $this->createStub(HistoryProviderInterface::class);
         $provider->method('forSession')->willReturn($tree);
 
         $switcher = $this->createMock(TuiSessionSwitchServiceInterface::class);
-        $switcher->expects($this->once())->method('rewindToTurn')->with(3);
+        $switcher->expects($this->once())->method('selectHistoryTurn')->with(3);
 
-        $controller = new TreePickerController($provider, $switcher);
+        $controller = new HistoryPickerController($provider, $switcher);
         $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
         $controller->open();
 
@@ -164,50 +152,33 @@ final class TreePickerControllerTest extends TestCase
         $list->handleInput("\n");
     }
 
-    private function createMixedRoleHistory(?int $currentLeaf = 3): TurnTreeView
+    private function createMixedRoleHistory(?int $positionTurnNo = 3): HistoryView
     {
-        $n1 = new TurnTreeNodeView(
-            turnNo: 1,
-            parentTurnNo: null,
-            childTurnNos: [2],
-            anchorSeq: 2,
-            title: 'Hello',
-            promptPreview: 'Hello',
-            createdAt: null,
-            isCurrentLeaf: 1 === $currentLeaf,
-            displayRole: 'user',
-            fullPromptText: 'Hello',
-        );
-        $n2 = new TurnTreeNodeView(
-            turnNo: 2,
-            parentTurnNo: 1,
-            childTurnNos: [3],
-            anchorSeq: 5,
-            title: 'Assistant response',
-            promptPreview: 'Assistant response',
-            createdAt: null,
-            isCurrentLeaf: 2 === $currentLeaf,
-            displayRole: 'assistant',
-        );
-        $n3 = new TurnTreeNodeView(
-            turnNo: 3,
-            parentTurnNo: 2,
-            childTurnNos: [],
-            anchorSeq: 8,
-            title: 'Follow-up',
-            promptPreview: 'Follow-up',
-            createdAt: null,
-            isCurrentLeaf: 3 === $currentLeaf,
-            displayRole: 'user',
-            fullPromptText: 'Follow-up',
-        );
-
-        return new TurnTreeView(
+        return new HistoryView(
             runId: 'test-session',
-            nodesByTurnNo: [1 => $n1, 2 => $n2, 3 => $n3],
-            rootTurnNos: [1],
-            currentLeafTurnNo: $currentLeaf,
-            activePathTurnNos: [1, 2, 3],
+            turns: [
+                new HistoryPromptView(
+                    turnNo: 1,
+                    title: 'Hello',
+                    displayRole: 'user',
+                    promptText: 'Hello',
+                    isPosition: 1 === $positionTurnNo,
+                ),
+                new HistoryPromptView(
+                    turnNo: 2,
+                    title: 'Assistant response',
+                    displayRole: 'assistant',
+                    isPosition: 2 === $positionTurnNo,
+                ),
+                new HistoryPromptView(
+                    turnNo: 3,
+                    title: 'Follow-up',
+                    displayRole: 'user',
+                    promptText: 'Follow-up',
+                    isPosition: 3 === $positionTurnNo,
+                ),
+            ],
+            positionTurnNo: $positionTurnNo,
         );
     }
 }

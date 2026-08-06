@@ -11,8 +11,8 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Session\History\HistoryProjector;
 use Ineersa\CodingAgent\Session\History\HistoryTailDiscardService;
-use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -29,11 +29,11 @@ final class HistoryTailDiscardServiceTest extends TestCase
         $runId = 'discard-test';
         $events = [
             $this->event($runId, 1, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]),
-            $this->event($runId, 2, 1, RunEventTypeEnum::LeafSet->value, ['turn_no' => 1]),
+            $this->event($runId, 2, 1, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 1]),
             $this->event($runId, 3, 2, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2]),
-            $this->event($runId, 4, 2, RunEventTypeEnum::LeafSet->value, ['turn_no' => 2]),
-            $this->event($runId, 5, 1, RunEventTypeEnum::LeafSet->value, [
-                'turn_no' => 1,
+            $this->event($runId, 4, 2, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 2]),
+            $this->event($runId, 5, 1, RunEventTypeEnum::HistoryPositionSet->value, [
+                'position_turn_no' => 1,
                 'reason' => 'history_select',
             ]),
         ];
@@ -56,7 +56,7 @@ final class HistoryTailDiscardServiceTest extends TestCase
                 );
             });
 
-        $service = new HistoryTailDiscardService($store, new TurnTreeProjector(), new NullLogger());
+        $service = new HistoryTailDiscardService($store, new HistoryProjector(), new NullLogger());
         $state = new RunState(
             runId: $runId,
             status: RunStatus::Completed,
@@ -79,14 +79,14 @@ final class HistoryTailDiscardServiceTest extends TestCase
         $runId = 'discard-tip';
         $events = [
             $this->event($runId, 1, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]),
-            $this->event($runId, 2, 1, RunEventTypeEnum::LeafSet->value, ['turn_no' => 1]),
+            $this->event($runId, 2, 1, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 1]),
         ];
 
         $store = $this->createMock(EventStoreInterface::class);
         $store->method('allFor')->willReturn($events);
         $store->expects($this->never())->method('append');
 
-        $service = new HistoryTailDiscardService($store, new TurnTreeProjector(), new NullLogger());
+        $service = new HistoryTailDiscardService($store, new HistoryProjector(), new NullLogger());
         $state = new RunState(
             runId: $runId,
             status: RunStatus::Completed,
@@ -104,7 +104,7 @@ final class HistoryTailDiscardServiceTest extends TestCase
     {
         $service = new HistoryTailDiscardService(
             $this->createStub(EventStoreInterface::class),
-            new TurnTreeProjector(),
+            new HistoryProjector(),
             new NullLogger(),
         );
 

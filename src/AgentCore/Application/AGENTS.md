@@ -71,19 +71,18 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
 
 ## Linear history replay
 
-Active linear-history projection and filtering live in **CodingAgent session**
-(`CodingAgent\Session\TurnTree`, `CodingAgent\Session\Replay`, `CodingAgent\Session\History`).
-AgentCore emits canonical events (`turn_advanced`, `leaf_set`, `history_tail_discarded`)
-and replays through narrow contracts (`BranchReplayFilterInterface` under
-`AgentCore\Contract\TurnTree`, `HistoryTailDiscardInterface` under
-`AgentCore\Contract\History`). Active-history projection lives in CodingAgent.
-See `docs/session-storage.md` "Linear history model".
+Ordered retained-history projection and filtering live in **CodingAgent session**
+(`CodingAgent\Session\History`). AgentCore emits canonical events
+(`turn_advanced`, `history_position_set`, `history_tail_discarded`) and depends on
+narrow history contracts (`HistoryTailDiscardInterface`, `HistorySelectionServiceInterface`
+under `AgentCore\Contract\History`). Replay filtering is CodingAgent-local
+(`HistoryReplayFilter`). See `docs/session-storage.md` "Linear history model".
 
 Core replay integration:
-- `RunStateRebuilderInterface` (`SessionRunStateReplayService` in App) — optional active-history filter before reducing into `RunState`;
-  integrity checks use the full canonical stream, not the filtered stream.
-- `HotPromptStateRebuilderInterface (SessionHotPromptReplayService in App)` — optional active-history filter before replaying prompt messages; integrity from full stream.
-- `RunRewindServiceInterface` (`SessionRewindService` in App) — positions before a selected user prompt (`leaf_set` + editor text).
+- `RunStateRebuilderInterface` (`SessionRunStateReplayService` in App) — optional retained-history filter before reducing into `RunState`;
+  integrity checks use the full canonical stream, not the filtered stream. `rebuildAtPosition()` rebuilds at a selected tip.
+- `HotPromptStateRebuilderInterface (SessionHotPromptReplayService in App)` — optional retained-history filter before replaying prompt messages; integrity from full stream.
+- `HistorySelectionServiceInterface` (`HistorySelectionService` in App) — positions before a selected user prompt (`history_position_set` + editor text).
 - `HistoryTailDiscardInterface` (`HistoryTailDiscardService` in App) — shared mutate-behind-tip choke point used by `RunMessageProcessor`.
 
 ## Maintenance rule

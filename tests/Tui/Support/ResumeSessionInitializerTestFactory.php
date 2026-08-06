@@ -10,7 +10,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\CancellationProjectionSubscriber;
@@ -19,9 +19,9 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscri
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
@@ -71,16 +71,10 @@ final class ResumeSessionInitializerTestFactory
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
         $projector = new TranscriptProjector($dispatcher, $projectionState);
 
-        $turnTreeProvider = new class implements TurnTreeProviderInterface {
-            public function forSession(string $runId): TurnTreeView
+        $historyProvider = new class implements HistoryProviderInterface {
+            public function forSession(string $runId): HistoryView
             {
-                return new TurnTreeView(
-                    runId: $runId,
-                    nodesByTurnNo: [],
-                    rootTurnNos: [],
-                    currentLeafTurnNo: null,
-                    activePathTurnNos: [],
-                );
+                return new HistoryView(runId: $runId, turns: [], positionTurnNo: null);
             }
         };
 
@@ -92,9 +86,9 @@ final class ResumeSessionInitializerTestFactory
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($projector),
-            turnTreeProvider: $turnTreeProvider,
+            historyProvider: $historyProvider,
             sessionTranscriptProvider: new class implements \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface {
-                public function transcriptForLeaf(string $runId, int $leafTurnNo): \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO
+                public function transcriptAtPosition(string $runId, int $positionTurnNo): \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO
                 {
                     return new \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO([], []);
                 }

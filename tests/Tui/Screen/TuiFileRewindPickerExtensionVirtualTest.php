@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
+use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryPromptView;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\HatfieldExt\FileRewind\FileRewindCheckpointKindEnum;
 use Ineersa\HatfieldExt\FileRewind\FileRewindConfig;
@@ -19,7 +19,7 @@ use Ineersa\HatfieldExt\FileRewind\HiddenGitSnapshotBackend;
 use Ineersa\HatfieldExt\FileRewind\RewindPathScope;
 use Ineersa\HatfieldExt\FileRewind\RewindProjectIdentity;
 use Ineersa\HatfieldExt\FileRewind\RewindStoragePaths;
-use Ineersa\Tui\Picker\TreePickerController;
+use Ineersa\Tui\Picker\HistoryPickerController;
 use Ineersa\Tui\Runtime\BridgeTuiExtensionContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
@@ -52,14 +52,14 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
             $this->seedCheckpoint($projectDir, $sessionId, 3);
 
             $harness = new VirtualTuiHarness(sessionId: $sessionId);
-            $provider = $this->createStub(TurnTreeProviderInterface::class);
+            $provider = $this->createStub(HistoryProviderInterface::class);
             $provider->method('forSession')->willReturn($this->sampleTree($sessionId));
 
             $runtime = $this->buildTuiContext()
                 ->withTui($harness->tui())
                 ->withScreen($harness->screen())
                 ->withState(new TuiSessionState($sessionId))
-                ->withTurnTreeProvider($provider)
+                ->withHistoryProvider($provider)
                 ->build();
 
             $picker = new FileRewindPickerController($this->makeService($projectDir));
@@ -88,14 +88,14 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
         $tree = $this->sampleTree($sessionId);
 
         $harness = new VirtualTuiHarness(sessionId: $sessionId);
-        $provider = $this->createStub(TurnTreeProviderInterface::class);
+        $provider = $this->createStub(HistoryProviderInterface::class);
         $provider->method('forSession')->willReturn($tree);
 
         $runtime = $this->buildTuiContext()
             ->withTui($harness->tui())
             ->withScreen($harness->screen())
             ->withState(new TuiSessionState($sessionId))
-            ->withTurnTreeProvider($provider)
+            ->withHistoryProvider($provider)
             ->build();
 
         $bridge = new BridgeTuiExtensionContext($runtime);
@@ -105,7 +105,7 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
         $this->assertSame(['user', 'user'], array_column($rows, 'displayRole'));
         $this->assertNotContains(2, array_column($rows, 'turnNo'), 'assistant/tool-cycle turn must not be a public row');
 
-        $historyTurnNos = TreePickerController::flattenTurnOrder($tree);
+        $historyTurnNos = HistoryPickerController::userPromptTurnNos($tree);
         $this->assertSame([1, 3], $historyTurnNos);
         $this->assertNotContains(2, $historyTurnNos, '/history must stay user-prompt-only');
     }
@@ -147,18 +147,16 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
         );
     }
 
-    private function sampleTree(string $sessionId): TurnTreeView
+    private function sampleTree(string $sessionId): HistoryView
     {
-        return new TurnTreeView(
+        return new HistoryView(
             runId: $sessionId,
-            nodesByTurnNo: [
-                1 => new TurnTreeNodeView(1, null, [2], 2, 'Create file', 'Hey', null, false, 'user'),
-                2 => new TurnTreeNodeView(2, 1, [3], 4, 'Edit file', 'Follow', null, false, 'assistant'),
-                3 => new TurnTreeNodeView(3, 2, [], 6, 'Append line', 'Third', null, true, 'user'),
+            turns: [
+                new HistoryPromptView(1, 'Create file', 'user', '', false),
+                new HistoryPromptView(2, 'Edit file', 'assistant', '', false),
+                new HistoryPromptView(3, 'Append line', 'user', '', true),
             ],
-            rootTurnNos: [1],
-            currentLeafTurnNo: 3,
-            activePathTurnNos: [1, 2, 3],
+            positionTurnNo: 3,
         );
     }
 }

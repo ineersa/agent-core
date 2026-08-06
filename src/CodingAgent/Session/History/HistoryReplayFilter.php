@@ -2,59 +2,52 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Session\Replay;
+namespace Ineersa\CodingAgent\Session\History;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 
 /**
- * Filters a canonical event stream to only active linear-history events.
+ * Filters canonical events to the retained linear-history prefix at a position.
  *
- * Uses {@see TurnTreeProjector} to determine retained active turns, then includes:
- *  - Run-level events (turnNo === 0, e.g. run_started)
- *  - Events whose turnNo is in the active retained list up to the target tip
- *  - History metadata events (leaf_set, history_tail_discarded)
+ * Includes:
+ *  - run-level events (turnNo === 0)
+ *  - events for retained turns through the position
+ *  - history metadata (history_position_set, history_tail_discarded)
  *
- * Discarded/abandoned turn events stay in events.jsonl but are excluded from
- * hot prompt, transcript, and RunState rebuild.
+ * Suppresses turn-seeding commands whose created turn is outside the retained
+ * prefix (prevents resurrecting abandoned prompts / issue #183 hangs).
  */
-final class TurnTreeReplayFilter
+final class HistoryReplayFilter
 {
     public function __construct(
-        private readonly TurnTreeProjector $projector,
+        private readonly HistoryProjector $projector,
     ) {
     }
 
     /**
      * @param list<RunEvent> $events
      */
-    public function filter(string $runId, array $events): TurnBranchReplayDTO
+    public function filter(string $runId, array $events): HistoryReplayResultDTO
     {
-        $tree = $this->projector->build($runId, $events);
+        $history = $this->projector->build($runId, $events);
 
-        return $this->filterForLeaf($runId, $events, $tree->currentLeafTurnNo);
+        return $this->filterAtPosition($runId, $events, $history->positionTurnNo);
     }
 
     /**
      * @param list<RunEvent> $events
      */
-    public function filterForLeaf(string $runId, array $events, ?int $targetLeafTurnNo = null): TurnBranchReplayDTO
+    public function filterAtPosition(string $runId, array $events, ?int $positionTurnNo = null): HistoryReplayResultDTO
     {
-        $tree = $this->projector->build($runId, $events);
+        $history = $this->projector->build($runId, $events);
 
-        if (null === $targetLeafTurnNo) {
-            $targetLeafTurnNo = $tree->currentLeafTurnNo;
+        // null = current selected position; 0 = before first retained turn.
+        if (null === $positionTurnNo) {
+            $positionTurnNo = $history->positionTurnNo;
         }
 
-        // Active path through target tip (prefix of linear history).
-        $activePathTurnNos = null !== $targetLeafTurnNo && [] !== $tree->nodesByTurnNo
-            ? TurnTreeProjector::activePathTo($targetLeafTurnNo, $tree->nodesByTurnNo)
-            : [];
-
-        // When positioned before a selected user prompt (leaf_set on previous
-        // boundary), seed commands that create the next discarded/unselected
-        // turn must not resurrect that turn's prompt into hot state.
+        $retainedTurnNos = $history->retainedTurnNosThrough($positionTurnNo);
         $commandSeqToCreatedTurn = $this->buildCommandSeqToCreatedTurnMap($events);
 
         $canonicalEventCount = \count($events);
@@ -67,8 +60,8 @@ final class TurnTreeReplayFilter
                 continue;
             }
 
-            if (\in_array($event->turnNo, $activePathTurnNos, true)) {
-                if ($this->shouldExcludeTurnSeedingCommand($event, $commandSeqToCreatedTurn, $activePathTurnNos)) {
+            if (\in_array($event->turnNo, $retainedTurnNos, true)) {
+                if ($this->shouldExcludeTurnSeedingCommand($event, $commandSeqToCreatedTurn, $retainedTurnNos)) {
                     continue;
                 }
                 $filtered[] = $event;
@@ -82,12 +75,12 @@ final class TurnTreeReplayFilter
 
         usort($filtered, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
 
-        return new TurnBranchReplayDTO(
+        return new HistoryReplayResultDTO(
             events: $filtered,
             canonicalEventCount: $canonicalEventCount,
             canonicalLastSeq: $canonicalLastSeq,
-            activePathTurnNos: $activePathTurnNos,
-            currentLeafTurnNo: $targetLeafTurnNo,
+            retainedTurnNos: $retainedTurnNos,
+            positionTurnNo: $positionTurnNo,
         );
     }
 
@@ -138,12 +131,12 @@ final class TurnTreeReplayFilter
 
     /**
      * @param array<int, int> $commandSeqToCreatedTurn
-     * @param list<int>       $activePathTurnNos
+     * @param list<int>       $retainedTurnNos
      */
     private function shouldExcludeTurnSeedingCommand(
         RunEvent $event,
         array $commandSeqToCreatedTurn,
-        array $activePathTurnNos,
+        array $retainedTurnNos,
     ): bool {
         if (!$this->isTurnSeedingCommandEvent($event)) {
             return false;
@@ -154,13 +147,13 @@ final class TurnTreeReplayFilter
             return false;
         }
 
-        return !\in_array($createdTurnNo, $activePathTurnNos, true);
+        return !\in_array($createdTurnNo, $retainedTurnNos, true);
     }
 
     private function isHistoryMetadataEvent(RunEvent $event): bool
     {
         return \in_array($event->type, [
-            RunEventTypeEnum::LeafSet->value,
+            RunEventTypeEnum::HistoryPositionSet->value,
             RunEventTypeEnum::HistoryTailDiscarded->value,
         ], true);
     }

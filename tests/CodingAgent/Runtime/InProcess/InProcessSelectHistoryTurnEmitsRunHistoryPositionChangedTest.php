@@ -19,27 +19,27 @@ use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * Thesis: In-process rewind MUST emit RunLeafChanged into the transient sink,
- * because RuntimeEventTranslator drops LeafSet canonical events — without this
- * emission the TUI poller never sees the leaf change and the transcript is
+ * Thesis: In-process select_history_turn MUST emit RunHistoryPositionChanged into the transient sink,
+ * because RuntimeEventTranslator drops history_position_set canonical events — without this
+ * emission the TUI poller never sees the position change and the transcript is
  * never rebuilt.
  *
  * This test would have FAILED before FIX 1: the send() match arm called
- * runRewindService->rewind() directly and discarded the result, so the
- * RunLeafChanged emission in handleInProcessRewind() was dead code.
+ * historySelectionService->selectPrompt() directly and discarded the result, so the
+ * RunHistoryPositionChanged emission in handleInProcessSelectHistoryTurn() was dead code.
  *
  * Container-based: anonymous-class stubs for EventStoreInterface and
  * RunStoreInterface are injected once in setUpBeforeClass(), then
  * the real InProcessAgentSessionClient is exercised. The shared
- * InMemoryRuntimeEventSink is drained to assert RunLeafChanged.
+ * InMemoryRuntimeEventSink is drained to assert RunHistoryPositionChanged.
  *
  * @coversNothing — covers the wiring contract between send() match arm,
- * handleInProcessRewind(), and InMemoryRuntimeEventSink::emit().
+ * handleInProcessSelectHistoryTurn(), and InMemoryRuntimeEventSink::emit().
  */
 #[CoversNothing]
-final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCase
+final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends IsolatedKernelTestCase
 {
-    private const string RUN_ID = 'test-rewind-run';
+    private const string RUN_ID = 'test-history-select-run';
 
     public static function setUpBeforeClass(): void
     {
@@ -111,7 +111,7 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
     }
 
     #[Test]
-    public function sendRewindToTurnEmitsRunLeafChangedIntoSink(): void
+    public function sendSelectHistoryTurnEmitsRunHistoryPositionChangedIntoSink(): void
     {
         /** @var InProcessAgentSessionClient $client */
         $client = self::getContainer()->get(InProcessAgentSessionClient::class);
@@ -121,7 +121,7 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
 
         // ── Exercise ─────────────────────────────────────────────
         $client->send(self::RUN_ID, new UserCommand(
-            type: 'rewind_to_turn',
+            type: 'select_history_turn',
             payload: ['turn_no' => 1],
         ));
 
@@ -129,15 +129,15 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
         /** @var list<RuntimeEvent> $events */
         $events = iterator_to_array($sink->drain(self::RUN_ID));
 
-        $this->assertCount(1, $events, 'Expected exactly one RunLeafChanged event in the transient sink');
+        $this->assertCount(1, $events, 'Expected exactly one RunHistoryPositionChanged event in the transient sink');
 
         $event = $events[0];
-        $this->assertSame(RuntimeEventTypeEnum::RunLeafChanged->value, $event->type);
+        $this->assertSame(RuntimeEventTypeEnum::RunHistoryPositionChanged->value, $event->type);
         $this->assertSame(self::RUN_ID, $event->runId);
         // Selecting user prompt turn 1 positions before it (retained boundary 0).
-        $this->assertSame(0, $event->payload['turn_no'] ?? null);
+        $this->assertSame(0, $event->payload['position_turn_no'] ?? null);
         $this->assertSame(1, $event->payload['selected_prompt_turn_no'] ?? null);
-        $this->assertIsInt($event->payload['leaf_set_seq'] ?? null);
+        $this->assertIsInt($event->payload['position_event_seq'] ?? null);
     }
 
     /**
@@ -169,8 +169,8 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
                 runId: self::RUN_ID,
                 seq: 3,
                 turnNo: 1,
-                type: RunEventTypeEnum::LeafSet->value,
-                payload: ['turn_no' => 1, 'previous_turn_no' => 0, 'reason' => 'continue'],
+                type: RunEventTypeEnum::HistoryPositionSet->value,
+                payload: ['position_turn_no' => 1, 'previous_position_turn_no' => 0, 'reason' => 'continue'],
                 createdAt: new \DateTimeImmutable('2026-06-29T00:00:02Z'),
             ),
         ];

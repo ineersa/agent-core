@@ -39,7 +39,7 @@ final readonly class TuiRuntimeEventApplier
             $state->usage->accumulate($event);
         }
 
-        if (RuntimeEventTypeEnum::RunLeafChanged->value === $event->type) {
+        if (RuntimeEventTypeEnum::RunHistoryPositionChanged->value === $event->type) {
             // Reset live projector for post-leaf events in the same poll batch.
             // Leaf transcript blocks are assigned wholesale by RuntimeEventPoller
             // from SessionTranscriptProvider (isolated projector).

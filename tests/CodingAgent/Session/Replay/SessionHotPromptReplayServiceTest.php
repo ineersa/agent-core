@@ -10,10 +10,9 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
-use Ineersa\CodingAgent\Session\Replay\BranchReplayFilterContractAdapter;
+use Ineersa\CodingAgent\Session\History\HistoryProjector;
+use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
-use Ineersa\CodingAgent\Session\Replay\TurnTreeReplayFilter;
-use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 use PHPUnit\Framework\TestCase;
 
 final class SessionHotPromptReplayServiceTest extends TestCase
@@ -472,16 +471,16 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $this->assertTrue($rebuiltState->isContiguous);
     }
 
-    // ── Branch-aware prompt replay ──────────────────────────────────────────
+    // ── Linear history prompt replay ─────────────────────────────────────────
 
-    public function testBranchReplayExcludesAbandonedBranchMessages(): void
+    public function testHistoryReplayExcludesDiscardedMessages(): void
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new InMemoryPromptStateStore();
-        $treeFilter = new BranchReplayFilterContractAdapter(new TurnTreeReplayFilter(new TurnTreeProjector()));
-        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), null, null, $treeFilter);
+        $historyFilter = new HistoryReplayFilter(new HistoryProjector());
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), null, null, $historyFilter);
 
-        $runId = 'run-branch-replay';
+        $runId = 'run-history-replay';
 
         // Turn 1: initial
         $this->appendTo($eventStore, $runId, 'run_started', 1, 0, [
@@ -507,16 +506,16 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $this->appendTo($eventStore, $runId, RunEventTypeEnum::TurnAdvanced->value, 3, 1, [
             'turn_no' => 1, 'step_id' => 's1',
         ]);
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LeafSet->value, 4, 1, [
-            'turn_no' => 1, 'reason' => 'continue',
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::HistoryPositionSet->value, 4, 1, [
+            'position_turn_no' => 1, 'reason' => 'continue',
         ]);
 
         // Turn 2: follow-up (later discarded)
         $this->appendTo($eventStore, $runId, RunEventTypeEnum::TurnAdvanced->value, 5, 2, [
             'turn_no' => 2, 'step_id' => 's2',
         ]);
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LeafSet->value, 6, 2, [
-            'turn_no' => 2, 'reason' => 'continue',
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::HistoryPositionSet->value, 6, 2, [
+            'position_turn_no' => 2, 'reason' => 'continue',
         ]);
         $this->appendTo($eventStore, $runId, RunEventTypeEnum::LlmStepCompleted->value, 7, 2, [
             'step_id' => 's2',
@@ -531,8 +530,8 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         ]);
 
         // Select tip 1 then discard forward tail; new turn 3 is active.
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LeafSet->value, 8, 1, [
-            'turn_no' => 1, 'reason' => 'history_select',
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::HistoryPositionSet->value, 8, 1, [
+            'position_turn_no' => 1, 'reason' => 'history_select',
         ]);
         $this->appendTo($eventStore, $runId, RunEventTypeEnum::HistoryTailDiscarded->value, 9, 1, [
             'after_turn_no' => 1, 'reason' => 'mutate_behind_tip',
@@ -540,8 +539,8 @@ final class SessionHotPromptReplayServiceTest extends TestCase
         $this->appendTo($eventStore, $runId, RunEventTypeEnum::TurnAdvanced->value, 10, 3, [
             'turn_no' => 3, 'step_id' => 's3',
         ]);
-        $this->appendTo($eventStore, $runId, RunEventTypeEnum::LeafSet->value, 11, 3, [
-            'turn_no' => 3, 'reason' => 'continue',
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::HistoryPositionSet->value, 11, 3, [
+            'position_turn_no' => 3, 'reason' => 'continue',
         ]);
         $this->appendTo($eventStore, $runId, RunEventTypeEnum::LlmStepCompleted->value, 12, 3, [
             'step_id' => 's3',

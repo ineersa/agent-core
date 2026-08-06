@@ -77,7 +77,7 @@ final class RuntimeEventPoller
 
             $hasNew = false;
             $processingRemoved = false;
-            $hasRunLeafChanged = false;
+            $hasRunHistoryPositionChanged = false;
             $removedProcessing = false;
 
             foreach ($events as $runtimeEvent) {
@@ -97,26 +97,26 @@ final class RuntimeEventPoller
 
                 $this->eventApplier->apply($state, $runtimeEvent);
 
-                // ── Leaf change: rebuild transcript wholesale ──
+                // ── History position change: rebuild transcript wholesale ──
                 // The applier resets live projector state; projected blocks come from
                 // SessionTranscriptProvider (isolated projector), not TUI local replay.
-                if (RuntimeEventTypeEnum::RunLeafChanged->value === $runtimeEvent->type) {
-                    // turn_no is retained boundary tip; 0 means before first turn (valid).
-                    $hasTurnNoKey = \array_key_exists('turn_no', $runtimeEvent->payload);
-                    $leafTurnNo = (int) ($runtimeEvent->payload['turn_no'] ?? -1);
+                if (RuntimeEventTypeEnum::RunHistoryPositionChanged->value === $runtimeEvent->type) {
+                    // position_turn_no is retained tip; 0 means before first turn (valid).
+                    $hasPositionKey = \array_key_exists('position_turn_no', $runtimeEvent->payload);
+                    $positionTurnNo = (int) ($runtimeEvent->payload['position_turn_no'] ?? -1);
                     $editorPromptText = \is_string($runtimeEvent->payload['editor_prompt_text'] ?? null)
                         ? $runtimeEvent->payload['editor_prompt_text']
                         : '';
-                    // Always treat leaf change as wholesale replace so the mounted path
+                    // Always treat history position change as wholesale replace so the mounted path
                     // receives an explicit full snapshot (including empty after failure).
-                    $hasRunLeafChanged = true;
+                    $hasRunHistoryPositionChanged = true;
 
-                    if ($hasTurnNoKey && $leafTurnNo >= 0 && null !== $state->handle) {
+                    if ($hasPositionKey && $positionTurnNo >= 0 && null !== $state->handle) {
                         try {
-                            if ($leafTurnNo > 0) {
-                                $snapshot = $this->sessionTranscriptProvider->transcriptForLeaf(
+                            if ($positionTurnNo > 0) {
+                                $snapshot = $this->sessionTranscriptProvider->transcriptAtPosition(
                                     $state->handle->runId,
-                                    $leafTurnNo,
+                                    $positionTurnNo,
                                 );
                                 $state->replaceTranscript($snapshot->transcriptBlocks);
                             } else {
@@ -124,9 +124,9 @@ final class RuntimeEventPoller
                                 $state->replaceTranscript([]);
                             }
                         } catch (\Throwable $e) {
-                            $this->logger->warning('runtime_event_poller.leaf_changed_rebuild_failed', [
+                            $this->logger->warning('runtime_event_poller.history_position_changed_rebuild_failed', [
                                 'run_id' => $state->handle->runId,
-                                'leaf_turn_no' => $leafTurnNo,
+                                'position_turn_no' => $positionTurnNo,
                                 'exception' => $e->getMessage(),
                             ]);
                             // Intentional degradation: clear transcript rather than show stale
@@ -138,10 +138,10 @@ final class RuntimeEventPoller
                             $state->pendingEditorPromptText = $editorPromptText;
                         }
                     } else {
-                        // Malformed RunLeafChanged: missing turn_no, or no handle.
-                        $this->logger->warning('runtime_event_poller.leaf_changed_malformed', [
+                        // Malformed RunHistoryPositionChanged: missing position_turn_no, or no handle.
+                        $this->logger->warning('runtime_event_poller.history_position_changed_malformed', [
                             'run_id' => null !== $state->handle ? $state->handle->runId : 'unknown',
-                            'leaf_turn_no' => $leafTurnNo,
+                            'position_turn_no' => $positionTurnNo,
                         ]);
                         $state->replaceTranscript([]);
                     }
@@ -240,7 +240,7 @@ final class RuntimeEventPoller
                 }
             }
 
-            if ($hasRunLeafChanged) {
+            if ($hasRunHistoryPositionChanged) {
                 // Wholesale leaf replace already applied; drain projector dirty set for any
                 // post-leaf events in the same batch, then return an explicit full snapshot.
                 $postLeaf = $this->eventApplier->drainProjectedChanges();

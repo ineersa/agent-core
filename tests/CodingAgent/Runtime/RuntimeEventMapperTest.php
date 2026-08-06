@@ -708,18 +708,17 @@ final class RuntimeEventMapperTest extends TestCase
         $this->assertNull($result);
     }
 
-    public function testSkipsLeafSet(): void
+    public function testSkipsHistoryPositionSet(): void
     {
-        $event = $this->runEvent('leaf_set', [
-            'turn_no' => 2,
-            'parent_turn_no' => 1,
-            'previous_turn_no' => 1,
+        $event = $this->runEvent('history_position_set', [
+            'position_turn_no' => 2,
+            'previous_position_turn_no' => 1,
             'reason' => 'continue',
         ]);
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNull($result, 'leaf_set is tree metadata and must not produce a runtime event');
+        $this->assertNull($result, 'history_position_set is history metadata and must not produce a runtime event');
     }
 
     // ── Status fallback normalization ────────────────────────────────────────

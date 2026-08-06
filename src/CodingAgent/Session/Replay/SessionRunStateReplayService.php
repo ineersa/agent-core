@@ -10,11 +10,11 @@ use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
-use Ineersa\AgentCore\Contract\TurnTree\BranchReplayFilterInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
+use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Psr\Log\LoggerInterface;
 
 final readonly class SessionRunStateReplayService implements RunStateRebuilderInterface
@@ -24,7 +24,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
         private LoggerInterface $logger,
         private RunStateReducer $runStateReducer,
         private ReplayEventPreparer $replayEventPreparer,
-        private ?BranchReplayFilterInterface $turnTreeReplayFilter = null,
+        private ?HistoryReplayFilter $historyReplayFilter = null,
     ) {
     }
 
@@ -69,21 +69,19 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                 'event_count' => \count($sortedEvents),
             ]);
 
-            // Filter to active branch events when tree metadata is available.
-            // Abandoned sibling branch events (message/tool/assistant content for
-            // turns not on the active path) are excluded from replay while the
-            // canonical stream integrity checks remain on the full sorted stream.
+            // Filter to retained history when available. Discarded-turn content is
+            // excluded while canonical integrity checks remain on the full stream.
             $filteredEvents = $sortedEvents;
-            if (null !== $this->turnTreeReplayFilter) {
-                $branchReplay = $this->turnTreeReplayFilter->filter($runId, $sortedEvents);
-                $filteredEvents = $branchReplay->events;
+            if (null !== $this->historyReplayFilter) {
+                $historyReplay = $this->historyReplayFilter->filter($runId, $sortedEvents);
+                $filteredEvents = $historyReplay->events;
 
-                $this->logger->info('run_state_replay.branch_filtered', [
+                $this->logger->info('run_state_replay.history_filtered', [
                     'run_id' => $runId,
-                    'canonical_event_count' => $branchReplay->canonicalEventCount,
+                    'canonical_event_count' => $historyReplay->canonicalEventCount,
                     'filtered_event_count' => \count($filteredEvents),
-                    'current_leaf_turn_no' => $branchReplay->currentLeafTurnNo,
-                    'active_branch_turns' => $branchReplay->activePathTurnNos,
+                    'position_turn_no' => $historyReplay->positionTurnNo,
+                    'retained_turns' => $historyReplay->retainedTurnNos,
                 ]);
             }
 
@@ -91,7 +89,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
 
             // After replay, ensure lastSeq reflects the full canonical stream
             // so state is current with respect to the append-only event log,
-            // even when replaying an earlier branch/leaf.
+            // even when replaying an earlier history position.
             $rebuiltState = new RunState(
                 runId: $rebuiltState->runId,
                 status: $rebuiltState->status,
@@ -131,7 +129,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
         }
     }
 
-    public function rebuildForLeaf(RunState $state, string $runId, int $targetLeafTurnNo): RunStateReplayResult
+    public function rebuildAtPosition(RunState $state, string $runId, int $positionTurnNo): RunStateReplayResult
     {
         $events = $this->eventStore->allFor($runId);
 
@@ -156,16 +154,16 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                     'duplicate_count' => \count($duplicateSeqs),
                 ]);
 
-                throw new RunStateDuplicateSequenceReplayException(\sprintf('Cannot replay run %s for leaf %d: event history contains %d duplicate sequence number(s): %s.', $runId, $targetLeafTurnNo, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
+                throw new RunStateDuplicateSequenceReplayException(\sprintf('Cannot replay run %s at position %d: event history contains %d duplicate sequence number(s): %s.', $runId, $positionTurnNo, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
             }
 
             // Boundary 0 = before first turn: only run-level events (turnNo === 0).
-            if (0 === $targetLeafTurnNo) {
+            if (0 === $positionTurnNo) {
                 $filteredEvents = array_values(array_filter(
                     $sortedEvents,
                     static fn (RunEvent $event): bool => 0 === $event->turnNo
                         || \in_array($event->type, [
-                            RunEventTypeEnum::LeafSet->value,
+                            RunEventTypeEnum::HistoryPositionSet->value,
                             RunEventTypeEnum::HistoryTailDiscarded->value,
                         ], true),
                 ));
@@ -198,26 +196,25 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
 
             // Filter to the target tip's active retained prefix.
             $filteredEvents = $sortedEvents;
-            if (null !== $this->turnTreeReplayFilter) {
-                $branchReplay = $this->turnTreeReplayFilter->filterForLeaf($runId, $sortedEvents, $targetLeafTurnNo);
-                $filteredEvents = $branchReplay->events;
+            if (null !== $this->historyReplayFilter) {
+                $historyReplay = $this->historyReplayFilter->filterAtPosition($runId, $sortedEvents, $positionTurnNo);
+                $filteredEvents = $historyReplay->events;
 
-                $this->logger->info('run_state_replay.rebuild_for_leaf_filtered', [
+                $this->logger->info('run_state_replay.rebuild_at_position_filtered', [
                     'run_id' => $runId,
-                    'target_leaf_turn_no' => $targetLeafTurnNo,
-                    'canonical_event_count' => $branchReplay->canonicalEventCount,
+                    'position_turn_no' => $positionTurnNo,
+                    'canonical_event_count' => $historyReplay->canonicalEventCount,
                     'filtered_event_count' => \count($filteredEvents),
-                    'active_branch_turns' => $branchReplay->activePathTurnNos,
+                    'retained_turns' => $historyReplay->retainedTurnNos,
                 ]);
 
                 // History-select replay must not resurrect post-completion follow_up
-                // commands that were queued on the target turn to launch a later turn
-                // (e.g. pineapple after turn-1 agent_end). Those leave status=Running
-                // and suppress ApplyCommandHandler's immediate AdvanceRun for the next
-                // follow_up after a later mutation discard.
-                $filteredEvents = $this->filterAbandonedChildLaunchCommandsOnTargetLeaf(
+                // commands that were queued on the position turn to launch a later turn.
+                // Those leave status=Running and suppress ApplyCommandHandler's immediate
+                // AdvanceRun for the next follow_up after a later mutation discard.
+                $filteredEvents = $this->filterAbandonedLaunchCommandsAtPosition(
                     $sortedEvents,
-                    $targetLeafTurnNo,
+                    $positionTurnNo,
                     $filteredEvents,
                 );
             }
@@ -244,9 +241,9 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                 model: $rebuiltState->model,
             );
 
-            $this->logger->info('run_state_replay.rebuilt_for_leaf', [
+            $this->logger->info('run_state_replay.rebuilt_at_position', [
                 'run_id' => $runId,
-                'target_leaf_turn_no' => $targetLeafTurnNo,
+                'position_turn_no' => $positionTurnNo,
                 'rebuilt_message_count' => \count($rebuiltState->messages),
                 'rebuilt_status' => $rebuiltState->status->value,
                 'rebuilt_turn_no' => $rebuiltState->turnNo,
@@ -269,39 +266,39 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
      *
      * @return list<RunEvent>
      */
-    private function filterAbandonedChildLaunchCommandsOnTargetLeaf(
+    private function filterAbandonedLaunchCommandsAtPosition(
         array $sortedEvents,
-        int $targetLeafTurnNo,
+        int $positionTurnNo,
         array $filteredEvents,
     ): array {
-        // Only relevant when rebuilding immediately after a rewind leaf_set
-        // (RunRewindService::rewind → rebuildForLeaf). Strip follow_up commands
-        // that were queued on the target turn after its last completion but
-        // before the rewind leaf_set — those launched an abandoned child branch.
-        $rewindLeafSetSeq = 0;
+        // Only relevant when rebuilding immediately after a history_position_set
+        // (HistorySelectionService::selectPrompt → rebuildAtPosition). Strip follow_up
+        // commands queued on the position turn after its last completion but before
+        // the history_select marker — those launched a discarded later turn.
+        $historySelectSeq = 0;
         foreach ($sortedEvents as $event) {
-            if (RunEventTypeEnum::LeafSet->value !== $event->type) {
+            if (RunEventTypeEnum::HistoryPositionSet->value !== $event->type) {
                 continue;
             }
 
             $payload = $event->payload;
-            $leafTurnNo = (int) ($payload['turn_no'] ?? 0);
+            $eventPosition = (int) ($payload['position_turn_no'] ?? 0);
             $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : '';
 
-            if ($leafTurnNo !== $targetLeafTurnNo || !\in_array($reason, ['rewind', 'history_select'], true)) {
+            if ($eventPosition !== $positionTurnNo || !\in_array($reason, ['history_select'], true)) {
                 continue;
             }
 
-            $rewindLeafSetSeq = max($rewindLeafSetSeq, $event->seq);
+            $historySelectSeq = max($historySelectSeq, $event->seq);
         }
 
-        if (0 === $rewindLeafSetSeq) {
+        if (0 === $historySelectSeq) {
             return $filteredEvents;
         }
 
         $turnCompletionSeq = 0;
         foreach ($sortedEvents as $event) {
-            if ($event->turnNo !== $targetLeafTurnNo || $event->seq >= $rewindLeafSetSeq) {
+            if ($event->turnNo !== $positionTurnNo || $event->seq >= $historySelectSeq) {
                 continue;
             }
 
@@ -319,8 +316,8 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
 
         return array_values(array_filter(
             $filteredEvents,
-            static function (RunEvent $event) use ($targetLeafTurnNo, $turnCompletionSeq, $rewindLeafSetSeq): bool {
-                if ($event->turnNo !== $targetLeafTurnNo) {
+            static function (RunEvent $event) use ($positionTurnNo, $turnCompletionSeq, $historySelectSeq): bool {
+                if ($event->turnNo !== $positionTurnNo) {
                     return true;
                 }
 
@@ -335,7 +332,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                     return true;
                 }
 
-                return $event->seq >= $rewindLeafSetSeq;
+                return $event->seq >= $historySelectSeq;
             },
         ));
     }

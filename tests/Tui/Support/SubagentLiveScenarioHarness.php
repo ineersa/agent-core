@@ -10,13 +10,13 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\EventListener\RuntimeExceptionPolicySubscriber;
+use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeErrorCaptureConfig;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
@@ -99,7 +99,7 @@ final class SubagentLiveScenarioHarness
         string $parentRunId = 'parent-run-1',
         ?EntityManagerInterface $entityManager = null,
         ?TuiSessionSwitchServiceInterface $switchService = null,
-        ?TurnTreeProviderInterface $turnTreeProvider = null,
+        ?HistoryProviderInterface $historyProvider = null,
     ): self {
         $state = new TuiSessionState($parentSessionId);
         $state->handle = new RunHandle($parentRunId);
@@ -162,7 +162,7 @@ final class SubagentLiveScenarioHarness
             ticks: new TuiTickDispatcher(),
             switch: $switchService,
             lifecycle: new TuiSessionLifecycleDispatcher(),
-            turnTreeProvider: $turnTreeProvider ?? self::emptyTurnTreeProvider(),
+            historyProvider: $historyProvider ?? self::emptyHistoryProvider(),
         );
 
         $submitListener = new SubmitListener(
@@ -341,18 +341,12 @@ final class SubagentLiveScenarioHarness
         return array_map(static fn (array $row): string => $row['label'], $items);
     }
 
-    private static function emptyTurnTreeProvider(): TurnTreeProviderInterface
+    private static function emptyHistoryProvider(): HistoryProviderInterface
     {
-        return new class implements TurnTreeProviderInterface {
-            public function forSession(string $runId): TurnTreeView
+        return new class implements HistoryProviderInterface {
+            public function forSession(string $runId): HistoryView
             {
-                return new TurnTreeView(
-                    runId: $runId,
-                    nodesByTurnNo: [],
-                    rootTurnNos: [],
-                    currentLeafTurnNo: null,
-                    activePathTurnNos: [],
-                );
+                return new HistoryView(runId: $runId, turns: [], positionTurnNo: null);
             }
         };
     }

@@ -12,10 +12,9 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
-use Ineersa\CodingAgent\Session\Replay\BranchReplayFilterContractAdapter;
+use Ineersa\CodingAgent\Session\History\HistoryProjector;
+use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService;
-use Ineersa\CodingAgent\Session\Replay\TurnTreeReplayFilter;
-use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
@@ -24,20 +23,20 @@ final class SessionRunStateReplayServiceTest extends TestCase
     private InMemoryEventStore $eventStore;
     private SessionRunStateReplayService $service;
     private RunStateReducer $reducer;
-    private BranchReplayFilterContractAdapter $treeFilter;
+    private HistoryReplayFilter $historyFilter;
     private string $runId = 'run-replay-test';
 
     protected function setUp(): void
     {
         $this->eventStore = new InMemoryEventStore();
-        $this->treeFilter = new BranchReplayFilterContractAdapter(new TurnTreeReplayFilter(new TurnTreeProjector()));
+        $this->historyFilter = new HistoryReplayFilter(new HistoryProjector());
         $this->reducer = new RunStateReducer();
         $this->service = new SessionRunStateReplayService(
             $this->eventStore,
             new NullLogger(),
             $this->reducer,
             new ReplayEventPreparer(),
-            $this->treeFilter,
+            $this->historyFilter,
         );
     }
 
@@ -790,14 +789,14 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status);
     }
 
-    // ── Branch replay ───────────────────────────────────────────────────────
+    // ── Linear history replay ───────────────────────────────────────────────
 
-    public function testBranchReplayExcludesAbandonedTurnMessages(): void
+    public function testHistoryReplayExcludesDiscardedTurnMessages(): void
     {
         // Build a canonical stream where:
         //   - Turn 1: initial user message, assistant response
-        //   - Turn 2: follow-up user message, assistant response (abandoned)
-        //   - Turn 3: new user message, assistant response (active branch from turn 1)
+        //   - Turn 2: follow-up user message, assistant response (discarded)
+        //   - Turn 3: new user message, assistant response (new tail from retained turn 1)
         $this->appendEventWithTurn('run_started', 1, 0, [
             'step_id' => 's0',
             'payload' => ['messages' => [
@@ -808,13 +807,11 @@ final class SessionRunStateReplayServiceTest extends TestCase
         // Turn 1
         $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 2, 1, [
             'turn_no' => 1,
-            'parent_turn_no' => null,
             'step_id' => 'step-1',
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 3, 1, [
-            'turn_no' => 1,
-            'parent_turn_no' => null,
-            'previous_turn_no' => null,
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 3, 1, [
+            'position_turn_no' => 1,
+            'previous_position_turn_no' => null,
             'reason' => 'continue',
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 4, 1, [
@@ -825,7 +822,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
             ],
         ]);
 
-        // Turn 2: follow-up from user (ABANDONED branch)
+        // Turn 2: follow-up from user (discarded turn)
         $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandApplied->value, 5, 1, [
             'kind' => 'steer',
             'idempotency_key' => 'steer-2',
@@ -837,13 +834,11 @@ final class SessionRunStateReplayServiceTest extends TestCase
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 6, 2, [
             'turn_no' => 2,
-            'parent_turn_no' => 1,
             'step_id' => 'step-2',
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 7, 2, [
-            'turn_no' => 2,
-            'parent_turn_no' => 1,
-            'previous_turn_no' => 1,
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 7, 2, [
+            'position_turn_no' => 2,
+            'previous_position_turn_no' => 1,
             'reason' => 'continue',
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 8, 2, [
@@ -855,9 +850,9 @@ final class SessionRunStateReplayServiceTest extends TestCase
         ]);
 
         // Select tip 1, discard forward tail (turn 2), then continue as turn 3.
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 9, 1, [
-            'turn_no' => 1,
-            'previous_turn_no' => 2,
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 9, 1, [
+            'position_turn_no' => 1,
+            'previous_position_turn_no' => 2,
             'reason' => 'history_select',
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::HistoryTailDiscarded->value, 10, 1, [
@@ -877,9 +872,9 @@ final class SessionRunStateReplayServiceTest extends TestCase
             'turn_no' => 3,
             'step_id' => 'step-3',
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 13, 3, [
-            'turn_no' => 3,
-            'previous_turn_no' => 1,
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 13, 3, [
+            'position_turn_no' => 3,
+            'previous_position_turn_no' => 1,
             'reason' => 'continue',
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 14, 3, [
@@ -900,7 +895,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         // Should include: system, initial user, turn 1 assistant, steer-2 user,
         // steer-3 user, turn 3 assistant.
-        // Must NOT include: turn 2 assistant (abandoned branch).
+        // Must NOT include: turn 2 assistant (discarded turn).
         $assistantTexts = [];
         foreach ($messages as $msg) {
             if ('assistant' === $msg->role && [] !== $msg->content) {
@@ -917,7 +912,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertSame(3, $result->rebuiltState->turnNo, 'Turn number should be 3 (current tip)');
     }
 
-    public function testBranchReplayThrowsNoExceptionDespiteFilteredGaps(): void
+    public function testHistoryReplayThrowsNoExceptionDespiteFilteredGaps(): void
     {
         // Verify that branch filtering does NOT trigger a non-contiguous
         // exception. Integrity checks run on the full stream which is contiguous.
@@ -926,27 +921,27 @@ final class SessionRunStateReplayServiceTest extends TestCase
             'payload' => ['messages' => []],
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 2, 1, [
-            'turn_no' => 1, 'parent_turn_no' => null, 'step_id' => 's1',
+            'turn_no' => 1, 'step_id' => 's1',
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 3, 1, [
-            'turn_no' => 1, 'reason' => 'continue',
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 3, 1, [
+            'position_turn_no' => 1, 'reason' => 'continue',
         ]);
         // Turn 2: abandoned
         $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 4, 2, [
-            'turn_no' => 2, 'parent_turn_no' => 1, 'step_id' => 's2',
+            'turn_no' => 2, 'step_id' => 's2',
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 5, 2, [
-            'turn_no' => 2, 'reason' => 'continue',
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 5, 2, [
+            'position_turn_no' => 2, 'reason' => 'continue',
         ]);
         // Rewind to turn 1 and create turn 3
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 6, 1, [
-            'turn_no' => 1, 'reason' => 'rewind',
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 6, 1, [
+            'position_turn_no' => 1, 'reason' => 'rewind',
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 7, 3, [
-            'turn_no' => 3, 'parent_turn_no' => 1, 'step_id' => 's3',
+            'turn_no' => 3, 'step_id' => 's3',
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 8, 3, [
-            'turn_no' => 3, 'reason' => 'continue',
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 8, 3, [
+            'position_turn_no' => 3, 'reason' => 'continue',
         ]);
 
         $state = RunState::queued($this->runId);
@@ -960,7 +955,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
     public function testRebuildForLeafAfterRewindExcludesAbandonedFollowUpCommands(): void
     {
         // Mirrors live rewind E2E: turn1 completes, follow_up on turn1 launches
-        // abandoned turn2, rewind to turn1. rebuildForLeaf must NOT replay the
+        // abandoned turn2, rewind to turn1. rebuildAtPosition must NOT replay the
         // abandoned follow_up (agent_command_*) or status stays Running and blocks
         // the next follow_up AdvanceRun.
         $this->appendEventWithTurn('run_started', 1, 0, [
@@ -970,10 +965,10 @@ final class SessionRunStateReplayServiceTest extends TestCase
             ]],
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 2, 1, [
-            'turn_no' => 1, 'parent_turn_no' => null, 'step_id' => 'step-1',
+            'turn_no' => 1, 'step_id' => 'step-1',
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 3, 1, [
-            'turn_no' => 1, 'reason' => 'continue',
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 3, 1, [
+            'position_turn_no' => 1, 'reason' => 'continue',
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 4, 1, [
             'assistant_message' => [
@@ -1005,10 +1000,10 @@ final class SessionRunStateReplayServiceTest extends TestCase
             ],
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 8, 2, [
-            'turn_no' => 2, 'parent_turn_no' => 1, 'step_id' => 'step-2',
+            'turn_no' => 2, 'step_id' => 'step-2',
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 9, 2, [
-            'turn_no' => 2, 'reason' => 'continue',
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 9, 2, [
+            'position_turn_no' => 2, 'reason' => 'continue',
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 10, 2, [
             'assistant_message' => [
@@ -1020,10 +1015,9 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->appendEventWithTurn(RunEventTypeEnum::AgentEnd->value, 11, 2, [
             'reason' => 'completed',
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 12, 1, [
-            'turn_no' => 1,
-            'previous_turn_no' => 2,
-            'parent_turn_no' => null,
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 12, 1, [
+            'position_turn_no' => 1,
+            'previous_position_turn_no' => 2,
             'reason' => 'rewind',
         ]);
 
@@ -1036,7 +1030,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
             model: 'test-model',
         );
 
-        $result = $this->service->rebuildForLeaf($state, $this->runId, 1);
+        $result = $this->service->rebuildAtPosition($state, $this->runId, 1);
 
         $this->assertTrue($result->rebuilt);
         $this->assertNotNull($result->rebuiltState);
@@ -1055,9 +1049,9 @@ final class SessionRunStateReplayServiceTest extends TestCase
     {
         // Regression for silent transcript corruption in multi-level rewind: a branch-seeding
         // follow_up command stamped with an ancestor's turnNo (the established queuing pattern)
-        // must survive rebuildForLeaf when that branch is the rewind target. The obsolete
+        // must survive rebuildAtPosition when that branch is the rewind target. The obsolete
         // filterPostRewindSiblingLaunchesOnPath stripped it because seq > rewind-cutoff, dropping
-        // the user message while keeping the assistant response. TurnTreeReplayFilter already
+        // the user message while keeping the assistant response. HistoryReplayFilter already
         // includes the command (createdTurn is on the active path); the post-filter must not
         // re-strip it.
         $this->appendEventWithTurn('run_started', 1, 0, [
@@ -1067,10 +1061,10 @@ final class SessionRunStateReplayServiceTest extends TestCase
             ]],
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 2, 1, [
-            'turn_no' => 1, 'parent_turn_no' => null, 'step_id' => 'step-1',
+            'turn_no' => 1, 'step_id' => 'step-1',
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 3, 1, [
-            'turn_no' => 1, 'reason' => 'continue',
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 3, 1, [
+            'position_turn_no' => 1, 'reason' => 'continue',
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 4, 1, [
             'assistant_message' => [
@@ -1082,7 +1076,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->appendEventWithTurn(RunEventTypeEnum::AgentEnd->value, 5, 1, [
             'reason' => 'completed',
         ]);
-        // Off-path turn 2 (abandoned) — keeps canonical seq contiguous 1..18
+        // Off-path turn 2 (discarded) — keeps canonical seq contiguous 1..18
         $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandQueued->value, 6, 1, [
             'kind' => 'follow_up',
             'idempotency_key' => 'fu-pineapple',
@@ -1102,10 +1096,10 @@ final class SessionRunStateReplayServiceTest extends TestCase
             ],
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 8, 2, [
-            'turn_no' => 2, 'parent_turn_no' => 1, 'step_id' => 'step-2',
+            'turn_no' => 2, 'step_id' => 'step-2',
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 9, 2, [
-            'turn_no' => 2, 'reason' => 'continue',
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 9, 2, [
+            'position_turn_no' => 2, 'reason' => 'continue',
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 10, 2, [
             'assistant_message' => [
@@ -1117,10 +1111,9 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->appendEventWithTurn(RunEventTypeEnum::AgentEnd->value, 11, 2, [
             'reason' => 'completed',
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 12, 1, [
-            'turn_no' => 1,
-            'previous_turn_no' => 2,
-            'parent_turn_no' => null,
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 12, 1, [
+            'position_turn_no' => 1,
+            'previous_position_turn_no' => 2,
             'reason' => 'rewind',
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandQueued->value, 13, 1, [
@@ -1142,10 +1135,10 @@ final class SessionRunStateReplayServiceTest extends TestCase
             ],
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 15, 3, [
-            'turn_no' => 3, 'parent_turn_no' => 1, 'step_id' => 'step-3',
+            'turn_no' => 3, 'step_id' => 'step-3',
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 16, 3, [
-            'turn_no' => 3, 'reason' => 'continue',
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 16, 3, [
+            'position_turn_no' => 3, 'reason' => 'continue',
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 17, 3, [
             'assistant_message' => [
@@ -1167,7 +1160,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
             model: 'test-model',
         );
 
-        $result = $this->service->rebuildForLeaf($state, $this->runId, 3);
+        $result = $this->service->rebuildAtPosition($state, $this->runId, 3);
 
         $this->assertTrue($result->rebuilt);
         $this->assertNotNull($result->rebuiltState);
@@ -1183,22 +1176,22 @@ final class SessionRunStateReplayServiceTest extends TestCase
         }
 
         $this->assertContains('apple', $userTexts,
-            'Branch-seeding follow_up stamped on ancestor turnNo must survive rebuildForLeaf for active-path leaf 3');
+            'Turn-seeding follow_up stamped on retained position turnNo must survive rebuildAtPosition for tip 3');
         $this->assertStringContainsString('apple noted', $result->rebuiltState->messages[\count($result->rebuiltState->messages) - 1]->content[0]['text'] ?? '',
             'Assistant response for turn 3 must remain when user message is preserved');
     }
 
     // ── Leaf_set is a no-op reducer ─────────────────────────────────────────
 
-    public function testLeafSetIsNoOpDuringReplay(): void
+    public function testHistoryPositionSetIsNoOpDuringReplay(): void
     {
         $this->appendEventWithTurn('run_started', 1, 0, [
             'step_id' => 's0',
             'payload' => ['messages' => []],
         ]);
-        // leaf_set must not change RunState.
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 2, 1, [
-            'turn_no' => 1,
+        // history_position_set must not change RunState.
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 2, 1, [
+            'position_turn_no' => 1,
             'reason' => 'continue',
         ]);
 
@@ -1208,7 +1201,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertTrue($result->rebuilt);
         // Status should remain the same as after run_started (Running)
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status);
-        $this->assertSame(0, $result->rebuiltState->turnNo, 'leaf_set must not advance turn');
+        $this->assertSame(0, $result->rebuiltState->turnNo, 'history_position_set must not advance turn');
     }
 
     // ── Compaction event replay ────────────────────────────────────────────
@@ -1921,11 +1914,10 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->appendEventWithTurn('run_started', 1, 0, ['step_id' => 's1', 'payload' => ['messages' => []]]);
         $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 2, 1, [
             'turn_no' => 1,
-            'parent_turn_no' => null,
             'step_id' => 's1',
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 3, 1, [
-            'turn_no' => 1,
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 3, 1, [
+            'position_turn_no' => 1,
             'reason' => 'continue',
         ]);
         $this->appendEventWithTurn('llm_step_failed', 4, 1, [
@@ -1948,10 +1940,9 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 6, 2, [
             'step_id' => 's2',
             'turn_no' => 2,
-            'parent_turn_no' => 1,
         ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 7, 2, [
-            'turn_no' => 2,
+        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 7, 2, [
+            'position_turn_no' => 2,
             'reason' => 'continue',
         ]);
 

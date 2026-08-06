@@ -120,7 +120,7 @@ final class TuiSessionState
 
     /**
      * Original user prompt text from /history selection, applied once by TickPollListener
-     * into the editor after RunLeafChanged rebuild. Null when nothing pending.
+     * into the editor after RunHistoryPositionChanged rebuild. Null when nothing pending.
      */
     public ?string $pendingEditorPromptText = null;
 

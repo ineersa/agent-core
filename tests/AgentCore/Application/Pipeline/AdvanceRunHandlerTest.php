@@ -65,8 +65,8 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $this->assertCount(2, $result->events);
         $this->assertSame('turn_advanced', $result->events[0]->type);
-        $this->assertSame('leaf_set', $result->events[1]->type);
-        $this->assertSame(12, $result->events[1]->payload['turn_no']);
+        $this->assertSame('history_position_set', $result->events[1]->type);
+        $this->assertSame(12, $result->events[1]->payload['position_turn_no']);
         $this->assertSame('continue', $result->events[1]->payload['reason']);
         $this->assertSame(12, $result->events[0]->payload['turn_no']);
 
@@ -130,11 +130,11 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertSame(11, $result->nextState->turnNo, 'Turn should advance to max(lastSeq, turnNo)+1');
         $this->assertNull($result->nextState->errorMessage, 'errorMessage should be cleared when transitioning Cancelled → Running');
 
-        // Should produce events including agent_command_applied, turn_advanced, and leaf_set
+        // Should produce events including agent_command_applied, turn_advanced, and history_position_set
         $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
         $this->assertContains('agent_command_applied', $eventTypes, 'Expected agent_command_applied event');
         $this->assertContains('turn_advanced', $eventTypes, 'Expected turn_advanced event');
-        $this->assertContains('leaf_set', $eventTypes, 'Expected leaf_set event');
+        $this->assertContains('history_position_set', $eventTypes, 'Expected history_position_set event');
 
         // Should produce an LLM step effect (the agent will process the follow-up)
         $this->assertCount(1, $result->effects);
@@ -188,7 +188,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
         $this->assertContains('agent_command_applied', $eventTypes, 'Expected agent_command_applied event');
         $this->assertContains('turn_advanced', $eventTypes, 'Expected turn_advanced event');
-        $this->assertContains('leaf_set', $eventTypes, 'Expected leaf_set event');
+        $this->assertContains('history_position_set', $eventTypes, 'Expected history_position_set event');
 
         $this->assertCount(1, $result->effects);
         $this->assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
@@ -226,14 +226,14 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertNotNull($result->nextState);
         $this->assertSame(4, $result->nextState->turnNo);
 
-        // leaf_set must be present
+        // history_position_set must be present
         $this->assertCount(2, $result->events);
         $this->assertSame('turn_advanced', $result->events[0]->type);
-        $this->assertSame('leaf_set', $result->events[1]->type);
+        $this->assertSame('history_position_set', $result->events[1]->type);
 
         $this->assertSame(4, $result->events[0]->payload['turn_no']);
-        $this->assertSame(4, $result->events[1]->payload['turn_no']);
-        $this->assertNull($result->events[1]->payload['previous_turn_no']);
+        $this->assertSame(4, $result->events[1]->payload['position_turn_no']);
+        $this->assertNull($result->events[1]->payload['previous_position_turn_no']);
     }
 
     public function testCancelledRunWithNoPendingCommandsIsNoOp(): void
@@ -457,12 +457,12 @@ final class AdvanceRunHandlerTest extends TestCase
             'Compact drain must emit agent_command_applied event.',
         );
 
-        // Must NOT produce turn_advanced or leaf_set — compact doesn't advance
+        // Must NOT produce turn_advanced or history_position_set — compact doesn't advance
         $this->assertNotContains('turn_advanced', $eventTypes,
             'Compact drain must NOT produce turn_advanced event.',
         );
-        $this->assertNotContains('leaf_set', $eventTypes,
-            'Compact drain must NOT produce leaf_set event.',
+        $this->assertNotContains('history_position_set', $eventTypes,
+            'Compact drain must NOT produce history_position_set event.',
         );
 
         // The CompactRun effect must be passed through

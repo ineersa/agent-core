@@ -11,5 +11,5 @@ interface RunStateRebuilderInterface
 {
     public function rebuildIfStale(RunState $state, string $runId): RunStateReplayResult;
 
-    public function rebuildForLeaf(RunState $state, string $runId, int $targetLeafTurnNo): RunStateReplayResult;
+    public function rebuildAtPosition(RunState $state, string $runId, int $positionTurnNo): RunStateReplayResult;
 }

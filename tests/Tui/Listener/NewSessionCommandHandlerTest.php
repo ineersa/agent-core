@@ -38,7 +38,7 @@ final class NewSessionCommandHandlerTest extends TestCase
                 $this->draftRequested = true;
             }
 
-            public function rewindToTurn(int $targetTurnNo): void
+            public function selectHistoryTurn(int $targetTurnNo): void
             {
                 // No-op: this test does not exercise rewind.
             }
