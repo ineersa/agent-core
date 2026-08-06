@@ -152,6 +152,33 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $state = $event->state;
         $toolCallId = (string) ($p['tool_call_id'] ?? '');
         $toolName = (string) ($p['tool_name'] ?? '');
+
+        // Direct !shell (and similar non-streamed paths) emit tool_execution.started
+        // with arguments but never tool_call.* events. Synthesize a finalized ToolCall
+        // once so the exchange card can show command: args. Guard by block id so normal
+        // LLM-streamed ToolCall blocks are never duplicated.
+        $arguments = $p['arguments'] ?? null;
+        if (\is_array($arguments) && [] !== $arguments) {
+            $callBlockId = 'tool_call_'.$toolCallId;
+            if (null === $state->getBlock($callBlockId)) {
+                $argumentsText = $state->argumentsToText($arguments);
+                $text = '' !== $toolName ? $toolName.$argumentsText : $argumentsText;
+                $state->addBlock(new TranscriptBlock(
+                    id: $callBlockId,
+                    kind: TranscriptBlockKindEnum::ToolCall,
+                    runId: $event->runId(),
+                    seq: $state->nextSeq(),
+                    text: $text,
+                    meta: [
+                        'tool_call_id' => $toolCallId,
+                        'tool_name' => $toolName,
+                        'arguments' => $arguments,
+                    ],
+                    streaming: false,
+                ));
+            }
+        }
+
         $blockId = 'tool_result_'.$toolCallId;
 
         $state->addBlock(new TranscriptBlock(

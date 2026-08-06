@@ -281,16 +281,23 @@ final class RuntimeEventTranslator
     private function onToolExecutionStarted(RunEvent $runEvent): RuntimeEvent
     {
         $p = $runEvent->payload;
+        $payload = [
+            'tool_call_id' => (string) ($p['tool_call_id'] ?? ''),
+            'tool_name' => (string) ($p['tool_name'] ?? ''),
+            'order_index' => (int) ($p['order_index'] ?? 0),
+        ];
+        // Optional: direct-shell and other non-streamed starts may carry args so
+        // projection can synthesize a ToolCall card without tool_call.* events.
+        $arguments = $p['arguments'] ?? null;
+        if (\is_array($arguments)) {
+            $payload['arguments'] = $arguments;
+        }
 
         return new RuntimeEvent(
             type: RuntimeEventTypeEnum::ToolExecutionStarted->value,
             runId: $runEvent->runId,
             seq: $runEvent->seq,
-            payload: [
-                'tool_call_id' => (string) ($p['tool_call_id'] ?? ''),
-                'tool_name' => (string) ($p['tool_name'] ?? ''),
-                'order_index' => (int) ($p['order_index'] ?? 0),
-            ],
+            payload: $payload,
         );
     }
 
