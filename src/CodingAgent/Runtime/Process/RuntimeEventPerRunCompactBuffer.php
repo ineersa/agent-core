@@ -67,8 +67,15 @@ final class RuntimeEventPerRunCompactBuffer
             return;
         }
 
+        // Transient stream completions (seq = 0) prune superseded deltas. Observed runs
+        // must retain the checkpoint itself: parent-first JSONL demux would otherwise leave
+        // child live projection with tool results and no ToolCall arguments (fork/subagent
+        // bash cards). Unobserved runs keep pruning-only — memory compact, no durable backlog.
         if ($this->isStreamCheckpoint($event)) {
             $this->pruneTransientTailForCheckpoint($runId, $event);
+            if ($observedRun) {
+                $this->appendTail($runId, $event);
+            }
 
             return;
         }
