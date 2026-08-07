@@ -226,6 +226,8 @@ final class RuntimeQuestionEventHandler
      * - transcript is false (no transcript block)
      * - answer sends answer_tool_question (not answer_human)
      * - no WaitingHuman state transition in AgentCore
+     * - no catalog/live WaitingHuman or main/picker "needs input" attention
+     *   (bash background confirms stay answerable overlays only)
      *
      * A guard against duplicate request IDs prevents enqueueing the
      * same question twice if the event stream replays.
@@ -251,12 +253,11 @@ final class RuntimeQuestionEventHandler
             return;
         }
 
-        if (null !== $sessionState && null !== $screen) {
-            SubagentLiveAttention::markChildNeedsInputForRun($sessionState, $screen, $runId);
-        }
+        // Do not mark catalog/live WaitingHuman: local tool questions are not
+        // canonical HITL. They remain answerable via QuestionCoordinator only.
 
         // Boolean/confirm only — enum/approval choice overlays were SafeGuard-specific.
-        $this->handleConfirmToolQuestion($p, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState, $screen);
+        $this->handleConfirmToolQuestion($p, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState);
     }
 
     public function shouldRejectOrphanedQuestion(TuiSessionState $state, QuestionRequest $activeRequest): bool
@@ -381,7 +382,6 @@ final class RuntimeQuestionEventHandler
         AgentSessionClient $client,
         QuestionCoordinator $questionCoordinator,
         ?TuiSessionState $sessionState = null,
-        ?ChatScreen $screen = null,
     ): void {
         $request = new QuestionRequest(
             requestId: $requestId,
@@ -401,7 +401,7 @@ final class RuntimeQuestionEventHandler
 
         $questionCoordinator->enqueue(
             $request,
-            onAnswer: static function (mixed $answer) use ($client, $runId, $requestIdFromPayload, $sessionState, $screen): void {
+            onAnswer: static function (mixed $answer) use ($client, $runId, $requestIdFromPayload): void {
                 $boolAnswer = \is_string($answer) && 'yes' === strtolower($answer);
 
                 $client->send($runId, new UserCommand(
@@ -413,11 +413,10 @@ final class RuntimeQuestionEventHandler
                     ],
                 ));
 
-                if (null !== $sessionState && null !== $screen) {
-                    SubagentLiveAttention::clearWaitingHumanForRun($sessionState, $screen, $runId);
-                }
+                // Local tool questions never own WaitingHuman; do not clear an
+                // independently canonical HITL waiting state for this run.
             },
-            onCancel: static function () use ($client, $runId, $requestIdFromPayload, $sessionState, $screen): void {
+            onCancel: static function () use ($client, $runId, $requestIdFromPayload): void {
                 $client->send($runId, new UserCommand(
                     type: 'answer_tool_question',
                     payload: [
@@ -427,9 +426,7 @@ final class RuntimeQuestionEventHandler
                     ],
                 ));
 
-                if (null !== $sessionState && null !== $screen) {
-                    SubagentLiveAttention::clearWaitingHumanForRun($sessionState, $screen, $runId);
-                }
+                // Same as onAnswer: leave catalog/live WaitingHuman alone.
             },
         );
     }

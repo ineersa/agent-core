@@ -23,6 +23,7 @@ use Ineersa\Tui\ImagePaste\PastedImagePlaceholderFormatter;
 use Ineersa\Tui\ImagePaste\PastedImageSubmissionService;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
+use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -111,9 +112,11 @@ final class SubmitListener implements TuiListenerRegistrar
                 }
 
                 $answerRunId = null !== $active ? $active->runId : null;
+                $clearsCanonicalWaiting = null !== $active && QuestionSource::AgentCore === $active->source;
                 $questionCoordinator->answer($text);
                 $questionController->close();
-                if (null !== $answerRunId && '' !== $answerRunId) {
+                // Local tool questions must not clear independent canonical WaitingHuman.
+                if ($clearsCanonicalWaiting && null !== $answerRunId && '' !== $answerRunId) {
                     SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, $answerRunId);
                 }
 

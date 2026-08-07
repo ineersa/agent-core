@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
+use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
@@ -72,10 +73,12 @@ final class CancelListener implements TuiListenerRegistrar
                 // Stale child questions left in the coordinator must not cancel from main.
                 if ($activeOwnedByVisible) {
                     if (QuestionKind::Text === $active->kind) {
+                        $runId = $active->runId;
+                        $clearsCanonicalWaiting = QuestionSource::AgentCore === $active->source;
                         $questionCoordinator->cancel();
                         $questionController->close();
-                        if (null !== $active->runId && '' !== $active->runId) {
-                            SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, $active->runId);
+                        if ($clearsCanonicalWaiting && null !== $runId && '' !== $runId) {
+                            SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, $runId);
                         }
 
                         return;
@@ -89,10 +92,12 @@ final class CancelListener implements TuiListenerRegistrar
                     // Child-owned non-text HITL without an open overlay: cancel the question only.
                     $parentRunId = null !== $state->handle ? $state->handle->runId : $state->sessionId;
                     if ($active->runId !== $parentRunId) {
+                        $runId = $active->runId;
+                        $clearsCanonicalWaiting = QuestionSource::AgentCore === $active->source;
                         $questionCoordinator->cancel();
                         $questionController->close();
-                        if (null !== $active->runId && '' !== $active->runId) {
-                            SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, $active->runId);
+                        if ($clearsCanonicalWaiting && null !== $runId && '' !== $runId) {
+                            SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, $runId);
                         }
 
                         return;
