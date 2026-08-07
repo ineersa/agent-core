@@ -362,8 +362,8 @@ runtime:
 #
 # Discovery load order (lowest to highest):
 #   1. User agents under ~/.agents/*.md
-#   2. User agents under ~/.hatfield/agents/*.md
-#   3. Project agents under .agents/*.md
+#   2. Project agents under .agents/*.md
+#   3. User agents under ~/.hatfield/agents/*.md
 #   4. Project agents under .hatfield/agents/*.md
 #   5. Configured agents.paths (highest precedence)
 #

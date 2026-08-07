@@ -57,10 +57,12 @@ Agent definitions are discovered from the following locations in deterministic l
 ### Precedence (load order, lowest to highest)
 
 1. **User agents** — `~/.agents/*.md`
-2. **User agents** — `~/.hatfield/agents/*.md`
-3. **Project agents** — `.agents/*.md`
+2. **Project agents** — `.agents/*.md`
+3. **User agents** — `~/.hatfield/agents/*.md`
 4. **Project agents** — `.hatfield/agents/*.md`
 5. **Configured paths** — `agents.paths` settings (highest precedence)
+
+Generic scope loads before Hatfield-specific scope: a user-level Hatfield definition (`~/.hatfield/agents`) overrides a project-level generic definition (`.agents`).
 
 Each directory is scanned non-recursively for `*.md` files (sorted lexicographically). Configured paths may be a single `.md` file or a directory of `*.md` files.
 
@@ -102,11 +104,11 @@ Your custom instructions here.
 
 ### Per-project agents
 
-For project-specific agents, add `.md` files under `.hatfield/agents/` or `.agents/`. These override user definitions with the same name.
+For project-specific agents, prefer `.hatfield/agents/` (highest auto-discovery). Project `.agents/` overrides user `.agents/` but loses to any same-named `~/.hatfield/agents/` or project `.hatfield/agents/` definition.
 
 ### User-level agents
 
-For personal agents available across projects, add `.md` files under `~/.hatfield/agents/` or `~/.agents/`. These can be overridden by project definitions with the same name.
+For personal agents available across projects, add `.md` files under `~/.hatfield/agents/` (overrides project and user `.agents/`) or `~/.agents/` (lowest auto-discovery). Project `.hatfield/agents/` still overrides user Hatfield definitions.
 
 ### Bundled starter agents
 
@@ -379,7 +381,9 @@ The task text follows as the `user` message.
 Hatfield ships a built-in `subagents` skill under
 `src/CodingAgent/Resources/skills/subagents/`. On discovery, each direct
 bundled skill directory is mirrored into `~/.hatfield/skills/<name>/` and
-then discovered with normal home skill precedence (project skills still win).
+then discovered with normal skill precedence (CLI `--skills-path`, then
+project/user Hatfield skills, then project/user `.agents/skills`, then
+extension-registered skills; first-discovered name wins).
 See also `FRONTMATTER.md` next to `SKILL.md` in that skill directory.
 
 ## Current limitations

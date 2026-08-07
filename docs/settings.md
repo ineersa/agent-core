@@ -738,8 +738,10 @@ Paths support `~` (home), `%kernel.project_dir%`, and relative paths
 (resolved against the project CWD). Each entry may be a single `.md` file
 or a directory of `*.md` files (non-recursive).
 
-Auto-discovery directories (`~/.hatfield/agents/`, `~/.agents/`,
-`.hatfield/agents/`, `.agents/`) are always scanned regardless of this list.
+Auto-discovery directories are always scanned regardless of this list, in this
+order (lowest to highest, then `agents.paths`):
+`~/.agents/` → project `.agents/` → `~/.hatfield/agents/` → project
+`.hatfield/agents/`.
 
 **Default:** `[]` (empty — only auto-discovery directories are scanned)
 
@@ -847,15 +849,23 @@ Composer autoload contexts before starting Hatfield:
 Extensions register tools, slash commands, and optional package-local skills
 during startup. Enabled extensions may call
 `ExtensionApiInterface::registerSkill()` with an absolute skill directory
-(containing `SKILL.md`); those skills are discovered after CLI
-`--skills-path` and project/user auto-discovery paths, so local skills win
-name collisions. Extension-owned skills are suppressed by `--no-skills`.
+(containing `SKILL.md`). Skill discovery order (highest priority first;
+first-discovered name wins):
+
+1. CLI `--skills-path` entries (always scanned, even with `--no-skills`)
+2. Auto-discovery (when not `--no-skills`):
+   - project `.hatfield/skills`
+   - `~/.hatfield/skills` (includes materialized built-ins)
+   - project `.agents/skills`
+   - `~/.agents/skills`
+3. Extension-registered skill directories (lowest; suppressed by `--no-skills`)
 
 Built-in skills shipped under `src/CodingAgent/Resources/skills/<name>/` are
 mirrored into `~/.hatfield/skills/<name>/` immediately before skill discovery
-(Hatfield owns those destinations and rewrites them). Project skills still
-override home/built-in copies. `--no-skills` suppresses discovery of
-materialized built-ins but still refreshes the home mirror.
+(Hatfield owns those destinations and rewrites them). User Hatfield skills
+override project `.agents/skills`; project `.hatfield/skills` override both.
+`--no-skills` suppresses discovery of materialized built-ins but still
+refreshes the home mirror.
 **Start a new Hatfield session** (or restart the agent/TUI) after install so
 enabled classes are loaded; an already-running session will not pick up new
 extensions.

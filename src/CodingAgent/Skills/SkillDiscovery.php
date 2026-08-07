@@ -20,8 +20,8 @@ use Symfony\Component\Yaml\Yaml;
  *   1. CLI --skills-path entries (always checked, regardless of --no-skills)
  *   2. Auto-discovery paths (only when auto-discovery is enabled):
  *        {cwd}/.hatfield/skills
- *        {cwd}/.agents/skills
  *        ~/.hatfield/skills   (includes materialized built-in skills)
+ *        {cwd}/.agents/skills
  *        ~/.agents/skills
  *   3. Extension-registered skill directories (only when auto-discovery is enabled)
  *
@@ -114,12 +114,12 @@ final class SkillDiscovery
             $searchPaths[] = $path;
         }
 
-        // Step 2: Auto-discovery paths (only when auto-discovery is enabled)
+        // Step 2: Auto-discovery paths (only when auto-discovery is enabled).
+        // Patterns are highest→lowest Hatfield specificity; for each pattern
+        // scan project then user so Hatfield-specific beats generic scope.
         if (!$this->config->noSkills) {
-            $baseDirs = [$cwd, $homeDir];
-
-            foreach ($baseDirs as $baseDir) {
-                foreach (self::AUTO_DISCOVERY_PATTERNS as $pattern) {
+            foreach (self::AUTO_DISCOVERY_PATTERNS as $pattern) {
+                foreach ([$cwd, $homeDir] as $baseDir) {
                     $path = \sprintf($pattern, $baseDir);
                     if (is_dir($path)) {
                         $searchPaths[] = $path;

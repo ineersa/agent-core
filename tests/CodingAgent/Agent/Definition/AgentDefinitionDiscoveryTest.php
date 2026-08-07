@@ -262,34 +262,34 @@ Body
         $this->assertTrue($hasInvalidDef, 'Expected an invalid_definition diagnostic');
     }
 
-    public function testOverrideProducesCollisionDiagnostic(): void
+    public function testUserHatfieldOverridesProjectAgentsWithCollisionDiagnostic(): void
     {
+        // Cross-middle collision: project generic vs user Hatfield-specific.
+        // Scope-before-specificity order: user Hatfield wins over project .agents.
         $this->createValidDefinition(
             $this->homeDir.'/.hatfield/agents/collide.md',
             'collide',
-            ['description' => 'Lower precedence'],
+            ['description' => 'User-hatfield version'],
         );
         $this->createValidDefinition(
             $this->cwd.'/.agents/collide.md',
             'collide',
-            ['description' => 'Higher precedence'],
+            ['description' => 'Project-agents version'],
         );
 
         $discovery = $this->createDiscovery();
         $catalog = $discovery->discover();
 
-        // The catalog should have the winning definition
         $definition = $catalog->get('collide');
         $this->assertNotNull($definition);
-        $this->assertSame('Higher precedence', $definition->description);
+        $this->assertSame('User-hatfield version', $definition->description);
 
-        // And a collision diagnostic with exact directional winner/loser paths
         $hasCollision = false;
         foreach ($catalog->diagnostics() as $d) {
             if ('collision' === $d->type && 'collide' === $d->name) {
                 $hasCollision = true;
-                $this->assertSame($this->cwd.'/.agents/collide.md', $d->winnerPath);
-                $this->assertSame($this->homeDir.'/.hatfield/agents/collide.md', $d->loserPath);
+                $this->assertSame($this->homeDir.'/.hatfield/agents/collide.md', $d->winnerPath);
+                $this->assertSame($this->cwd.'/.agents/collide.md', $d->loserPath);
                 break;
             }
         }
