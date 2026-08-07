@@ -733,6 +733,13 @@ services:
   Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface:
     alias: Ineersa\CodingAgent\Compaction\CodingAgentPreLlmCompactionGuard
 
+  # Child-run compaction eligibility: CodingAgent reads RunStarted metadata
+  # (session.kind=agent_child). Injected into AgentCore overflow recovery and
+  # CodingAgent auto/manual CompactRun paths without AgentCore depending on
+  # CodingAgent metadata readers.
+  Ineersa\AgentCore\Contract\Compaction\CompactionEligibilityPolicyInterface:
+    alias: Ineersa\CodingAgent\Compaction\ChildRunCompactionEligibilityPolicy
+
   # Context-budget wrap-up reminder thresholds (CodingAgent after-turn hook).
   Ineersa\CodingAgent\Config\ContextBudgetReminderConfig:
     factory: ['Ineersa\CodingAgent\Config\ContextBudgetReminderConfig', 'fromAppConfig']

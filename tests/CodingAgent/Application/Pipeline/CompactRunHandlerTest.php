@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Application\Pipeline;
 
+use Ineersa\AgentCore\Contract\Compaction\CompactionEligibilityPolicyInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
@@ -60,6 +61,52 @@ use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
  */
 final class CompactRunHandlerTest extends TestCase
 {
+    /**
+     * Thesis: CompactRun reaching the handler for an agent child produces no
+     * compaction lifecycle event and invokes no preparation/worker.
+     */
+    public function testAgentChildCompactRunIsSilentNoOp(): void
+    {
+        $messages = [
+            $this->userMsg('question 1'),
+            $this->userMsg('question 2'),
+            $this->assistantMsg('answer 1'),
+            $this->assistantMsg('answer 2'),
+        ];
+        $state = $this->createRunState($messages);
+
+        $service = $this->createMock(CompactionServiceInterface::class);
+        $service->expects($this->never())->method('prepare');
+        $service->expects($this->never())->method('buildSummarizationMessages');
+        $service->expects($this->never())->method('buildCompactedMessages');
+        $service->expects($this->never())->method('compactMessages');
+
+        $handler = new CompactRunHandler(
+            $service,
+            $this->createAppConfig(),
+            new EventFactory(),
+            $this->hooks([]),
+            $this->extensionHooks([]),
+            $this->allowCompactionPolicy(false),
+        );
+
+        $result = $handler->handle(
+            new CompactRun(
+                runId: 'child-run',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-child',
+                trigger: 'manual',
+            ),
+            $state,
+        );
+
+        $this->assertSame($state, $result->nextState);
+        $this->assertSame([], $result->events);
+        $this->assertSame([], $result->effects);
+    }
+
     public function testReadyPreparationEmitsStartedAndDispatchesWorker(): void
     {
         $messages = [
@@ -85,6 +132,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
+            $this->allowCompactionPolicy(),
         );
 
         $result = $handler->handle(
@@ -170,6 +218,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
+            $this->allowCompactionPolicy(),
         );
 
         $result = $handler->handle(
@@ -212,6 +261,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
+            $this->allowCompactionPolicy(),
         );
 
         $result = $handler->handle(
@@ -270,6 +320,7 @@ final class CompactRunHandlerTest extends TestCase
                 new EventFactory(),
                 $this->hooks([]),
                 $this->extensionHooks([]),
+                $this->allowCompactionPolicy(),
             );
 
             $result = $handler->handle(
@@ -330,6 +381,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$cancelHook]),
             $this->extensionHooks([$cancelHook]),
+            $this->allowCompactionPolicy(),
         );
 
         $result = $handler->handle(
@@ -411,6 +463,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$replaceHook]),
             $this->extensionHooks([$replaceHook]),
+            $this->allowCompactionPolicy(),
         );
 
         $result = $handler->handle(
@@ -725,6 +778,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$hook]),
             $this->extensionHooks([$hook]),
+            $this->allowCompactionPolicy(),
         );
 
         $handler->handle(
@@ -778,6 +832,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$hook]),
             $this->extensionHooks([$hook]),
+            $this->allowCompactionPolicy(),
         );
 
         $result = $handler->handle(
@@ -847,6 +902,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$cancelHook]),
             $this->extensionHooks([$cancelHook]),
+            $this->allowCompactionPolicy(),
         );
 
         $result = $handler->handle(
@@ -908,6 +964,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
+            $this->allowCompactionPolicy(),
         );
 
         $result = $handler->handle(
@@ -953,6 +1010,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
+            $this->allowCompactionPolicy(),
         );
 
         $result = $handler->handle(
@@ -1029,6 +1087,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$cancelHook]),
             $this->extensionHooks([$cancelHook]),
+            $this->allowCompactionPolicy(),
         );
 
         $result = $handler->handle(
@@ -1132,6 +1191,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([], [$publicHook]),
+            $this->allowCompactionPolicy(),
         );
 
         $result = $handler->handle(
@@ -1400,6 +1460,14 @@ final class CompactRunHandlerTest extends TestCase
     private function hooks(array $hooks = []): CompactionHookDispatcher
     {
         return new CompactionHookDispatcher($hooks);
+    }
+
+    private function allowCompactionPolicy(bool $allowed = true): CompactionEligibilityPolicyInterface
+    {
+        $policy = $this->createStub(CompactionEligibilityPolicyInterface::class);
+        $policy->method('isCompactionAllowed')->willReturn($allowed);
+
+        return $policy;
     }
 
     /**

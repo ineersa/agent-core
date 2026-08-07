@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver;
+use Ineersa\AgentCore\Contract\Compaction\CompactionEligibilityPolicyInterface;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
@@ -62,6 +63,7 @@ final class LlmStepResultHandler implements RunMessageHandler
         private int $agentRetryBaseDelayMs = 1000,
         private int $agentRetryMaxDelayMs = 60000,
         private int $maxParallelism = 1,
+        private ?CompactionEligibilityPolicyInterface $compactionEligibilityPolicy = null,
     ) {
     }
 
@@ -711,6 +713,14 @@ final class LlmStepResultHandler implements RunMessageHandler
         array $classifiedError,
     ): ?callable {
         if (null === $this->commandBus || null === $this->errorClassifier) {
+            return null;
+        }
+
+        // Fork/subagent children never compact — overflow must fail at the
+        // provider limit rather than schedule CompactRun recovery.
+        if (null !== $this->compactionEligibilityPolicy
+            && !$this->compactionEligibilityPolicy->isCompactionAllowed($runId)
+        ) {
             return null;
         }
 

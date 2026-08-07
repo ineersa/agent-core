@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Compaction;
 
+use Ineersa\AgentCore\Contract\Compaction\CompactionEligibilityPolicyInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
@@ -29,6 +30,8 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * forget send to agent.command.bus — it never blocks the commit.
  *
  * Guards:
+ *  - Agent child runs (fork/subagent; session.kind=agent_child) via
+ *    CompactionEligibilityPolicyInterface — children never auto-compact
  *  - Auto disabled via compaction.auto_enabled (per-provider/per-model overrides)
  *  - In-flight compaction (activeStepId starts with compact-)
  *  - Commit contains compaction lifecycle events (avoids loops)
@@ -53,12 +56,19 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         private readonly RunModelResolverInterface $modelResolver,
         private readonly MessageBusInterface $commandBus,
         private readonly CompactionServiceInterface $compactionService,
+        private readonly CompactionEligibilityPolicyInterface $compactionEligibilityPolicy,
     ) {
     }
 
     public function handleAfterTurnCommit(AfterTurnCommitHookContext $context): AfterTurnCommitHookContext
     {
         $runId = $context->runId;
+
+        // Guard: fork/subagent child runs never compact (auto or manual).
+        // Parent-side fork snapshot compaction is separate and unchanged.
+        if (!$this->compactionEligibilityPolicy->isCompactionAllowed($runId)) {
+            return $context;
+        }
 
         // Guard: fresh user turn — skip evaluation.  StartRun commits
         // signal a new user prompt cycle; auto-compaction should fire after

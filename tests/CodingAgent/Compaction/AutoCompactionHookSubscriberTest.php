@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Compaction;
 
+use Ineersa\AgentCore\Contract\Compaction\CompactionEligibilityPolicyInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
@@ -49,6 +50,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     /** @var CompactionServiceInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $compactionService;
     private TestMessageBus $commandBus;
+    private CompactionEligibilityPolicyInterface $compactionEligibilityPolicy;
 
     protected function setUp(): void
     {
@@ -81,6 +83,8 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                 priorSummaryPresent: false,
             ));
         $this->commandBus = new TestMessageBus();
+        $this->compactionEligibilityPolicy = $this->createStub(CompactionEligibilityPolicyInterface::class);
+        $this->compactionEligibilityPolicy->method('isCompactionAllowed')->willReturn(true);
 
         $this->subscriber = new AutoCompactionHookSubscriber(
             $this->runStore,
@@ -89,6 +93,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $this->compactionService,
+            $this->compactionEligibilityPolicy,
         );
     }
 
@@ -195,6 +200,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $this->compactionService,
+            $this->compactionEligibilityPolicy,
         );
 
         $context = $this->createHookContext();
@@ -351,6 +357,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $modelResolver,
             $this->commandBus,
             $this->compactionService,
+            $this->compactionEligibilityPolicy,
         );
 
         $messages = [
@@ -604,6 +611,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $this->compactionService,
+            $this->compactionEligibilityPolicy,
         );
 
         $freshSubscriber->handleAfterTurnCommit($this->createHookContext());
@@ -932,6 +940,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $summaryOnlyService,
+            $this->compactionEligibilityPolicy,
         );
 
         $context = $this->createHookContext();
@@ -1022,6 +1031,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $summaryPlusFreshService,
+            $this->compactionEligibilityPolicy,
         );
 
         $context = $this->createHookContext();
@@ -1090,6 +1100,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $failedService,
+            $this->compactionEligibilityPolicy,
         );
 
         $context = $this->createHookContext();
@@ -1124,6 +1135,45 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $this->assertCount(0, $this->commandBus->messages,
             'Must skip without fatal when RunState is missing from store '
             .'— null $runState must not dereference in prepare().');
+    }
+
+    /**
+     * Thesis: agent child runs (fork/subagent, session.kind=agent_child) never
+     * schedule after-turn auto-compaction even when provider usage exceeds the
+     * normal compact_after_tokens threshold.
+     */
+    public function testSkipsDispatchForAgentChildRunAboveThreshold(): void
+    {
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
+
+        $deny = $this->createStub(CompactionEligibilityPolicyInterface::class);
+        $deny->method('isCompactionAllowed')->willReturn(false);
+
+        // Fresh mock: child gate must return before prepare().
+        $compactionService = $this->createMock(CompactionServiceInterface::class);
+        $compactionService->expects($this->never())->method('prepare');
+
+        $subscriber = new AutoCompactionHookSubscriber(
+            $this->runStore,
+            $this->providerUsageResolver,
+            $this->compactionConfig,
+            $this->modelResolver,
+            $this->commandBus,
+            $compactionService,
+            $deny,
+        );
+
+        $messages = [$this->makeTextMessage('user', 'Hello')];
+        $runState = $this->createRunState($messages);
+
+        $this->runStore->method('get')->willReturn($runState);
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // above 11000
+
+        $subscriber->handleAfterTurnCommit($this->createHookContext());
+
+        $this->assertCount(0, $this->commandBus->messages,
+            'Agent child runs must not dispatch CompactRun from after-turn auto-compaction.');
     }
 
     private function createRunState(

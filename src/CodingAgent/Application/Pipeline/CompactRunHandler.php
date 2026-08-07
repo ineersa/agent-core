@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
+use Ineersa\AgentCore\Contract\Compaction\CompactionEligibilityPolicyInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -44,6 +45,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
         private EventFactory $eventFactory,
         private CompactionHookDispatcher $hookDispatcher,
         private ExtensionCompactionHookDispatcher $extensionHookDispatcher,
+        private CompactionEligibilityPolicyInterface $compactionEligibilityPolicy,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -60,6 +62,14 @@ final readonly class CompactRunHandler implements RunMessageHandler
         }
 
         $runId = $message->runId();
+
+        // Defensive gate: fork/subagent children never compact. Silent no-op
+        // (no lifecycle events, no preparation, no worker) so manual/API
+        // CompactRun and any leak past scheduling paths produce no noise.
+        // Parent-side fork snapshot compaction does not use CompactRun.
+        if (!$this->compactionEligibilityPolicy->isCompactionAllowed($runId)) {
+            return new HandlerResult(nextState: $state, events: [], effects: []);
+        }
 
         // Canonical execution model is RunState.model (run_started / model_changed).
         // Compaction override resolution may still use configured overrides, but
