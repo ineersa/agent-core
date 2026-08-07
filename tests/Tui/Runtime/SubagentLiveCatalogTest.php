@@ -170,6 +170,7 @@ final class SubagentLiveCatalogTest extends TestCase
             'agent_run_id' => 'child-run-ctx',
             'task_summary' => 'Context stats',
             'model' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL,
+            'reasoning' => 'high',
             'latest_input_tokens' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS,
             'context_window' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW,
         ]));
@@ -177,6 +178,7 @@ final class SubagentLiveCatalogTest extends TestCase
         $child = $catalog->findByArtifactId('agent_ctx');
         $this->assertNotNull($child);
         $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL, $this->childContextString($child, 'model'));
+        $this->assertSame('high', $this->childContextString($child, 'reasoning'));
         $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS, $this->childContextInt($child, 'latestInputTokens'));
         $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW, $this->childContextInt($child, 'contextWindow'));
     }
@@ -191,6 +193,7 @@ final class SubagentLiveCatalogTest extends TestCase
             'agent_run_id' => 'child-run-ctx',
             'task_summary' => 'Context stats',
             'model' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL,
+            'reasoning' => 'high',
             'latest_input_tokens' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS,
             'context_window' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW,
         ];
@@ -201,6 +204,7 @@ final class SubagentLiveCatalogTest extends TestCase
         $this->assertNotNull($child);
         $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
         $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL, $this->childContextString($child, 'model'));
+        $this->assertSame('high', $this->childContextString($child, 'reasoning'));
         $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS, $this->childContextInt($child, 'latestInputTokens'));
         $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW, $this->childContextInt($child, 'contextWindow'));
     }

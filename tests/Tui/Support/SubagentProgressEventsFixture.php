@@ -36,6 +36,7 @@ final class SubagentProgressEventsFixture
             'reasoning_tokens' => 584000,
             'cost' => 0.0104,
             'model' => 'deepseek/deepseek-v4-flash',
+            'reasoning' => 'high',
             'artifact_path' => 'artifacts/agents/'.$artifactId,
             'recent_tools' => ['read: path="src/Tui/Transcript/SubagentResultRenderer.php"'],
             'assistant_excerpt' => 'Structured subagent block renders inline.',

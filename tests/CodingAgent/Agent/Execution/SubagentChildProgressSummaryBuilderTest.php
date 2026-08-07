@@ -117,6 +117,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
                 'step_id' => 's0',
                 'payload' => ['metadata' => [
                     'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'high',
                     'context_window' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW,
                 ]],
             ]),
@@ -192,6 +193,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
         $this->assertSame(2, $fields['llm_step_count'] ?? null);
         $this->assertSame(25000, $fields['latest_input_tokens'] ?? null, 'Latest LLM step input_tokens must be exposed separately from cumulative input_tokens');
         $this->assertSame('deepseek/deepseek-v4-flash', $fields['model'] ?? null);
+        $this->assertSame('high', $fields['reasoning'] ?? null, 'Canonical reasoning from child run_started must propagate into progress fields');
         $this->assertSame(
             \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW,
             $fields['context_window'] ?? null,

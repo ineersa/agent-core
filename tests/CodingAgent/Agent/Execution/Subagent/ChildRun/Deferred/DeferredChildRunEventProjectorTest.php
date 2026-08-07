@@ -40,6 +40,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
                 new AfterTurnCommitEventSummary(1, RunEventTypeEnum::RunStarted->value, [
                     'payload' => ['metadata' => [
                         'model' => 'openai-codex/gpt-5.6-sol',
+                        'reasoning' => 'xhigh',
                         'provider' => 'openai-codex',
                     ]],
                 ]),
@@ -60,10 +61,11 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 
         $this->assertSame(RunStatus::Failed, $failed->childStatus);
         $this->assertSame('openai-codex/gpt-5.6-sol', $failed->model);
+        $this->assertSame('xhigh', $failed->reasoning);
         $this->assertSame('openai-codex', $failed->provider);
         $this->assertSame(1, $failed->llmStepCount);
 
-        // Recovery/resume apply without another run_started must keep launch model.
+        // Recovery/resume apply without another run_started must keep launch model/reasoning.
         $resumed = $projector->apply(
             $failed,
             [
@@ -81,8 +83,10 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         );
 
         $this->assertSame('openai-codex/gpt-5.6-sol', $resumed->model);
+        $this->assertSame('xhigh', $resumed->reasoning);
         $this->assertSame(2, $resumed->llmStepCount);
         $this->assertSame(4, $resumed->childTurnNo);
+        $this->assertSame('xhigh', DeferredChildRunLifecycleProjectionDTO::fromArray($resumed->toArray())->reasoning);
     }
 
     public function testRetryableLlmStepFailedStaysRunningWhileExhaustedFailureIsTerminal(): void
@@ -308,6 +312,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             totalTokens: $roundTrip->totalTokens,
             cost: $roundTrip->cost,
             model: $roundTrip->model,
+            reasoning: $roundTrip->reasoning,
             provider: $roundTrip->provider,
             artifactPath: 'artifacts/agents/agent_llm_steps',
             assistantExcerpt: $roundTrip->assistantExcerpt,

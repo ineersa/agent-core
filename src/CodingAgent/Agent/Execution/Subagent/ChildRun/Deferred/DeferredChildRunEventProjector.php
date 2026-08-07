@@ -48,6 +48,7 @@ final class DeferredChildRunEventProjector
         $cost = $current->cost;
         $hasCost = null !== $cost && $cost > 0.0;
         $model = $current->model ?? $definitionModel;
+        $reasoning = $current->reasoning;
         $provider = $current->provider;
         $recentTools = $current->recentTools;
         $activeToolLine = $current->activeToolLine;
@@ -80,10 +81,13 @@ final class DeferredChildRunEventProjector
             if (RunEventTypeEnum::RunStarted->value === $type) {
                 $inner = \is_array($payload['payload'] ?? null) ? $payload['payload'] : [];
                 $metadata = \is_array($inner['metadata'] ?? null) ? $inner['metadata'] : [];
-                // Canonical launch model from run_started must override definition/current fallback.
+                // Canonical launch model/reasoning from run_started must override definition/current fallback.
                 // definitionModel remains prelaunch-only; never let a stale snapshot win after start.
                 if (\is_string($metadata['model'] ?? null) && '' !== $metadata['model']) {
                     $model = $metadata['model'];
+                }
+                if (\is_string($metadata['reasoning'] ?? null) && '' !== $metadata['reasoning']) {
+                    $reasoning = $metadata['reasoning'];
                 }
                 if (\is_string($metadata['provider'] ?? null) && '' !== $metadata['provider']) {
                     $provider = $metadata['provider'];
@@ -236,6 +240,7 @@ final class DeferredChildRunEventProjector
             totalTokens: $totalTokens,
             cost: $hasCost ? $cost : null,
             model: $model,
+            reasoning: $reasoning,
             provider: $provider,
             recentTools: $recentTools,
             activeToolLine: $activeToolLine,

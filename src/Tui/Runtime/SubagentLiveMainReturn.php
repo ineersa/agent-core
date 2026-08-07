@@ -28,6 +28,8 @@ final class SubagentLiveMainReturn
         $screen->setTranscriptBlocks($state->transcript);
         $screen->syncQueuedUserMessages($state->queuedUserMessages);
         $screen->setWorkingMessage(null);
+        // Restore main-agent editor border from session footerReasoning (never overwritten by child).
+        $screen->applyEditorBorderColor($state->footerReasoning);
         if ($requestRender) {
             $screen->requestRender(true);
         }

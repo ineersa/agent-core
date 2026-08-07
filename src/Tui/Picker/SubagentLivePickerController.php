@@ -461,6 +461,8 @@ final class SubagentLivePickerController
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
         $screen->syncQueuedUserMessages($state->subagentLiveView->childQueuedUserMessages);
         $screen->setWorkingMessage($child->isRunning() ? 'Child agent working...' : 'Child agent idle');
+        // Child reasoning colours the editor frame while live; main footerReasoning is left alone.
+        $screen->applyEditorBorderColor($child->reasoning ?? '');
         $screen->requestRender(true);
     }
 }

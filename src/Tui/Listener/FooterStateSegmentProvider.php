@@ -22,8 +22,9 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
  *     ⌂ cwd (25)
  *     ⎇ branch (30)
  *
- * Reasoning level is NOT shown as a text segment — it only affects the
- * diamond AND model-name colour (matching Pi's thinking-level colouring).
+ * When reasoning is non-empty, the model segment text is `model (reasoning: level)`
+ * (same convention as `/usage`). Colour still follows the reasoning level for the
+ * diamond and model segments.
  */
 final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
 {
@@ -53,7 +54,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
             color: $thinkColor,
         );
         $segments[] = new FooterSegment(
-            text: $modelName,
+            text: self::modelWithReasoningLabel($modelName, $s->footerReasoning),
             priority: 1,
             color: $thinkColor,
         );
@@ -187,6 +188,17 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         return ThemeColorEnum::forReasoning($reasoning);
     }
 
+    /** Append ` (reasoning: level)` when level is non-empty (matches `/usage`). */
+    public static function modelWithReasoningLabel(string $model, string $reasoning): string
+    {
+        $reasoning = trim($reasoning);
+        if ('' === $reasoning) {
+            return $model;
+        }
+
+        return $model.' (reasoning: '.$reasoning.')';
+    }
+
     public static function formatTokenCount(int $n): string
     {
         return ContextUsageFormatter::formatTokenCount($n);
@@ -215,10 +227,14 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
                 $segments[] = new FooterSegment(text: $ctxFormatted->text, priority: 6, color: $ctxFormatted->color);
             }
             if (null !== $child->model && '' !== $child->model) {
+                $childReasoning = $child->reasoning ?? '';
                 $segments[] = new FooterSegment(
-                    text: FooterStateInitializer::shortModelName($child->model),
+                    text: self::modelWithReasoningLabel(
+                        FooterStateInitializer::shortModelName($child->model),
+                        $childReasoning,
+                    ),
                     priority: 7,
-                    color: ThemeColorEnum::Accent,
+                    color: self::thinkingColor($childReasoning),
                 );
             }
         }
