@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
+use Ineersa\AgentCore\Contract\Compaction\CompactionEligibilityPolicyInterface;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
@@ -675,6 +676,76 @@ final class LlmStepResultHandlerTest extends TestCase
             $this->assertNotInstanceOf(\Ineersa\AgentCore\Domain\Message\ApplyCommand::class, $dispatched);
         }
         $this->assertTrue($hasCompact, 'Overflow recovery should dispatch CompactRun, not Continue.');
+    }
+
+    public function testContextOverflowDoesNotDispatchCompactRunForAgentChild(): void
+    {
+        $executionBus = new TestMessageBus();
+        $commandBus = new TestMessageBus();
+        $stepDispatcher = new StepDispatcher($executionBus);
+        $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
+
+        $deny = $this->createStub(CompactionEligibilityPolicyInterface::class);
+        $deny->method('isCompactionAllowed')->willReturn(false);
+
+        $handler = new LlmStepResultHandler(
+            toolBatchCollector: new ToolBatchCollector(),
+            commandMailboxPolicy: new CommandMailboxPolicy(
+                commandStore: new InMemoryCommandStore(),
+                commandRouter: new CommandRouter([]),
+            ),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            stepDispatcher: $stepDispatcher,
+            commandBus: $commandBus,
+            errorClassifier: $classifier,
+            agentRetryMaxAttempts: 2,
+            agentRetryBaseDelayMs: 0,
+            agentRetryMaxDelayMs: 0,
+            compactionEligibilityPolicy: $deny,
+        );
+
+        $error = $classifier->classify([
+            'type' => 'RuntimeException',
+            'message' => 'Context size has been exceeded.',
+            'http_status_code' => 500,
+        ]);
+
+        $state = new RunState(
+            runId: 'run-child-overflow',
+            status: RunStatus::Running,
+            version: 2,
+            turnNo: 1,
+            lastSeq: 3,
+            activeStepId: 'step-1',
+            messages: [
+                new \Ineersa\AgentCore\Domain\Message\AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Hi']]),
+            ],
+            model: 'test-model');
+
+        $message = new LlmStepResult(
+            runId: 'run-child-overflow',
+            turnNo: 1,
+            stepId: 'step-1',
+            attempt: 1,
+            idempotencyKey: 'llm-child-overflow-1',
+            assistantMessage: null,
+            usage: [],
+            stopReason: null,
+            error: $error,
+        );
+
+        $result = $handler->handle($message, $state);
+
+        foreach ($result->postCommit as $callback) {
+            $callback();
+        }
+        foreach ($commandBus->messages as $dispatched) {
+            $this->assertNotInstanceOf(CompactRun::class, $dispatched,
+                'Agent child context overflow must not dispatch CompactRun recovery.');
+        }
+        $this->assertCount(0, $commandBus->messages);
     }
 
     public function testParallelToolCallsCarryConfiguredMaxParallelism(): void

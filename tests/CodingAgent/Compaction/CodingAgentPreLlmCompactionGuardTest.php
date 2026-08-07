@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Compaction;
 
+use Ineersa\AgentCore\Contract\Compaction\CompactionEligibilityPolicyInterface;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
@@ -34,6 +35,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
     private CompactionConfig $compactionConfig;
     /** @var RunModelResolverInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $modelResolver;
+    private CompactionEligibilityPolicyInterface $compactionEligibilityPolicy;
 
     protected function setUp(): void
     {
@@ -47,10 +49,14 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         // Most tests don't care about the model; return null by default.
         $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
+        $this->compactionEligibilityPolicy = $this->createStub(CompactionEligibilityPolicyInterface::class);
+        $this->compactionEligibilityPolicy->method('isCompactionAllowed')->willReturn(true);
+
         $this->guard = new CodingAgentPreLlmCompactionGuard(
             $this->compactionConfig,
             $this->providerUsageResolver,
             $this->modelResolver,
+            $this->compactionEligibilityPolicy,
         );
     }
 
@@ -121,6 +127,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $disabledConfig,
             $this->providerUsageResolver,
             $this->modelResolver,
+            $this->compactionEligibilityPolicy,
         );
 
         $messages = [
@@ -162,6 +169,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $configWithOverride,
             $this->providerUsageResolver,
             $modelResolver,
+            $this->compactionEligibilityPolicy,
         );
 
         $messages = [
@@ -315,6 +323,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->compactionConfig,
             $this->providerUsageResolver,
             $this->modelResolver,
+            $this->compactionEligibilityPolicy,
         );
 
         $this->assertFalse(
@@ -374,6 +383,32 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         $this->assertTrue(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 2, $messages, null),
             'Newer measurement at seq 5 must be eligible after auto start at seq 2',
+        );
+    }
+
+    /**
+     * Thesis: agent child runs never schedule pre-LLM CompactRun even when
+     * provider usage exceeds compact_after_tokens.
+     */
+    public function testReturnsFalseForAgentChildRunAboveThreshold(): void
+    {
+        $deny = $this->createStub(CompactionEligibilityPolicyInterface::class);
+        $deny->method('isCompactionAllowed')->willReturn(false);
+
+        $guard = new CodingAgentPreLlmCompactionGuard(
+            $this->compactionConfig,
+            $this->providerUsageResolver,
+            $this->modelResolver,
+            $deny,
+        );
+
+        $messages = [$this->makeTextMessage('user', 'Hello')];
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
+
+        $this->assertFalse(
+            $guard->shouldCompactBeforeLlmStep('child-run', 1, $messages, null),
+            'Agent child runs must not trigger pre-LLM compaction.',
         );
     }
 

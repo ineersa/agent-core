@@ -31,7 +31,9 @@ The compaction algorithm never splits tool-call/tool-result groups. If the cut p
 
 Alias: `/cmp`
 
-Manual compaction is always available regardless of the `compaction.auto_enabled` setting.
+Manual compaction is always available for parent sessions regardless of the `compaction.auto_enabled` setting.
+
+**Fork and subagent child runs do not compact.** Children are identified by `RunStarted` metadata `session.kind=agent_child` (forks also set `child_kind=fork`). Automatic after-turn compaction, pre-LLM threshold compaction, provider context-overflow recovery, and manual/API `CompactRun` are all unavailable for those runs. A child completes, hands off, or fails at the provider context limit. Parent automatic and manual compaction is unchanged. Parent-side fork snapshot compaction (`CompactionService::compactMessages` with trigger `fork` before launch) remains supported and is not gated by the child-run policy.
 
 **Custom instructions** are optional. When provided, they are appended to the summarization prompt to narrow or emphasize the summary:
 
@@ -87,7 +89,7 @@ compaction:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `auto_enabled` | `true` | Controls auto-compaction only. Manual `/compact` is always available. |
+| `auto_enabled` | `true` | Controls auto-compaction only for parent sessions. Manual `/compact` remains available for parents. Fork/subagent child runs never compact (auto or manual). |
 | `compact_after_tokens` | `120000` | Flat token threshold for auto-compaction trigger. When estimated context exceeds this, auto-compaction fires. |
 | `keep_recent_tokens` | `20000` | Approximate number of newest tokens to retain raw after compaction. Messages are kept whole — the actual retained count may modestly exceed this target. |
 | `model` | `null` | Summarization model override in `provider/model` format (e.g. `llama_cpp/flash`). When `null`, the active session model is used. |

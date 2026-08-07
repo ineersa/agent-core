@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Compaction;
 
+use Ineersa\AgentCore\Contract\Compaction\CompactionEligibilityPolicyInterface;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\CodingAgent\Config\CompactionConfig;
@@ -42,6 +43,7 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
         private readonly CompactionConfig $compactionConfig,
         private readonly ProviderContextUsageResolver $providerUsageResolver,
         private readonly RunModelResolverInterface $modelResolver,
+        private readonly CompactionEligibilityPolicyInterface $compactionEligibilityPolicy,
     ) {
     }
 
@@ -52,6 +54,11 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
         ?string $activeStepId,
         ?string $activeModel = null,
     ): bool {
+        // Fork/subagent children never compact — do not schedule pre-LLM CompactRun.
+        if (!$this->compactionEligibilityPolicy->isCompactionAllowed($runId)) {
+            return false;
+        }
+
         // One-shot guard: prevent repeated pre-LLM compaction for the
         // same run+turnNo.  When the pre-LLM guard fires, the AdvanceRun
         // is replaced with a CompactRun effect.  After compaction succeeds,
