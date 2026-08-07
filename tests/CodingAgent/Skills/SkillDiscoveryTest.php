@@ -441,10 +441,15 @@ final class SkillDiscoveryTest extends TestCase
         mkdir($staleDir, 0777, true);
         file_put_contents($staleDir.'/SKILL.md', "---\nname: alpha\ndescription: stale\n---\n\nStale body");
         file_put_contents($staleDir.'/obsolete.txt', 'remove me');
+        // PHAR/materialization can leave owned destination files mode 0444; replacement
+        // must still succeed without touching sibling user skills.
+        chmod($staleDir.'/SKILL.md', 0444);
+        chmod($staleDir.'/obsolete.txt', 0444);
 
         $userSkillDir = $homeDir.'/.hatfield/skills/user-skill';
         mkdir($userSkillDir, 0777, true);
         file_put_contents($userSkillDir.'/SKILL.md', "---\nname: user-skill\ndescription: User owned\n---\n\nUser body");
+        $userBodyBefore = (string) file_get_contents($userSkillDir.'/SKILL.md');
 
         $discovery = $this->createDiscovery(cwd: $cwd, homeDir: $homeDir, appRoot: $appRoot);
         $skills = $discovery->discover();
@@ -462,8 +467,10 @@ final class SkillDiscoveryTest extends TestCase
         $this->assertSame('Alpha built-in', $byName['alpha']->description);
         $this->assertFileExists($homeDir.'/.hatfield/skills/alpha/notes.md');
         $this->assertFileDoesNotExist($homeDir.'/.hatfield/skills/alpha/obsolete.txt');
+        $this->assertStringContainsString('Alpha body', (string) file_get_contents($homeDir.'/.hatfield/skills/alpha/SKILL.md'));
         $this->assertSame('User owned', $byName['user-skill']->description);
         $this->assertSame($userSkillDir, $byName['user-skill']->skillDirectory);
+        $this->assertSame($userBodyBefore, (string) file_get_contents($userSkillDir.'/SKILL.md'));
     }
 
     public function testMaterializedBuiltinIsSuppressedByNoSkillsButStillRewritten(): void
