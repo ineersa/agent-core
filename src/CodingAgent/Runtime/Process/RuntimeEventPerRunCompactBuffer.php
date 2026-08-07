@@ -41,16 +41,21 @@ final class RuntimeEventPerRunCompactBuffer
             return;
         }
 
-        if ($event->seq > 0) {
-            if ($this->isStreamCheckpoint($event)) {
-                $this->pruneTransientTailForCheckpoint($runId, $event);
-                if ($observedRun) {
-                    $this->appendTail($runId, $event);
-                }
-
-                return;
+        // Stream checkpoints (durable seq > 0 or transient seq = 0) prune superseded deltas.
+        // Observed runs must retain the checkpoint itself: parent-first JSONL demux would
+        // otherwise leave child live projection with tool results and no ToolCall arguments
+        // (fork/subagent bash cards). Unobserved runs keep pruning-only — memory compact,
+        // no durable backlog.
+        if ($this->isStreamCheckpoint($event)) {
+            $this->pruneTransientTailForCheckpoint($runId, $event);
+            if ($observedRun) {
+                $this->appendTail($runId, $event);
             }
 
+            return;
+        }
+
+        if ($event->seq > 0) {
             if ($this->isRunTerminal($event)) {
                 $this->clearTransientTail($runId);
                 if ($observedRun) {
@@ -60,19 +65,6 @@ final class RuntimeEventPerRunCompactBuffer
                 return;
             }
 
-            if ($observedRun) {
-                $this->appendTail($runId, $event);
-            }
-
-            return;
-        }
-
-        // Transient stream completions (seq = 0) prune superseded deltas. Observed runs
-        // must retain the checkpoint itself: parent-first JSONL demux would otherwise leave
-        // child live projection with tool results and no ToolCall arguments (fork/subagent
-        // bash cards). Unobserved runs keep pruning-only — memory compact, no durable backlog.
-        if ($this->isStreamCheckpoint($event)) {
-            $this->pruneTransientTailForCheckpoint($runId, $event);
             if ($observedRun) {
                 $this->appendTail($runId, $event);
             }
