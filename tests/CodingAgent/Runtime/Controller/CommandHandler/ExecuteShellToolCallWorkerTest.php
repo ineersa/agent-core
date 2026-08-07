@@ -65,6 +65,11 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         $this->assertSame(RunEventTypeEnum::ToolExecutionStart->value, $this->appendedEvents[0]->type);
         $this->assertSame(2, $this->appendedEvents[0]->turnNo);
         $this->assertSame('sh_tc_1', $this->appendedEvents[0]->payload['tool_call_id'] ?? null);
+        $this->assertSame('bash', $this->appendedEvents[0]->payload['tool_name'] ?? null);
+        // Direct shell must carry exact command args so TUI can render the bash card.
+        $this->assertSame(['command' => 'echo hello'], $this->appendedEvents[0]->payload['arguments'] ?? null);
+        $this->assertArrayNotHasKey('timeout', $this->appendedEvents[0]->payload['arguments'] ?? []);
+        $this->assertArrayNotHasKey('timeout', $this->appendedEvents[0]->payload);
 
         // Seq 2: tool_execution_end
         $this->assertSame(2, $this->appendedEvents[1]->seq);

@@ -395,6 +395,28 @@ final class RuntimeEventMapperTest extends TestCase
         $this->assertSame('call-read', $result->payload['tool_call_id']);
         $this->assertSame('read_file', $result->payload['tool_name']);
         $this->assertSame(0, $result->payload['order_index']);
+        $this->assertArrayNotHasKey('arguments', $result->payload,
+            'arguments must stay optional when absent from the domain payload');
+    }
+
+    public function testNormalizesToolExecutionStartPassesThroughOptionalArguments(): void
+    {
+        // Direct !shell emits tool_execution_start with command args and no tool_call.* stream.
+        $event = $this->runEvent('tool_execution_start', [
+            'tool_call_id' => 'sh_direct_1',
+            'tool_name' => 'bash',
+            'order_index' => 0,
+            'arguments' => ['command' => 'ls -1'],
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        $this->assertNotNull($result);
+        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionStarted->value, $result->type);
+        $this->assertSame('sh_direct_1', $result->payload['tool_call_id']);
+        $this->assertSame('bash', $result->payload['tool_name']);
+        $this->assertSame(['command' => 'ls -1'], $result->payload['arguments'] ?? null);
+        $this->assertArrayNotHasKey('timeout', $result->payload['arguments'] ?? []);
     }
 
     public function testNormalizesToolExecutionEndSuccess(): void

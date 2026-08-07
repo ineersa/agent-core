@@ -1013,6 +1013,65 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertTrue($block->streaming);
     }
 
+    public function testToolExecutionStartedWithArgumentsSynthesizesToolCallOnce(): void
+    {
+        // Thesis: direct !shell never streams tool_call.*; tool_execution.started
+        // carrying arguments must create exactly one finalized ToolCall + ToolResult
+        // so the exchange card can show command: without inventing timeout.
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'sh_direct',
+            'tool_name' => 'bash',
+            'arguments' => ['command' => 'ls -1'],
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'sh_direct',
+            'result' => "marker.txt\n",
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(2, $blocks);
+        $this->assertSame(TranscriptBlockKindEnum::ToolCall, $blocks[0]->kind);
+        $this->assertSame('tool_call_sh_direct', $blocks[0]->id);
+        $this->assertFalse($blocks[0]->streaming);
+        $this->assertSame('bash(command: "ls -1")', $blocks[0]->text);
+        $this->assertSame(['command' => 'ls -1'], $blocks[0]->meta['arguments'] ?? null);
+        $this->assertArrayNotHasKey('timeout', $blocks[0]->meta['arguments'] ?? []);
+
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[1]->kind);
+        $this->assertSame('tool_result_sh_direct', $blocks[1]->id);
+        $this->assertSame("marker.txt\n", $blocks[1]->text);
+        $this->assertFalse($blocks[1]->streaming);
+    }
+
+    public function testToolExecutionStartedWithArgumentsDoesNotDuplicateExistingToolCall(): void
+    {
+        // Thesis: normal LLM path already has a ToolCall block; execution start
+        // with the same id + args must not create a second ToolCall.
+        $this->accept('tool_call.started', [
+            'tool_call_id' => 'tc_llm', 'tool_name' => 'bash',
+        ]);
+        $this->accept('tool_call.arguments_completed', [
+            'tool_call_id' => 'tc_llm',
+            'tool_name' => 'bash',
+            'arguments' => ['command' => 'pwd'],
+        ]);
+        $existingText = $this->projector->blocks()[0]->text;
+
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_llm',
+            'tool_name' => 'bash',
+            'arguments' => ['command' => 'pwd'],
+        ]);
+
+        $toolCallBlocks = array_values(array_filter(
+            $this->projector->blocks(),
+            static fn (TranscriptBlock $b) => TranscriptBlockKindEnum::ToolCall === $b->kind,
+        ));
+        $this->assertCount(1, $toolCallBlocks, 'Must not create duplicate ToolCall for LLM path');
+        $this->assertSame($existingText, $toolCallBlocks[0]->text);
+        $this->assertSame('tool_result_tc_llm', $this->projector->blocks()[1]->id);
+    }
+
     public function testToolExecutionOutputDeltaAppendsText(): void
     {
         $this->accept('tool_execution.started', [
