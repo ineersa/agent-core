@@ -9,11 +9,18 @@ use Ineersa\Tui\Screen\ChatScreen;
 
 /**
  * Shared return-to-main behavior for /agents-main and Ctrl+\ toggle.
+ *
+ * Callers that own QuestionCoordinator must drop the leaving child's questions
+ * before invoking this helper (Deptrac: TuiRuntime must not depend on TuiQuestion).
  */
 final class SubagentLiveMainReturn
 {
-    public static function returnToMain(TuiSessionState $state, ChatScreen $screen, ?AgentSessionClient $client = null, bool $requestRender = true): void
-    {
+    public static function returnToMain(
+        TuiSessionState $state,
+        ChatScreen $screen,
+        ?AgentSessionClient $client = null,
+        bool $requestRender = true,
+    ): void {
         if (!$state->subagentLiveView->active) {
             return;
         }

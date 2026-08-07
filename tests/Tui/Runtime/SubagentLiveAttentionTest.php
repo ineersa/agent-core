@@ -149,6 +149,60 @@ final class SubagentLiveAttentionTest extends TestCase
         $this->assertNull($this->statusText($screen, 'agents-live'));
     }
 
+    public function testLateNeedsInputDoesNotReopenTerminalCatalogOrLiveActivity(): void
+    {
+        $state = new TuiSessionState('parent-session');
+        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+            'mode' => 'single', 'status' => 'failed', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Done',
+        ]));
+        $state->subagentLiveView->enter(new SubagentLiveChildDTO(
+            agentRunId: 'child-run-1',
+            artifactId: 'agent_a',
+            agentName: 'scout',
+            status: SubagentLiveStatusEnum::Failed,
+            taskSummary: 'Done',
+            lastActivityAtMs: 1,
+        ));
+        $state->subagentLiveView->childActivity = RunActivityStateEnum::Failed;
+
+        $screen = new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            'parent-session',
+            new PromptEditor(),
+            new TranscriptDisplayConfig(),
+            new TranscriptDisplayState(),
+        );
+
+        SubagentLiveAttention::markChildNeedsInputForRun($state, $screen, 'child-run-1');
+
+        $child = $state->subagentLiveCatalog->findByArtifactId('agent_a');
+        $this->assertSame(SubagentLiveStatusEnum::Failed, $child?->status);
+        $this->assertSame(RunActivityStateEnum::Failed, $state->subagentLiveView->childActivity);
+    }
+
+    public function testClearWaitingHumanDoesNotDowngradeTerminalCatalog(): void
+    {
+        $state = new TuiSessionState('parent-session');
+        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+            'mode' => 'single', 'status' => 'cancelled', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Done',
+        ]));
+
+        $screen = new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            'parent-session',
+            new PromptEditor(),
+            new TranscriptDisplayConfig(),
+            new TranscriptDisplayState(),
+        );
+
+        SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, 'child-run-1');
+
+        $child = $state->subagentLiveCatalog->findByArtifactId('agent_a');
+        $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child?->status);
+    }
+
     public function testRefreshAttentionFooterClearsStaleAgentsLiveWhenLiveViewInactive(): void
     {
         $state = new TuiSessionState('parent-session');

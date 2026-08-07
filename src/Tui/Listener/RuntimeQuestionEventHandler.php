@@ -144,8 +144,9 @@ final class RuntimeQuestionEventHandler
                     ],
                 ));
 
+                // Question dismiss is not child-run cancellation; clear needs-input only.
                 if (null !== $sessionState && null !== $screen) {
-                    SubagentLiveAttention::markCancelledForRun($sessionState, $screen, $runId);
+                    SubagentLiveAttention::clearWaitingHumanForRun($sessionState, $screen, $runId);
                 }
             },
         );

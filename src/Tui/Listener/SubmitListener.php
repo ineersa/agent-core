@@ -104,6 +104,12 @@ final class SubmitListener implements TuiListenerRegistrar
                 }
 
                 $active = $questionCoordinator->activeRequest();
+                $visibleOwnerRunId = $state->visibleQuestionOwnerRunId();
+                // Stale child questions must not be answered from main (or another child view).
+                if (null !== $active && null !== $active->runId && '' !== $active->runId && $active->runId !== $visibleOwnerRunId) {
+                    return;
+                }
+
                 $answerRunId = null !== $active ? $active->runId : null;
                 $questionCoordinator->answer($text);
                 $questionController->close();

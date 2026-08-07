@@ -88,6 +88,23 @@ final class SubagentLiveCatalogTest extends TestCase
         $this->assertNull($catalog->firstChildNeedingAttention());
     }
 
+    public function testApplyChildStatusRejectsTerminalToNonterminal(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'failed', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Done',
+        ]));
+
+        $catalog->applyChildStatus('agent_a', SubagentLiveStatusEnum::Running);
+        $catalog->applyChildStatus('agent_a', SubagentLiveStatusEnum::WaitingHuman);
+
+        $child = $catalog->findByArtifactId('agent_a');
+        $this->assertNotNull($child);
+        $this->assertSame(SubagentLiveStatusEnum::Failed, $child->status);
+        $this->assertNull($catalog->firstChildNeedingAttention());
+    }
+
     public function testStaleWaitingHumanProgressDoesNotDowngradeCancelledCatalogEntry(): void
     {
         $catalog = new SubagentLiveCatalog();

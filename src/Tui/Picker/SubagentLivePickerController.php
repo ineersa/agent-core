@@ -38,6 +38,14 @@ final class SubagentLivePickerController
 
     private ?AgentSessionClient $client = null;
 
+    /**
+     * Invoked with the previous child run id when leaving/switching away from it.
+     * Listener layer wires question cleanup here (Deptrac: picker must not import TuiQuestion).
+     *
+     * @var ?callable(string): void
+     */
+    private $onLeavingChildRun;
+
     /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
     private $onHumanInputRequested;
 
@@ -63,6 +71,7 @@ final class SubagentLivePickerController
         ?callable $onHumanInputRequested = null,
         ?callable $onToolQuestionRequested = null,
         ?callable $onToolTerminal = null,
+        ?callable $onLeavingChildRun = null,
     ): void {
         $this->tui = $tui;
         $this->screen = $screen;
@@ -71,6 +80,7 @@ final class SubagentLivePickerController
         $this->onHumanInputRequested = $onHumanInputRequested;
         $this->onToolQuestionRequested = $onToolQuestionRequested;
         $this->onToolTerminal = $onToolTerminal;
+        $this->onLeavingChildRun = $onLeavingChildRun;
     }
 
     public function open(): void
@@ -389,6 +399,10 @@ final class SubagentLivePickerController
         if ($state->subagentLiveView->active
             && null !== $state->subagentLiveView->selected
             && $state->subagentLiveView->selected->artifactId === $artifactId) {
+            $leavingRunId = $state->subagentLiveView->selected->agentRunId;
+            if (null !== $this->onLeavingChildRun) {
+                ($this->onLeavingChildRun)($leavingRunId);
+            }
             SubagentLiveMainReturn::returnToMain($state, $screen, $this->client, requestRender: false);
         }
 
@@ -416,12 +430,18 @@ final class SubagentLivePickerController
     private function enterLiveView(SubagentLiveChildDTO $child, TuiSessionState $state, ChatScreen $screen): void
     {
         $client = $this->client;
-        if (null !== $client) {
-            $previous = $state->subagentLiveView->selected;
-            if (null !== $previous && $previous->agentRunId !== $child->agentRunId) {
+        $previous = $state->subagentLiveView->selected;
+        if (null !== $previous && $previous->agentRunId !== $child->agentRunId) {
+            // Drop previous child's active/queued HITL before switching visible owner.
+            if (null !== $this->onLeavingChildRun) {
+                ($this->onLeavingChildRun)($previous->agentRunId);
+            }
+            if (null !== $client) {
                 $client->endObservingChildRun($previous->agentRunId);
             }
+        }
 
+        if (null !== $client) {
             $client->beginObservingChildRun($child->agentRunId);
         }
 

@@ -19,6 +19,11 @@ final class SubagentLiveAttention
                 continue;
             }
 
+            // Late HITL must not reopen terminal live/catalog rows as waiting_human.
+            if ($catalogChild->status->isTerminal()) {
+                break;
+            }
+
             if (SubagentLiveStatusEnum::WaitingHuman !== $catalogChild->status) {
                 $state->subagentLiveCatalog->applyChildStatus($catalogChild->artifactId, SubagentLiveStatusEnum::WaitingHuman);
             }
@@ -31,7 +36,9 @@ final class SubagentLiveAttention
             if (null !== $refreshed) {
                 $live->selected = $refreshed;
             }
-            $live->childActivity = RunActivityStateEnum::WaitingHuman;
+            if (!$live->childActivity->isTerminal() && RunActivityStateEnum::Cancelling !== $live->childActivity) {
+                $live->childActivity = RunActivityStateEnum::WaitingHuman;
+            }
         }
 
         self::refreshAttentionFooter($state, $screen);
@@ -65,11 +72,19 @@ final class SubagentLiveAttention
         self::refreshAttentionFooter($state, $screen);
     }
 
+    /**
+     * Confirmed cancellation only — do not call for a cancel *request* (use Cancelling + runtime terminal).
+     */
     public static function markCancelledForRun(TuiSessionState $state, ChatScreen $screen, string $agentRunId): void
     {
         foreach ($state->subagentLiveCatalog->all() as $catalogChild) {
             if ($catalogChild->agentRunId !== $agentRunId) {
                 continue;
+            }
+
+            if ($catalogChild->status->isTerminal() && SubagentLiveStatusEnum::Cancelled !== $catalogChild->status) {
+                // Preserve Failed/Completed over a late cancel confirmation.
+                break;
             }
 
             $state->subagentLiveCatalog->applyChildStatus($catalogChild->artifactId, SubagentLiveStatusEnum::Cancelled);
@@ -82,9 +97,7 @@ final class SubagentLiveAttention
             if (null !== $refreshed) {
                 $live->selected = $refreshed;
             }
-            if ($live->childActivity->isActive() || RunActivityStateEnum::Cancelling === $live->childActivity) {
-                $live->childActivity = RunActivityStateEnum::Cancelling;
-            } else {
+            if (!$live->childActivity->isTerminal() || RunActivityStateEnum::Cancelling === $live->childActivity) {
                 $live->childActivity = RunActivityStateEnum::Cancelled;
             }
         }

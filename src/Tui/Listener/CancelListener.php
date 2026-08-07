@@ -64,35 +64,54 @@ final class CancelListener implements TuiListenerRegistrar
 
             if ($questionCoordinator->actionRequired()) {
                 $active = $questionCoordinator->activeRequest();
-                if (null !== $active && QuestionKind::Text === $active->kind) {
-                    $questionCoordinator->cancel();
-                    $questionController->close();
-                    SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, $active->runId);
+                $visibleOwnerRunId = $state->visibleQuestionOwnerRunId();
+                $activeOwnedByVisible = null !== $active
+                    && (null === $active->runId || $active->runId === $visibleOwnerRunId);
 
-                    return;
-                }
+                // Only answer/cancel questions owned by the currently visible run.
+                // Stale child questions left in the coordinator must not cancel from main.
+                if ($activeOwnedByVisible) {
+                    if (QuestionKind::Text === $active->kind) {
+                        $questionCoordinator->cancel();
+                        $questionController->close();
+                        if (null !== $active->runId && '' !== $active->runId) {
+                            SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, $active->runId);
+                        }
 
-                if (null !== $active) {
+                        return;
+                    }
+
+                    // Choice/confirm/approval overlays own Esc while open.
+                    if ($questionController->isOpen()) {
+                        return;
+                    }
+
+                    // Child-owned non-text HITL without an open overlay: cancel the question only.
                     $parentRunId = null !== $state->handle ? $state->handle->runId : $state->sessionId;
                     if ($active->runId !== $parentRunId) {
                         $questionCoordinator->cancel();
                         $questionController->close();
-                        SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, $active->runId);
+                        if (null !== $active->runId && '' !== $active->runId) {
+                            SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, $active->runId);
+                        }
 
                         return;
                     }
-                }
 
-                if ($questionController->isOpen()) {
+                    // Parent HITL with no open overlay — do not cascade into run cancel.
                     return;
                 }
-
-                return;
             }
 
             $live = $state->subagentLiveView;
-            if ($live->active && null !== $live->selected && self::shouldCancelSelectedChild($live->selected, $live->childActivity)) {
+            // Live child view owns Esc entirely: never fall through to parent cancel.
+            if ($live->active && null !== $live->selected) {
                 $child = $live->selected;
+                if (!self::shouldCancelSelectedChild($child, $live->childActivity)) {
+                    // Terminal/idle selected child: consume Esc locally (no parent cascade).
+                    return;
+                }
+
                 $logger->info('ESC cancel child subagent requested', [
                     'component' => 'cancel_listener',
                     'event_type' => 'subagent_live_child_cancel_requested',
@@ -120,10 +139,13 @@ final class CancelListener implements TuiListenerRegistrar
                     return;
                 }
 
+                // Request is nonterminal until runtime/artifact confirms cancellation.
                 $live->childActivity = RunActivityStateEnum::Cancelling;
-                SubagentLiveAttention::markCancelledForRun($state, $screen, $child->agentRunId);
-                $screen->setWorkingMessage(\sprintf('Cancelling child %s...', $child->agentName));
-                $screen->setWorkingMessage(\sprintf('Cancelling child %s (%s).', $child->agentName, $child->artifactId));
+                $screen->setWorkingMessage(\sprintf(
+                    'Cancelling child %s (%s)…',
+                    $child->agentName,
+                    $child->artifactId,
+                ));
 
                 return;
             }

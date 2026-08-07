@@ -9,6 +9,8 @@ use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
+use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -19,6 +21,8 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
         private readonly TuiSessionState $state,
         private readonly ChatScreen $screen,
         private readonly ?AgentSessionClient $client = null,
+        private readonly ?QuestionCoordinator $questionCoordinator = null,
+        private readonly ?QuestionController $questionController = null,
     ) {
     }
 
@@ -26,6 +30,12 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
     {
         if (!$this->state->subagentLiveView->active) {
             return new NoOp();
+        }
+
+        $selected = $this->state->subagentLiveView->selected;
+        if (null !== $selected && null !== $this->questionCoordinator) {
+            $this->questionCoordinator->removeForRun($selected->agentRunId);
+            $this->questionController?->close();
         }
 
         SubagentLiveMainReturn::returnToMain($this->state, $this->screen, $this->client);

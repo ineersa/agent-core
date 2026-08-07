@@ -42,6 +42,11 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
             $runtimeQuestionEventHandler->handleToolTerminal($event, $questionCoordinator, $questionController);
         };
 
+        $onLeavingChildRun = static function (string $childRunId) use ($questionCoordinator, $questionController): void {
+            $questionCoordinator->removeForRun($childRunId);
+            $questionController->close();
+        };
+
         $this->pickerController->setRuntimeRefs(
             $context->tui,
             $context->screen,
@@ -50,6 +55,7 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
             onHumanInputRequested: $onHumanInputRequested,
             onToolQuestionRequested: $onToolQuestionRequested,
             onToolTerminal: $onToolTerminal,
+            onLeavingChildRun: $onLeavingChildRun,
         );
 
         $liveHandler = new AgentsLiveCommandHandler($this->pickerController);
@@ -67,7 +73,13 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
             );
         }
 
-        $mainHandler = new AgentsMainCommandHandler($context->state, $context->screen, $client);
+        $mainHandler = new AgentsMainCommandHandler(
+            $context->state,
+            $context->screen,
+            $client,
+            $questionCoordinator,
+            $questionController,
+        );
 
         if ($this->commandRegistry->has('agents-main')) {
             $this->commandRegistry->setHandler('agents-main', $mainHandler);

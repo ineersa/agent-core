@@ -309,10 +309,73 @@ class CancelListenerTest extends TestCase
             ->method('cancel')
             ->with('child-run-esc');
 
-        $this->dispatchCancelEvent();
+        $screen = $this->dispatchCancelEvent();
 
         $this->assertSame(RunActivityStateEnum::Cancelling, $this->state->subagentLiveView->childActivity);
         $this->assertSame(RunActivityStateEnum::Running, $this->state->activity, 'Parent activity must not transition when child ESC cancel succeeds');
+        $working = $screen->registry()->getWorkingMessage();
+        $this->assertStringContainsString('Cancelling child scout', $working);
+        $this->assertStringContainsString('agent_esc', $working);
+        $this->assertStringNotContainsString('Child cancelled', $working);
+    }
+
+    #[Test]
+    public function escOnTerminalChildInLiveViewDoesNotCancelParent(): void
+    {
+        $this->state->activity = RunActivityStateEnum::Running;
+        $this->state->handle = new RunHandle('parent-run-terminal-esc');
+
+        $child = new SubagentLiveChildDTO(
+            agentRunId: 'child-run-terminal',
+            artifactId: 'agent_terminal',
+            agentName: 'scout',
+            status: SubagentLiveStatusEnum::Failed,
+            taskSummary: 'task',
+            lastActivityAtMs: 1,
+        );
+        $this->state->subagentLiveView->enter($child);
+        $this->state->subagentLiveView->childActivity = RunActivityStateEnum::Failed;
+
+        $this->client->expects($this->never())->method('cancel');
+
+        $this->dispatchCancelEvent();
+
+        $this->assertSame(RunActivityStateEnum::Failed, $this->state->subagentLiveView->childActivity);
+        $this->assertSame(RunActivityStateEnum::Running, $this->state->activity);
+    }
+
+    #[Test]
+    public function escWithStaleChildQuestionInMainDoesNotCancelQuestionOrParentCascade(): void
+    {
+        $this->state->activity = RunActivityStateEnum::Running;
+        $this->state->handle = new RunHandle('parent-run-stale-q');
+        $this->assertFalse($this->state->subagentLiveView->active);
+
+        $cancelled = false;
+        $coordinator = new QuestionCoordinator();
+        $coordinator->enqueue(
+            new QuestionRequest(
+                requestId: 'stale_child_q',
+                source: QuestionSource::AgentCore,
+                kind: QuestionKind::Text,
+                prompt: 'Stale child question',
+                runId: 'child-run-stale',
+                questionId: 'q_stale',
+            ),
+            onCancel: static function () use (&$cancelled): void {
+                $cancelled = true;
+            },
+        );
+
+        $this->client->expects($this->once())
+            ->method('cancel')
+            ->with('parent-run-stale-q');
+
+        $this->dispatchCancelEvent(questionCoordinator: $coordinator);
+
+        $this->assertFalse($cancelled, 'Stale child question must not be cancelled from main');
+        $this->assertTrue($coordinator->actionRequired());
+        $this->assertSame(RunActivityStateEnum::Cancelling, $this->state->activity);
     }
 
     #[Test]
