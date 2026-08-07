@@ -88,6 +88,7 @@ final class SubagentLiveCatalog
             taskSummary: $existing->taskSummary,
             lastActivityAtMs: (int) (microtime(true) * 1000),
             model: $existing->model,
+            reasoning: $existing->reasoning,
             latestInputTokens: $existing->latestInputTokens,
             contextWindow: $existing->contextWindow,
         );
@@ -141,6 +142,7 @@ final class SubagentLiveCatalog
         $taskSummary = trim((string) ($row['task_summary'] ?? ''));
 
         $model = $this->optionalString($row['model'] ?? null);
+        $reasoning = $this->optionalString($row['reasoning'] ?? null);
         $latestInputTokens = $this->optionalPositiveInt($row['latest_input_tokens'] ?? null);
         $contextWindow = $this->optionalPositiveInt($row['context_window'] ?? null);
 
@@ -162,6 +164,9 @@ final class SubagentLiveCatalog
         if (null === $model && null !== $existing) {
             $model = $existing->model;
         }
+        if (null === $reasoning && null !== $existing) {
+            $reasoning = $existing->reasoning;
+        }
         if (0 === $latestInputTokens && null !== $existing) {
             $latestInputTokens = $existing->latestInputTokens;
         }
@@ -177,6 +182,7 @@ final class SubagentLiveCatalog
             taskSummary: $taskSummary,
             lastActivityAtMs: $now,
             model: $model,
+            reasoning: $reasoning,
             latestInputTokens: $latestInputTokens,
             contextWindow: $contextWindow,
         );

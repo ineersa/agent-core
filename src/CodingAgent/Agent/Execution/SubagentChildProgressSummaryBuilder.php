@@ -48,6 +48,7 @@ final class SubagentChildProgressSummaryBuilder
             totalTokens: $projection->totalTokens,
             cost: $projection->cost,
             model: $projection->model,
+            reasoning: $projection->reasoning,
             provider: $projection->provider,
             artifactPath: AgentArtifactPathsDTO::forArtifactId($artifactId)->artifactDir,
             assistantExcerpt: $projection->assistantExcerpt,
@@ -98,6 +99,7 @@ final class SubagentChildProgressSummaryBuilder
         $cost = 0.0;
         $hasCost = false;
         $model = $definitionModel;
+        $reasoning = null;
         $provider = null;
 
         /** @var array<string, array{name: string, args: array<string, mixed>}> $pendingById */
@@ -112,9 +114,12 @@ final class SubagentChildProgressSummaryBuilder
             if (RunEventTypeEnum::RunStarted->value === $event->type) {
                 $inner = \is_array($payload['payload'] ?? null) ? $payload['payload'] : [];
                 $metadata = \is_array($inner['metadata'] ?? null) ? $inner['metadata'] : [];
-                // Canonical launch model from run_started must override definitionModel fallback.
+                // Canonical launch model/reasoning from run_started must override definitionModel fallback.
                 if (\is_string($metadata['model'] ?? null) && '' !== $metadata['model']) {
                     $model = $metadata['model'];
+                }
+                if (\is_string($metadata['reasoning'] ?? null) && '' !== $metadata['reasoning']) {
+                    $reasoning = $metadata['reasoning'];
                 }
                 if (\is_string($metadata['provider'] ?? null) && '' !== $metadata['provider']) {
                     $provider = $metadata['provider'];
@@ -217,6 +222,7 @@ final class SubagentChildProgressSummaryBuilder
             totalTokens: $totalTokens,
             cost: $hasCost ? $cost : null,
             model: $model,
+            reasoning: $reasoning,
             provider: $provider,
             artifactPath: $artifactPath,
             assistantExcerpt: $assistantExcerpt,

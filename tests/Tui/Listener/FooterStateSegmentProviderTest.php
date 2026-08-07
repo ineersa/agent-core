@@ -94,13 +94,13 @@ class FooterStateSegmentProviderTest extends TestCase
 
         // Model name segment (priority 1) uses thinking color, NOT Accent
         $modelSegment = $segments[1];
-        $this->assertSame('glm-5.1', $modelSegment->text);
+        $this->assertSame('glm-5.1 (reasoning: high)', $modelSegment->text);
         $this->assertSame(ThemeColorEnum::ThinkingHigh, $modelSegment->color);
         $this->assertNotSame(ThemeColorEnum::Accent, $modelSegment->color);
     }
 
     #[Test]
-    public function testNoReasoningTextSegmentInFooter(): void
+    public function testMainFooterShowsModelWithReasoningSuffixWhenNonEmpty(): void
     {
         $state = $this->state;
         $state->footerModel = 'flash';
@@ -109,14 +109,12 @@ class FooterStateSegmentProviderTest extends TestCase
         $provider = new FooterStateSegmentProvider($state);
         $segments = $provider->getSegments();
 
-        // Verify that the word "medium" does not appear as a text segment
-        foreach ($segments as $segment) {
-            $this->assertStringNotContainsString(
-                'medium',
-                $segment->text,
-                'Reasoning level text should not appear in footer segments',
-            );
-        }
+        $this->assertSame('flash (reasoning: medium)', $segments[1]->text);
+        $this->assertSame(ThemeColorEnum::ThinkingMedium, $segments[1]->color);
+
+        $state->footerReasoning = '';
+        $segments = $provider->getSegments();
+        $this->assertSame('flash', $segments[1]->text);
     }
 
     #[Test]
@@ -303,12 +301,14 @@ class FooterStateSegmentProviderTest extends TestCase
                     'artifact_id' => 'agent_ctx',
                     'agent_run_id' => 'child-run-ctx',
                     'task_summary' => 'Context stats',
+                    'reasoning' => 'high',
                 ], \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverrides()),
             ],
         ));
 
         $child = $state->subagentLiveCatalog->findByArtifactId('agent_ctx');
         $this->assertNotNull($child);
+        $this->assertSame('high', $child->reasoning);
         $state->subagentLiveView->enter($child);
 
         $segments = (new FooterStateSegmentProvider($state))->getSegments();
@@ -316,7 +316,14 @@ class FooterStateSegmentProviderTest extends TestCase
         $joined = implode(' ', $texts);
 
         $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_DETAIL, $joined);
-        $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL_SHORT, $joined);
+        $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL_SHORT.' (reasoning: high)', $joined);
+
+        $modelSegments = array_values(array_filter(
+            $segments,
+            static fn (FooterSegment $s): bool => 7 === $s->priority,
+        ));
+        $this->assertCount(1, $modelSegments);
+        $this->assertSame(ThemeColorEnum::ThinkingHigh, $modelSegments[0]->color);
     }
 
     #[Test]
