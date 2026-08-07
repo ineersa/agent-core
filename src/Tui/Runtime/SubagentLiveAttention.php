@@ -8,42 +8,9 @@ use Ineersa\Tui\Screen\ChatScreen;
 
 /**
  * Syncs catalog/live-view child state and clears status-panel keys for subagent live.
- * left waiting_human before the next parent subagent_progress snapshot.
  */
 final class SubagentLiveAttention
 {
-    public static function markChildNeedsInputForRun(TuiSessionState $state, ChatScreen $screen, string $agentRunId): void
-    {
-        foreach ($state->subagentLiveCatalog->all() as $catalogChild) {
-            if ($catalogChild->agentRunId !== $agentRunId) {
-                continue;
-            }
-
-            // Late HITL must not reopen terminal live/catalog rows as waiting_human.
-            if ($catalogChild->status->isTerminal()) {
-                break;
-            }
-
-            if (SubagentLiveStatusEnum::WaitingHuman !== $catalogChild->status) {
-                $state->subagentLiveCatalog->applyChildStatus($catalogChild->artifactId, SubagentLiveStatusEnum::WaitingHuman);
-            }
-            break;
-        }
-
-        $live = $state->subagentLiveView;
-        if ($live->active && null !== $live->selected && $live->selected->agentRunId === $agentRunId) {
-            $refreshed = $state->subagentLiveCatalog->findByArtifactId($live->selected->artifactId);
-            if (null !== $refreshed) {
-                $live->selected = $refreshed;
-            }
-            if (!$live->childActivity->isTerminal() && RunActivityStateEnum::Cancelling !== $live->childActivity) {
-                $live->childActivity = RunActivityStateEnum::WaitingHuman;
-            }
-        }
-
-        self::refreshAttentionFooter($state, $screen);
-    }
-
     public static function clearWaitingHumanForRun(TuiSessionState $state, ChatScreen $screen, string $agentRunId): void
     {
         foreach ($state->subagentLiveCatalog->all() as $catalogChild) {

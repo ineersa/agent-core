@@ -237,7 +237,6 @@ final class RuntimeQuestionEventHandler
         AgentSessionClient $client,
         QuestionCoordinator $questionCoordinator,
         ?TuiSessionState $sessionState = null,
-        ?ChatScreen $screen = null,
     ): void {
         $p = $event->payload;
         $requestIdFromPayload = (string) ($p['request_id'] ?? '');

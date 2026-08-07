@@ -136,7 +136,7 @@ final class TickPollListenerChildHitlTest extends TestCase
                 'tool_name' => 'bash',
             ],
         );
-        $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator, $state, $screen);
+        $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator, $state);
 
         $active = $coordinator->activeRequest();
         $this->assertNotNull($active);
@@ -174,7 +174,7 @@ final class TickPollListenerChildHitlTest extends TestCase
                 'tool_name' => 'bash',
             ],
         );
-        $ref->invoke($this->runtimeQuestionHandler(), $cancelEvent, $client, $coordinator, $state, $screen);
+        $ref->invoke($this->runtimeQuestionHandler(), $cancelEvent, $client, $coordinator, $state);
         $this->assertTrue($coordinator->actionRequired());
         $coordinator->cancel();
 
