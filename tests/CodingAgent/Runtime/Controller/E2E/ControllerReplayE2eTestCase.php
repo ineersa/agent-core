@@ -173,6 +173,9 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             // MockHttpClient via Symfony DI.
             'APP_ENV' => 'test',
             'APP_DEBUG' => '1',
+            // Hermetic home: skill materialization and user settings must not touch
+            // the real developer HOME (proc_open env arrays do not inherit).
+            'HOME' => $this->tempDir,
             // Give the subprocess its own isolated SQLite DB so
             // migrations run fresh (the parent PHPUnit migrated the
             // shared test DB already).  The path is relative to

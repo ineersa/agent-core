@@ -213,6 +213,9 @@ abstract class ControllerE2eTestCase extends TestCase
         $env = [
             'APP_ENV' => 'test',
             'APP_DEBUG' => '1',
+            // Hermetic home: skill materialization and user settings must not touch
+            // the real developer HOME (proc_open env arrays do not inherit).
+            'HOME' => $this->tempDir,
             'HATFIELD_TEST_DATABASE_PATH' => 'app_test-live-'.$this->sessionId.'.sqlite',
             'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => 'messenger_transport_test-live-'.$this->sessionId.'.sqlite',
             'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=run_control_{$this->sessionId}&redeliver_timeout=60",
