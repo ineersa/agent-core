@@ -768,7 +768,7 @@ run(s) to finish. This is enforced inside `SubagentExecutionService` (poll loop
 deadline). The `subagent` tool definition does not set a generic ToolExecutor
 budget; child work is bounded only by this tool-owned deadline (and cancellation).
 
-**Default:** `1800` (30 minutes). Must be an integer **>= 60**. Values below 60
+**Default:** `86400` (24 hours). Must be an integer **>= 60**. Values below 60
 are rejected at config load with an error (not silently adjusted).
 
 Set higher when child agents routinely run multi-minute reviews or large

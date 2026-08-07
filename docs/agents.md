@@ -229,7 +229,7 @@ scouts/reviewers:
    modes `metadata`, `events`, or `history` to recover more detail; cancellation
    remains an error/cancelled tool result, not success.
 6. **Timeout.** Foreground `subagent` execution uses a durable deferred-batch
-   deadline from `agents.subagent_tool_timeout_seconds` (default **1800**
+   deadline from `agents.subagent_tool_timeout_seconds` (default **86400**
    seconds; minimum **60**, invalid lower values fail config load). The batch
    schedules a timeout interruption (`DelayStamp` +
    `InterruptDeferredSubagentBatchMessage`). This is not the generic

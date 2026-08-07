@@ -212,12 +212,56 @@ final class QuestionCoordinator
     }
 
     /**
+     * Silently drop active and queued questions owned by {@see $runId}.
+     *
+     * No answer/cancel callbacks fire. Other runs keep FIFO order, maps, and IDs.
+     * Used when leaving or switching away from a child live view so child HITL
+     * cannot surface in main or another child's view.
+     */
+    public function removeForRun(string $runId): void
+    {
+        $runId = trim($runId);
+        if ('' === $runId) {
+            return;
+        }
+
+        if (!$this->queue->isEmpty()) {
+            $kept = new \SplQueue();
+            while (!$this->queue->isEmpty()) {
+                /** @var QuestionRequest $request */
+                $request = $this->queue->dequeue();
+                if ($request->runId === $runId) {
+                    $this->forgetRequest($request->requestId);
+                    continue;
+                }
+                $kept->enqueue($request);
+            }
+            $this->queue = $kept;
+        }
+
+        while (null !== $this->active && $this->active->runId === $runId) {
+            $this->forgetRequest($this->active->requestId);
+            if ($this->queue->isEmpty()) {
+                $this->active = null;
+                $this->activeStatus = null;
+
+                return;
+            }
+            $this->activate($this->queue->dequeue());
+        }
+    }
+
+    private function forgetRequest(string $requestId): void
+    {
+        unset($this->callbacks[$requestId], $this->cancelCallbacks[$requestId], $this->requestIds[$requestId]);
+    }
+
+    /**
      * Advance to the next queued request, or clear the active slot.
      */
     private function advance(): void
     {
-        $activeRequestId = $this->active->requestId;
-        unset($this->callbacks[$activeRequestId], $this->cancelCallbacks[$activeRequestId], $this->requestIds[$activeRequestId]);
+        $this->forgetRequest($this->active->requestId);
 
         if ($this->queue->isEmpty()) {
             $this->active = null;
