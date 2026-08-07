@@ -451,6 +451,10 @@ final class SubagentLivePickerController
         $state->subagentLiveView->enter($child);
 
         if ($hasCachedTranscript) {
+            // Re-entry must re-dispatch HITL/tool callbacks: leave/switch silently
+            // removed coordinator questions, and cached childLastSeq would skip the
+            // original waiting event on subsequent poll(). Request-ID dedupe in
+            // RuntimeQuestionEventHandler is the safety net if a question remains.
             $cachedReplay = $state->subagentLiveView->childReplayEvents;
             $this->childPoller->replaySnapshot(
                 $state->subagentLiveView,
@@ -459,6 +463,9 @@ final class SubagentLivePickerController
                     $cachedReplay,
                     $state->subagentLiveView->childLastSeq,
                 ),
+                onHumanInputRequested: $this->onHumanInputRequested,
+                onToolQuestionRequested: $this->onToolQuestionRequested,
+                onToolTerminal: $this->onToolTerminal,
             );
         } else {
             $this->childPoller->resetProjection();

@@ -305,8 +305,8 @@ final class SubagentLiveScenarioHarness
         $handler = new AgentsMainCommandHandler(
             $this->state,
             $this->screen,
-            questionCoordinator: $this->questionCoordinator,
-            questionController: $this->questionController,
+            $this->questionCoordinator,
+            $this->questionController,
         );
         $handler->handle(new SlashCommand('agents-main', '', '/agents-main'));
     }

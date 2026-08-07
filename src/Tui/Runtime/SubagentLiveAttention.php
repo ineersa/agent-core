@@ -73,39 +73,6 @@ final class SubagentLiveAttention
     }
 
     /**
-     * Confirmed cancellation only — do not call for a cancel *request* (use Cancelling + runtime terminal).
-     */
-    public static function markCancelledForRun(TuiSessionState $state, ChatScreen $screen, string $agentRunId): void
-    {
-        foreach ($state->subagentLiveCatalog->all() as $catalogChild) {
-            if ($catalogChild->agentRunId !== $agentRunId) {
-                continue;
-            }
-
-            if ($catalogChild->status->isTerminal() && SubagentLiveStatusEnum::Cancelled !== $catalogChild->status) {
-                // Preserve Failed/Completed over a late cancel confirmation.
-                break;
-            }
-
-            $state->subagentLiveCatalog->applyChildStatus($catalogChild->artifactId, SubagentLiveStatusEnum::Cancelled);
-            break;
-        }
-
-        $live = $state->subagentLiveView;
-        if ($live->active && null !== $live->selected && $live->selected->agentRunId === $agentRunId) {
-            $refreshed = $state->subagentLiveCatalog->findByArtifactId($live->selected->artifactId);
-            if (null !== $refreshed) {
-                $live->selected = $refreshed;
-            }
-            if (!$live->childActivity->isTerminal() || RunActivityStateEnum::Cancelling === $live->childActivity) {
-                $live->childActivity = RunActivityStateEnum::Cancelled;
-            }
-        }
-
-        self::refreshAttentionFooter($state, $screen);
-    }
-
-    /**
      * Parent cancel owns foreground child lifecycle: optimistically mark active/waiting
      * catalog children cancelled so picker/footer do not stay on needs input until
      * terminal subagent_progress arrives from the runtime.

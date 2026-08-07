@@ -20,9 +20,9 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
     public function __construct(
         private readonly TuiSessionState $state,
         private readonly ChatScreen $screen,
+        private readonly QuestionCoordinator $questionCoordinator,
+        private readonly QuestionController $questionController,
         private readonly ?AgentSessionClient $client = null,
-        private readonly ?QuestionCoordinator $questionCoordinator = null,
-        private readonly ?QuestionController $questionController = null,
     ) {
     }
 
@@ -33,9 +33,9 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
         }
 
         $selected = $this->state->subagentLiveView->selected;
-        if (null !== $selected && null !== $this->questionCoordinator) {
+        if (null !== $selected) {
             $this->questionCoordinator->removeForRun($selected->agentRunId);
-            $this->questionController?->close();
+            $this->questionController->close();
         }
 
         SubagentLiveMainReturn::returnToMain($this->state, $this->screen, $this->client);

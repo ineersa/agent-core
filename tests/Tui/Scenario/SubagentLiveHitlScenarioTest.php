@@ -104,7 +104,7 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $child = $h->state->subagentLiveCatalog->findByArtifactId(self::ARTIFACT);
         $this->assertNotNull($child);
         $this->assertNotSame(SubagentLiveStatusEnum::Cancelled, $child->status);
-        $working = $this->workingMessage($h->screen);
+        $working = $h->screen->registry()->getWorkingMessage();
         $this->assertStringContainsString('Cancelling child', $working);
         $this->assertStringContainsString(self::ARTIFACT, $working);
 
@@ -286,13 +286,5 @@ final class SubagentLiveHitlScenarioTest extends TestCase
             entityManager: $this->createStub(EntityManagerInterface::class),
             switchService: $this->createStub(TuiSessionSwitchServiceInterface::class),
         );
-    }
-
-    private function workingMessage(\Ineersa\Tui\Screen\ChatScreen $screen): string
-    {
-        $ref = new \ReflectionClass($screen);
-        $registry = $ref->getProperty('registry');
-
-        return $registry->getValue($screen)->getWorkingMessage();
     }
 }
