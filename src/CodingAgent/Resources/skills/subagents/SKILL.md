@@ -36,9 +36,13 @@ After a run, copy **`Artifact: agent_<hex>`** from the tool result. Single-mode 
 
 Discovery load order (lowest → highest; later overrides earlier on name collision):
 
-1. `~/.agents/*.md` → `~/.hatfield/agents/*.md`
-2. `.agents/*.md` → `.hatfield/agents/*.md`
-3. `agents.paths` in settings (highest)
+1. `~/.agents/*.md`
+2. `.agents/*.md`
+3. `~/.hatfield/agents/*.md`
+4. `.hatfield/agents/*.md`
+5. `agents.paths` in settings (highest)
+
+Hatfield-specific roots beat generic `.agents` roots (user `~/.hatfield/agents` overrides project `.agents`).
 
 Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<available_agents>`** (name + description) when `agents.enabled` is true for every valid discovered definition.
 
