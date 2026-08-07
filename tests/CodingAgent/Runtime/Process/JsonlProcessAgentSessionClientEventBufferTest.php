@@ -427,6 +427,149 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $this->assertSame(10, $childDrain[0]->seq);
     }
 
+    /**
+     * Live half-race: parent drains shared JSONL first while a child is observed.
+     * LLM bash tool_call.* events are seq=0; arguments_completed is a stream checkpoint that
+     * prunes started/deltas. Observed runs must retain that completion so child projection still
+     * gets one ToolCall with command args before tool_execution.completed (not orphan ToolResult).
+     */
+    public function testObservedChildParentFirstPollRetainsSeqZeroToolCallCompletionForBashCard(): void
+    {
+        $parentRunId = 'parent-run';
+        $childRunId = 'child-agent-run';
+        $toolCallId = 'call_bash_live';
+        $client = $this->createIdleClient();
+        $client->beginObservingChildRun($childRunId);
+        $this->injectStdoutJsonlLines($client, [
+            $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $parentRunId, 1),
+            json_encode([
+                'type' => RuntimeEventTypeEnum::ToolCallStarted->value,
+                'runId' => $childRunId,
+                'seq' => 0,
+                'payload' => [
+                    'tool_call_id' => $toolCallId,
+                    'tool_name' => 'bash',
+                    'block_id' => 'tool_call_'.$toolCallId,
+                ],
+            ], \JSON_THROW_ON_ERROR),
+            json_encode([
+                'type' => RuntimeEventTypeEnum::ToolCallArgumentsDelta->value,
+                'runId' => $childRunId,
+                'seq' => 0,
+                'payload' => [
+                    'tool_call_id' => $toolCallId,
+                    'tool_name' => 'bash',
+                    'partial_json' => '{"command":"ls -1"}',
+                    'block_id' => 'tool_call_'.$toolCallId,
+                ],
+            ], \JSON_THROW_ON_ERROR),
+            json_encode([
+                'type' => RuntimeEventTypeEnum::ToolCallArgumentsCompleted->value,
+                'runId' => $childRunId,
+                'seq' => 0,
+                'payload' => [
+                    'tool_call_id' => $toolCallId,
+                    'tool_name' => 'bash',
+                    'arguments' => ['command' => 'ls -1'],
+                    'block_id' => 'tool_call_'.$toolCallId,
+                ],
+            ], \JSON_THROW_ON_ERROR),
+            json_encode([
+                'type' => RuntimeEventTypeEnum::ToolExecutionCompleted->value,
+                'runId' => $childRunId,
+                'seq' => 20,
+                'payload' => [
+                    'tool_call_id' => $toolCallId,
+                    'tool_name' => 'bash',
+                    'is_error' => false,
+                    'result' => "README.md\n",
+                    'order_index' => 0,
+                ],
+            ], \JSON_THROW_ON_ERROR),
+        ]);
+
+        iterator_to_array($client->events($parentRunId));
+
+        $childDrain = iterator_to_array($client->events($childRunId));
+        $types = array_map(static fn (RuntimeEvent $e): string => $e->type, $childDrain);
+        $this->assertSame(
+            [
+                RuntimeEventTypeEnum::ToolCallArgumentsCompleted->value,
+                RuntimeEventTypeEnum::ToolExecutionCompleted->value,
+            ],
+            $types,
+            'Observed parent-first demux must keep seq=0 tool_call.arguments_completed after pruning deltas',
+        );
+        $this->assertSame(['command' => 'ls -1'], $childDrain[0]->payload['arguments'] ?? null);
+
+        $dispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
+        $state = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
+        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber());
+        $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($dispatcher, $state);
+        foreach ($childDrain as $event) {
+            $projector->accept([
+                'type' => $event->type,
+                'runId' => $event->runId,
+                'seq' => $event->seq,
+                'payload' => $event->payload,
+            ]);
+        }
+
+        $toolCalls = [];
+        $toolResults = [];
+        foreach ($projector->blocks() as $block) {
+            if (\Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum::ToolCall === $block->kind) {
+                $toolCalls[] = $block;
+            }
+            if (\Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum::ToolResult === $block->kind) {
+                $toolResults[] = $block;
+            }
+        }
+
+        $this->assertCount(1, $toolCalls, 'Exactly one ToolCall after parent-first live demux');
+        $this->assertCount(1, $toolResults, 'Matching ToolResult must still project');
+        $this->assertSame('bash', $toolCalls[0]->meta['tool_name'] ?? null);
+        $this->assertSame(['command' => 'ls -1'], $toolCalls[0]->meta['arguments'] ?? null);
+        $this->assertStringContainsString('ls -1', $toolCalls[0]->text);
+        $this->assertSame($toolCallId, $toolResults[0]->meta['tool_call_id'] ?? null);
+    }
+
+    public function testUnobservedSeqZeroToolCallArgumentsCompletedIsDiscardedAfterPrune(): void
+    {
+        $parentRunId = 'parent-run';
+        $childRunId = 'child-agent-run';
+        $toolCallId = 'call_bash_unobserved';
+        $client = $this->createIdleClient();
+        // deliberately not beginObservingChildRun
+        $this->injectStdoutJsonlLines($client, [
+            $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $parentRunId, 1),
+            json_encode([
+                'type' => RuntimeEventTypeEnum::ToolCallStarted->value,
+                'runId' => $childRunId,
+                'seq' => 0,
+                'payload' => [
+                    'tool_call_id' => $toolCallId,
+                    'tool_name' => 'bash',
+                ],
+            ], \JSON_THROW_ON_ERROR),
+            json_encode([
+                'type' => RuntimeEventTypeEnum::ToolCallArgumentsCompleted->value,
+                'runId' => $childRunId,
+                'seq' => 0,
+                'payload' => [
+                    'tool_call_id' => $toolCallId,
+                    'tool_name' => 'bash',
+                    'arguments' => ['command' => 'ls'],
+                ],
+            ], \JSON_THROW_ON_ERROR),
+        ]);
+
+        iterator_to_array($client->events($parentRunId));
+
+        $childDrain = iterator_to_array($client->events($childRunId));
+        $this->assertSame([], $childDrain, 'Unobserved seq=0 tool_call completion must not be retained after prune');
+    }
+
     public function testEndObservingReleasesReplayableDurableBacklog(): void
     {
         $childRunId = 'child-agent-run';
