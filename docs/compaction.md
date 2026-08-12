@@ -33,7 +33,9 @@ Alias: `/cmp`
 
 Manual compaction is always available for parent sessions regardless of the `compaction.auto_enabled` setting.
 
-**Fork and subagent child runs do not compact.** Children are identified by `RunStarted` metadata `session.kind=agent_child` (forks also set `child_kind=fork`). Automatic after-turn compaction, pre-LLM threshold compaction, provider context-overflow recovery, and manual/API `CompactRun` are all unavailable for those runs. A child completes, hands off, or fails at the provider context limit. Parent automatic and manual compaction is unchanged. Parent-side fork snapshot compaction (`CompactionService::compactMessages` with trigger `fork` before launch) remains supported and is not gated by the child-run policy.
+**Fork and subagent child runs do not compact.** Children are identified by `RunStarted` metadata `session.kind=agent_child` (forks also set `child_kind=fork`). Automatic after-turn compaction, pre-LLM threshold compaction, and manual/API `CompactRun` are all unavailable for those runs. A child completes, hands off, or fails at the provider context limit. Parent automatic and manual compaction is unchanged. Parent-side fork snapshot compaction (`CompactionService::compactMessages` with trigger `fork` before launch) remains supported and is not gated by the child-run policy.
+
+**Provider context-limit errors do not trigger compaction.** If the model provider rejects a request as context-too-large, the run fails through the ordinary LLM error path. Hatfield does not schedule compaction recovery, retry via compaction, or rewrite/hide that failure for parent or child runs. Compaction still occurs only via manual `/compact` (parents) or automatic threshold-based scheduling (parents).
 
 **Custom instructions** are optional. When provided, they are appended to the summarization prompt to narrow or emphasize the summary:
 

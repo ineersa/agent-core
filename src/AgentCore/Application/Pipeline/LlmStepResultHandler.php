@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
@@ -19,7 +18,6 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
-use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -35,16 +33,6 @@ use Symfony\Component\Messenger\Stamp\DelayStamp;
 
 final class LlmStepResultHandler implements RunMessageHandler
 {
-    /**
-     * In-process guard: run IDs for which overflow recovery has been
-     * attempted.  Prevents repeated recovery dispatches within the same
-     * consumer process.  Cleared on process restart (intentional — a
-     * stuck compaction is better than infinite recovery loops).
-     *
-     * @var array<string, true>
-     */
-    private array $overflowRecoveryAttempted = [];
-
     public function __construct(
         private ToolBatchCollector $toolBatchCollector,
         private CommandMailboxPolicy $commandMailboxPolicy,
@@ -63,7 +51,6 @@ final class LlmStepResultHandler implements RunMessageHandler
         private int $agentRetryBaseDelayMs = 1000,
         private int $agentRetryMaxDelayMs = 60000,
         private int $maxParallelism = 1,
-        private ?EventStoreInterface $eventStore = null,
     ) {
     }
 
@@ -281,14 +268,8 @@ final class LlmStepResultHandler implements RunMessageHandler
                 );
             }
 
-            $overflowRecovery = $this->maybeScheduleOverflowRecovery(
-                $runId,
-                $state->turnNo,
-                $error,
-            );
-            if (null !== $overflowRecovery) {
-                $postCommit[] = $overflowRecovery;
-            }
+            // Context-overflow is a visible LLM failure. Do not schedule
+            // CompactRun recovery or hide the provider rejection.
 
             return new HandlerResult(
                 nextState: $nextState,
@@ -651,15 +632,6 @@ final class LlmStepResultHandler implements RunMessageHandler
         return $specs;
     }
 
-    /**
-     * Schedule a one-shot compaction recovery when the LLM error
-     * indicates a context-overflow (prompt exceeded the model's
-     * context window).
-     *
-     * Returns a postCommit callback that dispatches CompactRun with
-     * trigger 'overflow_recovery', or null when recovery is not
-     * applicable or already attempted.
-     */
     private function autoRetryContinueCallback(string $runId, int $turnNo, string $stepId, int $retryAttempt): callable
     {
         return function () use ($runId, $turnNo, $stepId, $retryAttempt): void {
@@ -702,94 +674,5 @@ final class LlmStepResultHandler implements RunMessageHandler
                 throw new \RuntimeException(\sprintf('Failed to dispatch auto-retry Continue for run %s.', $runId), previous: $exception);
             }
         };
-    }
-
-    /**
-     * @param array<string, mixed> $classifiedError
-     */
-    private function maybeScheduleOverflowRecovery(
-        string $runId,
-        int $turnNo,
-        array $classifiedError,
-    ): ?callable {
-        if (null === $this->commandBus || null === $this->errorClassifier) {
-            return null;
-        }
-
-        // Fork/subagent children never compact — overflow must fail at the
-        // provider limit rather than schedule CompactRun recovery. This gate
-        // is required because overflow recovery truly dispatches CompactRun.
-        if ($this->isAgentChildRun($runId)) {
-            return null;
-        }
-
-        // One-attempt guard — prevent repeated recovery dispatches
-        // for the same overflow episode.
-        $guardKey = \sprintf('%s|%d', $runId, $turnNo);
-        if (isset($this->overflowRecoveryAttempted[$guardKey])) {
-            return null;
-        }
-
-        if (!$this->errorClassifier->isContextOverflow($classifiedError)) {
-            return null;
-        }
-
-        $this->overflowRecoveryAttempted[$guardKey] = true;
-
-        return function () use ($runId): void {
-            $stepId = \sprintf('compact-%d', hrtime(true));
-
-            try {
-                $this->commandBus->dispatch(new CompactRun(
-                    runId: $runId,
-                    turnNo: 0,
-                    stepId: $stepId,
-                    attempt: 1,
-                    idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
-                    trigger: 'overflow_recovery',
-                ));
-            } catch (ExceptionInterface $exception) {
-                throw new \RuntimeException(\sprintf('Failed to dispatch overflow-recovery CompactRun for run %s.', $runId), previous: $exception);
-            }
-        };
-    }
-
-    /**
-     * Child detection from RunStarted nested metadata (session.kind=agent_child).
-     *
-     * Shape matches StartRunHandler / SubagentRunMetadataReader:
-     * $event->payload['payload']['metadata']['session']['kind'].
-     * Missing/malformed metadata is not a child (parent overflow recovery remains allowed).
-     */
-    private function isAgentChildRun(string $runId): bool
-    {
-        if (null === $this->eventStore) {
-            return false;
-        }
-
-        foreach ($this->eventStore->allFor($runId) as $event) {
-            if (RunEventTypeEnum::RunStarted->value !== $event->type) {
-                continue;
-            }
-
-            $inner = $event->payload['payload'] ?? null;
-            if (!\is_array($inner)) {
-                return false;
-            }
-
-            $metadata = $inner['metadata'] ?? null;
-            if (!\is_array($metadata)) {
-                return false;
-            }
-
-            $session = $metadata['session'] ?? [];
-            if (!\is_array($session)) {
-                return false;
-            }
-
-            return 'agent_child' === ($session['kind'] ?? null);
-        }
-
-        return false;
     }
 }

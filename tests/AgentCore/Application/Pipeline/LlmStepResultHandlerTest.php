@@ -15,7 +15,6 @@ use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
@@ -25,7 +24,6 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
-use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
@@ -609,7 +607,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertCount(0, $commandBus->messages);
     }
 
-    public function testContextOverflow500DoesNotDispatchAutoRetryContinue(): void
+    public function testContextOverflowFailsVisiblyWithoutCompactRunOrAutoRetry(): void
     {
         $executionBus = new TestMessageBus();
         $commandBus = new TestMessageBus();
@@ -665,105 +663,28 @@ final class LlmStepResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
+        $this->assertSame(RunStatus::Failed, $result->nextState->status);
         $this->assertFalse($result->nextState->retryableFailure);
+        $this->assertNotNull($result->nextState->errorMessage);
 
-        $hasCompact = false;
-        foreach ($result->postCommit as $callback) {
-            $callback();
-        }
-        foreach ($commandBus->messages as $dispatched) {
-            if ($dispatched instanceof CompactRun) {
-                $hasCompact = true;
+        $failed = null;
+        foreach ($result->events as $event) {
+            if (RunEventTypeEnum::LlmStepFailed->value === $event->type) {
+                $failed = $event;
+                break;
             }
-            $this->assertNotInstanceOf(\Ineersa\AgentCore\Domain\Message\ApplyCommand::class, $dispatched);
         }
-        $this->assertTrue($hasCompact, 'Overflow recovery should dispatch CompactRun, not Continue.');
-    }
-
-    public function testContextOverflowDoesNotDispatchCompactRunForAgentChild(): void
-    {
-        $executionBus = new TestMessageBus();
-        $commandBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
-        $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
-
-        $eventStore = new InMemoryEventStore();
-        $eventStore->seed(new RunEvent(
-            runId: 'run-child-overflow',
-            seq: 1,
-            turnNo: 0,
-            type: RunEventTypeEnum::RunStarted->value,
-            payload: [
-                'step_id' => 'start-1',
-                'payload' => [
-                    'system_prompt' => 'child',
-                    'messages' => [],
-                    'metadata' => [
-                        'session' => [
-                            'kind' => 'agent_child',
-                            'parent_run_id' => 'parent-1',
-                        ],
-                    ],
-                ],
-            ],
-        ));
-
-        $handler = new LlmStepResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
-            commandMailboxPolicy: new CommandMailboxPolicy(
-                commandStore: new InMemoryCommandStore(),
-                commandRouter: new CommandRouter([]),
-            ),
-            eventFactory: new EventFactory(),
-            toolCallExtractor: new ToolCallExtractor(),
-            messageNormalizer: new AgentMessageNormalizer(),
-            stepDispatcher: $stepDispatcher,
-            commandBus: $commandBus,
-            errorClassifier: $classifier,
-            agentRetryMaxAttempts: 2,
-            agentRetryBaseDelayMs: 0,
-            agentRetryMaxDelayMs: 0,
-            eventStore: $eventStore,
-        );
-
-        $error = $classifier->classify([
-            'type' => 'RuntimeException',
-            'message' => 'Context size has been exceeded.',
-            'http_status_code' => 500,
-        ]);
-
-        $state = new RunState(
-            runId: 'run-child-overflow',
-            status: RunStatus::Running,
-            version: 2,
-            turnNo: 1,
-            lastSeq: 3,
-            activeStepId: 'step-1',
-            messages: [
-                new \Ineersa\AgentCore\Domain\Message\AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Hi']]),
-            ],
-            model: 'test-model');
-
-        $message = new LlmStepResult(
-            runId: 'run-child-overflow',
-            turnNo: 1,
-            stepId: 'step-1',
-            attempt: 1,
-            idempotencyKey: 'llm-child-overflow-1',
-            assistantMessage: null,
-            usage: [],
-            stopReason: null,
-            error: $error,
-        );
-
-        $result = $handler->handle($message, $state);
+        $this->assertNotNull($failed, 'Context overflow must emit the normal LlmStepFailed event.');
+        $this->assertFalse($failed->payload['retryable'] ?? true);
 
         foreach ($result->postCommit as $callback) {
             $callback();
         }
         foreach ($commandBus->messages as $dispatched) {
             $this->assertNotInstanceOf(CompactRun::class, $dispatched,
-                'Agent child context overflow must not dispatch CompactRun recovery.');
+                'Provider context overflow must not schedule CompactRun recovery.');
+            $this->assertNotInstanceOf(\Ineersa\AgentCore\Domain\Message\ApplyCommand::class, $dispatched,
+                'Provider context overflow must not auto-retry via Continue.');
         }
         $this->assertCount(0, $commandBus->messages);
     }
