@@ -8,35 +8,9 @@ use Ineersa\Tui\Screen\ChatScreen;
 
 /**
  * Syncs catalog/live-view child state and clears status-panel keys for subagent live.
- * left waiting_human before the next parent subagent_progress snapshot.
  */
 final class SubagentLiveAttention
 {
-    public static function markChildNeedsInputForRun(TuiSessionState $state, ChatScreen $screen, string $agentRunId): void
-    {
-        foreach ($state->subagentLiveCatalog->all() as $catalogChild) {
-            if ($catalogChild->agentRunId !== $agentRunId) {
-                continue;
-            }
-
-            if (SubagentLiveStatusEnum::WaitingHuman !== $catalogChild->status) {
-                $state->subagentLiveCatalog->applyChildStatus($catalogChild->artifactId, SubagentLiveStatusEnum::WaitingHuman);
-            }
-            break;
-        }
-
-        $live = $state->subagentLiveView;
-        if ($live->active && null !== $live->selected && $live->selected->agentRunId === $agentRunId) {
-            $refreshed = $state->subagentLiveCatalog->findByArtifactId($live->selected->artifactId);
-            if (null !== $refreshed) {
-                $live->selected = $refreshed;
-            }
-            $live->childActivity = RunActivityStateEnum::WaitingHuman;
-        }
-
-        self::refreshAttentionFooter($state, $screen);
-    }
-
     public static function clearWaitingHumanForRun(TuiSessionState $state, ChatScreen $screen, string $agentRunId): void
     {
         foreach ($state->subagentLiveCatalog->all() as $catalogChild) {
@@ -59,33 +33,6 @@ final class SubagentLiveAttention
             }
             if (RunActivityStateEnum::WaitingHuman === $live->childActivity) {
                 $live->childActivity = RunActivityStateEnum::Running;
-            }
-        }
-
-        self::refreshAttentionFooter($state, $screen);
-    }
-
-    public static function markCancelledForRun(TuiSessionState $state, ChatScreen $screen, string $agentRunId): void
-    {
-        foreach ($state->subagentLiveCatalog->all() as $catalogChild) {
-            if ($catalogChild->agentRunId !== $agentRunId) {
-                continue;
-            }
-
-            $state->subagentLiveCatalog->applyChildStatus($catalogChild->artifactId, SubagentLiveStatusEnum::Cancelled);
-            break;
-        }
-
-        $live = $state->subagentLiveView;
-        if ($live->active && null !== $live->selected && $live->selected->agentRunId === $agentRunId) {
-            $refreshed = $state->subagentLiveCatalog->findByArtifactId($live->selected->artifactId);
-            if (null !== $refreshed) {
-                $live->selected = $refreshed;
-            }
-            if ($live->childActivity->isActive() || RunActivityStateEnum::Cancelling === $live->childActivity) {
-                $live->childActivity = RunActivityStateEnum::Cancelling;
-            } else {
-                $live->childActivity = RunActivityStateEnum::Cancelled;
             }
         }
 

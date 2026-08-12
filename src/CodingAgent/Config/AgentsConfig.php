@@ -19,7 +19,7 @@ final readonly class AgentsConfig
 {
     private const SUBAGENT_TOOL_TIMEOUT_SECONDS_MIN = 60;
 
-    private const SUBAGENT_TOOL_TIMEOUT_SECONDS_DEFAULT = 1800;
+    private const SUBAGENT_TOOL_TIMEOUT_SECONDS_DEFAULT = 86400;
 
     /**
      * @param bool         $enabled               Whether agent discovery is enabled
@@ -34,7 +34,7 @@ final readonly class AgentsConfig
         public int $maxAgents = 4,
 
         #[SerializedName('subagent_tool_timeout_seconds')]
-        public int $subagentToolTimeoutSeconds = 1800,
+        public int $subagentToolTimeoutSeconds = 86400,
 
         #[SerializedName('subagent_excluded_tools')]
         public array $subagentExcludedTools = ['settings', 'hatfield_docs'],

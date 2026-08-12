@@ -74,6 +74,94 @@ final class TuiSubagentChildHitlCancellationE2eTest extends TestCase
         }
     }
 
+    public function testLeaveChildLiveViewDropsChildQuestionAndEscDoesNotFalseCancel(): void
+    {
+        $pane = $this->tmux->startDetached(
+            command: $this->agentCommand(),
+            prefix: 'tui-subagent-child-hitl-leave',
+            width: 120,
+            height: 60,
+            cwd: $this->testProjectDir,
+        );
+
+        $sessionId = $this->createSessionAndWaitForAssistant($pane);
+        SubagentChildHitlEventsFixture::write($this->testProjectDir, $sessionId);
+
+        $this->tmux->sendKey($pane, 'C-u');
+        $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
+        $this->tmux->sendKey($pane, 'Enter');
+        $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
+        $this->tmux->waitForTuiReadyAfterLogo($pane);
+
+        $this->tmux->waitForCaptureContains($pane, 'needs input', 12.0, 'Main transcript card must show child needs input');
+
+        $this->tmux->sendKey($pane, 'C-u');
+        $this->tmux->sendLiteral($pane, '/agents-live');
+        $this->tmux->sendKey($pane, 'Enter');
+        $this->tmux->waitForCaptureContains($pane, 'Agents live', 10.0, 'Agents live picker must open');
+        $this->tmux->waitForCaptureContains($pane, '⚠ needs input', 10.0, 'Picker must mark waiting child');
+
+        $this->tmux->sendKey($pane, 'Enter');
+        $this->tmux->waitForCaptureContains($pane, 'Child waiting for your input', 10.0, 'Live view working line must show child waiting');
+        $this->tmux->waitForCaptureContains($pane, 'Which file should the scout inspect next?', 12.0, 'Child question overlay prompt must appear');
+        $this->tmux->waitForCaptureContains($pane, 'agents-live scout', 10.0, 'Live-view footer must show agents-live chrome');
+
+        // Production leave path: Ctrl+\ → SubagentLiveMainReturn (same as /agents-main).
+        // Do not wait for the transient "Returned to main session" working line — ticks overwrite it.
+        $this->tmux->sendKey($pane, 'C-\\');
+        $this->tmux->waitForCallback(
+            $pane,
+            static function (string $cap): bool {
+                $leftLiveChrome = !str_contains($cap, 'agents-live scout')
+                    && !str_contains($cap, 'Child waiting for your input');
+                $questionGone = !str_contains($cap, 'Which file should the scout inspect next?');
+
+                return $leftLiveChrome && $questionGone;
+            },
+            timeout: 12.0,
+            message: 'Ctrl+\\ leave must drop live chrome and child question from main UI',
+            history: 2000,
+        );
+
+        $captureAfterLeave = $this->tmux->capturePlainWithHistory($pane, 2000);
+        $this->assertStringNotContainsString(
+            'Which file should the scout inspect next?',
+            $captureAfterLeave,
+            'Child question must not remain visible in main after leaving live view',
+        );
+        $this->assertStringNotContainsString(
+            'Child waiting for your input',
+            $captureAfterLeave,
+            'Child live working line must not remain after Ctrl+\\',
+        );
+        $this->assertStringNotContainsString(
+            'agents-live scout',
+            $captureAfterLeave,
+            'Live-view footer chrome must clear after leave',
+        );
+
+        // Esc on main after leave must not fabricate child-cancel confirmation.
+        $this->tmux->sendKey($pane, 'Escape');
+        usleep(500_000);
+        $captureAfterEsc = $this->tmux->capturePlainWithHistory($pane, 2000);
+
+        $this->assertStringNotContainsString(
+            'Child cancelled',
+            $captureAfterEsc,
+            'Esc on main must not show false child-cancel confirmation',
+        );
+        $this->assertStringNotContainsString(
+            'Cancelling child',
+            $captureAfterEsc,
+            'Esc on main must not request selected-child cancellation after leave',
+        );
+        $this->assertStringNotContainsString(
+            'Cancelled by parent',
+            $captureAfterEsc,
+            'Esc after leave must not indicate parent-driven child cancellation',
+        );
+    }
+
     private function createSessionAndWaitForAssistant(TmuxPane $pane): string
     {
         $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);

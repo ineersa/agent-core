@@ -13,7 +13,7 @@ final class SubagentToolDefinitionBuilderTest extends IsolatedKernelTestCase
     public function testBuildDoesNotSetToolExecutorTimeout(): void
     {
         $handler = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler::class);
-        $def = SubagentToolDefinitionBuilder::build(new AgentsConfig(subagentToolTimeoutSeconds: 1800), $handler);
+        $def = SubagentToolDefinitionBuilder::build(new AgentsConfig(subagentToolTimeoutSeconds: 86400), $handler);
 
         $this->assertNull($def->timeoutSeconds);
         $this->assertStringContainsString('full child handoff inline', $def->description);
@@ -27,7 +27,7 @@ final class SubagentToolDefinitionBuilderTest extends IsolatedKernelTestCase
     public function testBuildGuidanceRequiresIndependentBatchAndDependentSerialization(): void
     {
         $handler = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler::class);
-        $def = SubagentToolDefinitionBuilder::build(new AgentsConfig(subagentToolTimeoutSeconds: 1800), $handler);
+        $def = SubagentToolDefinitionBuilder::build(new AgentsConfig(subagentToolTimeoutSeconds: 86400), $handler);
 
         // Provider schema must remain cache-stable with origin/main wording.
         $this->assertStringContainsString('Single mode uses "agent" and "task"', $def->description);

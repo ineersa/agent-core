@@ -47,7 +47,7 @@ final class AgentsConfigTest extends TestCase
         $this->assertTrue($config->enabled);
         $this->assertCount(0, $config->paths);
         $this->assertSame(4, $config->maxAgents);
-        $this->assertSame(1800, $config->subagentToolTimeoutSeconds);
+        $this->assertSame(86400, $config->subagentToolTimeoutSeconds);
         $this->assertSame(['settings', 'hatfield_docs'], $config->subagentExcludedTools);
     }
 

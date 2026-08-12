@@ -199,6 +199,19 @@ final class TuiSessionState
     }
 
     /**
+     * Run id that currently owns visible HITL / Esc / submit question routing.
+     * Parent session in main view; selected child while live view is active.
+     */
+    public function visibleQuestionOwnerRunId(): string
+    {
+        if ($this->subagentLiveView->active && null !== $this->subagentLiveView->selected) {
+            return $this->subagentLiveView->selected->agentRunId;
+        }
+
+        return null !== $this->handle ? $this->handle->runId : $this->sessionId;
+    }
+
+    /**
      * Apply a queued-user-message runtime event to the pending-queue state.
      *
      * Pushes user.message_queued entries (keyed by idempotency_key, value =
