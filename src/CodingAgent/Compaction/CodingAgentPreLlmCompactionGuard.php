@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Compaction;
 
-use Ineersa\AgentCore\Contract\Compaction\CompactionEligibilityPolicyInterface;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 
 /**
@@ -43,7 +43,7 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
         private readonly CompactionConfig $compactionConfig,
         private readonly ProviderContextUsageResolver $providerUsageResolver,
         private readonly RunModelResolverInterface $modelResolver,
-        private readonly CompactionEligibilityPolicyInterface $compactionEligibilityPolicy,
+        private readonly SubagentRunMetadataReader $metadataReader,
     ) {
     }
 
@@ -55,7 +55,7 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
         ?string $activeModel = null,
     ): bool {
         // Fork/subagent children never compact — do not schedule pre-LLM CompactRun.
-        if (!$this->compactionEligibilityPolicy->isCompactionAllowed($runId)) {
+        if ($this->metadataReader->isAgentChild($runId)) {
             return false;
         }
 

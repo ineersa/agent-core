@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Compaction;
 
-use Ineersa\AgentCore\Contract\Compaction\CompactionEligibilityPolicyInterface;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Compaction\CodingAgentPreLlmCompactionGuard;
 use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use Ineersa\CodingAgent\Config\CompactionConfig;
@@ -35,7 +35,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
     private CompactionConfig $compactionConfig;
     /** @var RunModelResolverInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $modelResolver;
-    private CompactionEligibilityPolicyInterface $compactionEligibilityPolicy;
+    private SubagentRunMetadataReader $metadataReader;
 
     protected function setUp(): void
     {
@@ -49,14 +49,13 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         // Most tests don't care about the model; return null by default.
         $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
-        $this->compactionEligibilityPolicy = $this->createStub(CompactionEligibilityPolicyInterface::class);
-        $this->compactionEligibilityPolicy->method('isCompactionAllowed')->willReturn(true);
+        $this->metadataReader = new SubagentRunMetadataReader($this->eventStore);
 
         $this->guard = new CodingAgentPreLlmCompactionGuard(
             $this->compactionConfig,
             $this->providerUsageResolver,
             $this->modelResolver,
-            $this->compactionEligibilityPolicy,
+            $this->metadataReader,
         );
     }
 
@@ -127,7 +126,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $disabledConfig,
             $this->providerUsageResolver,
             $this->modelResolver,
-            $this->compactionEligibilityPolicy,
+            $this->metadataReader,
         );
 
         $messages = [
@@ -169,7 +168,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $configWithOverride,
             $this->providerUsageResolver,
             $modelResolver,
-            $this->compactionEligibilityPolicy,
+            $this->metadataReader,
         );
 
         $messages = [
@@ -323,7 +322,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->compactionConfig,
             $this->providerUsageResolver,
             $this->modelResolver,
-            $this->compactionEligibilityPolicy,
+            $this->metadataReader,
         );
 
         $this->assertFalse(
@@ -392,22 +391,34 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
      */
     public function testReturnsFalseForAgentChildRunAboveThreshold(): void
     {
-        $deny = $this->createStub(CompactionEligibilityPolicyInterface::class);
-        $deny->method('isCompactionAllowed')->willReturn(false);
-
-        $guard = new CodingAgentPreLlmCompactionGuard(
-            $this->compactionConfig,
-            $this->providerUsageResolver,
-            $this->modelResolver,
-            $deny,
-        );
+        // Child gate reads RunStarted; usage resolver would also see this store,
+        // but the child check short-circuits before threshold evaluation.
+        $this->eventStore->method('allFor')->willReturn([
+            new RunEvent(
+                runId: 'child-run',
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: [
+                    'step_id' => 'start-1',
+                    'payload' => [
+                        'system_prompt' => 'child',
+                        'messages' => [],
+                        'metadata' => [
+                            'session' => [
+                                'kind' => 'agent_child',
+                                'parent_run_id' => 'parent-1',
+                            ],
+                        ],
+                    ],
+                ],
+            ),
+            $this->makeLlmStepCompletedEvent(12000),
+        ]);
 
         $messages = [$this->makeTextMessage('user', 'Hello')];
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
-
         $this->assertFalse(
-            $guard->shouldCompactBeforeLlmStep('child-run', 1, $messages, null),
+            $this->guard->shouldCompactBeforeLlmStep('child-run', 1, $messages, null),
             'Agent child runs must not trigger pre-LLM compaction.',
         );
     }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Compaction;
 
-use Ineersa\AgentCore\Contract\Compaction\CompactionEligibilityPolicyInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
@@ -12,6 +11,7 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -31,7 +31,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *
  * Guards:
  *  - Agent child runs (fork/subagent; session.kind=agent_child) via
- *    CompactionEligibilityPolicyInterface — children never auto-compact
+ *    SubagentRunMetadataReader — children never auto-compact
  *  - Auto disabled via compaction.auto_enabled (per-provider/per-model overrides)
  *  - In-flight compaction (activeStepId starts with compact-)
  *  - Commit contains compaction lifecycle events (avoids loops)
@@ -56,7 +56,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         private readonly RunModelResolverInterface $modelResolver,
         private readonly MessageBusInterface $commandBus,
         private readonly CompactionServiceInterface $compactionService,
-        private readonly CompactionEligibilityPolicyInterface $compactionEligibilityPolicy,
+        private readonly SubagentRunMetadataReader $metadataReader,
     ) {
     }
 
@@ -66,7 +66,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
 
         // Guard: fork/subagent child runs never compact (auto or manual).
         // Parent-side fork snapshot compaction is separate and unchanged.
-        if (!$this->compactionEligibilityPolicy->isCompactionAllowed($runId)) {
+        if ($this->metadataReader->isAgentChild($runId)) {
             return $context;
         }
 

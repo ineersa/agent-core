@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Compaction;
 
-use Ineersa\AgentCore\Contract\Compaction\CompactionEligibilityPolicyInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
@@ -20,7 +19,9 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Compaction\AutoCompactionHookSubscriber;
 use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use Ineersa\CodingAgent\Config\CompactionConfig;
@@ -50,7 +51,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     /** @var CompactionServiceInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $compactionService;
     private TestMessageBus $commandBus;
-    private CompactionEligibilityPolicyInterface $compactionEligibilityPolicy;
+    private SubagentRunMetadataReader $metadataReader;
 
     protected function setUp(): void
     {
@@ -83,8 +84,9 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                 priorSummaryPresent: false,
             ));
         $this->commandBus = new TestMessageBus();
-        $this->compactionEligibilityPolicy = $this->createStub(CompactionEligibilityPolicyInterface::class);
-        $this->compactionEligibilityPolicy->method('isCompactionAllowed')->willReturn(true);
+        // Parent by default: empty event store so isAgentChild() is false.
+        // Provider usage stays on the separate $this->eventStore mock.
+        $this->metadataReader = new SubagentRunMetadataReader(new InMemoryEventStore());
 
         $this->subscriber = new AutoCompactionHookSubscriber(
             $this->runStore,
@@ -93,7 +95,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $this->compactionService,
-            $this->compactionEligibilityPolicy,
+            $this->metadataReader,
         );
     }
 
@@ -200,7 +202,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $this->compactionService,
-            $this->compactionEligibilityPolicy,
+            $this->metadataReader,
         );
 
         $context = $this->createHookContext();
@@ -357,7 +359,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $modelResolver,
             $this->commandBus,
             $this->compactionService,
-            $this->compactionEligibilityPolicy,
+            $this->metadataReader,
         );
 
         $messages = [
@@ -611,7 +613,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $this->compactionService,
-            $this->compactionEligibilityPolicy,
+            $this->metadataReader,
         );
 
         $freshSubscriber->handleAfterTurnCommit($this->createHookContext());
@@ -940,7 +942,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $summaryOnlyService,
-            $this->compactionEligibilityPolicy,
+            $this->metadataReader,
         );
 
         $context = $this->createHookContext();
@@ -1031,7 +1033,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $summaryPlusFreshService,
-            $this->compactionEligibilityPolicy,
+            $this->metadataReader,
         );
 
         $context = $this->createHookContext();
@@ -1100,7 +1102,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $failedService,
-            $this->compactionEligibilityPolicy,
+            $this->metadataReader,
         );
 
         $context = $this->createHookContext();
@@ -1146,8 +1148,31 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     {
         $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
-        $deny = $this->createStub(CompactionEligibilityPolicyInterface::class);
-        $deny->method('isCompactionAllowed')->willReturn(false);
+        // Metadata reader uses its own event store with RunStarted child shape.
+        // Provider usage resolver keeps the shared eventStore mock for threshold.
+        $childEventStore = $this->createMock(EventStoreInterface::class);
+        $childEventStore->method('allFor')->willReturn([
+            new RunEvent(
+                runId: 'run-1',
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: [
+                    'step_id' => 'start-1',
+                    'payload' => [
+                        'system_prompt' => 'child',
+                        'messages' => [],
+                        'metadata' => [
+                            'session' => [
+                                'kind' => 'agent_child',
+                                'parent_run_id' => 'parent-1',
+                            ],
+                        ],
+                    ],
+                ],
+            ),
+        ]);
+        $childReader = new SubagentRunMetadataReader($childEventStore);
 
         // Fresh mock: child gate must return before prepare().
         $compactionService = $this->createMock(CompactionServiceInterface::class);
@@ -1160,7 +1185,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $compactionService,
-            $deny,
+            $childReader,
         );
 
         $messages = [$this->makeTextMessage('user', 'Hello')];

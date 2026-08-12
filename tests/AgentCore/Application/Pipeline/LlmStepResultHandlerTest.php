@@ -10,12 +10,13 @@ use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
-use Ineersa\AgentCore\Contract\Compaction\CompactionEligibilityPolicyInterface;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
@@ -24,6 +25,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
@@ -685,8 +687,26 @@ final class LlmStepResultHandlerTest extends TestCase
         $stepDispatcher = new StepDispatcher($executionBus);
         $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
 
-        $deny = $this->createStub(CompactionEligibilityPolicyInterface::class);
-        $deny->method('isCompactionAllowed')->willReturn(false);
+        $eventStore = new InMemoryEventStore();
+        $eventStore->seed(new RunEvent(
+            runId: 'run-child-overflow',
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'step_id' => 'start-1',
+                'payload' => [
+                    'system_prompt' => 'child',
+                    'messages' => [],
+                    'metadata' => [
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'parent_run_id' => 'parent-1',
+                        ],
+                    ],
+                ],
+            ],
+        ));
 
         $handler = new LlmStepResultHandler(
             toolBatchCollector: new ToolBatchCollector(),
@@ -703,7 +723,7 @@ final class LlmStepResultHandlerTest extends TestCase
             agentRetryMaxAttempts: 2,
             agentRetryBaseDelayMs: 0,
             agentRetryMaxDelayMs: 0,
-            compactionEligibilityPolicy: $deny,
+            eventStore: $eventStore,
         );
 
         $error = $classifier->classify([

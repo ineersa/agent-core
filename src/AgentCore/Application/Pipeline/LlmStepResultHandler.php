@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver;
-use Ineersa\AgentCore\Contract\Compaction\CompactionEligibilityPolicyInterface;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
@@ -63,7 +63,7 @@ final class LlmStepResultHandler implements RunMessageHandler
         private int $agentRetryBaseDelayMs = 1000,
         private int $agentRetryMaxDelayMs = 60000,
         private int $maxParallelism = 1,
-        private ?CompactionEligibilityPolicyInterface $compactionEligibilityPolicy = null,
+        private ?EventStoreInterface $eventStore = null,
     ) {
     }
 
@@ -717,10 +717,9 @@ final class LlmStepResultHandler implements RunMessageHandler
         }
 
         // Fork/subagent children never compact — overflow must fail at the
-        // provider limit rather than schedule CompactRun recovery.
-        if (null !== $this->compactionEligibilityPolicy
-            && !$this->compactionEligibilityPolicy->isCompactionAllowed($runId)
-        ) {
+        // provider limit rather than schedule CompactRun recovery. This gate
+        // is required because overflow recovery truly dispatches CompactRun.
+        if ($this->isAgentChildRun($runId)) {
             return null;
         }
 
@@ -753,5 +752,44 @@ final class LlmStepResultHandler implements RunMessageHandler
                 throw new \RuntimeException(\sprintf('Failed to dispatch overflow-recovery CompactRun for run %s.', $runId), previous: $exception);
             }
         };
+    }
+
+    /**
+     * Child detection from RunStarted nested metadata (session.kind=agent_child).
+     *
+     * Shape matches StartRunHandler / SubagentRunMetadataReader:
+     * $event->payload['payload']['metadata']['session']['kind'].
+     * Missing/malformed metadata is not a child (parent overflow recovery remains allowed).
+     */
+    private function isAgentChildRun(string $runId): bool
+    {
+        if (null === $this->eventStore) {
+            return false;
+        }
+
+        foreach ($this->eventStore->allFor($runId) as $event) {
+            if (RunEventTypeEnum::RunStarted->value !== $event->type) {
+                continue;
+            }
+
+            $inner = $event->payload['payload'] ?? null;
+            if (!\is_array($inner)) {
+                return false;
+            }
+
+            $metadata = $inner['metadata'] ?? null;
+            if (!\is_array($metadata)) {
+                return false;
+            }
+
+            $session = $metadata['session'] ?? [];
+            if (!\is_array($session)) {
+                return false;
+            }
+
+            return 'agent_child' === ($session['kind'] ?? null);
+        }
+
+        return false;
     }
 }

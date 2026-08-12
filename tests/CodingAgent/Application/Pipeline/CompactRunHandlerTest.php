@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Application\Pipeline;
 
-use Ineersa\AgentCore\Contract\Compaction\CompactionEligibilityPolicyInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
 use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
@@ -20,6 +20,8 @@ use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler;
 use Ineersa\CodingAgent\Compaction\BeforeCompactionHookInterface;
 use Ineersa\CodingAgent\Compaction\CompactionBoundarySelector;
@@ -87,7 +89,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
-            $this->allowCompactionPolicy(false),
+            $this->metadataReader(isChild: true),
         );
 
         $result = $handler->handle(
@@ -132,7 +134,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
-            $this->allowCompactionPolicy(),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -218,7 +220,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
-            $this->allowCompactionPolicy(),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -261,7 +263,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
-            $this->allowCompactionPolicy(),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -320,7 +322,7 @@ final class CompactRunHandlerTest extends TestCase
                 new EventFactory(),
                 $this->hooks([]),
                 $this->extensionHooks([]),
-                $this->allowCompactionPolicy(),
+                $this->metadataReader(),
             );
 
             $result = $handler->handle(
@@ -381,7 +383,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$cancelHook]),
             $this->extensionHooks([$cancelHook]),
-            $this->allowCompactionPolicy(),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -463,7 +465,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$replaceHook]),
             $this->extensionHooks([$replaceHook]),
-            $this->allowCompactionPolicy(),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -778,7 +780,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$hook]),
             $this->extensionHooks([$hook]),
-            $this->allowCompactionPolicy(),
+            $this->metadataReader(),
         );
 
         $handler->handle(
@@ -832,7 +834,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$hook]),
             $this->extensionHooks([$hook]),
-            $this->allowCompactionPolicy(),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -902,7 +904,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$cancelHook]),
             $this->extensionHooks([$cancelHook]),
-            $this->allowCompactionPolicy(),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -964,7 +966,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
-            $this->allowCompactionPolicy(),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -1010,7 +1012,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
-            $this->allowCompactionPolicy(),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -1087,7 +1089,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$cancelHook]),
             $this->extensionHooks([$cancelHook]),
-            $this->allowCompactionPolicy(),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -1191,7 +1193,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([], [$publicHook]),
-            $this->allowCompactionPolicy(),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -1462,12 +1464,32 @@ final class CompactRunHandlerTest extends TestCase
         return new CompactionHookDispatcher($hooks);
     }
 
-    private function allowCompactionPolicy(bool $allowed = true): CompactionEligibilityPolicyInterface
+    private function metadataReader(bool $isChild = false, string $runId = 'child-run'): SubagentRunMetadataReader
     {
-        $policy = $this->createStub(CompactionEligibilityPolicyInterface::class);
-        $policy->method('isCompactionAllowed')->willReturn($allowed);
+        $eventStore = new InMemoryEventStore();
+        if ($isChild) {
+            $eventStore->seed(new RunEvent(
+                runId: $runId,
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: [
+                    'step_id' => 'start-1',
+                    'payload' => [
+                        'system_prompt' => 'child',
+                        'messages' => [],
+                        'metadata' => [
+                            'session' => [
+                                'kind' => 'agent_child',
+                                'parent_run_id' => 'parent-1',
+                            ],
+                        ],
+                    ],
+                ],
+            ));
+        }
 
-        return $policy;
+        return new SubagentRunMetadataReader($eventStore);
     }
 
     /**
