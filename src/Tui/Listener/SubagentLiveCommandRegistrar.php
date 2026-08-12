@@ -35,11 +35,16 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
         $onHumanInputRequested = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
             $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator, $state, $screen);
         };
-        $onToolQuestionRequested = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
-            $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator, $state, $screen);
+        $onToolQuestionRequested = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $runtimeQuestionEventHandler): void {
+            $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator, $state);
         };
         $onToolTerminal = static function (RuntimeEvent $event) use ($questionCoordinator, $questionController, $runtimeQuestionEventHandler): void {
             $runtimeQuestionEventHandler->handleToolTerminal($event, $questionCoordinator, $questionController);
+        };
+
+        $onLeavingChildRun = static function (string $childRunId) use ($questionCoordinator, $questionController): void {
+            $questionCoordinator->removeForRun($childRunId);
+            $questionController->close();
         };
 
         $this->pickerController->setRuntimeRefs(
@@ -50,6 +55,7 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
             onHumanInputRequested: $onHumanInputRequested,
             onToolQuestionRequested: $onToolQuestionRequested,
             onToolTerminal: $onToolTerminal,
+            onLeavingChildRun: $onLeavingChildRun,
         );
 
         $liveHandler = new AgentsLiveCommandHandler($this->pickerController);
@@ -67,7 +73,13 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
             );
         }
 
-        $mainHandler = new AgentsMainCommandHandler($context->state, $context->screen, $client);
+        $mainHandler = new AgentsMainCommandHandler(
+            $context->state,
+            $context->screen,
+            $questionCoordinator,
+            $questionController,
+            $client,
+        );
 
         if ($this->commandRegistry->has('agents-main')) {
             $this->commandRegistry->setHandler('agents-main', $mainHandler);
