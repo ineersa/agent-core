@@ -10,10 +10,6 @@
             "options": {
                 "symlink": true
             }
-        },
-        {
-            "type": "vcs",
-            "url": "https://github.com/ineersa/tui"
         }
     ],
     "require": {
@@ -47,7 +43,7 @@
         "symfony/ai-platform": "^0.11",
         "symfony/validator": "^8.0",
         "symfony/uid": "^8.0",
-        "symfony/tui": "dev-fix-tui-markdown-inline-html as 8.1.x-dev",
+        "symfony/tui": "8.1.x-dev",
         "symfony/ai-generic-platform": "^0.11",
         "symfony/ai-open-responses-platform": "^0.11",
         "monolog/monolog": "^3.10",
