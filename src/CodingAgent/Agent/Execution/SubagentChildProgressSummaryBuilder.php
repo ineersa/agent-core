@@ -98,8 +98,8 @@ final class SubagentChildProgressSummaryBuilder
         $totalTokens = 0;
         $cost = 0.0;
         $hasCost = false;
-        $model = $definitionModel;
-        $reasoning = null;
+        $model = null !== $definitionModel ? $definitionModel : '';
+        $reasoning = '';
         $provider = null;
 
         /** @var array<string, array{name: string, args: array<string, mixed>}> $pendingById */

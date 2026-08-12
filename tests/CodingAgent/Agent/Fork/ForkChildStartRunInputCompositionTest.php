@@ -53,7 +53,12 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
 
         $sanitizer = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer::class);
         $inherited = $sanitizer->sanitize($parentMessages);
-        $prepared = $builder->buildPrepared($identity, new ForkLaunchTaskDTO(task: 'Delegated task body', inheritedMessages: $inherited), $policy);
+        $prepared = $builder->buildPrepared(
+            $identity,
+            new ForkLaunchTaskDTO(task: 'Delegated task body', inheritedMessages: $inherited, reasoningOverride: 'medium'),
+            $policy,
+            parentModel: 'test-model',
+        );
         $messages = $prepared->startRunInput->messages;
         $roles = array_map(static fn (AgentMessage $m): string => $m->role, $messages);
 
@@ -95,7 +100,12 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             artifactKind: AgentArtifactKindEnum::Fork,
         );
         $policy = ['tools' => ['read'], 'mcp' => ['mode' => 'inherit', 'tools' => []]];
-        $prepared = $builder->buildPrepared($identity, new ForkLaunchTaskDTO(task: 'Sys contract task', inheritedMessages: []), $policy);
+        $prepared = $builder->buildPrepared(
+            $identity,
+            new ForkLaunchTaskDTO(task: 'Sys contract task', inheritedMessages: [], reasoningOverride: 'medium'),
+            $policy,
+            parentModel: 'test-model',
+        );
 
         $this->assertNotSame('', trim($prepared->startRunInput->systemPrompt));
         $this->assertSame(
@@ -140,7 +150,12 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
         $policy = ['tools' => ['read'], 'mcp' => ['mode' => 'inherit', 'tools' => []]];
         $sanitizer = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer::class);
         $inherited = $sanitizer->sanitize($parentMessages);
-        $prepared = $builder->buildPrepared($identity, new ForkLaunchTaskDTO(task: 'Compact task', inheritedMessages: $inherited), $policy);
+        $prepared = $builder->buildPrepared(
+            $identity,
+            new ForkLaunchTaskDTO(task: 'Compact task', inheritedMessages: $inherited, reasoningOverride: 'medium'),
+            $policy,
+            parentModel: 'test-model',
+        );
 
         $found = array_values(array_filter(
             $prepared->startRunInput->messages,
@@ -188,7 +203,12 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
         $policy = ['tools' => ['read'], 'mcp' => ['mode' => 'inherit', 'tools' => []]];
         $sanitizer = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer::class);
         $inherited = $sanitizer->sanitize($parentMessages);
-        $prepared = $builder->buildPrepared($identity, new ForkLaunchTaskDTO(task: 'Task', inheritedMessages: $inherited), $policy);
+        $prepared = $builder->buildPrepared(
+            $identity,
+            new ForkLaunchTaskDTO(task: 'Task', inheritedMessages: $inherited, reasoningOverride: 'medium'),
+            $policy,
+            parentModel: 'test-model',
+        );
 
         foreach ($prepared->startRunInput->messages as $message) {
             $this->assertNotSame(
@@ -216,7 +236,12 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             artifactKind: AgentArtifactKindEnum::Fork,
         );
         $policy = ['tools' => ['read', 'bash'], 'mcp' => ['mode' => 'inherit', 'tools' => []]];
-        $prepared = $builder->buildPrepared($identity, new ForkLaunchTaskDTO(task: 'Task', inheritedMessages: []), $policy);
+        $prepared = $builder->buildPrepared(
+            $identity,
+            new ForkLaunchTaskDTO(task: 'Task', inheritedMessages: [], reasoningOverride: 'medium'),
+            $policy,
+            parentModel: 'test-model',
+        );
 
         $allowed = $prepared->startRunInput->metadata->toolsScope['allowed_tools'] ?? [];
         $this->assertNotContains('fork', $allowed);
@@ -273,7 +298,12 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             artifactKind: AgentArtifactKindEnum::Fork,
         );
         $policy = ['tools' => ['read'], 'mcp' => ['mode' => 'inherit', 'tools' => []]];
-        $prepared = $builder->buildPrepared($identity, new ForkLaunchTaskDTO(task: 'Task', inheritedMessages: []), $policy);
+        $prepared = $builder->buildPrepared(
+            $identity,
+            new ForkLaunchTaskDTO(task: 'Task', inheritedMessages: [], reasoningOverride: 'medium'),
+            $policy,
+            parentModel: 'test-model',
+        );
 
         $contractMessages = array_values(array_filter(
             $prepared->startRunInput->messages,

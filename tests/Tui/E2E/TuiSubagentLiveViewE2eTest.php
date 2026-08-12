@@ -58,13 +58,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->waitForTuiReadyAfterLogo($pane);
             // Resume proof: fixture artifact must be visible before slash commands.
             $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 12.0, 'Resumed transcript must show fixture artifact');
-            // Resume may leave footer model as no-model; reasoning suffix is the contract under test.
-            $this->tmux->waitForCaptureContains(
-                $pane,
-                '(reasoning: medium)',
-                10.0,
-                'Main footer must show main reasoning level',
-            );
+            // Main footer keeps reasoning as color only (no text suffix). Capture border before live view.
             $mainBorderSgr = $this->editorBottomBorderSgr($this->tmux->captureAnsi($pane));
             $this->assertNotNull($mainBorderSgr, 'Main editor border SGR must be readable before live view');
 
@@ -123,12 +117,6 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->sendLiteral($pane, '/agents-main');
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'scout [completed]', 10.0, 'Parent transcript must restore after /agents-main');
-            $this->tmux->waitForCaptureContains(
-                $pane,
-                '(reasoning: medium)',
-                10.0,
-                'Main footer reasoning must restore after /agents-main',
-            );
             $parentCap = $this->tmux->capturePlainWithHistory($pane, 2500);
             $this->assertStringContainsString(ChildContextStatisticsFixture::TRANSCRIPT_CTX_LINE, $parentCap, 'Parent child card must show context usage line after resume');
             $this->assertStringNotContainsString('Subagent live:', $this->tmux->capturePlainWithHistory($pane, 2500));

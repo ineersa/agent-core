@@ -31,8 +31,8 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         public int $reasoningTokens = 0,
         public int $totalTokens = 0,
         public ?float $cost = null,
-        public ?string $model = null,
-        public ?string $reasoning = null,
+        public string $model = '',
+        public string $reasoning = '',
         public ?string $provider = null,
         public array $recentTools = [],
         public ?string $activeToolLine = null,
@@ -72,10 +72,10 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         if (null !== $this->cost && $this->cost > 0.0) {
             $data['cost'] = $this->cost;
         }
-        if (null !== $this->model && '' !== $this->model) {
+        if ('' !== $this->model) {
             $data['model'] = $this->model;
         }
-        if (null !== $this->reasoning && '' !== $this->reasoning) {
+        if ('' !== $this->reasoning) {
             $data['reasoning'] = $this->reasoning;
         }
         if (null !== $this->provider && '' !== $this->provider) {
@@ -114,8 +114,8 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
             reasoningTokens: isset($data['reasoning_tokens']) && is_numeric($data['reasoning_tokens']) ? (int) $data['reasoning_tokens'] : 0,
             totalTokens: isset($data['total_tokens']) && is_numeric($data['total_tokens']) ? (int) $data['total_tokens'] : 0,
             cost: isset($data['cost']) && is_numeric($data['cost']) ? (float) $data['cost'] : null,
-            model: \is_string($data['model'] ?? null) ? $data['model'] : null,
-            reasoning: \is_string($data['reasoning'] ?? null) ? $data['reasoning'] : null,
+            model: \is_string($data['model'] ?? null) ? $data['model'] : '',
+            reasoning: \is_string($data['reasoning'] ?? null) ? $data['reasoning'] : '',
             provider: \is_string($data['provider'] ?? null) ? $data['provider'] : null,
             recentTools: array_values(array_filter($recent, static fn ($line): bool => \is_string($line))),
             activeToolLine: \is_string($data['active_tool'] ?? null) ? $data['active_tool'] : null,

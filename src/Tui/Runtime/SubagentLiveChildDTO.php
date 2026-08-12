@@ -16,8 +16,8 @@ final readonly class SubagentLiveChildDTO
         public SubagentLiveStatusEnum $status,
         public string $taskSummary,
         public int $lastActivityAtMs,
-        public ?string $model = null,
-        public ?string $reasoning = null,
+        public string $model = '',
+        public string $reasoning = '',
         public int $latestInputTokens = 0,
         public int $contextWindow = 0,
     ) {

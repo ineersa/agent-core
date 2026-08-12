@@ -69,6 +69,7 @@ final class ForkChildLaunchInputBuilder
             allowedExtensions: $effectiveExtensions,
         );
 
+        // Resolver fails closed: model/thinking are concrete non-empty strings.
         $childMetadata = new RunMetadata(
             session: [
                 'kind' => 'agent_child',

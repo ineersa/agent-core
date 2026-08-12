@@ -47,7 +47,9 @@ final class DeferredChildRunEventProjector
         $totalTokens = $current->totalTokens;
         $cost = $current->cost;
         $hasCost = null !== $cost && $cost > 0.0;
-        $model = $current->model ?? $definitionModel;
+        $model = '' !== $current->model
+            ? $current->model
+            : (null !== $definitionModel ? $definitionModel : '');
         $reasoning = $current->reasoning;
         $provider = $current->provider;
         $recentTools = $current->recentTools;

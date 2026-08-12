@@ -22,9 +22,9 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
  *     ⌂ cwd (25)
  *     ⎇ branch (30)
  *
- * When reasoning is non-empty, the model segment text is `model (reasoning: level)`
- * (same convention as `/usage`). Colour still follows the reasoning level for the
- * diamond and model segments.
+ * Reasoning level is NOT shown as a text segment on the main footer — it only
+ * affects the diamond AND model-name colour (matching Pi's thinking-level colouring).
+ * Live-child footer is different: selected child model text includes reasoning.
  */
 final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
 {
@@ -54,7 +54,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
             color: $thinkColor,
         );
         $segments[] = new FooterSegment(
-            text: self::modelWithReasoningLabel($modelName, $s->footerReasoning),
+            text: $modelName,
             priority: 1,
             color: $thinkColor,
         );
@@ -188,17 +188,6 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         return ThemeColorEnum::forReasoning($reasoning);
     }
 
-    /** Append ` (reasoning: level)` when level is non-empty (matches `/usage`). */
-    public static function modelWithReasoningLabel(string $model, string $reasoning): string
-    {
-        $reasoning = trim($reasoning);
-        if ('' === $reasoning) {
-            return $model;
-        }
-
-        return $model.' (reasoning: '.$reasoning.')';
-    }
-
     public static function formatTokenCount(int $n): string
     {
         return ContextUsageFormatter::formatTokenCount($n);
@@ -226,13 +215,14 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
             if (null !== $ctxFormatted) {
                 $segments[] = new FooterSegment(text: $ctxFormatted->text, priority: 6, color: $ctxFormatted->color);
             }
-            if (null !== $child->model && '' !== $child->model) {
-                $childReasoning = $child->reasoning ?? '';
+            if ('' !== $child->model) {
+                $childReasoning = $child->reasoning;
+                $modelText = FooterStateInitializer::shortModelName($child->model);
+                if ('' !== trim($childReasoning)) {
+                    $modelText .= ' (reasoning: '.trim($childReasoning).')';
+                }
                 $segments[] = new FooterSegment(
-                    text: self::modelWithReasoningLabel(
-                        FooterStateInitializer::shortModelName($child->model),
-                        $childReasoning,
-                    ),
+                    text: $modelText,
                     priority: 7,
                     color: self::thinkingColor($childReasoning),
                 );

@@ -118,6 +118,7 @@ final class SubagentProgressProjectionTest extends TestCase
             'artifact_id' => 'agent_rich', 'task_summary' => 'Inspect docs', 'turn_no' => 2, 'elapsed_ms' => 139000,
             'tool_count' => 5, 'total_tokens' => 49000, 'input_tokens' => 35000, 'output_tokens' => 14000,
             'reasoning_tokens' => 584000, 'cost' => 0.0104, 'model' => 'deepseek/deepseek-v4-flash',
+            'reasoning' => 'high',
             'artifact_path' => 'artifacts/agents/agent_rich',
             'recent_tools' => ['read: path="docs/agents.md"'],
             'assistant_excerpt' => 'Scanning agent docs.',
@@ -139,6 +140,7 @@ final class SubagentProgressProjectionTest extends TestCase
         $text = $blocks[0]->text;
         $this->assertStringContainsString('38 tools', $text);
         $this->assertStringContainsString('49k tok', $text);
+        $this->assertStringContainsString('deepseek/deepseek-v4-flash (reasoning: high)', $text);
         $this->assertStringContainsString('grep', $text);
         $this->assertStringNotContainsString('docs/agents.md', $text);
         $this->assertStringNotContainsString('| turn 2 | artifact', $text);

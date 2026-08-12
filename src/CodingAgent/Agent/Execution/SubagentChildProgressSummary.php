@@ -25,8 +25,8 @@ final readonly class SubagentChildProgressSummary
         public int $reasoningTokens = 0,
         public int $totalTokens = 0,
         public ?float $cost = null,
-        public ?string $model = null,
-        public ?string $reasoning = null,
+        public string $model = '',
+        public string $reasoning = '',
         public ?string $provider = null,
         public ?string $artifactPath = null,
         public ?string $assistantExcerpt = null,
@@ -54,10 +54,10 @@ final readonly class SubagentChildProgressSummary
         if (null !== $this->cost && $this->cost > 0.0) {
             $fields['cost'] = $this->cost;
         }
-        if (null !== $this->model && '' !== $this->model) {
+        if ('' !== $this->model) {
             $fields['model'] = $this->model;
         }
-        if (null !== $this->reasoning && '' !== $this->reasoning) {
+        if ('' !== $this->reasoning) {
             $fields['reasoning'] = $this->reasoning;
         }
         if ($this->contextWindow > 0) {

@@ -82,6 +82,7 @@ final class SubagentExecutionServiceFactory
                 $args['appConfig'],
                 $args['childExtensionSelection'],
                 $args['toolRegistry'],
+                $args['metadataReader'],
             );
         $launchPreparation = new SubagentLaunchPreparationService(
             $definitionPolicy,

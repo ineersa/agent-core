@@ -94,13 +94,13 @@ class FooterStateSegmentProviderTest extends TestCase
 
         // Model name segment (priority 1) uses thinking color, NOT Accent
         $modelSegment = $segments[1];
-        $this->assertSame('glm-5.1 (reasoning: high)', $modelSegment->text);
+        $this->assertSame('glm-5.1', $modelSegment->text);
         $this->assertSame(ThemeColorEnum::ThinkingHigh, $modelSegment->color);
         $this->assertNotSame(ThemeColorEnum::Accent, $modelSegment->color);
     }
 
     #[Test]
-    public function testMainFooterShowsModelWithReasoningSuffixWhenNonEmpty(): void
+    public function testNoReasoningTextSegmentInMainFooter(): void
     {
         $state = $this->state;
         $state->footerModel = 'flash';
@@ -109,12 +109,11 @@ class FooterStateSegmentProviderTest extends TestCase
         $provider = new FooterStateSegmentProvider($state);
         $segments = $provider->getSegments();
 
-        $this->assertSame('flash (reasoning: medium)', $segments[1]->text);
-        $this->assertSame(ThemeColorEnum::ThinkingMedium, $segments[1]->color);
-
-        $state->footerReasoning = '';
-        $segments = $provider->getSegments();
         $this->assertSame('flash', $segments[1]->text);
+        $this->assertSame(ThemeColorEnum::ThinkingMedium, $segments[1]->color);
+        foreach ($segments as $segment) {
+            $this->assertStringNotContainsString('reasoning:', $segment->text);
+        }
     }
 
     #[Test]

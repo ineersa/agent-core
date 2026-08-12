@@ -108,6 +108,21 @@ final class ForkToolContractTest extends TestCase
         $resolved2 = $resolver->resolve('explicit/model', null, 'parent/model', 'medium');
         $this->assertSame('explicit/model', $resolved2->model);
         $this->assertSame('low', $resolved2->thinking);
+
+        $emptyModelResolver = new ForkRuntimeConfigResolver(new ForksConfigDTO(model: null, thinkingLevel: null));
+        try {
+            $emptyModelResolver->resolve(null, null, null, null);
+            $this->fail('Expected RuntimeException when model and thinking are all missing');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('missing explicit model', $e->getMessage());
+        }
+
+        try {
+            $emptyModelResolver->resolve('parent/model', null, 'parent/model', null);
+            $this->fail('Expected RuntimeException when thinking candidates are all missing');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('missing explicit thinking', $e->getMessage());
+        }
     }
 
     public function testPromptGuidelinesAndParallelModeExposeSafetyGuidance(): void

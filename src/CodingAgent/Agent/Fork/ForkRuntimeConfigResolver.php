@@ -20,12 +20,18 @@ final class ForkRuntimeConfigResolver
         ?string $parentReasoning,
     ): ForkRuntimeResolvedConfigDTO {
         $model = $this->firstNonEmpty($explicitModel, $this->forksConfig->model, $parentModel);
+        if (null === $model) {
+            throw new \RuntimeException('Cannot launch fork: missing explicit model, forks.model, and parent execution model.');
+        }
 
         $thinking = $this->firstNonEmpty(
             $explicitThinking,
             $this->forksConfig->thinkingLevel,
             $parentReasoning,
         );
+        if (null === $thinking) {
+            throw new \RuntimeException('Cannot launch fork: missing explicit thinking, forks.thinking_level, and parent reasoning.');
+        }
 
         return new ForkRuntimeResolvedConfigDTO(model: $model, thinking: $thinking);
     }

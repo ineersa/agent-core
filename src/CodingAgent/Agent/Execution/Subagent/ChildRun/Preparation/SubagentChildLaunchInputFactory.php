@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\AgentChildLaunchContextDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
@@ -29,6 +30,7 @@ final class SubagentChildLaunchInputFactory
         private readonly AppConfig $appConfig,
         private readonly ChildExtensionSelectionService $childExtensionSelection,
         private readonly ToolRegistryInterface $toolRegistry,
+        private readonly SubagentRunMetadataReader $metadataReader,
     ) {
     }
 
@@ -65,13 +67,19 @@ final class SubagentChildLaunchInputFactory
         // Pin the effective child model at launch from explicit override or
         // the exact parent execution model that produced the tool call.
         $effectiveModel = $this->resolveEffectiveChildModel($definition->model, $parentModel);
+        // Reasoning follows the same launch precedence as forks: explicit
+        // definition thinking, else parent run_started.metadata.reasoning.
+        $effectiveReasoning = $this->resolveEffectiveChildReasoning(
+            $definition->thinking,
+            $identity->parentRunId,
+        );
 
         $childMetadata = $this->buildChildRunMetadata(
             parentRunId: $identity->parentRunId,
             agentName: $identity->displayName,
             artifactId: $identity->artifactId,
             model: $effectiveModel,
-            reasoning: $definition->thinking,
+            reasoning: $effectiveReasoning,
             allowedTools: $allowedTools,
             mcp: $mcp,
             extensions: $effectiveExtensions,
@@ -97,8 +105,8 @@ final class SubagentChildLaunchInputFactory
         string $parentRunId,
         string $agentName,
         string $artifactId,
-        ?string $model,
-        ?string $reasoning,
+        string $model,
+        string $reasoning,
         array $allowedTools,
         array $mcp,
         array $extensions,
@@ -137,6 +145,22 @@ final class SubagentChildLaunchInputFactory
         }
 
         throw new \RuntimeException('Cannot launch child run: missing explicit child model and parent execution model snapshot.');
+    }
+
+    private function resolveEffectiveChildReasoning(?string $definitionThinking, string $parentRunId): string
+    {
+        $explicit = null !== $definitionThinking ? trim($definitionThinking) : '';
+        if ('' !== $explicit) {
+            return $explicit;
+        }
+
+        $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId) ?? [];
+        $parentReasoning = $parentMetadata['reasoning'] ?? null;
+        if (\is_string($parentReasoning) && '' !== trim($parentReasoning)) {
+            return trim($parentReasoning);
+        }
+
+        throw new \RuntimeException('Cannot launch child run: missing explicit child thinking and parent run reasoning snapshot.');
     }
 
     private function resolveContextWindowForModel(?string $model): int
