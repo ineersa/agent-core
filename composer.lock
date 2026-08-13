@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "64d947e5831030d34a4178f06cd38619",
+    "content-hash": "bdf1aa942de1035a012af60db0efcd76",
     "packages": [
         {
             "name": "amphp/amp",
@@ -9061,16 +9061,16 @@
         },
         {
             "name": "symfony/tui",
-            "version": "dev-fix-tui-markdown-inline-html",
+            "version": "8.1.x-dev",
             "source": {
                 "type": "git",
-                "url": "https://github.com/ineersa/tui.git",
-                "reference": "130bc651f2e22919c6a4036f6fe8658cfd2df78c"
+                "url": "https://github.com/symfony/tui.git",
+                "reference": "b490918497b19a388e5cac435667b66ea68ace4d"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/ineersa/tui/zipball/130bc651f2e22919c6a4036f6fe8658cfd2df78c",
-                "reference": "130bc651f2e22919c6a4036f6fe8658cfd2df78c",
+                "url": "https://api.github.com/repos/symfony/tui/zipball/b490918497b19a388e5cac435667b66ea68ace4d",
+                "reference": "b490918497b19a388e5cac435667b66ea68ace4d",
                 "shasum": ""
             },
             "require": {
@@ -9092,6 +9092,7 @@
                     "/Tests/"
                 ]
             },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "MIT"
             ],
@@ -9114,9 +9115,27 @@
                 "tui"
             ],
             "support": {
-                "source": "https://github.com/ineersa/tui/tree/fix-tui-markdown-inline-html"
+                "source": "https://github.com/symfony/tui/tree/8.1"
             },
-            "time": "2026-07-29T00:48:44+00:00"
+            "funding": [
+                {
+                    "url": "https://symfony.com/sponsor",
+                    "type": "custom"
+                },
+                {
+                    "url": "https://github.com/fabpot",
+                    "type": "github"
+                },
+                {
+                    "url": "https://github.com/nicolas-grekas",
+                    "type": "github"
+                },
+                {
+                    "url": "https://tidelift.com/funding/github/packagist/symfony/symfony",
+                    "type": "tidelift"
+                }
+            ],
+            "time": "2026-08-11T13:16:01+00:00"
         },
         {
             "name": "symfony/type-info",
@@ -13486,14 +13505,7 @@
             "time": "2025-12-08T11:19:18+00:00"
         }
     ],
-    "aliases": [
-        {
-            "package": "symfony/tui",
-            "version": "dev-fix-tui-markdown-inline-html",
-            "alias": "8.1.x-dev",
-            "alias_normalized": "8.1.9999999.9999999-dev"
-        }
-    ],
+    "aliases": [],
     "minimum-stability": "dev",
     "stability-flags": {
         "ineersa/hatfield-extension-api": 20,
