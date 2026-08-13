@@ -171,60 +171,39 @@ final class McpConfigLoader
     }
 
     /**
-     * Diagnostic priority matches pre-Serializer semantics:
-     *  1) unknown fields
-     *  2) wrong-type enabled
-     *  3) source-aware transport/inheritance (including early return for inherited disable-only)
-     *  4) Serializer+Validator for normal per-server field rules
+     * Hydrate/validate every raw server via Serializer+Validator first, then apply
+     * source-aware no-transport rules using the typed DTO.
      *
-     * Inherited disable-only deliberately bypasses DTO hydration so extra allowed
-     * fields are ignored even when malformed (historical behavior).
+     * A no-transport definition is allowed only as an inherited project disable
+     * marker (`enabled: false`). All field/type/unknown-field checks run first,
+     * including on disable markers.
      *
      * @param array<string, mixed>      $data
      * @param array<string, mixed>|null $globalServers
      */
     private function validateServer(string $name, array $data, ?array $globalServers): void
     {
-        $allowedFields = [
-            'enabled', 'command', 'args', 'env', 'cwd',
-            'url', 'headers', 'timeoutMs', 'startupTimeoutMs', 'availability', 'excludeTools',
-        ];
+        $dto = $this->hydrateServerDefinition($name, $data);
 
-        foreach (array_keys($data) as $key) {
-            if (!\in_array($key, $allowedFields, true)) {
-                throw new \RuntimeException(\sprintf('MCP server "%s": unknown field "%s". Allowed fields: %s.', $name, $key, implode(', ', $allowedFields)));
-            }
+        if (null !== $dto->transportType) {
+            return;
         }
 
-        if (\array_key_exists('enabled', $data) && !\is_bool($data['enabled'])) {
-            throw new \RuntimeException(\sprintf('MCP server "%s": "enabled" must be a boolean, got %s.', $name, \gettype($data['enabled'])));
-        }
+        $isInherited = null !== $globalServers && \array_key_exists($name, $globalServers);
 
-        $enabled = $data['enabled'] ?? true;
-        // isset: null is treated as absent (matches prior transport presence checks).
-        $hasCommand = isset($data['command']);
-        $hasUrl = isset($data['url']);
-
-        // No transport defined — only loader can evaluate inheritance context.
-        if (!$hasCommand && !$hasUrl) {
-            if (null !== $globalServers && \array_key_exists($name, $globalServers)) {
-                // Inherited disable-only: return after unknown/enabled checks; ignore other fields.
-                if (\array_key_exists('enabled', $data) && false === $data['enabled']) {
-                    return;
-                }
-
-                throw new \RuntimeException(\sprintf('MCP server "%s": missing transport (command or url). An inherited server override must define a transport or explicitly set "enabled": false.', $name));
+        if ($isInherited) {
+            if (false === $dto->enabled) {
+                return;
             }
 
-            if (false === $enabled) {
-                throw new \RuntimeException(\sprintf('MCP server "%s": cannot define a server with only "enabled": false and no transport. This server is not inherited from global config.', $name));
-            }
-
-            throw new \RuntimeException(\sprintf('MCP server "%s": missing transport. Define "command" for a STDIO server or "url" for an HTTP server.', $name));
+            throw new \RuntimeException(\sprintf('MCP server "%s": missing transport (command or url). An inherited server override must define a transport or explicitly set "enabled": false.', $name));
         }
 
-        // Field types, list/map shapes, command xor url, timeouts, availability.
-        $this->hydrateServerDefinition($name, $data);
+        if (false === $dto->enabled) {
+            throw new \RuntimeException(\sprintf('MCP server "%s": cannot define a server with only "enabled": false and no transport. This server is not inherited from global config.', $name));
+        }
+
+        throw new \RuntimeException(\sprintf('MCP server "%s": missing transport. Define "command" for a STDIO server or "url" for an HTTP server.', $name));
     }
 
     /**
@@ -252,7 +231,7 @@ final class McpConfigLoader
             $extra = $e->getExtraAttributes();
             $first = (string) reset($extra);
 
-            throw new \RuntimeException(\sprintf('MCP server "%s": unknown field "%s". Allowed fields: enabled, command, args, env, cwd, url, headers, timeoutMs, startupTimeoutMs, availability, excludeTools.', $name, $first));
+            throw new \RuntimeException(\sprintf('MCP server "%s": unknown field "%s".', $name, $first));
         } catch (MissingConstructorArgumentsException $e) {
             $missing = $e->getMissingConstructorArguments();
             $first = ltrim((string) reset($missing), '$');

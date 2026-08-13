@@ -621,7 +621,7 @@ JSON;
     }
 
     /**
-     * Source-aware inheritance/disable priority after unknown-field and enabled-type checks.
+     * Source-aware inheritance/disable rules after Serializer/Validator hydration.
      *
      * @param array<string, mixed>|null $globalServers
      * @param array<string, mixed>      $projectServers
@@ -665,30 +665,35 @@ JSON;
      */
     public static function inheritanceAndPriorityCases(): iterable
     {
-        // Inherited disable-only with malformed allowed fields still succeeds (fields ignored).
-        yield 'inherited disable ignores malformed allowed fields' => [
+        // Plain inherited disable marker still accepted (covered also by dedicated test).
+        yield 'plain inherited disable accepted' => [
             ['filesystem' => ['command' => 'npx']],
-            ['filesystem' => [
-                'enabled' => false,
-                'timeoutMs' => 0,
-                'args' => 'not-a-list',
-                'env' => 'not-a-map',
-                'availability' => 'nope',
-            ]],
+            ['filesystem' => ['enabled' => false]],
             null,
             true,
         ];
 
-        // Unknown field wins before transport/inheritance decisions.
-        yield 'unknown field before inherited disable' => [
+        // Malformed allowed fields on inherited disable markers are now rejected.
+        yield 'inherited disable rejects malformed allowed fields' => [
+            ['filesystem' => ['command' => 'npx']],
+            ['filesystem' => [
+                'enabled' => false,
+                'timeoutMs' => 0,
+            ]],
+            'timeoutMs',
+            false,
+        ];
+
+        // Unknown fields rejected on inherited disable markers via Serializer.
+        yield 'unknown field on inherited disable rejected' => [
             ['filesystem' => ['command' => 'npx']],
             ['filesystem' => ['enabled' => false, 'bogus' => true]],
             'unknown field',
             false,
         ];
 
-        // Wrong-type enabled wins before transport/inheritance decisions.
-        yield 'enabled type before missing transport' => [
+        // Wrong-type enabled rejected by DTO/Serializer even without transport.
+        yield 'enabled type rejected without transport' => [
             null,
             ['ghost' => ['enabled' => 'false']],
             'enabled',
