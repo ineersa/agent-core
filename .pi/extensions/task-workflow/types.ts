@@ -47,4 +47,8 @@ export type WorktreeCreateResult = {
 	extensionsVendorNote?: string;
 	ideaExclusionsUpdated: boolean;
 	ideaNote?: string;
+	/** Note from minimal per-worktree .idea creation (success or skip/degrade). */
+	ideaSetupNote?: string;
+	/** Note from ide_open_project after worktree setup (success or degrade). */
+	ideOpenNote?: string;
 };
