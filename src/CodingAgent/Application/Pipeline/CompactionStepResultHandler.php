@@ -271,25 +271,13 @@ final class CompactionStepResultHandler implements RunMessageHandler
             'messages_compacted' => $message->messagesCompacted,
             'messages_retained' => $message->messagesRetained,
         ]);
-        // Deserialize retained tail messages from transport-safe array shapes.
-        $retainedTail = [];
-        foreach ($message->retainedTailMessages as $raw) {
-            if (!\is_array($raw)) {
-                continue;
-            }
-            $msg = AgentMessage::fromPayload($raw);
-            if (null !== $msg) {
-                $retainedTail[] = $msg;
-            }
-        }
-
         // priorSummaryPresent is synthetic: the summarization prompt already
         // handled the prior compact_summary marker when it was present.
         // buildCompactedMessages only uses it to annotate the new summary
         // message — it does not affect the merged message list.
         $preparation = CompactionPrepareResult::ready(
             messagesToSummarize: [], // Not needed for buildCompactedMessages
-            retainedTailMessages: $retainedTail,
+            retainedTailMessages: $message->retainedTailMessages,
             tokenEstimateBefore: $message->tokenEstimateBefore,
             messagesCompacted: $message->messagesCompacted,
             messagesRetained: $message->messagesRetained,
