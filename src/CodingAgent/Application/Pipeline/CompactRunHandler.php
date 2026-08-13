@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Compaction\CompactionHookContextDTO;
 use Ineersa\CodingAgent\Compaction\CompactionHookDispatcher;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -44,6 +45,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
         private EventFactory $eventFactory,
         private CompactionHookDispatcher $hookDispatcher,
         private ExtensionCompactionHookDispatcher $extensionHookDispatcher,
+        private SubagentRunMetadataReader $metadataReader,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -60,6 +62,14 @@ final readonly class CompactRunHandler implements RunMessageHandler
         }
 
         $runId = $message->runId();
+
+        // Defensive gate: fork/subagent children never compact. Silent no-op
+        // (no lifecycle events, no preparation, no worker) so manual/API
+        // CompactRun and any leak past scheduling paths produce no noise.
+        // Parent-side fork snapshot compaction does not use CompactRun.
+        if ($this->metadataReader->isAgentChild($runId)) {
+            return new HandlerResult(nextState: $state, events: [], effects: []);
+        }
 
         // Canonical execution model is RunState.model (run_started / model_changed).
         // Compaction override resolution may still use configured overrides, but
