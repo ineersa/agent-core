@@ -10,19 +10,17 @@ namespace Ineersa\CodingAgent\Agent\Execution;
  * Never includes raw tool results, system/user-context/tool-role message bodies,
  * or full prompts. Intended for parent inline subagent_progress payloads only.
  *
- * Model and reasoning are concrete launch identity (non-empty).
+ * Model and reasoning are concrete launch identity supplied by preparation /
+ * deferred projection paths (not external input).
  */
 final readonly class SubagentChildProgressSummary
 {
-    public string $model;
-    public string $reasoning;
-
     /**
      * @param list<string> $recentTools Safe display lines (e.g. read: path="…")
      */
     public function __construct(
-        string $model,
-        string $reasoning,
+        public string $model,
+        public string $reasoning,
         public int $toolCount = 0,
         public int $llmStepCount = 0,
         public int $inputTokens = 0,
@@ -38,13 +36,6 @@ final readonly class SubagentChildProgressSummary
         public array $recentTools = [],
         public ?string $activeToolLine = null,
     ) {
-        $model = trim($model);
-        $reasoning = trim($reasoning);
-        if ('' === $model || '' === $reasoning) {
-            throw new \InvalidArgumentException('Subagent child progress summary requires non-empty model and reasoning.');
-        }
-        $this->model = $model;
-        $this->reasoning = $reasoning;
     }
 
     /**

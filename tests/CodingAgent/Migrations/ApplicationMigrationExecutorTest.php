@@ -182,15 +182,7 @@ final class ApplicationMigrationExecutorTest extends TestCase
             'SQLite busy_timeout must be >= 5000ms after executor startup (#228)',
         );
 
-        $recordedLaunchIdentity = $connection->fetchOne(
-            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
-            ['Version20260812190000'],
-        );
-        $this->assertNotFalse(
-            $recordedLaunchIdentity,
-            'Version20260812190000 (deferred child launch identity) must be recorded in doctrine_migration_versions',
-        );
-
+        // Schema outcome for launch identity (not migration version bookkeeping).
         $childColumns = array_keys($schemaManager->listTableColumns('deferred_subagent_child'));
         $this->assertContains('launch_model', $childColumns);
         $this->assertContains('launch_reasoning', $childColumns);
@@ -240,8 +232,10 @@ SQL);
 
         $executor = new ApplicationMigrationExecutor($connection, new NullLogger());
 
+        // Generated SQLite rebuild inserts without backfilling launch_* columns;
+        // existing rows fail naturally on NOT NULL launch_model/launch_reasoning.
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Cannot migrate deferred_subagent_child to launch_model/launch_reasoning while rows exist');
+        $this->expectExceptionMessageMatches('/NOT NULL constraint failed: deferred_subagent_child\.launch_model/');
 
         $executor();
     }
@@ -434,7 +428,7 @@ SQL);
             'Version20260715120000',
             'Version20260720120000',
             'Version20260723230000',
-            'Version20260812190000',
+            'Version20260813031629',
         ];
 
         foreach ($ordered as $version) {
