@@ -68,6 +68,42 @@ final class BuiltinDocsCatalogTest extends TestCase
         (new BuiltinDocsCatalog())->discover($this->appRoot);
     }
 
+    public function testBuiltinTrueWithTrailingGarbageFailsClosed(): void
+    {
+        // Symfony YAML accepts unquoted "true garbage" as a string scalar, not a parse error.
+        // Intent detection must still fail closed because the token starts with true.
+        $this->write(
+            'docs/garbage.md',
+            "---\nbuiltin: true garbage\ndescription: bad\n---\n\n# Garbage\n\nbody\n",
+        );
+
+        self::expectException(BuiltinDocsCatalogException::class);
+        self::expectExceptionMessage('not as YAML boolean true');
+        (new BuiltinDocsCatalog())->discover($this->appRoot);
+    }
+
+    public function testBuiltinTrueishDoesNotFailClosedAsIntendedMarker(): void
+    {
+        $this->write(
+            'docs/trueish.md',
+            "---\nbuiltin: trueish\ndescription: no\n---\n\n# Trueish\n\nbody\n",
+        );
+
+        $entries = (new BuiltinDocsCatalog())->discover($this->appRoot);
+        $this->assertSame([], $entries);
+    }
+
+    public function testBodyProseAboutBuiltinTrueDoesNotFailClosedWithoutFrontmatterMarker(): void
+    {
+        $this->write(
+            'docs/prose.md',
+            "# Prose\n\nRepository docs may mention builtin: true without selecting the file.\n",
+        );
+
+        $entries = (new BuiltinDocsCatalog())->discover($this->appRoot);
+        $this->assertSame([], $entries);
+    }
+
     public function testMissingClosingFrontmatterDelimiterWithBuiltinTrueFailsClosed(): void
     {
         $this->write(
@@ -111,6 +147,44 @@ final class BuiltinDocsCatalogTest extends TestCase
         self::expectException(BuiltinDocsCatalogException::class);
         self::expectExceptionMessage('must not be a symlink');
         (new BuiltinDocsCatalog())->discover($this->appRoot);
+    }
+
+    public function testSymlinkedDocsRootOutsideAppRootFailsClosedWithoutDeletingExternalFixture(): void
+    {
+        if (!\function_exists('symlink')) {
+            $this->markTestSkipped('symlink() unavailable on this platform');
+        }
+
+        $externalRoot = TestDirectoryIsolation::createProjectTempDir('builtin-docs-external-root');
+        try {
+            TestDirectoryIsolation::ensureDirectory($externalRoot.'/docs');
+            file_put_contents(
+                $externalRoot.'/docs/escape.md',
+                "---\nbuiltin: true\ndescription: External\n---\n\n# External\n\nbody\n",
+            );
+
+            // Replace in-tree docs/ with a symlink to the external fixture.
+            TestDirectoryIsolation::removeDirectory($this->appRoot.'/docs');
+            if (!@symlink($externalRoot.'/docs', $this->appRoot.'/docs')) {
+                $this->markTestSkipped('Unable to create docs-root symlink in test environment');
+            }
+
+            try {
+                (new BuiltinDocsCatalog())->discover($this->appRoot);
+                $this->fail('Expected escaped docs root to fail closed');
+            } catch (BuiltinDocsCatalogException $e) {
+                $this->assertStringContainsString('outside application root', $e->getMessage());
+            }
+
+            $this->assertFileExists($externalRoot.'/docs/escape.md');
+        } finally {
+            // Cleanup only the external fixture tree; appRoot tearDown must not follow the symlink.
+            if (is_link($this->appRoot.'/docs')) {
+                unlink($this->appRoot.'/docs');
+                TestDirectoryIsolation::ensureDirectory($this->appRoot.'/docs');
+            }
+            TestDirectoryIsolation::removeDirectory($externalRoot);
+        }
     }
 
     public function testTildeFencedDecoyAndIndentedHeadingUseSharedScanner(): void

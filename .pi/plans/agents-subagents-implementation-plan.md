@@ -97,16 +97,7 @@ Relevant current code remains useful background, but should not become a v1 chil
 
 ### 3.2 MCP prerequisite
 
-Agents need per-agent MCP tool policy. The agent system should not implement MCP itself. Complete the MCP task chain first:
-
-```text
-tasks/TODO/mcp-01-config-sdk-boundary.md
-tasks/TODO/mcp-02-broker-transport-consumer.md
-tasks/TODO/mcp-03-connection-discovery-catalog.md
-tasks/TODO/mcp-04-dynamic-tool-registration.md
-tasks/TODO/mcp-05-tool-invocation-request-reply.md
-tasks/TODO/mcp-06-hardening-docs-validation.md
-```
+Agents need per-agent MCP tool policy. The agent system should not implement MCP itself. **Historical / completed** at plan time: the MCP track was sequenced as numbered prerequisites `mcp-01` … `mcp-06` (config/SDK boundary → broker/transport → discovery/catalog → dynamic tools → invocation → hardening/docs). Those `tasks/TODO/mcp-0N-…` paths are not current board locations; treat them as historical labels only.
 
 Relevant plan:
 
@@ -1131,7 +1122,7 @@ Complete/verify any prerequisite runtime/session work needed for parent-scoped c
 MCP remains a prerequisite only for per-agent MCP policy:
 
 ```text
-MCP track: mcp-01 → mcp-06
+MCP track (historical/completed labels): mcp-01 → mcp-06
 ```
 
 The QH/`ask_human` track is not a blocker for v1 agents because child HITL/questions are explicitly out of scope.

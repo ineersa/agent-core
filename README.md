@@ -51,7 +51,7 @@ ai:
     openai:
       type: generic
       enabled: true
-      base_url: https://api.openai.com/v1
+      base_url: https://api.openai.com
       api: openai-completions
       api_key: env:OPENAI_API_KEY
       supports_completions: true

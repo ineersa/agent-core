@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
-use Ineersa\CodingAgent\Docs\BuiltinDocsCatalog;
-
 /**
  * Locates bundled application resources (defaults, built-in themes, etc.).
  *
@@ -17,6 +15,9 @@ use Ineersa\CodingAgent\Docs\BuiltinDocsCatalog;
  * Project-local files (e.g. {@see .hatfield/settings.yaml}) are always
  * resolved from the active project cwd supplied at resolution time, not
  * from the app resource root.
+ *
+ * Built-in documentation roots and selection live in {@see \Ineersa\CodingAgent\Docs\BuiltinDocsCatalog}
+ * (use {@see getAppRoot()} + catalog constants/discovery; no docs path helpers here).
  */
 final readonly class AppResourceLocator
 {
@@ -39,36 +40,6 @@ final readonly class AppResourceLocator
     public function getBuiltinThemesPath(): string
     {
         return $this->appRoot.'/config/themes';
-    }
-
-    /**
-     * Absolute path to the top-level core documentation directory.
-     *
-     * Model-visible documents are selected via {@code builtin: true}
-     * frontmatter; see {@see BuiltinDocsCatalog}.
-     */
-    public function getCoreDocsPath(): string
-    {
-        return $this->appRoot.'/'.BuiltinDocsCatalog::CORE_DOCS_RELATIVE;
-    }
-
-    /**
-     * Absolute path to the public Extension API documentation directory.
-     */
-    public function getExtensionApiDocsPath(): string
-    {
-        return $this->appRoot.'/'.BuiltinDocsCatalog::EXTENSION_API_DOCS_RELATIVE;
-    }
-
-    /**
-     * Absolute approved documentation roots used by {@see hatfield_docs}
-     * and packaging selection.
-     *
-     * @return list<string>
-     */
-    public function getBuiltinDocsRoots(): array
-    {
-        return (new BuiltinDocsCatalog())->absoluteRoots($this->appRoot);
     }
 
     /**
