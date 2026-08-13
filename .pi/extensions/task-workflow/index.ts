@@ -245,6 +245,8 @@ export default function (pi: ExtensionAPI) {
 					if (wtResult.veraCopied) notes.push(`Copied .vera index into ${wtResult.worktree}.`);
 					if (wtResult.ideaExclusionsUpdated) notes.push(`Updated parent IDEA worktree exclusions for ${wtResult.worktree}.`);
 					if (wtResult.ideaNote) notes.push(wtResult.ideaNote);
+					if (wtResult.ideaSetupNote) notes.push(wtResult.ideaSetupNote);
+					if (wtResult.ideOpenNote) notes.push(wtResult.ideOpenNote);
 				}
 				// ── IN-PROGRESS → CODE-REVIEW: push + PR ─────────────────────
 				else if (task.status === "IN-PROGRESS" && to === "CODE-REVIEW") {

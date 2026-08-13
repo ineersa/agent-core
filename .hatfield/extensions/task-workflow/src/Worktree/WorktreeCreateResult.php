@@ -15,6 +15,8 @@ final readonly class WorktreeCreateResult
         public bool $extensionsVendorInstalled,
         public bool $ideaExclusionsUpdated,
         public ?string $ideaNote = null,
+        public ?string $ideaSetupNote = null,
+        public ?string $ideOpenNote = null,
     ) {
     }
 }

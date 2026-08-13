@@ -14,6 +14,8 @@ import { join, resolve, dirname, basename } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { TaskInfo, WorktreeCreateResult } from "./types";
 import { gitOk, git, branchExists, run } from "./exec";
+import { closeWorktreeProject, openWorktreeProject } from "./jetbrains-mcp";
+import { ensureWorktreeIdea } from "./worktree-idea";
 
 // ── Worktree default base ────────────────────────────────────────────────────
 
@@ -358,6 +360,10 @@ export async function createWorktreeForTask(
 	const { installed: extensionsVendorInstalled, note: extensionsVendorNote } =
 		await installExtensionsVendor(pi, worktree, signal);
 
+	// ── Minimal worktree .idea + open JetBrains project ─────────────
+	const ideaSetup = await ensureWorktreeIdea(codeRoot, worktree);
+	const ideOpenNote = await openWorktreeProject(codeRoot, worktree);
+
 	return {
 		branch,
 		worktree,
@@ -368,6 +374,8 @@ export async function createWorktreeForTask(
 		extensionsVendorNote,
 		ideaExclusionsUpdated,
 		ideaNote,
+		ideaSetupNote: ideaSetup.note,
+		ideOpenNote,
 	};
 }
 
@@ -412,8 +420,19 @@ export async function mergeTaskBranch(
 		throw new Error(`Worktree has uncommitted changes; commit them before moving to DONE.\n${worktree}\n${wtStatus.stdout}`);
 	}
 
+	// Close IDE project only after dirty-worktree preflight and only when cleanup will remove it.
+	let closedForCleanup = false;
+	if (options.cleanupWorktree && existsSync(worktree)) {
+		notes.push(await closeWorktreeProject(codeRoot, worktree));
+		closedForCleanup = true;
+	}
+
 	const merge = await git(pi, codeRoot, ["merge", "--no-ff", "--no-edit", branch], signal);
 	if (merge.code !== 0) {
+		if (closedForCleanup && existsSync(worktree)) {
+			notes.push(await openWorktreeProject(codeRoot, worktree));
+			notes.push(`Reopened JetBrains project after failed merge for ${worktree}.`);
+		}
 		const conflicts = await git(pi, codeRoot, ["diff", "--name-only", "--diff-filter=U"], signal);
 		throw new Error(`Merge of ${branch} failed. Resolve conflicts in integration checkout, then retry move_task.\nConflicts:\n${conflicts.stdout || "(none reported)"}\n\n${merge.stderr || merge.stdout}`);
 	}
@@ -424,6 +443,11 @@ export async function mergeTaskBranch(
 		// DONE cleanup is best-effort: failure notes are recorded but the merge still succeeds.
 		const cleanupNotes = await cleanupWorktreeAndIdeaExclusions(pi, codeRoot, task, false, signal);
 		notes.push(...cleanupNotes);
+		// If remove failed and the worktree still exists, reopen so the active task stays IDE-ready.
+		if (closedForCleanup && existsSync(worktree)) {
+			notes.push(await openWorktreeProject(codeRoot, worktree));
+			notes.push(`Reopened JetBrains project after failed worktree cleanup for ${worktree}.`);
+		}
 	}
 	if (options.deleteBranch) {
 		const del = await git(pi, codeRoot, ["branch", "-d", branch], signal);
@@ -516,5 +540,28 @@ export async function removeTaskWorktreeSafely(
 		return notes;
 	}
 
-	return cleanupWorktreeAndIdeaExclusions(pi, codeRoot, task, true, signal);
+	// Fail-closed: dirty worktree must throw before close so an active dirty
+	// cancellation does not leave the IDE project closed.
+	const wtStatus = await gitOk(pi, worktree, ["status", "--porcelain"], signal);
+	if (wtStatus.stdout.trim() !== "") {
+		throw new Error(
+			`Safe worktree cleanup failed; leaving task unmoved and IDEA project open.\n` +
+			`Worktree has uncommitted changes.\nWorktree: ${worktree}\n${wtStatus.stdout}`,
+		);
+	}
+
+	const notes: string[] = [];
+	notes.push(await closeWorktreeProject(codeRoot, worktree));
+	try {
+		const cleanupNotes = await cleanupWorktreeAndIdeaExclusions(pi, codeRoot, task, true, signal);
+		notes.push(...cleanupNotes);
+		return notes;
+	} catch (err) {
+		if (existsSync(worktree)) {
+			notes.push(await openWorktreeProject(codeRoot, worktree));
+			notes.push(`Reopened JetBrains project after failed cancellation cleanup for ${worktree}.`);
+		}
+		const detail = err instanceof Error ? err.message : String(err);
+		throw new Error(`${detail}\n${notes.join("\n")}`);
+	}
 }

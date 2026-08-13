@@ -18,6 +18,10 @@ You are an **orchestrator**, not an implementor. Your job is to dispatch work to
 
 If you catch yourself about to open an editor, write a file, or run a code change — stop and launch a fork instead.
 
+## JetBrains checkout targeting (implementation/review)
+
+Prefer semantic JetBrains IDE tools (`ide_*`) for navigation, references/hierarchy, diagnostics, and semantic rename/move. Always pass the exact task worktree as `project_path`. Never assume the integration checkout or the aggregate sibling-worktree project. If the worktree is not open/indexed, open that exact path with `ide_open_project` before code work. Fall back to absolute-path filesystem tools when IDE tools are unavailable. Scouts do not need IDE tools.
+
 1. **Read all PR comments and task metadata**
    - Use `gh pr view <number> --comments` or the task's PR URL from task metadata.
    - Read the task file (usually in the external task board at `/home/ineersa/projects/agent-core-tasks/CODE-REVIEW/`) to retrieve worktree
