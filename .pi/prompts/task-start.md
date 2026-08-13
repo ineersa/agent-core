@@ -18,6 +18,10 @@ You are an **orchestrator**, not an implementor. Your job is to dispatch work to
 
 If you catch yourself about to open an editor, write a file, or run a code change — stop and launch a fork instead.
 
+## JetBrains checkout targeting (implementation/review)
+
+Prefer semantic JetBrains IDE tools (`ide_*`) for navigation, references/hierarchy, diagnostics, and semantic rename/move. Always pass the exact task worktree as `project_path`. Never assume the integration checkout or the aggregate sibling-worktree project. If the worktree is not open/indexed, open that exact path with `ide_open_project` before code work. Fall back to absolute-path filesystem tools when IDE tools are unavailable. Scouts do not need IDE tools.
+
 1. **Inspect task context**
    - Use `task_list` to find the task file (typically in the external task board at `/home/ineersa/projects/agent-core-tasks/TODO/`).
    - Read the task file to understand what it's about, its body, and acceptance criteria.
