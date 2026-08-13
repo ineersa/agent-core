@@ -9,9 +9,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManager;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
 use Ineersa\CodingAgent\Mcp\Client\McpSdkClientFactory;
-use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
-use Ineersa\CodingAgent\Mcp\Config\McpConfigValidator;
-use Ineersa\CodingAgent\Mcp\Config\McpEnvInterpolator;
+use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
@@ -65,12 +63,7 @@ class McpConnectionManagerTest extends TestCase
             homeDir: $this->projectDir,
         );
 
-        $configLoader = new McpConfigLoader(
-            $pathResolver,
-            new McpConfigValidator(),
-            new McpEnvInterpolator(),
-            $this->projectDir,
-        );
+        $configLoader = TestMcpConfigLoaderFactory::create($pathResolver, $this->projectDir);
 
         $this->logger = new TestLogger();
         $this->manager = new McpConnectionManager(

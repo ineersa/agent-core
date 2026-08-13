@@ -5,9 +5,21 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Mcp\Config;
 
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Symfony\Component\Serializer\Exception\ExtraAttributesException;
+use Symfony\Component\Serializer\Exception\MissingConstructorArgumentsException;
+use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Validator\ConstraintViolationInterface;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Loads typed MCP configuration from global and project .hatfield/mcp.json files.
+ *
+ * Owns JSON/root shape, source-aware merge/disable semantics, env/header
+ * interpolation, cwd resolution, and secret-safe exception translation.
+ * Per-server field hydration/type validation uses Symfony Serializer + Validator
+ * on {@see McpServerDefinitionDTO}.
  *
  * Merge semantics:
  *  - Project server definitions replace whole global definitions by server name.
@@ -15,27 +27,19 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
  *  - Non-inherited disable-only entries fail validation.
  *
  * Empty or missing files produce an empty McpConfigDTO (no error).
- *
- * This loader is designed as a standalone service with explicit dependencies
- * (SettingsPathResolver and project CWD) rather than relying on DI autowiring
- * of the full container, so it can be tested easily without kernel boot.
  */
 final class McpConfigLoader
 {
     public function __construct(
         private readonly SettingsPathResolver $pathResolver,
-        private readonly McpConfigValidator $validator,
-        private readonly McpEnvInterpolator $interpolator,
         private readonly string $projectCwd,
+        private readonly DenormalizerInterface $denormalizer,
+        private readonly ValidatorInterface $validator,
     ) {
     }
 
     /**
      * Load the merged MCP configuration.
-     *
-     * Reads ~/.hatfield/mcp.json (global) then <cwd>/.hatfield/mcp.json (project).
-     * Merges by whole-server replacement, validates, interpolates env vars,
-     * and returns a typed McpConfigDTO.
      *
      * @throws \RuntimeException for validation or interpolation failures
      */
@@ -46,12 +50,12 @@ final class McpConfigLoader
 
         $globalServers = $this->extractServers($globalRaw, '~/.hatfield/mcp.json');
         if ([] !== $globalServers) {
-            $globalServers = $this->validator->validate($globalServers, null);
+            $globalServers = $this->validate($globalServers, null);
         }
 
         $projectServers = $this->extractServers($projectRaw, $this->projectCwd.'/.hatfield/mcp.json');
         if ([] !== $projectServers) {
-            $projectServers = $this->validator->validate($projectServers, $globalServers);
+            $projectServers = $this->validate($projectServers, $globalServers);
         }
 
         // Merge: project overrides global by whole-server replacement
@@ -64,24 +68,26 @@ final class McpConfigLoader
             }
         }
 
-        // Build typed DTOs with interpolation
         $servers = [];
         foreach ($mergedRaw as $name => $data) {
-            if (!\is_array($data)) {
+            if (!\is_array($data) || !\is_string($name)) {
                 continue;
             }
+
+            // Drop transport-inapplicable fields before interpolation (historical ignore semantics).
+            $data = $this->stripTransportInapplicableFields($data);
 
             // Interpolate env and headers BEFORE building DTO
             if (isset($data['env']) && \is_array($data['env'])) {
                 /** @var array<string, string> $env */
                 $env = $data['env'];
-                $data['env'] = $this->interpolator->interpolateMap($env, $name, 'env');
+                $data['env'] = $this->interpolateMap($env, $name, 'env');
             }
 
             if (isset($data['headers']) && \is_array($data['headers'])) {
                 /** @var array<string, string> $headers */
                 $headers = $data['headers'];
-                $data['headers'] = $this->interpolator->interpolateMap($headers, $name, 'headers');
+                $data['headers'] = $this->interpolateMap($headers, $name, 'headers');
             }
 
             // Resolve relative cwd to project CWD
@@ -89,15 +95,13 @@ final class McpConfigLoader
                 $data['cwd'] = $this->resolveCwd($data['cwd']);
             }
 
-            $servers[$name] = McpServerDefinitionDTO::fromArray($name, $data);
+            $servers[$name] = $this->hydrateServerDefinition($name, $data);
         }
 
-        return McpConfigDTO::fromServers($servers);
+        return new McpConfigDTO(servers: $servers);
     }
 
     /**
-     * Load and decode a JSON file, returning the decoded array or empty array on missing/invalid.
-     *
      * @return array<string, mixed>
      */
     private function loadJsonFile(string $pathPattern, string $baseDir): array
@@ -124,17 +128,9 @@ final class McpConfigLoader
     }
 
     /**
-     * Extract mcpServers from a decoded JSON config.
-     *
-     * Returns empty array when the key is missing (normal: no servers configured).
-     * Throws when the key is present but not a JSON object/array.
-     *
-     * @param array<string, mixed> $raw    Decoded JSON config
-     * @param string               $source Human-readable file path for error messages
+     * @param array<string, mixed> $raw
      *
      * @return array<string, mixed>
-     *
-     * @throws \RuntimeException when mcpServers is present but not a JSON object
      */
     private function extractServers(array $raw, string $source): array
     {
@@ -152,24 +148,224 @@ final class McpConfigLoader
     }
 
     /**
-     * Resolve a relative cwd to the project CWD.
+     * @param array<string, mixed>      $rawServers
+     * @param array<string, mixed>|null $globalServers
      *
-     * An empty string or null cwd is left as-is (means "use project cwd").
-     * Absolute paths pass through unchanged.
+     * @return array<string, mixed>
      */
+    private function validate(array $rawServers, ?array $globalServers = null): array
+    {
+        foreach ($rawServers as $name => $data) {
+            if (!\is_string($name) || '' === $name) {
+                throw new \RuntimeException('MCP config: server name must be a non-empty string.');
+            }
+
+            if (!\is_array($data)) {
+                throw new \RuntimeException(\sprintf('MCP server "%s": server definition must be an object.', $name));
+            }
+
+            $this->validateServer($name, $data, $globalServers);
+        }
+
+        return $rawServers;
+    }
+
+    /**
+     * Hydrate/validate every raw server via Serializer+Validator first, then apply
+     * source-aware no-transport rules using the typed DTO.
+     *
+     * A no-transport definition is allowed only as an inherited project disable
+     * marker (`enabled: false`). All field/type/unknown-field checks run first,
+     * including on disable markers.
+     *
+     * @param array<string, mixed>      $data
+     * @param array<string, mixed>|null $globalServers
+     */
+    private function validateServer(string $name, array $data, ?array $globalServers): void
+    {
+        $dto = $this->hydrateServerDefinition($name, $data);
+
+        if (null !== $dto->transportType) {
+            return;
+        }
+
+        $isInherited = null !== $globalServers && \array_key_exists($name, $globalServers);
+
+        if ($isInherited) {
+            if (false === $dto->enabled) {
+                return;
+            }
+
+            throw new \RuntimeException(\sprintf('MCP server "%s": missing transport (command or url). An inherited server override must define a transport or explicitly set "enabled": false.', $name));
+        }
+
+        if (false === $dto->enabled) {
+            throw new \RuntimeException(\sprintf('MCP server "%s": cannot define a server with only "enabled": false and no transport. This server is not inherited from global config.', $name));
+        }
+
+        throw new \RuntimeException(\sprintf('MCP server "%s": missing transport. Define "command" for a STDIO server or "url" for an HTTP server.', $name));
+    }
+
+    /**
+     * Denormalize + validate one server definition.
+     *
+     * Strips transport-inapplicable fields and the non-user transportType key so
+     * historical ignore-semantics and derived transport are preserved.
+     *
+     * @param array<string, mixed> $data
+     */
+    private function hydrateServerDefinition(string $name, array $data): McpServerDefinitionDTO
+    {
+        $payload = $this->prepareServerPayload($name, $data);
+
+        try {
+            /** @var McpServerDefinitionDTO $dto */
+            $dto = $this->denormalizer->denormalize(
+                $payload,
+                McpServerDefinitionDTO::class,
+                context: [
+                    AbstractObjectNormalizer::ALLOW_EXTRA_ATTRIBUTES => false,
+                ],
+            );
+        } catch (ExtraAttributesException $e) {
+            $extra = $e->getExtraAttributes();
+            $first = (string) reset($extra);
+
+            throw new \RuntimeException(\sprintf('MCP server "%s": unknown field "%s".', $name, $first));
+        } catch (MissingConstructorArgumentsException $e) {
+            $missing = $e->getMissingConstructorArguments();
+            $first = ltrim((string) reset($missing), '$');
+
+            throw new \RuntimeException(\sprintf('MCP server "%s": "%s" is required.', $name, $first));
+        } catch (NotNormalizableValueException $e) {
+            $path = $e->getPath() ?? 'a field';
+            $expected = $e->getExpectedTypes() ?? [];
+            $typeHint = [] === $expected ? 'a valid value' : implode('|', $expected);
+
+            throw new \RuntimeException(\sprintf('MCP server "%s": "%s" must be of type %s.', $name, $path, $typeHint));
+        } catch (\TypeError $e) {
+            $field = 'a field';
+            if (preg_match('/Argument #\d+ \(\$(\w+)\)/', $e->getMessage(), $matches)) {
+                $field = $matches[1];
+            }
+
+            throw new \RuntimeException(\sprintf('MCP server "%s": "%s" has an invalid type.', $name, $field));
+        } catch (\ValueError $e) {
+            // Backed enum construction failures (e.g. invalid availability).
+            if (str_contains($e->getMessage(), 'McpServerAvailabilityEnum')) {
+                throw new \RuntimeException(\sprintf('MCP server "%s": "availability" must be one of: all, specific.', $name));
+            }
+
+            throw new \RuntimeException(\sprintf('MCP server "%s": %s', $name, $e->getMessage()));
+        }
+
+        $violations = $this->validator->validate($dto);
+        if (0 === $violations->count()) {
+            return $dto;
+        }
+
+        /** @var ConstraintViolationInterface $violation */
+        $violation = $violations->get(0);
+        $propertyPath = $violation->getPropertyPath();
+        $message = (string) $violation->getMessage();
+
+        if ('' === $propertyPath) {
+            throw new \RuntimeException(\sprintf('MCP server "%s": %s', $name, $message));
+        }
+
+        throw new \RuntimeException(\sprintf('MCP server "%s": "%s": %s', $name, $propertyPath, $message));
+    }
+
+    /**
+     * Inject server name, drop non-user transportType, ignore transport-inapplicable fields.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, mixed>
+     */
+    private function prepareServerPayload(string $name, array $data): array
+    {
+        $payload = $this->stripTransportInapplicableFields($data);
+        $payload['name'] = $name;
+        unset($payload['transportType']);
+
+        return $payload;
+    }
+
+    /**
+     * Preserve historical behavior: transport-inapplicable fields are ignored, not rejected.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, mixed>
+     */
+    private function stripTransportInapplicableFields(array $data): array
+    {
+        $hasCommand = isset($data['command']);
+        $hasUrl = isset($data['url']);
+
+        if (!$hasCommand) {
+            unset($data['args'], $data['env'], $data['cwd']);
+        }
+        if (!$hasUrl) {
+            unset($data['headers']);
+        }
+
+        return $data;
+    }
+
+    /**
+     * @param array<string, string> $map
+     *
+     * @return array<string, string>
+     */
+    private function interpolateMap(array $map, string $server, string $field): array
+    {
+        $result = [];
+
+        foreach ($map as $key => $value) {
+            $result[$key] = $this->interpolateValue($value, $server, \sprintf('%s.%s', $field, $key));
+        }
+
+        return $result;
+    }
+
+    private function interpolateValue(string $value, string $server, string $context): string
+    {
+        if (!str_contains($value, '${')) {
+            return $value;
+        }
+
+        return preg_replace_callback(
+            '/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/',
+            static function (array $matches) use ($server, $context): string {
+                $varName = $matches[1];
+                $resolved = getenv($varName);
+
+                if (false === $resolved) {
+                    throw new \RuntimeException(\sprintf('MCP server "%s": environment variable "%s" referenced in "%s" is not set.', $server, $varName, $context));
+                }
+
+                if ('' === $resolved) {
+                    throw new \RuntimeException(\sprintf('MCP server "%s": environment variable "%s" referenced in "%s" is empty. Set the variable or remove the interpolation reference.', $server, $varName, $context));
+                }
+
+                return $resolved;
+            },
+            $value,
+        );
+    }
+
     private function resolveCwd(string $cwd): string
     {
-        // Already absolute, return as-is
         if (str_starts_with($cwd, '/')) {
             return $cwd;
         }
 
-        // Tilde expansion
         if (str_starts_with($cwd, '~')) {
             return $this->pathResolver->resolve($cwd, $this->projectCwd);
         }
 
-        // Relative path → resolve against project cwd
         return $this->pathResolver->resolve($cwd, $this->projectCwd);
     }
 }
