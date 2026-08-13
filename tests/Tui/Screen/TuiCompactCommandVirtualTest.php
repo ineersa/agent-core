@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\CompactionProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjectionEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\SlashCommandRegistry;
@@ -64,15 +65,15 @@ final class TuiCompactCommandVirtualTest extends TestCase
     {
         $projectionState = new TranscriptProjectionState();
         $event = new TranscriptProjectionEvent(
-            rawEvent: [
-                'type' => 'compaction.completed',
-                'runId' => 'run-virtual',
-                'seq' => 1,
-                'payload' => [
+            runtimeEvent: new RuntimeEvent(
+                type: 'compaction.completed',
+                runId: 'run-virtual',
+                seq: 1,
+                payload: [
                     'estimated_tokens_before' => 1200,
                     'estimated_tokens_after' => 700,
                 ],
-            ],
+            ),
             state: $projectionState,
         );
 

@@ -291,12 +291,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $state = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
         $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber());
         $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($dispatcher, $state);
-        $projector->accept([
-            'type' => $messageCompleted[0]->type,
-            'runId' => $messageCompleted[0]->runId,
-            'seq' => $messageCompleted[0]->seq,
-            'payload' => $messageCompleted[0]->payload,
-        ]);
+        $projector->accept($messageCompleted[0]);
 
         $assistantText = '';
         foreach ($projector->blocks() as $block) {
@@ -507,12 +502,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber(new \Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create())));
         $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($dispatcher, $state);
         foreach ($childDrain as $event) {
-            $projector->accept([
-                'type' => $event->type,
-                'runId' => $event->runId,
-                'seq' => $event->seq,
-                'payload' => $event->payload,
-            ]);
+            $projector->accept($event);
         }
 
         $toolCalls = [];

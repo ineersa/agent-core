@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscri
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -2036,6 +2037,28 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame('Free-standing informational nudge', $blocks[1]->text);
     }
 
+    public function testAcceptsTypedRuntimeEventWithoutArrayRoundTrip(): void
+    {
+        $event = new RuntimeEvent(
+            type: 'user.message_submitted',
+            runId: self::RUN_ID,
+            seq: 7,
+            payload: [
+                'message_id' => 'typed-1',
+                'text' => 'typed projector path',
+            ],
+        );
+
+        $this->projector->accept($event);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks);
+        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
+        $this->assertSame('typed projector path', $blocks[0]->text);
+        // Projector-local ordering seq is independent of RuntimeEvent.seq.
+        $this->assertSame(0, $blocks[0]->seq);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /**
@@ -2057,20 +2080,17 @@ final class TranscriptProjectorTest extends TestCase
     }
 
     /**
-     * Build a RuntimeEvent-shaped array.
+     * Build a typed RuntimeEvent for projector acceptance.
      *
      * @param array<string, mixed> $payload
-     *
-     * @return array{type: string, runId: string, seq: int, payload: array<string, mixed>, v: int}
      */
-    private function event(string $type, array $payload = [], string $runId = self::RUN_ID): array
+    private function event(string $type, array $payload = [], string $runId = self::RUN_ID): RuntimeEvent
     {
-        return [
-            'type' => $type,
-            'runId' => $runId,
-            'seq' => $this->seq++,
-            'payload' => $payload,
-            'v' => 1,
-        ];
+        return new RuntimeEvent(
+            type: $type,
+            runId: $runId,
+            seq: $this->seq++,
+            payload: $payload,
+        );
     }
 }

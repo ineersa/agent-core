@@ -109,7 +109,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->projector->expects($this->once())
             ->method('accept')
-            ->with($event->toArray());
+            ->with($event);
 
         $this->projector->expects($this->once())
             ->method('drainChanges')
@@ -900,11 +900,11 @@ final class RuntimeEventPollerTest extends TestCase
 
         // Real projector that tracks accepted events and returns blocks
         $projector = new class implements TranscriptProjectorInterface {
-            /** @var list<array{type: string, seq: int, payload?: array}> */
+            /** @var list<RuntimeEvent> */
             public array $accepted = [];
             public bool $wasReset = false;
 
-            public function accept(array $event): void
+            public function accept(RuntimeEvent $event): void
             {
                 $this->accepted[] = $event;
             }
@@ -914,11 +914,11 @@ final class RuntimeEventPollerTest extends TestCase
                 $blocks = [];
                 foreach ($this->accepted as $e) {
                     $blocks[] = new TranscriptBlock(
-                        id: 'block-seq-'.$e['seq'],
+                        id: 'block-seq-'.$e->seq,
                         kind: TranscriptBlockKindEnum::AssistantMessage,
                         runId: 'test-run',
-                        seq: $e['seq'],
-                        text: (string) ($e['payload']['text'] ?? ''),
+                        seq: $e->seq,
+                        text: (string) ($e->payload['text'] ?? ''),
                     );
                 }
 

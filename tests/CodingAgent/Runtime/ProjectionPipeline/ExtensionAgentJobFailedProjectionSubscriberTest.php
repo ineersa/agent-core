@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ExtensionAgentJobFailedProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjectionEvent;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -28,11 +29,11 @@ final class ExtensionAgentJobFailedProjectionSubscriberTest extends TestCase
         $state = new TranscriptProjectionState();
         $projector = new TranscriptProjector($dispatcher, $state);
 
-        $projector->accept([
-            'type' => RuntimeEventTypeEnum::ExtensionAgentJobFailed->value,
-            'runId' => 'run-1',
-            'seq' => 0,
-            'payload' => [
+        $projector->accept(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ExtensionAgentJobFailed->value,
+            runId: 'run-1',
+            seq: 0,
+            payload: [
                 'message' => 'Extension background job failed after retrying.',
                 'reason' => 'retry_exhausted',
                 'handler_id' => 'observational_memory.observe_boundary',
@@ -40,7 +41,7 @@ final class ExtensionAgentJobFailedProjectionSubscriberTest extends TestCase
                 'retry_count' => 1,
                 'attempts' => 2,
             ],
-        ]);
+        ));
 
         $blocks = $projector->blocks();
         $this->assertCount(1, $blocks);
@@ -67,14 +68,14 @@ final class ExtensionAgentJobFailedProjectionSubscriberTest extends TestCase
         $subscriber = new ExtensionAgentJobFailedProjectionSubscriber();
         $state = new TranscriptProjectionState();
         $event = new TranscriptProjectionEvent(
-            rawEvent: [
-                'type' => RuntimeEventTypeEnum::ExtensionAgentJobFailed->value,
-                'runId' => 'run-2',
-                'seq' => 0,
-                'payload' => [
+            runtimeEvent: new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ExtensionAgentJobFailed->value,
+                runId: 'run-2',
+                seq: 0,
+                payload: [
                     'reason' => 'retry_exhausted',
                 ],
-            ],
+            ),
             state: $state,
         );
 

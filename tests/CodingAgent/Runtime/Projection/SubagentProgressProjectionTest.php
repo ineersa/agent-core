@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Projection;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -212,12 +213,11 @@ final class SubagentProgressProjectionTest extends TestCase
     /** @param array<string, mixed> $payload */
     private function accept(string $type, array $payload): void
     {
-        $this->projector->accept([
-            'type' => $type,
-            'runId' => 'run_subagent',
-            'seq' => $this->seq++,
-            'payload' => $payload,
-            'v' => 1,
-        ]);
+        $this->projector->accept(new RuntimeEvent(
+            type: $type,
+            runId: 'run_subagent',
+            seq: $this->seq++,
+            payload: $payload,
+        ));
     }
 }

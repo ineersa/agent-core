@@ -93,12 +93,12 @@ final class TuiModelInteractionVirtualTest extends TestCase
         $seq = 0;
         $accept = static function (string $type, array $payload) use ($projector, &$seq): void {
             ++$seq;
-            $projector->accept([
-                'type' => $type,
-                'runId' => self::RUN_ID,
-                'seq' => $seq,
-                'payload' => $payload,
-            ]);
+            $projector->accept(new RuntimeEvent(
+                type: $type,
+                runId: self::RUN_ID,
+                seq: $seq,
+                payload: $payload,
+            ));
         };
 
         $accept('assistant.text_started', [

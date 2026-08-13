@@ -474,7 +474,7 @@ final class SessionInitializerReplayTest extends TestCase
             }
             $runtimeEvent = $pollerMapper->toRuntimeEvent($runEvent);
             if (null !== $runtimeEvent) {
-                $this->projector->accept($runtimeEvent->toArray());
+                $this->projector->accept($runtimeEvent);
                 ++$newBlocks;
             }
         }

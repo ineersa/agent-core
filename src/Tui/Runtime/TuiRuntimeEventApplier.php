@@ -78,7 +78,7 @@ final readonly class TuiRuntimeEventApplier
 
         $state->applyQueuedUserMessageEvent($event);
         $state->subagentLiveCatalog->ingestRuntimeEvent($event);
-        $this->projector->accept($event->toArray());
+        $this->projector->accept($event);
     }
 
     /** @return list<\Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock> */
