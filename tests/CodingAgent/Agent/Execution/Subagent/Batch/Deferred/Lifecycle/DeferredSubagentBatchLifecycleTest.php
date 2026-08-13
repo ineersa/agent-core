@@ -74,7 +74,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'o-one', 'task' => 'O1', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'o-one', 'task' => 'O1', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
@@ -134,8 +134,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 2,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'p-one', 'task' => 'P1', 'definitionModel' => null],
-                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'p-two', 'task' => 'P2', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'p-one', 'task' => 'P1', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
+                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'p-two', 'task' => 'P2', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1, 2]);
@@ -207,8 +207,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 2,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => \sprintf('t%s-one', $scenario), 'task' => \sprintf('T%s-1', $scenario), 'definitionModel' => null],
-                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => \sprintf('t%s-two', $scenario), 'task' => \sprintf('T%s-2', $scenario), 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => \sprintf('t%s-one', $scenario), 'task' => \sprintf('T%s-1', $scenario), 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
+                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => \sprintf('t%s-two', $scenario), 'task' => \sprintf('T%s-2', $scenario), 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1, 2]);
@@ -307,8 +307,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 2,
             deadlineAt: $deadline,
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'i-one', 'task' => 'I1', 'definitionModel' => null],
-                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'i-two', 'task' => 'I2', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'i-one', 'task' => 'I1', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
+                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'i-two', 'task' => 'I2', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, $startedAt, [1, 2]);
@@ -598,7 +598,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'h-one', 'task' => 'H1', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'h-one', 'task' => 'H1', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
@@ -697,7 +697,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 's-nat', 'task' => 'Do work', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 's-nat', 'task' => 'Do work', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
@@ -845,7 +845,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: $deadline,
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 's-int', 'task' => 'Interrupt me', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 's-int', 'task' => 'Interrupt me', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, $startedAt, [1]);
@@ -1133,7 +1133,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'fork', 'task' => 'Fork task', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'fork', 'task' => 'Fork task', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
@@ -1270,7 +1270,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             artifactId: $artifactId,
             displayName: $agentName,
             taskSummary: $task,
-            definitionModel: null,
+            launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium',
             artifactKind: $artifactKind,
             batchIndex: 1,
         ));

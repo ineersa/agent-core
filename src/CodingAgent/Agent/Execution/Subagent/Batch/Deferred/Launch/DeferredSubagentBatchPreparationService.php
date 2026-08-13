@@ -15,8 +15,10 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSin
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory;
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
+use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
 
 /**
  * Builds the deferred batch launch plan and prepares still-pending children (Piece 4A).
@@ -27,6 +29,8 @@ final class DeferredSubagentBatchPreparationService
         private readonly SubagentLaunchPreparationService $launchPreparation,
         private readonly DeferredSubagentBatchIdentityFactory $identityFactory,
         private readonly ChildRunArtifactLifecycleService $artifactLifecycle,
+        private readonly SubagentChildLaunchInputFactory $subagentLaunchInputFactory,
+        private readonly ForkChildLaunchInputBuilder $forkLaunchInputBuilder,
     ) {
     }
 
@@ -54,13 +58,19 @@ final class DeferredSubagentBatchPreparationService
             $definition = $this->resolveDefinition($agentName, $executionMode);
             $definitionsByBatchIndex[$batchIndex] = $definition;
             $ids = $this->identityFactory->childIdentity($parentRunId, $toolCallId, $batchIndex);
+            $launch = $this->subagentLaunchInputFactory->resolveLaunchIdentity(
+                $definition,
+                $parentRunId,
+                $parentModel,
+            );
             $childIntents[] = new DeferredSubagentBatchChildIntentDTO(
                 batchIndex: $batchIndex,
                 childRunId: $ids['childRunId'],
                 artifactId: $ids['artifactId'],
                 agentName: $agentName,
                 task: $taskText,
-                definitionModel: $definition->model,
+                launchModel: $launch['model'],
+                launchReasoning: $launch['reasoning'],
             );
             $identities[] = new ChildRunIdentityDTO(
                 parentRunId: $parentRunId,
@@ -68,7 +78,8 @@ final class DeferredSubagentBatchPreparationService
                 artifactId: $ids['artifactId'],
                 displayName: $agentName,
                 taskSummary: $taskText,
-                definitionModel: $definition->model,
+                launchModel: $launch['model'],
+                launchReasoning: $launch['reasoning'],
                 artifactKind: AgentArtifactKindEnum::Subagent,
                 batchIndex: $batchIndex,
             );
@@ -100,6 +111,12 @@ final class DeferredSubagentBatchPreparationService
         $lifecycleId = $this->identityFactory->batchLifecycleId($parentRunId, $toolCallId);
         $taskText = trim($task);
         $ids = $this->identityFactory->childIdentity($parentRunId, $toolCallId, 1);
+        $launch = $this->forkLaunchInputBuilder->resolveLaunchIdentity(
+            $parentRunId,
+            $profile->definition->model,
+            $profile->reasoningOverride,
+            $parentModel,
+        );
         $childIntents = [
             new DeferredSubagentBatchChildIntentDTO(
                 batchIndex: 1,
@@ -107,7 +124,8 @@ final class DeferredSubagentBatchPreparationService
                 artifactId: $ids['artifactId'],
                 agentName: $profile->displayAgentName,
                 task: $taskText,
-                definitionModel: $profile->definition->model,
+                launchModel: $launch['model'],
+                launchReasoning: $launch['reasoning'],
             ),
         ];
         $identities = [
@@ -117,7 +135,8 @@ final class DeferredSubagentBatchPreparationService
                 artifactId: $ids['artifactId'],
                 displayName: $profile->displayAgentName,
                 taskSummary: $taskText,
-                definitionModel: $profile->definition->model,
+                launchModel: $launch['model'],
+                launchReasoning: $launch['reasoning'],
                 artifactKind: $profile->artifactKind,
                 batchIndex: 1,
             ),

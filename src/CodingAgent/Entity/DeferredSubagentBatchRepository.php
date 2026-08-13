@@ -170,7 +170,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}> $childIntents
+     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, launchModel: string, launchReasoning: string}> $childIntents
      */
     public function reserveBatch(
         string $lifecycleId,
@@ -558,7 +558,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}> $childIntents
+     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, launchModel: string, launchReasoning: string}> $childIntents
      */
     private function assertBatchMatchesIntent(
         DeferredSubagentBatch $row,
@@ -600,8 +600,8 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                 throw new ToolCallException('Deferred subagent batch child intent does not match the durable reservation.', retryable: false);
             }
 
-            if (null !== $intent['definitionModel'] && $match->definitionModel !== $intent['definitionModel']) {
-                throw new ToolCallException('Deferred subagent batch child was reserved with a different model.', retryable: false);
+            if ($match->launchModel !== $intent['launchModel'] || $match->launchReasoning !== $intent['launchReasoning']) {
+                throw new ToolCallException('Deferred subagent batch child was reserved with a different launch model or reasoning.', retryable: false);
             }
         }
     }

@@ -9,6 +9,9 @@ namespace Ineersa\CodingAgent\Agent\Execution;
  *
  * Never includes raw tool results, system/user-context/tool-role message bodies,
  * or full prompts. Intended for parent inline subagent_progress payloads only.
+ *
+ * Model and reasoning are concrete launch identity supplied by preparation /
+ * deferred projection paths (not external input).
  */
 final readonly class SubagentChildProgressSummary
 {
@@ -16,6 +19,8 @@ final readonly class SubagentChildProgressSummary
      * @param list<string> $recentTools Safe display lines (e.g. read: path="…")
      */
     public function __construct(
+        public string $model,
+        public string $reasoning,
         public int $toolCount = 0,
         public int $llmStepCount = 0,
         public int $inputTokens = 0,
@@ -25,7 +30,6 @@ final readonly class SubagentChildProgressSummary
         public int $reasoningTokens = 0,
         public int $totalTokens = 0,
         public ?float $cost = null,
-        public ?string $model = null,
         public ?string $provider = null,
         public ?string $artifactPath = null,
         public ?string $assistantExcerpt = null,
@@ -48,13 +52,12 @@ final readonly class SubagentChildProgressSummary
             'reasoning_tokens' => $this->reasoningTokens,
             'total_tokens' => $this->totalTokens,
             'recent_tools' => $this->recentTools,
+            'model' => $this->model,
+            'reasoning' => $this->reasoning,
         ];
 
         if (null !== $this->cost && $this->cost > 0.0) {
             $fields['cost'] = $this->cost;
-        }
-        if (null !== $this->model && '' !== $this->model) {
-            $fields['model'] = $this->model;
         }
         if ($this->contextWindow > 0) {
             $fields['context_window'] = $this->contextWindow;
