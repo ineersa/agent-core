@@ -26,11 +26,9 @@ use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Tui\Event\TickEvent;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Application-level TUI entry point.
@@ -75,8 +73,6 @@ final readonly class InteractiveMode
         private AppConfig $appConfig,
         private TranscriptDisplayConfigMapper $transcriptConfigMapper,
         private HistoryProviderInterface $historyProvider,
-        private DenormalizerInterface $denormalizer,
-        private ValidatorInterface $validator,
     ) {
     }
 
@@ -189,8 +185,6 @@ final readonly class InteractiveMode
                 $this->promptEditor,
                 $displayConfig,
                 $state->transcriptDisplayState,
-                $this->denormalizer,
-                $this->validator,
             );
             $screen->mount($tui);
 

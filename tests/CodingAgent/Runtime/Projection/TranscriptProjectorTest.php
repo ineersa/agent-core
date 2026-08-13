@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Projection;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -1173,8 +1174,8 @@ final class TranscriptProjectorTest extends TestCase
             'subagent_progress' => [
                 'mode' => 'single',
                 'status' => 'running',
-                'agent' => 'scout',
-                'task_preview' => 'Inspect resume path',
+                'agent_name' => 'scout',
+                'task_summary' => 'Inspect resume path',
             ],
         ]);
         $this->accept('tool_execution.completed', [
@@ -1186,7 +1187,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertStringContainsString('HANDOFF: resume uses shared applier', $block->text);
         $this->assertFalse($block->streaming);
         $this->assertTrue($block->meta['subagent_final'] ?? false);
-        $this->assertIsArray($block->meta['subagent_progress'] ?? null);
+        $this->assertInstanceOf(SubagentProgressSnapshotInterface::class, $block->meta['subagent_progress'] ?? null);
     }
 
     public function testToolExecutionEmptyResultPreservesProgressText(): void

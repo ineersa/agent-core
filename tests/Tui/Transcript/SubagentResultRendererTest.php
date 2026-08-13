@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Transcript;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
@@ -33,7 +34,7 @@ final class SubagentResultRendererTest extends TestCase
             runId: 'run1',
             seq: 1,
             text: 'ignored when progress present',
-            meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress],
+            meta: ['tool_name' => 'subagent', 'subagent_progress' => $this->snapshot($progress)],
             streaming: true,
         );
 
@@ -62,7 +63,7 @@ final class SubagentResultRendererTest extends TestCase
             runId: 'run1',
             seq: 1,
             text: '',
-            meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress],
+            meta: ['tool_name' => 'subagent', 'subagent_progress' => $this->snapshot($progress)],
         );
         $joined = implode("\n", $this->renderBlockLines($block));
         $this->assertStringContainsString('1 LLM step', $joined);
@@ -87,7 +88,7 @@ final class SubagentResultRendererTest extends TestCase
         ];
         $block = new TranscriptBlock(
             id: 'tool_result_tc1', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
-            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress], streaming: true,
+            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $this->snapshot($progress)], streaming: true,
         );
         $joined = implode("\n", $this->renderBlockLines($block));
         $this->assertStringContainsString('● scout [running]', $joined);
@@ -110,7 +111,7 @@ final class SubagentResultRendererTest extends TestCase
         ];
         $block = new TranscriptBlock(
             id: 'tool_result_wait', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
-            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress],
+            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $this->snapshot($progress)],
         );
         $joined = implode("\n", $this->renderBlockLines($block));
         $this->assertStringContainsString('⚠ scout [needs input]', $joined);
@@ -126,7 +127,7 @@ final class SubagentResultRendererTest extends TestCase
         ];
         $block = new TranscriptBlock(
             id: 'tool_result_multiline_task', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
-            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress],
+            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $this->snapshot($progress)],
         );
         $joined = implode("\n", $this->renderBlockLines($block));
         $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $joined) ?? $joined;
@@ -149,7 +150,7 @@ final class SubagentResultRendererTest extends TestCase
             id: 'tool_result_tc_hint', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
             text: 'fallback', meta: [
                 'tool_name' => 'subagent',
-                'subagent_progress' => $progress,
+                'subagent_progress' => $this->snapshot($progress),
                 'result' => $handoff,
             ],
         );
@@ -174,7 +175,7 @@ final class SubagentResultRendererTest extends TestCase
             id: 'tool_result_running_handoff', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
             text: '', meta: [
                 'tool_name' => 'subagent',
-                'subagent_progress' => $progress,
+                'subagent_progress' => $this->snapshot($progress),
                 'result' => $handoff,
             ],
             streaming: true,
@@ -196,7 +197,7 @@ final class SubagentResultRendererTest extends TestCase
             id: 'tool_result_wait_handoff', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
             text: '', meta: [
                 'tool_name' => 'subagent',
-                'subagent_progress' => $progress,
+                'subagent_progress' => $this->snapshot($progress),
                 'result' => "# Draft handoff\n\nNot terminal yet.",
             ],
         );
@@ -224,7 +225,7 @@ final class SubagentResultRendererTest extends TestCase
         ];
         $block = new TranscriptBlock(
             id: 'tool_result_tc_par', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
-            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress], streaming: true,
+            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $this->snapshot($progress)], streaming: true,
         );
         $joined = implode("\n", $this->renderBlockLines($block));
         $this->assertStringContainsString('parallel subagents (0/2 completed)', $joined);
@@ -250,7 +251,7 @@ final class SubagentResultRendererTest extends TestCase
             id: 'tool_result_tc', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
             text: 'fallback', meta: [
                 'tool_name' => 'subagent',
-                'subagent_progress' => $progress,
+                'subagent_progress' => $this->snapshot($progress),
                 'subagent_final' => true,
                 'result' => $handoff,
             ],
@@ -279,7 +280,7 @@ final class SubagentResultRendererTest extends TestCase
             id: 'tool_result_expand', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
             text: '', meta: [
                 'tool_name' => 'subagent',
-                'subagent_progress' => $progress,
+                'subagent_progress' => $this->snapshot($progress),
                 'result' => $handoff,
             ],
         );
@@ -291,7 +292,7 @@ final class SubagentResultRendererTest extends TestCase
 
     public function testSubagentResultRendererSupportsMetaOnly(): void
     {
-        $renderer = new SubagentResultRenderer(denormalizer: SubagentProgressSerializerTestSupport::denormalizer(), validator: SubagentProgressSerializerTestSupport::validator());
+        $renderer = new SubagentResultRenderer();
         $block = new TranscriptBlock(
             id: 'tr',
             kind: TranscriptBlockKindEnum::ToolResult,
@@ -355,11 +356,27 @@ final class SubagentResultRendererTest extends TestCase
     {
         $block = new TranscriptBlock(
             id: 'tool_result_ctx', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
-            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress],
+            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $this->snapshot($progress)],
         );
         $joined = implode("\n", $this->renderBlockLines($block));
 
         return preg_replace('/\x1b\[[0-9;]*m/', '', $joined) ?? $joined;
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     */
+    private function snapshot(array $progress): SubagentProgressSnapshotInterface
+    {
+        $snapshot = SubagentProgressSerializerTestSupport::denormalizer()->denormalize(
+            $progress,
+            SubagentProgressSnapshotInterface::class,
+        );
+        $this->assertInstanceOf(SubagentProgressSnapshotInterface::class, $snapshot);
+        $violations = SubagentProgressSerializerTestSupport::validator()->validate($snapshot);
+        $this->assertSame(0, $violations->count());
+
+        return $snapshot;
     }
 
     /**
@@ -374,7 +391,7 @@ final class SubagentResultRendererTest extends TestCase
         $displayConfig = new TranscriptDisplayConfig(toolResultPreviewLines: $previewLines);
         $displayState = new TranscriptDisplayState(previewableBlocksExpanded: $expanded);
         $factory = new TranscriptBlockWidgetFactory(
-            subagentRenderer: new SubagentResultRenderer(denormalizer: SubagentProgressSerializerTestSupport::denormalizer(), validator: SubagentProgressSerializerTestSupport::validator(),
+            subagentRenderer: new SubagentResultRenderer(
                 displayConfig: $displayConfig,
                 displayState: $displayState,
             ),

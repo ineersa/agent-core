@@ -7,7 +7,6 @@ namespace Ineersa\Tui\Tests\Transcript;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
-use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Transcript\TranscriptVisualPatch;
 use Ineersa\Tui\Transcript\TranscriptVisualProjector;
 use PHPUnit\Framework\Attributes\Test;
@@ -27,7 +26,7 @@ final class TranscriptVisualProjectorTest extends TestCase
     #[Test]
     public function testPureTailStreamEmitsContentOnlyPatchWithoutOrderSnapshot(): void
     {
-        $projector = new TranscriptVisualProjector(denormalizer: SubagentProgressSerializerTestSupport::denormalizer(), validator: SubagentProgressSerializerTestSupport::validator());
+        $projector = new TranscriptVisualProjector();
 
         $history = [];
         for ($i = 0; $i < 40; ++$i) {

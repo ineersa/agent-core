@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Projection;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
@@ -61,7 +62,9 @@ final class SubagentProgressProjectionTest extends TestCase
         $this->assertStringContainsString('Artifacts:', $block->text);
         $this->assertStringContainsString('agent_abc', $block->text);
         $this->assertStringNotContainsString('subagent scout running | turn 1', $block->text);
-        $this->assertSame(2, $block->meta['subagent_progress']['llm_step_count'] ?? null);
+        $progress = $block->meta['subagent_progress'] ?? null;
+        $this->assertInstanceOf(SubagentProgressSingleSnapshotDTO::class, $progress);
+        $this->assertSame(2, $progress->llmStepCount);
     }
 
     public function testParallelSubagentProgressRendersChildSingleWidgetSections(): void

@@ -15,8 +15,8 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapsh
  * Stored on ToolResult blocks as visible text; {@see \Ineersa\Tui\Transcript\SubagentResultRenderer}
  * applies the same layout for terminal rendering (kept in sync intentionally).
  *
- * Accepts typed snapshots only. Wire/meta arrays are denormalized once at the
- * public RuntimeEvent/transcript boundary before calling this formatter.
+ * Accepts typed snapshots only. Wire arrays are denormalized once at the
+ * RuntimeEvent projection boundary before calling this formatter.
  */
 final class SubagentProgressDisplayFormatter
 {

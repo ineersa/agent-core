@@ -48,7 +48,6 @@ final class SubagentLiveAttentionTest extends TestCase
             new PromptEditor(),
             new TranscriptDisplayConfig(),
             new TranscriptDisplayState(),
-            denormalizer: SubagentProgressSerializerTestSupport::denormalizer(), validator: SubagentProgressSerializerTestSupport::validator(),
         );
         $screen->setStatus('subagent_live', '⚠ Subagent scout needs your input — /agents-live');
 
@@ -72,7 +71,6 @@ final class SubagentLiveAttentionTest extends TestCase
             new PromptEditor(),
             new TranscriptDisplayConfig(),
             new TranscriptDisplayState(),
-            denormalizer: SubagentProgressSerializerTestSupport::denormalizer(), validator: SubagentProgressSerializerTestSupport::validator(),
         );
         $screen->setStatus('subagent_live', '⚠ Subagent scout needs your input — /agents-live');
 
@@ -99,7 +97,6 @@ final class SubagentLiveAttentionTest extends TestCase
             new PromptEditor(),
             new TranscriptDisplayConfig(),
             new TranscriptDisplayState(),
-            denormalizer: SubagentProgressSerializerTestSupport::denormalizer(), validator: SubagentProgressSerializerTestSupport::validator(),
         );
 
         SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, 'child-run-1');
@@ -119,7 +116,6 @@ final class SubagentLiveAttentionTest extends TestCase
             new PromptEditor(),
             new TranscriptDisplayConfig(),
             new TranscriptDisplayState(),
-            denormalizer: SubagentProgressSerializerTestSupport::denormalizer(), validator: SubagentProgressSerializerTestSupport::validator(),
         );
         $screen->setStatus('agents-live', 'Subagent live: scout [running] — stale after exit.');
 
@@ -143,7 +139,6 @@ final class SubagentLiveAttentionTest extends TestCase
             new PromptEditor(),
             new TranscriptDisplayConfig(),
             new TranscriptDisplayState(),
-            denormalizer: SubagentProgressSerializerTestSupport::denormalizer(), validator: SubagentProgressSerializerTestSupport::validator(),
         );
         $screen->setStatus('agents-live', 'Subagent live: scout [waiting_human] — stale.');
 
@@ -177,7 +172,6 @@ final class SubagentLiveAttentionTest extends TestCase
             new PromptEditor(),
             new TranscriptDisplayConfig(),
             new TranscriptDisplayState(),
-            denormalizer: SubagentProgressSerializerTestSupport::denormalizer(), validator: SubagentProgressSerializerTestSupport::validator(),
         );
         $screen->setStatus('agents-live', 'Subagent live: scout [running] — type to steer next step; /agents-main to return.');
 

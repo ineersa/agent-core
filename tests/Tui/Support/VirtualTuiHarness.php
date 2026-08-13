@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Support;
 
-use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
@@ -48,8 +47,6 @@ final class VirtualTuiHarness
             promptEditor: new PromptEditor(),
             displayConfig: $displayConfig ?? new TranscriptDisplayConfig(),
             displayState: $displayState ?? new TranscriptDisplayState(),
-            denormalizer: SubagentProgressSerializerTestSupport::denormalizer(),
-            validator: SubagentProgressSerializerTestSupport::validator(),
         );
         $this->tui = new Tui(terminal: $this->terminal);
         $this->screen->mount($this->tui);

@@ -22,7 +22,7 @@ final readonly class TranscriptBlock
      * @param string                  $runId     The run this block belongs to
      * @param int                     $seq       Monotonic sequence number (for deterministic ordering)
      * @param string                  $text      Visible text content of the block
-     * @param array<string, mixed>    $meta      Additional block metadata (tool name, model, stop reason, etc.)
+     * @param array<string, mixed>    $meta      Additional block metadata (tool name, model, stop reason, typed subagent_progress snapshot, etc.)
      * @param bool                    $streaming Whether this block is still receiving deltas
      * @param bool                    $collapsed Whether this block should be collapsed in the UI by default
      */
