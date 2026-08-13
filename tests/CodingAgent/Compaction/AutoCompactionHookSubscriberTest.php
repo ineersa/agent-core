@@ -19,7 +19,9 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Compaction\AutoCompactionHookSubscriber;
 use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use Ineersa\CodingAgent\Config\CompactionConfig;
@@ -49,6 +51,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     /** @var CompactionServiceInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $compactionService;
     private TestMessageBus $commandBus;
+    private SubagentRunMetadataReader $metadataReader;
 
     protected function setUp(): void
     {
@@ -81,6 +84,9 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                 priorSummaryPresent: false,
             ));
         $this->commandBus = new TestMessageBus();
+        // Parent by default: empty event store so isAgentChild() is false.
+        // Provider usage stays on the separate $this->eventStore mock.
+        $this->metadataReader = new SubagentRunMetadataReader(new InMemoryEventStore());
 
         $this->subscriber = new AutoCompactionHookSubscriber(
             $this->runStore,
@@ -89,6 +95,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $this->compactionService,
+            $this->metadataReader,
         );
     }
 
@@ -195,6 +202,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $this->compactionService,
+            $this->metadataReader,
         );
 
         $context = $this->createHookContext();
@@ -351,6 +359,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $modelResolver,
             $this->commandBus,
             $this->compactionService,
+            $this->metadataReader,
         );
 
         $messages = [
@@ -604,6 +613,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $this->compactionService,
+            $this->metadataReader,
         );
 
         $freshSubscriber->handleAfterTurnCommit($this->createHookContext());
@@ -932,6 +942,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $summaryOnlyService,
+            $this->metadataReader,
         );
 
         $context = $this->createHookContext();
@@ -1022,6 +1033,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $summaryPlusFreshService,
+            $this->metadataReader,
         );
 
         $context = $this->createHookContext();
@@ -1090,6 +1102,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->modelResolver,
             $this->commandBus,
             $failedService,
+            $this->metadataReader,
         );
 
         $context = $this->createHookContext();
@@ -1124,6 +1137,68 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $this->assertCount(0, $this->commandBus->messages,
             'Must skip without fatal when RunState is missing from store '
             .'— null $runState must not dereference in prepare().');
+    }
+
+    /**
+     * Thesis: agent child runs (fork/subagent, session.kind=agent_child) never
+     * schedule after-turn auto-compaction even when provider usage exceeds the
+     * normal compact_after_tokens threshold.
+     */
+    public function testSkipsDispatchForAgentChildRunAboveThreshold(): void
+    {
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
+
+        // Metadata reader uses its own event store with RunStarted child shape.
+        // Provider usage resolver keeps the shared eventStore mock for threshold.
+        $childEventStore = $this->createMock(EventStoreInterface::class);
+        $childEventStore->method('allFor')->willReturn([
+            new RunEvent(
+                runId: 'run-1',
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: [
+                    'step_id' => 'start-1',
+                    'payload' => [
+                        'system_prompt' => 'child',
+                        'messages' => [],
+                        'metadata' => [
+                            'session' => [
+                                'kind' => 'agent_child',
+                                'parent_run_id' => 'parent-1',
+                            ],
+                        ],
+                    ],
+                ],
+            ),
+        ]);
+        $childReader = new SubagentRunMetadataReader($childEventStore);
+
+        // Fresh mock: child gate must return before prepare().
+        $compactionService = $this->createMock(CompactionServiceInterface::class);
+        $compactionService->expects($this->never())->method('prepare');
+
+        $subscriber = new AutoCompactionHookSubscriber(
+            $this->runStore,
+            $this->providerUsageResolver,
+            $this->compactionConfig,
+            $this->modelResolver,
+            $this->commandBus,
+            $compactionService,
+            $childReader,
+        );
+
+        $messages = [$this->makeTextMessage('user', 'Hello')];
+        $runState = $this->createRunState($messages);
+
+        $this->runStore->method('get')->willReturn($runState);
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // above 11000
+
+        $subscriber->handleAfterTurnCommit($this->createHookContext());
+
+        $this->assertCount(0, $this->commandBus->messages,
+            'Agent child runs must not dispatch CompactRun from after-turn auto-compaction.');
     }
 
     private function createRunState(
