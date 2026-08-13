@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Support;
 use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\PropertyInfo\PropertyInfoExtractor;
+use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
@@ -16,6 +17,7 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Validation;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
@@ -28,7 +30,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 final class AttributeSerializerValidatorTestFactory
 {
     /**
-     * @return array{0: NormalizerInterface&DenormalizerInterface, 1: ValidatorInterface}
+     * @return array{0: SerializerInterface&NormalizerInterface&DenormalizerInterface, 1: ValidatorInterface}
      */
     public static function create(bool $withBackedEnumNormalizer = false): array
     {
@@ -47,7 +49,7 @@ final class AttributeSerializerValidatorTestFactory
             propertyTypeExtractor: $propertyTypeExtractor,
         );
 
-        $serializer = new Serializer($normalizers);
+        $serializer = new Serializer($normalizers, [new JsonEncoder()]);
         $validator = Validation::createValidatorBuilder()
             ->enableAttributeMapping()
             ->getValidator();

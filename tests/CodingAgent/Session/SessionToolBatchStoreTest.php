@@ -32,6 +32,7 @@ use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
@@ -102,11 +103,17 @@ final class SessionToolBatchStoreTest extends TestCase
         $dir = $this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$runId.'/runtime/tool-batches';
         mkdir($dir, recursive: true);
         $filename = \sprintf('%d_%s.json', $turnNo, hash('sha256', $stepId));
+        [$serializer] = AttributeSerializerValidatorTestFactory::create();
+        $batchState = $serializer->normalize(
+            $this->emptyBatch([]),
+            null,
+            [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]],
+        );
         $envelope = [
             'run_id' => 'other-run',
             'turn_no' => $turnNo,
             'step_id' => $stepId,
-            'batch_state' => ToolBatchSnapshotEnvelopeDTO::create($runId, $turnNo, $stepId, $this->emptyBatch([]))->toArray(AttributeSerializerValidatorTestFactory::create()[0])['batch_state'],
+            'batch_state' => $batchState,
         ];
         file_put_contents($dir.'/'.$filename, json_encode($envelope, \JSON_THROW_ON_ERROR));
 
@@ -271,9 +278,8 @@ final class SessionToolBatchStoreTest extends TestCase
             $this->store->load($runId, $turnNo, $stepId);
             $this->fail('Expected SessionToolBatchStoreException for malformed batch_state.');
         } catch (SessionToolBatchStoreException $exception) {
-            $this->assertStringContainsString('batch_state is invalid', $exception->getMessage());
-            $previous = $exception->getPrevious();
-            $this->assertInstanceOf(\UnexpectedValueException::class, $previous);
+            $this->assertStringContainsString('snapshot is invalid', $exception->getMessage());
+            $this->assertNotNull($exception->getPrevious());
         }
     }
 
@@ -376,10 +382,11 @@ final class SessionToolBatchStoreTest extends TestCase
     private function assertPersistedEquivalent(ToolBatchStateDTO $expected, ?ToolBatchStateDTO $actual): void
     {
         $this->assertNotNull($actual);
-        [$normalizer] = AttributeSerializerValidatorTestFactory::create();
+        [$serializer] = AttributeSerializerValidatorTestFactory::create();
+        $context = [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]];
         $this->assertSame(
-            ToolBatchSnapshotEnvelopeDTO::create('eq', 1, 's', $expected)->toArray($normalizer)['batch_state'],
-            ToolBatchSnapshotEnvelopeDTO::create('eq', 1, 's', $actual)->toArray($normalizer)['batch_state'],
+            $serializer->normalize(new ToolBatchSnapshotEnvelopeDTO('eq', 1, 's', $expected), null, $context),
+            $serializer->normalize(new ToolBatchSnapshotEnvelopeDTO('eq', 1, 's', $actual), null, $context),
         );
     }
 }

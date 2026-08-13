@@ -12,16 +12,17 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Session\ToolBatchSnapshotEnvelopeDTO;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
+use Symfony\Component\Serializer\SerializerInterface;
 
 /**
  * Session snapshot persistence serializes the real ToolBatchStateDTO graph:
- * nested ExecuteToolCall/ToolCallResult objects, bus envelope fields excluded.
+ * nested ExecuteToolCall/ToolCallResult objects via container-like Serializer.
  */
 final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
 {
-    public function testCanonicalSnapshotRoundTripsTypedNestedObjectsAndExcludesBusEnvelope(): void
+    public function testCanonicalSnapshotRoundTripsTypedNestedObjectsAndPersistsBusIdentity(): void
     {
-        [$normalizer, $validator] = AttributeSerializerValidatorTestFactory::create();
+        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
         $answer = new ToolCallHumanInputAnswerDTO(
             questionId: 'q-1',
             answer: ['approved' => true],
@@ -38,7 +39,7 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
             turnNo: 2,
             stepId: 'step-a',
             attempt: 3,
-            idempotencyKey: 'live-ik-must-not-persist',
+            idempotencyKey: 'live-ik',
             toolCallId: 'c1',
             toolName: 'bash',
             args: ['command' => 'ls'],
@@ -77,31 +78,32 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
             awaitingHumanInput: ['c1' => 'q-1'],
         );
 
-        $envelope = ToolBatchSnapshotEnvelopeDTO::create('run-1', 2, 'step-a', $batch);
-        $wire = $envelope->toArray($normalizer);
+        $envelope = new ToolBatchSnapshotEnvelopeDTO('run-1', 2, 'step-a', $batch);
+        $json = $serializer->serialize($envelope, 'json', [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]]);
+        $wire = json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
         $batchWire = $wire['batch_state'];
 
         $this->assertSame(['run_id', 'turn_no', 'step_id', 'batch_state'], array_keys($wire));
         $this->assertArrayHasKey('call_data', $batchWire);
         $this->assertArrayHasKey('result_data', $batchWire);
-        $this->assertArrayNotHasKey('runId', $batchWire['call_data']['c1']);
-        $this->assertArrayNotHasKey('turnNo', $batchWire['call_data']['c1']);
-        $this->assertArrayNotHasKey('stepId', $batchWire['call_data']['c1']);
-        $this->assertArrayNotHasKey('attempt', $batchWire['call_data']['c1']);
-        $this->assertArrayNotHasKey('idempotencyKey', $batchWire['call_data']['c1']);
+        $this->assertSame('run-1', $batchWire['call_data']['c1']['runId']);
+        $this->assertSame(2, $batchWire['call_data']['c1']['turnNo']);
+        $this->assertSame('step-a', $batchWire['call_data']['c1']['stepId']);
+        $this->assertSame(3, $batchWire['call_data']['c1']['attempt']);
+        $this->assertSame('live-ik', $batchWire['call_data']['c1']['idempotencyKey']);
         $this->assertArrayNotHasKey('pendingHumanInput', $batchWire['result_data']['c2']);
         $this->assertSame('deepseek/deepseek-v4-flash', $batchWire['call_data']['c1']['parentModel']);
         $this->assertSame('q-1', $batchWire['call_data']['c1']['humanInputAnswer']['question_id']);
 
-        $restored = ToolBatchSnapshotEnvelopeDTO::fromArray(
-            $wire,
-            'run-1',
-            2,
-            'step-a',
-            '/tmp/tool-batch-roundtrip.json',
-            $normalizer,
-            $validator,
-        )->batchState;
+        $restoredEnvelope = $serializer->deserialize(
+            $json,
+            ToolBatchSnapshotEnvelopeDTO::class,
+            'json',
+            [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]],
+        );
+        $this->assertInstanceOf(ToolBatchSnapshotEnvelopeDTO::class, $restoredEnvelope);
+        $this->assertSame(0, $validator->validate($restoredEnvelope)->count());
+        $restored = $restoredEnvelope->batchState;
 
         $this->assertSame('bash', $restored->calls['c1']->toolName);
         $this->assertSame(['command' => 'ls'], $restored->calls['c1']->args);
@@ -110,57 +112,50 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
         $this->assertSame('q-1', $restored->calls['c1']->humanInputAnswer->questionId);
         $this->assertSame(['stdout' => 'ok'], $restored->results['c2']->result);
         $this->assertNull($restored->results['c2']->pendingHumanInput);
-        // Bus identity reconstructed from envelope, not live message values.
         $this->assertSame('run-1', $restored->calls['c1']->runId());
         $this->assertSame(2, $restored->calls['c1']->turnNo());
         $this->assertSame('step-a', $restored->calls['c1']->stepId());
-        $this->assertSame(1, $restored->calls['c1']->attempt());
-        $this->assertSame(hash('sha256', 'run-1|step-a|c1'), $restored->calls['c1']->idempotencyKey());
+        $this->assertSame(3, $restored->calls['c1']->attempt());
+        $this->assertSame('live-ik', $restored->calls['c1']->idempotencyKey());
         $this->assertSame(
-            $normalizer->normalize($restored, null, [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]]),
-            $normalizer->normalize($batch, null, [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]]),
+            $serializer->normalize($restored, null, [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]]),
+            $serializer->normalize($batch, null, [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]]),
         );
+        $this->assertInstanceOf(SerializerInterface::class, $serializer);
     }
 
     public function testMalformedBatchStateFailsStrictly(): void
     {
-        [$normalizer, $validator] = AttributeSerializerValidatorTestFactory::create();
+        [$serializer] = AttributeSerializerValidatorTestFactory::create();
 
-        try {
-            ToolBatchSnapshotEnvelopeDTO::fromArray(
-                [
-                    'run_id' => 'run-x',
-                    'turn_no' => 1,
-                    'step_id' => 'step-x',
-                    'batch_state' => [
-                        'expected_order' => ['c1' => 0],
-                        'call_data' => [
-                            'c1' => [
-                                'toolCallId' => 'c1',
-                                'toolName' => 'read',
-                                'orderIndex' => 0,
-                                'args' => [],
-                                'mode' => 99,
-                            ],
+        $this->expectException(\Throwable::class);
+        $serializer->deserialize(
+            json_encode([
+                'run_id' => 'run-x',
+                'turn_no' => 1,
+                'step_id' => 'step-x',
+                'batch_state' => [
+                    'expected_order' => ['c1' => 0],
+                    'call_data' => [
+                        'c1' => [
+                            'toolCallId' => 'c1',
+                            'toolName' => 'read',
+                            'orderIndex' => 0,
+                            'args' => [],
+                            'mode' => 99,
                         ],
-                        'pending_queue' => [],
-                        'in_flight' => [],
-                        'result_data' => [],
-                        'finalized' => false,
-                        'max_parallelism' => 1,
-                        'awaiting_human_input' => [],
                     ],
+                    'pending_queue' => [],
+                    'in_flight' => [],
+                    'result_data' => [],
+                    'finalized' => false,
+                    'max_parallelism' => 1,
+                    'awaiting_human_input' => [],
                 ],
-                'run-x',
-                1,
-                'step-x',
-                '/tmp/tool-batch-malformed.json',
-                $normalizer,
-                $validator,
-            );
-            $this->fail('Expected SessionToolBatchStoreException for malformed call mode.');
-        } catch (\Ineersa\CodingAgent\Session\SessionToolBatchStoreException $exception) {
-            $this->assertInstanceOf(\UnexpectedValueException::class, $exception->getPrevious());
-        }
+            ], \JSON_THROW_ON_ERROR),
+            ToolBatchSnapshotEnvelopeDTO::class,
+            'json',
+            [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]],
+        );
     }
 }

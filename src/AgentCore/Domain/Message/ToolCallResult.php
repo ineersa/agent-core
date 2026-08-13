@@ -16,8 +16,8 @@ use Symfony\Component\Serializer\Attribute\Groups;
  * human-input suspension: it must not be collected as a finished tool result
  * and must not append a tool message or mark pendingToolCalls complete.
  *
- * `$pendingHumanInput` has no snapshot group attribute and never enters tool-batch
- * session files (run_control uses PhpSerializer, so bus transport is unaffected).
+ * `$pendingHumanInput` has no snapshot group and is omitted from tool-batch session
+ * files (run_control uses PhpSerializer, so bus transport is unaffected).
  */
 final readonly class ToolCallResult extends AbstractAgentBusMessage
 {

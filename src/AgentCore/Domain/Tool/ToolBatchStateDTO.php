@@ -14,7 +14,7 @@ use Symfony\Component\Validator\Constraints as Assert;
  * Runtime and persisted tool-batch coordination state for one (run, turn, step).
  *
  * In-process maps hold typed bus messages. Session snapshots serialize this DTO
- * directly via the container Serializer (group tool_batch_snapshot).
+ * via Serializer group tool_batch_snapshot (including nested bus identity fields).
  */
 final class ToolBatchStateDTO
 {

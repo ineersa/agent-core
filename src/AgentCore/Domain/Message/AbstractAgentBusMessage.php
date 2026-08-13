@@ -4,21 +4,28 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
+use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
+use Symfony\Component\Serializer\Attribute\Groups;
+
 /**
  * Bus envelope fields shared by execution messages.
  *
- * These properties intentionally have no {@see \Symfony\Component\Serializer\Attribute\Groups}
- * attribute so tool-batch snapshot normalization
- * ({@see \Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO::SNAPSHOT_GROUP}) excludes them.
- * Identity is reattached from the snapshot envelope on load. Messenger/PhpSerializer is unaffected.
+ * Snapshot serialization includes these fields so nested ExecuteToolCall /
+ * ToolCallResult objects reconstruct without rebinding.
+ * Messenger/PhpSerializer is unaffected by Serializer attributes.
  */
 abstract readonly class AbstractAgentBusMessage implements AgentBusMessageInterface
 {
     public function __construct(
+        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         private string $runId,
+        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         private int $turnNo,
+        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         private string $stepId,
+        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         private int $attempt,
+        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         private string $idempotencyKey,
     ) {
     }
