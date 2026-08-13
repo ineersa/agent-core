@@ -287,8 +287,9 @@ final class ControllerReplayHttpClientFactory
 
         $fifoIndex = 0;
         $hasRequestMatchers = self::fixturesHaveRequestMatchers($fixtures);
+        $streamChunkDelayMs = self::maxSseChunkDelayMs($fixtures);
 
-        return new MockHttpClient(
+        $mock = new MockHttpClient(
             static function (string $method, string $url, array $options) use (&$fifoIndex, $fixtures, $hasRequestMatchers): MockResponse {
                 $fixture = self::selectFixtureForRequest($fixtures, $options, $fifoIndex, $hasRequestMatchers);
                 if (null === $fixture) {
@@ -297,14 +298,13 @@ final class ControllerReplayHttpClientFactory
                     // Return a minimal text-only stop response so the
                     // run can complete cleanly.
                     return new MockResponse(
-                        self::buildSSEBody(
+                        self::buildSSEFromDeltas(
                             model: 'llama_cpp/test',
                             deltas: [
                                 ['type' => 'text', 'content' => 'done'],
                             ],
                             stopReason: 'stop',
                             usage: null,
-                            sseChunkDelayMs: 0,
                         ),
                         [
                             'http_code' => 200,
@@ -335,11 +335,16 @@ final class ControllerReplayHttpClientFactory
                 $model = $fixture['model'] ?? 'llama_cpp/test';
 
                 $usage = $fixture['usage'] ?? null;
-                // Optional test-only pacing: when sse_chunk_delay_ms is set, yield each
-                // SSE frame across MockResponse idle-timeout ticks so TUI can open
-                // overlays between streamed assistant chunks (still deterministic).
-                $sseChunkDelayMs = (int) ($fixture['sse_chunk_delay_ms'] ?? 0);
-                $body = self::buildSSEBody($model, $deltas, $stopReason, $usage, $sseChunkDelayMs);
+                // Multi-frame bodies only when stream pacing is active. MockResponse
+                // fully prebuffers iterable generators, so sleeps must NOT live in the
+                // body generator — StreamPacingHttpClient delays between stream() chunks.
+                $body = self::buildSSEFromDeltas(
+                    $model,
+                    $deltas,
+                    $stopReason,
+                    $usage,
+                    multiFrame: (int) ($fixture['sse_chunk_delay_ms'] ?? 0) > 0,
+                );
 
                 return new MockResponse($body, [
                     'http_code' => 200,
@@ -352,6 +357,25 @@ final class ControllerReplayHttpClientFactory
             },
             'http://replay.internal',
         );
+
+        if ($streamChunkDelayMs <= 0) {
+            return $mock;
+        }
+
+        return new StreamPacingHttpClient($mock, $streamChunkDelayMs);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $fixtures
+     */
+    private static function maxSseChunkDelayMs(array $fixtures): int
+    {
+        $max = 0;
+        foreach ($fixtures as $fixture) {
+            $max = max($max, (int) ($fixture['sse_chunk_delay_ms'] ?? 0));
+        }
+
+        return $max;
     }
 
     /**
@@ -392,33 +416,21 @@ final class ControllerReplayHttpClientFactory
 
     /**
      * Convert fixture deltas to an OpenAI-compatible SSE stream.
-     * When $sseChunkDelayMs > 0, yields frames with inter-chunk usleep for TUI overlay timing.
+     *
+     * When $multiFrame is true, returns an iterable of SSE frames (no sleeps).
+     * StreamPacingHttpClient supplies inter-chunk delay during stream() so
+     * EventSourceHttpClient/SseStream observe frames across real wall-clock gaps.
      *
      * @param list<array<string, mixed>> $deltas
      * @param array<string, mixed>|null  $usage
      *
      * @return string|iterable<int, string>
      */
-    private static function buildSSEBody(string $model, array $deltas, string $stopReason, ?array $usage, int $sseChunkDelayMs): string|iterable
+    private static function buildSSEFromDeltas(string $model, array $deltas, string $stopReason, ?array $usage, bool $multiFrame = false): string|iterable
     {
         $frames = self::buildSSEFrames($model, $deltas, $stopReason, $usage);
-        if ($sseChunkDelayMs <= 0) {
-            return implode('', $frames);
-        }
 
-        // MockResponse fully prebuffers iterable bodies on first read, so delays must live
-        // inside the generator. That keeps the consumer process busy long enough for the
-        // parent TUI to open overlays before STREAM markers are emitted.
-        return (static function () use ($frames, $sseChunkDelayMs): iterable {
-            $first = true;
-            foreach ($frames as $frame) {
-                if (!$first) {
-                    usleep($sseChunkDelayMs * 1000);
-                }
-                $first = false;
-                yield $frame;
-            }
-        })();
+        return $multiFrame ? $frames : implode('', $frames);
     }
 
     /**

@@ -4,9 +4,9 @@
     "provider_id": "llama_cpp_test",
     "reasoning": "off",
     "fixture_source": "synthetic",
-    "synthetic_reason": "Deterministic multi-delta assistant stream. response_delay_ms keeps the run Working long enough to open /agents-live before body frames; deltas then deliver ordered STREAM_MARK_* tokens while the picker remains open.",
+    "synthetic_reason": "Deterministic multi-delta assistant stream. response_delay_ms keeps the run Working long enough to open /agents-live before body frames. sse_chunk_delay_ms is applied by StreamPacingHttpClient during stream() (not MockResponse body prebuffer) so STREAM_MARK_* tokens arrive across real TUI ticks while the picker remains open.",
     "response_delay_ms": 3500,
-    "sse_chunk_delay_ms": 250,
+    "sse_chunk_delay_ms": 400,
     "replay_match": {
         "last_user_contains": "PICKER_STREAM_PROMPT_UNIQUE"
     },

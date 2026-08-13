@@ -208,23 +208,27 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->assertFalse($initial['agent_e2e_fork_nl']['accent']);
             $this->assertFalse($initial['agent_e2e_scout_nl']['accent']);
 
+            // Early marker while picker open; mid/late markers must still be absent so
+            // we prove true multi-tick delivery (not one prebuffered dump after response_delay).
             $this->tmux->waitForHistoryContains($pane, 'STREAM_MARK_A', 20.0, 2500);
+            $earlyCap = $this->tmux->capturePlainWithHistory($pane, 2500);
             $this->assertStringContainsString(
                 'Agents live',
                 $this->tmux->capturePlain($pane),
                 'First stream marker must arrive while agents-live picker remains open',
             );
-            $this->tmux->waitForHistoryContains($pane, 'STREAM_MARK_FINAL', 12.0, 2500);
-            $this->assertStringContainsString(
-                'Agents live',
-                $this->tmux->capturePlain($pane),
-                'Final stream marker must arrive while agents-live picker remains open',
+            $this->assertStringContainsString('STREAM_MARK_A', $earlyCap);
+            $this->assertStringNotContainsString(
+                'STREAM_MARK_FINAL',
+                $earlyCap,
+                'Final marker must not already be present when first marker arrives (proves incremental stream)',
             );
-            $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-stream-final-marker');
+            $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-stream-early-marker');
 
             $this->assertPickerRowCount($pane, $ids, 2);
             $this->assertPickerRowsAreSinglePhysicalLine($pane, $ids);
 
+            // Navigation interaction between early and late markers.
             $this->tmux->sendKey($pane, 'Down');
             $afterDown = $this->waitForPickerRowStyles($pane, $ids, static function (array $rows): bool {
                 return !$rows['agent_e2e_fork_nl']['native']
@@ -239,6 +243,14 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->assertPickerRowCount($pane, $ids, 2);
             $this->assertPickerRowsAreSinglePhysicalLine($pane, $ids);
             $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-stream-after-down');
+
+            $this->tmux->waitForHistoryContains($pane, 'STREAM_MARK_FINAL', 12.0, 2500);
+            $this->assertStringContainsString(
+                'Agents live',
+                $this->tmux->capturePlain($pane),
+                'Final stream marker must arrive while agents-live picker remains open',
+            );
+            $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-stream-final-marker');
 
             $this->tmux->sendKey($pane, 'Escape');
             $this->tmux->waitForCallback(
