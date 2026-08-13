@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedEventPayloadDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
-use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
@@ -86,8 +85,8 @@ final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllow
     }
 
     /**
-     * Typed RunStarted metadata for the run, or null when no RunStarted event
-     * / nested metadata envelope is available / denormalization fails.
+     * Typed RunStarted metadata for the run, or null when no RunStarted event exists.
+     * Malformed RunStarted payloads propagate Serializer type errors.
      */
     public function readRunStartedMetadata(string $runId): ?RunStartedMetadataDTO
     {
@@ -98,17 +97,10 @@ final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllow
                 continue;
             }
 
-            try {
-                $envelope = $this->denormalizer->denormalize($event->payload, RunStartedEventPayloadDTO::class);
-            } catch (SerializerExceptionInterface|\TypeError|\ValueError|\InvalidArgumentException) {
-                // Malformed RunStarted envelope: treat as unavailable metadata (best-effort read).
-                return null;
-            }
-            if (!$envelope instanceof RunStartedEventPayloadDTO) {
-                return null;
-            }
-
-            return $envelope->payload->metadata;
+            return $this->denormalizer
+                ->denormalize($event->payload, RunStartedEventPayloadDTO::class)
+                ->payload
+                ->metadata;
         }
 
         return null;

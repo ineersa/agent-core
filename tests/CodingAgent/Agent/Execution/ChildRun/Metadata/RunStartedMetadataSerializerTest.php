@@ -144,34 +144,6 @@ final class RunStartedMetadataSerializerTest extends TestCase
         ], RunStartedEventPayloadDTO::class);
     }
 
-    public function testStrictMalformedNestedTypeFailsClosedAtReaderBoundary(): void
-    {
-        // Scalar interactive must not soft-coerce; boundary catch returns null.
-        $runId = 'bad-interactive';
-        $store = new InMemoryEventStore();
-        $store->append(new RunEvent(
-            runId: $runId,
-            seq: 1,
-            turnNo: 0,
-            type: RunEventTypeEnum::RunStarted->value,
-            payload: [
-                'payload' => [
-                    'metadata' => [
-                        'session' => [
-                            'kind' => 'agent_child',
-                            'interactive' => 'false',
-                        ],
-                    ],
-                ],
-            ],
-            createdAt: new \DateTimeImmutable(),
-        ));
-
-        $reader = new SubagentRunMetadataReader($store, $this->denormalizer);
-        $this->assertNull($reader->readRunStartedMetadata($runId));
-        $this->assertFalse($reader->isAgentChild($runId));
-    }
-
     public function testParentDoesNotClassifyAsChild(): void
     {
         $envelope = $this->denormalizer->denormalize([

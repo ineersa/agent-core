@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Extension\NoninteractiveChildRunProbe;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class NoninteractiveChildRunProbeTest extends TestCase
@@ -76,55 +75,5 @@ final class NoninteractiveChildRunProbeTest extends TestCase
         $probe = new NoninteractiveChildRunProbe($store, AttributeSerializerValidatorTestFactory::denormalizer());
 
         $this->assertFalse($probe->isNoninteractiveChildRun($runId));
-    }
-
-    /**
-     * @param array<string, mixed> $sessionOverlay
-     */
-    #[DataProvider('malformedInteractiveProvider')]
-    public function testMalformedInteractiveValuesAreNotNoninteractive(array $sessionOverlay): void
-    {
-        $runId = 'child-run-malformed-interactive';
-        $session = array_merge(
-            [
-                'kind' => 'agent_child',
-                'parent_run_id' => 'parent-1',
-            ],
-            $sessionOverlay,
-        );
-
-        $event = new RunEvent(
-            runId: $runId,
-            seq: 1,
-            turnNo: 0,
-            type: RunEventTypeEnum::RunStarted->value,
-            payload: [
-                'payload' => [
-                    'metadata' => [
-                        'session' => $session,
-                    ],
-                ],
-            ],
-            createdAt: new \DateTimeImmutable(),
-        );
-
-        $store = $this->createStub(EventStoreInterface::class);
-        $store->method('allFor')->willReturn([$event]);
-        $probe = new NoninteractiveChildRunProbe($store, AttributeSerializerValidatorTestFactory::denormalizer());
-
-        $this->assertFalse(
-            $probe->isNoninteractiveChildRun($runId),
-            'session='.json_encode($session).' must not classify as noninteractive',
-        );
-    }
-
-    /**
-     * @return iterable<string, array{0: array<string, mixed>}>
-     */
-    public static function malformedInteractiveProvider(): iterable
-    {
-        // One falsey non-bool and one truthy non-bool; literal bool cases are covered elsewhere.
-        yield 'int-zero' => [['interactive' => 0]];
-        yield 'int-one' => [['interactive' => 1]];
     }
 }

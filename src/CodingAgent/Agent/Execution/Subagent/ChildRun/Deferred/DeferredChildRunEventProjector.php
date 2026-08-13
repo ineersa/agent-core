@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildToolProgressPresentationFormatter;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedEventPayloadDTO;
-use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
@@ -82,27 +81,22 @@ final class DeferredChildRunEventProjector
             }
 
             if (RunEventTypeEnum::RunStarted->value === $type) {
-                try {
-                    $envelope = $this->denormalizer->denormalize($payload, RunStartedEventPayloadDTO::class);
-                } catch (SerializerExceptionInterface|\TypeError|\ValueError|\InvalidArgumentException) {
-                    // Malformed RunStarted: keep launch-seeded identity; continue projection (best-effort).
-                    $envelope = null;
-                }
                 // RunStarted may confirm/update concrete identity; never clear to empty.
-                if ($envelope instanceof RunStartedEventPayloadDTO) {
-                    $metadata = $envelope->payload->metadata;
-                    if (null !== $metadata->model && '' !== trim($metadata->model)) {
-                        $model = trim($metadata->model);
-                    }
-                    if (null !== $metadata->reasoning && '' !== trim($metadata->reasoning)) {
-                        $reasoning = trim($metadata->reasoning);
-                    }
-                    if (null !== $metadata->provider && '' !== $metadata->provider) {
-                        $provider = $metadata->provider;
-                    }
-                    if (null !== $metadata->contextWindow && $metadata->contextWindow > 0) {
-                        $contextWindow = $metadata->contextWindow;
-                    }
+                $metadata = $this->denormalizer
+                    ->denormalize($payload, RunStartedEventPayloadDTO::class)
+                    ->payload
+                    ->metadata;
+                if (null !== $metadata->model && '' !== trim($metadata->model)) {
+                    $model = trim($metadata->model);
+                }
+                if (null !== $metadata->reasoning && '' !== trim($metadata->reasoning)) {
+                    $reasoning = trim($metadata->reasoning);
+                }
+                if (null !== $metadata->provider && '' !== $metadata->provider) {
+                    $provider = $metadata->provider;
+                }
+                if (null !== $metadata->contextWindow && $metadata->contextWindow > 0) {
+                    $contextWindow = $metadata->contextWindow;
                 }
                 $status = RunStatus::Running;
                 $endsWithRetryPendingLlmFailure = false;

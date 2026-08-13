@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Extension;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedEventPayloadDTO;
-use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
@@ -35,17 +34,10 @@ final readonly class NoninteractiveChildRunProbe
                 continue;
             }
 
-            try {
-                $envelope = $this->denormalizer->denormalize($event->payload, RunStartedEventPayloadDTO::class);
-            } catch (SerializerExceptionInterface|\TypeError|\ValueError|\InvalidArgumentException) {
-                // Malformed RunStarted envelope: not a noninteractive child (best-effort probe).
-                return false;
-            }
-            if (!$envelope instanceof RunStartedEventPayloadDTO) {
-                return false;
-            }
-
-            $metadata = $envelope->payload->metadata;
+            $metadata = $this->denormalizer
+                ->denormalize($event->payload, RunStartedEventPayloadDTO::class)
+                ->payload
+                ->metadata;
             if (!$metadata->isAgentChild()) {
                 return false;
             }
