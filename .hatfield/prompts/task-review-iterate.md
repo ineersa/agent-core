@@ -9,11 +9,6 @@ If the argument is empty or still the literal placeholder `<task-or-pr>`, ask th
 
 ## Orchestrator role
 
-## JetBrains checkout targeting (implementation/review)
-
-Prefer semantic JetBrains IDE tools (agent-visible `jetbrains-index_ide_*`; raw MCP names remain `ide_*`) for navigation, references/hierarchy, diagnostics, and semantic rename/move. Always pass the exact task worktree as `project_path`. Never assume the integration checkout or the aggregate sibling-worktree project. If the worktree is not open/indexed, open that exact path with `jetbrains-index_ide_open_project` before code work. Fall back to absolute-path filesystem tools when IDE tools are unavailable. Scouts do not need IDE tools.
-
-
 You are an **orchestrator**, not an implementor. Your job is to dispatch work to specialized agents and coordinate their results:
 
 - **Reviewer subagent** — for re-review after fixes are applied.
@@ -22,6 +17,10 @@ You are an **orchestrator**, not an implementor. Your job is to dispatch work to
 - **Main agent (you)** — reads PR comments, classifies feedback, prepares fork instructions, verifies output, moves task state.
 
 If you catch yourself about to open an editor, write a file, or run a code change — stop and launch a fork instead.
+
+## JetBrains checkout targeting (implementation/review)
+
+Prefer semantic JetBrains IDE tools (agent-visible `jetbrains-index_ide_*`; raw MCP names remain `ide_*`) for navigation, references/hierarchy, diagnostics, and semantic rename/move. Always pass the exact task worktree as `project_path`. Never assume the integration checkout or the aggregate sibling-worktree project. If the worktree is not open/indexed, open that exact path with `jetbrains-index_ide_open_project` before code work. Fall back to absolute-path filesystem tools when IDE tools are unavailable. Scouts do not need IDE tools.
 
 1. **Read all PR comments and task metadata**
    - Use `gh pr view <number> --comments` or the task's PR URL from task metadata.

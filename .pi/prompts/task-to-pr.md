@@ -9,11 +9,6 @@ If the task argument is empty or still the literal placeholder `<task>`, ask the
 
 ## Orchestrator role
 
-## JetBrains checkout targeting (implementation/review)
-
-Prefer semantic JetBrains IDE tools (`ide_*`) for navigation, references/hierarchy, diagnostics, and semantic rename/move. Always pass the exact task worktree as `project_path`. Never assume the integration checkout or the aggregate sibling-worktree project. If the worktree is not open/indexed, open that exact path with `ide_open_project` before code work. Fall back to absolute-path filesystem tools when IDE tools are unavailable. Scouts do not need IDE tools.
-
-
 You are an **orchestrator**, not an implementor. Your job is to dispatch work to specialized agents and coordinate their results:
 
 - **Reviewer subagent** — for code review of the worktree changes.
@@ -22,6 +17,10 @@ You are an **orchestrator**, not an implementor. Your job is to dispatch work to
 - **Main agent (you)** — reads diffs, launches reviewers, analyzes feedback, prepares fork instructions, records results, moves task state.
 
 If you catch yourself about to open an editor, write a file, or run a code change — stop and launch a fork instead.
+
+## JetBrains checkout targeting (implementation/review)
+
+Prefer semantic JetBrains IDE tools (`ide_*`) for navigation, references/hierarchy, diagnostics, and semantic rename/move. Always pass the exact task worktree as `project_path`. Never assume the integration checkout or the aggregate sibling-worktree project. If the worktree is not open/indexed, open that exact path with `ide_open_project` before code work. Fall back to absolute-path filesystem tools when IDE tools are unavailable. Scouts do not need IDE tools.
 
 1. **Inspect worktree state**
    - `task_list` or read the task file to confirm it is IN-PROGRESS with worktree metadata.

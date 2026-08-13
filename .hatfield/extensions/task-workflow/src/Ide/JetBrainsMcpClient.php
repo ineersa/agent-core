@@ -54,11 +54,16 @@ final class JetBrainsMcpClient
             throw new \RuntimeException('mcp/sdk client not available in host autoload');
         }
 
+        // Match Pi: open allows OPEN_TIMEOUT_SECONDS + 30 overhead; close is short.
+        $requestTimeoutSeconds = self::OPEN_TOOL === $toolName
+            ? self::OPEN_TIMEOUT_SECONDS + 30
+            : 60;
+
         $url = self::resolveServerUrl($codeRoot);
         $client = \Mcp\Client::builder()
             ->setClientInfo('hatfield-task-workflow', '1.0.0')
             ->setInitTimeout(10)
-            ->setRequestTimeout(max(30, self::OPEN_TIMEOUT_SECONDS + 30))
+            ->setRequestTimeout($requestTimeoutSeconds)
             ->build();
         $transport = new \Mcp\Client\Transport\HttpTransport($url);
 
