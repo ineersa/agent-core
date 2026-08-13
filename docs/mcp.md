@@ -24,24 +24,47 @@ Special case: project entry `{ "enabled": false }` disables an inherited server 
 
 ## Schema (JSON)
 
+Each server entry is either **STDIO** (`command`) or **HTTP** (`url`). Transport is **derived** from which field you set — there is no user `transport` field. Do not set both `command` and `url`.
+
 ```jsonc
 {
   "mcpServers": {
-    "<server-name>": {
+    "local-stdio": {
       "enabled": true,
-      "transport": "stdio",   // or HTTP/SSE transports supported by the client
       "command": "npx",
       "args": ["-y", "some-mcp-server"],
       "env": { "FOO": "bar" },
+      "cwd": "/path/to/server",
+      "timeoutMs": 30000,
+      "startupTimeoutMs": 30000,
+      "excludeTools": []
+    },
+    "remote-http": {
+      "enabled": true,
       "url": "https://example.example/mcp",
       "headers": { "Authorization": "Bearer ..." },
-      "timeout": 60
+      "timeoutMs": 30000,
+      "startupTimeoutMs": 30000
     }
   }
 }
 ```
 
-Exact transport fields depend on server type. Prefer least-privilege env vars. Do not commit secrets.
+| Field | Meaning | Default |
+|---|---|---|
+| `enabled` | Include this server | `true` |
+| `command` | STDIO executable (implies STDIO transport) | — |
+| `args` | STDIO argv list | `[]` |
+| `env` | Extra env for STDIO child | `{}` |
+| `cwd` | Working directory for STDIO child | inherit |
+| `url` | HTTP endpoint (implies HTTP transport) | — |
+| `headers` | HTTP request headers | `{}` |
+| `timeoutMs` | Per-request timeout (ms) | `30000` |
+| `startupTimeoutMs` | Startup/connect timeout (ms) | `30000` |
+| `availability` | Tool availability policy for the server | product enum default |
+| `excludeTools` | Tool names to hide from the registry | `[]` |
+
+Unknown fields are rejected by the config loader. Prefer least-privilege env vars. Do not commit secrets.
 
 ## Runtime behavior
 

@@ -1,6 +1,6 @@
 ---
 builtin: true
-description: TUI extension interfaces for overlays, status rows, focus, ticks, and retained rows.
+description: TUI extension interfaces for overlays, status-panel rows, focus, ticks, and retained prompt lookup.
 ---
 
 # TUI Extension API
@@ -18,14 +18,19 @@ That is part of the public API. Do **not** depend on in-repo `Ineersa\Tui\*` cla
 
 ## Capabilities (public context)
 
-Typical context operations (see interface methods for exact signatures):
+`TuiExtensionContextInterface` exposes exactly:
 
-- Mount/unmount overlay widgets
-- Contribute status rows / footer-adjacent UI through approved slots
-- Participate in focus and tick/render cycles
-- Retain turn-scoped rows when the host retains them
+- `setStatus($key, $text|null)` — keyed **status-panel** rows (not the footer bar)
+- `insertOverlayAfterEditor` / `removeOverlay` — overlay widgets below the editor
+- `setFocus` — focus an overlay widget
+- `onTick` — idle-safe tick callbacks (host discards return values; self-throttle)
+- `requestRender` / `getSessionId`
+- `formatMuted` / `formatRolePrefix` — themed text helpers for pickers
+- `turnRowsInDisplayOrder($sessionId)` — **read-only** retained user-prompt rows
+  (`turnNo`, `title`, `displayRole`) for history/rewind pickers
 
-Extensions must not mutate core transcript widgets directly; use slot/context APIs.
+There is no footer-segment API and no API to retain/write transcript rows from this context.
+Extensions must not mutate core transcript widgets directly.
 
 ## UX guidelines
 

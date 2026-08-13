@@ -1510,7 +1510,14 @@ function phar_build(): string
     if (!mkdir($extensionApiStaging, 0755, true) && !is_dir($extensionApiStaging)) {
         throw new \RuntimeException('Unable to create staging directory: '.$extensionApiStaging);
     }
-    run_checked('cp -a '.escapeshellarg($extensionApiSrc).'/. '.escapeshellarg($extensionApiStaging.'/'));
+    // Copy the public Extension API package for composer path resolution, but exclude
+    // its docs/ tree so unmarked Markdown cannot enter the archive. Catalog-selected
+    // API docs are materialized below as regular files at canonical paths.
+    run_checked(
+        'rsync -a --delete --exclude '.escapeshellarg('docs/')
+        .' '.escapeshellarg($extensionApiSrc.'/')
+        .' '.escapeshellarg($extensionApiStaging.'/'),
+    );
 
     // Stage only marked built-in docs at their canonical paths as regular files.
     // Unmarked repository docs and any legacy internal-docs projection are omitted.

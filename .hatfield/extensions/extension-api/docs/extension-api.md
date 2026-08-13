@@ -61,8 +61,11 @@ Paths should resolve against `getCwd()`, not the extension install path, unless 
 
 ## Skills
 
-`registerSkill($absoluteDirectoryWithSkillMd)` adds a lowest-precedence skill root.
-Relative paths are rejected — pass `__DIR__.'/skills/foo'`.
+`registerSkill($skillDirectory)` registers a skill directory scanned after CLI and
+project/user auto-discovery paths (and only when skill auto-discovery is enabled).
+The host stores the string as given and does **not** currently validate absolute vs
+relative paths — pass an absolute package path such as `__DIR__.'/skills/foo'` so
+resolution does not depend on process CWD.
 
 ## Versioning
 

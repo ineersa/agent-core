@@ -1,6 +1,6 @@
 ---
 builtin: true
-description: Tool approval suspensions, SafeGuard modes, and extension approval hooks.
+description: Tool approval suspensions, SafeGuard policy, and extension approval hooks.
 ---
 
 # Tool Approvals
@@ -24,17 +24,42 @@ Hooks run in registration order; the first non-allow decision wins for tool-call
 
 ## SafeGuard (built-in)
 
-`Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension` is the built-in approval policy extension. It classifies tool calls (for example bash/file mutations) and may require approval based on mode and rules.
+`Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension` is the built-in
+approval policy extension. It classifies tool calls (bash, write/edit, protected reads,
+settings mutations, and related patterns) and returns **allow**, **require approval**,
+or **block** according to fixed policy rules — there is **no** user-facing SafeGuard
+“mode” enum.
 
-### Modes (summary)
+### Interactive vs noninteractive
 
-SafeGuard supports multiple runtime modes (interactive approval, auto behaviors, stricter blocking) configured under `extensions.settings.safe_guard` and related defaults. Exact rule tables live in defaults/settings — keep project overrides sparse.
+- **Interactive** (TUI / controller present): policy-relaxable dangerous operations
+  typically return **RequireApproval** so a human can allow, block, or replace-result.
+- **Noninteractive** (no TUI/controller — for example headless messenger workers): when
+  `auto_deny_in_noninteractive` is `true` (default), those same categories return
+  **Block** instead of waiting forever for a human.
+
+Hard blocks (for example privilege escalation via `sudo`) are never negotiable.
+
+### Settings (`extensions.settings.safe_guard`)
+
+| Key | Meaning | Default |
+|---|---|---|
+| `tool_names.bash` / `write` / `edit` / `read` / `settings` | Tool name aliases used for matching | built-in tool names |
+| `allow_command_patterns` | Command substrings that bypass destructive/dangerous checks | `[]` |
+| `allow_write_outside_cwd` | Absolute paths where outside-CWD writes are always allowed | `[]` |
+| `protected_read_patterns` | **Additive** on top of built-in secret-path defaults | `[]` |
+| `dangerous_command_patterns` | Extra dangerous command substrings | `[]` |
+| `auto_deny_in_noninteractive` | Block instead of RequireApproval without TUI/controller | `true` |
+
+Built-in protected-read patterns (`.env.local`, SSH keys, cloud credentials, etc.) cannot
+be removed through config; YAML only adds more.
 
 `HATFIELD_APPROVAL_CHANNEL` can override approval channel routing for specialized environments.
 
 ### Child agents
 
-`agents.extensions.always_on` includes SafeGuard by default so children inherit approval policy unless configuration removes it.
+`agents.extensions.always_on` includes SafeGuard by default so children inherit approval
+policy unless configuration removes it.
 
 ## Extension authors
 
@@ -55,4 +80,5 @@ See Extension API docs (`extension-api`, `extension-api-tools`).
 ## Limitations
 
 - Approval UX depends on an interactive TUI or configured approval channel.
-- Noninteractive automation must set modes/channels deliberately or calls stay blocked waiting for humans.
+- Noninteractive automation should keep `auto_deny_in_noninteractive: true` (default)
+  or provide a real approval channel; otherwise policy-relaxable calls cannot complete.

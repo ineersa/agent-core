@@ -177,7 +177,7 @@ artifact boots and responds to basic commands.
 Run PHAR smoke tests manually:
 ```bash
 castor phar:build
-HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --group phar
+castor test --filter=PharSmokeTest
 ```
 
 ## Isolation
@@ -199,7 +199,7 @@ E2E, live-LLM, recording, and PHAR groups).
 - DB path: `HATFIELD_TEST_DATABASE_PATH` (defaults to `app_test.sqlite`).
 - ParaTest cache dir: `HATFIELD_CACHE_DIR=.hatfield/cache-paraT{token}` (per-worker).
 - `doctrine:migrations:migrate` runs once before the suite.
-- Standalone `vendor/bin/phpunit` runs without Castor must export `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite`.
+- If you must isolate a Castor PHPUnit failure with raw `vendor/bin/phpunit`, export `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite`. Normal workflow stays on Castor.
 - Filtered runs (`castor test --filter=...`) use sequential PHPUnit (shared single DB).
 
 ## What each command tests

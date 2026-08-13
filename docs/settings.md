@@ -52,13 +52,13 @@ Relative paths in settings resolve against the **active project CWD** (not the i
 
 | Key | Meaning | Default (built-in) |
 |---|---|---|
-| `tui.theme` | Theme id | theme registry default |
-| `tui.theme_paths` | Extra theme YAML directories | `[]` |
-| `tui.transcript.thinking.visible` | Show thinking blocks | product default |
-| `tui.transcript.thinking.style` | Thinking presentation | product default |
+| `tui.theme` | Theme id | `cyberpunk` |
+| `tui.theme_paths` | Theme YAML search paths | `config/themes`, `.hatfield/themes`, `~/.hatfield/themes` |
+| `tui.transcript.thinking.visible` | Show thinking blocks | `true` |
+| `tui.transcript.thinking.style` | Thinking presentation | `dim_italic` |
 | `tui.transcript.previews.expanded_by_default` | Expand previews | `false` |
-| `tui.transcript.previews.tool_result_lines` | Tool result preview lines | product default |
-| `tui.transcript.previews.diff_lines` | Diff preview lines | product default |
+| `tui.transcript.previews.tool_result_lines` | Tool result preview lines | `8` |
+| `tui.transcript.previews.diff_lines` | Diff preview lines | `20` |
 
 ### Sessions and logging
 
@@ -98,7 +98,7 @@ a successful late result into a timeout failure.
 |---|---|---|
 | `tools.execution.default_mode` | `sequential` or `parallel` | `sequential` |
 | `tools.execution.max_parallelism` | Concurrent tool workers | `4` |
-| `runtime.llm_worker_count` | LLM worker processes | product default |
+| `runtime.llm_worker_count` | LLM worker processes | `4` |
 
 ### Output cap
 
@@ -127,11 +127,11 @@ a successful late result into a timeout failure.
 |---|---|
 | `tools.bash.default_timeout_seconds` | `300` |
 | `tools.bash.max_timeout_seconds` | `3600` |
-| `tools.bash.background_prompt_threshold_seconds` | product default |
+| `tools.bash.background_prompt_threshold_seconds` | `15` |
 | `tools.background_process.path` | `.hatfield/tmp/bg` |
 | `tools.background_process.retention` | `86400` |
-| `tools.background_process.stop_grace_seconds` | product default |
-| `tools.background_process.log_tail_chars` | product default |
+| `tools.background_process.stop_grace_seconds` | `5` |
+| `tools.background_process.log_tail_chars` | `5000` |
 
 See [background-processes.md](background-processes.md).
 

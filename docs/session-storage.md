@@ -73,7 +73,7 @@ Session access uses cooperative locking so two interactive controllers do not co
 
 - SQLite (and other DBs) back metadata/queues as configured by the app; session **conversation** remains file-based events for portability and replay.
 - Attachments and large tool outputs may live under tool temp paths (for example output-cap storage) with references from events — not as free-form copies inside every event payload.
-- Fork **trees** / multi-branch session graphs are not a shipped user workflow in this documentation set; linear history is the supported model. If fork APIs appear experimentally, treat them as unfinished unless a release notes them.
+- The model-visible `fork` tool is **shipped** (isolated child with inherited parent context; see [agents.md](agents.md)). Linear history remains the supported user model: multi-branch session **trees**, `/tree` UI, and session-graph browsing are **not** shipped end-user workflows.
 
 ## Compaction interaction
 

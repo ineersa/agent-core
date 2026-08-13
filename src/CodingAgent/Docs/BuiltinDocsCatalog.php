@@ -159,14 +159,38 @@ final class BuiltinDocsCatalog
             return null;
         }
 
+        $yamlBlock = $extraction['yamlBlock'];
+        $intendsBuiltin = self::yamlBlockMentionsBuiltinTrue($yamlBlock);
+
         try {
-            $parsed = Yaml::parse($extraction['yamlBlock']);
-        } catch (ParseException) {
+            $parsed = Yaml::parse($yamlBlock);
+        } catch (ParseException $e) {
+            if ($intendsBuiltin) {
+                throw new BuiltinDocsCatalogException(\sprintf('Document "%s" (%s) has invalid frontmatter YAML but appears to set builtin: true: %s', $id, $pathForErrors, $e->getMessage()), 0, $e);
+            }
+
             // Invalid unmarked frontmatter is ignored at discovery time.
             return null;
         }
 
-        if (!\is_array($parsed) || !\array_key_exists('builtin', $parsed) || true !== $parsed['builtin']) {
+        if (!\is_array($parsed)) {
+            if ($intendsBuiltin) {
+                throw new BuiltinDocsCatalogException(\sprintf('Document "%s" (%s) frontmatter must parse to a map when builtin: true is intended.', $id, $pathForErrors));
+            }
+
+            return null;
+        }
+
+        if (!\array_key_exists('builtin', $parsed)) {
+            return null;
+        }
+
+        // Strict selection requires YAML boolean true only.
+        if (true !== $parsed['builtin']) {
+            if ($intendsBuiltin) {
+                throw new BuiltinDocsCatalogException(\sprintf('Document "%s" (%s) frontmatter sets builtin but not as YAML boolean true.', $id, $pathForErrors));
+            }
+
             return null;
         }
 
@@ -184,6 +208,58 @@ final class BuiltinDocsCatalog
             'body' => $body,
             'charCount' => $charCount,
         ];
+    }
+
+    /**
+     * GitHub-style heading slug used for local Markdown fragment validation.
+     */
+    public static function githubStyleHeadingSlug(string $heading): string
+    {
+        $slug = mb_strtolower(trim($heading), 'UTF-8');
+        $slug = preg_replace('/[^\p{L}\p{N}\s_-]+/u', '', $slug) ?? '';
+        $slug = preg_replace('/[\s_]+/u', '-', $slug) ?? '';
+        $slug = trim($slug, '-');
+
+        return $slug;
+    }
+
+    /**
+     * Collect GitHub-style heading slugs from Markdown body (outside fenced code).
+     *
+     * Duplicate headings receive -1, -2, … suffixes matching common GitHub behavior.
+     *
+     * @return list<string>
+     */
+    public static function headingSlugsFromMarkdown(string $markdown): array
+    {
+        $slugs = [];
+        $counts = [];
+        $inFence = false;
+        $lines = preg_split("/\n/", $markdown);
+        if (!\is_array($lines)) {
+            $lines = [];
+        }
+        foreach ($lines as $line) {
+            if (preg_match('/^\s*```/', $line)) {
+                $inFence = !$inFence;
+                continue;
+            }
+            if ($inFence) {
+                continue;
+            }
+            if (!preg_match('/^#{1,6}\s+(.+?)\s*#*\s*$/', $line, $matches)) {
+                continue;
+            }
+            $base = self::githubStyleHeadingSlug($matches[1]);
+            if ('' === $base) {
+                continue;
+            }
+            $n = $counts[$base] ?? 0;
+            $counts[$base] = $n + 1;
+            $slugs[] = 0 === $n ? $base : $base.'-'.$n;
+        }
+
+        return $slugs;
     }
 
     /**
@@ -218,5 +294,20 @@ final class BuiltinDocsCatalog
         }
 
         return $titles[0];
+    }
+
+    /**
+     * Detect an intended builtin: true marker in raw YAML text even when parse fails.
+     *
+     * Matches a line whose key is builtin and whose scalar looks like true
+     * (boolean, quoted, or 1). Used only to fail closed on broken intended markers;
+     * selection still requires parsed YAML boolean true.
+     */
+    private static function yamlBlockMentionsBuiltinTrue(string $yamlBlock): bool
+    {
+        return 1 === preg_match(
+            '/^\s*builtin\s*:\s*(?:true|["\']true["\']|1)\s*(?:#.*)?$/mi',
+            $yamlBlock,
+        );
     }
 }

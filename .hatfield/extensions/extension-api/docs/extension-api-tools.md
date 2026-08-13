@@ -51,8 +51,13 @@ before handler execution (policy normalization, path rewriting, etc.).
 
 ## Tool-result hooks
 
-`registerToolResultHook()` observes/adjusts post-execution results in registration order.
-Each hook sees the latest result state.
+`registerToolResultHook()` runs after tool execution in registration order.
+
+**Host behavior today is observational:** Symfony AI `ToolCallSucceeded` / `ToolCallFailed`
+events expose readonly result data, so replacement decisions from
+`ToolResultDecisionDTO` are **not applied** back to the live tool result even if the DTO
+exposes a replace kind. Write hooks for side effects/logging; do not rely on result
+mutation until a host release documents applied replacements.
 
 ## Naming and safety
 

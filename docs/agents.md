@@ -7,7 +7,7 @@ description: Agent definitions, discovery, subagent execution, retrieval, and li
 
 Named child-agent roles live in Markdown files with YAML frontmatter. Discovery and the
 model-visible `subagent` tool are implemented for **foreground** single and parallel runs.
-Background launch is not implemented.
+Background `subagent` launch is not implemented. The separate model-visible `fork` tool is shipped (see below).
 
 Settings keys: [settings-agents.md](settings-agents.md). Sessions/artifacts: [session-storage.md](session-storage.md).
 
@@ -77,6 +77,23 @@ Provide at least one identifier. Cross-parent retrieval is rejected. Use when pa
 - `/agents-main` (and `Ctrl+\` toggle) — return to the main agent.
 - Transcript cards surface live child progress and remind about `/agents-live`.
 - Live view is a dedicated navigation mode: most other slash commands require returning to main first.
+
+
+## `fork` tool
+
+Shipped model tool for **implementation delegation** to an isolated child with
+inherited parent conversation context (snapshot → sanitize → compact → deferred
+single-child launch). Distinct from `subagent`:
+
+| | `subagent` | `fork` |
+|---|---|---|
+| Purpose | Named roles, exploration/review, parallel tasks | Isolated implementation handoff |
+| Context | Child system prompt from agent Markdown | Inherits compacted parent messages |
+| Nested children | Nested `subagent` policy as implemented for children | Nested `fork` **rejected**; forks must not launch `subagent` either |
+| Concurrency | Parallel mode up to `agents.max_agents` | Prefer ≤3 concurrent forks; never same worktree |
+
+Arguments: required `task`; optional `model`, `thinking`. Blocks until the fork completes
+and returns a dense handoff through deferred tool completion.
 
 ## Related
 

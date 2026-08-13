@@ -23,10 +23,14 @@ Handlers receive `CommandContextInterface` for notifications and host interactio
 ## Exec
 
 ```php
-$result = $api->exec()->run(['git', 'status', '--short'], new ExecOptionsDTO(
-    cwd: $api->getCwd(),
-    timeoutSeconds: 30,
-));
+$result = $api->exec()->exec(
+    'git',
+    ['status', '--short'],
+    new ExecOptionsDTO(
+        cwd: $api->getCwd(),
+        timeout: 30,
+    ),
+);
 ```
 
 No shell string evaluation. Check exit codes via `ExecResultDTO`.

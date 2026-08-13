@@ -10,13 +10,55 @@ Optional local log/APM wiring for maintainers. Not model-visible.
 ## Castor helpers
 
 ```bash
-castor diag:datadog:smoke
-castor diag:datadog:log-config
-castor diag:datadog:smoke-log
+castor datadog:smoke        # package/agent/ddtrace/log-path diagnostic
+castor datadog:log-config   # print ops/datadog/hatfield.d/conf.yaml + install hints
+castor datadog:smoke-log    # append one JSONL smoke line to today's agent log
 ```
 
-Configure the Datadog Agent to tail Hatfield log files from the active log directory
-(`logging.path` / `HATFIELD_LOG_DIR`). Exact Agent YAML is environment-specific.
+## Agent log collection
+
+1. Enable logs in the Datadog Agent (`logs_enabled: true`).
+2. Install the sample config from this repo:
+
+```bash
+castor datadog:log-config
+# then follow the printed install steps, e.g.:
+sudo mkdir -p /etc/datadog-agent/conf.d/hatfield.d
+sudo install -o dd-agent -g dd-agent -m 0644 \
+  ops/datadog/hatfield.d/conf.yaml \
+  /etc/datadog-agent/conf.d/hatfield.d/conf.yaml
+```
+
+3. Ensure the Agent user can traverse to and read Hatfield log files under the active
+   log directory (`logging.path` / `HATFIELD_LOG_DIR`, default project `.hatfield/logs/`).
+   On Linux this often means ACL execute on parent dirs and read on the log dir
+   (`setfacl`); exact paths depend on your checkout layout — adapt the hints printed
+   by `castor datadog:log-config`.
+4. Restart the Agent and write a smoke line:
+
+```bash
+sudo systemctl restart datadog-agent
+castor datadog:smoke-log
+```
+
+Search Logs Explorer for the printed smoke message. The sample config includes
+masking rules for common secret shapes.
+
+## APM (`HATFIELD_DATADOG` / ddtrace)
+
+Castor launch helpers may wrap the agent process with Datadog APM env when auto-enabled:
+
+| Condition | Behavior |
+|---|---|
+| `HATFIELD_DATADOG=0` (or false/off) | Force APM off |
+| `HATFIELD_DATADOG=1` (or true/on) | Force APM on **only if** the `ddtrace` extension is loaded |
+| unset | Auto: enable only when `ddtrace` is loaded **and** a local Agent trace endpoint is reachable (for example unix socket `/var/run/datadog/apm.socket`) |
+
+When enabled, helpers set `DD_TRACE_ENABLED`, `DD_TRACE_CLI_ENABLED`, service/env/version,
+log injection flags, and prefer the local APM socket when present. `DD_TRACE_ENABLED=0` in
+the environment also keeps auto mode off.
+
+Use `castor datadog:smoke` to inspect package status, `ddtrace` load, and today's log path.
 
 ## Related
 

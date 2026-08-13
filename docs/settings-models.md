@@ -60,9 +60,11 @@ Sparse retry policy for transient provider failures (counts, backoff) as defined
 
 ## Model reference format
 
-Use `providerKey/modelId` (example: `deepseek/deepseek-v4-pro`). The provider key is the map key under `ai.providers`, not necessarily a public vendor slug.
+Use `providerKey/modelId` (illustrative example: `deepseek/deepseek-v4-pro`). The provider key is the map key under `ai.providers`, not necessarily a public vendor slug.
 
 ## Minimal example
+
+Illustrative only — provider/model names and context sizes below are **examples**, not built-in defaults. Copy and adapt to your real providers.
 
 ```yaml
 ai:
