@@ -46,7 +46,7 @@ Do this before proposing a test strategy, adding tests, running Castor tests, or
 
 ## JetBrains IDE tools
 
-When the repo is open in JetBrains and `ide_*` tools are available, prefer them for semantic navigation, references/call hierarchy, diagnostics, and renames/moves. Target the exact checkout (`project_path` / `ide_open_project` if needed). Fall back to filesystem/`rg`/`find` for docs, generated artifacts, bulk ops, or when IDE tools are unavailable/insufficient. Full tool list: `.pi/APPEND_SYSTEM.md`.
+When JetBrains IDE integration is available in the active coding agent/runtime, prefer those tools for semantic navigation, references/call hierarchy, diagnostics, and semantic rename/move. Target the exact checkout using that runtime's project-scoping and open-project capability. Fall back to filesystem/`rg`/`find` for docs, generated artifacts, bulk ops, or when IDE tools are unavailable/insufficient. Exact tool names and capabilities come from the active coding agent's system instructions (Pi and Hatfield expose different names).
 
 ## Specification fidelity and minimality
 
