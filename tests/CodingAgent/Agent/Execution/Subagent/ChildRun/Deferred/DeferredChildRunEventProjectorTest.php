@@ -42,6 +42,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             [
                 new AfterTurnCommitEventSummary(1, RunEventTypeEnum::RunStarted->value, [
                     'payload' => ['metadata' => [
+                        'session' => ['kind' => 'agent_child'],
                         'model' => 'openai-codex/gpt-5.6-sol',
                         'reasoning' => 'xhigh',
                         'provider' => 'openai-codex',

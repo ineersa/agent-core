@@ -8,7 +8,8 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildToolProgressPresentationFormatter;
-use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedEventPayloadDTO;
+use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
@@ -81,9 +82,15 @@ final class DeferredChildRunEventProjector
             }
 
             if (RunEventTypeEnum::RunStarted->value === $type) {
-                $metadata = RunStartedMetadataDTO::tryFromRunEventPayload($payload, $this->denormalizer);
+                try {
+                    $envelope = $this->denormalizer->denormalize($payload, RunStartedEventPayloadDTO::class);
+                } catch (SerializerExceptionInterface|\TypeError|\ValueError|\InvalidArgumentException) {
+                    // Malformed RunStarted: keep launch-seeded identity; continue projection (best-effort).
+                    $envelope = null;
+                }
                 // RunStarted may confirm/update concrete identity; never clear to empty.
-                if (null !== $metadata) {
+                if ($envelope instanceof RunStartedEventPayloadDTO) {
+                    $metadata = $envelope->payload->metadata;
                     if (null !== $metadata->model && '' !== trim($metadata->model)) {
                         $model = trim($metadata->model);
                     }

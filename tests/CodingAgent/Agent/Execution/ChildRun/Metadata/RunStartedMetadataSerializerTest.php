@@ -9,13 +9,14 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
-use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedEventPayloadDTO;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
- * Thesis: Symfony Serializer denormalizes stable nested RunStarted metadata;
- * SubagentRunMetadataReader exposes typed child launch fields without a Decoder.
+ * Thesis: Symfony Serializer denormalizes the full nested RunStarted envelope;
+ * SubagentRunMetadataReader exposes typed child launch fields without a Decoder/static mapper.
  */
 final class RunStartedMetadataSerializerTest extends TestCase
 {
@@ -26,9 +27,10 @@ final class RunStartedMetadataSerializerTest extends TestCase
         $this->denormalizer = AttributeSerializerValidatorTestFactory::denormalizer();
     }
 
-    public function testCanonicalSubagentMetadataDenormalizesTypedFields(): void
+    public function testCanonicalSubagentEnvelopeDenormalizesTypedGraph(): void
     {
-        $dto = RunStartedMetadataDTO::tryFromRunEventPayload([
+        $envelope = $this->denormalizer->denormalize([
+            'step_id' => 'step-1',
             'payload' => [
                 'metadata' => [
                     'session' => [
@@ -49,9 +51,10 @@ final class RunStartedMetadataSerializerTest extends TestCase
                     'extensions' => ['Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension'],
                 ],
             ],
-        ], $this->denormalizer);
+        ], RunStartedEventPayloadDTO::class);
 
-        $this->assertNotNull($dto);
+        $this->assertInstanceOf(RunStartedEventPayloadDTO::class, $envelope);
+        $dto = $envelope->payload->metadata;
         $this->assertTrue($dto->isAgentChild());
         $this->assertNull($dto->session->childKind);
         $this->assertSame('parent-1', $dto->session->parentRunId);
@@ -69,26 +72,31 @@ final class RunStartedMetadataSerializerTest extends TestCase
         );
     }
 
-    public function testCanonicalForkMetadataDenormalizesChildKind(): void
+    public function testCanonicalForkEnvelopeDenormalizesChildKind(): void
     {
-        $dto = $this->denormalizer->denormalize([
-            'session' => [
-                'kind' => 'agent_child',
-                'child_kind' => 'fork',
-                'parent_run_id' => 'parent-run',
-                'agent_name' => 'fork',
-                'artifact_id' => 'agent_fork1',
-                'interactive' => true,
+        $envelope = $this->denormalizer->denormalize([
+            'payload' => [
+                'metadata' => [
+                    'session' => [
+                        'kind' => 'agent_child',
+                        'child_kind' => 'fork',
+                        'parent_run_id' => 'parent-run',
+                        'agent_name' => 'fork',
+                        'artifact_id' => 'agent_fork1',
+                        'interactive' => true,
+                    ],
+                    'model' => 'openai/gpt-5',
+                    'tools_scope' => [
+                        'allowed_tools' => ['read'],
+                        'mcp' => [],
+                    ],
+                    'extensions' => [],
+                ],
             ],
-            'model' => 'openai/gpt-5',
-            'tools_scope' => [
-                'allowed_tools' => ['read'],
-                'mcp' => [],
-            ],
-            'extensions' => [],
-        ], RunStartedMetadataDTO::class);
+        ], RunStartedEventPayloadDTO::class);
 
-        $this->assertInstanceOf(RunStartedMetadataDTO::class, $dto);
+        $this->assertInstanceOf(RunStartedEventPayloadDTO::class, $envelope);
+        $dto = $envelope->payload->metadata;
         $this->assertTrue($dto->isAgentChild());
         $this->assertSame('fork', $dto->session->childKind);
         $this->assertSame(['read'], $dto->allowedToolsForChild());
@@ -97,17 +105,22 @@ final class RunStartedMetadataSerializerTest extends TestCase
 
     public function testMissingExtensionsFailsClosedForChildAllowlist(): void
     {
-        $dto = $this->denormalizer->denormalize([
-            'session' => [
-                'kind' => 'agent_child',
-                'parent_run_id' => 'parent-1',
+        $envelope = $this->denormalizer->denormalize([
+            'payload' => [
+                'metadata' => [
+                    'session' => [
+                        'kind' => 'agent_child',
+                        'parent_run_id' => 'parent-1',
+                    ],
+                    'tools_scope' => [
+                        'allowed_tools' => ['read'],
+                    ],
+                ],
             ],
-            'tools_scope' => [
-                'allowed_tools' => ['read'],
-            ],
-        ], RunStartedMetadataDTO::class);
+        ], RunStartedEventPayloadDTO::class);
 
-        $this->assertInstanceOf(RunStartedMetadataDTO::class, $dto);
+        $this->assertInstanceOf(RunStartedEventPayloadDTO::class, $envelope);
+        $dto = $envelope->payload->metadata;
         $this->assertTrue($dto->isAgentChild());
         $this->assertSame(['read'], $dto->allowedToolsForChild());
         $this->assertSame([], $dto->allowedExtensionsForChild());
@@ -115,37 +128,66 @@ final class RunStartedMetadataSerializerTest extends TestCase
         $this->assertNull($dto->contextWindow);
     }
 
-    public function testMalformedEnvelopeReturnsNullAndParentDoesNotClassifyAsChild(): void
+    public function testMissingRequiredEnvelopeFailsStrictly(): void
     {
-        $this->assertNull(RunStartedMetadataDTO::tryFromRunEventPayload([], $this->denormalizer));
-        $this->assertNull(RunStartedMetadataDTO::tryFromRunEventPayload(['payload' => 'not-array'], $this->denormalizer));
-        $this->assertNull(RunStartedMetadataDTO::tryFromRunEventPayload(['payload' => ['metadata' => 'x']], $this->denormalizer));
-
-        $parent = $this->denormalizer->denormalize([
-            'session' => ['kind' => 'parent'],
-            'model' => 'openai/gpt-5',
-        ], RunStartedMetadataDTO::class);
-        $this->assertInstanceOf(RunStartedMetadataDTO::class, $parent);
-        $this->assertFalse($parent->isAgentChild());
-        $this->assertNull($parent->allowedToolsForChild());
-        $this->assertNull($parent->allowedExtensionsForChild());
+        $this->expectException(SerializerExceptionInterface::class);
+        $this->denormalizer->denormalize([], RunStartedEventPayloadDTO::class);
     }
 
-    public function testStrictMalformedNestedTypeFailsClosed(): void
+    public function testMalformedNestedMetadataFailsStrictly(): void
     {
-        // Scalar interactive must not soft-coerce; Serializer type mismatch fails closed.
-        $dto = RunStartedMetadataDTO::tryFromRunEventPayload([
+        $this->expectException(SerializerExceptionInterface::class);
+        $this->denormalizer->denormalize([
             'payload' => [
-                'metadata' => [
-                    'session' => [
-                        'kind' => 'agent_child',
-                        'interactive' => 'false',
+                'metadata' => 'x',
+            ],
+        ], RunStartedEventPayloadDTO::class);
+    }
+
+    public function testStrictMalformedNestedTypeFailsClosedAtReaderBoundary(): void
+    {
+        // Scalar interactive must not soft-coerce; boundary catch returns null.
+        $runId = 'bad-interactive';
+        $store = new InMemoryEventStore();
+        $store->append(new RunEvent(
+            runId: $runId,
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'payload' => [
+                    'metadata' => [
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'interactive' => 'false',
+                        ],
                     ],
                 ],
             ],
-        ], $this->denormalizer);
+            createdAt: new \DateTimeImmutable(),
+        ));
 
-        $this->assertNull($dto);
+        $reader = new SubagentRunMetadataReader($store, $this->denormalizer);
+        $this->assertNull($reader->readRunStartedMetadata($runId));
+        $this->assertFalse($reader->isAgentChild($runId));
+    }
+
+    public function testParentDoesNotClassifyAsChild(): void
+    {
+        $envelope = $this->denormalizer->denormalize([
+            'payload' => [
+                'metadata' => [
+                    'session' => ['kind' => 'parent'],
+                    'model' => 'openai/gpt-5',
+                ],
+            ],
+        ], RunStartedEventPayloadDTO::class);
+
+        $this->assertInstanceOf(RunStartedEventPayloadDTO::class, $envelope);
+        $parent = $envelope->payload->metadata;
+        $this->assertFalse($parent->isAgentChild());
+        $this->assertNull($parent->allowedToolsForChild());
+        $this->assertNull($parent->allowedExtensionsForChild());
     }
 
     public function testReaderUsesSerializerForCanonicalNestedEnvelope(): void
@@ -204,21 +246,33 @@ final class RunStartedMetadataSerializerTest extends TestCase
     public function testInteractiveLiteralBoolIsPreserved(): void
     {
         $false = $this->denormalizer->denormalize([
-            'session' => ['kind' => 'agent_child', 'interactive' => false],
-        ], RunStartedMetadataDTO::class);
-        $this->assertInstanceOf(RunStartedMetadataDTO::class, $false);
-        $this->assertFalse($false->session->interactive);
+            'payload' => [
+                'metadata' => [
+                    'session' => ['kind' => 'agent_child', 'interactive' => false],
+                ],
+            ],
+        ], RunStartedEventPayloadDTO::class);
+        $this->assertInstanceOf(RunStartedEventPayloadDTO::class, $false);
+        $this->assertFalse($false->payload->metadata->session->interactive);
 
         $true = $this->denormalizer->denormalize([
-            'session' => ['kind' => 'agent_child', 'interactive' => true],
-        ], RunStartedMetadataDTO::class);
-        $this->assertInstanceOf(RunStartedMetadataDTO::class, $true);
-        $this->assertTrue($true->session->interactive);
+            'payload' => [
+                'metadata' => [
+                    'session' => ['kind' => 'agent_child', 'interactive' => true],
+                ],
+            ],
+        ], RunStartedEventPayloadDTO::class);
+        $this->assertInstanceOf(RunStartedEventPayloadDTO::class, $true);
+        $this->assertTrue($true->payload->metadata->session->interactive);
 
         $absent = $this->denormalizer->denormalize([
-            'session' => ['kind' => 'agent_child'],
-        ], RunStartedMetadataDTO::class);
-        $this->assertInstanceOf(RunStartedMetadataDTO::class, $absent);
-        $this->assertNull($absent->session->interactive);
+            'payload' => [
+                'metadata' => [
+                    'session' => ['kind' => 'agent_child'],
+                ],
+            ],
+        ], RunStartedEventPayloadDTO::class);
+        $this->assertInstanceOf(RunStartedEventPayloadDTO::class, $absent);
+        $this->assertNull($absent->payload->metadata->session->interactive);
     }
 }

@@ -6,19 +6,17 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedEventPayloadDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
+use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Reads agent child metadata from RunStarted events.
  *
- * Encapsulates the nested RunStarted event shape produced by StartRunHandler:
- *
- *   $event->payload['payload']['metadata'][...]
- *
- * Stable nested metadata is denormalized once via Symfony Serializer into
- * {@see RunStartedMetadataDTO}.
+ * Nested RunStarted envelope produced by StartRunHandler is denormalized via
+ * Symfony Serializer into {@see RunStartedEventPayloadDTO} → metadata.
  */
 final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllowlistReaderInterface
 {
@@ -100,7 +98,17 @@ final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllow
                 continue;
             }
 
-            return RunStartedMetadataDTO::tryFromRunEventPayload($event->payload, $this->denormalizer);
+            try {
+                $envelope = $this->denormalizer->denormalize($event->payload, RunStartedEventPayloadDTO::class);
+            } catch (SerializerExceptionInterface|\TypeError|\ValueError|\InvalidArgumentException) {
+                // Malformed RunStarted envelope: treat as unavailable metadata (best-effort read).
+                return null;
+            }
+            if (!$envelope instanceof RunStartedEventPayloadDTO) {
+                return null;
+            }
+
+            return $envelope->payload->metadata;
         }
 
         return null;
