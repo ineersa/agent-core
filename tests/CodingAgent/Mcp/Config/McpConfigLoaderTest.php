@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Ineersa\CodingAgent\Mcp\Config\McpServerAvailabilityEnum;
 use Ineersa\CodingAgent\Mcp\Config\McpTransportTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
@@ -561,9 +562,6 @@ JSON;
 
     private function createLoader(): McpConfigLoader
     {
-        return new McpConfigLoader(
-            $this->pathResolver,
-            $this->projectDir,
-        );
+        return TestMcpConfigLoaderFactory::create($this->pathResolver, $this->projectDir);
     }
 }

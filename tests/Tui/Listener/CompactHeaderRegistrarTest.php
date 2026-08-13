@@ -19,6 +19,7 @@ use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\CompactHeader\CompactHeaderSnapshotProvider;
 use Ineersa\Tui\CompactHeader\CompactHeaderWidget;
@@ -190,7 +191,7 @@ final class CompactHeaderRegistrarTest extends TestCase
 
     private function mcpConfigLoader(): McpConfigLoader
     {
-        return new McpConfigLoader(
+        return TestMcpConfigLoaderFactory::create(
             new SettingsPathResolver($this->tmpDir, $this->tmpDir),
             $this->tmpDir,
         );

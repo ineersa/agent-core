@@ -23,6 +23,7 @@ use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface;
 use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCommand;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\CompactHeader\CompactHeaderSnapshotProvider;
 use PHPUnit\Framework\Attributes\Test;
@@ -305,7 +306,7 @@ JSON;
 
     private function createMcpConfigLoader(): McpConfigLoader
     {
-        return new McpConfigLoader(
+        return TestMcpConfigLoaderFactory::create(
             new SettingsPathResolver($this->tmpDir, $this->tmpDir),
             $this->tmpDir,
         );
