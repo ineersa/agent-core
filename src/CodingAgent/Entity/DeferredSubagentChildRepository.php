@@ -11,6 +11,7 @@ use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionCodec;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Symfony\Component\Clock\Clock;
 
@@ -19,8 +20,10 @@ use Symfony\Component\Clock\Clock;
  */
 final class DeferredSubagentChildRepository extends ServiceEntityRepository
 {
-    public function __construct(ManagerRegistry $registry)
-    {
+    public function __construct(
+        ManagerRegistry $registry,
+        private readonly DeferredChildRunLifecycleProjectionCodec $lifecycleProjectionCodec,
+    ) {
         parent::__construct($registry, DeferredSubagentChild::class);
     }
 
@@ -199,6 +202,6 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
             return null;
         }
 
-        return DeferredChildRunLifecycleProjectionDTO::fromArray($raw);
+        return $this->lifecycleProjectionCodec->denormalize($raw);
     }
 }

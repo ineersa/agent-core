@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecution
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionCodec;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Symfony\Component\Clock\Clock;
@@ -25,6 +26,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
     public function __construct(
         ManagerRegistry $registry,
         private readonly DeferredSubagentChildRepository $childRepository,
+        private readonly DeferredChildRunLifecycleProjectionCodec $lifecycleProjectionCodec,
     ) {
         parent::__construct($registry, DeferredSubagentBatch::class);
     }
@@ -73,7 +75,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                     updated_at = :now, projection_version = projection_version + 1
                  WHERE batch_lifecycle_id = :batch AND batch_index = :idx AND projection_version = :child_version',
                 [
-                    'projection' => json_encode($projection->toArray(), \JSON_THROW_ON_ERROR),
+                    'projection' => json_encode($this->lifecycleProjectionCodec->normalize($projection), \JSON_THROW_ON_ERROR),
                     'cursor' => $childEventCursor,
                     'terminal_at' => $terminalAt,
                     'terminal_status' => $terminalStatus,

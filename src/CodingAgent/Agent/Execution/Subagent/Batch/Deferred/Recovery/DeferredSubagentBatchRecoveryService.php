@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\InterruptDeferredSubagentBatchMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeliverDeferredSubagentBatchLifecycleMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionCodec;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
@@ -30,6 +31,7 @@ final readonly class DeferredSubagentBatchRecoveryService
         private DeferredSubagentChildRepository $childRepository,
         private AgentChildRunEventStoreFactory $childEventStoreFactory,
         private DeferredChildRunEventProjector $projector,
+        private DeferredChildRunLifecycleProjectionCodec $lifecycleProjectionCodec,
         private MessageBusInterface $commandBus,
         private LoggerInterface $logger,
     ) {
@@ -91,7 +93,7 @@ final readonly class DeferredSubagentBatchRecoveryService
 
             $rawProjection = $childEntity->childLifecycleProjection;
             $current = \is_array($rawProjection) && [] !== $rawProjection
-                ? DeferredChildRunLifecycleProjectionDTO::fromArray($rawProjection)
+                ? $this->lifecycleProjectionCodec->denormalize($rawProjection)
                 : new DeferredChildRunLifecycleProjectionDTO(
                     childStatus: RunStatus::Running,
                     childTurnNo: 0,

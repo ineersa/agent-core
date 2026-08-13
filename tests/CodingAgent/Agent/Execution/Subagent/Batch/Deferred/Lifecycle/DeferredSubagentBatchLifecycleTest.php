@@ -84,6 +84,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
             new DeferredChildRunEventProjector(),
+            \Ineersa\CodingAgent\Tests\Support\DeferredChildRunLifecycleProjectionCodecTestFactory::create(),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -145,6 +146,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
             new DeferredChildRunEventProjector(),
+            \Ineersa\CodingAgent\Tests\Support\DeferredChildRunLifecycleProjectionCodecTestFactory::create(),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -221,6 +223,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
             new DeferredChildRunEventProjector(),
+            \Ineersa\CodingAgent\Tests\Support\DeferredChildRunLifecycleProjectionCodecTestFactory::create(),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -322,6 +325,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
             new DeferredChildRunEventProjector(),
+            \Ineersa\CodingAgent\Tests\Support\DeferredChildRunLifecycleProjectionCodecTestFactory::create(),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -562,6 +566,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
             new DeferredChildRunEventProjector(),
+            \Ineersa\CodingAgent\Tests\Support\DeferredChildRunLifecycleProjectionCodecTestFactory::create(),
             new TestLogger(),
             $observeBus,
         );
@@ -708,6 +713,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
             new DeferredChildRunEventProjector(),
+            \Ineersa\CodingAgent\Tests\Support\DeferredChildRunLifecycleProjectionCodecTestFactory::create(),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -856,6 +862,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
             new DeferredChildRunEventProjector(),
+            \Ineersa\CodingAgent\Tests\Support\DeferredChildRunLifecycleProjectionCodecTestFactory::create(),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -1144,6 +1151,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
             new DeferredChildRunEventProjector(),
+            \Ineersa\CodingAgent\Tests\Support\DeferredChildRunLifecycleProjectionCodecTestFactory::create(),
             new TestLogger(),
             new TestMessageBus(),
         );

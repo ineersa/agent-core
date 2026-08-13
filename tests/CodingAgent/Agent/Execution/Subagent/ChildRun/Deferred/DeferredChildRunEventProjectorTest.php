@@ -293,9 +293,10 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertSame(7, $projection->childTurnNo);
         $this->assertSame(30, $projection->inputTokens);
 
-        $roundTrip = DeferredChildRunLifecycleProjectionDTO::fromArray($projection->toArray());
+        $codec = \Ineersa\CodingAgent\Tests\Support\DeferredChildRunLifecycleProjectionCodecTestFactory::create();
+        $roundTrip = $codec->denormalize($codec->normalize($projection));
         $this->assertSame(3, $roundTrip->llmStepCount);
-        $this->assertSame(3, $roundTrip->toArray()['llm_step_count'] ?? null);
+        $this->assertSame(3, $codec->normalize($roundTrip)['llm_step_count'] ?? null);
         $this->assertSame(7, $roundTrip->childTurnNo);
 
         $summary = new \Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary(

@@ -52,7 +52,7 @@ final class DeferredChildRunEventProjector
         $recentTools = $current->recentTools;
         $activeToolLine = $current->activeToolLine;
 
-        /** @var array<string, array{name: string, displayLine: string}> $pendingById */
+        /** @var array<string, DeferredPendingToolCallRowDTO> $pendingById */
         $pendingById = $current->pendingToolCalls;
 
         // When the processed tail ends on a still-retryable llm_step_failed, child lifecycle
@@ -134,7 +134,7 @@ final class DeferredChildRunEventProjector
                         $args = $this->presentationFormatter->normalizeToolArguments($toolCall['arguments'] ?? $toolCall['args'] ?? []);
                         $displayLine = $this->presentationFormatter->formatToolDisplayLine($name, $args);
                         if (null !== $id) {
-                            $pendingById[$id] = ['name' => $name, 'displayLine' => $displayLine];
+                            $pendingById[$id] = new DeferredPendingToolCallRowDTO(name: $name, displayLine: $displayLine);
                         }
                     }
                 }
@@ -148,7 +148,7 @@ final class DeferredChildRunEventProjector
                 $toolCallId = \is_string($payload['tool_call_id'] ?? null) ? $payload['tool_call_id'] : null;
                 $displayLine = null;
                 if (null !== $toolCallId && isset($pendingById[$toolCallId])) {
-                    $displayLine = $pendingById[$toolCallId]['displayLine'];
+                    $displayLine = $pendingById[$toolCallId]->displayLine;
                     unset($pendingById[$toolCallId]);
                 }
                 if (null === $displayLine) {
@@ -203,7 +203,7 @@ final class DeferredChildRunEventProjector
         if ([] !== $pendingById) {
             $lastPending = array_values($pendingById);
             $last = $lastPending[\count($lastPending) - 1];
-            $activeToolLine = $last['displayLine'];
+            $activeToolLine = $last->displayLine;
         }
 
         if (null !== $committedStatus) {
