@@ -51,7 +51,10 @@ final class DeferredChildRunLifecycleProjectionCodec
     public function denormalize(array $data): DeferredChildRunLifecycleProjectionDTO
     {
         try {
-            $projection = $this->serializer->denormalize($data, DeferredChildRunLifecycleProjectionDTO::class);
+            $projection = $this->serializer->denormalize(
+                $this->rewriteHistoricalPendingToolCallAliases($data),
+                DeferredChildRunLifecycleProjectionDTO::class,
+            );
         } catch (SerializerExceptionInterface|\TypeError|\ValueError $exception) {
             throw new \InvalidArgumentException(\sprintf('Invalid deferred child lifecycle projection: %s', $exception->getMessage()), 0, $exception);
         }
@@ -62,10 +65,50 @@ final class DeferredChildRunLifecycleProjectionCodec
 
         $violations = $this->validator->validate($projection);
         if ($violations->count() > 0) {
-            throw new ValidationFailedException($projection, $violations);
+            throw new \InvalidArgumentException(\sprintf('Invalid deferred child lifecycle projection: validation failed with %d violation(s).', $violations->count()), 0, new ValidationFailedException($projection, $violations));
         }
 
         return $projection;
+    }
+
+    /**
+     * Read-only historical alias: nested pending rows may store display_line.
+     * Canonical wire key remains displayLine; canonical wins when both exist.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, mixed>
+     */
+    private function rewriteHistoricalPendingToolCallAliases(array $data): array
+    {
+        if (!\array_key_exists('pending_tool_calls', $data)) {
+            return $data;
+        }
+
+        $raw = $data['pending_tool_calls'];
+        if (!\is_array($raw)) {
+            throw new \InvalidArgumentException('Invalid deferred child lifecycle projection: pending_tool_calls must be an array.');
+        }
+
+        $rewritten = [];
+        foreach ($raw as $id => $entry) {
+            if (!\is_string($id) || !\is_array($entry)) {
+                throw new \InvalidArgumentException('Invalid deferred child lifecycle projection: pending_tool_calls entries must be string-keyed object rows.');
+            }
+
+            $row = $entry;
+            $hasCanonical = \array_key_exists('displayLine', $row) && \is_string($row['displayLine']);
+            if (!$hasCanonical && \array_key_exists('display_line', $row) && \is_string($row['display_line'])) {
+                $row['displayLine'] = $row['display_line'];
+            }
+            unset($row['display_line']);
+            $rewritten[$id] = $row;
+        }
+
+        // Copy top-level so caller input is not mutated unexpectedly.
+        $data['pending_tool_calls'] = $rewritten;
+
+        return $data;
     }
 
     /**

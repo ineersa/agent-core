@@ -16,7 +16,8 @@ use Symfony\Component\Validator\Exception\ValidationFailedException;
  *
  * Thesis: Serializer preserves exact historical on-disk keys/omission rules;
  * corrupt rows fail at the codec boundary without partial objects; no DTO
- * toArray()/fromArray() hydration remains.
+ * toArray()/fromArray() hydration remains; validation failures share the
+ * domain InvalidArgumentException contract with Serializer errors.
  */
 final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
 {
@@ -157,6 +158,63 @@ final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
         ]);
     }
 
+    public function testHistoricalDisplayLineAliasHydratesAndRewritesCanonicalKey(): void
+    {
+        $codec = DeferredChildRunLifecycleProjectionCodecTestFactory::create();
+        $historical = [
+            'child_status' => 'running',
+            'child_turn_no' => 2,
+            'last_committed_seq' => 3,
+            'pending_tool_calls' => [
+                'tc-alias' => [
+                    'name' => 'bash',
+                    'display_line' => 'bash ls -la',
+                ],
+            ],
+        ];
+
+        $dto = $codec->denormalize($historical);
+        $this->assertArrayHasKey('tc-alias', $dto->pendingToolCalls);
+        $this->assertInstanceOf(DeferredPendingToolCallRowDTO::class, $dto->pendingToolCalls['tc-alias']);
+        $this->assertSame('bash', $dto->pendingToolCalls['tc-alias']->name);
+        $this->assertSame('bash ls -la', $dto->pendingToolCalls['tc-alias']->displayLine);
+
+        $wire = $codec->normalize($dto);
+        $this->assertSame(
+            ['tc-alias' => ['name' => 'bash', 'displayLine' => 'bash ls -la']],
+            $wire['pending_tool_calls'],
+        );
+        $this->assertArrayNotHasKey('display_line', $wire['pending_tool_calls']['tc-alias']);
+
+        // Caller input must not be mutated by the boundary rewrite.
+        $this->assertSame('bash ls -la', $historical['pending_tool_calls']['tc-alias']['display_line']);
+        $this->assertArrayNotHasKey('displayLine', $historical['pending_tool_calls']['tc-alias']);
+    }
+
+    public function testCanonicalDisplayLineWinsOverHistoricalAlias(): void
+    {
+        $codec = DeferredChildRunLifecycleProjectionCodecTestFactory::create();
+        $dto = $codec->denormalize([
+            'child_status' => 'running',
+            'child_turn_no' => 1,
+            'last_committed_seq' => 1,
+            'pending_tool_calls' => [
+                'tc1' => [
+                    'name' => 'edit',
+                    'displayLine' => 'edit path.php',
+                    'display_line' => 'should-not-win',
+                ],
+            ],
+        ]);
+
+        $this->assertSame('edit path.php', $dto->pendingToolCalls['tc1']->displayLine);
+        $wire = $codec->normalize($dto);
+        $this->assertSame(
+            ['tc1' => ['name' => 'edit', 'displayLine' => 'edit path.php']],
+            $wire['pending_tool_calls'],
+        );
+    }
+
     public function testMalformedPendingToolCallFailsAtBoundary(): void
     {
         $codec = DeferredChildRunLifecycleProjectionCodecTestFactory::create();
@@ -170,12 +228,25 @@ final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
                     'tc1' => ['name' => '', 'displayLine' => ''],
                 ],
             ]);
-            $this->fail('Expected validation failure for blank pending tool call fields.');
-        } catch (ValidationFailedException $exception) {
-            $this->assertGreaterThan(0, $exception->getViolations()->count());
+            $this->fail('Expected domain validation failure for blank pending tool call fields.');
         } catch (\InvalidArgumentException $exception) {
             $this->assertStringContainsString('Invalid deferred child lifecycle projection', $exception->getMessage());
+            $this->assertInstanceOf(ValidationFailedException::class, $exception->getPrevious());
         }
+    }
+
+    public function testNonArrayPendingToolCallsFailsAtBoundary(): void
+    {
+        $codec = DeferredChildRunLifecycleProjectionCodecTestFactory::create();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid deferred child lifecycle projection: pending_tool_calls must be an array.');
+        $codec->denormalize([
+            'child_status' => 'running',
+            'child_turn_no' => 1,
+            'last_committed_seq' => 1,
+            'pending_tool_calls' => 'not-an-array',
+        ]);
     }
 
     public function testNoManualDtoHydrationMethodsRemain(): void
