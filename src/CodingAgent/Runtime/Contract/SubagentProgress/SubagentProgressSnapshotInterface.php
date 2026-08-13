@@ -12,8 +12,6 @@ namespace Ineersa\CodingAgent\Runtime\Contract\SubagentProgress;
  */
 interface SubagentProgressSnapshotInterface
 {
-    public function mode(): string;
-
     public function status(): string;
 
     public function isParallel(): bool;

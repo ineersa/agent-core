@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDecoder;
-use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedSessionMetadataDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -83,8 +82,7 @@ final class RunStartedMetadataDecoderTest extends TestCase
         ]);
 
         $this->assertTrue($dto->isAgentChild());
-        $this->assertTrue($dto->session->isForkChild());
-        $this->assertSame(RunStartedSessionMetadataDTO::CHILD_KIND_FORK, $dto->session->childKind);
+        $this->assertSame('fork', $dto->session->childKind);
         $this->assertSame(['read'], $dto->allowedToolsForChild());
         $this->assertSame([], $dto->allowedExtensionsForChild());
     }
@@ -170,7 +168,7 @@ final class RunStartedMetadataDecoderTest extends TestCase
 
         $typed = $reader->readRunStartedMetadata($runId);
         $this->assertNotNull($typed);
-        $this->assertSame(RunStartedSessionMetadataDTO::CHILD_KIND_FORK, $typed->session->childKind);
+        $this->assertSame('fork', $typed->session->childKind);
         $this->assertSame('m', $typed->model);
     }
 
@@ -304,8 +302,6 @@ final class RunStartedMetadataDecoderTest extends TestCase
         $this->assertSame(' fork ', $childFields->session->childKind);
         $this->assertSame(' scout ', $childFields->session->agentName);
         $this->assertSame(' agent_abc ', $childFields->session->artifactId);
-        // isForkChild requires exact 'fork'.
-        $this->assertFalse($childFields->session->isForkChild());
     }
 
     public function testExtensionsStillTrimAndDropBlankEntries(): void

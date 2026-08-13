@@ -45,18 +45,14 @@ final class SubagentProgressDisplayFormatter
             }
         }
 
-        return $snapshot instanceof SubagentProgressParallelSnapshotDTO
-            ? $this->formatParallel($snapshot)
-            : $this->formatSingle($this->requireSingle($snapshot));
-    }
-
-    private function requireSingle(SubagentProgressSnapshotInterface $snapshot): SubagentProgressSingleSnapshotDTO
-    {
+        if ($snapshot instanceof SubagentProgressParallelSnapshotDTO) {
+            return $this->formatParallel($snapshot);
+        }
         if (!$snapshot instanceof SubagentProgressSingleSnapshotDTO) {
             throw new \InvalidArgumentException('Expected single subagent_progress snapshot.');
         }
 
-        return $snapshot;
+        return $this->formatSingle($snapshot);
     }
 
     private function formatSingle(SubagentProgressSingleSnapshotDTO $progress): string
@@ -96,8 +92,8 @@ final class SubagentProgressDisplayFormatter
         string $agentName,
         string $status,
     ): array {
-        $artifactId = $this->artifactId($progress);
-        $task = $this->taskSummary($progress);
+        $artifactId = $progress->artifactId;
+        $task = $progress->taskSummary;
         $elapsed = $progress instanceof SubagentProgressSingleSnapshotDTO
             ? $this->formatElapsedHuman($progress->elapsedMs)
             : null;
@@ -301,16 +297,6 @@ final class SubagentProgressDisplayFormatter
     private function agentName(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress): string
     {
         return '' !== $progress->agentName ? $progress->agentName : 'subagent';
-    }
-
-    private function artifactId(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress): string
-    {
-        return $progress->artifactId;
-    }
-
-    private function taskSummary(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress): string
-    {
-        return $progress->taskSummary;
     }
 
     private function truncate(string $text, int $max): string

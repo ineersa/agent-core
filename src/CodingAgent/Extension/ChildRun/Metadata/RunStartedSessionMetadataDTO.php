@@ -16,8 +16,6 @@ namespace Ineersa\CodingAgent\Extension\ChildRun\Metadata;
 final readonly class RunStartedSessionMetadataDTO
 {
     public const string KIND_AGENT_CHILD = 'agent_child';
-    public const string CHILD_KIND_FORK = 'fork';
-    public const string CHILD_KIND_SUBAGENT = 'subagent';
 
     public function __construct(
         public ?string $kind = null,
@@ -32,10 +30,5 @@ final readonly class RunStartedSessionMetadataDTO
     public function isAgentChild(): bool
     {
         return self::KIND_AGENT_CHILD === $this->kind;
-    }
-
-    public function isForkChild(): bool
-    {
-        return $this->isAgentChild() && self::CHILD_KIND_FORK === $this->childKind;
     }
 }

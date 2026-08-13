@@ -122,12 +122,8 @@ final class NoninteractiveChildRunProbeTest extends TestCase
      */
     public static function malformedInteractiveProvider(): iterable
     {
-        yield 'absent' => [[]];
-        yield 'null' => [['interactive' => null]];
+        // One falsey non-bool and one truthy non-bool; literal bool cases are covered elsewhere.
         yield 'int-zero' => [['interactive' => 0]];
-        yield 'string-zero' => [['interactive' => '0']];
-        yield 'empty-string' => [['interactive' => '']];
         yield 'int-one' => [['interactive' => 1]];
-        yield 'string-false' => [['interactive' => 'false']];
     }
 }

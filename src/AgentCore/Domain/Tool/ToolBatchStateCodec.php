@@ -51,7 +51,8 @@ final class ToolBatchStateCodec
      */
     public function denormalize(array $data, string $runId, int $turnNo, string $stepId): ToolBatchStateDTO
     {
-        $this->assertRequiredTopLevelKeys($data);
+        // Required top-level keys have no constructor defaults on ToolBatchPersistedStateDTO;
+        // Serializer rejects missing args. Keep only pre-checks for fields that defaults would soft-fill.
         $this->assertRequiredCallRowKeys($data);
         $this->assertRequiredResultKeys($data);
         // Input-only compatibility: never mutate caller payload.
@@ -127,6 +128,8 @@ final class ToolBatchStateCodec
         int $turnNo,
         string $stepId,
     ): ToolBatchStateDTO {
+        // PHPDoc generics are not runtime-enforced: keep map-key / weakly-typed map value checks.
+        // Row object types and pending_queue element types are covered by Validator Assert\All.
         $expectedOrder = [];
         foreach ($persisted->expectedOrder as $callId => $orderIndex) {
             if (!\is_string($callId) || '' === $callId) {
@@ -143,19 +146,10 @@ final class ToolBatchStateCodec
             if (!\is_string($callId) || '' === $callId) {
                 throw new \UnexpectedValueException('Tool batch call_data keys must be non-empty strings.');
             }
-            if (!$row instanceof ToolBatchCallRowDTO) {
-                throw new \UnexpectedValueException(\sprintf('Tool batch call_data[%s] must be an object.', $callId));
-            }
             $calls[$callId] = $this->toExecuteToolCall($runId, $turnNo, $stepId, $row);
         }
 
-        $pendingQueue = [];
-        foreach ($persisted->pendingQueue as $index => $callId) {
-            if (!\is_string($callId) || '' === $callId) {
-                throw new \UnexpectedValueException(\sprintf('Tool batch pending_queue[%s] must be a non-empty string.', (string) $index));
-            }
-            $pendingQueue[] = $callId;
-        }
+        $pendingQueue = $persisted->pendingQueue;
 
         $inFlight = [];
         foreach ($persisted->inFlight as $callId => $flag) {
@@ -172,9 +166,6 @@ final class ToolBatchStateCodec
         foreach ($persisted->resultData as $callId => $row) {
             if (!\is_string($callId) || '' === $callId) {
                 throw new \UnexpectedValueException('Tool batch result_data keys must be non-empty strings.');
-            }
-            if (!$row instanceof ToolBatchResultRowDTO) {
-                throw new \UnexpectedValueException(\sprintf('Tool batch result_data[%s] must be an object.', $callId));
             }
             $results[$callId] = $this->toToolCallResult($runId, $turnNo, $stepId, $row);
         }
@@ -200,56 +191,6 @@ final class ToolBatchStateCodec
             maxParallelism: $persisted->maxParallelism,
             awaitingHumanInput: $awaitingHumanInput,
         );
-    }
-
-    /**
-     * Preserve pre-Serializer required top-level keys from ToolBatchStateDTO::fromPersistedArray().
-     *
-     * @param array<string, mixed> $data
-     */
-    private function assertRequiredTopLevelKeys(array $data): void
-    {
-        $required = [
-            'expected_order' => 'Tool batch expected_order must be an array.',
-            'call_data' => 'Tool batch call_data must be an array.',
-            'pending_queue' => 'Tool batch pending_queue must be an array.',
-            'in_flight' => 'Tool batch in_flight must be an array.',
-            'result_data' => 'Tool batch result_data must be an array.',
-            'finalized' => 'Tool batch finalized must be a boolean.',
-            'max_parallelism' => 'Tool batch max_parallelism must be a positive integer.',
-            'awaiting_human_input' => 'Tool batch awaiting_human_input must be an array.',
-        ];
-
-        foreach ($required as $key => $message) {
-            if (!\array_key_exists($key, $data)) {
-                throw new \UnexpectedValueException($message);
-            }
-        }
-
-        if (!\is_array($data['expected_order'])) {
-            throw new \UnexpectedValueException('Tool batch expected_order must be an array.');
-        }
-        if (!\is_array($data['call_data'])) {
-            throw new \UnexpectedValueException('Tool batch call_data must be an array.');
-        }
-        if (!\is_array($data['pending_queue'])) {
-            throw new \UnexpectedValueException('Tool batch pending_queue must be an array.');
-        }
-        if (!\is_array($data['in_flight'])) {
-            throw new \UnexpectedValueException('Tool batch in_flight must be an array.');
-        }
-        if (!\is_array($data['result_data'])) {
-            throw new \UnexpectedValueException('Tool batch result_data must be an array.');
-        }
-        if (!\is_bool($data['finalized'])) {
-            throw new \UnexpectedValueException('Tool batch finalized must be a boolean.');
-        }
-        if (!\is_int($data['max_parallelism']) || $data['max_parallelism'] < 1) {
-            throw new \UnexpectedValueException('Tool batch max_parallelism must be a positive integer.');
-        }
-        if (!\is_array($data['awaiting_human_input'])) {
-            throw new \UnexpectedValueException('Tool batch awaiting_human_input must be an array.');
-        }
     }
 
     /**

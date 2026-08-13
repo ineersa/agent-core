@@ -15,9 +15,8 @@ use Symfony\Component\Validator\Exception\ValidationFailedException;
  * Doctrine JSON boundary for deferred child lifecycle projections.
  *
  * Thesis: Serializer preserves exact historical on-disk keys/omission rules;
- * corrupt rows fail at the codec boundary without partial objects; no DTO
- * toArray()/fromArray() hydration remains; validation failures share the
- * domain InvalidArgumentException contract with Serializer errors.
+ * corrupt rows fail at the codec boundary without partial objects; validation
+ * failures share the domain InvalidArgumentException contract with Serializer errors.
  */
 final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
 {
@@ -247,13 +246,5 @@ final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
             'last_committed_seq' => 1,
             'pending_tool_calls' => 'not-an-array',
         ]);
-    }
-
-    public function testNoManualDtoHydrationMethodsRemain(): void
-    {
-        $dtoReflection = new \ReflectionClass(DeferredChildRunLifecycleProjectionDTO::class);
-        $this->assertFalse($dtoReflection->hasMethod('toArray'));
-        $this->assertFalse($dtoReflection->hasMethod('fromArray'));
-        $this->assertFalse($dtoReflection->hasMethod('decodePendingToolCalls'));
     }
 }

@@ -20,7 +20,7 @@ namespace Ineersa\AgentCore\Domain\Notification;
  *
  * Wire/persisted shape uses snake_case optional tool fields and omits null
  * optionals (see {@see toArray()}). Decode once at trust/array boundaries via
- * {@see fromArray()} / {@see tryFromMixed()}.
+ * {@see fromArray()} / {@see listFromMixed()}.
  *
  * DTOs decoded from an array retain that original wire row privately so
  * {@see toArray()} re-emits it unchanged (unknown keys, key order, missing
@@ -136,19 +136,8 @@ final readonly class ModelNotificationDTO
     }
 
     /**
-     * Soft-decode a mixed list/map entry; non-array rows are skipped (null).
-     */
-    public static function tryFromMixed(mixed $row): ?self
-    {
-        if (!\is_array($row)) {
-            return null;
-        }
-
-        /* @var array<string, mixed> $row */
-        return self::fromArray($row);
-    }
-
-    /**
+     * Soft-decode a mixed list/map; non-array rows are skipped.
+     *
      * @param list<mixed>|array<int|string, mixed>|null $rows
      *
      * @return list<self>
@@ -161,25 +150,11 @@ final readonly class ModelNotificationDTO
 
         $out = [];
         foreach ($rows as $row) {
-            $dto = self::tryFromMixed($row);
-            if (null !== $dto) {
-                $out[] = $dto;
+            if (!\is_array($row)) {
+                continue;
             }
-        }
-
-        return $out;
-    }
-
-    /**
-     * @param list<self> $notifications
-     *
-     * @return list<array<string, mixed>>
-     */
-    public static function listToArrays(array $notifications): array
-    {
-        $out = [];
-        foreach ($notifications as $notification) {
-            $out[] = $notification->toArray();
+            /* @var array<string, mixed> $row */
+            $out[] = self::fromArray($row);
         }
 
         return $out;

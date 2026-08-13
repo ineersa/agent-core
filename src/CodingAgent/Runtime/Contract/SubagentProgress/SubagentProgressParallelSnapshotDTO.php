@@ -57,11 +57,6 @@ final readonly class SubagentProgressParallelSnapshotDTO implements SubagentProg
     ) {
     }
 
-    public function mode(): string
-    {
-        return $this->mode;
-    }
-
     public function status(): string
     {
         return $this->status;

@@ -86,11 +86,6 @@ final readonly class SubagentProgressSingleSnapshotDTO implements SubagentProgre
     ) {
     }
 
-    public function mode(): string
-    {
-        return $this->mode;
-    }
-
     public function status(): string
     {
         return $this->status;

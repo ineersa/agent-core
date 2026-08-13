@@ -25,9 +25,13 @@ final class SubagentTranscriptCardBuilder
      */
     public function buildLines(SubagentProgressSnapshotInterface $progress, ?string $handoffAppend = null): array
     {
-        $lines = $progress instanceof SubagentProgressParallelSnapshotDTO
-            ? $this->buildParallelLines($progress)
-            : $this->buildSingleLines($this->requireSingle($progress), null);
+        if ($progress instanceof SubagentProgressParallelSnapshotDTO) {
+            $lines = $this->buildParallelLines($progress);
+        } elseif ($progress instanceof SubagentProgressSingleSnapshotDTO) {
+            $lines = $this->buildSingleLines($progress, null);
+        } else {
+            throw new \InvalidArgumentException('Expected single subagent_progress snapshot.');
+        }
 
         if (null !== $handoffAppend && '' !== trim($handoffAppend)) {
             $collapsed = $this->sanitizeInlineValue($handoffAppend);
@@ -37,15 +41,6 @@ final class SubagentTranscriptCardBuilder
         }
 
         return $lines;
-    }
-
-    private function requireSingle(SubagentProgressSnapshotInterface $progress): SubagentProgressSingleSnapshotDTO
-    {
-        if (!$progress instanceof SubagentProgressSingleSnapshotDTO) {
-            throw new \InvalidArgumentException('Expected single subagent_progress snapshot.');
-        }
-
-        return $progress;
     }
 
     /**
@@ -59,20 +54,20 @@ final class SubagentTranscriptCardBuilder
 
         $lines = [$header];
 
-        $task = $this->taskSummary($progress);
+        $task = $progress->taskSummary;
         if ('' !== $task) {
             $lines[] = 'Task '.$this->truncate($task, 120);
         }
 
         $artifactPath = $progress->artifactPath ?? '';
-        $artifactId = $this->artifactId($progress);
+        $artifactId = $progress->artifactId;
         if ('' !== $artifactPath) {
             $lines[] = 'Artifact '.$artifactPath;
         } elseif ('' !== $artifactId) {
             $lines[] = 'Artifact '.$artifactId;
         }
 
-        $runId = $this->agentRunId($progress);
+        $runId = $progress->agentRunId;
         if ('' !== $runId) {
             $lines[] = 'Run '.$this->truncate($runId, 80);
         }
@@ -335,21 +330,6 @@ final class SubagentTranscriptCardBuilder
     private function agentName(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress): string
     {
         return '' !== $progress->agentName ? $progress->agentName : 'subagent';
-    }
-
-    private function artifactId(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress): string
-    {
-        return $progress->artifactId;
-    }
-
-    private function agentRunId(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress): string
-    {
-        return $progress->agentRunId;
-    }
-
-    private function taskSummary(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress): string
-    {
-        return $progress->taskSummary;
     }
 
     private function sanitizeInlineValue(string $text): string

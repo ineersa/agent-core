@@ -153,7 +153,7 @@ final class ModelNotificationDTOTest extends TestCase
         $this->assertSame('a', $list[0]->id);
         $this->assertSame('b', $list[1]->id);
         $this->assertTrue($list[1]->isToolResultReplace());
-        $this->assertSame([$rowA, $rowB], ModelNotificationDTO::listToArrays($list));
+        $this->assertSame([$rowA, $rowB], [$list[0]->toArray(), $list[1]->toArray()]);
     }
 
     public function testRawNonStringOrEmptyIdDoesNotQualify(): void
