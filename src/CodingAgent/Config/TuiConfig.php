@@ -31,27 +31,4 @@ final readonly class TuiConfig
         public TuiTranscriptConfig $transcript = new TuiTranscriptConfig(),
     ) {
     }
-
-    /**
-     * Create from a raw config array (from merged Hatfield YAML).
-     *
-     * @deprecated Use Symfony Serializer denormalization instead. Kept for
-     *             backward compat with existing test constructors.
-     *
-     * @param array<string, mixed> $data
-     *
-     * @throws \RuntimeException if the theme key is missing or empty
-     */
-    public static function fromArray(array $data): self
-    {
-        $theme = $data['theme'] ?? null;
-        if (!\is_string($theme) || '' === $theme) {
-            throw new \RuntimeException('TUI theme not configured. Set tui.theme in config/hatfield.defaults.yaml or your Hatfield settings.');
-        }
-
-        return new self(
-            theme: $theme,
-            themePaths: (array) ($data['theme_paths'] ?? []),
-        );
-    }
 }

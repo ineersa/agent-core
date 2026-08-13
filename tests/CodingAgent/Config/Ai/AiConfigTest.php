@@ -413,7 +413,7 @@ class AiConfigTest extends TestCase
         $sessionsData = (array) ($data['sessions'] ?? []);
 
         return new AppConfig(
-            tui: TuiConfig::fromArray((array) ($data['tui'] ?? [])),
+            tui: new TuiConfig(theme: (string) (($data['tui'] ?? [])['theme'] ?? 'cyberpunk')),
             logging: new LoggingConfig(),
             sessions: new SessionsConfig(
                 path: (string) ($sessionsData['path'] ?? '.hatfield/sessions'),
