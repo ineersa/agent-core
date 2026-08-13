@@ -30,10 +30,12 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
 
     public function onModelNotification(TranscriptProjectionEvent $event): void
     {
+        // Projection soft-casts (via fromArray typed fields) match pre-typed
+        // consumer casts; do not use raw-sensitive predicates here.
         $notification = ModelNotificationDTO::fromArray($event->payload());
         $state = $event->state;
 
-        $blockId = 'model_notification_'.($notification->hasNonEmptyId()
+        $blockId = 'model_notification_'.('' !== $notification->id
             ? $notification->id
             : hash('sha256', $notification->text));
 
@@ -69,7 +71,7 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
         // ToolResult block so the TUI does not show raw/full output that
         // the model never saw.  The exact model-facing notification is
         // already visible in the System block above.
-        if ($notification->isToolResultReplace()
+        if ('tool_result_replace' === $notification->delivery
             && null !== $notification->toolCallId
             && '' !== $notification->toolCallId) {
             $this->compactCappedToolResult(

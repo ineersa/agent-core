@@ -106,14 +106,17 @@ final readonly class AgentMessageNormalizer
         // notification text — not the raw/full output and not a JSON
         // envelope.  The notification text is identical to what appears
         // in the model_notification event for TUI projection.
+        // First array row whose raw delivery is exactly tool_result_replace wins,
+        // even when its text is empty/non-string (then fall back to normal content).
+        // Do not continue to a later valid replacement row.
         $notificationText = null;
         foreach (ModelNotificationDTO::listFromMixed(
             \is_array($result->result['details']['model_notifications'] ?? null)
                 ? $result->result['details']['model_notifications']
                 : null,
         ) as $notif) {
-            if ($notif->isToolResultReplace() && $notif->hasNonEmptyText()) {
-                $notificationText = $notif->text;
+            if ($notif->isToolResultReplace()) {
+                $notificationText = $notif->hasNonEmptyText() ? $notif->text : null;
                 break;
             }
         }
