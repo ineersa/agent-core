@@ -1364,7 +1364,7 @@ function distribution_verify(
     $phar = $dist.'/hatfield.phar';
     if (is_file($phar)) {
         distribution_smoke_artifact($phar, isPhar: true);
-        // Hard packaged-content proof: defaults/themes/migrations/internal-docs present.
+        // Hard packaged-content proof: defaults/themes/migrations/selected docs present.
         distribution_assert_phar_bundled_resources($phar);
     } elseif (!$allowMissingPhar) {
         throw new RuntimeException('distribution:verify requires hatfield.phar in '.$dist);
@@ -1394,7 +1394,7 @@ function distribution_verify(
 }
 
 /**
- * Assert the PHAR archive contains bundled defaults, themes, migrations, internal docs.
+ * Assert the PHAR archive contains bundled defaults, themes, migrations, selected docs.
  */
 function distribution_assert_phar_bundled_resources(string $pharPath): void
 {
@@ -1406,8 +1406,9 @@ function distribution_assert_phar_bundled_resources(string $pharPath): void
         'config/hatfield.defaults.yaml',
         'config/themes/catppuccin-mocha.yaml',
         'migrations/Version20260601152619.php',
-        'internal-docs/settings.md',
-        'internal-docs/agents.md',
+        'docs/settings.md',
+        'docs/agents.md',
+        '.hatfield/extensions/extension-api/docs/extension-api.md',
     ];
     foreach ($required as $entry) {
         if (!isset($phar[$entry])) {
@@ -1416,6 +1417,9 @@ function distribution_assert_phar_bundled_resources(string $pharPath): void
         if ($phar[$entry]->isLink()) {
             throw new RuntimeException('PHAR entry must be materialized file, not symlink: '.$entry);
         }
+    }
+    if (isset($phar['internal-docs/settings.md'])) {
+        throw new RuntimeException('PHAR must not contain legacy internal-docs projection');
     }
     echo "  phar bundled resources: ok\n";
 }

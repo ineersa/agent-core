@@ -229,7 +229,7 @@ final class PharSmokeTest extends TestCase
         }
     }
 
-    public function testPharContainsMaterializedInternalDocs(): void
+    public function testPharContainsMaterializedBuiltinDocs(): void
     {
         [$cmd, $pharPath] = $this->resolveArtifactCommand();
         $isPhar = str_ends_with($pharPath, '.phar');
@@ -243,35 +243,53 @@ final class PharSmokeTest extends TestCase
 
         $this->assertFileExists($pharPath);
         $phar = new \Phar($pharPath);
-        $expected = [
+        $expectedCore = [
             'agents',
+            'approvals',
             'background-processes',
             'compaction',
-            'hitl-and-approvals',
+            'human-input',
             'mcp',
             'prompt-templates',
             'session-storage',
             'settings',
+            'settings-agents',
+            'settings-models',
+        ];
+        $expectedApi = [
+            'extension-api',
+            'extension-api-tools',
+            'extension-api-runtime',
+            'extension-api-tui',
         ];
 
-        foreach ($expected as $id) {
-            $entry = 'internal-docs/'.$id.'.md';
+        foreach ($expectedCore as $id) {
+            $entry = 'docs/'.$id.'.md';
             $this->assertTrue(isset($phar[$entry]), 'Missing PHAR entry '.$entry);
             $this->assertFalse($phar[$entry]->isLink(), $entry.' must be a regular file, not a symlink');
             $uri = 'phar://'.$pharPath.'/'.$entry;
             $raw = file_get_contents($uri);
             $this->assertNotFalse($raw, 'Unable to read '.$uri);
+            $this->assertStringContainsString('builtin: true', $raw);
             $this->assertStringContainsString('description:', $raw);
             $this->assertStringContainsString('# ', $raw);
         }
+        foreach ($expectedApi as $id) {
+            $entry = '.hatfield/extensions/extension-api/docs/'.$id.'.md';
+            $this->assertTrue(isset($phar[$entry]), 'Missing PHAR entry '.$entry);
+            $this->assertFalse($phar[$entry]->isLink(), $entry.' must be a regular file, not a symlink');
+        }
 
-        $this->assertFalse(isset($phar['docs/settings.md']), 'PHAR must not bundle docs/');
-        $this->assertFalse(isset($phar['docs/archive']), 'PHAR must not bundle docs/archive');
+        $this->assertFalse(isset($phar['internal-docs/settings.md']), 'PHAR must not contain internal-docs');
+        $this->assertFalse(isset($phar['docs/datadog.md']), 'PHAR must not bundle unmarked repository docs');
+        $this->assertFalse(isset($phar['docs/async-runtime-architecture.md']), 'PHAR must not bundle repository-only docs');
+        $this->assertFalse(isset($phar['docs/file-rewind.md']), 'PHAR must not bundle extension-owned file-rewind docs under core docs/');
 
         $locator = new \Ineersa\CodingAgent\Config\AppResourceLocator('phar://'.$pharPath);
-        $settingsPath = $locator->getInternalDocsPath().'/settings.md';
+        $settingsPath = $locator->getCoreDocsPath().'/settings.md';
         $this->assertFileExists($settingsPath);
         $this->assertStringContainsString('Hatfield Settings', (string) file_get_contents($settingsPath));
+        $this->assertDirectoryExists($locator->getExtensionApiDocsPath());
 
         $skillMd = 'src/CodingAgent/Resources/skills/subagents/SKILL.md';
         $frontmatterMd = 'src/CodingAgent/Resources/skills/subagents/FRONTMATTER.md';
@@ -332,13 +350,14 @@ final class PharSmokeTest extends TestCase
         $this->assertFileExists($pharPath);
         $phar = new \Phar($pharPath);
 
-        // Bundled defaults / themes / migrations / internal docs (materialized).
+        // Bundled defaults / themes / migrations / selected built-in docs.
         $requiredEntries = [
             'config/hatfield.defaults.yaml',
             'config/themes/catppuccin-mocha.yaml',
             'migrations/Version20260601152619.php',
-            'internal-docs/settings.md',
-            'internal-docs/agents.md',
+            'docs/settings.md',
+            'docs/agents.md',
+            '.hatfield/extensions/extension-api/docs/extension-api.md',
         ];
         foreach ($requiredEntries as $entry) {
             $this->assertTrue(isset($phar[$entry]), 'Missing PHAR entry '.$entry);

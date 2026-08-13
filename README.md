@@ -1,8 +1,10 @@
-# Hatfield Monorepo
+# Hatfield
 
-Monorepo for Hatfield, a coding assistant built with PHP.
+Hatfield is a local coding agent for the terminal: tools, sessions, human approvals,
+MCP servers, subagents, and a public extension API — packaged as a modular Symfony CLI
+monolith (no web server).
 
-## Install (PHAR / static)
+## Install
 
 Default install path is `~/.local/bin` (ensure it is on `PATH`):
 
@@ -11,108 +13,133 @@ export PATH="$HOME/.local/bin:$PATH"
 ```
 
 ```bash
-# PHAR (requires system PHP >= 8.5 + extensions; see docs/phar-packaging.md)
-curl --proto '=https' --tlsv1.2 -fsSL \
-  https://raw.githubusercontent.com/ineersa/agent-core/main/installer/bash-installer \
-  | bash -s --
+# PHAR (system PHP ≥ 8.5 + extensions; see docs/phar-packaging.md)
+curl --proto '=https' --tlsv1.2 -fsSL   https://raw.githubusercontent.com/ineersa/agent-core/main/installer/bash-installer   | bash -s --
 
 # Native static binary (no system PHP)
-curl --proto '=https' --tlsv1.2 -fsSL \
-  https://raw.githubusercontent.com/ineersa/agent-core/main/installer/bash-installer \
-  | bash -s -- --static
+curl --proto '=https' --tlsv1.2 -fsSL   https://raw.githubusercontent.com/ineersa/agent-core/main/installer/bash-installer   | bash -s -- --static
 
 # Pin a release (optional; omit for latest)
 # ... | bash -s -- --version=vX.Y.Z
 # ... | bash -s -- --static --version=vX.Y.Z
 ```
 
-Artifacts: `hatfield.phar`, `hatfield.linux-amd64`, `hatfield.linux-arm64`,
-`hatfield.darwin-amd64`, `hatfield.darwin-arm64`, plus `SHA256SUMS`.
-Local builds: `castor distribution:build`, `scripts/build-distribution.sh`.
-Packaging docs: [`docs/distribution.md`](docs/distribution.md) (release/installer),
-[`docs/phar-packaging.md`](docs/phar-packaging.md), [`docs/static-packaging.md`](docs/static-packaging.md).
+Release assets: `hatfield.phar`, `hatfield.linux-amd64`, `hatfield.linux-arm64`,
+`hatfield.darwin-amd64`, `hatfield.darwin-arm64`, and `SHA256SUMS`.
 
-## Extensions
-
-Public contracts package (not an extension):
-[`ineersa/hatfield-extension-api`](https://packagist.org/packages/ineersa/hatfield-extension-api)
-([README](.hatfield/extensions/extension-api/README.md)).
-
-| Extension | Purpose | Packagist |
-| --- | --- | --- |
-| task-workflow | External task board tools, slash commands, and prompt guidance | [`ineersa/hatfield-ext-task-workflow`](https://packagist.org/packages/ineersa/hatfield-ext-task-workflow) |
-| castor-llm-mode | LLM-friendly Castor bash rewrites (`LLM_MODE`, normalized `castor list`) | [`ineersa/hatfield-ext-castor-llm-mode`](https://packagist.org/packages/ineersa/hatfield-ext-castor-llm-mode) |
-| file-rewind | Hidden-git file checkpoints and `/rewind` restore picker | [`ineersa/hatfield-ext-file-rewind`](https://packagist.org/packages/ineersa/hatfield-ext-file-rewind) |
-| observational-memory | Observational memory storage + async Observer/Reflector pipeline | [`ineersa/hatfield-ext-observational-memory`](https://packagist.org/packages/ineersa/hatfield-ext-observational-memory) |
-
-Package READMEs: [`task-workflow`](.hatfield/extensions/task-workflow/README.md),
-[`castor-llm-mode`](.hatfield/extensions/castor-llm-mode/README.md),
-[`file-rewind`](.hatfield/extensions/file-rewind/README.md),
-[`observational-memory`](.hatfield/extensions/observational-memory/README.md).
-
-External install under a project `.hatfield/extensions` Composer root (example):
+- Installer, checksums, upgrades: [`docs/distribution.md`](docs/distribution.md)
+- System PHAR requirements: [`docs/phar-packaging.md`](docs/phar-packaging.md)
+- Static/native builds: [`docs/static-packaging.md`](docs/static-packaging.md)
 
 ```bash
-cd .hatfield/extensions
-composer require ineersa/hatfield-ext-task-workflow
+hatfield --version
+hatfield agent --help
 ```
 
-Enable the extension class in `.hatfield/settings.yaml` (`extensions.enabled`); it takes effect in a **new** session. Details and settings keys live in each package README and [`docs/settings.md`](docs/settings.md). Release/mirror notes: [`docs/distribution.md`](docs/distribution.md).
+## Features
 
-## Structure
+- Interactive TUI agent sessions with replayable event storage
+- Built-in tools (bash, files, settings, docs) plus MCP server tools
+- Human input (`ask_human`) and tool approvals (SafeGuard / extensions)
+- Named agent definitions and foreground `subagent` / `agent_retrieve`
+- Prompt templates, skills, context compaction (`/compact`)
+- Project extensions via `ineersa/hatfield-extension-api`
+- PHAR and fused static binaries with the same packaged resources
 
+## Settings
+
+Precedence (later wins):
+
+1. Built-in defaults (`config/hatfield.defaults.yaml` inside the install)
+2. `~/.hatfield/settings.yaml`
+3. Project `.hatfield/settings.yaml`
+
+Sparse overrides only — do not copy the full defaults file. Details:
+[`docs/settings.md`](docs/settings.md), models in [`docs/settings-models.md`](docs/settings-models.md),
+agents/prompts/extensions in [`docs/settings-agents.md`](docs/settings-agents.md).
+
+Session identity and storage: [`docs/session-storage.md`](docs/session-storage.md).
+
+## Layout
+
+```text
+src/AgentCore/     Core loop, domain, contracts, storage
+src/CodingAgent/   HTTP-less Symfony CLI app, tools, runtime boundary
+src/Tui/           Terminal UI
+src/Platform/      Provider bridges (e.g. Codex)
+config/            YAML config (defaults, themes, services)
+docs/              Canonical documentation (selected files are model-visible)
+.hatfield/         Tracked project config + extensions; runtime dirs are ignored
+tests/             Mirrors src modules
+castor.php         Sole QA/test/lint/package task runner
+depfile.yaml       Architecture boundaries (castor deptrac)
 ```
-├── packages/
-│   ├── agent-core/            # ineersa/agent-core library
-│   │   ├── src/               # Pipeline, Domain, Contract, Infrastructure
-│   │   ├── tests/
-│   │   ├── castor.php         # Package-level task runner
-│   │   └── composer.json
-│   └── tui-bundle/            # ineersa/tui-bundle (Symfony TUI)
-│       ├── src/
-│       ├── tests/
-│       └── composer.json
-├── apps/
-│   └── coding-agent/          # Symfony CLI application
-│       ├── bin/console
-│       ├── src/
-│       ├── config/
-│       └── composer.json
-├── docs/
-├── .pi/plans/                 # Active plans
-├── castor.php                 # Root orchestrator
-└── composer.json              # Root: orchestration only
-```
 
-## Getting Started
+Architecture boundaries are enforced by Deptrac. Public extension contracts live in
+`.hatfield/extensions/extension-api/` (`Ineersa\Hatfield\ExtensionApi`).
+
+## Development
 
 ```bash
-# Install root dependencies (castor)
 composer install
+composer install -d .hatfield/extensions   # when using project extensions
 
-# Install all workspace dependencies
-castor install
-
-# Project extensions (e.g. task-workflow): Hatfield loads
-# .hatfield/extensions/vendor/autoload.php — run after clone/pull when
-# extensions.enabled includes packages under .hatfield/extensions/
-composer install -d .hatfield/extensions
-
-# Run QA across all workspaces
-castor check
+castor check                 # full QA gate
+castor test                  # unit/integration
+castor test:controller-replay
+castor test:tui
+castor deptrac
+castor phpstan
+castor cs-check
+castor docs:validate         # built-in catalog, links, ≤25k chars
+castor phar:build
+castor distribution:build
 ```
 
-After enabling new extensions in `.hatfield/settings.yaml`, start a new Hatfield session so tools and slash commands register at startup.
+All QA goes through Castor — do not run raw `vendor/bin/*` in normal workflow.
+See `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md`.
 
-## Workspace Commands
+## Model-visible docs (`hatfield_docs`)
 
-| Command | Description |
-|---------|-------------|
-| `castor check` | Run QA in all workspaces |
-| `castor install` | Install all dependencies |
-| `castor lib:check` | Run agent-core library QA |
-| `castor lib:test` | Run agent-core library tests |
-| `castor lib:cs-fix` | Run CS fixer on agent-core |
-| `castor lib:phpstan` | Run PHPStan on agent-core |
-| `castor tui:validate` | Validate tui-bundle composer.json |
-| `castor app:check` | Run coding-agent app QA |
+Parent agents can `list` / `read` documents marked `builtin: true` under:
+
+- `docs/*.md` (core product docs)
+- `.hatfield/extensions/extension-api/docs/*.md` (public Extension API)
+
+Installed extension packages keep their own README/docs and are **not** auto-discovered.
+Use `hatfield_docs` operation `list` for the live catalog IDs.
+
+## Documentation index
+
+| Topic | Doc |
+|---|---|
+| Settings overview | [`docs/settings.md`](docs/settings.md) |
+| Models / providers | [`docs/settings-models.md`](docs/settings-models.md) |
+| Agents / prompts / extensions settings | [`docs/settings-agents.md`](docs/settings-agents.md) |
+| Sessions | [`docs/session-storage.md`](docs/session-storage.md) |
+| Agents / subagents | [`docs/agents.md`](docs/agents.md) |
+| MCP | [`docs/mcp.md`](docs/mcp.md) |
+| Prompt templates | [`docs/prompt-templates.md`](docs/prompt-templates.md) |
+| Compaction | [`docs/compaction.md`](docs/compaction.md) |
+| Human input | [`docs/human-input.md`](docs/human-input.md) |
+| Approvals / SafeGuard | [`docs/approvals.md`](docs/approvals.md) |
+| Background processes | [`docs/background-processes.md`](docs/background-processes.md) |
+| Extension API | [`.hatfield/extensions/extension-api/docs/`](.hatfield/extensions/extension-api/docs/) |
+| Distribution | [`docs/distribution.md`](docs/distribution.md) |
+| TUI architecture | [`docs/tui-architecture.md`](docs/tui-architecture.md) |
+| Async runtime | [`docs/async-runtime-architecture.md`](docs/async-runtime-architecture.md) |
+| Testing | [`docs/tui-testing.md`](docs/tui-testing.md), [`docs/llm-replay.md`](docs/llm-replay.md) |
+
+## Extensions (packages)
+
+Public contracts: [`ineersa/hatfield-extension-api`](https://packagist.org/packages/ineersa/hatfield-extension-api).
+
+| Extension | Package |
+|---|---|
+| task-workflow | `ineersa/hatfield-ext-task-workflow` |
+| castor-llm-mode | `ineersa/hatfield-ext-castor-llm-mode` |
+| file-rewind | `ineersa/hatfield-ext-file-rewind` |
+| observational-memory | `ineersa/hatfield-ext-observational-memory` |
+
+Enable classes under `extensions.enabled` in project settings; they register at **session start**.
+Package-local docs stay with each extension (for example file-rewind README).

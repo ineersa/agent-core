@@ -133,7 +133,7 @@ Phases: `task-explain` → `task-start` → `task-to-pr` → `task-done` (with `
 ## Docs map
 
 - `docs/agents.md` — agent definitions, discovery, catalog, settings
-- `docs/settings.md` — Hatfield settings
+- `docs/settings.md` — Hatfield settings (see also settings-models, settings-agents)
 - `docs/compaction.md` — compaction, `/compact`, events, hooks
 - `docs/session-storage.md` — sessions, replay, locking, resume/fork
 - `docs/tui-architecture.md` — layout, widgets, slots, themes
@@ -141,7 +141,7 @@ Phases: `task-explain` → `task-start` → `task-to-pr` → `task-done` (with `
 - `docs/distribution.md` — release artifacts, installer, publish
 - `docs/phar-packaging.md` — PHAR build/runtime/test
 - `docs/static-packaging.md` — native PHP-micro binaries
-- `docs/hitl-and-approvals.md` — HITL, questions, extension approvals
+- `docs/approvals.md / docs/human-input.md` — HITL, questions, extension approvals
 - `docs/datadog.md` — structured logs, privacy, local Datadog
 - `docs/llm-replay.md` — LLM fixture replay
 - `src/AgentCore/Domain/AGENTS.md` — domain/event docs

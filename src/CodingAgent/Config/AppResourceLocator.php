@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Ineersa\CodingAgent\Docs\BuiltinDocsCatalog;
+
 /**
  * Locates bundled application resources (defaults, built-in themes, etc.).
  *
@@ -40,11 +42,33 @@ final readonly class AppResourceLocator
     }
 
     /**
-     * Absolute path to the curated internal documentation directory.
+     * Absolute path to the top-level core documentation directory.
+     *
+     * Model-visible documents are selected via {@code builtin: true}
+     * frontmatter; see {@see BuiltinDocsCatalog}.
      */
-    public function getInternalDocsPath(): string
+    public function getCoreDocsPath(): string
     {
-        return $this->appRoot.'/internal-docs';
+        return $this->appRoot.'/'.BuiltinDocsCatalog::CORE_DOCS_RELATIVE;
+    }
+
+    /**
+     * Absolute path to the public Extension API documentation directory.
+     */
+    public function getExtensionApiDocsPath(): string
+    {
+        return $this->appRoot.'/'.BuiltinDocsCatalog::EXTENSION_API_DOCS_RELATIVE;
+    }
+
+    /**
+     * Absolute approved documentation roots used by {@see hatfield_docs}
+     * and packaging selection.
+     *
+     * @return list<string>
+     */
+    public function getBuiltinDocsRoots(): array
+    {
+        return (new BuiltinDocsCatalog())->absoluteRoots($this->appRoot);
     }
 
     /**

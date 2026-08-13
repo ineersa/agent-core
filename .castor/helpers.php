@@ -815,6 +815,13 @@ function write_file_checked(string $path, string $contents): void
  */
 function phar_packaged_inputs(string $root): array
 {
+    // Selected built-in docs are fingerprinted as individual files (not the whole
+    // docs/ tree). Discovery uses the same BuiltinDocsCatalog roots/marker as runtime.
+    $selectedDocs = [];
+    if (class_exists(\Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::class)) {
+        $selectedDocs = (new \Ineersa\CodingAgent\Docs\BuiltinDocsCatalog())->selectedAbsolutePaths($root);
+    }
+
     return [
         'directories' => [
             $root.'/bin',
@@ -822,27 +829,28 @@ function phar_packaged_inputs(string $root): array
             $root.'/config',
             $root.'/migrations',
             // Public ExtensionApi package source (path-required by root composer).
+            // Selected Extension API docs live under this tree and are also listed
+            // explicitly as files for clarity/freshness.
             $root.'/.hatfield/extensions/extension-api',
-            $root.'/internal-docs',
             $root.'/.castor',
             $root.'/tools/phar',
         ],
-        'files' => [
+        'files' => array_values(array_unique(array_merge([
             $root.'/composer.json',
             $root.'/composer.lock',
             $root.'/box.json',
             $root.'/castor.php',
             $root.'/tools/phar/composer.json',
             $root.'/tools/phar/composer.lock',
-        ],
+        ], $selectedDocs))),
     ];
 }
 
 /**
  * Sidecar path storing the deterministic packaged-input fingerprint for a PHAR.
  *
- * Compared by phar_is_stale() so freshness tracks content (including resolved
- * internal-docs symlink targets), not just directory mtimes.
+ * Compared by phar_is_stale() so freshness tracks packaged content
+ * (including selected built-in docs), not just directory mtimes.
  */
 function phar_freshness_marker_path(string $pharPath): string
 {
@@ -853,8 +861,8 @@ function phar_freshness_marker_path(string $pharPath): string
  * Deterministic fingerprint of the complete packaged/build input set.
  *
  * Directories are walked recursively. Symlinks contribute the resolved target
- * path and the target file contents (critical for internal-docs → docs/*).
- * Missing optional paths are recorded as absent so deletions invalidate.
+ * path and the target file contents. Selected built-in docs are also listed as
+ * explicit files. Missing optional paths are recorded as absent so deletions invalidate.
  */
 function phar_input_fingerprint(string $root): string
 {
@@ -1504,11 +1512,16 @@ function phar_build(): string
     }
     run_checked('cp -a '.escapeshellarg($extensionApiSrc).'/. '.escapeshellarg($extensionApiStaging.'/'));
 
-    // Curated internal docs use source-tree symlinks; Box rejects links, so
-    // materialize regular files into the staging tree before compilation.
-    $internalDocsPath = $root.'/internal-docs';
-    if (is_dir($internalDocsPath)) {
-        run_checked('cp -aL '.escapeshellarg($internalDocsPath).' '.escapeshellarg($stagingDir.'/'));
+    // Stage only marked built-in docs at their canonical paths as regular files.
+    // Unmarked repository docs and any legacy internal-docs projection are omitted.
+    $selectedDocs = (new \Ineersa\CodingAgent\Docs\BuiltinDocsCatalog())->discover($root);
+    foreach ($selectedDocs as $entry) {
+        $dest = $stagingDir.'/'.$entry['relativePath'];
+        $destDir = \dirname($dest);
+        if (!is_dir($destDir) && !mkdir($destDir, 0755, true) && !is_dir($destDir)) {
+            throw new \RuntimeException('Unable to create staged docs directory: '.$destDir);
+        }
+        copy_file_checked($entry['absolutePath'], $dest);
     }
 
     foreach (['composer.json', 'composer.lock', 'box.json'] as $file) {
