@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
-use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -25,12 +27,16 @@ use Symfony\Component\Tui\Widget\TextWidget;
  */
 final readonly class SubagentResultRenderer
 {
+    private SubagentProgressSnapshotCodec $progressCodec;
+
     public function __construct(
         private SubagentTranscriptCardBuilder $cardBuilder = new SubagentTranscriptCardBuilder(),
         private TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         private TranscriptDisplayState $displayState = new TranscriptDisplayState(),
         private TranscriptLinePreviewService $linePreviewService = new TranscriptLinePreviewService(),
+        ?SubagentProgressSnapshotCodec $progressCodec = null,
     ) {
+        $this->progressCodec = $progressCodec ?? SubagentProgressSnapshotCodec::createStandalone();
     }
 
     public function supports(TranscriptBlock $block): bool
@@ -56,7 +62,7 @@ final readonly class SubagentResultRenderer
             return $this->buildProgressWidget(
                 $block,
                 $theme,
-                SubagentProgressSnapshotDTO::fromArray($progressRaw),
+                $this->progressCodec->denormalize($progressRaw),
                 $resultText,
             );
         }
@@ -73,7 +79,7 @@ final readonly class SubagentResultRenderer
     private function buildProgressWidget(
         TranscriptBlock $block,
         TuiTheme $theme,
-        SubagentProgressSnapshotDTO $progress,
+        SubagentProgressSnapshotInterface $progress,
         string $resultText,
     ): AbstractWidget {
         $status = $this->resolveCardStatus($progress);
@@ -156,7 +162,7 @@ final readonly class SubagentResultRenderer
         return \count($lines) > $this->displayConfig->toolResultPreviewLines;
     }
 
-    private function resolveHandoffMarkdown(SubagentProgressSnapshotDTO $progress, string $resultText): string
+    private function resolveHandoffMarkdown(SubagentProgressSnapshotInterface $progress, string $resultText): string
     {
         if (!$this->isTerminalCardStatus($this->resolveCardStatus($progress))) {
             return '';
@@ -197,7 +203,7 @@ final readonly class SubagentResultRenderer
         array $plainLines,
         TuiTheme $theme,
         string $status,
-        SubagentProgressSnapshotDTO $progress,
+        SubagentProgressSnapshotInterface $progress,
         ?string $footerHint,
         bool $streaming,
         ?string $inCardTrailingHint = null,
@@ -324,12 +330,12 @@ final readonly class SubagentResultRenderer
             || str_starts_with($line, 'Use agent_retrieve');
     }
 
-    private function resolveCardStatus(SubagentProgressSnapshotDTO $progress): string
+    private function resolveCardStatus(SubagentProgressSnapshotInterface $progress): string
     {
-        return match ($progress->status) {
+        return match ($progress->status()) {
             'needs_clarification' => 'waiting_human',
             'starting' => 'running',
-            default => $progress->status,
+            default => $progress->status(),
         };
     }
 
@@ -351,13 +357,15 @@ final readonly class SubagentResultRenderer
         return \is_string($result) && '' !== $result ? $result : $block->text;
     }
 
-    private function isRedundantHandoff(SubagentProgressSnapshotDTO $progress, string $resultText): bool
+    private function isRedundantHandoff(SubagentProgressSnapshotInterface $progress, string $resultText): bool
     {
         $normalized = trim($resultText);
         if ('' === $normalized) {
             return true;
         }
-        $artifactId = $progress->artifactId ?? '';
+        $artifactId = $progress instanceof SubagentProgressSingleSnapshotDTO
+            ? $progress->artifactId
+            : '';
 
         return '' !== $artifactId && str_contains($normalized, $artifactId) && !str_contains($normalized, "\n\n");
     }

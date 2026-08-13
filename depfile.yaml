@@ -465,6 +465,8 @@ parameters:
       - TuiTheme
 
     TuiTranscript:
+      # Typed subagent_progress DTOs live under Runtime/Contract (serializer boundary).
+      - AppRuntimeContract
       - AppRuntimeProjection
       - TuiWidget
       - TuiTheme
@@ -659,7 +661,9 @@ parameters:
       - AppSkills
       - SymfonyEventDispatcher
 
-    AppRuntimeProjection: ~
+    AppRuntimeProjection:
+      # Shared typed subagent_progress contracts live under Runtime/Contract.
+      - AppRuntimeContract
 
     AppExtension:
       - AppExtensionApi
@@ -683,8 +687,6 @@ parameters:
       - TuiTheme
       - AppSession
       - AppRuntimeContract
-      # Typed subagent_progress snapshots shared with runtime projection / TUI transcript.
-      - AppRuntimeProjection
       - AppSkills
       - AppTool
       - AppExtension

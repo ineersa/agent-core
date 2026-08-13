@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
-use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressChildRowDTO;
-use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\Tui\Footer\ContextUsageFormatter;
 
 /**
@@ -13,23 +15,19 @@ use Ineersa\Tui\Footer\ContextUsageFormatter;
  *
  * Runtime projection keeps using {@see \Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter};
  * this helper is TUI-only layout for {@see SubagentResultRenderer}.
+ *
+ * Callers must pass a typed snapshot already denormalized at the wire/meta boundary.
  */
 final class SubagentTranscriptCardBuilder
 {
     /**
-     * @param SubagentProgressSnapshotDTO|array<string, mixed> $progress
-     *
      * @return list<string>
      */
-    public function buildLines(SubagentProgressSnapshotDTO|array $progress, ?string $handoffAppend = null): array
+    public function buildLines(SubagentProgressSnapshotInterface $progress, ?string $handoffAppend = null): array
     {
-        $snapshot = $progress instanceof SubagentProgressSnapshotDTO
-            ? $progress
-            : SubagentProgressSnapshotDTO::fromArray($progress);
-
-        $lines = $snapshot->isParallel()
-            ? $this->buildParallelLines($snapshot)
-            : $this->buildSingleLines($snapshot, null);
+        $lines = $progress instanceof SubagentProgressParallelSnapshotDTO
+            ? $this->buildParallelLines($progress)
+            : $this->buildSingleLines($this->requireSingle($progress), null);
 
         if (null !== $handoffAppend && '' !== trim($handoffAppend)) {
             $collapsed = $this->sanitizeInlineValue($handoffAppend);
@@ -41,10 +39,19 @@ final class SubagentTranscriptCardBuilder
         return $lines;
     }
 
+    private function requireSingle(SubagentProgressSnapshotInterface $progress): SubagentProgressSingleSnapshotDTO
+    {
+        if (!$progress instanceof SubagentProgressSingleSnapshotDTO) {
+            throw new \InvalidArgumentException('Expected single subagent_progress snapshot.');
+        }
+
+        return $progress;
+    }
+
     /**
      * @return list<string>
      */
-    private function buildSingleLines(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress, ?int $childIndex): array
+    private function buildSingleLines(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress, ?int $childIndex): array
     {
         $agentName = $this->agentName($progress);
         $status = $this->normalizeStatus($progress->status);
@@ -111,11 +118,11 @@ final class SubagentTranscriptCardBuilder
     /**
      * @return list<string>
      */
-    private function buildParallelLines(SubagentProgressSnapshotDTO $progress): array
+    private function buildParallelLines(SubagentProgressParallelSnapshotDTO $progress): array
     {
         $status = $this->normalizeStatus($progress->status);
-        $completed = $progress->completedCount ?? 0;
-        $total = max($progress->totalCount ?? 0, 1);
+        $completed = $progress->completedCount;
+        $total = max($progress->totalCount, 1);
         $lines = [\sprintf('parallel subagents (%d/%d completed)', $completed, $total)];
 
         $childBlocks = [];
@@ -140,7 +147,7 @@ final class SubagentTranscriptCardBuilder
     }
 
     private function formatHeaderLine(
-        SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress,
+        SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress,
         string $agentName,
         string $status,
         ?int $childIndex,
@@ -159,7 +166,7 @@ final class SubagentTranscriptCardBuilder
             if (null !== $tok) {
                 $parts[] = $tok;
             }
-            if ($progress instanceof SubagentProgressSnapshotDTO) {
+            if ($progress instanceof SubagentProgressSingleSnapshotDTO) {
                 $elapsed = $this->formatElapsedHuman($progress->elapsedMs);
                 if (null !== $elapsed) {
                     $parts[] = $elapsed;
@@ -213,7 +220,7 @@ final class SubagentTranscriptCardBuilder
         return 'running' === $status;
     }
 
-    private function formatFooter(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $data): string
+    private function formatFooter(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $data): string
     {
         $llmSteps = $data->llmStepCount;
         $in = $data->inputTokens ?? 0;
@@ -252,12 +259,12 @@ final class SubagentTranscriptCardBuilder
     /**
      * @return list<string>
      */
-    private function recentToolLines(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $data): array
+    private function recentToolLines(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $data): array
     {
         return $data->recentTools ?? [];
     }
 
-    private function formatTokenCompact(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $data): ?string
+    private function formatTokenCompact(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $data): ?string
     {
         $total = $data->totalTokens;
         if (null !== $total && $total > 0) {
@@ -301,7 +308,7 @@ final class SubagentTranscriptCardBuilder
         return \sprintf('%dm%02ds', $minutes, $rem);
     }
 
-    private function formatContextUsageLine(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress): ?string
+    private function formatContextUsageLine(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress): ?string
     {
         $model = $progress->model;
         $latest = (null !== $progress->latestInputTokens && $progress->latestInputTokens > 0)
@@ -325,40 +332,24 @@ final class SubagentTranscriptCardBuilder
         return 'Use agent_retrieve (metadata/events/history) for full child details.';
     }
 
-    private function agentName(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress): string
+    private function agentName(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress): string
     {
-        if ($progress instanceof SubagentProgressChildRowDTO) {
-            return '' !== $progress->agentName ? $progress->agentName : 'subagent';
-        }
-
-        return (null !== $progress->agentName && '' !== $progress->agentName) ? $progress->agentName : 'subagent';
+        return '' !== $progress->agentName ? $progress->agentName : 'subagent';
     }
 
-    private function artifactId(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress): string
+    private function artifactId(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress): string
     {
-        if ($progress instanceof SubagentProgressChildRowDTO) {
-            return $progress->artifactId;
-        }
-
-        return $progress->artifactId ?? '';
+        return $progress->artifactId;
     }
 
-    private function agentRunId(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress): string
+    private function agentRunId(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress): string
     {
-        if ($progress instanceof SubagentProgressChildRowDTO) {
-            return $progress->agentRunId;
-        }
-
-        return $progress->agentRunId ?? '';
+        return $progress->agentRunId;
     }
 
-    private function taskSummary(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress): string
+    private function taskSummary(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress): string
     {
-        if ($progress instanceof SubagentProgressChildRowDTO) {
-            return $progress->taskSummary;
-        }
-
-        return $progress->taskSummary ?? '';
+        return $progress->taskSummary;
     }
 
     private function sanitizeInlineValue(string $text): string

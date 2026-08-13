@@ -326,7 +326,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             elapsedMs: 1000,
             enrichment: $summary,
         );
-        $singlePayload = $snapshot->toArray();
+        $singlePayload = \Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec::createStandalone()->normalize($snapshot);
         $this->assertSame(3, $singlePayload['llm_step_count'] ?? null);
         $this->assertSame(7, $singlePayload['turn_no'] ?? null);
 
@@ -348,7 +348,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             enrichmentByAgentRunId: ['child-run-llm-steps' => $summary],
             aggregateStatus: 'completed',
         );
-        $parallelPayload = $parallel->toArray();
+        $parallelPayload = \Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec::createStandalone()->normalize($parallel);
         $this->assertSame(3, $parallelPayload['children'][0]['llm_step_count'] ?? null);
         $this->assertSame(7, $parallelPayload['children'][0]['turn_no'] ?? null);
     }

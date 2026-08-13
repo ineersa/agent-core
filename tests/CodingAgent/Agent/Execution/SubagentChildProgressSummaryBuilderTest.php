@@ -203,7 +203,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             elapsedMs: 100,
             enrichment: $summary,
         );
-        $fields = $snapshot->toArray();
+        $fields = \Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec::createStandalone()->normalize($snapshot);
         $this->assertSame(35000, $fields['input_tokens']);
         $this->assertSame(2, $fields['llm_step_count'] ?? null);
         $this->assertSame(25000, $fields['latest_input_tokens'] ?? null);

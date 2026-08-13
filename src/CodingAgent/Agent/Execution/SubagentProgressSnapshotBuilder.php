@@ -6,14 +6,15 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
-use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressChildRowDTO;
-use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 
 /**
  * Builds typed subagent_progress snapshots for parent transcript projection.
  *
- * Canonical array shape is produced only at event boundaries via
- * {@see SubagentProgressSnapshotDTO::toArray()}.
+ * Canonical snake_case arrays are produced only at event boundaries via
+ * {@see \Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec}.
  */
 final class SubagentProgressSnapshotBuilder
 {
@@ -26,7 +27,7 @@ final class SubagentProgressSnapshotBuilder
         int $elapsedMs,
         ?SubagentChildProgressSummary $enrichment = null,
         string $status = 'running',
-    ): SubagentProgressSnapshotDTO {
+    ): SubagentProgressSingleSnapshotDTO {
         return $this->single(
             status: $status,
             agentName: $agentName,
@@ -48,7 +49,7 @@ final class SubagentProgressSnapshotBuilder
         int $childTurnNo,
         int $elapsedMs,
         ?SubagentChildProgressSummary $enrichment = null,
-    ): SubagentProgressSnapshotDTO {
+    ): SubagentProgressSingleSnapshotDTO {
         return $this->single(
             status: $status,
             agentName: $agentName,
@@ -70,7 +71,7 @@ final class SubagentProgressSnapshotBuilder
         int $elapsedMs,
         ?SubagentChildProgressSummary $enrichment = null,
         string $status = 'running',
-    ): SubagentProgressSnapshotDTO {
+    ): SubagentProgressSingleSnapshotDTO {
         return $this->singleRunningFromChildTurn($agentName, $artifactId, $agentRunId, $taskSummary, $childState->turnNo, $elapsedMs, $enrichment, $status);
     }
 
@@ -83,7 +84,7 @@ final class SubagentProgressSnapshotBuilder
         RunState $childState,
         int $elapsedMs,
         ?SubagentChildProgressSummary $enrichment = null,
-    ): SubagentProgressSnapshotDTO {
+    ): SubagentProgressSingleSnapshotDTO {
         return $this->singleTerminalFromChildTurn($status, $agentName, $artifactId, $agentRunId, $taskSummary, $childState->turnNo, $elapsedMs, $enrichment);
     }
 
@@ -98,7 +99,7 @@ final class SubagentProgressSnapshotBuilder
         int $elapsedMs,
         array $enrichmentByAgentRunId = [],
         string $aggregateStatus = 'running',
-    ): SubagentProgressSnapshotDTO {
+    ): SubagentProgressParallelSnapshotDTO {
         $sorted = array_values($reports);
         usort($sorted, static fn (array $a, array $b): int => $a['index'] <=> $b['index']);
 
@@ -157,19 +158,19 @@ final class SubagentProgressSnapshotBuilder
             );
         }
 
-        return new SubagentProgressSnapshotDTO(
+        return new SubagentProgressParallelSnapshotDTO(
             mode: 'parallel',
             status: $aggregateStatus,
-            elapsedMs: max(0, $elapsedMs),
             completedCount: $completed,
             totalCount: $total,
+            elapsedMs: max(0, $elapsedMs),
             children: $children,
             toolCount: $aggToolCount,
             inputTokens: $aggInput,
             outputTokens: $aggOutput,
             reasoningTokens: $aggReasoning,
             totalTokens: $aggTotal,
-            cost: $hasCost ? $aggCost : null,
+            cost: $hasCost && $aggCost > 0.0 ? $aggCost : null,
         );
     }
 
@@ -182,9 +183,9 @@ final class SubagentProgressSnapshotBuilder
         int $childTurnNo,
         int $elapsedMs,
         ?SubagentChildProgressSummary $enrichment,
-    ): SubagentProgressSnapshotDTO {
+    ): SubagentProgressSingleSnapshotDTO {
         if (null === $enrichment) {
-            return new SubagentProgressSnapshotDTO(
+            return new SubagentProgressSingleSnapshotDTO(
                 mode: 'single',
                 status: $status,
                 elapsedMs: max(0, $elapsedMs),
@@ -196,7 +197,7 @@ final class SubagentProgressSnapshotBuilder
             );
         }
 
-        return new SubagentProgressSnapshotDTO(
+        return new SubagentProgressSingleSnapshotDTO(
             mode: 'single',
             status: $status,
             elapsedMs: max(0, $elapsedMs),

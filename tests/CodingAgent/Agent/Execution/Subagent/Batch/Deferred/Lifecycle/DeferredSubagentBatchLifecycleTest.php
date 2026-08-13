@@ -1189,7 +1189,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         return new class(self::getContainer()->get(CommittedRunEventAppender::class), $appended) extends SubagentProgressEventAppender {
             public function __construct(CommittedRunEventAppender $inner, private array &$appended)
             {
-                parent::__construct($inner);
+                parent::__construct($inner, \Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec::createStandalone());
             }
 
             public function append(
@@ -1198,10 +1198,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 string $parentToolCallId,
                 int $parentOrderIndex,
                 string $toolName,
-                \Ineersa\CodingAgent\Runtime\Projection\SubagentProgressSnapshotDTO $progress,
+                \Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface $progress,
             ): \Ineersa\AgentCore\Domain\Event\RunEvent {
                 // Capture canonical payload shape asserted by lifecycle contract tests.
-                $this->appended[] = $progress->toArray();
+                $this->appended[] = \Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec::createStandalone()->normalize($progress);
 
                 return parent::append($parentRunId, $parentTurnNo, $parentToolCallId, $parentOrderIndex, $toolName, $progress);
             }

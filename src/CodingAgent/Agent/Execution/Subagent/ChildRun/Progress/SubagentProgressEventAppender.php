@@ -6,19 +6,21 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 
 /**
  * Canonical parent subagent_progress append using explicit stored parent tool correlation.
  *
- * Accepts the typed snapshot and serializes to the canonical snake_case array only
+ * Accepts a typed snapshot and normalizes to the canonical snake_case array only
  * when writing the RunEvent payload (persisted/public boundary).
  */
 class SubagentProgressEventAppender
 {
     public function __construct(
         private CommittedRunEventAppender $committedRunEventAppender,
+        private SubagentProgressSnapshotCodec $progressSnapshotCodec,
     ) {
     }
 
@@ -28,7 +30,7 @@ class SubagentProgressEventAppender
         string $parentToolCallId,
         int $parentOrderIndex,
         string $toolName,
-        SubagentProgressSnapshotDTO $progress,
+        SubagentProgressSnapshotInterface $progress,
     ): RunEvent {
         $event = new RunEvent(
             runId: $parentRunId,
@@ -39,7 +41,7 @@ class SubagentProgressEventAppender
                 'tool_call_id' => $parentToolCallId,
                 'tool_name' => $toolName,
                 'delta' => '',
-                'subagent_progress' => $progress->toArray(),
+                'subagent_progress' => $this->progressSnapshotCodec->normalize($progress),
                 'order_index' => $parentOrderIndex,
             ],
         );

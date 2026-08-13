@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Runtime;
 
-use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressChildRowDTO;
-use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 
 /**
@@ -13,11 +15,18 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
  */
 final class SubagentLiveCatalog
 {
+    private readonly SubagentProgressSnapshotCodec $progressCodec;
+
     /** @var array<string, SubagentLiveChildDTO> artifactId → child */
     private array $byArtifactId = [];
 
     /** @var array<string, true> */
     private array $dismissedArtifactIds = [];
+
+    public function __construct(?SubagentProgressSnapshotCodec $progressCodec = null)
+    {
+        $this->progressCodec = $progressCodec ?? SubagentProgressSnapshotCodec::createStandalone();
+    }
 
     public function dismissArtifactId(string $artifactId): ?SubagentLiveChildDTO
     {
@@ -49,7 +58,17 @@ final class SubagentLiveCatalog
                 return $b->needsAttention() <=> $a->needsAttention();
             }
 
-            return $b->lastActivityAtMs <=> $a->lastActivityAtMs;
+            // Active rows still prefer most-recent activity; terminal rows sort
+            // deterministically so microsecond ingest jitter does not reshuffle.
+            $aActive = $a->status->isActive();
+            $bActive = $b->status->isActive();
+            if ($aActive || $bActive) {
+                if ($a->lastActivityAtMs !== $b->lastActivityAtMs) {
+                    return $b->lastActivityAtMs <=> $a->lastActivityAtMs;
+                }
+            }
+
+            return $a->artifactId <=> $b->artifactId;
         });
 
         return $items;
@@ -111,11 +130,16 @@ final class SubagentLiveCatalog
             return;
         }
 
-        // Wire/public boundary: denormalize once, then use typed properties.
-        $snapshot = SubagentProgressSnapshotDTO::fromArray($progress);
+        // Wire/public boundary: denormalize + validate once, then use typed properties.
+        try {
+            $snapshot = $this->progressCodec->denormalize($progress);
+        } catch (\Throwable) {
+            // Invalid wire payloads are ignored; live catalog stays best-effort.
+            return;
+        }
         $now = (int) (microtime(true) * 1000);
 
-        if ($snapshot->isParallel()) {
+        if ($snapshot instanceof SubagentProgressParallelSnapshotDTO) {
             foreach ($snapshot->children as $child) {
                 $this->upsertFromChildRow($child, $now);
             }
@@ -123,23 +147,25 @@ final class SubagentLiveCatalog
             return;
         }
 
-        $this->upsertFromSingleSnapshot($snapshot, $now);
+        if ($snapshot instanceof SubagentProgressSingleSnapshotDTO) {
+            $this->upsertFromSingleSnapshot($snapshot, $now);
+        }
     }
 
-    private function upsertFromSingleSnapshot(SubagentProgressSnapshotDTO $row, int $now): void
+    private function upsertFromSingleSnapshot(SubagentProgressSingleSnapshotDTO $row, int $now): void
     {
-        $artifactId = trim($row->artifactId ?? '');
+        $artifactId = trim($row->artifactId);
         if ('' === $artifactId || $this->isDismissed($artifactId)) {
             return;
         }
 
-        $agentRunId = trim($row->agentRunId ?? '');
-        $agentName = trim($row->agentName ?? 'subagent');
+        $agentRunId = trim($row->agentRunId);
+        $agentName = trim($row->agentName);
         if ('' === $agentName) {
             $agentName = 'subagent';
         }
         $status = SubagentLiveStatusEnum::fromProgressString($row->status);
-        $taskSummary = trim($row->taskSummary ?? '');
+        $taskSummary = trim($row->taskSummary);
         $model = $row->model;
         $latestInputTokens = (null !== $row->latestInputTokens && $row->latestInputTokens > 0) ? $row->latestInputTokens : 0;
         $contextWindow = (null !== $row->contextWindow && $row->contextWindow > 0) ? $row->contextWindow : 0;

@@ -4,29 +4,61 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Projection;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+
 /**
  * Builds compact inline transcript text for structured subagent progress snapshots.
  *
  * Stored on ToolResult blocks as visible text; {@see \Ineersa\Tui\Transcript\SubagentResultRenderer}
  * applies the same layout for terminal rendering (kept in sync intentionally).
+ *
+ * Wire/meta arrays are denormalized once at the public boundary; internal callers
+ * should pass typed snapshots.
  */
 final class SubagentProgressDisplayFormatter
 {
-    /**
-     * @param SubagentProgressSnapshotDTO|array<string, mixed> $progress
-     */
-    public function format(SubagentProgressSnapshotDTO|array $progress): string
-    {
-        $snapshot = $progress instanceof SubagentProgressSnapshotDTO
-            ? $progress
-            : SubagentProgressSnapshotDTO::fromArray($progress);
+    private readonly SubagentProgressSnapshotCodec $codec;
 
-        return $snapshot->isParallel()
-            ? $this->formatParallel($snapshot)
-            : $this->formatSingle($snapshot);
+    public function __construct(?SubagentProgressSnapshotCodec $codec = null)
+    {
+        $this->codec = $codec ?? SubagentProgressSnapshotCodec::createStandalone();
     }
 
-    private function formatSingle(SubagentProgressSnapshotDTO $progress): string
+    /**
+     * @param SubagentProgressSnapshotInterface|array<string, mixed> $progress
+     */
+    public function format(SubagentProgressSnapshotInterface|array $progress): string
+    {
+        if ($progress instanceof SubagentProgressSnapshotInterface) {
+            $snapshot = $progress;
+        } else {
+            try {
+                $snapshot = $this->codec->denormalize($progress);
+            } catch (\Throwable) {
+                // Corrupt/incomplete transcript meta: keep projection resilient.
+                return '';
+            }
+        }
+
+        return $snapshot instanceof SubagentProgressParallelSnapshotDTO
+            ? $this->formatParallel($snapshot)
+            : $this->formatSingle($this->requireSingle($snapshot));
+    }
+
+    private function requireSingle(SubagentProgressSnapshotInterface $snapshot): SubagentProgressSingleSnapshotDTO
+    {
+        if (!$snapshot instanceof SubagentProgressSingleSnapshotDTO) {
+            throw new \InvalidArgumentException('Expected single subagent_progress snapshot.');
+        }
+
+        return $snapshot;
+    }
+
+    private function formatSingle(SubagentProgressSingleSnapshotDTO $progress): string
     {
         return implode("\n", $this->formatSingleWidgetLines($progress, null));
     }
@@ -34,7 +66,7 @@ final class SubagentProgressDisplayFormatter
     /**
      * @return list<string>
      */
-    private function formatSingleWidgetLines(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress, ?int $childIndex): array
+    private function formatSingleWidgetLines(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress, ?int $childIndex): array
     {
         $agentName = $this->agentName($progress);
         $status = $progress->status;
@@ -59,13 +91,15 @@ final class SubagentProgressDisplayFormatter
      * @return list<string>
      */
     private function formatSingleWidgetBodyLines(
-        SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress,
+        SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress,
         string $agentName,
         string $status,
     ): array {
         $artifactId = $this->artifactId($progress);
         $task = $this->taskSummary($progress);
-        $elapsed = $this->formatElapsedHuman($progress instanceof SubagentProgressSnapshotDTO ? $progress->elapsedMs : null);
+        $elapsed = $progress instanceof SubagentProgressSingleSnapshotDTO
+            ? $this->formatElapsedHuman($progress->elapsedMs)
+            : null;
 
         $lines = [];
 
@@ -110,11 +144,11 @@ final class SubagentProgressDisplayFormatter
         return $lines;
     }
 
-    private function formatParallel(SubagentProgressSnapshotDTO $progress): string
+    private function formatParallel(SubagentProgressParallelSnapshotDTO $progress): string
     {
         $status = $progress->status;
-        $completed = $progress->completedCount ?? 0;
-        $total = max($progress->totalCount ?? 0, 1);
+        $completed = $progress->completedCount;
+        $total = max($progress->totalCount, 1);
 
         if ('running' === $status) {
             $lines = [\sprintf('parallel subagents running (%d/%d completed)', $completed, $total)];
@@ -143,7 +177,7 @@ final class SubagentProgressDisplayFormatter
     private function formatRunningSummary(
         string $status,
         string $agentName,
-        SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $data,
+        SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $data,
         ?string $elapsed,
     ): string {
         if ('running' !== $status) {
@@ -166,7 +200,7 @@ final class SubagentProgressDisplayFormatter
         return implode(' | ', $parts);
     }
 
-    private function formatFooter(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $data): string
+    private function formatFooter(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $data): string
     {
         $llmSteps = $data->llmStepCount;
         $in = $data->inputTokens ?? 0;
@@ -205,12 +239,12 @@ final class SubagentProgressDisplayFormatter
     /**
      * @return list<string>
      */
-    private function recentToolLines(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $data): array
+    private function recentToolLines(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $data): array
     {
         return $data->recentTools ?? [];
     }
 
-    private function formatTokenCompact(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $data): ?string
+    private function formatTokenCompact(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $data): ?string
     {
         $total = $data->totalTokens;
         if (null !== $total && $total > 0) {
@@ -263,31 +297,19 @@ final class SubagentProgressDisplayFormatter
         return 'Use agent_retrieve (metadata/events/history) for full child details.';
     }
 
-    private function agentName(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress): string
+    private function agentName(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress): string
     {
-        if ($progress instanceof SubagentProgressChildRowDTO) {
-            return '' !== $progress->agentName ? $progress->agentName : 'subagent';
-        }
-
-        return (null !== $progress->agentName && '' !== $progress->agentName) ? $progress->agentName : 'subagent';
+        return '' !== $progress->agentName ? $progress->agentName : 'subagent';
     }
 
-    private function artifactId(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress): string
+    private function artifactId(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress): string
     {
-        if ($progress instanceof SubagentProgressChildRowDTO) {
-            return $progress->artifactId;
-        }
-
-        return $progress->artifactId ?? '';
+        return $progress->artifactId;
     }
 
-    private function taskSummary(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress): string
+    private function taskSummary(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress): string
     {
-        if ($progress instanceof SubagentProgressChildRowDTO) {
-            return $progress->taskSummary;
-        }
-
-        return $progress->taskSummary ?? '';
+        return $progress->taskSummary;
     }
 
     private function truncate(string $text, int $max): string
