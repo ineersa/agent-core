@@ -12,7 +12,7 @@ Optional local log/APM wiring for maintainers. Not model-visible.
 ```bash
 castor datadog:smoke        # package/agent/ddtrace/log-path diagnostic
 castor datadog:log-config   # print ops/datadog/hatfield.d/conf.yaml + install hints
-castor datadog:smoke-log    # append one JSONL smoke line to today's agent log
+castor datadog:smoke-log    # append one JSONL smoke line under project .hatfield/logs
 ```
 
 ## Agent log collection
@@ -41,6 +41,10 @@ sudo install -o dd-agent -g dd-agent -m 0644 \
 sudo systemctl restart datadog-agent
 castor datadog:smoke-log
 ```
+
+`castor datadog:smoke-log` currently writes under project `.hatfield/logs/` only. It does
+**not** follow a custom `logging.path` / `HATFIELD_LOG_DIR`. For a non-default log path,
+inspect or inject a smoke line in the configured directory manually.
 
 Search Logs Explorer for the printed smoke message. The sample config includes
 masking rules for common secret shapes.

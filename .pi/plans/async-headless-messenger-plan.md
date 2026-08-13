@@ -408,6 +408,15 @@ Add `RuntimeEventTypeEnum::CommandAck`.
 
 ## Storage summary
 
+> **Historical note (plan-era design, not current product behavior):** the table below
+> reflects the design target at plan time. Current canonical session storage is
+> documented in `docs/session-storage.md`: `events.jsonl` + `state.json` under
+> `.hatfield/sessions/<id>/`, session metadata in the `hatfield_session` DB table
+> (`.hatfield/state.sqlite`), and Messenger transport SQLite separate from app state.
+> There is **no** `metadata.yaml` or `transcript.jsonl` in the session directory today;
+> transcript is rebuilt from events on resume. Treat plan-era `metadata.yaml` /
+> `transcript.jsonl` / single `messenger.sqlite` path claims as historical only.
+
 ### What stays
 
 | File | Role | Writer |

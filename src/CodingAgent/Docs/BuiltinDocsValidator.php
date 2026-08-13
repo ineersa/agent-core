@@ -113,18 +113,16 @@ final class BuiltinDocsValidator
 
                 $resolvedReal = $this->realpathOr($resolved);
                 $id = pathinfo($resolved, \PATHINFO_FILENAME);
-                $underCore = $this->isUnder($resolvedReal, $coreDocsRoot);
-                $underApiDocs = $this->isUnder($resolvedReal, $apiDocsRoot);
-                $underApiPackage = $this->isUnder($resolvedReal, $apiPackageRoot);
+                $underCore = BuiltinDocsCatalog::pathIsUnderRoot($resolvedReal, $coreDocsRoot);
+                $underApiDocs = BuiltinDocsCatalog::pathIsUnderRoot($resolvedReal, $apiDocsRoot);
+                $underApiPackage = BuiltinDocsCatalog::pathIsUnderRoot($resolvedReal, $apiPackageRoot);
 
                 if (BuiltinDocsCatalog::CORE_DOCS_RELATIVE === $entry['rootRelative']) {
+                    $selectedPath = isset($byId[$id]) ? realpath($byId[$id]['absolutePath']) : false;
                     $ok = str_ends_with($resolved, '.md')
-                        && isset($byId[$id])
+                        && false !== $selectedPath
                         && ($underCore || $underApiDocs)
-                        && (
-                            ($underCore && ($byId[$id]['absolutePath'] === $resolved || realpath($byId[$id]['absolutePath']) === $resolvedReal))
-                            || ($underApiDocs && ($byId[$id]['absolutePath'] === $resolved || realpath($byId[$id]['absolutePath']) === $resolvedReal))
-                        );
+                        && $selectedPath === $resolvedReal;
                     if (!$ok) {
                         $errors[] = \sprintf('%s: core built-in doc link "%s" must target another selected built-in document at its canonical path.', $rel, $target);
                         continue;
@@ -133,17 +131,14 @@ final class BuiltinDocsValidator
                     // Extension API docs: Markdown under the API docs root must itself be selected.
                     // Non-docs package source files may link within the packaged Extension API tree.
                     if ($underApiDocs) {
-                        if (!str_ends_with($resolved, '.md') || !isset($byId[$id])) {
-                            $errors[] = \sprintf('%s: Extension API doc link "%s" must target a selected built-in document.', $rel, $target);
-                            continue;
-                        }
-                        $canonical = realpath($byId[$id]['absolutePath']);
-                        if (false === $canonical || $canonical !== $resolvedReal) {
+                        $selectedPath = isset($byId[$id]) ? realpath($byId[$id]['absolutePath']) : false;
+                        if (!str_ends_with($resolved, '.md') || false === $selectedPath || $selectedPath !== $resolvedReal) {
                             $errors[] = \sprintf('%s: Extension API doc link "%s" must resolve to the selected document path.', $rel, $target);
                             continue;
                         }
                     } elseif ($underCore) {
-                        if (!str_ends_with($resolved, '.md') || !isset($byId[$id])) {
+                        $selectedPath = isset($byId[$id]) ? realpath($byId[$id]['absolutePath']) : false;
+                        if (!str_ends_with($resolved, '.md') || false === $selectedPath || $selectedPath !== $resolvedReal) {
                             $errors[] = \sprintf('%s: link "%s" into core docs must target a selected built-in document.', $rel, $target);
                             continue;
                         }
@@ -175,39 +170,28 @@ final class BuiltinDocsValidator
     /**
      * Maintained Markdown paths subject to the 25k size gate.
      *
+     * Includes:
+     * - git-tracked README.md files when $appRoot is a git checkout (worktree-safe),
+     * - root README.md when present outside git (temp fixtures),
+     * - all Markdown files under the approved built-in documentation roots.
+     *
+     * Untracked/generated README files under vendor/var/etc. are not size-gated.
+     *
      * @return list<string>
      */
     public function sizeTargetPaths(string $appRoot): array
     {
         $appRoot = rtrim($appRoot, '/');
         $paths = [];
-        $excludeDirNames = [
-            'vendor' => true,
-            'var' => true,
-            '.git' => true,
-            'node_modules' => true,
-            'dist' => true,
-            'build' => true,
-        ];
 
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveCallbackFilterIterator(
-                new \RecursiveDirectoryIterator($appRoot, \FilesystemIterator::SKIP_DOTS),
-                static function (\SplFileInfo $current) use ($excludeDirNames): bool {
-                    if ($current->isDir()) {
-                        return !isset($excludeDirNames[$current->getFilename()]);
-                    }
-
-                    return true;
-                },
-            ),
-        );
-
-        foreach ($iterator as $file) {
-            /** @var \SplFileInfo $file */
-            if ($file->isFile() && 'README.md' === $file->getFilename()) {
-                $paths[] = $file->getPathname();
+        $trackedReadmes = $this->gitTrackedReadmePaths($appRoot);
+        if (null !== $trackedReadmes) {
+            foreach ($trackedReadmes as $path) {
+                $paths[] = $path;
             }
+        } elseif (is_file($appRoot.'/README.md')) {
+            // Non-git temp trees still validate the project README when present.
+            $paths[] = $appRoot.'/README.md';
         }
 
         foreach (BuiltinDocsCatalog::approvedRelativeRoots() as $relRoot) {
@@ -227,17 +211,44 @@ final class BuiltinDocsValidator
         return $paths;
     }
 
+    /**
+     * @return list<string>|null absolute paths, or null when git is unavailable / not a checkout
+     */
+    private function gitTrackedReadmePaths(string $appRoot): ?array
+    {
+        // Normal repos use a .git directory; worktrees use a .git file.
+        if (!is_dir($appRoot.'/.git') && !is_file($appRoot.'/.git')) {
+            return null;
+        }
+
+        $cmd = 'git -C '.escapeshellarg($appRoot)." ls-files -z -- 'README.md' '**/README.md' 2>/dev/null";
+        $raw = shell_exec($cmd);
+        if (!\is_string($raw)) {
+            return null;
+        }
+
+        $paths = [];
+        foreach (explode("\0", $raw) as $relative) {
+            if ('' === $relative) {
+                continue;
+            }
+            // Defense: only README.md basenames, never path-escaped entries.
+            if ('README.md' !== basename($relative)) {
+                continue;
+            }
+            $absolute = $appRoot.'/'.$relative;
+            if (is_file($absolute)) {
+                $paths[] = $absolute;
+            }
+        }
+
+        return $paths;
+    }
+
     private function realpathOr(string $path): string
     {
         $real = realpath($path);
 
         return false !== $real ? $real : $path;
-    }
-
-    private function isUnder(string $path, string $root): bool
-    {
-        $root = rtrim($root, '/');
-
-        return $path === $root || str_starts_with($path, $root.'/');
     }
 }

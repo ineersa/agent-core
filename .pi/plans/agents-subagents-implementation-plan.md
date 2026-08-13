@@ -92,7 +92,7 @@ Relevant current code remains useful background, but should not become a v1 chil
   - already has `WaitingHuman`.
 - `src/Tui/Question/QuestionCoordinator.php` and `src/Tui/Question/QuestionController.php`
   - parent-session question infrastructure, not v1 child-agent control UX.
-- `docs/hitl-and-approvals.md`
+- `docs/human-input.md` and `docs/approvals.md` (current canonical docs; historically referenced as `docs/hitl-and-approvals.md`)
   - parent-session SafeGuard/HITL approval architecture.
 
 ### 3.2 MCP prerequisite

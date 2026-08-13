@@ -340,7 +340,7 @@ After `castor test:tui`, passing test snapshots are kept at `var/tmp/tui-e2e-*/`
 
 After failures, diagnostics go to `var/tmp/tui-failures/` (ANSI snapshots + plain text dumps).
 
-Run `castor cleanup` to remove all temp/test artifacts. See `tests/AGENTS.md` for full test standards: shared helpers, directory isolation, fast E2E waits, what not to test, one-class-per-file rules.
+Run `castor clean:cleanup` to remove all temp/test artifacts. See `tests/AGENTS.md` for full test standards: shared helpers, directory isolation, fast E2E waits, what not to test, one-class-per-file rules.
 
 TUI E2E waits should target exact visible proof with short caps (typically 2-5s for startup/status/UI assertions on the local test model). Avoid broad 30-60s waits and fixed `usleep()` calls unless the delay itself is the behavior under test.
 

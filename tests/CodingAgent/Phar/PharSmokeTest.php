@@ -314,10 +314,21 @@ final class PharSmokeTest extends TestCase
             isset($phar['.hatfield/extensions/extension-api/docs/private-unmarked.md']),
             'PHAR must not bundle unmarked Extension API docs',
         );
-        $this->assertFalse(
-            isset($phar['vendor/ineersa/hatfield-extension-api/docs/extension-api.md']),
-            'PHAR must not ship vendor path-package Extension API docs duplicates',
-        );
+        $vendorApiDocsPrefix = 'vendor/ineersa/hatfield-extension-api/docs/';
+        /** @var \PharFileInfo $vendorFile */
+        foreach (new \RecursiveIteratorIterator($phar) as $vendorFile) {
+            if (!$vendorFile->isFile()) {
+                continue;
+            }
+            $vendorRel = str_replace('\\', '/', $vendorFile->getPathname());
+            if (str_contains($vendorRel, '.phar/')) {
+                $vendorRel = substr($vendorRel, strpos($vendorRel, '.phar/') + \strlen('.phar/'));
+            }
+            $this->assertFalse(
+                str_starts_with($vendorRel, $vendorApiDocsPrefix),
+                'PHAR must not ship any vendor path-package Extension API docs entry: '.$vendorRel,
+            );
+        }
 
         $locator = new \Ineersa\CodingAgent\Config\AppResourceLocator('phar://'.$pharPath);
         $settingsPath = $locator->getCoreDocsPath().'/settings.md';

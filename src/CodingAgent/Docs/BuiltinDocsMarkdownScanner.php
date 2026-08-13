@@ -36,18 +36,16 @@ final class BuiltinDocsMarkdownScanner
     }
 
     /**
-     * GitHub-style heading slugs from Markdown body (outside fenced code via AST).
+     * Headings from Markdown body (outside fenced code via AST).
      *
-     * Duplicate headings receive -1, -2, … suffixes matching common GitHub behavior.
-     *
-     * @return list<string>
+     * @return list<array{level: int, text: string, slug: string}>
      */
-    public function headingSlugs(string $markdown): array
+    public function headings(string $markdown): array
     {
         $document = $this->parser->parse($markdown);
-        $slugs = [];
+        $headings = [];
         $counts = [];
-        $this->walk($document, function (Node $node) use (&$slugs, &$counts): void {
+        $this->walk($document, function (Node $node) use (&$headings, &$counts): void {
             if (!$node instanceof Heading) {
                 return;
             }
@@ -61,10 +59,49 @@ final class BuiltinDocsMarkdownScanner
             }
             $n = $counts[$base] ?? 0;
             $counts[$base] = $n + 1;
-            $slugs[] = 0 === $n ? $base : $base.'-'.$n;
+            $headings[] = [
+                'level' => $node->getLevel(),
+                'text' => $text,
+                'slug' => 0 === $n ? $base : $base.'-'.$n,
+            ];
         });
 
-        return $slugs;
+        return $headings;
+    }
+
+    /**
+     * GitHub-style heading slugs from Markdown body (outside fenced code via AST).
+     *
+     * Duplicate headings receive -1, -2, … suffixes matching common GitHub behavior.
+     *
+     * @return list<string>
+     */
+    public function headingSlugs(string $markdown): array
+    {
+        return array_map(
+            static fn (array $heading): string => $heading['slug'],
+            $this->headings($markdown),
+        );
+    }
+
+    /**
+     * Exactly one useful H1 title outside fenced code, or null when zero/many.
+     *
+     * @return array{title: string, count: int}
+     */
+    public function usefulH1(string $markdown): array
+    {
+        $titles = [];
+        foreach ($this->headings($markdown) as $heading) {
+            if (1 === $heading['level']) {
+                $titles[] = $heading['text'];
+            }
+        }
+
+        return [
+            'title' => 1 === \count($titles) ? $titles[0] : '',
+            'count' => \count($titles),
+        ];
     }
 
     /**

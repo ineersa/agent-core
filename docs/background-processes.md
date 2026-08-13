@@ -23,11 +23,11 @@ After backgrounding, inspect or stop processes with `bg_status`.
 ## Lifecycle
 
 1. `bash` runs a command; after the threshold, the TUI may prompt the user to background it.
-2. On accept, Hatfield records a running process (session-scoped tracking under `.hatfield/tmp/bg/`) and returns a notice with PID + log path.
-3. Stdout/stderr append to a log file; a status sidecar records exit codes when available.
+2. On accept, Hatfield persists a durable `background_process` row in `.hatfield/state.sqlite` and returns a notice with PID + log path.
+3. PID / status / log sidecars are written under `tools.background_process.path` (default `.hatfield/tmp/bg`): `.pid`, `.status`, and `.log` companions for the live process.
 4. `bg_status stop` resolves the process group, sends `SIGTERM`, waits `tools.background_process.stop_grace_seconds`, then `SIGKILL` if still alive.
 
-Tracking is **session-scoped**. Logs and DB files live under `tools.background_process.path` (default `.hatfield/tmp/bg`).
+Tracking is **session-scoped**. Durable records live in `.hatfield/state.sqlite`; filesystem sidecars (PID/status/log) live under the configured tool path.
 
 ## Settings
 

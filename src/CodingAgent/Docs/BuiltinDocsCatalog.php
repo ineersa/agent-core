@@ -94,6 +94,11 @@ final class BuiltinDocsCatalog
                 ->name('*.md')
                 ->sortByName();
 
+            $rootReal = realpath($rootPath);
+            if (false === $rootReal || !is_dir($rootReal)) {
+                continue;
+            }
+
             foreach ($files as $file) {
                 $id = $file->getBasename('.md');
                 if ('' === $id) {
@@ -101,6 +106,8 @@ final class BuiltinDocsCatalog
                 }
 
                 $absolutePath = $file->getPathname();
+                $this->assertCandidateContainedInRoot($absolutePath, $rootReal, $id);
+
                 $raw = @file_get_contents($absolutePath);
                 if (false === $raw) {
                     throw new BuiltinDocsCatalogException(\sprintf('Unable to read documentation file "%s".', $absolutePath));
@@ -154,6 +161,18 @@ final class BuiltinDocsCatalog
     {
         $charCount = mb_strlen($raw, 'UTF-8');
         $extraction = $this->extractor->extract($raw);
+
+        // Fail closed when an intended builtin marker is present but frontmatter is incomplete
+        // (missing closing delimiter yields yamlBlock=null with hasOpeningDelimiter=true).
+        if ($extraction['hasOpeningDelimiter'] && !$extraction['hasClosingDelimiter']) {
+            if (self::rawMentionsBuiltinTrue($raw)) {
+                throw new BuiltinDocsCatalogException(\sprintf('Document "%s" (%s) opens frontmatter and appears to set builtin: true but is missing a closing delimiter.', $id, $pathForErrors));
+            }
+
+            // Incomplete unmarked frontmatter is ignored at discovery time.
+            return null;
+        }
+
         if (null === $extraction['yamlBlock'] || !$extraction['hasOpeningDelimiter'] || !$extraction['hasClosingDelimiter']) {
             // Repository-only docs may omit frontmatter entirely.
             return null;
@@ -234,37 +253,46 @@ final class BuiltinDocsCatalog
     }
 
     /**
-     * Enforce exactly one useful Markdown H1 outside fenced code blocks.
+     * Separator-boundary containment: root match or root + '/' prefix only.
+     */
+    public static function pathIsUnderRoot(string $path, string $root): bool
+    {
+        $root = rtrim(str_replace('\\', '/', $root), '/');
+        $path = str_replace('\\', '/', $path);
+
+        return $path === $root || str_starts_with($path, $root.'/');
+    }
+
+    /**
+     * Enforce exactly one useful Markdown H1 outside fenced code blocks via shared AST scanner.
      */
     private function extractSingleUsefulH1(string $body, string $id, string $pathForErrors): string
     {
-        $titles = [];
-        $inFence = false;
-        $lines = preg_split("/\n/", $body);
-        if (!\is_array($lines)) {
-            $lines = [];
-        }
-        foreach ($lines as $line) {
-            if (preg_match('/^\s*```/', $line)) {
-                $inFence = !$inFence;
-                continue;
-            }
-            if ($inFence) {
-                continue;
-            }
-            if (preg_match('/^#\s+(.+?)\s*$/', $line, $matches)) {
-                $title = trim($matches[1]);
-                if ('' !== $title) {
-                    $titles[] = $title;
-                }
-            }
+        $result = (new BuiltinDocsMarkdownScanner())->usefulH1($body);
+        if (1 !== $result['count'] || '' === $result['title']) {
+            throw new BuiltinDocsCatalogException(\sprintf('Document "%s" (%s) must contain exactly one useful H1 title outside code fences (found %d).', $id, $pathForErrors, $result['count']));
         }
 
-        if (1 !== \count($titles)) {
-            throw new BuiltinDocsCatalogException(\sprintf('Document "%s" (%s) must contain exactly one useful H1 title outside code fences (found %d).', $id, $pathForErrors, \count($titles)));
+        return $result['title'];
+    }
+
+    /**
+     * Reject symlink candidates and path escapes outside the approved root.
+     */
+    private function assertCandidateContainedInRoot(string $absolutePath, string $rootReal, string $id): void
+    {
+        if (is_link($absolutePath)) {
+            throw new BuiltinDocsCatalogException(\sprintf('Document "%s" (%s) must not be a symlink; built-in docs must be regular files under the approved root.', $id, $absolutePath));
         }
 
-        return $titles[0];
+        $resolved = realpath($absolutePath);
+        if (false === $resolved || !is_file($resolved)) {
+            throw new BuiltinDocsCatalogException(\sprintf('Document "%s" (%s) could not be resolved as a regular file under the approved root.', $id, $absolutePath));
+        }
+
+        if (!self::pathIsUnderRoot($resolved, $rootReal)) {
+            throw new BuiltinDocsCatalogException(\sprintf('Document "%s" (%s) resolves outside approved root "%s".', $id, $absolutePath, $rootReal));
+        }
     }
 
     /**
@@ -280,5 +308,13 @@ final class BuiltinDocsCatalog
             '/^\s*builtin\s*:\s*(?:true|["\']true["\']|1)\s*(?:#.*)?$/mi',
             $yamlBlock,
         );
+    }
+
+    /**
+     * Detect intended builtin: true in raw Markdown before frontmatter closes.
+     */
+    private static function rawMentionsBuiltinTrue(string $raw): bool
+    {
+        return self::yamlBlockMentionsBuiltinTrue($raw);
     }
 }

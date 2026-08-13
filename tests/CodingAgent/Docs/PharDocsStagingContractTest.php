@@ -11,7 +11,8 @@ use PHPUnit\Framework\TestCase;
 /**
  * Thesis: PHAR fingerprint identity includes selected docs and resolved build
  * identity; Extension API docs subtree is excluded from recursive package inputs
- * while selected docs remain explicit; staging helpers exclude unmarked API docs.
+ * while selected docs remain explicit; production materialize/strip helpers drop
+ * vendor path-package docs and retain non-doc package files.
  *
  * All mutations use isolated temp trees — never the real checkout sources.
  */
@@ -103,58 +104,54 @@ final class PharDocsStagingContractTest extends TestCase
         }
     }
 
-    public function testStagingExcludesUnmarkedApiDocsAndMatchesSelectedBytes(): void
+    public function testProductionMaterializeStripRemovesVendorDocsAndKeepsPackageFile(): void
     {
         $helpers = \dirname(__DIR__, 3).'/.castor/helpers.php';
         require_once $helpers;
+        $this->assertTrue(\function_exists('CastorTasks\materialize_vendor_path_package_symlinks'));
+        $this->assertTrue(\function_exists('CastorTasks\strip_vendor_extension_api_docs'));
 
-        $root = \dirname(__DIR__, 3);
-        // Use real catalog paths on the real tree only for read-only discovery of relative paths,
-        // but stage into an isolated staging dir from a temp source tree.
-        $tree = $this->scaffoldFingerprintTree();
-        try {
-            $unmarked = $tree.'/.hatfield/extensions/extension-api/docs/private-unmarked.md';
-            file_put_contents($unmarked, "# Private\n\nnot selected\n");
-
-            $staging = TestDirectoryIsolation::createProjectTempDir('phar-docs-staging');
-            try {
-                // Mirror the production staging semantics for Extension API + selected docs.
-                $extensionApiSrc = $tree.'/.hatfield/extensions/extension-api';
-                $extensionApiStaging = $staging.'/.hatfield/extensions/extension-api';
-                TestDirectoryIsolation::ensureDirectory($extensionApiStaging);
-                $cmd = 'rsync -a --delete --exclude '.escapeshellarg('docs/')
-                    .' '.escapeshellarg($extensionApiSrc.'/')
-                    .' '.escapeshellarg($extensionApiStaging.'/');
-                exec($cmd, $out, $code);
-                $this->assertSame(0, $code, implode("\n", $out));
-
-                $entries = (new BuiltinDocsCatalog())->discover($tree);
-                $this->assertNotSame([], $entries);
-                foreach ($entries as $entry) {
-                    $dest = $staging.'/'.$entry['relativePath'];
-                    TestDirectoryIsolation::ensureDirectory(\dirname($dest));
-                    copy($entry['absolutePath'], $dest);
-                }
-
-                $this->assertFileDoesNotExist($staging.'/.hatfield/extensions/extension-api/docs/private-unmarked.md');
-                foreach ($entries as $entry) {
-                    $dest = $staging.'/'.$entry['relativePath'];
-                    $this->assertFileExists($dest);
-                    $this->assertSame(
-                        (string) file_get_contents($entry['absolutePath']),
-                        (string) file_get_contents($dest),
-                        $entry['relativePath'],
-                    );
-                }
-            } finally {
-                TestDirectoryIsolation::removeDirectory($staging);
-            }
-        } finally {
-            TestDirectoryIsolation::removeDirectory($tree);
+        if (!\function_exists('symlink')) {
+            $this->markTestSkipped('symlink() unavailable on this platform');
         }
 
-        // Silence unused variable if root only used for path stability.
-        $this->assertDirectoryExists($root);
+        $staging = TestDirectoryIsolation::createProjectTempDir('phar-materialize-staging');
+        $packageSrc = TestDirectoryIsolation::createProjectTempDir('phar-extension-api-src');
+        try {
+            // Path-package source (outside staging) with docs + a non-doc file.
+            TestDirectoryIsolation::ensureDirectory($packageSrc.'/docs');
+            file_put_contents(
+                $packageSrc.'/docs/extension-api.md',
+                "---\nbuiltin: true\ndescription: API\n---\n\n# Extension API\n\nbody\n",
+            );
+            file_put_contents($packageSrc.'/composer.json', "{}\n");
+            file_put_contents($packageSrc.'/KEEP.txt', "retain-me\n");
+
+            $vendorLink = $staging.'/vendor/ineersa/hatfield-extension-api';
+            TestDirectoryIsolation::ensureDirectory(\dirname($vendorLink));
+            if (!@symlink($packageSrc, $vendorLink)) {
+                $this->markTestSkipped('Unable to create path-package symlink in test environment');
+            }
+
+            // Selected canonical doc staged separately (production stages catalog paths).
+            $canonical = $staging.'/.hatfield/extensions/extension-api/docs/extension-api.md';
+            TestDirectoryIsolation::ensureDirectory(\dirname($canonical));
+            $canonicalBytes = "---\nbuiltin: true\ndescription: API\n---\n\n# Extension API\n\ncanonical-bytes\n";
+            file_put_contents($canonical, $canonicalBytes);
+
+            \CastorTasks\materialize_vendor_path_package_symlinks($staging);
+
+            $this->assertFalse(is_link($vendorLink), 'vendor path-package must be materialized to a real directory');
+            $this->assertDirectoryDoesNotExist($vendorLink.'/docs');
+            $this->assertFileDoesNotExist($vendorLink.'/docs/extension-api.md');
+            $this->assertFileExists($vendorLink.'/KEEP.txt');
+            $this->assertSame("retain-me\n", (string) file_get_contents($vendorLink.'/KEEP.txt'));
+            $this->assertFileExists($vendorLink.'/composer.json');
+            $this->assertSame($canonicalBytes, (string) file_get_contents($canonical));
+        } finally {
+            TestDirectoryIsolation::removeDirectory($staging);
+            TestDirectoryIsolation::removeDirectory($packageSrc);
+        }
     }
 
     public function testCatalogRelativePathsAreOnlyApprovedRoots(): void
@@ -169,6 +166,16 @@ final class PharDocsStagingContractTest extends TestCase
                 $entry['relativePath'],
             );
             $this->assertStringEndsWith('.md', $entry['relativePath']);
+            // Selected path must resolve under its declared root (separator-boundary).
+            $rootPath = $root.'/'.$entry['rootRelative'];
+            $rootReal = realpath($rootPath);
+            $pathReal = realpath($entry['absolutePath']);
+            $this->assertNotFalse($rootReal);
+            $this->assertNotFalse($pathReal);
+            $this->assertTrue(
+                BuiltinDocsCatalog::pathIsUnderRoot($pathReal, $rootReal),
+                $entry['absolutePath'].' not under '.$rootReal,
+            );
         }
     }
 

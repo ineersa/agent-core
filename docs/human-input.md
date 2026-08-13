@@ -18,12 +18,17 @@ The model supplies structured arguments — **not** raw JSON Schema:
 
 | Argument | Meaning |
 |---|---|
-| `question` or `prompt` | Required user-facing text (either non-empty) |
+| `question` | **Required** user-facing text |
+| `prompt` | Deprecated runtime compatibility alias for `question` (not an alternative schema field; prefer `question`) |
 | `kind` / `ui_kind` | Optional: `text`, `confirm`, `choice`, `approval` |
 | `choices` | Required non-empty string list when kind is `choice` |
 | `default` | Optional default value |
-| `question_id` | Optional stable id; otherwise derived from prompt/kind/choices/header |
+| `question_id` | Optional stable id; otherwise derived from question/kind/choices/header |
 | `header` | Optional short header |
+
+Provider-facing schema requires `question`. Runtime still accepts non-empty `prompt` as a
+deprecated compatibility alias when deserializing older payloads — do not treat it as a
+second first-class schema field.
 
 Hatfield **derives** the answer schema internally from kind/choices (boolean for
 confirm/approval, string enum for choices, otherwise string). Do not send a schema
@@ -39,11 +44,11 @@ Typical outcomes:
 
 ## End-to-end flow
 
-1. Model invokes `ask_human` with question/kind/choices (as above).
-2. Runtime records a pending human-input request and projects `human_input.requested`
-   from AgentCore `waiting_human` (see runtime protocol docs).
+1. Model invokes `ask_human` with `question` / kind / choices (as above).
+2. Runtime records a pending human-input request and projects the runtime event
+   `human_input.requested` from AgentCore `waiting_human`.
 3. TUI `QuestionCoordinator` / controller renders the overlay.
-4. Human submits `answer_human` (runtime command) or cancels.
+4. Human submits the runtime command `answer_human` or cancels.
 5. Runtime resumes the agent with the answer payload attached to the waiting tool call.
 
 Answers are correlated to the exact pending request — not “latest question wins” across unrelated ids.

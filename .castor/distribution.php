@@ -1434,16 +1434,13 @@ function distribution_assert_phar_bundled_resources(string $pharPath): void
             throw new RuntimeException('PHAR built-in doc bytes must match source: '.$entry['relativePath']);
         }
     }
-    if (isset($phar['vendor/ineersa/hatfield-extension-api/docs/extension-api.md'])) {
-        throw new RuntimeException('PHAR must not ship vendor path-package Extension API docs duplicates');
-    }
-
-    // Exact Markdown inventory under both canonical archive doc roots
-    // (not vendor/ path-package duplicates of the Extension API).
+    // Exact Markdown inventory under both canonical archive doc roots, and
+    // reject ANY archive entry under the vendor path-package Extension API docs tree.
     $canonicalPrefixes = [
         Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::CORE_DOCS_RELATIVE.'/',
         Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::EXTENSION_API_DOCS_RELATIVE.'/',
     ];
+    $vendorApiDocsPrefix = 'vendor/ineersa/hatfield-extension-api/docs/';
     foreach (new RecursiveIteratorIterator($phar) as $file) {
         /** @var PharFileInfo $file */
         if (!$file->isFile()) {
@@ -1452,6 +1449,9 @@ function distribution_assert_phar_bundled_resources(string $pharPath): void
         $rel = str_replace('\\', '/', $file->getPathname());
         if (str_contains($rel, '.phar/')) {
             $rel = substr($rel, strpos($rel, '.phar/') + strlen('.phar/'));
+        }
+        if (str_starts_with($rel, $vendorApiDocsPrefix) || $rel === rtrim($vendorApiDocsPrefix, '/')) {
+            throw new RuntimeException('PHAR must not ship vendor path-package Extension API docs entry: '.$rel);
         }
         if (!str_ends_with($rel, '.md')) {
             continue;
