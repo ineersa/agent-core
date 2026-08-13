@@ -40,8 +40,11 @@ class DeferredSubagentChild
     #[ORM\Column(type: 'text')]
     public string $task = '';
 
-    #[ORM\Column(name: 'definition_model', type: 'string', length: 255, nullable: true)]
-    public ?string $definitionModel = null;
+    #[ORM\Column(name: 'launch_model', type: 'string', length: 255)]
+    public string $launchModel = '';
+
+    #[ORM\Column(name: 'launch_reasoning', type: 'string', length: 64)]
+    public string $launchReasoning = '';
 
     #[ORM\Column(name: 'launch_status', type: 'string', length: 32, enumType: DeferredSubagentChildLaunchStatusEnum::class)]
     public DeferredSubagentChildLaunchStatusEnum $launchStatus = DeferredSubagentChildLaunchStatusEnum::Reserved;

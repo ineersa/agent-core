@@ -35,7 +35,7 @@ final class SubagentChildExtensionMetadataTest extends IsolatedKernelTestCase
                 artifactId: 'agent_ext1',
                 displayName: 'scout',
                 taskSummary: 'task',
-                definitionModel: 'llama_cpp_test/test',
+                launchModel: 'llama_cpp_test/test', launchReasoning: 'medium',
                 artifactKind: AgentArtifactKindEnum::Subagent,
             ),
             definition: new AgentDefinitionDTO(
@@ -74,7 +74,7 @@ final class SubagentChildExtensionMetadataTest extends IsolatedKernelTestCase
                 artifactId: 'agent_fork_ext1',
                 displayName: 'fork',
                 taskSummary: 'fork task',
-                definitionModel: null,
+                launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium',
                 artifactKind: AgentArtifactKindEnum::Fork,
             ),
             task: new ForkLaunchTaskDTO(

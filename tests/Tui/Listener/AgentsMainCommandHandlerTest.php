@@ -27,7 +27,8 @@ final class AgentsMainCommandHandlerTest extends TestCase
             SubagentLiveStatusEnum::Running,
             'task',
             1,
-        ));
+            'deepseek/deepseek-v4-flash',
+            'medium'));
         $state->subagentLiveView->lastLiveWorkingMessage = 'Child agent working...';
 
         $screen = $this->screen();

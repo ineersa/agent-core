@@ -32,7 +32,7 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
     {
         $harness = new VirtualTuiHarness(sessionId: 'obs-before-snapshot');
         $state = new TuiSessionState('obs-before-snapshot');
-        $child = new SubagentLiveChildDTO('child-run-1', 'art-1', 'scout', SubagentLiveStatusEnum::Completed, 'task', 1);
+        $child = new SubagentLiveChildDTO('child-run-1', 'art-1', 'scout', SubagentLiveStatusEnum::Completed, 'task', 1, 'deepseek/deepseek-v4-flash', 'medium');
         $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
             type: 'tool_execution.output_delta',
             runId: 'obs-before-snapshot',
@@ -48,7 +48,8 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
                     'artifact_id' => 'art-1',
                     'agent_run_id' => 'child-run-1',
                     'task_summary' => 'task',
-                ],
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'medium', ],
             ],
         ));
 

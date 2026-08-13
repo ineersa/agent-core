@@ -399,7 +399,8 @@ final class SubagentLivePickerControllerTest extends TestCase
                     'artifact_id' => 'agent_scout',
                     'agent_run_id' => 'scout-run',
                     'task_summary' => 'list docs',
-                ],
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'medium', ],
             ],
         );
 
@@ -613,6 +614,8 @@ final class SubagentLivePickerControllerTest extends TestCase
                     'artifact_id' => $artifactId,
                     'agent_run_id' => $runId,
                     'task_summary' => $task,
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'medium',
                 ],
             ],
         ));

@@ -68,22 +68,25 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
         );
     }
 
-    public function testMissingParentReasoningFailsClosedWhenDefinitionHasNoThinking(): void
+    public function testMissingParentRunStartedReasoningUsesCanonicalDefault(): void
     {
         $parentRunId = 'parent-missing-reasoning';
         $this->seedParentRunStarted($parentRunId, reasoning: null);
         $factory = self::getContainer()->get(SubagentChildLaunchInputFactory::class);
         \assert($factory instanceof SubagentChildLaunchInputFactory);
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('parent run reasoning');
-        $factory->buildPrepared(
+        $prepared = $factory->buildPrepared(
             identity: $this->identity($parentRunId, null),
             definition: $this->definition(null),
             allowedTools: [],
             mcp: [],
             parentModel: 'deepseek/deepseek-v4-flash',
         );
+
+        $this->assertSame('deepseek/deepseek-v4-flash', $prepared->startRunInput->metadata?->model);
+        // Canonical ModelResolver product default when run_started omits reasoning.
+        $this->assertSame('medium', $prepared->startRunInput->metadata?->reasoning);
+        $this->assertSame('medium', $prepared->identity->launchReasoning);
     }
 
     private function seedParentRunStarted(string $parentRunId, ?string $reasoning): void
@@ -112,7 +115,7 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
             artifactId: 'agent_child1',
             displayName: 'scout',
             taskSummary: 'task',
-            definitionModel: $model,
+            launchModel: $model ?? 'deepseek/deepseek-v4-flash', launchReasoning: 'medium',
             artifactKind: AgentArtifactKindEnum::Subagent,
         );
     }

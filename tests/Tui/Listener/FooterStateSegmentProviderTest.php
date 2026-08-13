@@ -241,7 +241,8 @@ class FooterStateSegmentProviderTest extends TestCase
             status: \Ineersa\Tui\Runtime\SubagentLiveStatusEnum::Running,
             taskSummary: 'Task',
             lastActivityAtMs: 1,
-        ));
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium'));
 
         $segments = (new FooterStateSegmentProvider($state))->getSegments();
         $texts = array_map(static fn ($s) => $s->text, $segments);
@@ -293,15 +294,18 @@ class FooterStateSegmentProviderTest extends TestCase
                 'tool_call_id' => 'tc_subagent',
                 'tool_name' => 'subagent',
                 'delta' => '',
-                'subagent_progress' => array_merge([
-                    'mode' => 'single',
-                    'status' => 'completed',
-                    'agent_name' => 'scout',
-                    'artifact_id' => 'agent_ctx',
-                    'agent_run_id' => 'child-run-ctx',
-                    'task_summary' => 'Context stats',
-                    'reasoning' => 'high',
-                ], \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverrides()),
+                'subagent_progress' => array_merge(
+                    \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverrides(),
+                    [
+                        'mode' => 'single',
+                        'status' => 'completed',
+                        'agent_name' => 'scout',
+                        'artifact_id' => 'agent_ctx',
+                        'agent_run_id' => 'child-run-ctx',
+                        'task_summary' => 'Context stats',
+                        'reasoning' => 'high',
+                    ],
+                ),
             ],
         ));
 

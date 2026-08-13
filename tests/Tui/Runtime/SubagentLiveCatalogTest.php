@@ -212,12 +212,45 @@ final class SubagentLiveCatalogTest extends TestCase
     /** @param array<string, mixed> $progress */
     private function progressEvent(string $runId, array $progress): RuntimeEvent
     {
+        $progress = $this->withConcreteIdentity($progress);
+
         return new RuntimeEvent(
             type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             runId: $runId,
             seq: 1,
             payload: ['tool_call_id' => 'tc1', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => $progress],
         );
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     *
+     * @return array<string, mixed>
+     */
+    private function withConcreteIdentity(array $progress): array
+    {
+        if ('parallel' === ($progress['mode'] ?? null) && isset($progress['children']) && \is_array($progress['children'])) {
+            $children = [];
+            foreach ($progress['children'] as $child) {
+                if (!\is_array($child)) {
+                    $children[] = $child;
+                    continue;
+                }
+                $children[] = $this->withConcreteIdentity($child);
+            }
+            $progress['children'] = $children;
+
+            return $progress;
+        }
+
+        if (!isset($progress['model']) || !\is_string($progress['model']) || '' === trim($progress['model'])) {
+            $progress['model'] = 'deepseek/deepseek-v4-flash';
+        }
+        if (!isset($progress['reasoning']) || !\is_string($progress['reasoning']) || '' === trim($progress['reasoning'])) {
+            $progress['reasoning'] = 'medium';
+        }
+
+        return $progress;
     }
 
     private function childContextString(\Ineersa\Tui\Runtime\SubagentLiveChildDTO $child, string $property): ?string

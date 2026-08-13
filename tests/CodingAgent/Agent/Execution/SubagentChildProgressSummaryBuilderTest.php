@@ -89,6 +89,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             $artifactA,
             new RunState(runId: $childA, status: RunStatus::Failed, version: 1, turnNo: 1, lastSeq: 2),
             'deepseek/deepseek-v4-flash',
+            'medium',
         );
         $summaryB = $builder->summarize(
             $parentRunId,
@@ -96,6 +97,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             $artifactB,
             new RunState(runId: $childB, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 2),
             'deepseek/deepseek-v4-flash',
+            'medium',
         );
 
         $this->assertSame('openai-codex/gpt-5.6-sol', $summaryA->model);
@@ -183,7 +185,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             new FileRunSequenceAllocator(),
         );
         $builder = new SubagentChildProgressSummaryBuilder($factory);
-        $summary = $builder->summarize($parentRunId, $childRunId, $artifactId, $childState, 'deepseek/deepseek-v4-flash');
+        $summary = $builder->summarize($parentRunId, $childRunId, $artifactId, $childState, 'deepseek/deepseek-v4-flash', 'medium');
 
         $this->assertSame(2, $summary->toolCount);
         $this->assertSame(2, $summary->llmStepCount);

@@ -118,6 +118,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
             'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
             'appConfig' => self::getContainer()->get(AppConfig::class),
+            'modelResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
         ]);
 
         $this->expectException(ToolCallException::class);
@@ -254,6 +255,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
             'appConfig' => self::getContainer()->get(AppConfig::class),
+            'modelResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
             'clock' => new NativeClock(),
             'batchRepository' => self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
             'lifecycleListener' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener::class),

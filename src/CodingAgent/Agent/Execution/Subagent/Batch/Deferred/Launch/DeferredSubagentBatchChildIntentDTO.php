@@ -9,18 +9,29 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
  */
 final readonly class DeferredSubagentBatchChildIntentDTO
 {
+    public readonly string $launchModel;
+    public readonly string $launchReasoning;
+
     public function __construct(
         public int $batchIndex,
         public string $childRunId,
         public string $artifactId,
         public string $agentName,
         public string $task,
-        public ?string $definitionModel,
+        string $launchModel,
+        string $launchReasoning,
     ) {
+        $model = trim($launchModel);
+        $reasoning = trim($launchReasoning);
+        if ('' === $model || '' === $reasoning) {
+            throw new \InvalidArgumentException('Deferred child intent requires non-empty launch model and reasoning.');
+        }
+        $this->launchModel = $model;
+        $this->launchReasoning = $reasoning;
     }
 
     /**
-     * @return array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}
+     * @return array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, launchModel: string, launchReasoning: string}
      */
     public function toReserveArray(): array
     {
@@ -30,7 +41,8 @@ final readonly class DeferredSubagentBatchChildIntentDTO
             'artifactId' => $this->artifactId,
             'agentName' => $this->agentName,
             'task' => $this->task,
-            'definitionModel' => $this->definitionModel,
+            'launchModel' => $this->launchModel,
+            'launchReasoning' => $this->launchReasoning,
         ];
     }
 }

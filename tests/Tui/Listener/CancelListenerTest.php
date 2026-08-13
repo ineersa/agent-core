@@ -301,6 +301,8 @@ class CancelListenerTest extends TestCase
             status: SubagentLiveStatusEnum::Running,
             taskSummary: 'task',
             lastActivityAtMs: 1,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         );
         $this->state->subagentLiveView->enter($child);
         $this->state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
@@ -328,6 +330,8 @@ class CancelListenerTest extends TestCase
             status: SubagentLiveStatusEnum::WaitingHuman,
             taskSummary: 'task',
             lastActivityAtMs: 1,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         );
         $this->state->subagentLiveView->enter($child);
         $this->state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
@@ -374,6 +378,8 @@ class CancelListenerTest extends TestCase
             status: SubagentLiveStatusEnum::WaitingHuman,
             taskSummary: 'task',
             lastActivityAtMs: 1,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         );
         $this->state->subagentLiveView->enter($child);
         $this->state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
@@ -392,7 +398,8 @@ class CancelListenerTest extends TestCase
                     'artifact_id' => 'agent_confirm',
                     'agent_run_id' => 'child-run-confirm',
                     'task_summary' => 'task',
-                ],
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'medium', ],
             ],
         ));
 
@@ -435,6 +442,8 @@ class CancelListenerTest extends TestCase
             status: SubagentLiveStatusEnum::Running,
             taskSummary: 'task',
             lastActivityAtMs: 1,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         );
         $this->state->subagentLiveView->enter($child);
         $this->state->subagentLiveView->childActivity = RunActivityStateEnum::Running;

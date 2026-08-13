@@ -77,29 +77,33 @@ final class SubagentLaunchPreparationService
         $artifactId ??= 'agent_'.bin2hex(random_bytes(8));
         $childRunId ??= Uuid::v4()->toRfc4122();
 
+        // Seed identity carries ids/task only; buildPrepared rewrites with concrete launch model/reasoning.
         $identity = $identityTemplate ?? new ChildRunIdentityDTO(
             parentRunId: $parentRunId,
             childRunId: $childRunId,
             artifactId: $artifactId,
             displayName: $agentName,
             taskSummary: $task,
-            definitionModel: $definition->model,
+            launchModel: $this->seedLaunchModel($definition->model, $parentModel),
+            launchReasoning: $this->seedLaunchReasoning($definition->thinking),
             artifactKind: AgentArtifactKindEnum::Subagent,
         );
 
-        if (!$skipReservation) {
-            $this->artifactLifecycle->reservePending($identity);
-        }
-
         $policy = $this->definitionPolicy->resolveToolPolicy($definition, $parentRunId);
 
-        return $this->launchInputFactory->buildPrepared(
+        $prepared = $this->launchInputFactory->buildPrepared(
             $identity,
             $definition,
             $policy['tools'],
             $policy['mcp'],
             parentModel: $parentModel,
         );
+
+        if (!$skipReservation) {
+            $this->artifactLifecycle->reservePending($prepared->identity);
+        }
+
+        return $prepared;
     }
 
     /**
@@ -122,21 +126,19 @@ final class SubagentLaunchPreparationService
         $artifactId ??= 'agent_'.bin2hex(random_bytes(8));
         $childRunId ??= Uuid::v4()->toRfc4122();
 
+        // Seed identity carries ids/task only; buildPrepared rewrites with concrete launch model/reasoning.
         $identity = $identityTemplate ?? new ChildRunIdentityDTO(
             parentRunId: $parentRunId,
             childRunId: $childRunId,
             artifactId: $artifactId,
             displayName: $profile->displayAgentName,
             taskSummary: $task,
-            definitionModel: $profile->definition->model,
+            launchModel: $this->seedLaunchModel($profile->definition->model, $parentModel),
+            launchReasoning: $this->seedLaunchReasoning($profile->reasoningOverride ?? $profile->definition->thinking),
             artifactKind: $profile->artifactKind,
         );
 
-        if (!$skipReservation) {
-            $this->artifactLifecycle->reservePending($identity);
-        }
-
-        return $this->forkLaunchInputBuilder->buildPrepared(
+        $prepared = $this->forkLaunchInputBuilder->buildPrepared(
             $identity,
             new ForkLaunchTaskDTO(
                 task: $task,
@@ -147,5 +149,34 @@ final class SubagentLaunchPreparationService
             $this->forkToolPolicyResolver->resolve($parentRunId),
             parentModel: $parentModel,
         );
+
+        if (!$skipReservation) {
+            $this->artifactLifecycle->reservePending($prepared->identity);
+        }
+
+        return $prepared;
+    }
+
+    private function seedLaunchModel(?string $definitionModel, ?string $parentModel): string
+    {
+        foreach ([$definitionModel, $parentModel] as $candidate) {
+            if (\is_string($candidate) && '' !== trim($candidate)) {
+                return trim($candidate);
+            }
+        }
+
+        // Temporary seed so ChildRunIdentityDTO can exist before factory resolution.
+        // buildPrepared always rewrites identity from canonical resolution.
+        return 'pending-model';
+    }
+
+    private function seedLaunchReasoning(?string $thinking): string
+    {
+        if (\is_string($thinking) && '' !== trim($thinking)) {
+            return trim($thinking);
+        }
+
+        // Temporary seed; buildPrepared rewrites from canonical resolution.
+        return 'medium';
     }
 }

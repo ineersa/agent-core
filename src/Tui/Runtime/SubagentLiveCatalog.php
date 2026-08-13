@@ -141,8 +141,8 @@ final class SubagentLiveCatalog
         $status = SubagentLiveStatusEnum::fromProgressString((string) ($row['status'] ?? 'running'));
         $taskSummary = trim((string) ($row['task_summary'] ?? ''));
 
-        $model = $this->optionalString($row['model'] ?? null) ?? '';
-        $reasoning = $this->optionalString($row['reasoning'] ?? null) ?? '';
+        $model = $this->optionalString($row['model'] ?? null);
+        $reasoning = $this->optionalString($row['reasoning'] ?? null);
         $latestInputTokens = $this->optionalPositiveInt($row['latest_input_tokens'] ?? null);
         $contextWindow = $this->optionalPositiveInt($row['context_window'] ?? null);
 
@@ -161,12 +161,16 @@ final class SubagentLiveCatalog
             return;
         }
 
-        // Progress rows may omit model/reasoning on later ticks; preserve last known values.
-        if ('' === $model && null !== $existing) {
-            $model = $existing->model;
+        // Progress rows may omit model/reasoning on later ticks; preserve last known concrete values.
+        // Initial creation requires concrete identity from the durable progress payload.
+        if (null === $model) {
+            $model = null !== $existing ? $existing->model : null;
         }
-        if ('' === $reasoning && null !== $existing) {
-            $reasoning = $existing->reasoning;
+        if (null === $reasoning) {
+            $reasoning = null !== $existing ? $existing->reasoning : null;
+        }
+        if (null === $model || null === $reasoning) {
+            return;
         }
         if (0 === $latestInputTokens && null !== $existing) {
             $latestInputTokens = $existing->latestInputTokens;

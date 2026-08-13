@@ -237,6 +237,8 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
             status: SubagentLiveStatusEnum::Running,
             taskSummary: 'replay test',
             lastActivityAtMs: 1,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         );
         $state->childActivity = RunActivityStateEnum::Running;
         $state->childLastPoll = 0.0;

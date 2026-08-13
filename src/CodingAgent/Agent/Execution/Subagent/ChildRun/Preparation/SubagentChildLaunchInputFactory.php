@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunD
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 
@@ -31,7 +32,24 @@ final class SubagentChildLaunchInputFactory
         private readonly ChildExtensionSelectionService $childExtensionSelection,
         private readonly ToolRegistryInterface $toolRegistry,
         private readonly SubagentRunMetadataReader $metadataReader,
+        private readonly ModelResolver $modelResolver,
     ) {
+    }
+
+    /**
+     * Resolve concrete non-empty launch model/reasoning without building prompts.
+     *
+     * @return array{model: string, reasoning: string}
+     */
+    public function resolveLaunchIdentity(
+        AgentDefinitionDTO $definition,
+        string $parentRunId,
+        ?string $parentModel = null,
+    ): array {
+        return [
+            'model' => $this->resolveEffectiveChildModel($definition->model, $parentModel),
+            'reasoning' => $this->resolveEffectiveChildReasoning($definition->thinking, $parentRunId),
+        ];
     }
 
     /**
@@ -67,8 +85,8 @@ final class SubagentChildLaunchInputFactory
         // Pin the effective child model at launch from explicit override or
         // the exact parent execution model that produced the tool call.
         $effectiveModel = $this->resolveEffectiveChildModel($definition->model, $parentModel);
-        // Reasoning follows the same launch precedence as forks: explicit
-        // definition thinking, else parent run_started.metadata.reasoning.
+        // Reasoning: definition thinking override, else canonical parent/session
+        // resolution (run_started metadata → session → ai.default_reasoning → medium).
         $effectiveReasoning = $this->resolveEffectiveChildReasoning(
             $definition->thinking,
             $identity->parentRunId,
@@ -85,8 +103,21 @@ final class SubagentChildLaunchInputFactory
             extensions: $effectiveExtensions,
         );
 
+        // Prepared identity always carries the concrete launch identity used for RunMetadata.
+        $launchIdentity = new ChildRunIdentityDTO(
+            parentRunId: $identity->parentRunId,
+            childRunId: $identity->childRunId,
+            artifactId: $identity->artifactId,
+            displayName: $identity->displayName,
+            taskSummary: $identity->taskSummary,
+            launchModel: $effectiveModel,
+            launchReasoning: $effectiveReasoning,
+            artifactKind: $identity->artifactKind,
+            batchIndex: $identity->batchIndex,
+        );
+
         return new PreparedAgentChildRunDTO(
-            identity: $identity,
+            identity: $launchIdentity,
             startRunInput: new StartRunInput(
                 systemPrompt: $prompt['systemPrompt'],
                 messages: $prompt['messages'],
@@ -149,18 +180,27 @@ final class SubagentChildLaunchInputFactory
 
     private function resolveEffectiveChildReasoning(?string $definitionThinking, string $parentRunId): string
     {
-        $explicit = null !== $definitionThinking ? trim($definitionThinking) : '';
-        if ('' !== $explicit) {
-            return $explicit;
+        $explicit = null !== $definitionThinking ? trim($definitionThinking) : null;
+        if (null !== $explicit && '' === $explicit) {
+            $explicit = null;
         }
 
-        $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId) ?? [];
-        $parentReasoning = $parentMetadata['reasoning'] ?? null;
-        if (\is_string($parentReasoning) && '' !== trim($parentReasoning)) {
-            return trim($parentReasoning);
+        // Prefer durable parent run_started reasoning when definition has no override,
+        // then fall through the canonical ModelResolver session/default/product chain.
+        if (null === $explicit) {
+            $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId) ?? [];
+            $parentReasoning = $parentMetadata['reasoning'] ?? null;
+            if (\is_string($parentReasoning) && '' !== trim($parentReasoning)) {
+                return trim($parentReasoning);
+            }
         }
 
-        throw new \RuntimeException('Cannot launch child run: missing explicit child thinking and parent run reasoning snapshot.');
+        $resolved = trim($this->modelResolver->resolveInitialReasoning($explicit, $parentRunId));
+        if ('' === $resolved) {
+            throw new \RuntimeException('Cannot launch child run: canonical reasoning resolution produced an empty value.');
+        }
+
+        return $resolved;
     }
 
     private function resolveContextWindowForModel(?string $model): int

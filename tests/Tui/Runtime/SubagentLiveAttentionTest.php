@@ -32,6 +32,8 @@ final class SubagentLiveAttentionTest extends TestCase
             status: SubagentLiveStatusEnum::WaitingHuman,
             taskSummary: 'Task',
             lastActivityAtMs: 1,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         ));
         $state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
         $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
@@ -64,6 +66,8 @@ final class SubagentLiveAttentionTest extends TestCase
             status: SubagentLiveStatusEnum::WaitingHuman,
             taskSummary: 'Task',
             lastActivityAtMs: 1,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         ));
         $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
@@ -129,6 +133,8 @@ final class SubagentLiveAttentionTest extends TestCase
             status: SubagentLiveStatusEnum::Running,
             taskSummary: 'Task',
             lastActivityAtMs: 1,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         ));
         $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
 
@@ -206,6 +212,8 @@ final class SubagentLiveAttentionTest extends TestCase
             status: SubagentLiveStatusEnum::Running,
             taskSummary: 'Task',
             lastActivityAtMs: 1,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         ));
 
         $screen = new ChatScreen(
@@ -232,6 +240,13 @@ final class SubagentLiveAttentionTest extends TestCase
     /** @param array<string, mixed> $progress */
     private function progressEvent(array $progress): RuntimeEvent
     {
+        if (!isset($progress['model']) || !\is_string($progress['model']) || '' === trim($progress['model'])) {
+            $progress['model'] = 'deepseek/deepseek-v4-flash';
+        }
+        if (!isset($progress['reasoning']) || !\is_string($progress['reasoning']) || '' === trim($progress['reasoning'])) {
+            $progress['reasoning'] = 'medium';
+        }
+
         return new RuntimeEvent(
             type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             runId: 'parent-1',

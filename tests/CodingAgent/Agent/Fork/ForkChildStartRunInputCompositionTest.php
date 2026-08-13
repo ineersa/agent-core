@@ -42,7 +42,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             artifactId: 'artifact-fork-1',
             displayName: 'fork',
             taskSummary: 'Delegated task body',
-            definitionModel: null,
+            launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium',
             artifactKind: AgentArtifactKindEnum::Fork,
         );
 
@@ -96,7 +96,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             artifactId: 'artifact-fork-sys-1',
             displayName: 'fork',
             taskSummary: 'Sys contract task',
-            definitionModel: null,
+            launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium',
             artifactKind: AgentArtifactKindEnum::Fork,
         );
         $policy = ['tools' => ['read'], 'mcp' => ['mode' => 'inherit', 'tools' => []]];
@@ -144,7 +144,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             artifactId: 'artifact-fork-compact-1',
             displayName: 'fork',
             taskSummary: 'Compact task',
-            definitionModel: null,
+            launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium',
             artifactKind: AgentArtifactKindEnum::Fork,
         );
         $policy = ['tools' => ['read'], 'mcp' => ['mode' => 'inherit', 'tools' => []]];
@@ -197,7 +197,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             artifactId: 'artifact-fork-defs',
             displayName: 'fork',
             taskSummary: 'Task',
-            definitionModel: null,
+            launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium',
             artifactKind: AgentArtifactKindEnum::Fork,
         );
         $policy = ['tools' => ['read'], 'mcp' => ['mode' => 'inherit', 'tools' => []]];
@@ -232,7 +232,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             artifactId: 'artifact-fork-sys-tools',
             displayName: 'fork',
             taskSummary: 'Task',
-            definitionModel: null,
+            launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium',
             artifactKind: AgentArtifactKindEnum::Fork,
         );
         $policy = ['tools' => ['read', 'bash'], 'mcp' => ['mode' => 'inherit', 'tools' => []]];
@@ -294,7 +294,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             artifactId: 'artifact-fork-no-contract',
             displayName: 'fork',
             taskSummary: 'Task',
-            definitionModel: null,
+            launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium',
             artifactKind: AgentArtifactKindEnum::Fork,
         );
         $policy = ['tools' => ['read'], 'mcp' => ['mode' => 'inherit', 'tools' => []]];

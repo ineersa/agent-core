@@ -164,6 +164,8 @@ final class SubagentProgressEventsFixture
                 'artifact_id' => 'agent_e2e_alpha_pick',
                 'agent_run_id' => $sessionId.'_child_alpha_001',
                 'task_summary' => 'Alpha unique picker row',
+                'model' => ChildContextStatisticsFixture::MODEL,
+                'reasoning' => 'high',
             ],
             [
                 'index' => 2,
@@ -172,6 +174,8 @@ final class SubagentProgressEventsFixture
                 'artifact_id' => 'agent_e2e_bravo_pick',
                 'agent_run_id' => $sessionId.'_child_bravo_001',
                 'task_summary' => 'Bravo unique picker row',
+                'model' => ChildContextStatisticsFixture::MODEL,
+                'reasoning' => 'high',
             ],
             [
                 'index' => 3,
@@ -180,6 +184,8 @@ final class SubagentProgressEventsFixture
                 'artifact_id' => 'agent_e2e_charlie_pick',
                 'agent_run_id' => $sessionId.'_child_charlie_001',
                 'task_summary' => 'Charlie unique picker row',
+                'model' => ChildContextStatisticsFixture::MODEL,
+                'reasoning' => 'high',
             ],
         ];
 
