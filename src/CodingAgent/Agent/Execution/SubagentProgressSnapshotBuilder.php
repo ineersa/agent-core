@@ -184,7 +184,18 @@ final class SubagentProgressSnapshotBuilder
         int $elapsedMs,
         ?SubagentChildProgressSummary $enrichment,
     ): SubagentProgressSingleSnapshotDTO {
-        $e = $this->normalizedEnrichment($enrichment);
+        if (null === $enrichment) {
+            return new SubagentProgressSingleSnapshotDTO(
+                mode: 'single',
+                status: $status,
+                elapsedMs: max(0, $elapsedMs),
+                agentName: $agentName,
+                artifactId: $artifactId,
+                agentRunId: $agentRunId,
+                taskSummary: $taskSummary,
+                turnNo: $childTurnNo,
+            );
+        }
 
         return new SubagentProgressSingleSnapshotDTO(
             mode: 'single',
@@ -195,21 +206,21 @@ final class SubagentProgressSnapshotBuilder
             agentRunId: $agentRunId,
             taskSummary: $taskSummary,
             turnNo: $childTurnNo,
-            toolCount: $e['toolCount'],
-            llmStepCount: $e['llmStepCount'],
-            inputTokens: $e['inputTokens'],
-            latestInputTokens: $e['latestInputTokens'],
-            outputTokens: $e['outputTokens'],
-            reasoningTokens: $e['reasoningTokens'],
-            totalTokens: $e['totalTokens'],
-            recentTools: $e['recentTools'],
-            cost: $e['cost'],
-            model: $e['model'],
-            contextWindow: $e['contextWindow'],
-            provider: $e['provider'],
-            artifactPath: $e['artifactPath'],
-            assistantExcerpt: $e['assistantExcerpt'],
-            activeTool: $e['activeTool'],
+            toolCount: $enrichment->toolCount,
+            llmStepCount: $enrichment->llmStepCount,
+            inputTokens: $enrichment->inputTokens,
+            latestInputTokens: $enrichment->latestInputTokens,
+            outputTokens: $enrichment->outputTokens,
+            reasoningTokens: $enrichment->reasoningTokens,
+            totalTokens: $enrichment->totalTokens,
+            recentTools: $enrichment->recentTools,
+            cost: (null !== $enrichment->cost && $enrichment->cost > 0.0) ? $enrichment->cost : null,
+            model: (null !== $enrichment->model && '' !== $enrichment->model) ? $enrichment->model : null,
+            contextWindow: $enrichment->contextWindow > 0 ? $enrichment->contextWindow : null,
+            provider: (null !== $enrichment->provider && '' !== $enrichment->provider) ? $enrichment->provider : null,
+            artifactPath: (null !== $enrichment->artifactPath && '' !== $enrichment->artifactPath) ? $enrichment->artifactPath : null,
+            assistantExcerpt: (null !== $enrichment->assistantExcerpt && '' !== $enrichment->assistantExcerpt) ? $enrichment->assistantExcerpt : null,
+            activeTool: (null !== $enrichment->activeToolLine && '' !== $enrichment->activeToolLine) ? $enrichment->activeToolLine : null,
         );
     }
 
@@ -223,7 +234,18 @@ final class SubagentProgressSnapshotBuilder
         int $turnNo,
         ?SubagentChildProgressSummary $enrichment,
     ): SubagentProgressChildRowDTO {
-        $e = $this->normalizedEnrichment($enrichment);
+        if (null === $enrichment) {
+            return new SubagentProgressChildRowDTO(
+                index: $index,
+                label: 'Step '.$index,
+                agentName: $agentName,
+                status: $status,
+                artifactId: $artifactId,
+                agentRunId: $agentRunId,
+                taskSummary: $taskSummary,
+                turnNo: $turnNo,
+            );
+        }
 
         return new SubagentProgressChildRowDTO(
             index: $index,
@@ -234,83 +256,21 @@ final class SubagentProgressSnapshotBuilder
             agentRunId: $agentRunId,
             taskSummary: $taskSummary,
             turnNo: $turnNo,
-            toolCount: $e['toolCount'],
-            llmStepCount: $e['llmStepCount'],
-            inputTokens: $e['inputTokens'],
-            latestInputTokens: $e['latestInputTokens'],
-            outputTokens: $e['outputTokens'],
-            reasoningTokens: $e['reasoningTokens'],
-            totalTokens: $e['totalTokens'],
-            recentTools: $e['recentTools'],
-            cost: $e['cost'],
-            model: $e['model'],
-            contextWindow: $e['contextWindow'],
-            provider: $e['provider'],
-            artifactPath: $e['artifactPath'],
-            assistantExcerpt: $e['assistantExcerpt'],
-            activeTool: $e['activeTool'],
+            toolCount: $enrichment->toolCount,
+            llmStepCount: $enrichment->llmStepCount,
+            inputTokens: $enrichment->inputTokens,
+            latestInputTokens: $enrichment->latestInputTokens,
+            outputTokens: $enrichment->outputTokens,
+            reasoningTokens: $enrichment->reasoningTokens,
+            totalTokens: $enrichment->totalTokens,
+            recentTools: $enrichment->recentTools,
+            cost: (null !== $enrichment->cost && $enrichment->cost > 0.0) ? $enrichment->cost : null,
+            model: (null !== $enrichment->model && '' !== $enrichment->model) ? $enrichment->model : null,
+            contextWindow: $enrichment->contextWindow > 0 ? $enrichment->contextWindow : null,
+            provider: (null !== $enrichment->provider && '' !== $enrichment->provider) ? $enrichment->provider : null,
+            artifactPath: (null !== $enrichment->artifactPath && '' !== $enrichment->artifactPath) ? $enrichment->artifactPath : null,
+            assistantExcerpt: (null !== $enrichment->assistantExcerpt && '' !== $enrichment->assistantExcerpt) ? $enrichment->assistantExcerpt : null,
+            activeTool: (null !== $enrichment->activeToolLine && '' !== $enrichment->activeToolLine) ? $enrichment->activeToolLine : null,
         );
-    }
-
-    /**
-     * Shared omission rules for optional enrichment fields (empty/zero → null/default).
-     *
-     * @return array{
-     *     toolCount: int,
-     *     llmStepCount: int,
-     *     inputTokens: int,
-     *     latestInputTokens: int,
-     *     outputTokens: int,
-     *     reasoningTokens: int,
-     *     totalTokens: int,
-     *     recentTools: list<string>,
-     *     cost: float|null,
-     *     model: string|null,
-     *     contextWindow: int|null,
-     *     provider: string|null,
-     *     artifactPath: string|null,
-     *     assistantExcerpt: string|null,
-     *     activeTool: string|null
-     * }
-     */
-    private function normalizedEnrichment(?SubagentChildProgressSummary $enrichment): array
-    {
-        if (null === $enrichment) {
-            return [
-                'toolCount' => 0,
-                'llmStepCount' => 0,
-                'inputTokens' => 0,
-                'latestInputTokens' => 0,
-                'outputTokens' => 0,
-                'reasoningTokens' => 0,
-                'totalTokens' => 0,
-                'recentTools' => [],
-                'cost' => null,
-                'model' => null,
-                'contextWindow' => null,
-                'provider' => null,
-                'artifactPath' => null,
-                'assistantExcerpt' => null,
-                'activeTool' => null,
-            ];
-        }
-
-        return [
-            'toolCount' => $enrichment->toolCount,
-            'llmStepCount' => $enrichment->llmStepCount,
-            'inputTokens' => $enrichment->inputTokens,
-            'latestInputTokens' => $enrichment->latestInputTokens,
-            'outputTokens' => $enrichment->outputTokens,
-            'reasoningTokens' => $enrichment->reasoningTokens,
-            'totalTokens' => $enrichment->totalTokens,
-            'recentTools' => $enrichment->recentTools,
-            'cost' => (null !== $enrichment->cost && $enrichment->cost > 0.0) ? $enrichment->cost : null,
-            'model' => (null !== $enrichment->model && '' !== $enrichment->model) ? $enrichment->model : null,
-            'contextWindow' => $enrichment->contextWindow > 0 ? $enrichment->contextWindow : null,
-            'provider' => (null !== $enrichment->provider && '' !== $enrichment->provider) ? $enrichment->provider : null,
-            'artifactPath' => (null !== $enrichment->artifactPath && '' !== $enrichment->artifactPath) ? $enrichment->artifactPath : null,
-            'assistantExcerpt' => (null !== $enrichment->assistantExcerpt && '' !== $enrichment->assistantExcerpt) ? $enrichment->assistantExcerpt : null,
-            'activeTool' => (null !== $enrichment->activeToolLine && '' !== $enrichment->activeToolLine) ? $enrichment->activeToolLine : null,
-        ];
     }
 }
