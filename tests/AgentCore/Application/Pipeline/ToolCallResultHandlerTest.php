@@ -1180,6 +1180,7 @@ final class ToolCallResultHandlerTest extends TestCase
             new ParentSessionToolBatchRunStoragePaths($hatfield),
             new LockFactory(new FlockStore()),
             new NullLogger(),
+            \Ineersa\AgentCore\Tests\Support\ToolBatchStateCodecTestFactory::create(),
         );
     }
 }

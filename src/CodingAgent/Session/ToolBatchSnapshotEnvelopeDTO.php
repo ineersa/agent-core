@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
+use Ineersa\AgentCore\Domain\Tool\ToolBatchStateCodec;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 
 /**
  * Typed on-disk envelope for one tool-batch snapshot file.
+ *
+ * batch_state fixed rows are encoded by {@see ToolBatchStateCodec}.
  */
 final readonly class ToolBatchSnapshotEnvelopeDTO
 {
@@ -27,21 +30,27 @@ final readonly class ToolBatchSnapshotEnvelopeDTO
     /**
      * @return array<string, mixed>
      */
-    public function toArray(): array
+    public function toArray(ToolBatchStateCodec $codec): array
     {
         return [
             'run_id' => $this->runId,
             'turn_no' => $this->turnNo,
             'step_id' => $this->stepId,
-            'batch_state' => $this->batchState->toPersistedArray(),
+            'batch_state' => $codec->normalize($this->batchState),
         ];
     }
 
     /**
      * @param array<string, mixed> $decoded
      */
-    public static function fromArray(array $decoded, string $expectedRunId, int $expectedTurnNo, string $expectedStepId, string $path): self
-    {
+    public static function fromArray(
+        array $decoded,
+        string $expectedRunId,
+        int $expectedTurnNo,
+        string $expectedStepId,
+        string $path,
+        ToolBatchStateCodec $codec,
+    ): self {
         $embeddedRunId = $decoded['run_id'] ?? null;
         $turnNo = $decoded['turn_no'] ?? null;
         $stepId = $decoded['step_id'] ?? null;
@@ -68,7 +77,7 @@ final readonly class ToolBatchSnapshotEnvelopeDTO
         }
 
         try {
-            $batchState = ToolBatchStateDTO::fromPersistedArray($batchStateRaw, $embeddedRunId, $turnNo, $stepId);
+            $batchState = $codec->denormalize($batchStateRaw, $embeddedRunId, $turnNo, $stepId);
         } catch (\UnexpectedValueException $exception) {
             throw new SessionToolBatchStoreException('Tool batch snapshot batch_state is invalid.', ['path' => $path, 'component' => 'session_tool_batch_store', 'run_id' => $expectedRunId, 'turn_no' => $expectedTurnNo, 'step_id' => $expectedStepId], $exception);
         }

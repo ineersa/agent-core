@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Tests\Domain\Tool;
 
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
+use Ineersa\AgentCore\Tests\Support\ToolBatchStateCodecTestFactory;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -39,13 +40,14 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
             maxParallelism: 1,
         );
 
-        $persisted = $batch->toPersistedArray();
+        $codec = ToolBatchStateCodecTestFactory::create();
+        $persisted = $codec->normalize($batch);
         $this->assertSame(
             'deepseek/deepseek-v4-flash',
             $persisted['call_data']['call-subagent-1']['parentModel'] ?? null,
         );
 
-        $reconstructed = ToolBatchStateDTO::fromPersistedArray(
+        $reconstructed = $codec->denormalize(
             $persisted,
             runId: 'run-tool-batch-1',
             turnNo: 3,
@@ -57,6 +59,6 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
             'deepseek/deepseek-v4-flash',
             $reconstructed->calls['call-subagent-1']->parentModel,
         );
-        $this->assertSame($persisted, $reconstructed->toPersistedArray());
+        $this->assertSame($persisted, $codec->normalize($reconstructed));
     }
 }

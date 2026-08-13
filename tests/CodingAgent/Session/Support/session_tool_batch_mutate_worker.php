@@ -59,7 +59,7 @@ $paths = new class($base) implements ToolBatchRunStoragePathsInterface {
     }
 };
 
-$store = new SessionToolBatchStore($paths, new LockFactory(new FlockStore()), new NullLogger());
+$store = new SessionToolBatchStore($paths, new LockFactory(new FlockStore()), new NullLogger(), Ineersa\AgentCore\Tests\Support\ToolBatchStateCodecTestFactory::create());
 
 try {
     $store->mutate('run-par', 1, 'step-1', static function (?ToolBatchStateDTO $current) use ($callId): ToolBatchStoreMutation {

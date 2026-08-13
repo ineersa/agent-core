@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Session;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
+use Ineersa\AgentCore\Tests\Support\ToolBatchStateCodecTestFactory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathsDTO;
@@ -104,7 +105,7 @@ final class SessionToolBatchStoreTest extends TestCase
             'run_id' => 'other-run',
             'turn_no' => $turnNo,
             'step_id' => $stepId,
-            'batch_state' => $this->emptyBatch([])->toPersistedArray(),
+            'batch_state' => $this->codec()->normalize($this->emptyBatch([])),
         ];
         file_put_contents($dir.'/'.$filename, json_encode($envelope, \JSON_THROW_ON_ERROR));
 
@@ -156,7 +157,7 @@ final class SessionToolBatchStoreTest extends TestCase
         $directory = new AgentChildRunDirectory($this->hatfieldSessionStore, $registry, new NullLogger());
         $directory->register($entry);
 
-        $childStore = new SessionToolBatchStore(new ChildAwareToolBatchRunStoragePaths($this->hatfieldSessionStore, $directory, $pathResolver), new LockFactory(new FlockStore()), new NullLogger());
+        $childStore = new SessionToolBatchStore(new ChildAwareToolBatchRunStoragePaths($this->hatfieldSessionStore, $directory, $pathResolver), new LockFactory(new FlockStore()), new NullLogger(), ToolBatchStateCodecTestFactory::create());
         $childStore->save($childRunId, 2, 'step-child', $this->emptyBatch(['c1']));
 
         $expectedDir = $parentDir.'/artifacts/agents/'.$artifactId.'/runtime/tool-batches';
@@ -379,7 +380,13 @@ final class SessionToolBatchStoreTest extends TestCase
             new ParentSessionToolBatchRunStoragePaths($hatfield),
             new LockFactory(new FlockStore()),
             new NullLogger(),
+            ToolBatchStateCodecTestFactory::create(),
         );
+    }
+
+    private function codec(): \Ineersa\AgentCore\Domain\Tool\ToolBatchStateCodec
+    {
+        return ToolBatchStateCodecTestFactory::create();
     }
 
     private function emptyBatch(array $pending): ToolBatchStateDTO
@@ -404,6 +411,6 @@ final class SessionToolBatchStoreTest extends TestCase
     private function assertPersistedEquivalent(ToolBatchStateDTO $expected, ?ToolBatchStateDTO $actual): void
     {
         $this->assertNotNull($actual);
-        $this->assertSame($expected->toPersistedArray(), $actual->toPersistedArray());
+        $this->assertSame($this->codec()->normalize($expected), $this->codec()->normalize($actual));
     }
 }
