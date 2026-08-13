@@ -489,7 +489,7 @@ ChatScreen (14 widgets)
   │     └── semantic/native children: StreamingMarkdown / ToolExchange / Question /
   │         Subagent widgets, Welcome/TurnSeparator, trivial TextWidget
   ├── pendingWidget      (LiveTextWidget)  PendingMessagesWidget
-  ├── workingWidget      (LiveTextWidget)  WorkingStatusWidget (via registry)
+  ├── workingWidget      (LoaderWidget)    native circle spinner; registry + ChatScreen::syncWorkingSlot()
   ├── statusPanelWidget  (LiveTextWidget)  StatusPanelWidget (via registry)
   ├── aboveEditorWidget  (LiveTextWidget)  extension widgets (combined, ordered by `order`; compact-header pinned last)
   ├── editorSeparator    (LiveTextWidget)  ─── at live terminal width
@@ -581,7 +581,7 @@ and throughput) update even when no runtime events arrive.
 ```
 setTranscriptBlocks()           → TranscriptMountedWidget::setBlocks() (full reconcile)
 applyTranscriptChangeSet()      → TranscriptMountedWidget::applyChangeSet() (incremental)
-setWorkingMessage()     → registry + workingRenderable + workingWidget.invalidate()
+setWorkingMessage()     → registry + ChatScreen::syncWorkingSlot() (LoaderWidget start/stop)
 setStatus()             → registry + statusPanelRenderable + statusPanelWidget.invalidate()
                           (panel-only; footer uses segment providers / setFooter)
 refresh()               → invalidates mutable LiveText regions (transcript is mounted)
