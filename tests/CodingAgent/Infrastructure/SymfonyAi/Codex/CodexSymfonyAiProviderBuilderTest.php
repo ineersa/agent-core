@@ -430,7 +430,7 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
         );
 
         $appConfig = new AppConfig(
-            tui: TuiConfig::fromArray(['theme' => 'cyberpunk']),
+            tui: new TuiConfig(theme: 'cyberpunk'),
             logging: new LoggingConfig(),
             catalog: new HatfieldModelCatalog($aiConfig),
         );

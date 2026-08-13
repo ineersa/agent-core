@@ -439,27 +439,6 @@ class ModelResolverTest extends TestCase
         $this->assertSame('high', $resolver->getDisplayReasoning(''));
     }
 
-    // ──────────────────────────────────────────────
-    //  Cycle reasoning
-    // ──────────────────────────────────────────────
-
-    public function testCycleReasoningReturnsNextLevel(): void
-    {
-        $resolver = $this->createResolver($this->standardAiData());
-
-        $this->assertSame('high', $resolver->cycleReasoning('medium'));
-        $this->assertSame('max', $resolver->cycleReasoning('xhigh'));
-        $this->assertSame('off', $resolver->cycleReasoning('max'));
-        $this->assertSame('minimal', $resolver->cycleReasoning('off'));
-    }
-
-    public function testCycleReasoningStartsFromBeginningForUnknownLevel(): void
-    {
-        $resolver = $this->createResolver($this->standardAiData());
-
-        $this->assertSame('off', $resolver->cycleReasoning('unknown'));
-    }
-
     public function testGetSupportedReasoningLevelsIncludesMaxWhenModelMapHasMax(): void
     {
         $aiData = [
@@ -561,7 +540,7 @@ class ModelResolverTest extends TestCase
         $ai = AiConfig::optionalFromArray($raw);
 
         return new AppConfig(
-            tui: TuiConfig::fromArray((array) ($raw['tui'] ?? [])),
+            tui: new TuiConfig(theme: (string) (($raw['tui'] ?? [])['theme'] ?? 'cyberpunk')),
             logging: new LoggingConfig(),
             sessions: new SessionsConfig(),
             ai: $ai,

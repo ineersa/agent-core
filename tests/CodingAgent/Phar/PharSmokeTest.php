@@ -278,7 +278,7 @@ final class PharSmokeTest extends TestCase
         $this->assertTrue(isset($phar[$skillMd]), 'Missing PHAR entry '.$skillMd);
         $this->assertTrue(isset($phar[$frontmatterMd]), 'Missing PHAR entry '.$frontmatterMd);
         $this->assertSame(
-            $locator->getAppRoot().'/src/CodingAgent/Resources/skills',
+            'phar://'.$pharPath.'/src/CodingAgent/Resources/skills',
             $locator->getBuiltinSkillsPath(),
         );
         $this->assertFileExists($locator->getBuiltinSkillsPath().'/subagents/SKILL.md');
@@ -288,7 +288,7 @@ final class PharSmokeTest extends TestCase
         $this->assertStringContainsString('agent_retrieve', $skillBody);
 
         $this->assertSame(
-            $locator->getAppRoot().'/src/CodingAgent/Resources/agents',
+            'phar://'.$pharPath.'/src/CodingAgent/Resources/agents',
             $locator->getBuiltinAgentsPath(),
         );
         foreach (['scout', 'reviewer', 'researcher', 'architect', 'browser'] as $name) {
