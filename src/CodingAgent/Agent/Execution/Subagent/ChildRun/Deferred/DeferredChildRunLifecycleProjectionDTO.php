@@ -8,9 +8,14 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 
 /**
  * Compact durable child lifecycle projection for deferred child runs (Piece 3B1).
+ *
+ * Launch model/reasoning are concrete non-empty identity seeded at preparation.
  */
 final readonly class DeferredChildRunLifecycleProjectionDTO
 {
+    public string $model;
+    public string $reasoning;
+
     /**
      * @param list<string>                                            $recentTools
      * @param array<string, array{name: string, displayLine: string}> $pendingToolCalls
@@ -19,6 +24,8 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         public RunStatus $childStatus,
         public int $childTurnNo,
         public int $lastCommittedSeq,
+        string $model,
+        string $reasoning,
         public ?string $errorMessage = null,
         public ?string $assistantResultText = null,
         public ?string $assistantExcerpt = null,
@@ -31,12 +38,18 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         public int $reasoningTokens = 0,
         public int $totalTokens = 0,
         public ?float $cost = null,
-        public ?string $model = null,
         public ?string $provider = null,
         public array $recentTools = [],
         public ?string $activeToolLine = null,
         public array $pendingToolCalls = [],
     ) {
+        $model = trim($model);
+        $reasoning = trim($reasoning);
+        if ('' === $model || '' === $reasoning) {
+            throw new \InvalidArgumentException('Deferred child lifecycle projection requires non-empty model and reasoning.');
+        }
+        $this->model = $model;
+        $this->reasoning = $reasoning;
     }
 
     /** @return array<string, mixed> */
@@ -55,6 +68,8 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
             'total_tokens' => $this->totalTokens,
             'recent_tools' => $this->recentTools,
             'pending_tool_calls' => $this->pendingToolCalls,
+            'model' => $this->model,
+            'reasoning' => $this->reasoning,
         ];
         if (null !== $this->errorMessage && '' !== $this->errorMessage) {
             $data['error_message'] = $this->errorMessage;
@@ -70,9 +85,6 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         }
         if (null !== $this->cost && $this->cost > 0.0) {
             $data['cost'] = $this->cost;
-        }
-        if (null !== $this->model && '' !== $this->model) {
-            $data['model'] = $this->model;
         }
         if (null !== $this->provider && '' !== $this->provider) {
             $data['provider'] = $this->provider;
@@ -98,6 +110,8 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
             childStatus: $status,
             childTurnNo: isset($data['child_turn_no']) && is_numeric($data['child_turn_no']) ? (int) $data['child_turn_no'] : 0,
             lastCommittedSeq: isset($data['last_committed_seq']) && is_numeric($data['last_committed_seq']) ? (int) $data['last_committed_seq'] : 0,
+            model: self::requireNonEmptyString($data, 'model'),
+            reasoning: self::requireNonEmptyString($data, 'reasoning'),
             errorMessage: \is_string($data['error_message'] ?? null) ? $data['error_message'] : null,
             assistantResultText: \is_string($data['assistant_result_text'] ?? null) ? $data['assistant_result_text'] : null,
             assistantExcerpt: \is_string($data['assistant_excerpt'] ?? null) ? $data['assistant_excerpt'] : null,
@@ -110,12 +124,24 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
             reasoningTokens: isset($data['reasoning_tokens']) && is_numeric($data['reasoning_tokens']) ? (int) $data['reasoning_tokens'] : 0,
             totalTokens: isset($data['total_tokens']) && is_numeric($data['total_tokens']) ? (int) $data['total_tokens'] : 0,
             cost: isset($data['cost']) && is_numeric($data['cost']) ? (float) $data['cost'] : null,
-            model: \is_string($data['model'] ?? null) ? $data['model'] : null,
             provider: \is_string($data['provider'] ?? null) ? $data['provider'] : null,
             recentTools: array_values(array_filter($recent, static fn ($line): bool => \is_string($line))),
             activeToolLine: \is_string($data['active_tool'] ?? null) ? $data['active_tool'] : null,
             pendingToolCalls: self::decodePendingToolCalls($data['pending_tool_calls'] ?? []),
         );
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private static function requireNonEmptyString(array $data, string $key): string
+    {
+        $value = $data[$key] ?? null;
+        if (!\is_string($value) || '' === trim($value)) {
+            throw new \InvalidArgumentException(\sprintf('Deferred child lifecycle projection requires non-empty "%s".', $key));
+        }
+
+        return trim($value);
     }
 
     /**

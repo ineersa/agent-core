@@ -252,7 +252,8 @@ final class SubagentTranscriptCardBuilder
             $parts[] = '$'.number_format((float) $cost, 4, '.', '');
         }
         if ('' !== $model) {
-            $parts[] = $model;
+            $reasoning = $this->string($data, 'reasoning', '');
+            $parts[] = '' !== $reasoning ? $model.' (reasoning: '.$reasoning.')' : $model;
         }
 
         return implode(' · ', $parts);

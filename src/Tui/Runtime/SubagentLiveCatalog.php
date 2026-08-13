@@ -93,6 +93,7 @@ final class SubagentLiveCatalog
             taskSummary: $existing->taskSummary,
             lastActivityAtMs: (int) (microtime(true) * 1000),
             model: $existing->model,
+            reasoning: $existing->reasoning,
             latestInputTokens: $existing->latestInputTokens,
             contextWindow: $existing->contextWindow,
         );
@@ -146,6 +147,7 @@ final class SubagentLiveCatalog
         $taskSummary = trim((string) ($row['task_summary'] ?? ''));
 
         $model = $this->optionalString($row['model'] ?? null);
+        $reasoning = $this->optionalString($row['reasoning'] ?? null);
         $latestInputTokens = $this->optionalPositiveInt($row['latest_input_tokens'] ?? null);
         $contextWindow = $this->optionalPositiveInt($row['context_window'] ?? null);
 
@@ -164,8 +166,16 @@ final class SubagentLiveCatalog
             return;
         }
 
-        if (null === $model && null !== $existing) {
-            $model = $existing->model;
+        // Progress rows may omit model/reasoning on later ticks; preserve last known concrete values.
+        // Initial creation requires concrete identity from the durable progress payload.
+        if (null === $model) {
+            $model = null !== $existing ? $existing->model : null;
+        }
+        if (null === $reasoning) {
+            $reasoning = null !== $existing ? $existing->reasoning : null;
+        }
+        if (null === $model || null === $reasoning) {
+            return;
         }
         if (0 === $latestInputTokens && null !== $existing) {
             $latestInputTokens = $existing->latestInputTokens;
@@ -182,6 +192,7 @@ final class SubagentLiveCatalog
             taskSummary: $taskSummary,
             lastActivityAtMs: $now,
             model: $model,
+            reasoning: $reasoning,
             latestInputTokens: $latestInputTokens,
             contextWindow: $contextWindow,
         );

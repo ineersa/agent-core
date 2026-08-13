@@ -70,7 +70,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $state->activity = RunActivityStateEnum::Running;
         $state->transcript = [new TranscriptBlock('p1', TranscriptBlockKindEnum::UserMessage, $parentRun, 1, 'parent line')];
 
-        $child = new SubagentLiveChildDTO('child-200', 'art1', 'scout', SubagentLiveStatusEnum::Running, 'task', 1);
+        $child = new SubagentLiveChildDTO('child-200', 'art1', 'scout', SubagentLiveStatusEnum::Running, 'task', 1, 'deepseek/deepseek-v4-flash', 'medium');
         $state->subagentLiveView->enter($child);
         $state->subagentLiveView->childTranscript = [
             new TranscriptBlock('c1', TranscriptBlockKindEnum::Progress, 'child-200', 1, 'child live'),
@@ -139,7 +139,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $state->lastSeq = 0;
         $state->activity = RunActivityStateEnum::Completed;
 
-        $child = new SubagentLiveChildDTO('child-300', 'art1', 'scout', SubagentLiveStatusEnum::Running, 'task', 1);
+        $child = new SubagentLiveChildDTO('child-300', 'art1', 'scout', SubagentLiveStatusEnum::Running, 'task', 1, 'deepseek/deepseek-v4-flash', 'medium');
         $state->subagentLiveView->enter($child);
         $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
         $state->subagentLiveView->childTranscript = [
@@ -158,6 +158,8 @@ final class TickPollListenerSubagentLiveTest extends TestCase
                     'artifact_id' => 'art1',
                     'agent_run_id' => 'child-300',
                     'task_summary' => 'done',
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'medium',
                 ],
             ],
         ));

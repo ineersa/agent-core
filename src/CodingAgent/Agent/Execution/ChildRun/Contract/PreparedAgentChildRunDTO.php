@@ -39,8 +39,13 @@ final readonly class PreparedAgentChildRunDTO
         return $this->identity->taskSummary;
     }
 
-    public function definitionModel(): ?string
+    public function launchModel(): string
     {
-        return $this->identity->definitionModel;
+        return $this->identity->launchModel;
+    }
+
+    public function launchReasoning(): string
+    {
+        return $this->identity->launchReasoning;
     }
 }

@@ -58,6 +58,10 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->waitForTuiReadyAfterLogo($pane);
             // Resume proof: fixture artifact must be visible before slash commands.
             $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 12.0, 'Resumed transcript must show fixture artifact');
+            // Main footer keeps reasoning as color only (no text suffix). Capture border before live view.
+            $mainBorderSgr = $this->editorBottomBorderSgr($this->tmux->captureAnsi($pane));
+            $this->assertNotNull($mainBorderSgr, 'Main editor border SGR must be readable before live view');
+
             $this->tmux->sendKey($pane, 'C-u');
             $this->tmux->sendLiteral($pane, '/agents-live');
             $this->tmux->sendKey($pane, 'Enter');
@@ -70,9 +74,26 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'Child agent', 10.0, 'Live view working line must appear');
             $this->tmux->waitForCaptureContains($pane, '[completed]', 10.0, 'Fixture child must show completed status in live view');
+            $this->tmux->waitForCaptureContains(
+                $pane,
+                ChildContextStatisticsFixture::MODEL_SHORT.' (reasoning: high)',
+                10.0,
+                'Child live footer must show child model with child reasoning',
+            );
             $liveCap = $this->tmux->capturePlainWithHistory($pane, 2500);
             $this->assertStringContainsString(ChildContextStatisticsFixture::CONTEXT_DETAIL, $liveCap, 'Child live footer must show context usage');
-            $this->assertStringContainsString(ChildContextStatisticsFixture::MODEL_SHORT, $liveCap, 'Child live footer must show child model');
+            $this->assertStringContainsString(
+                ChildContextStatisticsFixture::MODEL_SHORT.' (reasoning: high)',
+                $liveCap,
+                'Child live footer must show child model + reasoning',
+            );
+            $childBorderSgr = $this->editorBottomBorderSgr($this->tmux->captureAnsi($pane));
+            $this->assertNotNull($childBorderSgr, 'Child live editor border SGR must be readable');
+            $this->assertNotSame(
+                $mainBorderSgr,
+                $childBorderSgr,
+                'Editor border SGR must change from main medium reasoning to child high reasoning',
+            );
 
             $this->tmux->sendKey($pane, 'C-u');
             $this->tmux->sendLiteral($pane, 'continue after completion');
@@ -99,6 +120,18 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $parentCap = $this->tmux->capturePlainWithHistory($pane, 2500);
             $this->assertStringContainsString(ChildContextStatisticsFixture::TRANSCRIPT_CTX_LINE, $parentCap, 'Parent child card must show context usage line after resume');
             $this->assertStringNotContainsString('Subagent live:', $this->tmux->capturePlainWithHistory($pane, 2500));
+            $restoredBorderSgr = $this->editorBottomBorderSgr($this->tmux->captureAnsi($pane));
+            $this->assertNotNull($restoredBorderSgr, 'Restored main editor border SGR must be readable');
+            $this->assertSame(
+                $mainBorderSgr,
+                $restoredBorderSgr,
+                'Editor border SGR must restore to main reasoning after /agents-main',
+            );
+            $this->assertNotSame(
+                $childBorderSgr,
+                $restoredBorderSgr,
+                'Restored main border must differ from child live border',
+            );
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
@@ -313,6 +346,42 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
         file_put_contents($path, $ansi);
     }
 
+    /**
+     * Extract editor-frame bottom border SGR (truecolor).
+     *
+     * Real ChatScreen places ThemeColorEnum::Separator rules above/below the
+     * EditorWidget frame. Scanning only the last ─ line hits the footer
+     * separator (steel), not EditorWidget::frame. Prefer the last truecolor
+     * full-rule line that is not the fixed steel separator (#4a5568).
+     */
+    private function editorBottomBorderSgr(string $ansi): ?string
+    {
+        $steel = '38;2;74;85;104'; // cyberpunk vars.steel used for Separator
+        $lines = explode("\n", $ansi);
+        for ($i = \count($lines) - 1; $i >= 0; --$i) {
+            $line = $lines[$i];
+            if (!str_contains($line, '─')) {
+                continue;
+            }
+            // Editor frame is a full-width rule of ─ only (optional scroll marker text).
+            $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $line) ?? $line;
+            $plain = trim($plain);
+            if ('' === $plain || !preg_match('/^─+$/u', $plain)) {
+                continue;
+            }
+            if (!preg_match('/\x1b\[(38;2;\d+;\d+;\d+)m/', $line, $m)) {
+                continue;
+            }
+            if ($steel === $m[1]) {
+                continue;
+            }
+
+            return $m[1];
+        }
+
+        return null;
+    }
+
     private function createSessionAndWaitForAssistant(TmuxPane $pane): string
     {
         $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
@@ -367,7 +436,39 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-subagent-live');
         @mkdir($dir.'/.hatfield', 0o777, true);
         @mkdir($dir.'/home/.hatfield', 0o777, true);
-        $settings = ['ai' => ['providers' => ['deepseek' => ChildContextStatisticsFixture::deepseekProviderSettings(), 'llama_cpp_test' => ['api' => 'openai-completions', 'api_key' => 'dummy', 'completions_path' => '/chat/completions', 'supports_completions' => true, 'supports_embeddings' => false, 'supports_thinking_levels' => true, 'models' => ['test' => ['name' => 'test', 'context_window' => 32768, 'max_tokens' => 32768, 'input' => ['text'], 'tool_calling' => true, 'reasoning' => true, 'thinking_level_map' => ['off' => '0'], 'cost' => ['input' => 0, 'output' => 0]]]]]]];
+        $settings = ['ai' => [
+            'default_reasoning' => 'medium',
+            'providers' => [
+                'deepseek' => ChildContextStatisticsFixture::deepseekProviderSettings(),
+                'llama_cpp_test' => [
+                    'api' => 'openai-completions',
+                    'api_key' => 'dummy',
+                    'completions_path' => '/chat/completions',
+                    'supports_completions' => true,
+                    'supports_embeddings' => false,
+                    'supports_thinking_levels' => true,
+                    'models' => [
+                        'test' => [
+                            'name' => 'test',
+                            'context_window' => 32768,
+                            'max_tokens' => 32768,
+                            'input' => ['text'],
+                            'tool_calling' => true,
+                            'reasoning' => true,
+                            'thinking_level_map' => [
+                                'off' => '0',
+                                'minimal' => '0',
+                                'low' => '0',
+                                'medium' => '0',
+                                'high' => '0',
+                                'xhigh' => '0',
+                            ],
+                            'cost' => ['input' => 0, 'output' => 0],
+                        ],
+                    ],
+                ],
+            ],
+        ]];
         $yaml = \Symfony\Component\Yaml\Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
         file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
         file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);

@@ -30,8 +30,8 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             childStatus: RunStatus::Running,
             childTurnNo: 0,
             lastCommittedSeq: 0,
-            // Stale projected model from a previous definition snapshot (session-shaped).
             model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         );
 
         $failed = $projector->apply(
@@ -40,6 +40,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
                 new AfterTurnCommitEventSummary(1, RunEventTypeEnum::RunStarted->value, [
                     'payload' => ['metadata' => [
                         'model' => 'openai-codex/gpt-5.6-sol',
+                        'reasoning' => 'xhigh',
                         'provider' => 'openai-codex',
                     ]],
                 ]),
@@ -52,18 +53,17 @@ final class DeferredChildRunEventProjectorTest extends TestCase
                     'retryable' => false,
                 ]),
             ],
-            // Stale definition snapshot that differs from immutable launch metadata.
-            definitionModel: 'deepseek/deepseek-v4-flash',
             committedStatus: RunStatus::Failed,
             committedTurnNo: 3,
         );
 
         $this->assertSame(RunStatus::Failed, $failed->childStatus);
         $this->assertSame('openai-codex/gpt-5.6-sol', $failed->model);
+        $this->assertSame('xhigh', $failed->reasoning);
         $this->assertSame('openai-codex', $failed->provider);
         $this->assertSame(1, $failed->llmStepCount);
 
-        // Recovery/resume apply without another run_started must keep launch model.
+        // Recovery/resume apply without another run_started must keep launch model/reasoning.
         $resumed = $projector->apply(
             $failed,
             [
@@ -75,14 +75,15 @@ final class DeferredChildRunEventProjectorTest extends TestCase
                     ],
                 ]),
             ],
-            definitionModel: 'deepseek/deepseek-v4-flash',
             committedStatus: RunStatus::Running,
             committedTurnNo: 4,
         );
 
         $this->assertSame('openai-codex/gpt-5.6-sol', $resumed->model);
+        $this->assertSame('xhigh', $resumed->reasoning);
         $this->assertSame(2, $resumed->llmStepCount);
         $this->assertSame(4, $resumed->childTurnNo);
+        $this->assertSame('xhigh', DeferredChildRunLifecycleProjectionDTO::fromArray($resumed->toArray())->reasoning);
     }
 
     public function testRetryableLlmStepFailedStaysRunningWhileExhaustedFailureIsTerminal(): void
@@ -92,6 +93,8 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             childStatus: RunStatus::Running,
             childTurnNo: 0,
             lastCommittedSeq: 0,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         );
 
         // Session-shaped: LlmStepResultHandler commits retryable failure as
@@ -118,7 +121,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
                     'message' => 'provider diagnostic notification',
                 ]),
             ],
-            definitionModel: 'openai-codex/gpt-5.6-sol',
             committedStatus: RunStatus::Failed,
             committedTurnNo: 47,
         );
@@ -156,7 +158,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
                     'max_retries' => 2,
                 ]),
             ],
-            definitionModel: 'openai-codex/gpt-5.6-sol',
             committedStatus: RunStatus::Failed,
             committedTurnNo: 48,
         );
@@ -179,6 +180,8 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             childStatus: RunStatus::Running,
             childTurnNo: 0,
             lastCommittedSeq: 0,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         );
 
         $longText = str_repeat('Z', 300);
@@ -202,7 +205,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $projection = $projector->apply(
             $current,
             $summaries,
-            definitionModel: null,
             committedStatus: RunStatus::WaitingHuman,
             committedTurnNo: 4,
         );
@@ -222,7 +224,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $projection = $projector->apply(
             $projection,
             [new AfterTurnCommitEventSummary(4, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 5])],
-            definitionModel: null,
             committedStatus: RunStatus::Running,
             committedTurnNo: 5,
         );
@@ -239,7 +240,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $projection = $projector->apply(
             $projection,
             [$malformed],
-            definitionModel: null,
             committedStatus: RunStatus::Compacting,
             committedTurnNo: 5,
         );
@@ -251,7 +251,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $projection = $projector->apply(
             $projection,
             [new AfterTurnCommitEventSummary(6, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 6])],
-            definitionModel: null,
             committedStatus: RunStatus::Cancelling,
             committedTurnNo: 6,
         );
@@ -267,6 +266,8 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             childStatus: RunStatus::Running,
             childTurnNo: 0,
             lastCommittedSeq: 0,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         );
 
         $projection = $projector->apply(
@@ -283,7 +284,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
                     'usage' => ['input_tokens' => 20, 'output_tokens' => 3, 'total_tokens' => 23],
                 ]),
             ],
-            definitionModel: 'deepseek/deepseek-v4-flash',
             committedStatus: RunStatus::Running,
             committedTurnNo: 7,
         );
@@ -298,6 +298,8 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertSame(7, $roundTrip->childTurnNo);
 
         $summary = new \Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary(
+            model: $roundTrip->model,
+            reasoning: $roundTrip->reasoning,
             toolCount: $roundTrip->toolCount,
             llmStepCount: $roundTrip->llmStepCount,
             inputTokens: $roundTrip->inputTokens,
@@ -307,7 +309,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             reasoningTokens: $roundTrip->reasoningTokens,
             totalTokens: $roundTrip->totalTokens,
             cost: $roundTrip->cost,
-            model: $roundTrip->model,
             provider: $roundTrip->provider,
             artifactPath: 'artifacts/agents/agent_llm_steps',
             assistantExcerpt: $roundTrip->assistantExcerpt,

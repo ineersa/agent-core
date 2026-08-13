@@ -95,7 +95,21 @@ final class ForkToolContractTest extends TestCase
 
     public function testConfigResolverPrecedence(): void
     {
-        $resolver = new ForkRuntimeConfigResolver(new ForksConfigDTO(model: 'forks/model', thinkingLevel: 'low'));
+        // ModelResolver + HatfieldSessionStore are final; build a real resolver with empty session id path.
+        $sessionStore = (new \ReflectionClass(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class))
+            ->newInstanceWithoutConstructor();
+        $modelResolver = new ModelResolver(
+            new \Ineersa\CodingAgent\Config\AppConfig(
+                tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+                logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+            ),
+            $sessionStore,
+        );
+
+        $resolver = new ForkRuntimeConfigResolver(
+            new ForksConfigDTO(model: 'forks/model', thinkingLevel: 'low'),
+            $modelResolver,
+        );
         $resolved = $resolver->resolve(
             explicitModel: null,
             explicitThinking: 'high',
@@ -108,6 +122,22 @@ final class ForkToolContractTest extends TestCase
         $resolved2 = $resolver->resolve('explicit/model', null, 'parent/model', 'medium');
         $this->assertSame('explicit/model', $resolved2->model);
         $this->assertSame('low', $resolved2->thinking);
+
+        $emptyModelResolver = new ForkRuntimeConfigResolver(
+            new ForksConfigDTO(model: null, thinkingLevel: null),
+            $modelResolver,
+        );
+        try {
+            $emptyModelResolver->resolve(null, null, null, null);
+            $this->fail('Expected RuntimeException when model candidates are all missing');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('missing explicit model', $e->getMessage());
+        }
+
+        // Parent run_started reasoning may be omitted; canonical ModelResolver still yields concrete thinking.
+        $resolvedThinking = $emptyModelResolver->resolve('parent/model', null, 'parent/model', null);
+        $this->assertSame('parent/model', $resolvedThinking->model);
+        $this->assertSame('medium', $resolvedThinking->thinking);
     }
 
     public function testPromptGuidelinesAndParallelModeExposeSafetyGuidance(): void

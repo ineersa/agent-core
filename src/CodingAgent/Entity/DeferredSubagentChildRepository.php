@@ -54,7 +54,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}> $childIntents
+     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, launchModel: string, launchReasoning: string}> $childIntents
      */
     public function insertReservedChildren(string $batchLifecycleId, array $childIntents, ?Connection $conn = null): void
     {
@@ -70,7 +70,8 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
                     'artifact_id' => $intent['artifactId'],
                     'agent_name' => $intent['agentName'],
                     'task' => $intent['task'],
-                    'definition_model' => $intent['definitionModel'],
+                    'launch_model' => $intent['launchModel'],
+                    'launch_reasoning' => $intent['launchReasoning'],
                     'launch_status' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
                     'child_event_cursor' => 0,
                     'projection_version' => 1,
@@ -94,7 +95,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string} $intent
+     * @param array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, launchModel: string, launchReasoning: string} $intent
      */
     public function assertChildMatchesIntent(DeferredSubagentChild $row, array $intent): void
     {
@@ -108,8 +109,8 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
             throw new ToolCallException('Deferred subagent batch child was reserved for a different agent or task.', retryable: false);
         }
 
-        if (null !== $intent['definitionModel'] && $row->definitionModel !== $intent['definitionModel']) {
-            throw new ToolCallException('Deferred subagent batch child was reserved with a different model.', retryable: false);
+        if ($row->launchModel !== $intent['launchModel'] || $row->launchReasoning !== $intent['launchReasoning']) {
+            throw new ToolCallException('Deferred subagent batch child was reserved with a different launch model or reasoning.', retryable: false);
         }
     }
 
@@ -179,7 +180,8 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
             artifactId: $row->artifactId,
             agentName: $row->agentName,
             task: $row->task,
-            definitionModel: $row->definitionModel,
+            launchModel: $row->launchModel,
+            launchReasoning: $row->launchReasoning,
             launchStatus: $row->launchStatus,
             childEventCursor: $row->childEventCursor,
             childLifecycleProjection: $this->decodeChildLifecycleProjection($row->childLifecycleProjection),

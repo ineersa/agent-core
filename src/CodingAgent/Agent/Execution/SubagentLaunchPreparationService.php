@@ -77,29 +77,32 @@ final class SubagentLaunchPreparationService
         $artifactId ??= 'agent_'.bin2hex(random_bytes(8));
         $childRunId ??= Uuid::v4()->toRfc4122();
 
-        $identity = $identityTemplate ?? new ChildRunIdentityDTO(
-            parentRunId: $parentRunId,
-            childRunId: $childRunId,
-            artifactId: $artifactId,
-            displayName: $agentName,
-            taskSummary: $task,
-            definitionModel: $definition->model,
-            artifactKind: AgentArtifactKindEnum::Subagent,
+        // Resolve concrete identity once before DTO construction (or reuse deferred plan identity).
+        $identity = $identityTemplate ?? $this->newSubagentIdentity(
+            $parentRunId,
+            $childRunId,
+            $artifactId,
+            $agentName,
+            $task,
+            $definition,
+            $parentModel,
         );
-
-        if (!$skipReservation) {
-            $this->artifactLifecycle->reservePending($identity);
-        }
 
         $policy = $this->definitionPolicy->resolveToolPolicy($definition, $parentRunId);
 
-        return $this->launchInputFactory->buildPrepared(
+        $prepared = $this->launchInputFactory->buildPrepared(
             $identity,
             $definition,
             $policy['tools'],
             $policy['mcp'],
             parentModel: $parentModel,
         );
+
+        if (!$skipReservation) {
+            $this->artifactLifecycle->reservePending($prepared->identity);
+        }
+
+        return $prepared;
     }
 
     /**
@@ -122,21 +125,16 @@ final class SubagentLaunchPreparationService
         $artifactId ??= 'agent_'.bin2hex(random_bytes(8));
         $childRunId ??= Uuid::v4()->toRfc4122();
 
-        $identity = $identityTemplate ?? new ChildRunIdentityDTO(
-            parentRunId: $parentRunId,
-            childRunId: $childRunId,
-            artifactId: $artifactId,
-            displayName: $profile->displayAgentName,
-            taskSummary: $task,
-            definitionModel: $profile->definition->model,
-            artifactKind: $profile->artifactKind,
+        $identity = $identityTemplate ?? $this->newForkIdentity(
+            $parentRunId,
+            $childRunId,
+            $artifactId,
+            $profile,
+            $task,
+            $parentModel,
         );
 
-        if (!$skipReservation) {
-            $this->artifactLifecycle->reservePending($identity);
-        }
-
-        return $this->forkLaunchInputBuilder->buildPrepared(
+        $prepared = $this->forkLaunchInputBuilder->buildPrepared(
             $identity,
             new ForkLaunchTaskDTO(
                 task: $task,
@@ -146,6 +144,62 @@ final class SubagentLaunchPreparationService
             ),
             $this->forkToolPolicyResolver->resolve($parentRunId),
             parentModel: $parentModel,
+        );
+
+        if (!$skipReservation) {
+            $this->artifactLifecycle->reservePending($prepared->identity);
+        }
+
+        return $prepared;
+    }
+
+    private function newSubagentIdentity(
+        string $parentRunId,
+        string $childRunId,
+        string $artifactId,
+        string $agentName,
+        string $task,
+        AgentDefinitionDTO $definition,
+        ?string $parentModel,
+    ): ChildRunIdentityDTO {
+        $launch = $this->launchInputFactory->resolveLaunchIdentity($definition, $parentRunId, $parentModel);
+
+        return new ChildRunIdentityDTO(
+            parentRunId: $parentRunId,
+            childRunId: $childRunId,
+            artifactId: $artifactId,
+            displayName: $agentName,
+            taskSummary: $task,
+            launchModel: $launch['model'],
+            launchReasoning: $launch['reasoning'],
+            artifactKind: AgentArtifactKindEnum::Subagent,
+        );
+    }
+
+    private function newForkIdentity(
+        string $parentRunId,
+        string $childRunId,
+        string $artifactId,
+        DeferredSubagentSingleChildLaunchProfileDTO $profile,
+        string $task,
+        ?string $parentModel,
+    ): ChildRunIdentityDTO {
+        $launch = $this->forkLaunchInputBuilder->resolveLaunchIdentity(
+            $parentRunId,
+            $profile->definition->model,
+            $profile->reasoningOverride,
+            $parentModel,
+        );
+
+        return new ChildRunIdentityDTO(
+            parentRunId: $parentRunId,
+            childRunId: $childRunId,
+            artifactId: $artifactId,
+            displayName: $profile->displayAgentName,
+            taskSummary: $task,
+            launchModel: $launch['model'],
+            launchReasoning: $launch['reasoning'],
+            artifactKind: $profile->artifactKind,
         );
     }
 }

@@ -27,7 +27,6 @@ final class DeferredChildRunEventProjector
     public function apply(
         DeferredChildRunLifecycleProjectionDTO $current,
         array $summaries,
-        ?string $definitionModel,
         ?RunStatus $committedStatus,
         int $committedTurnNo,
     ): DeferredChildRunLifecycleProjectionDTO {
@@ -47,7 +46,9 @@ final class DeferredChildRunEventProjector
         $totalTokens = $current->totalTokens;
         $cost = $current->cost;
         $hasCost = null !== $cost && $cost > 0.0;
-        $model = $current->model ?? $definitionModel;
+        // Identity is always seeded from durable launch model/reasoning before RunStarted.
+        $model = $current->model;
+        $reasoning = $current->reasoning;
         $provider = $current->provider;
         $recentTools = $current->recentTools;
         $activeToolLine = $current->activeToolLine;
@@ -80,10 +81,12 @@ final class DeferredChildRunEventProjector
             if (RunEventTypeEnum::RunStarted->value === $type) {
                 $inner = \is_array($payload['payload'] ?? null) ? $payload['payload'] : [];
                 $metadata = \is_array($inner['metadata'] ?? null) ? $inner['metadata'] : [];
-                // Canonical launch model from run_started must override definition/current fallback.
-                // definitionModel remains prelaunch-only; never let a stale snapshot win after start.
-                if (\is_string($metadata['model'] ?? null) && '' !== $metadata['model']) {
-                    $model = $metadata['model'];
+                // RunStarted may confirm/update concrete identity; never clear to empty.
+                if (\is_string($metadata['model'] ?? null) && '' !== trim($metadata['model'])) {
+                    $model = trim($metadata['model']);
+                }
+                if (\is_string($metadata['reasoning'] ?? null) && '' !== trim($metadata['reasoning'])) {
+                    $reasoning = trim($metadata['reasoning']);
                 }
                 if (\is_string($metadata['provider'] ?? null) && '' !== $metadata['provider']) {
                     $provider = $metadata['provider'];
@@ -223,6 +226,8 @@ final class DeferredChildRunEventProjector
             childStatus: $status,
             childTurnNo: $turnNo,
             lastCommittedSeq: $lastSeq,
+            model: $model,
+            reasoning: $reasoning,
             errorMessage: $errorMessage,
             assistantResultText: $assistantResultText,
             assistantExcerpt: $assistantExcerpt,
@@ -235,7 +240,6 @@ final class DeferredChildRunEventProjector
             reasoningTokens: $reasoningTokens,
             totalTokens: $totalTokens,
             cost: $hasCost ? $cost : null,
-            model: $model,
             provider: $provider,
             recentTools: $recentTools,
             activeToolLine: $activeToolLine,

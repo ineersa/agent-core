@@ -38,6 +38,8 @@ final class SubagentChildProgressSummaryBuilder
         $recentTools = $projection->recentTools;
 
         return new SubagentChildProgressSummary(
+            model: $projection->model,
+            reasoning: $projection->reasoning,
             toolCount: $projection->toolCount,
             llmStepCount: $projection->llmStepCount,
             inputTokens: $projection->inputTokens,
@@ -47,7 +49,6 @@ final class SubagentChildProgressSummaryBuilder
             reasoningTokens: $projection->reasoningTokens,
             totalTokens: $projection->totalTokens,
             cost: $projection->cost,
-            model: $projection->model,
             provider: $projection->provider,
             artifactPath: AgentArtifactPathsDTO::forArtifactId($artifactId)->artifactDir,
             assistantExcerpt: $projection->assistantExcerpt,
@@ -61,7 +62,8 @@ final class SubagentChildProgressSummaryBuilder
         string $agentRunId,
         string $artifactId,
         RunState $childState,
-        ?string $definitionModel = null,
+        string $launchModel,
+        string $launchReasoning,
     ): SubagentChildProgressSummary {
         $cacheKey = $parentRunId.'|'.$artifactId;
         $lastSeq = $childState->lastSeq;
@@ -72,7 +74,7 @@ final class SubagentChildProgressSummaryBuilder
         $store = $this->childEventStoreFactory->create($parentRunId, $agentRunId, $artifactId);
         $events = $store->allFor($agentRunId);
 
-        $summary = $this->scanEvents($events, $childState, $artifactId, $definitionModel);
+        $summary = $this->scanEvents($events, $childState, $artifactId, $launchModel, $launchReasoning);
         $this->cache[$cacheKey] = ['lastSeq' => $lastSeq, 'summary' => $summary];
 
         return $summary;
@@ -85,7 +87,8 @@ final class SubagentChildProgressSummaryBuilder
         array $events,
         RunState $childState,
         string $artifactId,
-        ?string $definitionModel,
+        string $launchModel,
+        string $launchReasoning,
     ): SubagentChildProgressSummary {
         $toolEnds = 0;
         $llmStepCount = 0;
@@ -97,7 +100,11 @@ final class SubagentChildProgressSummaryBuilder
         $totalTokens = 0;
         $cost = 0.0;
         $hasCost = false;
-        $model = $definitionModel;
+        $model = trim($launchModel);
+        $reasoning = trim($launchReasoning);
+        if ('' === $model || '' === $reasoning) {
+            throw new \InvalidArgumentException('Subagent progress scan requires non-empty launch model and reasoning.');
+        }
         $provider = null;
 
         /** @var array<string, array{name: string, args: array<string, mixed>}> $pendingById */
@@ -112,9 +119,12 @@ final class SubagentChildProgressSummaryBuilder
             if (RunEventTypeEnum::RunStarted->value === $event->type) {
                 $inner = \is_array($payload['payload'] ?? null) ? $payload['payload'] : [];
                 $metadata = \is_array($inner['metadata'] ?? null) ? $inner['metadata'] : [];
-                // Canonical launch model from run_started must override definitionModel fallback.
-                if (\is_string($metadata['model'] ?? null) && '' !== $metadata['model']) {
-                    $model = $metadata['model'];
+                // RunStarted may confirm/update concrete identity; never clear to empty.
+                if (\is_string($metadata['model'] ?? null) && '' !== trim($metadata['model'])) {
+                    $model = trim($metadata['model']);
+                }
+                if (\is_string($metadata['reasoning'] ?? null) && '' !== trim($metadata['reasoning'])) {
+                    $reasoning = trim($metadata['reasoning']);
                 }
                 if (\is_string($metadata['provider'] ?? null) && '' !== $metadata['provider']) {
                     $provider = $metadata['provider'];
@@ -207,6 +217,8 @@ final class SubagentChildProgressSummaryBuilder
         $artifactPath = AgentArtifactPathsDTO::forArtifactId($artifactId)->artifactDir;
 
         return new SubagentChildProgressSummary(
+            model: $model,
+            reasoning: $reasoning,
             toolCount: $toolEnds,
             llmStepCount: $llmStepCount,
             inputTokens: $inputTokens,
@@ -216,7 +228,6 @@ final class SubagentChildProgressSummaryBuilder
             reasoningTokens: $reasoningTokens,
             totalTokens: $totalTokens,
             cost: $hasCost ? $cost : null,
-            model: $model,
             provider: $provider,
             artifactPath: $artifactPath,
             assistantExcerpt: $assistantExcerpt,
