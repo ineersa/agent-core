@@ -683,6 +683,8 @@ parameters:
       - TuiTheme
       - AppSession
       - AppRuntimeContract
+      # Typed subagent_progress snapshots shared with runtime projection / TUI transcript.
+      - AppRuntimeProjection
       - AppSkills
       - AppTool
       - AppExtension

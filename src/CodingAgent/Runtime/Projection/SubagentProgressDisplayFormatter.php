@@ -13,34 +13,31 @@ namespace Ineersa\CodingAgent\Runtime\Projection;
 final class SubagentProgressDisplayFormatter
 {
     /**
-     * @param array<string, mixed> $progress Normalized subagent_progress payload
+     * @param SubagentProgressSnapshotDTO|array<string, mixed> $progress
      */
-    public function format(array $progress): string
+    public function format(SubagentProgressSnapshotDTO|array $progress): string
     {
-        $mode = \is_string($progress['mode'] ?? null) ? $progress['mode'] : 'single';
+        $snapshot = $progress instanceof SubagentProgressSnapshotDTO
+            ? $progress
+            : SubagentProgressSnapshotDTO::fromArray($progress);
 
-        return 'parallel' === $mode
-            ? $this->formatParallel($progress)
-            : $this->formatSingle($progress);
+        return $snapshot->isParallel()
+            ? $this->formatParallel($snapshot)
+            : $this->formatSingle($snapshot);
     }
 
-    /**
-     * @param array<string, mixed> $progress
-     */
-    private function formatSingle(array $progress): string
+    private function formatSingle(SubagentProgressSnapshotDTO $progress): string
     {
         return implode("\n", $this->formatSingleWidgetLines($progress, null));
     }
 
     /**
-     * @param array<string, mixed> $progress
-     *
      * @return list<string>
      */
-    private function formatSingleWidgetLines(array $progress, ?int $childIndex): array
+    private function formatSingleWidgetLines(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress, ?int $childIndex): array
     {
-        $agentName = $this->string($progress, 'agent_name', 'subagent');
-        $status = $this->string($progress, 'status', 'running');
+        $agentName = $this->agentName($progress);
+        $status = $progress->status;
 
         $lines = [];
         if (null === $childIndex) {
@@ -59,17 +56,16 @@ final class SubagentProgressDisplayFormatter
     }
 
     /**
-     * Shared body for single and per-child parallel widgets (header line excluded).
-     *
-     * @param array<string, mixed> $progress
-     *
      * @return list<string>
      */
-    private function formatSingleWidgetBodyLines(array $progress, string $agentName, string $status): array
-    {
-        $artifactId = $this->string($progress, 'artifact_id', '');
-        $task = $this->string($progress, 'task_summary', '');
-        $elapsed = $this->formatElapsedHuman($progress);
+    private function formatSingleWidgetBodyLines(
+        SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress,
+        string $agentName,
+        string $status,
+    ): array {
+        $artifactId = $this->artifactId($progress);
+        $task = $this->taskSummary($progress);
+        $elapsed = $this->formatElapsedHuman($progress instanceof SubagentProgressSnapshotDTO ? $progress->elapsedMs : null);
 
         $lines = [];
 
@@ -82,14 +78,14 @@ final class SubagentProgressDisplayFormatter
             $lines[] = 'Task: '.$this->truncate($task, 120);
         }
 
-        $artifactPath = $this->string($progress, 'artifact_path', '');
+        $artifactPath = $progress->artifactPath ?? '';
         if ('' !== $artifactPath) {
             $lines[] = 'Artifacts: '.$artifactPath;
         } elseif ('' !== $artifactId) {
             $lines[] = 'Artifacts: '.$artifactId;
         }
 
-        $activeTool = $this->string($progress, 'active_tool', '');
+        $activeTool = $progress->activeTool ?? '';
         if ('' !== $activeTool && 'running' === $status) {
             $lines[] = '> '.$activeTool;
         }
@@ -101,7 +97,7 @@ final class SubagentProgressDisplayFormatter
             $lines[] = '> '.$toolLine;
         }
 
-        $excerpt = $this->string($progress, 'assistant_excerpt', '');
+        $excerpt = $progress->assistantExcerpt ?? '';
         if ('' !== $excerpt) {
             $lines[] = $this->truncate($excerpt, 200);
         }
@@ -114,14 +110,11 @@ final class SubagentProgressDisplayFormatter
         return $lines;
     }
 
-    /**
-     * @param array<string, mixed> $progress
-     */
-    private function formatParallel(array $progress): string
+    private function formatParallel(SubagentProgressSnapshotDTO $progress): string
     {
-        $status = $this->string($progress, 'status', 'running');
-        $completed = $this->intOrNull($progress, 'completed_count') ?? 0;
-        $total = max($this->intOrNull($progress, 'total_count') ?? 0, 1);
+        $status = $progress->status;
+        $completed = $progress->completedCount ?? 0;
+        $total = max($progress->totalCount ?? 0, 1);
 
         if ('running' === $status) {
             $lines = [\sprintf('parallel subagents running (%d/%d completed)', $completed, $total)];
@@ -129,18 +122,9 @@ final class SubagentProgressDisplayFormatter
             $lines = [\sprintf('parallel subagents (%d/%d completed)', $completed, $total)];
         }
 
-        $children = $progress['children'] ?? [];
-        if (!\is_array($children)) {
-            $children = [];
-        }
-
         $sections = [];
-        foreach ($children as $child) {
-            if (!\is_array($child)) {
-                continue;
-            }
-            $index = $this->intOrNull($child, 'index') ?? (\count($sections) + 1);
-            $sections[] = implode("\n", $this->formatSingleWidgetLines($child, $index));
+        foreach ($progress->children as $child) {
+            $sections[] = implode("\n", $this->formatSingleWidgetLines($child, $child->index));
         }
 
         if ([] !== $sections) {
@@ -156,17 +140,18 @@ final class SubagentProgressDisplayFormatter
         return implode("\n", $lines);
     }
 
-    /**
-     * @param array<string, mixed> $data
-     */
-    private function formatRunningSummary(string $status, string $agentName, array $data, ?string $elapsed): string
-    {
+    private function formatRunningSummary(
+        string $status,
+        string $agentName,
+        SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $data,
+        ?string $elapsed,
+    ): string {
         if ('running' !== $status) {
             return $status.' '.$agentName;
         }
 
         $parts = [\sprintf('running %s', $agentName)];
-        $toolCount = $this->intOrNull($data, 'tool_count');
+        $toolCount = $data->toolCount;
         if (null !== $toolCount && $toolCount > 0) {
             $parts[] = \sprintf('%d tools', $toolCount);
         }
@@ -181,17 +166,14 @@ final class SubagentProgressDisplayFormatter
         return implode(' | ', $parts);
     }
 
-    /**
-     * @param array<string, mixed> $data
-     */
-    private function formatFooter(array $data): string
+    private function formatFooter(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $data): string
     {
-        $llmSteps = $this->intOrNull($data, 'llm_step_count');
-        $in = $this->intOrNull($data, 'input_tokens') ?? 0;
-        $out = $this->intOrNull($data, 'output_tokens') ?? 0;
-        $reason = $this->intOrNull($data, 'reasoning_tokens') ?? 0;
-        $cost = $data['cost'] ?? null;
-        $model = $this->string($data, 'model', '');
+        $llmSteps = $data->llmStepCount;
+        $in = $data->inputTokens ?? 0;
+        $out = $data->outputTokens ?? 0;
+        $reason = $data->reasoningTokens ?? 0;
+        $cost = $data->cost;
+        $model = $data->model ?? '';
 
         if (0 === $in && 0 === $out && 0 === $reason && (null === $llmSteps || $llmSteps <= 0) && '' === $model) {
             return '';
@@ -210,8 +192,8 @@ final class SubagentProgressDisplayFormatter
             }
             $parts[] = $tokPart;
         }
-        if (is_numeric($cost) && (float) $cost > 0.0) {
-            $parts[] = '$'.number_format((float) $cost, 4, '.', '');
+        if (null !== $cost && $cost > 0.0) {
+            $parts[] = '$'.number_format($cost, 4, '.', '');
         }
         if ('' !== $model) {
             $parts[] = $model;
@@ -221,38 +203,22 @@ final class SubagentProgressDisplayFormatter
     }
 
     /**
-     * @param array<string, mixed> $data
-     *
      * @return list<string>
      */
-    private function recentToolLines(array $data): array
+    private function recentToolLines(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $data): array
     {
-        $recent = $data['recent_tools'] ?? [];
-        if (!\is_array($recent)) {
-            return [];
-        }
-        $lines = [];
-        foreach ($recent as $line) {
-            if (\is_string($line) && '' !== $line) {
-                $lines[] = $line;
-            }
-        }
-
-        return $lines;
+        return $data->recentTools ?? [];
     }
 
-    /**
-     * @param array<string, mixed> $data
-     */
-    private function formatTokenCompact(array $data): ?string
+    private function formatTokenCompact(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $data): ?string
     {
-        $total = $this->intOrNull($data, 'total_tokens');
+        $total = $data->totalTokens;
         if (null !== $total && $total > 0) {
             return $this->formatTokenCount($total).' tok';
         }
-        $in = $this->intOrNull($data, 'input_tokens') ?? 0;
-        $out = $this->intOrNull($data, 'output_tokens') ?? 0;
-        $sum = $in + $out + ($this->intOrNull($data, 'reasoning_tokens') ?? 0);
+        $in = $data->inputTokens ?? 0;
+        $out = $data->outputTokens ?? 0;
+        $sum = $in + $out + ($data->reasoningTokens ?? 0);
         if ($sum <= 0) {
             return null;
         }
@@ -272,12 +238,8 @@ final class SubagentProgressDisplayFormatter
         return (string) $n;
     }
 
-    /**
-     * @param array<string, mixed> $data
-     */
-    private function formatElapsedHuman(array $data): ?string
+    private function formatElapsedHuman(?int $ms): ?string
     {
-        $ms = $this->intOrNull($data, 'elapsed_ms');
         if (null === $ms || $ms < 0) {
             return null;
         }
@@ -301,26 +263,31 @@ final class SubagentProgressDisplayFormatter
         return 'Use agent_retrieve (metadata/events/history) for full child details.';
     }
 
-    /**
-     * @param array<string, mixed> $data
-     */
-    private function string(array $data, string $key, string $default): string
+    private function agentName(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress): string
     {
-        $v = $data[$key] ?? $default;
-
-        return \is_string($v) && '' !== $v ? $v : $default;
-    }
-
-    /**
-     * @param array<string, mixed> $data
-     */
-    private function intOrNull(array $data, string $key): ?int
-    {
-        if (!isset($data[$key]) || !is_numeric($data[$key])) {
-            return null;
+        if ($progress instanceof SubagentProgressChildRowDTO) {
+            return '' !== $progress->agentName ? $progress->agentName : 'subagent';
         }
 
-        return (int) $data[$key];
+        return (null !== $progress->agentName && '' !== $progress->agentName) ? $progress->agentName : 'subagent';
+    }
+
+    private function artifactId(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress): string
+    {
+        if ($progress instanceof SubagentProgressChildRowDTO) {
+            return $progress->artifactId;
+        }
+
+        return $progress->artifactId ?? '';
+    }
+
+    private function taskSummary(SubagentProgressSnapshotDTO|SubagentProgressChildRowDTO $progress): string
+    {
+        if ($progress instanceof SubagentProgressChildRowDTO) {
+            return $progress->taskSummary;
+        }
+
+        return $progress->taskSummary ?? '';
     }
 
     private function truncate(string $text, int $max): string

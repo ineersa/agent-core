@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Runtime;
 
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressChildRowDTO;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 
 /**
@@ -109,46 +111,94 @@ final class SubagentLiveCatalog
             return;
         }
 
+        // Wire/public boundary: denormalize once, then use typed properties.
+        $snapshot = SubagentProgressSnapshotDTO::fromArray($progress);
         $now = (int) (microtime(true) * 1000);
-        $mode = (string) ($progress['mode'] ?? 'single');
 
-        if ('parallel' === $mode) {
-            $children = $progress['children'] ?? [];
-            if (!\is_array($children)) {
-                return;
-            }
-            foreach ($children as $child) {
-                if (!\is_array($child)) {
-                    continue;
-                }
-                $this->upsertFromProgressRow($child, $now);
+        if ($snapshot->isParallel()) {
+            foreach ($snapshot->children as $child) {
+                $this->upsertFromChildRow($child, $now);
             }
 
             return;
         }
 
-        $this->upsertFromProgressRow($progress, $now);
+        $this->upsertFromSingleSnapshot($snapshot, $now);
     }
 
-    /**
-     * @param array<string, mixed> $row
-     */
-    private function upsertFromProgressRow(array $row, int $now): void
+    private function upsertFromSingleSnapshot(SubagentProgressSnapshotDTO $row, int $now): void
     {
-        $artifactId = trim((string) ($row['artifact_id'] ?? ''));
+        $artifactId = trim($row->artifactId ?? '');
         if ('' === $artifactId || $this->isDismissed($artifactId)) {
             return;
         }
 
-        $agentRunId = trim((string) ($row['agent_run_id'] ?? ''));
-        $agentName = trim((string) ($row['agent_name'] ?? 'subagent'));
-        $status = SubagentLiveStatusEnum::fromProgressString((string) ($row['status'] ?? 'running'));
-        $taskSummary = trim((string) ($row['task_summary'] ?? ''));
+        $agentRunId = trim($row->agentRunId ?? '');
+        $agentName = trim($row->agentName ?? 'subagent');
+        if ('' === $agentName) {
+            $agentName = 'subagent';
+        }
+        $status = SubagentLiveStatusEnum::fromProgressString($row->status);
+        $taskSummary = trim($row->taskSummary ?? '');
+        $model = $row->model;
+        $latestInputTokens = (null !== $row->latestInputTokens && $row->latestInputTokens > 0) ? $row->latestInputTokens : 0;
+        $contextWindow = (null !== $row->contextWindow && $row->contextWindow > 0) ? $row->contextWindow : 0;
 
-        $model = $this->optionalString($row['model'] ?? null);
-        $latestInputTokens = $this->optionalPositiveInt($row['latest_input_tokens'] ?? null);
-        $contextWindow = $this->optionalPositiveInt($row['context_window'] ?? null);
+        $this->upsertCatalogRow(
+            artifactId: $artifactId,
+            agentRunId: $agentRunId,
+            agentName: $agentName,
+            status: $status,
+            taskSummary: $taskSummary,
+            now: $now,
+            model: $model,
+            latestInputTokens: $latestInputTokens,
+            contextWindow: $contextWindow,
+        );
+    }
 
+    private function upsertFromChildRow(SubagentProgressChildRowDTO $row, int $now): void
+    {
+        $artifactId = trim($row->artifactId);
+        if ('' === $artifactId || $this->isDismissed($artifactId)) {
+            return;
+        }
+
+        $agentRunId = trim($row->agentRunId);
+        $agentName = trim($row->agentName);
+        if ('' === $agentName) {
+            $agentName = 'subagent';
+        }
+        $status = SubagentLiveStatusEnum::fromProgressString($row->status);
+        $taskSummary = trim($row->taskSummary);
+        $model = $row->model;
+        $latestInputTokens = (null !== $row->latestInputTokens && $row->latestInputTokens > 0) ? $row->latestInputTokens : 0;
+        $contextWindow = (null !== $row->contextWindow && $row->contextWindow > 0) ? $row->contextWindow : 0;
+
+        $this->upsertCatalogRow(
+            artifactId: $artifactId,
+            agentRunId: $agentRunId,
+            agentName: $agentName,
+            status: $status,
+            taskSummary: $taskSummary,
+            now: $now,
+            model: $model,
+            latestInputTokens: $latestInputTokens,
+            contextWindow: $contextWindow,
+        );
+    }
+
+    private function upsertCatalogRow(
+        string $artifactId,
+        string $agentRunId,
+        string $agentName,
+        SubagentLiveStatusEnum $status,
+        string $taskSummary,
+        int $now,
+        ?string $model,
+        int $latestInputTokens,
+        int $contextWindow,
+    ): void {
         if ('' === $agentRunId) {
             $existing = $this->byArtifactId[$artifactId] ?? null;
             $agentRunId = null !== $existing ? $existing->agentRunId : '';
@@ -185,25 +235,5 @@ final class SubagentLiveCatalog
             latestInputTokens: $latestInputTokens,
             contextWindow: $contextWindow,
         );
-    }
-
-    private function optionalString(mixed $value): ?string
-    {
-        if (!\is_string($value)) {
-            return null;
-        }
-        $trimmed = trim($value);
-
-        return '' !== $trimmed ? $trimmed : null;
-    }
-
-    private function optionalPositiveInt(mixed $value): int
-    {
-        if (!is_numeric($value)) {
-            return 0;
-        }
-        $int = (int) $value;
-
-        return $int > 0 ? $int : 0;
     }
 }

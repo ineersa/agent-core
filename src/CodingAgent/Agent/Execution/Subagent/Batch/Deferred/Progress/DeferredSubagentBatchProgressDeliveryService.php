@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressSnapshotDTO;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -75,10 +76,7 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
             && $this->markDeliveredRevision($batch);
     }
 
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function appendProgress(DeferredSubagentBatchProjectionDTO $batch, array $payload, string $failureEventType): bool
+    private function appendProgress(DeferredSubagentBatchProjectionDTO $batch, SubagentProgressSnapshotDTO $payload, string $failureEventType): bool
     {
         try {
             $this->progressEventAppender->append(

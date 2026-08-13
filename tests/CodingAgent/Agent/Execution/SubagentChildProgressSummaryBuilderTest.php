@@ -187,15 +187,30 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
         $this->assertSame(2, $summary->toolCount);
         $this->assertSame(2, $summary->llmStepCount);
         $this->assertSame(35000, $summary->inputTokens);
-        $fields = $summary->toProgressFields();
+        $this->assertSame(25000, $summary->latestInputTokens, 'Latest LLM step input_tokens must be exposed separately from cumulative input_tokens');
+        $this->assertSame('deepseek/deepseek-v4-flash', $summary->model);
+        $this->assertSame(
+            \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW,
+            $summary->contextWindow,
+            'Canonical context_window from child run metadata must propagate into progress fields',
+        );
+        $snapshot = (new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder())->singleRunningFromChildTurn(
+            agentName: 'scout',
+            artifactId: $artifactId,
+            agentRunId: $childRunId,
+            taskSummary: 'summarize',
+            childTurnNo: 1,
+            elapsedMs: 100,
+            enrichment: $summary,
+        );
+        $fields = $snapshot->toArray();
         $this->assertSame(35000, $fields['input_tokens']);
         $this->assertSame(2, $fields['llm_step_count'] ?? null);
-        $this->assertSame(25000, $fields['latest_input_tokens'] ?? null, 'Latest LLM step input_tokens must be exposed separately from cumulative input_tokens');
+        $this->assertSame(25000, $fields['latest_input_tokens'] ?? null);
         $this->assertSame('deepseek/deepseek-v4-flash', $fields['model'] ?? null);
         $this->assertSame(
             \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW,
             $fields['context_window'] ?? null,
-            'Canonical context_window from child run metadata must propagate into progress fields',
         );
         $this->assertSame(14000, $summary->outputTokens);
         $this->assertSame(584000, $summary->reasoningTokens);

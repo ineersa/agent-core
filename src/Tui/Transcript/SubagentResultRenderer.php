@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -47,11 +48,17 @@ final readonly class SubagentResultRenderer
 
     public function buildWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
     {
-        $progress = $block->meta['subagent_progress'] ?? null;
+        $progressRaw = $block->meta['subagent_progress'] ?? null;
         $resultText = $this->resolveResultText($block);
 
-        if (\is_array($progress)) {
-            return $this->buildProgressWidget($block, $theme, $progress, $resultText);
+        if (\is_array($progressRaw)) {
+            // Transcript meta is a public/persisted array boundary; denormalize once.
+            return $this->buildProgressWidget(
+                $block,
+                $theme,
+                SubagentProgressSnapshotDTO::fromArray($progressRaw),
+                $resultText,
+            );
         }
 
         if ('' !== $resultText) {
@@ -63,13 +70,10 @@ final readonly class SubagentResultRenderer
         return new TextWidget($theme->color(ThemeColorEnum::ToolOutput, TranscriptGlyphs::GLYPH_TOOL.' subagent').$suffix);
     }
 
-    /**
-     * @param array<string, mixed> $progress
-     */
     private function buildProgressWidget(
         TranscriptBlock $block,
         TuiTheme $theme,
-        array $progress,
+        SubagentProgressSnapshotDTO $progress,
         string $resultText,
     ): AbstractWidget {
         $status = $this->resolveCardStatus($progress);
@@ -152,10 +156,7 @@ final readonly class SubagentResultRenderer
         return \count($lines) > $this->displayConfig->toolResultPreviewLines;
     }
 
-    /**
-     * @param array<string, mixed> $progress
-     */
-    private function resolveHandoffMarkdown(array $progress, string $resultText): string
+    private function resolveHandoffMarkdown(SubagentProgressSnapshotDTO $progress, string $resultText): string
     {
         if (!$this->isTerminalCardStatus($this->resolveCardStatus($progress))) {
             return '';
@@ -190,14 +191,13 @@ final readonly class SubagentResultRenderer
     }
 
     /**
-     * @param list<string>         $plainLines
-     * @param array<string, mixed> $progress
+     * @param list<string> $plainLines
      */
     private function renderCard(
         array $plainLines,
         TuiTheme $theme,
         string $status,
-        array $progress,
+        SubagentProgressSnapshotDTO $progress,
         ?string $footerHint,
         bool $streaming,
         ?string $inCardTrailingHint = null,
@@ -211,8 +211,7 @@ final readonly class SubagentResultRenderer
             array_pop($workingLines);
         }
 
-        $mode = \is_string($progress['mode'] ?? null) ? $progress['mode'] : 'single';
-        $isParallel = 'parallel' === $mode;
+        $isParallel = $progress->isParallel();
         $borderColor = $this->borderColorForStatus($status);
         $header = [] !== $workingLines ? array_shift($workingLines) : 'subagent';
         $top = $theme->color($borderColor, $isParallel ? '╭─ '.$header : '╭─ '.$header);
@@ -325,17 +324,12 @@ final readonly class SubagentResultRenderer
             || str_starts_with($line, 'Use agent_retrieve');
     }
 
-    /**
-     * @param array<string, mixed> $progress
-     */
-    private function resolveCardStatus(array $progress): string
+    private function resolveCardStatus(SubagentProgressSnapshotDTO $progress): string
     {
-        $status = \is_string($progress['status'] ?? null) ? $progress['status'] : 'running';
-
-        return match ($status) {
+        return match ($progress->status) {
             'needs_clarification' => 'waiting_human',
             'starting' => 'running',
-            default => $status,
+            default => $progress->status,
         };
     }
 
@@ -357,16 +351,13 @@ final readonly class SubagentResultRenderer
         return \is_string($result) && '' !== $result ? $result : $block->text;
     }
 
-    /**
-     * @param array<string, mixed> $progress
-     */
-    private function isRedundantHandoff(array $progress, string $resultText): bool
+    private function isRedundantHandoff(SubagentProgressSnapshotDTO $progress, string $resultText): bool
     {
         $normalized = trim($resultText);
         if ('' === $normalized) {
             return true;
         }
-        $artifactId = \is_string($progress['artifact_id'] ?? null) ? $progress['artifact_id'] : '';
+        $artifactId = $progress->artifactId ?? '';
 
         return '' !== $artifactId && str_contains($normalized, $artifactId) && !str_contains($normalized, "\n\n");
     }

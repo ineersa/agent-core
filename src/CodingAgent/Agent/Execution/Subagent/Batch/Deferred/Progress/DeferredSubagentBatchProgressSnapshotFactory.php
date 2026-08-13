@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubag
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressSnapshotDTO;
 use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Clock\MonotonicClock;
 
@@ -36,10 +37,8 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
 
     /**
      * Build normal progress payload, branching on execution mode.
-     *
-     * @return array<string, mixed>
      */
-    public function buildNormalPayload(DeferredSubagentBatchProjectionDTO $batch): array
+    public function buildNormalPayload(DeferredSubagentBatchProjectionDTO $batch): SubagentProgressSnapshotDTO
     {
         if (ChildRunBatchExecutionModeEnum::Single === $batch->executionMode) {
             return $this->buildSingleNormalPayload($batch);
@@ -54,9 +53,9 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
      * Single timeout → flat 'failed' payload.
      * Single parent-cancel → flat 'cancelled' payload.
      *
-     * @return array<string, mixed>|null null when the single child has no lifecycle projection yet
+     * @return SubagentProgressSnapshotDTO|null null when the single child has no lifecycle projection yet
      */
-    public function buildSingleForcedPayload(DeferredSubagentBatchProjectionDTO $batch, DeferredSubagentInterruptionKindEnum $kind): ?array
+    public function buildSingleForcedPayload(DeferredSubagentBatchProjectionDTO $batch, DeferredSubagentInterruptionKindEnum $kind): ?SubagentProgressSnapshotDTO
     {
         $child = $this->requireExactlyOneChild($batch);
         $cp = $child->childLifecycleProjection;
@@ -82,10 +81,8 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
     /**
      * Parallel forced parent-cancel payload: preserve terminal children;
      * override non-terminal and unprojected children to Cancelled + "Cancelled by parent run.".
-     *
-     * @return array<string, mixed>
      */
-    public function buildForcedCancelPayload(DeferredSubagentBatchProjectionDTO $batch): array
+    public function buildForcedCancelPayload(DeferredSubagentBatchProjectionDTO $batch): SubagentProgressSnapshotDTO
     {
         $reports = [];
         $activeTurns = [];
@@ -118,10 +115,8 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
     /**
      * Single-child flat normal payload: produces mode=single flat payload analogous to
      * the normalized single-batch terminal completion oracle.
-     *
-     * @return array<string, mixed>
      */
-    private function buildSingleNormalPayload(DeferredSubagentBatchProjectionDTO $batch): array
+    private function buildSingleNormalPayload(DeferredSubagentBatchProjectionDTO $batch): SubagentProgressSnapshotDTO
     {
         $child = $this->requireExactlyOneChild($batch);
         $cp = $child->childLifecycleProjection;
@@ -164,8 +159,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         );
     }
 
-    /** @return array<string, mixed> */
-    private function buildParallelNormalPayload(DeferredSubagentBatchProjectionDTO $batch): array
+    private function buildParallelNormalPayload(DeferredSubagentBatchProjectionDTO $batch): SubagentProgressSnapshotDTO
     {
         $reports = [];
         $activeTurns = [];

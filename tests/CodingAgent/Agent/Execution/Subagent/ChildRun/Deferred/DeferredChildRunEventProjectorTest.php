@@ -314,9 +314,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             recentTools: $roundTrip->recentTools,
             activeToolLine: $roundTrip->activeToolLine,
         );
-        $fields = $summary->toProgressFields();
-        $this->assertSame(3, $fields['llm_step_count'] ?? null);
-        $this->assertArrayNotHasKey('turn_no', $fields);
+        $this->assertSame(3, $summary->llmStepCount);
 
         $snapshot = (new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder())->singleTerminalFromChildTurn(
             status: 'completed',
@@ -328,8 +326,9 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             elapsedMs: 1000,
             enrichment: $summary,
         );
-        $this->assertSame(3, $snapshot['llm_step_count'] ?? null);
-        $this->assertSame(7, $snapshot['turn_no'] ?? null);
+        $singlePayload = $snapshot->toArray();
+        $this->assertSame(3, $singlePayload['llm_step_count'] ?? null);
+        $this->assertSame(7, $singlePayload['turn_no'] ?? null);
 
         $parallel = (new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder())->parallelSnapshot(
             reports: [
@@ -349,7 +348,8 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             enrichmentByAgentRunId: ['child-run-llm-steps' => $summary],
             aggregateStatus: 'completed',
         );
-        $this->assertSame(3, $parallel['children'][0]['llm_step_count'] ?? null);
-        $this->assertSame(7, $parallel['children'][0]['turn_no'] ?? null);
+        $parallelPayload = $parallel->toArray();
+        $this->assertSame(3, $parallelPayload['children'][0]['llm_step_count'] ?? null);
+        $this->assertSame(7, $parallelPayload['children'][0]['turn_no'] ?? null);
     }
 }
