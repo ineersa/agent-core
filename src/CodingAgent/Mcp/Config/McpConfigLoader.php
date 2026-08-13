@@ -74,6 +74,9 @@ final class McpConfigLoader
                 continue;
             }
 
+            // Drop transport-inapplicable fields before interpolation (historical ignore semantics).
+            $data = $this->stripTransportInapplicableFields($data);
+
             // Interpolate env and headers BEFORE building DTO
             if (isset($data['env']) && \is_array($data['env'])) {
                 /** @var array<string, string> $env */
@@ -168,13 +171,36 @@ final class McpConfigLoader
     }
 
     /**
-     * Contextual transport/inheritance checks, then Serializer+Validator field rules.
+     * Diagnostic priority matches pre-Serializer semantics:
+     *  1) unknown fields
+     *  2) wrong-type enabled
+     *  3) source-aware transport/inheritance (including early return for inherited disable-only)
+     *  4) Serializer+Validator for normal per-server field rules
+     *
+     * Inherited disable-only deliberately bypasses DTO hydration so extra allowed
+     * fields are ignored even when malformed (historical behavior).
      *
      * @param array<string, mixed>      $data
      * @param array<string, mixed>|null $globalServers
      */
     private function validateServer(string $name, array $data, ?array $globalServers): void
     {
+        $allowedFields = [
+            'enabled', 'command', 'args', 'env', 'cwd',
+            'url', 'headers', 'timeoutMs', 'startupTimeoutMs', 'availability', 'excludeTools',
+        ];
+
+        foreach (array_keys($data) as $key) {
+            if (!\in_array($key, $allowedFields, true)) {
+                throw new \RuntimeException(\sprintf('MCP server "%s": unknown field "%s". Allowed fields: %s.', $name, $key, implode(', ', $allowedFields)));
+            }
+        }
+
+        if (\array_key_exists('enabled', $data) && !\is_bool($data['enabled'])) {
+            throw new \RuntimeException(\sprintf('MCP server "%s": "enabled" must be a boolean, got %s.', $name, \gettype($data['enabled'])));
+        }
+
+        $enabled = $data['enabled'] ?? true;
         // isset: null is treated as absent (matches prior transport presence checks).
         $hasCommand = isset($data['command']);
         $hasUrl = isset($data['url']);
@@ -182,21 +208,22 @@ final class McpConfigLoader
         // No transport defined — only loader can evaluate inheritance context.
         if (!$hasCommand && !$hasUrl) {
             if (null !== $globalServers && \array_key_exists($name, $globalServers)) {
-                if (!(\array_key_exists('enabled', $data) && false === $data['enabled'])) {
-                    throw new \RuntimeException(\sprintf('MCP server "%s": missing transport (command or url). An inherited server override must define a transport or explicitly set "enabled": false.', $name));
-                }
-            // Inherited disable-only override is valid; still hydrate for field/type checks.
-            } else {
-                $enabled = $data['enabled'] ?? true;
-                if (false === $enabled) {
-                    throw new \RuntimeException(\sprintf('MCP server "%s": cannot define a server with only "enabled": false and no transport. This server is not inherited from global config.', $name));
+                // Inherited disable-only: return after unknown/enabled checks; ignore other fields.
+                if (\array_key_exists('enabled', $data) && false === $data['enabled']) {
+                    return;
                 }
 
-                throw new \RuntimeException(\sprintf('MCP server "%s": missing transport. Define "command" for a STDIO server or "url" for an HTTP server.', $name));
+                throw new \RuntimeException(\sprintf('MCP server "%s": missing transport (command or url). An inherited server override must define a transport or explicitly set "enabled": false.', $name));
             }
+
+            if (false === $enabled) {
+                throw new \RuntimeException(\sprintf('MCP server "%s": cannot define a server with only "enabled": false and no transport. This server is not inherited from global config.', $name));
+            }
+
+            throw new \RuntimeException(\sprintf('MCP server "%s": missing transport. Define "command" for a STDIO server or "url" for an HTTP server.', $name));
         }
 
-        // Field types, unknown fields, list/map shapes, command xor url, timeouts, availability.
+        // Field types, list/map shapes, command xor url, timeouts, availability.
         $this->hydrateServerDefinition($name, $data);
     }
 
@@ -246,6 +273,10 @@ final class McpConfigLoader
             throw new \RuntimeException(\sprintf('MCP server "%s": "%s" has an invalid type.', $name, $field));
         } catch (\ValueError $e) {
             // Backed enum construction failures (e.g. invalid availability).
+            if (str_contains($e->getMessage(), 'McpServerAvailabilityEnum')) {
+                throw new \RuntimeException(\sprintf('MCP server "%s": "availability" must be one of: all, specific.', $name));
+            }
+
             throw new \RuntimeException(\sprintf('MCP server "%s": %s', $name, $e->getMessage()));
         }
 
@@ -275,22 +306,33 @@ final class McpConfigLoader
      */
     private function prepareServerPayload(string $name, array $data): array
     {
-        $payload = $data;
+        $payload = $this->stripTransportInapplicableFields($data);
         $payload['name'] = $name;
         unset($payload['transportType']);
 
-        $hasCommand = isset($payload['command']);
-        $hasUrl = isset($payload['url']);
+        return $payload;
+    }
 
-        // Preserve historical behavior: transport-inapplicable fields are ignored, not rejected.
+    /**
+     * Preserve historical behavior: transport-inapplicable fields are ignored, not rejected.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, mixed>
+     */
+    private function stripTransportInapplicableFields(array $data): array
+    {
+        $hasCommand = isset($data['command']);
+        $hasUrl = isset($data['url']);
+
         if (!$hasCommand) {
-            unset($payload['args'], $payload['env'], $payload['cwd']);
+            unset($data['args'], $data['env'], $data['cwd']);
         }
         if (!$hasUrl) {
-            unset($payload['headers']);
+            unset($data['headers']);
         }
 
-        return $payload;
+        return $data;
     }
 
     /**
