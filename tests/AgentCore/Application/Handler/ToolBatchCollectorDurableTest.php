@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -233,11 +234,14 @@ final class ToolBatchCollectorDurableTest extends TestCase
         );
         $hatfield = new HatfieldSessionStore($appConfig, $entityManager);
 
+        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
+
         return new SessionToolBatchStore(
             new ParentSessionToolBatchRunStoragePaths($hatfield),
             new LockFactory(new FlockStore()),
             new NullLogger(),
-            \Ineersa\AgentCore\Tests\Support\ToolBatchStateCodecTestFactory::create(),
+            $serializer,
+            $validator,
         );
     }
 

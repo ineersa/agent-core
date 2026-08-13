@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -1176,11 +1177,14 @@ final class ToolCallResultHandlerTest extends TestCase
         );
         $hatfield = new HatfieldSessionStore($appConfig, $entityManager);
 
+        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
+
         return new SessionToolBatchStore(
             new ParentSessionToolBatchRunStoragePaths($hatfield),
             new LockFactory(new FlockStore()),
             new NullLogger(),
-            \Ineersa\AgentCore\Tests\Support\ToolBatchStateCodecTestFactory::create(),
+            $serializer,
+            $validator,
         );
     }
 }

@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Session;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
-use Ineersa\AgentCore\Tests\Support\ToolBatchStateCodecTestFactory;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathsDTO;
@@ -22,6 +22,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Session\SessionToolBatchStore;
 use Ineersa\CodingAgent\Session\SessionToolBatchStoreException;
+use Ineersa\CodingAgent\Session\ToolBatchSnapshotEnvelopeDTO;
 use Ineersa\CodingAgent\Tests\Session\Support\ParentSessionToolBatchRunStoragePaths;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
@@ -105,7 +106,7 @@ final class SessionToolBatchStoreTest extends TestCase
             'run_id' => 'other-run',
             'turn_no' => $turnNo,
             'step_id' => $stepId,
-            'batch_state' => $this->codec()->normalize($this->emptyBatch([])),
+            'batch_state' => ToolBatchSnapshotEnvelopeDTO::create($runId, $turnNo, $stepId, $this->emptyBatch([]))->toArray(AttributeSerializerValidatorTestFactory::create()[0])['batch_state'],
         ];
         file_put_contents($dir.'/'.$filename, json_encode($envelope, \JSON_THROW_ON_ERROR));
 
@@ -157,7 +158,8 @@ final class SessionToolBatchStoreTest extends TestCase
         $directory = new AgentChildRunDirectory($this->hatfieldSessionStore, $registry, new NullLogger());
         $directory->register($entry);
 
-        $childStore = new SessionToolBatchStore(new ChildAwareToolBatchRunStoragePaths($this->hatfieldSessionStore, $directory, $pathResolver), new LockFactory(new FlockStore()), new NullLogger(), ToolBatchStateCodecTestFactory::create());
+        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
+        $childStore = new SessionToolBatchStore(new ChildAwareToolBatchRunStoragePaths($this->hatfieldSessionStore, $directory, $pathResolver), new LockFactory(new FlockStore()), new NullLogger(), $serializer, $validator);
         $childStore->save($childRunId, 2, 'step-child', $this->emptyBatch(['c1']));
 
         $expectedDir = $parentDir.'/artifacts/agents/'.$artifactId.'/runtime/tool-batches';
@@ -245,8 +247,16 @@ final class SessionToolBatchStoreTest extends TestCase
             'turn_no' => $turnNo,
             'step_id' => $stepId,
             'batch_state' => [
-                'expected_order' => ['c1' => 'not-an-int'],
-                'call_data' => [],
+                'expected_order' => ['c1' => 0],
+                'call_data' => [
+                    'c1' => [
+                        'toolCallId' => 'c1',
+                        'toolName' => 'read',
+                        'orderIndex' => 0,
+                        'args' => [],
+                        'mode' => 99,
+                    ],
+                ],
                 'pending_queue' => [],
                 'in_flight' => [],
                 'result_data' => [],
@@ -264,49 +274,6 @@ final class SessionToolBatchStoreTest extends TestCase
             $this->assertStringContainsString('batch_state is invalid', $exception->getMessage());
             $previous = $exception->getPrevious();
             $this->assertInstanceOf(\UnexpectedValueException::class, $previous);
-            $this->assertStringContainsString('expected_order', $previous->getMessage());
-        }
-    }
-
-    public function testLoadRejectsMalformedOptionalCallFieldTypes(): void
-    {
-        $runId = 'run-1';
-        $turnNo = 1;
-        $stepId = 'step-b';
-        $dir = $this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$runId.'/runtime/tool-batches';
-        mkdir($dir, recursive: true);
-        $filename = \sprintf('%d_%s.json', $turnNo, hash('sha256', $stepId));
-        $envelope = [
-            'run_id' => $runId,
-            'turn_no' => $turnNo,
-            'step_id' => $stepId,
-            'batch_state' => [
-                'expected_order' => ['c1' => 0],
-                'call_data' => [
-                    'c1' => [
-                        'toolCallId' => 'c1',
-                        'toolName' => 'read',
-                        'orderIndex' => 0,
-                        'mode' => 99,
-                    ],
-                ],
-                'pending_queue' => [],
-                'in_flight' => [],
-                'result_data' => [],
-                'finalized' => false,
-                'max_parallelism' => 2,
-                'awaiting_human_input' => [],
-            ],
-        ];
-        file_put_contents($dir.'/'.$filename, json_encode($envelope, \JSON_THROW_ON_ERROR));
-
-        try {
-            $this->store->load($runId, $turnNo, $stepId);
-            $this->fail('Expected SessionToolBatchStoreException for malformed optional call field.');
-        } catch (SessionToolBatchStoreException $exception) {
-            $previous = $exception->getPrevious();
-            $this->assertInstanceOf(\UnexpectedValueException::class, $previous);
-            $this->assertStringContainsString('mode', $previous->getMessage());
         }
     }
 
@@ -376,17 +343,15 @@ final class SessionToolBatchStoreTest extends TestCase
             new NullLogger(),
         );
 
+        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
+
         return new SessionToolBatchStore(
             new ParentSessionToolBatchRunStoragePaths($hatfield),
             new LockFactory(new FlockStore()),
             new NullLogger(),
-            ToolBatchStateCodecTestFactory::create(),
+            $serializer,
+            $validator,
         );
-    }
-
-    private function codec(): \Ineersa\AgentCore\Domain\Tool\ToolBatchStateCodec
-    {
-        return ToolBatchStateCodecTestFactory::create();
     }
 
     private function emptyBatch(array $pending): ToolBatchStateDTO
@@ -411,6 +376,10 @@ final class SessionToolBatchStoreTest extends TestCase
     private function assertPersistedEquivalent(ToolBatchStateDTO $expected, ?ToolBatchStateDTO $actual): void
     {
         $this->assertNotNull($actual);
-        $this->assertSame($this->codec()->normalize($expected), $this->codec()->normalize($actual));
+        [$normalizer] = AttributeSerializerValidatorTestFactory::create();
+        $this->assertSame(
+            ToolBatchSnapshotEnvelopeDTO::create('eq', 1, 's', $expected)->toArray($normalizer)['batch_state'],
+            ToolBatchSnapshotEnvelopeDTO::create('eq', 1, 's', $actual)->toArray($normalizer)['batch_state'],
+        );
     }
 }

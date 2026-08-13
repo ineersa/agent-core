@@ -20,6 +20,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -175,11 +176,14 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         );
         $hatfield = new HatfieldSessionStore($appConfig, $entityManager);
 
+        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
+
         return new SessionToolBatchStore(
             new ParentSessionToolBatchRunStoragePaths($hatfield),
             new LockFactory(new FlockStore()),
             new NullLogger(),
-            \Ineersa\AgentCore\Tests\Support\ToolBatchStateCodecTestFactory::create(),
+            $serializer,
+            $validator,
         );
     }
 

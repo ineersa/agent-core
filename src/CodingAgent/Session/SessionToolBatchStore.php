@@ -6,10 +6,12 @@ namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
-use Ineersa\AgentCore\Domain\Tool\ToolBatchStateCodec;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Session-scoped durable tool batch snapshots (transient recovery state).
@@ -33,7 +35,8 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         private readonly ToolBatchRunStoragePathsInterface $storagePaths,
         private readonly LockFactory $lockFactory,
         private readonly LoggerInterface $logger,
-        private readonly ToolBatchStateCodec $batchStateCodec,
+        private readonly NormalizerInterface&DenormalizerInterface $serializer,
+        private readonly ValidatorInterface $validator,
     ) {
     }
 
@@ -181,7 +184,15 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
             throw new SessionToolBatchStoreException('Tool batch snapshot root must be an object.', ['path' => $path, 'component' => 'session_tool_batch_store']);
         }
 
-        return ToolBatchSnapshotEnvelopeDTO::fromArray($decoded, $expectedRunId, $expectedTurnNo, $expectedStepId, $path, $this->batchStateCodec);
+        return ToolBatchSnapshotEnvelopeDTO::fromArray(
+            $decoded,
+            $expectedRunId,
+            $expectedTurnNo,
+            $expectedStepId,
+            $path,
+            $this->serializer,
+            $this->validator,
+        );
     }
 
     private function writeSnapshot(string $runId, int $turnNo, string $stepId, ToolBatchSnapshotEnvelopeDTO $envelope): void
@@ -194,7 +205,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         $tempPath = $path.'.tmp.'.bin2hex(random_bytes(8));
 
         try {
-            $json = json_encode($envelope->toArray($this->batchStateCodec), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+            $json = json_encode($envelope->toArray($this->serializer), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
             $written = file_put_contents($tempPath, $json, \LOCK_EX);
             if (false === $written || $written !== \strlen($json)) {
                 throw new SessionToolBatchStoreException('Failed to write tool batch snapshot temp file.', ['run_id' => $runId, 'turn_no' => $turnNo, 'step_id' => $stepId, 'path' => $tempPath, 'component' => 'session_tool_batch_store']);

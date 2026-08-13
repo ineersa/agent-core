@@ -4,6 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
+/**
+ * Bus envelope fields shared by execution messages.
+ *
+ * These properties intentionally have no {@see \Symfony\Component\Serializer\Attribute\Groups}
+ * attribute so tool-batch snapshot normalization
+ * ({@see \Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO::SNAPSHOT_GROUP}) excludes them.
+ * Identity is reattached from the snapshot envelope on load. Messenger/PhpSerializer is unaffected.
+ */
 abstract readonly class AbstractAgentBusMessage implements AgentBusMessageInterface
 {
     public function __construct(
