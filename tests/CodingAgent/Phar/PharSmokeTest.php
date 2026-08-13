@@ -255,6 +255,9 @@ final class PharSmokeTest extends TestCase
             $uri = 'phar://'.$pharPath.'/'.$entry['relativePath'];
             $raw = file_get_contents($uri);
             $this->assertNotFalse($raw, 'Unable to read '.$uri);
+            $source = file_get_contents($entry['absolutePath']);
+            $this->assertNotFalse($source);
+            $this->assertSame($source, $raw, 'PHAR bytes must match source for '.$entry['relativePath']);
             $this->assertStringContainsString('builtin: true', $raw);
             $this->assertStringContainsString('description:', $raw);
             $this->assertStringContainsString('# ', $raw);
@@ -310,6 +313,10 @@ final class PharSmokeTest extends TestCase
         $this->assertFalse(
             isset($phar['.hatfield/extensions/extension-api/docs/private-unmarked.md']),
             'PHAR must not bundle unmarked Extension API docs',
+        );
+        $this->assertFalse(
+            isset($phar['vendor/ineersa/hatfield-extension-api/docs/extension-api.md']),
+            'PHAR must not ship vendor path-package Extension API docs duplicates',
         );
 
         $locator = new \Ineersa\CodingAgent\Config\AppResourceLocator('phar://'.$pharPath);

@@ -34,7 +34,40 @@ Release assets: `hatfield.phar`, `hatfield.linux-amd64`, `hatfield.linux-arm64`,
 ```bash
 hatfield --version
 hatfield agent --help
+hatfield agent                 # interactive TUI in the current directory
 ```
+
+## First-run model setup
+
+Built-in defaults ship **no** live provider/model — configure sparse `ai:` overrides before useful runs.
+Secrets belong in `~/.hatfield/settings.yaml` (or env vars via `env:NAME`), not committed project files.
+
+```yaml
+# ~/.hatfield/settings.yaml (illustrative — use your real provider)
+ai:
+  default_model: openai/gpt-4.1
+  default_reasoning: medium
+  providers:
+    openai:
+      type: generic
+      enabled: true
+      base_url: https://api.openai.com/v1
+      api: openai-completions
+      api_key: env:OPENAI_API_KEY
+      supports_completions: true
+      models:
+        gpt-4.1:
+          name: GPT-4.1
+          context_window: 1047576
+          max_tokens: 32768
+          input: [text]
+          tool_calling: true
+          reasoning: false
+```
+
+Every selectable model must be listed under its provider. Full field reference:
+[`docs/settings-models.md`](docs/settings-models.md). Codex OAuth helper (when used):
+`hatfield auth:codex`.
 
 ## Features
 
@@ -142,4 +175,4 @@ Public contracts: [`ineersa/hatfield-extension-api`](https://packagist.org/packa
 | observational-memory | `ineersa/hatfield-ext-observational-memory` |
 
 Enable classes under `extensions.enabled` in project settings; they register at **session start**.
-Package-local docs stay with each extension (for example file-rewind README).
+Package-local docs stay with each extension repository/package (for example the file-rewind README); they are not auto-merged into `hatfield_docs`.

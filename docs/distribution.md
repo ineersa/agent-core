@@ -15,9 +15,11 @@ Internals: [phar-packaging.md](phar-packaging.md) · [static-packaging.md](stati
 | `hatfield.darwin-arm64` | Fused PHP-micro native (macOS arm64) |
 | `SHA256SUMS` | SHA-256 for every release asset |
 
-**Windows:** the Bash installer and native matrix are **Linux/macOS only**. Windows may run a
-manually downloaded platform-neutral `hatfield.phar` with a suitable system PHP (≥ 8.5);
-there is no Windows native binary and no Windows installer path.
+**Windows / non-POSIX:** the Bash installer and native matrix are **Linux/macOS only**. There is no
+Windows native binary and no Windows installer path. The PHAR is platform-neutral in packaging, but
+runtime requires **POSIX-capable PHP with `pcntl` and `posix`** (plus the other PHAR extensions in
+[phar-packaging.md](phar-packaging.md)). Stock Windows PHP builds lack those extensions, so Windows
+is unsupported for normal product runs even with a downloaded PHAR.
 
 ## Local orchestration
 
@@ -50,8 +52,8 @@ scripts/build-distribution.sh --version=1.2.3 --commit=$(git rev-parse HEAD)
 # Latest PHAR into ~/.local/bin
 bash installer/bash-installer --version=latest
 
-# Pinned release tag, custom install dir
-bash installer/bash-installer --version=v1.2.3 --install-dir=~/.local/bin
+# Pinned release tag, custom install dir (quote $HOME — bare ~ in --install-dir is not expanded by the flag parser)
+bash installer/bash-installer --version=v1.2.3 --install-dir="$HOME/.local/bin"
 
 # Fused native binary for the current Linux/macOS platform
 bash installer/bash-installer --static --version=latest
@@ -71,7 +73,7 @@ Behavior (source-backed):
 
 | Symptom | Likely cause / action |
 |---|---|
-| `OS '…' not supported` / Windows | Use manual PHAR + system PHP; installer is Linux/macOS only |
+| `OS '…' not supported` / Windows | Installer is Linux/macOS only; product runtime needs POSIX PHP (`pcntl`/`posix`) — Windows is unsupported |
 | Architecture not supported | Only `amd64` and `arm64` are in the matrix |
 | PHP required (PHAR path) | Install PHP ≥ 8.5 with required extensions, or pass `--static` on supported OS/arch |
 | Checksum mismatch | Corrupt download or wrong `SHA256SUMS`; retry; do not force-install |

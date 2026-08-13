@@ -501,6 +501,9 @@ function materialize_vendor_path_package_symlinks(string $stagingDir): void
 {
     $path = $stagingDir.'/vendor/ineersa/hatfield-extension-api';
     if (!is_link($path)) {
+        // Already a real directory (or missing); still strip vendor docs duplicates.
+        strip_vendor_extension_api_docs($stagingDir);
+
         return;
     }
 
@@ -518,6 +521,23 @@ function materialize_vendor_path_package_symlinks(string $stagingDir): void
     if (!rename($tmp, $path)) {
         remove_path_checked($tmp);
         throw new \RuntimeException('Unable to replace path-package symlink with copy: '.$path);
+    }
+
+    // Canonical model-visible API docs live under .hatfield/extensions/extension-api/docs.
+    // Drop the vendor path-package docs/ copy so the PHAR does not ship duplicates.
+    strip_vendor_extension_api_docs($stagingDir);
+}
+
+/**
+ * Remove vendor/ineersa/hatfield-extension-api/docs after Composer path materialization.
+ *
+ * Selected API docs are staged only at the monorepo-canonical path.
+ */
+function strip_vendor_extension_api_docs(string $stagingDir): void
+{
+    $docs = $stagingDir.'/vendor/ineersa/hatfield-extension-api/docs';
+    if (is_dir($docs) || is_link($docs)) {
+        remove_path_checked($docs);
     }
 }
 
@@ -822,16 +842,46 @@ function phar_packaged_inputs(string $root): array
         $selectedDocs = (new \Ineersa\CodingAgent\Docs\BuiltinDocsCatalog())->selectedAbsolutePaths($root);
     }
 
+    // Extension API package source is fingerprinted without its docs/ subtree so
+    // unmarked API Markdown does not invalidate freshness; selected API docs are
+    // listed explicitly via $selectedDocs.
+    $extensionApiFiles = [];
+    $extensionApiRoot = $root.'/.hatfield/extensions/extension-api';
+    if (is_dir($extensionApiRoot)) {
+        $extensionApiRootReal = realpath($extensionApiRoot) ?: $extensionApiRoot;
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveCallbackFilterIterator(
+                new \RecursiveDirectoryIterator($extensionApiRoot, \FilesystemIterator::SKIP_DOTS),
+                static function (\SplFileInfo $current) use ($extensionApiRootReal): bool {
+                    if (!$current->isDir()) {
+                        return true;
+                    }
+                    // Skip only the package-level docs/ directory.
+                    if ('docs' !== $current->getFilename()) {
+                        return true;
+                    }
+                    $parent = \dirname($current->getPathname());
+                    $parentReal = realpath($parent) ?: $parent;
+
+                    return $parentReal !== $extensionApiRootReal;
+                },
+            ),
+        );
+        foreach ($iterator as $entry) {
+            /** @var \SplFileInfo $entry */
+            if ($entry->isFile() || $entry->isLink()) {
+                $extensionApiFiles[] = $entry->getPathname();
+            }
+        }
+        sort($extensionApiFiles);
+    }
+
     return [
         'directories' => [
             $root.'/bin',
             $root.'/src',
             $root.'/config',
             $root.'/migrations',
-            // Public ExtensionApi package source (path-required by root composer).
-            // Selected Extension API docs live under this tree and are also listed
-            // explicitly as files for clarity/freshness.
-            $root.'/.hatfield/extensions/extension-api',
             $root.'/.castor',
             $root.'/tools/phar',
         ],
@@ -842,7 +892,7 @@ function phar_packaged_inputs(string $root): array
             $root.'/castor.php',
             $root.'/tools/phar/composer.json',
             $root.'/tools/phar/composer.lock',
-        ], $selectedDocs))),
+        ], $extensionApiFiles, $selectedDocs))),
     ];
 }
 
@@ -911,11 +961,12 @@ function phar_input_fingerprint(string $root): string
         }
     }
 
-    // Build identity env inputs are part of the packaged artifact contents.
-    $version = getenv('HATFIELD_BUILD_VERSION');
-    $commit = getenv('HATFIELD_BUILD_COMMIT');
-    $lines[] = 'env\tHATFIELD_BUILD_VERSION\t'.(false === $version ? '' : trim((string) $version));
-    $lines[] = 'env\tHATFIELD_BUILD_COMMIT\t'.(false === $commit ? '' : trim((string) $commit));
+    // Fingerprint the resolved packaging build identity (env overrides + git HEAD),
+    // matching resolve_build_identity_for_packaging() so unset HATFIELD_BUILD_COMMIT
+    // still invalidates when HEAD moves.
+    $identity = resolve_build_identity_for_packaging($root);
+    $lines[] = 'build-identity\tversion\t'.$identity['version'];
+    $lines[] = 'build-identity\tcommit\t'.$identity['commit'];
 
     sort($lines);
 

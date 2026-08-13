@@ -37,6 +37,7 @@ Each server entry is either **STDIO** (`command`) or **HTTP** (`url`). Transport
       "cwd": "/path/to/server",
       "timeoutMs": 30000,
       "startupTimeoutMs": 30000,
+      "availability": "all",
       "excludeTools": []
     },
     "remote-http": {
@@ -44,7 +45,8 @@ Each server entry is either **STDIO** (`command`) or **HTTP** (`url`). Transport
       "url": "https://example.example/mcp",
       "headers": { "Authorization": "Bearer ..." },
       "timeoutMs": 30000,
-      "startupTimeoutMs": 30000
+      "startupTimeoutMs": 30000,
+      "availability": "specific"
     }
   }
 }
@@ -61,16 +63,44 @@ Each server entry is either **STDIO** (`command`) or **HTTP** (`url`). Transport
 | `headers` | HTTP request headers | `{}` |
 | `timeoutMs` | Per-request timeout (ms) | `30000` |
 | `startupTimeoutMs` | Startup/connect timeout (ms) | `30000` |
-| `availability` | Tool availability policy for the server | product enum default |
+| `availability` | `all` (global inherit) or `specific` (selector-only) | `all` |
 | `excludeTools` | Tool names to hide from the registry | `[]` |
 
 Unknown fields are rejected by the config loader. Prefer least-privilege env vars. Do not commit secrets.
+
+## Availability and child inheritance
+
+`AgentMcpToolsResolver` maps agent frontmatter `tools` entries into MCP runtime names:
+
+| `availability` | Meaning |
+|---|---|
+| `all` | Server tools participate in **global** MCP inheritance |
+| `specific` | Tools are **not** in the global set; only explicit child selectors can add them |
+
+When an agent definition **omits** `tools`, or lists tools **without** any `mcp:` selector, the child inherits the **global** MCP set (`availability: all` servers only).
+
+When the definition includes one or more `mcp:` selectors:
+
+| Selector | Policy |
+|---|---|
+| `mcp:-` | No MCP tools (`none`) — wins over other selectors |
+| only `mcp:*` | All globally available MCP tools (`all`) |
+| any other `mcp:…` | `specific` mode: start from global tools, then add matches |
+
+Specific selector grammar (after the `mcp:` prefix):
+
+- Exact runtime name: `mcp:websearch_query`
+- Terminal prefix wildcard only: `mcp:websearch_*` (exactly one trailing `*`)
+- Embedded/multiple `*` characters are **not** globs (exact match only)
+
+Raw catalog runtime names listed without the `mcp:` prefix are still treated as MCP-owned for policy (they do not bypass availability). Non-MCP tool names pass through as ordinary allowlist entries.
+
+Child denylist `agents.subagent_excluded_tools` still removes named tools after MCP merge.
 
 ## Runtime behavior
 
 - MCP tools are registered into the Hatfield tool registry for the session after servers connect and advertise tools.
 - Tool names are namespaced/unique per registry rules to avoid collisions with built-ins.
-- Child/subagent availability follows the same tool policy as other tools subject to `agents.subagent_excluded_tools` and child allowlists.
 - Invocations use the MCP client session for the active run; transient disconnects may reconnect according to client manager policy.
 
 ## Shutdown

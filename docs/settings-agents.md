@@ -37,6 +37,17 @@ Bundled starter agents install via `hatfield agents:init` into `~/.hatfield/agen
 
 Child extensions: effective allowlist = `agents.extensions.always_on` ∪ optional frontmatter `extensions` on the agent definition. Omitted frontmatter extensions means **no** optional child extensions (does not inherit global `extensions.enabled`).
 
+## Forks (`forks:`)
+
+| Key | Meaning |
+|---|---|
+| `forks.model` | Fallback model when the `fork` tool omits `model` (else parent model) |
+| `forks.thinking_level` | Fallback thinking when the tool omits `thinking` |
+| `forks.extensions.always_on` | Extension classes always loaded for fork children |
+| `forks.extensions.enabled` | Additional optional extension classes for forks only |
+
+Fork effective extensions = `forks.extensions.always_on` ∪ `forks.extensions.enabled`. This is **separate** from agent-definition frontmatter extensions and from parent `extensions.enabled`. Behavioral detail: [agents.md](agents.md).
+
 ## Prompts (`prompts:`)
 
 Top-level `prompts:` is a list of additional template files or directories (see [prompt-templates.md](prompt-templates.md)).
@@ -51,8 +62,10 @@ CLI may pass repeatable `--prompt-template` paths (highest practical override fo
 ## Skills
 
 Skill discovery is controlled by CLI/runtime flags and registered package skill directories.
-Built-in skills ship under the install tree (`src/CodingAgent/Resources/skills`).
-`--no-skills` disables auto-discovery. Extensions may `registerSkill()` for package-local skills (lowest precedence).
+Built-in skills ship under the install tree (`src/CodingAgent/Resources/skills`) and are
+**materialized into `~/.hatfield/skills/` even when `--no-skills` is set** (so later sessions stay current);
+`--no-skills` only disables auto-discovery scanning of project/user/extension skill dirs for the current run.
+CLI `--skills-path` entries are always scanned. Extensions may `registerSkill()` for package-local skills (lowest precedence when auto-discovery is on).
 
 ## Extensions (`extensions:`)
 
@@ -65,7 +78,7 @@ Extensions load from project `.hatfield/extensions/vendor/autoload.php` when pre
 They register **once at session start** — enablement changes require a new session.
 
 Built-in SafeGuard class may appear in defaults/`always_on` without a Composer package.
-Project packages (task-workflow, castor-llm-mode, file-rewind, observational-memory) document their own settings keys in package READMEs. Those keys are **not** core `hatfield_docs` entries.
+Project packages (task-workflow, castor-llm-mode, file-rewind, observational-memory) document their own settings keys in **package-local README files** shipped with each extension repository/package. Those keys are **not** core `hatfield_docs` catalog entries.
 
 Example:
 

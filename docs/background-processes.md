@@ -7,31 +7,37 @@ description: Background process tracking, logs, stop behavior, and related setti
 
 Long-running shell work can detach into tracked background processes so the conversation loop stays responsive.
 
+There is **no** model-facing `bg_start` tool. Backgrounding is offered from **`bash`** when a
+command exceeds `tools.bash.background_prompt_threshold_seconds` (default `15`). The **user**
+chooses whether to move the command to the background; the model does not control that choice.
+After backgrounding, inspect or stop processes with `bg_status`.
+
 ## Model / user tool: `bg_status`
 
 | Action | Meaning |
 |---|---|
 | `list` | Show tracked processes for the session |
-| `log` | Read recent log output for a process |
-| `stop` | TERM the process group, wait grace, then KILL if needed |
+| `log` | Read recent log output for a process (`pid` required) |
+| `stop` | TERM the process group, wait grace, then KILL if needed (`pid` required) |
 
 ## Lifecycle
 
-1. Start records a running process (session-scoped tracking DB under `.hatfield/tmp/bg/`).
-2. Stdout/stderr append to a log file; a status sidecar records exit codes when available.
-3. Stop resolves the process group, sends `SIGTERM`, waits `tools.background_process.stop_grace_seconds`, then `SIGKILL` if still alive.
+1. `bash` runs a command; after the threshold, the TUI may prompt the user to background it.
+2. On accept, Hatfield records a running process (session-scoped tracking under `.hatfield/tmp/bg/`) and returns a notice with PID + log path.
+3. Stdout/stderr append to a log file; a status sidecar records exit codes when available.
+4. `bg_status stop` resolves the process group, sends `SIGTERM`, waits `tools.background_process.stop_grace_seconds`, then `SIGKILL` if still alive.
 
 Tracking is **session-scoped**. Logs and DB files live under `tools.background_process.path` (default `.hatfield/tmp/bg`).
 
 ## Settings
 
-| Key | Role |
-|---|---|
-| `tools.background_process.path` | Storage directory |
-| `tools.background_process.retention` | Stale log/record retention seconds |
-| `tools.background_process.stop_grace_seconds` | TERM grace period |
-| `tools.background_process.log_tail_chars` | Default log tail size |
-| `tools.bash.*` | Timeouts / background threshold for bash integration |
+| Key | Role | Default |
+|---|---|---|
+| `tools.bash.background_prompt_threshold_seconds` | When bash may offer backgrounding | `15` |
+| `tools.background_process.path` | Storage directory | `.hatfield/tmp/bg` |
+| `tools.background_process.retention` | Stale log/record retention seconds | `86400` |
+| `tools.background_process.stop_grace_seconds` | TERM grace period | `5` |
+| `tools.background_process.log_tail_chars` | Default log tail size | `5000` |
 
 See [settings.md](settings.md).
 

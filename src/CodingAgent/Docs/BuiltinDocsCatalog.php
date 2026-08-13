@@ -224,42 +224,13 @@ final class BuiltinDocsCatalog
     }
 
     /**
-     * Collect GitHub-style heading slugs from Markdown body (outside fenced code).
-     *
-     * Duplicate headings receive -1, -2, … suffixes matching common GitHub behavior.
+     * Collect GitHub-style heading slugs from Markdown body via the shared AST scanner.
      *
      * @return list<string>
      */
     public static function headingSlugsFromMarkdown(string $markdown): array
     {
-        $slugs = [];
-        $counts = [];
-        $inFence = false;
-        $lines = preg_split("/\n/", $markdown);
-        if (!\is_array($lines)) {
-            $lines = [];
-        }
-        foreach ($lines as $line) {
-            if (preg_match('/^\s*```/', $line)) {
-                $inFence = !$inFence;
-                continue;
-            }
-            if ($inFence) {
-                continue;
-            }
-            if (!preg_match('/^#{1,6}\s+(.+?)\s*#*\s*$/', $line, $matches)) {
-                continue;
-            }
-            $base = self::githubStyleHeadingSlug($matches[1]);
-            if ('' === $base) {
-                continue;
-            }
-            $n = $counts[$base] ?? 0;
-            $counts[$base] = $n + 1;
-            $slugs[] = 0 === $n ? $base : $base.'-'.$n;
-        }
-
-        return $slugs;
+        return (new BuiltinDocsMarkdownScanner())->headingSlugs($markdown);
     }
 
     /**

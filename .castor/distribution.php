@@ -1427,6 +1427,15 @@ function distribution_assert_phar_bundled_resources(string $pharPath): void
         if ($phar[$entry['relativePath']]->isLink()) {
             throw new RuntimeException('PHAR built-in doc must be regular file: '.$entry['relativePath']);
         }
+        $uri = 'phar://'.$pharPath.'/'.$entry['relativePath'];
+        $packaged = file_get_contents($uri);
+        $source = file_get_contents($entry['absolutePath']);
+        if (false === $packaged || false === $source || $packaged !== $source) {
+            throw new RuntimeException('PHAR built-in doc bytes must match source: '.$entry['relativePath']);
+        }
+    }
+    if (isset($phar['vendor/ineersa/hatfield-extension-api/docs/extension-api.md'])) {
+        throw new RuntimeException('PHAR must not ship vendor path-package Extension API docs duplicates');
     }
 
     // Exact Markdown inventory under both canonical archive doc roots

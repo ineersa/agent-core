@@ -37,6 +37,7 @@ sudo install -o dd-agent -g dd-agent -m 0644 \
 4. Restart the Agent and write a smoke line:
 
 ```bash
+# Linux (systemd). Adapt for other service managers.
 sudo systemctl restart datadog-agent
 castor datadog:smoke-log
 ```

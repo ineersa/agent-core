@@ -14,21 +14,34 @@ see [approvals.md](approvals.md).
 
 ## Model-facing tool: `ask_human`
 
-The model provides a question payload / JSON schema for the expected answer.
-The tool does not continue until the human answers or the question is cancelled.
+The model supplies structured arguments — **not** raw JSON Schema:
+
+| Argument | Meaning |
+|---|---|
+| `question` or `prompt` | Required user-facing text (either non-empty) |
+| `kind` / `ui_kind` | Optional: `text`, `confirm`, `choice`, `approval` |
+| `choices` | Required non-empty string list when kind is `choice` |
+| `default` | Optional default value |
+| `question_id` | Optional stable id; otherwise derived from prompt/kind/choices/header |
+| `header` | Optional short header |
+
+Hatfield **derives** the answer schema internally from kind/choices (boolean for
+confirm/approval, string enum for choices, otherwise string). Do not send a schema
+object as a tool argument.
 
 Typical outcomes:
 
 | Outcome | Meaning |
 |---|---|
-| Structured answer | Matches the requested schema and resumes the agent turn |
+| Structured answer | Matches the derived schema and resumes the agent turn |
 | Free-text escape | UI may offer a plain-answer path when schema entry is impractical |
-| Cancel | Question is dismissed; the model sees a cancel signal and must not assume success |
+| Cancel | Explicit cancel of the pending question (not a successful answer) |
 
 ## End-to-end flow
 
-1. Model invokes `ask_human` with prompt + schema.
-2. Runtime records a pending human-input request and projects `human_input.requested` (or equivalent runtime events).
+1. Model invokes `ask_human` with question/kind/choices (as above).
+2. Runtime records a pending human-input request and projects `human_input.requested`
+   from AgentCore `waiting_human` (see runtime protocol docs).
 3. TUI `QuestionCoordinator` / controller renders the overlay.
 4. Human submits `answer_human` (runtime command) or cancels.
 5. Runtime resumes the agent with the answer payload attached to the waiting tool call.

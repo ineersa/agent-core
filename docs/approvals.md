@@ -54,7 +54,7 @@ Hard blocks (for example privilege escalation via `sudo`) are never negotiable.
 Built-in protected-read patterns (`.env.local`, SSH keys, cloud credentials, etc.) cannot
 be removed through config; YAML only adds more.
 
-`HATFIELD_APPROVAL_CHANNEL` can override approval channel routing for specialized environments.
+`HATFIELD_APPROVAL_CHANNEL` is a **capability signal**, not a routing selector. SafeGuard treats any non-empty value as “a human/broker can answer approval questions” (interactive TUI sets `controller` on the controller process so messenger workers inherit it). Empty/unset means no channel — policy-relaxable calls auto-deny when `auto_deny_in_noninteractive` is true (default), and settings set/remove always fail closed without a channel.
 
 ### Child agents
 
@@ -69,7 +69,7 @@ Use public Extension API types only:
 - `ToolCallDecisionDTO::requireApproval()`
 - `ApprovalAnswerHookInterface` + answer DTOs
 
-See Extension API docs (`extension-api`, `extension-api-tools`).
+See Extension API docs via `hatfield_docs` (`extension-api`, `extension-api-tools`).
 
 ## Related settings
 

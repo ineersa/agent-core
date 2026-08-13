@@ -23,9 +23,18 @@ The TUI talks to the controller through `AgentSessionClient` (`Runtime/Contract`
 
 Canonical replay source is the session event log — not transient stream deltas. See [session-storage.md](session-storage.md).
 
-## Supervision
+## Supervision (`ConsumerSupervisor`)
 
-- Controller may supervise worker processes and restart policies as implemented in CodingAgent runtime process helpers.
+Controller-owned messenger consumers (LLM/tool/…) are supervised with concrete invariants:
+
+- Keepalive interval **5s** (`messenger:consume --keepalive`) so live workers refresh `delivered_at` before session Doctrine `redeliver_timeout` (60s) reclaim.
+- Keepalive requires **pcntl** signal+alarm support; without it the supervisor refuses to launch (long turns would be reclaimed).
+- Restart budget: max **3** restarts per consumer key within a **60s** window, initial restart delay **1s**; beyond budget the consumer is abandoned and the controller can surface a diagnostic.
+- Shared consumer graceful shutdown grace defaults to **5s**; partial stdout line buffer max **65_536** bytes; stderr tail retained for crash diagnostics (**16_384** bytes).
+- Consumer memory recycle threshold **256M** via Messenger worker options.
+
+Other notes:
+
 - `HATFIELD_BINARY_PATH` selects the executable used for subprocesses (PHAR/static/tests).
 - Cancellation and shutdown are best-effort across workers; MCP disconnect is best-effort on worker stop ([mcp.md](mcp.md)).
 

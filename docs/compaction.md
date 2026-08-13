@@ -58,7 +58,7 @@ Compaction records canonical session events so resume rebuilds the compacted LLM
 
 ## Extension hooks
 
-Extensions may register `BeforeCompactionHookInterface` via the public Extension API to contribute notes within the public contract. Package-specific observational-memory settings, when that extension is installed, live under `extensions.settings.observational_memory` (package README), not as core catalog docs.
+Extensions may register `BeforeCompactionHookInterface` via the public Extension API to contribute notes within the public contract. Package-specific observational-memory settings, when that extension is installed, live under `extensions.settings.observational_memory` and are documented in that package’s own README — not as core `hatfield_docs` entries.
 
 ## Related
 

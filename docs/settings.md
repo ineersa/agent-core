@@ -10,11 +10,17 @@ in home or project settings. Hatfield does **not** copy defaults into your home 
 
 ## Precedence
 
-Later sources win on a key-by-key merge:
+Later sources win via structured overlay (`AppConfigLoader`):
 
 1. Built-in defaults shipped with the install (`config/hatfield.defaults.yaml`)
 2. `~/.hatfield/settings.yaml`
 3. `<project>/.hatfield/settings.yaml`
+
+Merge rules:
+
+- **Associative maps** deep-merge (higher layer overrides matching keys; untouched lower keys survive).
+- **Lists** (sequential arrays) are replaced entirely by the higher layer — no append/index-merge.
+- **Scalars** (and `null`) in a higher layer replace the lower value.
 
 Use only keys you intend to change. Full snapshots of defaults are unnecessary.
 
@@ -53,7 +59,7 @@ Relative paths in settings resolve against the **active project CWD** (not the i
 | Key | Meaning | Default (built-in) |
 |---|---|---|
 | `tui.theme` | Theme id | `cyberpunk` |
-| `tui.theme_paths` | Theme YAML search paths | `config/themes`, `.hatfield/themes`, `~/.hatfield/themes` |
+| `tui.theme_paths` | Theme YAML search paths (list replace) | `%kernel.project_dir%/config/themes`, `.hatfield/themes`, `~/.hatfield/themes` |
 | `tui.transcript.thinking.visible` | Show thinking blocks | `true` |
 | `tui.transcript.thinking.style` | Thinking presentation | `dim_italic` |
 | `tui.transcript.previews.expanded_by_default` | Expand previews | `false` |
@@ -146,7 +152,7 @@ See [background-processes.md](background-processes.md).
 | `HATFIELD_BINARY_PATH` | Subprocess/runtime executable override (tests, custom installs) |
 | `HATFIELD_LLM_RAW_STREAM_CAPTURE` | Enable raw stream capture |
 | `HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH` | Capture path |
-| `HATFIELD_APPROVAL_CHANNEL` | Approval channel override (see [approvals.md](approvals.md)) |
+| `HATFIELD_APPROVAL_CHANNEL` | Non-empty capability signal that an approval channel exists (see [approvals.md](approvals.md)) |
 
 ## `.hatfield/` policy
 
