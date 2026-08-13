@@ -151,7 +151,7 @@ final class SubagentLivePickerController
     {
         $items = [];
         foreach ($children as $child) {
-            $task = $child->taskSummary;
+            $task = PickerListLabelFormatter::sanitizeTitle($child->taskSummary);
             if (\strlen($task) > 48) {
                 $task = substr($task, 0, 45).'...';
             }
