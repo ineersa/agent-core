@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Result\Stream\SseStream;
+use Symfony\Component\HttpClient\EventSourceHttpClient;
 use Symfony\Component\HttpClient\MockHttpClient;
 
 /**
@@ -104,6 +106,59 @@ final class ControllerReplayHttpClientFactoryTest extends TestCase
             $response = $client->request('POST', 'http://replay.internal/v1/chat/completions', ['body' => $body]);
             $content = $response->getContent();
             $this->assertStringContainsString('summary-text', $content);
+        } finally {
+            unset($_ENV['HATFIELD_LLM_REPLAY_FIXTURE_PATH'], $_SERVER['HATFIELD_LLM_REPLAY_FIXTURE_PATH']);
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
+    }
+
+    #[Test]
+    public function sseChunkDelayMsSpacesSseStreamObservationsAcrossWallClock(): void
+    {
+        $dir = TestDirectoryIsolation::createOsTempDir('replay-factory-pace');
+        $fixture = $dir.'/paced.json';
+        file_put_contents($fixture, json_encode([
+            'model' => 'llama_cpp/test',
+            'sse_chunk_delay_ms' => 120,
+            'deltas' => [
+                ['type' => 'text', 'content' => 'A'],
+                ['type' => 'text', 'content' => 'B'],
+                ['type' => 'text', 'content' => 'C'],
+            ],
+            'usage' => ['input_tokens' => 1, 'output_tokens' => 3, 'total_tokens' => 4],
+            'stop_reason' => 'stop',
+            'replay_match' => ['last_user_contains' => 'PACE_PROMPT'],
+        ], \JSON_THROW_ON_ERROR));
+
+        $_ENV['HATFIELD_LLM_REPLAY_FIXTURE_PATH'] = $fixture;
+        $_SERVER['HATFIELD_LLM_REPLAY_FIXTURE_PATH'] = $fixture;
+
+        try {
+            $client = ControllerReplayHttpClientFactory::create();
+            $this->assertInstanceOf(StreamPacingHttpClient::class, $client);
+
+            $esc = new EventSourceHttpClient($client);
+            $response = $esc->request('POST', 'http://replay.internal/v1/chat/completions', [
+                'body' => json_encode([
+                    'messages' => [['role' => 'user', 'content' => 'PACE_PROMPT']],
+                ], \JSON_THROW_ON_ERROR),
+            ]);
+
+            $t0 = microtime(true);
+            $texts = [];
+            $times = [];
+            foreach ((new SseStream())->stream($response) as $data) {
+                $text = $data['choices'][0]['delta']['content'] ?? null;
+                if (!\is_string($text) || '' === $text) {
+                    continue;
+                }
+                $texts[] = $text;
+                $times[] = microtime(true) - $t0;
+            }
+
+            $this->assertSame(['A', 'B', 'C'], $texts);
+            $this->assertGreaterThanOrEqual(0.10, $times[1] - $times[0]);
+            $this->assertGreaterThanOrEqual(0.10, $times[2] - $times[1]);
         } finally {
             unset($_ENV['HATFIELD_LLM_REPLAY_FIXTURE_PATH'], $_SERVER['HATFIELD_LLM_REPLAY_FIXTURE_PATH']);
             TestDirectoryIsolation::removeDirectory($dir);

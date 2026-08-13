@@ -10,6 +10,7 @@ use Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture;
 use Ineersa\Tui\Tests\Support\SubagentProgressEventsFixture;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\UuidV7;
 
 /** @group tui-e2e-replay */
 #[Group('tui-e2e-replay')]
@@ -135,6 +136,160 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
+            try {
+                $this->tmux->sendKey($pane, 'C-d');
+            } catch (\Throwable) {
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Replay-backed proof: multiline picker rows stay one physical line and transcript
+     * remains ordered while a paced assistant stream continues with /agents-live open.
+     *
+     * Boots with agent --resume on a preseeded completed session (TuiRepair pattern)
+     * so the paced follow-up is the only LLM call and has a clean sequence/mailbox.
+     */
+    public function testAgentsLivePickerStaysSingleRowWhileStreamContinues(): void
+    {
+        $sessionId = '90042';
+        $projectRoot = ProjectDir::get();
+        $paths = TuiE2eDatabaseEnv::allocateIsolatedPaths($projectRoot, $this->testProjectDir, 'tui-picker-stream-');
+        $this->migrateIsolatedTestDatabase($paths['appEnv'], $paths['transportEnv'], $paths['transportAbsolute']);
+        SubagentProgressEventsFixture::writeMultilinePickerChildren($this->testProjectDir, $sessionId);
+        $this->registerHatfieldSessionRow($paths['appAbsolute'], $sessionId, 'picker stream e2e');
+
+        $pane = $this->tmux->startDetached(
+            command: $this->agentCommandResumeWithPacedStream($sessionId, $paths['appEnv'], $paths['transportEnv']),
+            prefix: 'tui-subagent-live-picker-stream',
+            width: 140,
+            height: 50,
+            cwd: $this->testProjectDir,
+        );
+
+        $snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
+        if (!is_dir($snapshotDir) && !mkdir($snapshotDir, 0o777, true) && !is_dir($snapshotDir)) {
+            throw new \RuntimeException('Failed to create snapshot dir: '.$snapshotDir);
+        }
+
+        $ids = ['agent_e2e_fork_nl', 'agent_e2e_scout_nl'];
+
+        try {
+            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForCaptureContains($pane, 'agent_e2e_fork_nl', 12.0, 'Resumed transcript must show fork artifact');
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => !str_contains($cap, 'Working') && str_contains($cap, 'agent_e2e_scout_nl'),
+                timeout: 10.0,
+                message: 'Resumed session must be idle with both multiline children visible',
+                history: 2500,
+            );
+
+            $this->tmux->sendKey($pane, 'C-u');
+            $this->tmux->sendLiteral($pane, 'PICKER_STREAM_PROMPT_UNIQUE stream while agents picker open');
+            $this->tmux->sendKey($pane, 'Enter');
+            $this->tmux->waitForCaptureContains($pane, 'Working', 10.0, 'Stream run must enter Working before picker open');
+
+            $this->tmux->sendKey($pane, 'C-\\');
+            $this->tmux->waitForCaptureContains($pane, 'Agents live', 10.0, 'Agents live picker must open during delayed stream');
+            $this->tmux->waitForCaptureContains($pane, 'agent_e2e_scout_nl', 10.0, 'Picker must list scout child');
+
+            $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-stream-open');
+            $this->assertPickerRowCount($pane, $ids, 2);
+            $this->assertPickerRowsAreSinglePhysicalLine($pane, $ids);
+
+            $initial = $this->waitForPickerRowStyles($pane, $ids, static function (array $rows): bool {
+                return $rows['agent_e2e_fork_nl']['native']
+                    && !$rows['agent_e2e_scout_nl']['native']
+                    && 1 === self::countNativePickerRows($rows);
+            }, 'Initial picker must show exactly one native highlight on fork row');
+            $this->assertFalse($initial['agent_e2e_fork_nl']['accent']);
+            $this->assertFalse($initial['agent_e2e_scout_nl']['accent']);
+
+            // Early marker while picker open; mid/late markers must still be absent so
+            // we prove true multi-tick delivery (not one prebuffered dump after response_delay).
+            $this->tmux->waitForHistoryContains($pane, 'STREAM_MARK_A', 20.0, 2500);
+            $earlyCap = $this->tmux->capturePlainWithHistory($pane, 2500);
+            $this->assertStringContainsString(
+                'Agents live',
+                $this->tmux->capturePlain($pane),
+                'First stream marker must arrive while agents-live picker remains open',
+            );
+            $this->assertStringContainsString('STREAM_MARK_A', $earlyCap);
+            $this->assertStringNotContainsString(
+                'STREAM_MARK_FINAL',
+                $earlyCap,
+                'Final marker must not already be present when first marker arrives (proves incremental stream)',
+            );
+            $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-stream-early-marker');
+
+            $this->assertPickerRowCount($pane, $ids, 2);
+            $this->assertPickerRowsAreSinglePhysicalLine($pane, $ids);
+
+            // Navigation interaction between early and late markers.
+            $this->tmux->sendKey($pane, 'Down');
+            $afterDown = $this->waitForPickerRowStyles($pane, $ids, static function (array $rows): bool {
+                return !$rows['agent_e2e_fork_nl']['native']
+                    && $rows['agent_e2e_scout_nl']['native']
+                    && 1 === self::countNativePickerRows($rows);
+            }, 'After Down during stream, native highlight must move one logical entry');
+            $this->assertTrue(
+                str_contains($afterDown['agent_e2e_scout_nl']['line'], '→')
+                && str_contains($afterDown['agent_e2e_scout_nl']['line'], "\x1b[1m"),
+                'Row 2 must use shared native selected-row marker/style while streaming',
+            );
+            $this->assertPickerRowCount($pane, $ids, 2);
+            $this->assertPickerRowsAreSinglePhysicalLine($pane, $ids);
+            $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-stream-after-down');
+
+            $this->tmux->waitForHistoryContains($pane, 'STREAM_MARK_FINAL', 12.0, 2500);
+            $this->assertStringContainsString(
+                'Agents live',
+                $this->tmux->capturePlain($pane),
+                'Final stream marker must arrive while agents-live picker remains open',
+            );
+            $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-stream-final-marker');
+
+            $this->tmux->sendKey($pane, 'Escape');
+            $this->tmux->waitForCallback(
+                $pane,
+                static function (string $cap): bool {
+                    return !str_contains($cap, 'Agents live')
+                        && str_contains($cap, 'STREAM_MARK_A')
+                        && str_contains($cap, 'STREAM_MARK_FINAL');
+                },
+                timeout: 10.0,
+                message: 'Closing picker must reveal complete ordered stream markers',
+                history: 2500,
+            );
+
+            $finalCap = $this->tmux->capturePlainWithHistory($pane, 2500);
+            $posA = strpos($finalCap, 'STREAM_MARK_A');
+            $posB = strpos($finalCap, 'STREAM_MARK_B');
+            $posC = strpos($finalCap, 'STREAM_MARK_C');
+            $posD = strpos($finalCap, 'STREAM_MARK_D');
+            $posFinal = strpos($finalCap, 'STREAM_MARK_FINAL');
+            $this->assertNotFalse($posA);
+            $this->assertNotFalse($posB);
+            $this->assertNotFalse($posC);
+            $this->assertNotFalse($posD);
+            $this->assertNotFalse($posFinal);
+            $this->assertTrue(
+                $posA < $posB && $posB < $posC && $posC < $posD && $posD < $posFinal,
+                'Stream markers must remain ordered after picker close',
+            );
+            $this->assertSame(1, substr_count($finalCap, 'STREAM_MARK_A'));
+            $this->assertSame(1, substr_count($finalCap, 'STREAM_MARK_FINAL'));
+            $this->assertStringNotContainsString('Agents live', $finalCap);
+
+            $this->tmux->sendKey($pane, 'C-d');
+        } catch (\Throwable $e) {
+            try {
+                $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-stream-failure');
+            } catch (\Throwable) {
+            }
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
@@ -310,6 +465,39 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
     /**
      * @param list<string> $artifactIds
      */
+    private function assertPickerRowsAreSinglePhysicalLine(TmuxPane $pane, array $artifactIds): void
+    {
+        $plain = $this->tmux->capturePlain($pane);
+        $pickerRegion = $plain;
+        $marker = strrpos($plain, 'Agents live');
+        if (false !== $marker) {
+            $pickerRegion = substr($plain, $marker);
+        }
+
+        $lines = explode("\n", $pickerRegion);
+        foreach ($artifactIds as $artifactId) {
+            $matching = [];
+            foreach ($lines as $line) {
+                if (str_contains($line, $artifactId) && preg_match('/(?:→| {2})\s*\S+\s*\[/', $line)) {
+                    $matching[] = $line;
+                }
+            }
+            $this->assertCount(
+                1,
+                $matching,
+                "Artifact {$artifactId} must occupy exactly one physical picker row",
+            );
+            $row = $matching[0];
+            $this->assertStringNotContainsString("\r", $row);
+            // Raw task continuation text from multiline summaries must not appear on adjacent rows.
+            $this->assertStringNotContainsString('Your task, in order', $pickerRegion);
+            $this->assertDoesNotMatchRegularExpression('/  +Your task/', $pickerRegion);
+        }
+    }
+
+    /**
+     * @param list<string> $artifactIds
+     */
     private function assertPickerRowCount(TmuxPane $pane, array $artifactIds, int $expected): void
     {
         $plain = $this->tmux->capturePlain($pane);
@@ -382,11 +570,11 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
         return null;
     }
 
-    private function createSessionAndWaitForAssistant(TmuxPane $pane): string
+    private function createSessionAndWaitForAssistant(TmuxPane $pane, string $bootPrompt = 'hi'): string
     {
         $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
         $this->tmux->waitForTuiReadyAfterLogo($pane);
-        $this->tmux->sendLiteral($pane, 'hi');
+        $this->tmux->sendLiteral($pane, $bootPrompt);
         $this->tmux->sendKey($pane, 'Enter');
         $sessionId = null;
         $this->tmux->waitForCallback(
@@ -413,7 +601,71 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
 
     private function agentCommand(): string
     {
-        $fixturePath = __DIR__.'/fixtures/tui-resume-minimal.json';
+        return $this->agentCommandWithFixtures([__DIR__.'/fixtures/tui-resume-minimal.json']);
+    }
+
+    private function agentCommandResumeWithPacedStream(
+        string $sessionId,
+        string $appDbEnvPath,
+        string $transportDbEnvPath,
+    ): string {
+        $projectDir = ProjectDir::get();
+
+        return \sprintf(
+            'APP_ENV=test %sHOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --resume=%s --cwd=%s --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
+            TuiE2eDatabaseEnv::shellPrefixForIsolatedEnv($appDbEnvPath, $transportDbEnvPath),
+            escapeshellarg($this->testProjectDir.'/home'),
+            escapeshellarg(__DIR__.'/fixtures/tui-agents-picker-stream-paced.json'),
+            escapeshellarg(\PHP_BINARY),
+            escapeshellarg($projectDir.'/bin/console'),
+            escapeshellarg($sessionId),
+            escapeshellarg($this->testProjectDir),
+        );
+    }
+
+    private function migrateIsolatedTestDatabase(
+        string $appDbEnvPath,
+        string $transportDbEnvPath,
+        string $transportDbAbsolutePath,
+    ): void {
+        $cmd = \sprintf(
+            'cd %s && APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=%s %s %s doctrine:migrations:migrate --no-interaction 2>&1',
+            escapeshellarg($this->testProjectDir),
+            escapeshellarg($appDbEnvPath),
+            escapeshellarg($transportDbEnvPath),
+            escapeshellarg(\PHP_BINARY),
+            escapeshellarg(ProjectDir::get().'/bin/console'),
+        );
+
+        exec($cmd, $output, $exitCode);
+        if (0 !== $exitCode) {
+            $this->fail('Failed to migrate test database for picker stream E2E: '.implode("\n", $output));
+        }
+
+        TuiE2eDatabaseEnv::ensureIsolatedMessengerTransportSchema($transportDbAbsolutePath);
+    }
+
+    private function registerHatfieldSessionRow(string $appDbAbsolutePath, string $sessionId, string $prompt): void
+    {
+        $pdo = new \PDO('sqlite:'.$appDbAbsolutePath);
+        $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+        $stmt = $pdo->prepare('INSERT INTO hatfield_session (id, cwd, prompt, name, provider_cache_key, created_at, updated_at) VALUES (:id, :cwd, :prompt, :name, :provider_cache_key, :created_at, :updated_at)');
+        $stmt->execute([
+            'id' => (int) $sessionId,
+            'cwd' => $this->testProjectDir,
+            'prompt' => $prompt,
+            'name' => 'picker-stream-e2e',
+            'provider_cache_key' => UuidV7::v7()->toRfc4122(),
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+    }
+
+    /**
+     * @param list<string> $fixturePaths
+     */
+    private function agentCommandWithFixtures(array $fixturePaths): string
+    {
         $projectDir = ProjectDir::get();
         $paths = TuiE2eDatabaseEnv::allocatePaths('tui-subagent-live-');
 
@@ -425,7 +677,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             'APP_ENV=test %sHOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
             TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
             escapeshellarg($this->testProjectDir.'/home'),
-            escapeshellarg($fixturePath),
+            escapeshellarg(implode(';', $fixturePaths)),
             escapeshellarg(\PHP_BINARY),
             escapeshellarg($projectDir.'/bin/console'),
         );

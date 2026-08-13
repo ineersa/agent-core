@@ -287,8 +287,9 @@ final class ControllerReplayHttpClientFactory
 
         $fifoIndex = 0;
         $hasRequestMatchers = self::fixturesHaveRequestMatchers($fixtures);
+        $streamChunkDelayMs = self::maxSseChunkDelayMs($fixtures);
 
-        return new MockHttpClient(
+        $mock = new MockHttpClient(
             static function (string $method, string $url, array $options) use (&$fifoIndex, $fixtures, $hasRequestMatchers): MockResponse {
                 $fixture = self::selectFixtureForRequest($fixtures, $options, $fifoIndex, $hasRequestMatchers);
                 if (null === $fixture) {
@@ -334,7 +335,16 @@ final class ControllerReplayHttpClientFactory
                 $model = $fixture['model'] ?? 'llama_cpp/test';
 
                 $usage = $fixture['usage'] ?? null;
-                $body = self::buildSSEFromDeltas($model, $deltas, $stopReason, $usage);
+                // Multi-frame bodies only when stream pacing is active. MockResponse
+                // fully prebuffers iterable generators, so sleeps must NOT live in the
+                // body generator — StreamPacingHttpClient delays between stream() chunks.
+                $body = self::buildSSEFromDeltas(
+                    $model,
+                    $deltas,
+                    $stopReason,
+                    $usage,
+                    multiFrame: (int) ($fixture['sse_chunk_delay_ms'] ?? 0) > 0,
+                );
 
                 return new MockResponse($body, [
                     'http_code' => 200,
@@ -347,6 +357,25 @@ final class ControllerReplayHttpClientFactory
             },
             'http://replay.internal',
         );
+
+        if ($streamChunkDelayMs <= 0) {
+            return $mock;
+        }
+
+        return new StreamPacingHttpClient($mock, $streamChunkDelayMs);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $fixtures
+     */
+    private static function maxSseChunkDelayMs(array $fixtures): int
+    {
+        $max = 0;
+        foreach ($fixtures as $fixture) {
+            $max = max($max, (int) ($fixture['sse_chunk_delay_ms'] ?? 0));
+        }
+
+        return $max;
     }
 
     /**
@@ -388,10 +417,29 @@ final class ControllerReplayHttpClientFactory
     /**
      * Convert fixture deltas to an OpenAI-compatible SSE stream.
      *
+     * When $multiFrame is true, returns an iterable of SSE frames (no sleeps).
+     * StreamPacingHttpClient supplies inter-chunk delay during stream() so
+     * EventSourceHttpClient/SseStream observe frames across real wall-clock gaps.
+     *
      * @param list<array<string, mixed>> $deltas
-     * @param array<string, mixed>|null  $usage  Fixture usage payload (null if no usage)
+     * @param array<string, mixed>|null  $usage
+     *
+     * @return string|iterable<int, string>
      */
-    private static function buildSSEFromDeltas(string $model, array $deltas, string $stopReason, ?array $usage): string
+    private static function buildSSEFromDeltas(string $model, array $deltas, string $stopReason, ?array $usage, bool $multiFrame = false): string|iterable
+    {
+        $frames = self::buildSSEFrames($model, $deltas, $stopReason, $usage);
+
+        return $multiFrame ? $frames : implode('', $frames);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $deltas
+     * @param array<string, mixed>|null  $usage
+     *
+     * @return list<string>
+     */
+    private static function buildSSEFrames(string $model, array $deltas, string $stopReason, ?array $usage): array
     {
         $chunks = [];
         $chunkId = 'chatcmpl-replay-'.bin2hex(random_bytes(4));
@@ -520,9 +568,9 @@ final class ControllerReplayHttpClientFactory
 
         $chunks[] = '[DONE]';
 
-        return implode("\n\n", array_map(
-            static fn (string $c): string => "data: {$c}",
+        return array_map(
+            static fn (string $c): string => "data: {$c}\n\n",
             $chunks,
-        ))."\n\n";
+        );
     }
 }
