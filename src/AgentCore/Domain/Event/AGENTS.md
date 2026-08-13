@@ -1,35 +1,25 @@
 # Domain\Event architecture notes
 
-`Domain\Event` defines event contracts and lifecycle rules.
+`Domain\Event` defines canonical AgentCore event contracts (persisted run stream), not TUI/JSONL runtime events (`CodingAgent\Runtime\Protocol`).
 
-## Event -> listener map
+## Ownership
 
-- `RunEvent` is the canonical persisted event envelope.
-- After commit, events are persisted through `EventStoreInterface`.
-- In-process listeners consume events through:
-  - `RunEventDispatcher`
-  - `EventSubscriberRegistry`
-  - extension subscribers implementing `EventSubscriberInterface`
+- `RunEvent` — persisted event envelope
+- `RunEventTypeEnum` — **source of truth** for all AgentCore event type strings (lifecycle, pipeline, compaction, linear-history metadata). Prefer enum cases over string literals.
+- `EventFactory` — constructs typed events for handlers
+- After commit, persistence goes through `EventStoreInterface` (see `RunCommit`)
+- Extension event contract: `Ineersa\AgentCore\Contract\Extension\EventSubscriberInterface` (`subscribedEventTypes()` + `onEvent(RunEvent)`). After-turn hooks: `HookDispatcher` / `HookSubscriberInterface`
 
-## Core lifecycle taxonomy
+## Lifecycle stream (ordered core)
 
-`RunEventTypeEnum` defines all AgentCore event type strings as a backed enum.
+Ordered lifecycle cases on `RunEventTypeEnum` (underscore wire values, e.g. `agent_start`):
 
-The ordered core stream cases are:
+`AgentStart` → `TurnStart` → `MessageStart`/`MessageUpdate`/`MessageEnd` → `ToolExecutionStart`/`ToolExecutionUpdate`/`ToolExecutionEnd` → `TurnEnd` → `AgentEnd`
 
-- `RunEventTypeEnum::AgentStart`
-- `RunEventTypeEnum::TurnStart`
-- `RunEventTypeEnum::MessageStart`
-- `RunEventTypeEnum::MessageUpdate`
-- `RunEventTypeEnum::MessageEnd`
-- `RunEventTypeEnum::ToolExecutionStart`
-- `RunEventTypeEnum::ToolExecutionUpdate`
-- `RunEventTypeEnum::ToolExecutionEnd`
-- `RunEventTypeEnum::TurnEnd`
-- `RunEventTypeEnum::AgentEnd`
+Pipeline/compaction/history cases (`RunStarted`, `WaitingHuman`, `HistoryPositionSet`, `HistoryTailDiscarded`, compaction, etc.) live on the same enum — read the enum file for the full set. Do not maintain a second exhaustive catalog here.
 
-`LifecycleOrderValidator::validateOrder()` is the source of truth for ordering constraints.
+Ordering constraints are enforced at each event write/commit call site; there is no separate `LifecycleOrderValidator`. Example: a standalone shell worker writes `tool_execution_*` then `AgentEnd`.
 
-## Maintenance rule
+## Maintenance
 
-When event types, ordering rules, or subscriber contracts change, update this file and `src/Application/AGENTS.md` in the same change.
+When event types or subscriber contracts change, update this file and `../../Application/AGENTS.md` in the same change.
