@@ -17,7 +17,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
@@ -25,7 +25,6 @@ use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
-use Ineersa\Tui\Runtime\SubagentLiveCatalog;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
@@ -60,13 +59,13 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $parentProjector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
         $poller = new RuntimeEventPoller(
-            new TuiRuntimeEventApplier($parentProjector),
+            new TuiRuntimeEventApplier($parentProjector, SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
             new TestLogger(),
             new RuntimeExceptionBoundary(new EventDispatcher()),
             $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
-        $state = new TuiSessionState($parentRun, subagentLiveCatalog: new SubagentLiveCatalog(SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState($parentRun);
         $state->handle = new RunHandle($parentRun, 'running');
         $state->lastSeq = 1;
         $state->activity = RunActivityStateEnum::Running;
@@ -81,10 +80,12 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $childPoller = new SubagentLiveChildViewPoller(
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
             new \Psr\Log\NullLogger(),
+            SubagentProgressSerializerTestSupport::denormalizer(),
+            SubagentProgressSerializerTestSupport::validator(),
         );
 
         $tui = new Tui();
-        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState(), progressSnapshotCodec: SubagentProgressSnapshotCodecTestFactory::create());
+        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState());
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
 
         $listenerRef = new \ReflectionClass(TickPollListener::class);
@@ -130,13 +131,13 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $parentProjector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
         $poller = new RuntimeEventPoller(
-            new TuiRuntimeEventApplier($parentProjector),
+            new TuiRuntimeEventApplier($parentProjector, SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
             new TestLogger(),
             new RuntimeExceptionBoundary(new EventDispatcher()),
             $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
-        $state = new TuiSessionState($parentRun, subagentLiveCatalog: new SubagentLiveCatalog(SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState($parentRun);
         $state->handle = null;
         $state->lastSeq = 0;
         $state->activity = RunActivityStateEnum::Completed;
@@ -148,7 +149,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             new TranscriptBlock('c1', TranscriptBlockKindEnum::Progress, 'child-300', 1, 'child live'),
         ];
 
-        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, new RuntimeEvent(
             'tool_execution_update',
             $parentRun,
             2,
@@ -169,10 +170,12 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $childPoller = new SubagentLiveChildViewPoller(
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
             new \Psr\Log\NullLogger(),
+            SubagentProgressSerializerTestSupport::denormalizer(),
+            SubagentProgressSerializerTestSupport::validator(),
         );
 
         $tui = new Tui();
-        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState(), progressSnapshotCodec: SubagentProgressSnapshotCodecTestFactory::create());
+        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState());
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
 
         $listenerRef = new \ReflectionClass(TickPollListener::class);

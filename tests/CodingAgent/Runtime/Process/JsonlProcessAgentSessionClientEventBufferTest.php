@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use PHPUnit\Framework\TestCase;
@@ -499,7 +500,11 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
 
         $dispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
         $state = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
-        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber(new \Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create())));
+        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber(
+            new \Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter(),
+            SubagentProgressSerializerTestSupport::denormalizer(),
+            SubagentProgressSerializerTestSupport::validator(),
+        ));
         $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($dispatcher, $state);
         foreach ($childDrain as $event) {
             $projector->accept($event);

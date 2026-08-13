@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -18,7 +19,7 @@ class FooterStateSegmentProviderTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->state = new TuiSessionState('test-session', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $this->state = new TuiSessionState('test-session');
     }
 
     #[Test]
@@ -286,7 +287,7 @@ class FooterStateSegmentProviderTest extends TestCase
     public function testLiveViewFooterShowsChildContextUsageAndModel(): void
     {
         $state = $this->state;
-        $state->subagentLiveCatalog->ingestRuntimeEvent(new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
             type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             runId: 'parent-run',
             seq: 1,
@@ -341,8 +342,8 @@ class FooterStateSegmentProviderTest extends TestCase
         ];
 
         foreach ($cases as [$latestInput, $expectedColor]) {
-            $state = new TuiSessionState('child-ctx-threshold-'.$latestInput, subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
-            $state->subagentLiveCatalog->ingestRuntimeEvent(new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+            $state = new TuiSessionState('child-ctx-threshold-'.$latestInput);
+            SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
                 type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
                 runId: 'parent-run',
                 seq: 1,

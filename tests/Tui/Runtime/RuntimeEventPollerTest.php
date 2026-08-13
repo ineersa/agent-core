@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
@@ -63,7 +64,7 @@ final class RuntimeEventPollerTest extends TestCase
         $this->logger = $this->createMock(LoggerInterface::class);
 
         $this->poller = new RuntimeEventPoller(
-            new TuiRuntimeEventApplier($this->projector),
+            new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
             $this->logger,
             new RuntimeExceptionBoundary(
                 $this->createStub(EventDispatcherInterface::class),
@@ -724,7 +725,7 @@ final class RuntimeEventPollerTest extends TestCase
             ->with('test-run', 3)
             ->willReturn(new SessionTranscriptSnapshotDTO($rebuiltBlocks, []));
 
-        $eventApplier = new TuiRuntimeEventApplier($this->projector);
+        $eventApplier = new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator());
         $poller = new RuntimeEventPoller(
             $eventApplier,
             $this->logger,
@@ -807,7 +808,7 @@ final class RuntimeEventPollerTest extends TestCase
             ->method('warning')
             ->with('runtime_event_poller.history_position_changed_rebuild_failed', $this->anything());
         $poller = new RuntimeEventPoller(
-            new TuiRuntimeEventApplier($this->projector),
+            new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
             $logger,
             new RuntimeExceptionBoundary(
                 $this->createStub(EventDispatcherInterface::class),
@@ -868,7 +869,7 @@ final class RuntimeEventPollerTest extends TestCase
             ->with('runtime_event_poller.history_position_changed_malformed', $this->anything());
 
         $poller = new RuntimeEventPoller(
-            new TuiRuntimeEventApplier($this->projector),
+            new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
             $logger,
             new RuntimeExceptionBoundary(
                 $this->createStub(EventDispatcherInterface::class),
@@ -954,7 +955,7 @@ final class RuntimeEventPollerTest extends TestCase
                 ),
             ], []));
 
-        $eventApplier = new TuiRuntimeEventApplier($projector);
+        $eventApplier = new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator());
         $poller = new RuntimeEventPoller(
             $eventApplier,
             $this->logger,

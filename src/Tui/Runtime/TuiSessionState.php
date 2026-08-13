@@ -195,8 +195,8 @@ final class TuiSessionState
         $this->usage = new UsageProjection();
         $this->transcriptDisplayConfig = new TranscriptDisplayConfig();
         $this->transcriptDisplayState = new TranscriptDisplayState();
-        // Production SessionInitializer injects a catalog wired to the container codec.
-        // Tests that only seed catalog rows (no wire denorm) may omit it.
+        // Catalog is typed-only; wire denorm happens in TuiRuntimeEventApplier.
+        // Tests that only seed catalog rows may omit the dependency.
         $this->subagentLiveCatalog = $subagentLiveCatalog ?? new SubagentLiveCatalog();
         $this->subagentLiveView = new SubagentLiveViewState();
     }

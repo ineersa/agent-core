@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChild
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
+use Ineersa\CodingAgent\Agent\Execution\SubagentProgressParallelChildReportDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Symfony\Component\Clock\ClockInterface;
@@ -90,11 +91,11 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         $enrichmentByRun = [];
         foreach ($batch->children as $child) {
             $built = $this->buildForcedCancelChildRow($batch, $child);
-            $snapshots[$child->childRunId] = $built['snapshot'];
-            $activeTurns[$child->childRunId] = $built['turnNo'];
-            $reports[$child->childRunId] = $built['report'];
-            if (null !== $built['enrichment']) {
-                $enrichmentByRun[$child->childRunId] = $built['enrichment'];
+            $snapshots[$child->childRunId] = $built->snapshot;
+            $activeTurns[$child->childRunId] = $built->turnNo;
+            $reports[$child->childRunId] = $built->report;
+            if (null !== $built->enrichment) {
+                $enrichmentByRun[$child->childRunId] = $built->enrichment;
             }
         }
 
@@ -167,11 +168,11 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         $enrichmentByRun = [];
         foreach ($batch->children as $child) {
             $built = $this->buildChildProgressRow($batch, $child);
-            $snapshots[$child->childRunId] = $built['snapshot'];
-            $activeTurns[$child->childRunId] = $built['turnNo'];
-            $reports[$child->childRunId] = $built['report'];
-            if (null !== $built['enrichment']) {
-                $enrichmentByRun[$child->childRunId] = $built['enrichment'];
+            $snapshots[$child->childRunId] = $built->snapshot;
+            $activeTurns[$child->childRunId] = $built->turnNo;
+            $reports[$child->childRunId] = $built->report;
+            if (null !== $built->enrichment) {
+                $enrichmentByRun[$child->childRunId] = $built->enrichment;
             }
         }
 
@@ -181,30 +182,28 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         );
     }
 
-    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: ?SubagentChildProgressSummary} */
     private function buildChildProgressRow(
         DeferredSubagentBatchProjectionDTO $batch,
         DeferredSubagentChildProjectionDTO $child,
-    ): array {
+    ): DeferredSubagentBatchChildProgressBuildDTO {
         $identity = $this->outcomeFactory->identityFromChild($batch, $child);
         $state = $this->resolveChildProgressState($child);
 
-        return [
-            'snapshot' => new ChildRunBatchItemSnapshotDTO(
+        return new DeferredSubagentBatchChildProgressBuildDTO(
+            snapshot: new ChildRunBatchItemSnapshotDTO(
                 identity: $identity, terminal: $state->terminal,
                 artifactStatus: $state->artifactStatus, message: $state->message,
             ),
-            'report' => $this->buildChildReport($child, $state),
-            'turnNo' => $state->turnNo,
-            'enrichment' => $state->enrichment,
-        ];
+            report: $this->buildChildReport($child, $state),
+            turnNo: $state->turnNo,
+            enrichment: $state->enrichment,
+        );
     }
 
-    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: ?SubagentChildProgressSummary} */
     private function buildForcedCancelChildRow(
         DeferredSubagentBatchProjectionDTO $batch,
         DeferredSubagentChildProjectionDTO $child,
-    ): array {
+    ): DeferredSubagentBatchChildProgressBuildDTO {
         $identity = $this->outcomeFactory->identityFromChild($batch, $child);
         $cp = $child->childLifecycleProjection;
 
@@ -243,17 +242,16 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         );
     }
 
-    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: ?SubagentChildProgressSummary} */
-    private function forcedCancelResult(ChildRunIdentityDTO $identity, DeferredSubagentChildProjectionDTO $child, DeferredSubagentBatchChildProgressStateDTO $state, int $turnNo, ?SubagentChildProgressSummary $enrichment): array
+    private function forcedCancelResult(ChildRunIdentityDTO $identity, DeferredSubagentChildProjectionDTO $child, DeferredSubagentBatchChildProgressStateDTO $state, int $turnNo, ?SubagentChildProgressSummary $enrichment): DeferredSubagentBatchChildProgressBuildDTO
     {
-        return [
-            'snapshot' => new ChildRunBatchItemSnapshotDTO(
+        return new DeferredSubagentBatchChildProgressBuildDTO(
+            snapshot: new ChildRunBatchItemSnapshotDTO(
                 identity: $identity, terminal: $state->terminal, artifactStatus: $state->artifactStatus, message: $state->message,
             ),
-            'report' => $this->buildChildReport($child, $state),
-            'turnNo' => $turnNo,
-            'enrichment' => $enrichment,
-        ];
+            report: $this->buildChildReport($child, $state),
+            turnNo: $turnNo,
+            enrichment: $enrichment,
+        );
     }
 
     private function resolveChildProgressState(DeferredSubagentChildProjectionDTO $child): DeferredSubagentBatchChildProgressStateDTO
@@ -282,21 +280,20 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         );
     }
 
-    /** @return array<string, mixed> */
-    private function buildChildReport(DeferredSubagentChildProjectionDTO $child, DeferredSubagentBatchChildProgressStateDTO $state): array
+    private function buildChildReport(DeferredSubagentChildProjectionDTO $child, DeferredSubagentBatchChildProgressStateDTO $state): SubagentProgressParallelChildReportDTO
     {
-        return [
-            'index' => $child->batchIndex,
-            'agentName' => $child->agentName,
-            'task' => $child->task,
-            'artifactId' => $child->artifactId,
-            'agentRunId' => $child->childRunId,
-            'terminal' => $state->terminal,
-            'status' => $state->artifactStatus,
-            'message' => $state->message,
-            'model' => $child->launchModel,
-            'reasoning' => $child->launchReasoning,
-        ];
+        return new SubagentProgressParallelChildReportDTO(
+            index: $child->batchIndex,
+            agentName: $child->agentName,
+            task: $child->task,
+            artifactId: $child->artifactId,
+            agentRunId: $child->childRunId,
+            terminal: $state->terminal,
+            status: $state->artifactStatus,
+            message: $state->message,
+            model: $child->launchModel,
+            reasoning: $child->launchReasoning,
+        );
     }
 
     private function artifactStatusFromProjection(RunStatus $status): AgentArtifactStatusEnum

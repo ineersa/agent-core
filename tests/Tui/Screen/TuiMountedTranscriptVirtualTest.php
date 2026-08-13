@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Screen;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -408,7 +409,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertStringNotContainsString('first error text', $errorWidget->getText());
 
         // Production projector contract for pure generic content update is content-only.
-        $projector = new TranscriptVisualProjector();
+        $projector = new TranscriptVisualProjector(denormalizer: SubagentProgressSerializerTestSupport::denormalizer(), validator: SubagentProgressSerializerTestSupport::validator());
         $projector->replaceAll([$user, $error, $assistant]);
         $patch = $projector->applyChangeSet(TranscriptChangeSet::incremental([$updatedError]));
         $this->assertTrue($patch->isContentOnly());

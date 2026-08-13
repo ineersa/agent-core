@@ -24,7 +24,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
-use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveCatalog;
@@ -118,11 +118,10 @@ final class TuiRuntimeEventApplierTest extends TestCase
         file_put_contents($this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl', implode('', $events));
 
         $initializer = $this->buildInitializer();
-        $codec = SubagentProgressSnapshotCodecTestFactory::create();
-        $resumeState = new TuiSessionState($runId, true, subagentLiveCatalog: new SubagentLiveCatalog($codec));
+        $resumeState = new TuiSessionState($runId, true, subagentLiveCatalog: new SubagentLiveCatalog());
         $resumeBlocks = $initializer->buildInitialTranscript($resumeState);
 
-        $applierState = new TuiSessionState($runId, true, subagentLiveCatalog: new SubagentLiveCatalog($codec));
+        $applierState = new TuiSessionState($runId, true, subagentLiveCatalog: new SubagentLiveCatalog());
         $applier = $this->buildApplier();
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
         $store = $this->buildEventStore();
@@ -190,7 +189,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
 
     private function buildApplier(): TuiRuntimeEventApplier
     {
-        return new TuiRuntimeEventApplier($this->buildProjector());
+        return new TuiRuntimeEventApplier($this->buildProjector(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator());
     }
 
     private function buildInitializer(): SessionInitializer
@@ -206,15 +205,14 @@ final class TuiRuntimeEventApplierTest extends TestCase
             eventStore: $eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($projector),
+            eventApplier: new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
             historyProvider: new \Ineersa\CodingAgent\Session\SessionHistoryProvider($eventStore, new \Ineersa\CodingAgent\Session\History\HistoryProjector()),
             sessionTranscriptProvider: new \Ineersa\CodingAgent\Session\SessionTranscriptProvider(
                 eventStore: $eventStore,
                 replayFilter: new \Ineersa\CodingAgent\Session\History\HistoryReplayFilter(new \Ineersa\CodingAgent\Session\History\HistoryProjector()),
                 eventMapper: $mapper,
                 transcriptProjector: $projector,
-            ),
-            progressSnapshotCodec: SubagentProgressSnapshotCodecTestFactory::create(),
+            )
         );
     }
 
@@ -238,7 +236,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $state = new TranscriptProjectionState();
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(SubagentProgressSnapshotCodecTestFactory::create())));
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()));
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());

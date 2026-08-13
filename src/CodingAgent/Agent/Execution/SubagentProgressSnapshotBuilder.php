@@ -13,8 +13,7 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingle
 /**
  * Builds typed subagent_progress snapshots for parent transcript projection.
  *
- * Canonical snake_case arrays are produced only at event boundaries via
- * {@see \Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec}.
+ * Canonical snake_case arrays are produced only at event boundaries via Symfony Serializer.
  */
 final class SubagentProgressSnapshotBuilder
 {
@@ -89,9 +88,9 @@ final class SubagentProgressSnapshotBuilder
     }
 
     /**
-     * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string,model?:?string}> $reports
-     * @param array<string, int>                                                                                                                                                           $activeTurns
-     * @param array<string, SubagentChildProgressSummary>                                                                                                                                  $enrichmentByAgentRunId
+     * @param array<string, SubagentProgressParallelChildReportDTO> $reports
+     * @param array<string, int>                                    $activeTurns
+     * @param array<string, SubagentChildProgressSummary>           $enrichmentByAgentRunId
      */
     public function parallelSnapshot(
         array $reports,
@@ -101,7 +100,7 @@ final class SubagentProgressSnapshotBuilder
         string $aggregateStatus = 'running',
     ): SubagentProgressParallelSnapshotDTO {
         $sorted = array_values($reports);
-        usort($sorted, static fn (array $a, array $b): int => $a['index'] <=> $b['index']);
+        usort($sorted, static fn (SubagentProgressParallelChildReportDTO $a, SubagentProgressParallelChildReportDTO $b): int => $a->index <=> $b->index);
 
         $total = \count($sorted);
         $completed = 0;
@@ -115,17 +114,17 @@ final class SubagentProgressSnapshotBuilder
         $hasCost = false;
 
         foreach ($sorted as $report) {
-            $agentRunId = $report['agentRunId'];
-            $terminal = $report['terminal'];
+            $agentRunId = $report->agentRunId;
+            $terminal = $report->terminal;
             if ($terminal) {
                 ++$completed;
             }
 
             $childStatus = 'running';
-            if (!$terminal && AgentArtifactStatusEnum::NeedsClarification === $report['status']) {
+            if (!$terminal && AgentArtifactStatusEnum::NeedsClarification === $report->status) {
                 $childStatus = 'waiting_human';
-            } elseif ($terminal && null !== $report['status']) {
-                $childStatus = match ($report['status']) {
+            } elseif ($terminal && null !== $report->status) {
+                $childStatus = match ($report->status) {
                     AgentArtifactStatusEnum::Completed => 'completed',
                     AgentArtifactStatusEnum::Failed => 'failed',
                     AgentArtifactStatusEnum::Cancelled => 'cancelled',
@@ -147,12 +146,12 @@ final class SubagentProgressSnapshotBuilder
             }
 
             $children[] = $this->childRow(
-                index: $report['index'],
-                agentName: $report['agentName'],
+                index: $report->index,
+                agentName: $report->agentName,
                 status: $childStatus,
-                artifactId: $report['artifactId'],
-                agentRunId: $report['agentRunId'],
-                taskSummary: $report['task'],
+                artifactId: $report->artifactId,
+                agentRunId: $report->agentRunId,
+                taskSummary: $report->task,
                 turnNo: $activeTurns[$agentRunId] ?? 0,
                 enrichment: $enrichment,
             );

@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Runtime;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Reduces non-transcript TUI session state from runtime events.
@@ -16,11 +21,16 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
  * for each retained-prefix replay event so usage, activity, queued messages, and
  * subagent catalog match live processing. History-position transcript blocks are
  * assigned wholesale from SessionTranscriptProviderInterface, not from this projector.
+ *
+ * Wire array {@code subagent_progress} is denormalized once here before the typed
+ * snapshot reaches {@see SubagentLiveCatalog}.
  */
 final readonly class TuiRuntimeEventApplier
 {
     public function __construct(
         private TranscriptProjectorInterface $projector,
+        private DenormalizerInterface $denormalizer,
+        private ValidatorInterface $validator,
     ) {
     }
 
@@ -77,7 +87,7 @@ final readonly class TuiRuntimeEventApplier
         }
 
         $state->applyQueuedUserMessageEvent($event);
-        $state->subagentLiveCatalog->ingestRuntimeEvent($event);
+        $this->ingestSubagentProgress($state, $event);
         $this->projector->accept($event);
     }
 
@@ -96,5 +106,33 @@ final readonly class TuiRuntimeEventApplier
     public function drainProjectedChanges(): TranscriptChangeSet
     {
         return $this->projector->drainChanges();
+    }
+
+    private function ingestSubagentProgress(TuiSessionState $state, RuntimeEvent $event): void
+    {
+        if (!str_contains($event->type, 'tool_execution')) {
+            return;
+        }
+
+        $progress = $event->payload['subagent_progress'] ?? null;
+        if (!\is_array($progress)) {
+            return;
+        }
+
+        try {
+            $snapshot = $this->denormalizer->denormalize($progress, SubagentProgressSnapshotInterface::class);
+            if (!$snapshot instanceof SubagentProgressSnapshotInterface) {
+                return;
+            }
+            $violations = $this->validator->validate($snapshot);
+            if ($violations->count() > 0) {
+                return;
+            }
+        } catch (SerializerExceptionInterface|ValidationFailedException|\TypeError|\ValueError|\InvalidArgumentException) {
+            // Invalid wire payloads are ignored; live catalog stays best-effort.
+            return;
+        }
+
+        $state->subagentLiveCatalog->ingestSnapshot($snapshot);
     }
 }

@@ -8,12 +8,10 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
-use Ineersa\Tui\Runtime\SubagentLiveCatalog;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
@@ -45,7 +43,6 @@ final readonly class SessionInitializer
         private TuiRuntimeEventApplier $eventApplier,
         private HistoryProviderInterface $historyProvider,
         private SessionTranscriptProviderInterface $sessionTranscriptProvider,
-        private SubagentProgressSnapshotCodec $progressSnapshotCodec,
     ) {
     }
 
@@ -139,7 +136,6 @@ final readonly class SessionInitializer
         return new TuiSessionState(
             sessionId: $sessionId,
             resuming: $resuming,
-            subagentLiveCatalog: new SubagentLiveCatalog($this->progressSnapshotCodec),
         );
     }
 

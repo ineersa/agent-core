@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Screen;
 
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\Tui\Editor\PromptEditor;
@@ -29,6 +28,7 @@ use Ineersa\Tui\Transcript\TranscriptMountedWidget;
 use Ineersa\Tui\Widget\LiveTextWidget;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\WidgetPlacementEnum;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Style\Padding;
 use Symfony\Component\Tui\Style\Style;
@@ -37,6 +37,7 @@ use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\EditorWidget;
 use Symfony\Component\Tui\Widget\LoaderWidget;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Production screen bridge between the TUI layout/widget system and Symfony TUI.
@@ -108,7 +109,8 @@ final class ChatScreen
         private readonly PromptEditor $promptEditor,
         TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         TranscriptDisplayState $displayState = new TranscriptDisplayState(),
-        ?SubagentProgressSnapshotCodec $progressSnapshotCodec = null,
+        ?DenormalizerInterface $denormalizer = null,
+        ?ValidatorInterface $validator = null,
     ) {
         $this->registry = new TuiSlotRegistry();
 
@@ -118,7 +120,8 @@ final class ChatScreen
             theme: $theme,
             displayConfig: $displayConfig,
             displayState: $displayState,
-            progressSnapshotCodec: $progressSnapshotCodec,
+            denormalizer: $denormalizer,
+            validator: $validator,
         );
         $this->pendingRenderable = new PendingMessagesWidget();
         $this->statusPanelRenderable = new StatusPanelWidget();

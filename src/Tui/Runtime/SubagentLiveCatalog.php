@@ -7,11 +7,13 @@ namespace Ineersa\Tui\Runtime;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 
 /**
- * Indexes subagent child runs from parent runtime subagent_progress payloads.
+ * Indexes subagent child runs from typed parent subagent_progress snapshots.
+ *
+ * RuntimeEvent payload arrays are denormalized once at the TUI RuntimeEvent
+ * boundary ({@see TuiRuntimeEventApplier}) before reaching this catalog.
  *
  * Model and reasoning follow upstream launch-identity semantics: non-empty after trim.
  * Later progress rows may omit them; catalog preserves last known concrete values.
@@ -23,17 +25,6 @@ final class SubagentLiveCatalog
 
     /** @var array<string, true> */
     private array $dismissedArtifactIds = [];
-
-    /**
-     * @param SubagentProgressSnapshotCodec|null $progressCodec required for {@see ingestRuntimeEvent()};
-     *                                                          production composition roots always inject the
-     *                                                          container-managed codec. Null is only for pure
-     *                                                          unit tests that seed rows without wire denorm.
-     */
-    public function __construct(
-        private readonly ?SubagentProgressSnapshotCodec $progressCodec = null,
-    ) {
-    }
 
     public function dismissArtifactId(string $artifactId): ?SubagentLiveChildDTO
     {
@@ -117,29 +108,9 @@ final class SubagentLiveCatalog
         );
     }
 
-    public function ingestRuntimeEvent(RuntimeEvent $event): void
+    public function ingestSnapshot(SubagentProgressSnapshotInterface $snapshot): void
     {
-        if (!str_contains($event->type, 'tool_execution')) {
-            return;
-        }
-
-        $progress = $event->payload['subagent_progress'] ?? null;
-        if (!\is_array($progress)) {
-            return;
-        }
-
-        if (null === $this->progressCodec) {
-            throw new \LogicException('SubagentLiveCatalog::ingestRuntimeEvent requires an injected SubagentProgressSnapshotCodec.');
-        }
-
-        // Wire/public boundary: denormalize + validate once, then use typed properties.
-        try {
-            $snapshot = $this->progressCodec->denormalize($progress);
-        } catch (\Throwable) {
-            // Invalid wire payloads are ignored; live catalog stays best-effort.
-            return;
-        }
-        // One wall-clock sample for the whole event so multi-child parallel
+        // One wall-clock sample for the whole snapshot so multi-child parallel
         // rows share lastActivityAtMs (stable within-event tie; no product order change).
         $now = (int) (microtime(true) * 1000);
 

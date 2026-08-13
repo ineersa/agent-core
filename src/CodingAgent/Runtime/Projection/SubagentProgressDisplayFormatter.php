@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Runtime\Projection;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 
 /**
@@ -16,35 +15,13 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapsh
  * Stored on ToolResult blocks as visible text; {@see \Ineersa\Tui\Transcript\SubagentResultRenderer}
  * applies the same layout for terminal rendering (kept in sync intentionally).
  *
- * Wire/meta arrays are denormalized once at the public boundary; internal callers
- * should pass typed snapshots.
+ * Accepts typed snapshots only. Wire/meta arrays are denormalized once at the
+ * public RuntimeEvent/transcript boundary before calling this formatter.
  */
 final class SubagentProgressDisplayFormatter
 {
-    public function __construct(
-        private readonly SubagentProgressSnapshotCodec $codec,
-    ) {
-    }
-
-    /**
-     * @param SubagentProgressSnapshotInterface|array<string, mixed> $progress
-     *
-     * Array form is the transcript/meta public boundary; typed form is preferred
-     * for already-decoded internal callers
-     */
-    public function format(SubagentProgressSnapshotInterface|array $progress): string
+    public function format(SubagentProgressSnapshotInterface $snapshot): string
     {
-        if ($progress instanceof SubagentProgressSnapshotInterface) {
-            $snapshot = $progress;
-        } else {
-            try {
-                $snapshot = $this->codec->denormalize($progress);
-            } catch (\Throwable) {
-                // Corrupt/incomplete transcript meta: keep projection resilient.
-                return '';
-            }
-        }
-
         if ($snapshot instanceof SubagentProgressParallelSnapshotDTO) {
             return $this->formatParallel($snapshot);
         }

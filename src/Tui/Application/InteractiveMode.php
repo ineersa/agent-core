@@ -8,7 +8,6 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
@@ -27,9 +26,11 @@ use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Tui\Event\TickEvent;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Application-level TUI entry point.
@@ -74,7 +75,8 @@ final readonly class InteractiveMode
         private AppConfig $appConfig,
         private TranscriptDisplayConfigMapper $transcriptConfigMapper,
         private HistoryProviderInterface $historyProvider,
-        private SubagentProgressSnapshotCodec $progressSnapshotCodec,
+        private DenormalizerInterface $denormalizer,
+        private ValidatorInterface $validator,
     ) {
     }
 
@@ -187,7 +189,8 @@ final readonly class InteractiveMode
                 $this->promptEditor,
                 $displayConfig,
                 $state->transcriptDisplayState,
-                $this->progressSnapshotCodec,
+                $this->denormalizer,
+                $this->validator,
             );
             $screen->mount($tui);
 

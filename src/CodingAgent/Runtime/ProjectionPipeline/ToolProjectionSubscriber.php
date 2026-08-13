@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\ProjectionPipeline;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Projects tool-call and tool-execution events into ToolCall and
@@ -18,6 +23,8 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
 {
     public function __construct(
         private readonly SubagentProgressDisplayFormatter $subagentProgressFormatter,
+        private readonly DenormalizerInterface $denormalizer,
+        private readonly ValidatorInterface $validator,
     ) {
     }
 
@@ -227,7 +234,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             if (isset($p['tool_name']) && \is_string($p['tool_name']) && '' !== $p['tool_name']) {
                 $meta['tool_name'] = $p['tool_name'];
             }
-            $displayText = $this->subagentProgressFormatter->format($progress);
+            $displayText = $this->formatSubagentProgress($progress);
             $state->updateBlock($blockId, $block->with(
                 text: $displayText,
                 streaming: true,
@@ -297,7 +304,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
 
         $displayText = $result;
         if (isset($meta['subagent_progress']) && \is_array($meta['subagent_progress'])) {
-            $widgetText = $this->subagentProgressFormatter->format($meta['subagent_progress']);
+            $widgetText = $this->formatSubagentProgress($meta['subagent_progress']);
             if ('' !== $result) {
                 $displayText = $widgetText."\n\n".$result;
             } else {
@@ -336,7 +343,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
 
         $displayText = $result;
         if (isset($meta['subagent_progress']) && \is_array($meta['subagent_progress'])) {
-            $widgetText = $this->subagentProgressFormatter->format($meta['subagent_progress']);
+            $widgetText = $this->formatSubagentProgress($meta['subagent_progress']);
             if ('' !== $result) {
                 $displayText = $widgetText."\n\n".$result;
             } else {
@@ -396,5 +403,31 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
     public function onRunCancelled(TranscriptProjectionEvent $event): void
     {
         $event->state->removeOrphanedToolCallBlocks();
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     */
+    private function formatSubagentProgress(array $progress): string
+    {
+        try {
+            $snapshot = $this->denormalizer->denormalize($progress, SubagentProgressSnapshotInterface::class);
+        } catch (SerializerExceptionInterface|\TypeError|\ValueError|\InvalidArgumentException) {
+            // Corrupt/incomplete RuntimeEvent payload: keep projection resilient.
+            return '';
+        }
+        if (!$snapshot instanceof SubagentProgressSnapshotInterface) {
+            return '';
+        }
+        try {
+            $violations = $this->validator->validate($snapshot);
+            if ($violations->count() > 0) {
+                return '';
+            }
+        } catch (ValidationFailedException) {
+            return '';
+        }
+
+        return $this->subagentProgressFormatter->format($snapshot);
     }
 }

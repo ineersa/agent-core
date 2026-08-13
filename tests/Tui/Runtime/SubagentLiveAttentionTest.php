@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
@@ -24,7 +25,7 @@ final class SubagentLiveAttentionTest extends TestCase
 {
     public function testClearWaitingHumanClearsSubagentLiveStatusWhileLiveViewActive(): void
     {
-        $state = new TuiSessionState('parent-session', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('parent-session');
         $state->subagentLiveView->enter(new SubagentLiveChildDTO(
             agentRunId: 'child-run-1',
             artifactId: 'agent_a',
@@ -36,7 +37,7 @@ final class SubagentLiveAttentionTest extends TestCase
             reasoning: 'medium',
         ));
         $state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
-        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
         ]));
@@ -47,7 +48,7 @@ final class SubagentLiveAttentionTest extends TestCase
             new PromptEditor(),
             new TranscriptDisplayConfig(),
             new TranscriptDisplayState(),
-            progressSnapshotCodec: \Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create(),
+            denormalizer: SubagentProgressSerializerTestSupport::denormalizer(), validator: SubagentProgressSerializerTestSupport::validator(),
         );
         $screen->setStatus('subagent_live', '⚠ Subagent scout needs your input — /agents-live');
 
@@ -59,8 +60,8 @@ final class SubagentLiveAttentionTest extends TestCase
 
     public function testMarkActiveChildrenCancelledForParentCancelClearsWaitingHumanOnMain(): void
     {
-        $state = new TuiSessionState('parent-session', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
-        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+        $state = new TuiSessionState('parent-session');
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
         ]));
@@ -71,7 +72,7 @@ final class SubagentLiveAttentionTest extends TestCase
             new PromptEditor(),
             new TranscriptDisplayConfig(),
             new TranscriptDisplayState(),
-            progressSnapshotCodec: \Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create(),
+            denormalizer: SubagentProgressSerializerTestSupport::denormalizer(), validator: SubagentProgressSerializerTestSupport::validator(),
         );
         $screen->setStatus('subagent_live', '⚠ Subagent scout needs your input — /agents-live');
 
@@ -86,8 +87,8 @@ final class SubagentLiveAttentionTest extends TestCase
 
     public function testClearWaitingHumanDoesNotDowngradeTerminalCatalog(): void
     {
-        $state = new TuiSessionState('parent-session', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
-        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+        $state = new TuiSessionState('parent-session');
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
             'mode' => 'single', 'status' => 'cancelled', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Done',
         ]));
@@ -98,7 +99,7 @@ final class SubagentLiveAttentionTest extends TestCase
             new PromptEditor(),
             new TranscriptDisplayConfig(),
             new TranscriptDisplayState(),
-            progressSnapshotCodec: \Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create(),
+            denormalizer: SubagentProgressSerializerTestSupport::denormalizer(), validator: SubagentProgressSerializerTestSupport::validator(),
         );
 
         SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, 'child-run-1');
@@ -109,7 +110,7 @@ final class SubagentLiveAttentionTest extends TestCase
 
     public function testRefreshAttentionFooterClearsStaleAgentsLiveWhenLiveViewInactive(): void
     {
-        $state = new TuiSessionState('parent-session', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('parent-session');
         $this->assertFalse($state->subagentLiveView->active);
 
         $screen = new ChatScreen(
@@ -118,7 +119,7 @@ final class SubagentLiveAttentionTest extends TestCase
             new PromptEditor(),
             new TranscriptDisplayConfig(),
             new TranscriptDisplayState(),
-            progressSnapshotCodec: \Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create(),
+            denormalizer: SubagentProgressSerializerTestSupport::denormalizer(), validator: SubagentProgressSerializerTestSupport::validator(),
         );
         $screen->setStatus('agents-live', 'Subagent live: scout [running] — stale after exit.');
 
@@ -129,8 +130,8 @@ final class SubagentLiveAttentionTest extends TestCase
 
     public function testRefreshAttentionFooterKeepsSubagentLiveMarkerWhileClearingAgentsLiveOnMain(): void
     {
-        $state = new TuiSessionState('parent-session', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
-        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+        $state = new TuiSessionState('parent-session');
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
         ]));
@@ -142,7 +143,7 @@ final class SubagentLiveAttentionTest extends TestCase
             new PromptEditor(),
             new TranscriptDisplayConfig(),
             new TranscriptDisplayState(),
-            progressSnapshotCodec: \Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create(),
+            denormalizer: SubagentProgressSerializerTestSupport::denormalizer(), validator: SubagentProgressSerializerTestSupport::validator(),
         );
         $screen->setStatus('agents-live', 'Subagent live: scout [waiting_human] — stale.');
 
@@ -154,8 +155,8 @@ final class SubagentLiveAttentionTest extends TestCase
 
     public function testRefreshAttentionFooterClearsAgentsLiveEvenWhenLiveViewActive(): void
     {
-        $state = new TuiSessionState('parent-session', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
-        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+        $state = new TuiSessionState('parent-session');
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
         ]));
@@ -176,7 +177,7 @@ final class SubagentLiveAttentionTest extends TestCase
             new PromptEditor(),
             new TranscriptDisplayConfig(),
             new TranscriptDisplayState(),
-            progressSnapshotCodec: \Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create(),
+            denormalizer: SubagentProgressSerializerTestSupport::denormalizer(), validator: SubagentProgressSerializerTestSupport::validator(),
         );
         $screen->setStatus('agents-live', 'Subagent live: scout [running] — type to steer next step; /agents-main to return.');
 

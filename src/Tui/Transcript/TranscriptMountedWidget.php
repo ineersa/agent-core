@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\Tui\Theme\TuiTheme;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Minimum keyed adapter from visual patches to Symfony ContainerWidget children.
@@ -36,12 +37,14 @@ final class TranscriptMountedWidget extends ContainerWidget
         private readonly TuiTheme $theme,
         TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         TranscriptDisplayState $displayState = new TranscriptDisplayState(),
-        ?SubagentProgressSnapshotCodec $progressSnapshotCodec = null,
+        ?DenormalizerInterface $denormalizer = null,
+        ?ValidatorInterface $validator = null,
     ) {
         $this->projector = new TranscriptVisualProjector(
             displayConfig: $displayConfig,
             displayState: $displayState,
-            progressSnapshotCodec: $progressSnapshotCodec,
+            denormalizer: $denormalizer,
+            validator: $validator,
         );
         $this->applyPatch($this->projector->replaceAll([]));
     }

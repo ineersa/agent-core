@@ -4,19 +4,24 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Contract;
 
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary;
+use Ineersa\CodingAgent\Agent\Execution\SubagentProgressParallelChildReportDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
-use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 
 /**
- * Thesis: Symfony Serializer produces/consumes exact canonical subagent_progress
- * snake_case payloads; Validator rejects invalid fixed fields at the wire boundary.
+ * Thesis: Symfony Serializer + DiscriminatorMap produce/consume canonical
+ * subagent_progress payloads; Validator rejects invalid fixed fields.
  */
-final class SubagentProgressSnapshotCodecTest extends TestCase
+final class SubagentProgressSnapshotSerializerTest extends TestCase
 {
     public function testNormalizeSingleMatchesHistoricalKeysAndOmissions(): void
     {
@@ -44,7 +49,7 @@ final class SubagentProgressSnapshotCodecTest extends TestCase
             ),
         );
 
-        $payload = SubagentProgressSnapshotCodecTestFactory::create()->normalize($snapshot);
+        $payload = SubagentProgressSerializerTestSupport::normalizer()->normalize($snapshot, null, [AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
 
         $this->assertSame('single', $payload['mode']);
         $this->assertSame('running', $payload['status']);
@@ -76,33 +81,31 @@ final class SubagentProgressSnapshotCodecTest extends TestCase
         $builder = new SubagentProgressSnapshotBuilder();
         $snapshot = $builder->parallelSnapshot(
             reports: [
-                'c1' => [
-                    'index' => 1,
-                    'agentName' => 'reviewer',
-                    'task' => 'Review',
-                    'artifactId' => 'a1',
-                    'agentRunId' => 'r1',
-                    'terminal' => true,
-                    'status' => \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum::Completed,
-                    'message' => '',
-                ],
-                'c2' => [
-                    'index' => 2,
-                    'agentName' => 'scout',
-                    'task' => 'Scout',
-                    'artifactId' => 'a2',
-                    'agentRunId' => 'r2',
-                    'terminal' => false,
-                    'status' => null,
-                    'message' => '',
-                ],
+                'c1' => new SubagentProgressParallelChildReportDTO(
+                    index: 1,
+                    agentName: 'reviewer',
+                    task: 'Review',
+                    artifactId: 'a1',
+                    agentRunId: 'r1',
+                    terminal: true,
+                    status: AgentArtifactStatusEnum::Completed,
+                ),
+                'c2' => new SubagentProgressParallelChildReportDTO(
+                    index: 2,
+                    agentName: 'scout',
+                    task: 'Scout',
+                    artifactId: 'a2',
+                    agentRunId: 'r2',
+                    terminal: false,
+                    status: null,
+                ),
             ],
             activeTurns: ['r1' => 3, 'r2' => 1],
             elapsedMs: 9000,
             aggregateStatus: 'running',
         );
 
-        $payload = SubagentProgressSnapshotCodecTestFactory::create()->normalize($snapshot);
+        $payload = SubagentProgressSerializerTestSupport::normalizer()->normalize($snapshot, null, [AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
 
         $this->assertSame('parallel', $payload['mode']);
         $this->assertSame(1, $payload['completed_count']);
@@ -120,8 +123,8 @@ final class SubagentProgressSnapshotCodecTest extends TestCase
 
     public function testDenormalizeRoundTripAndRejectsInvalidMode(): void
     {
-        $codec = SubagentProgressSnapshotCodecTestFactory::create();
-        $single = $codec->denormalize([
+        $denormalizer = SubagentProgressSerializerTestSupport::denormalizer();
+        $single = $denormalizer->denormalize([
             'mode' => 'single',
             'status' => 'running',
             'agent_name' => 'scout',
@@ -130,11 +133,11 @@ final class SubagentProgressSnapshotCodecTest extends TestCase
             'task_summary' => 'Task',
             'turn_no' => 1,
             'elapsed_ms' => 100,
-        ]);
+        ], SubagentProgressSnapshotInterface::class);
         $this->assertInstanceOf(SubagentProgressSingleSnapshotDTO::class, $single);
         $this->assertSame('scout', $single->agentName);
 
-        $parallel = $codec->denormalize([
+        $parallel = $denormalizer->denormalize([
             'mode' => 'parallel',
             'status' => 'running',
             'completed_count' => 0,
@@ -157,20 +160,17 @@ final class SubagentProgressSnapshotCodecTest extends TestCase
             'output_tokens' => 0,
             'reasoning_tokens' => 0,
             'total_tokens' => 0,
-        ]);
+        ], SubagentProgressSnapshotInterface::class);
         $this->assertInstanceOf(SubagentProgressParallelSnapshotDTO::class, $parallel);
         $this->assertCount(1, $parallel->children);
 
-        $this->expectException(\InvalidArgumentException::class);
-        $codec->denormalize(['mode' => 'weird', 'status' => 'running']);
+        $this->expectException(SerializerExceptionInterface::class);
+        $denormalizer->denormalize(['mode' => 'weird', 'status' => 'running'], SubagentProgressSnapshotInterface::class);
     }
 
     public function testValidatorRejectsBlankStatus(): void
     {
-        $codec = SubagentProgressSnapshotCodecTestFactory::create();
-
-        $this->expectException(ValidationFailedException::class);
-        $codec->denormalize([
+        $snapshot = SubagentProgressSerializerTestSupport::denormalizer()->denormalize([
             'mode' => 'single',
             'status' => '',
             'agent_name' => 'scout',
@@ -179,6 +179,11 @@ final class SubagentProgressSnapshotCodecTest extends TestCase
             'agent_run_id' => 'r',
             'task_summary' => 't',
             'turn_no' => 0,
-        ]);
+        ], SubagentProgressSnapshotInterface::class);
+
+        $violations = SubagentProgressSerializerTestSupport::validator()->validate($snapshot);
+        $this->assertGreaterThan(0, $violations->count());
+        $this->expectException(ValidationFailedException::class);
+        throw new ValidationFailedException($snapshot, $violations);
     }
 }

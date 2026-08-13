@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
@@ -37,9 +38,9 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
     public function testEnterLiveViewBeginsObservationBeforeSnapshotReplay(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'obs-before-snapshot');
-        $state = new TuiSessionState('obs-before-snapshot', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('obs-before-snapshot');
         $child = new SubagentLiveChildDTO('child-run-1', 'art-1', 'scout', SubagentLiveStatusEnum::Completed, 'task', 1, 'deepseek/deepseek-v4-flash', 'medium');
-        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, new RuntimeEvent(
             type: 'tool_execution.output_delta',
             runId: 'obs-before-snapshot',
             seq: 1,
@@ -65,10 +66,7 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
         );
 
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(
-                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-                new NullLogger(),
-            ),
+            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
             $snapshotProvider,
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),
@@ -91,7 +89,7 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
     public function testCachedReentryReenqueuesChildHitlAfterLeaveRemovesQuestion(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'hitl-reentry');
-        $state = new TuiSessionState('hitl-reentry', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('hitl-reentry');
         $childRunId = 'child-run-waiting';
         $child = new SubagentLiveChildDTO(
             $childRunId,
@@ -103,7 +101,7 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
             'deepseek/deepseek-v4-flash',
             'medium',
         );
-        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, new RuntimeEvent(
             type: 'tool_execution.output_delta',
             runId: 'hitl-reentry',
             seq: 1,
@@ -161,10 +159,7 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
 
         $snapshotProvider = new FixedChildRunTranscriptSnapshotProvider($snapshot);
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(
-                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-                new NullLogger(),
-            ),
+            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
             $snapshotProvider,
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),

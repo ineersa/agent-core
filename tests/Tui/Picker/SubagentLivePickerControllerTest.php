@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Picker\PickerOverlay;
@@ -64,7 +65,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     public function testOpenTwiceDoesNotStackOverlay(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-idempotent');
-        $state = new TuiSessionState('picker-idempotent', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('picker-idempotent');
         $this->seedCatalogChild($state, 'agent_a', 'child-run-1', 'running');
 
         $picker = $this->picker($harness, $state);
@@ -78,7 +79,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     public function dismissKeyDoesNotRemoveRunningChild(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-dismiss');
-        $state = new TuiSessionState('picker-dismiss', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('picker-dismiss');
         $this->seedCatalogChild($state, 'agent_running', 'child-run-running', 'running');
 
         $picker = $this->picker($harness, $state);
@@ -100,7 +101,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     public function dismissKeyRemovesCompletedChild(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-dismiss-done');
-        $state = new TuiSessionState('picker-dismiss-done', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('picker-dismiss-done');
         $this->seedCatalogChild($state, 'agent_done', 'child-run-done', 'completed');
 
         $picker = $this->picker($harness, $state);
@@ -118,7 +119,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     public function testEmptyOpenClearsWorkingMessageAndStatus(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-empty-open');
-        $state = new TuiSessionState('picker-empty-open', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('picker-empty-open');
 
         $picker = $this->picker($harness, $state);
         $picker->open();
@@ -134,7 +135,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     public function exportKeyWritesSelectedChildHtmlWithChildOnlyContent(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'parent-session-export');
-        $state = new TuiSessionState('parent-session-export', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('parent-session-export');
         $artifactId = 'agent_export';
         $childRunId = 'child-run-export';
         $this->seedCatalogChild($state, $artifactId, $childRunId, 'completed');
@@ -169,7 +170,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     public function exportKeyReportsMissingEventsFileWithoutParentFallback(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'parent-session-no-events');
-        $state = new TuiSessionState('parent-session-no-events', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('parent-session-no-events');
         $artifactId = 'agent_no_file';
         $this->seedCatalogChild($state, $artifactId, 'child-run-no-file', 'completed');
         $this->writeParentOnlyEvents('parent-session-no-events', 'parent-only marker must not appear in export');
@@ -186,7 +187,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     public function exportKeyReportsMalformedChildEventsWithoutParentFallback(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'parent-session-bad-json');
-        $state = new TuiSessionState('parent-session-bad-json', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('parent-session-bad-json');
         $artifactId = 'agent_bad_json';
         $this->seedCatalogChild($state, $artifactId, 'child-run-bad', 'completed');
         $dir = $this->projectDir.'/.hatfield/sessions/parent-session-bad-json/artifacts/agents/'.$artifactId;
@@ -209,7 +210,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     public function exportKeyReportsChildAbsentFromCatalog(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'parent-session-missing-child');
-        $state = new TuiSessionState('parent-session-missing-child', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('parent-session-missing-child');
         $this->seedCatalogChild($state, 'agent_stale', 'child-run-stale', 'completed');
 
         $picker = $this->exportPicker($harness, $state);
@@ -232,7 +233,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     public function exportKeyReportsNoSelectedChild(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'parent-session-no-select');
-        $state = new TuiSessionState('parent-session-no-select', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('parent-session-no-select');
         $this->seedCatalogChild($state, 'agent_x', 'child-run-x', 'completed');
 
         $picker = $this->exportPicker($harness, $state);
@@ -252,7 +253,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     public function enterLiveViewCallsSnapshotProviderOnceAndCachesTranscript(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-enter-snapshot');
-        $state = new TuiSessionState('picker-enter-snapshot', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('picker-enter-snapshot');
         $this->seedCatalogChild($state, 'agent_snap', 'child-run-snap', 'running');
 
         $child = $state->subagentLiveCatalog->findByArtifactId('agent_snap');
@@ -273,10 +274,7 @@ final class SubagentLivePickerControllerTest extends TestCase
             ->willReturn(new ChildRunTranscriptSnapshotDTO([$block], [], 4));
 
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(
-                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-                new NullLogger(),
-            ),
+            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
             $snapshotProvider,
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),
@@ -351,7 +349,7 @@ final class SubagentLivePickerControllerTest extends TestCase
             columns: 140,
             rows: 40,
         );
-        $state = new TuiSessionState('picker-native-highlight', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('picker-native-highlight');
         $this->seedCatalogChild($state, 'agent_alpha', 'child-run-alpha', 'completed', agentName: 'alpha', task: 'Alpha unique task');
         $this->seedCatalogChild($state, 'agent_bravo', 'child-run-bravo', 'completed', agentName: 'bravo', task: 'Bravo unique task');
         $this->seedCatalogChild($state, 'agent_charlie', 'child-run-charlie', 'completed', agentName: 'charlie', task: 'Charlie unique task');
@@ -428,7 +426,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     #[Test]
     public function testCatalogRepeatedNestedProgressDoesNotDuplicatePickerRows(): void
     {
-        $state = new TuiSessionState('parent-picker-dedupe', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('parent-picker-dedupe');
         $event = new RuntimeEvent(
             type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             runId: 'fork-run',
@@ -447,14 +445,14 @@ final class SubagentLivePickerControllerTest extends TestCase
         );
 
         for ($i = 0; $i < 5; ++$i) {
-            $state->subagentLiveCatalog->ingestRuntimeEvent($event);
+            SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $event);
         }
 
         $this->assertCount(1, $state->subagentLiveCatalog->all());
 
         $harness = new VirtualTuiHarness(sessionId: 'parent-picker-dedupe');
         $this->seedCatalogChild($state, 'agent_fork', 'fork-run', 'running');
-        $state->subagentLiveCatalog->ingestRuntimeEvent($event);
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $event);
 
         $picker = $this->picker($harness, $state);
         $picker->open();
@@ -475,8 +473,8 @@ final class SubagentLivePickerControllerTest extends TestCase
     public function pickerRowShowsChildContextUsageSuffix(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-child-ctx');
-        $state = new TuiSessionState('picker-child-ctx', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
-        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+        $state = new TuiSessionState('picker-child-ctx');
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, new RuntimeEvent(
             type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             runId: 'parent-run',
             seq: 1,
@@ -506,7 +504,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     public function exportFeedbackStoredInPickerHeaderAndState(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'parent-session-export-persist');
-        $state = new TuiSessionState('parent-session-export-persist', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('parent-session-export-persist');
         $artifactId = 'agent_export_persist';
         $this->seedCatalogChild($state, $artifactId, 'child-run-export-persist', 'completed');
         ChildAgentExportEventsFixture::write(
@@ -540,7 +538,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     public function exportFailureFeedbackStoredInPickerHeader(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'parent-session-export-fail-header');
-        $state = new TuiSessionState('parent-session-export-fail-header', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('parent-session-export-fail-header');
         $artifactId = 'agent_no_file_hdr';
         $this->seedCatalogChild($state, $artifactId, 'child-run-no-file', 'completed');
         $picker = $this->exportPicker($harness, $state);
@@ -556,7 +554,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     public function closePickerClearsExportFeedbackState(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-close-feedback');
-        $state = new TuiSessionState('picker-close-feedback', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('picker-close-feedback');
         $this->seedCatalogChild($state, 'agent_close', 'child-close', 'completed');
         $picker = $this->picker($harness, $state);
         $picker->open();
@@ -570,7 +568,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     public function dismissFeedbackReplacesStaleExportFeedbackInPickerHeader(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-dismiss-feedback');
-        $state = new TuiSessionState('picker-dismiss-feedback', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
+        $state = new TuiSessionState('picker-dismiss-feedback');
         $artifactId = 'agent_dismiss_done';
         $this->seedCatalogChild($state, $artifactId, 'child-dismiss-done', 'completed');
         $this->seedCatalogChild($state, 'agent_keep', 'child-keep', 'completed');
@@ -603,10 +601,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     private function picker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
     {
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(
-                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-                new NullLogger(),
-            ),
+            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),
@@ -713,10 +708,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     private function exportPicker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
     {
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(
-                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-                new NullLogger(),
-            ),
+            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->childEventsPathResolver(),
             new SessionEventsExportService(),

@@ -9,7 +9,8 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
-use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
+use Ineersa\CodingAgent\Agent\Execution\SubagentProgressParallelChildReportDTO;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -332,29 +333,29 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             elapsedMs: 1000,
             enrichment: $summary,
         );
-        $singlePayload = SubagentProgressSnapshotCodecTestFactory::create()->normalize($snapshot);
+        $singlePayload = SubagentProgressSerializerTestSupport::normalizer()->normalize($snapshot);
         $this->assertSame(3, $singlePayload['llm_step_count'] ?? null);
         $this->assertSame(7, $singlePayload['turn_no'] ?? null);
 
         $parallel = (new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder())->parallelSnapshot(
             reports: [
-                'child-run-llm-steps' => [
-                    'index' => 1,
-                    'agentName' => 'scout',
-                    'task' => 'count steps',
-                    'artifactId' => 'agent_llm_steps',
-                    'agentRunId' => 'child-run-llm-steps',
-                    'terminal' => true,
-                    'status' => \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum::Completed,
-                    'message' => 'done',
-                ],
+                'child-run-llm-steps' => new SubagentProgressParallelChildReportDTO(
+                    index: 1,
+                    agentName: 'scout',
+                    task: 'count steps',
+                    artifactId: 'agent_llm_steps',
+                    agentRunId: 'child-run-llm-steps',
+                    terminal: true,
+                    status: \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum::Completed,
+                    message: 'done',
+                ),
             ],
             activeTurns: ['child-run-llm-steps' => $roundTrip->childTurnNo],
             elapsedMs: 1000,
             enrichmentByAgentRunId: ['child-run-llm-steps' => $summary],
             aggregateStatus: 'completed',
         );
-        $parallelPayload = SubagentProgressSnapshotCodecTestFactory::create()->normalize($parallel);
+        $parallelPayload = SubagentProgressSerializerTestSupport::normalizer()->normalize($parallel);
         $this->assertSame(3, $parallelPayload['children'][0]['llm_step_count'] ?? null);
         $this->assertSame(7, $parallelPayload['children'][0]['turn_no'] ?? null);
     }

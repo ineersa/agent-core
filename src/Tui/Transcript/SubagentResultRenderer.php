@@ -5,18 +5,21 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Transcript;
 
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Tui\Style\Padding;
 use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\MarkdownWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Builds structured subagent tool-result widgets for the transcript renderer.
@@ -28,11 +31,12 @@ use Symfony\Component\Tui\Widget\TextWidget;
 final readonly class SubagentResultRenderer
 {
     public function __construct(
-        private ?SubagentProgressSnapshotCodec $progressCodec = null,
         private SubagentTranscriptCardBuilder $cardBuilder = new SubagentTranscriptCardBuilder(),
         private TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         private TranscriptDisplayState $displayState = new TranscriptDisplayState(),
         private TranscriptLinePreviewService $linePreviewService = new TranscriptLinePreviewService(),
+        private ?DenormalizerInterface $denormalizer = null,
+        private ?ValidatorInterface $validator = null,
     ) {
     }
 
@@ -54,18 +58,34 @@ final readonly class SubagentResultRenderer
         $progressRaw = $block->meta['subagent_progress'] ?? null;
         $resultText = $this->resolveResultText($block);
 
+        if ($progressRaw instanceof SubagentProgressSnapshotInterface) {
+            return $this->buildProgressWidget($block, $theme, $progressRaw, $resultText);
+        }
+
         if (\is_array($progressRaw)) {
-            if (null === $this->progressCodec) {
-                throw new \LogicException('SubagentResultRenderer requires an injected SubagentProgressSnapshotCodec to render subagent_progress meta.');
+            // Transcript meta remains a public array boundary in current projector storage.
+            if (null === $this->denormalizer || null === $this->validator) {
+                if ('' !== $resultText) {
+                    return $this->buildFallbackWidget($resultText, $theme);
+                }
+
+                return new TextWidget($theme->color(ThemeColorEnum::ToolOutput, TranscriptGlyphs::GLYPH_TOOL.' subagent'));
             }
 
-            // Transcript meta is a public/persisted array boundary; denormalize once.
-            return $this->buildProgressWidget(
-                $block,
-                $theme,
-                $this->progressCodec->denormalize($progressRaw),
-                $resultText,
-            );
+            try {
+                $snapshot = $this->denormalizer->denormalize($progressRaw, SubagentProgressSnapshotInterface::class);
+            } catch (SerializerExceptionInterface|\TypeError|\ValueError|\InvalidArgumentException $exception) {
+                throw new \InvalidArgumentException('Invalid subagent_progress transcript meta.', 0, $exception);
+            }
+            if (!$snapshot instanceof SubagentProgressSnapshotInterface) {
+                throw new \InvalidArgumentException('Invalid subagent_progress transcript meta.');
+            }
+            $violations = $this->validator->validate($snapshot);
+            if ($violations->count() > 0) {
+                throw new ValidationFailedException($snapshot, $violations);
+            }
+
+            return $this->buildProgressWidget($block, $theme, $snapshot, $resultText);
         }
 
         if ('' !== $resultText) {

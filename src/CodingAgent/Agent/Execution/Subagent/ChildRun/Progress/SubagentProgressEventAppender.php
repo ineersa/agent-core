@@ -6,9 +6,10 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /**
  * Canonical parent subagent_progress append using explicit stored parent tool correlation.
@@ -20,7 +21,7 @@ class SubagentProgressEventAppender
 {
     public function __construct(
         private CommittedRunEventAppender $committedRunEventAppender,
-        private SubagentProgressSnapshotCodec $progressSnapshotCodec,
+        private NormalizerInterface $normalizer,
     ) {
     }
 
@@ -32,6 +33,13 @@ class SubagentProgressEventAppender
         string $toolName,
         SubagentProgressSnapshotInterface $progress,
     ): RunEvent {
+        /** @var array<string, mixed> $normalized */
+        $normalized = $this->normalizer->normalize(
+            $progress,
+            null,
+            [AbstractObjectNormalizer::SKIP_NULL_VALUES => true],
+        );
+
         $event = new RunEvent(
             runId: $parentRunId,
             seq: 0,
@@ -41,7 +49,7 @@ class SubagentProgressEventAppender
                 'tool_call_id' => $parentToolCallId,
                 'tool_name' => $toolName,
                 'delta' => '',
-                'subagent_progress' => $this->progressSnapshotCodec->normalize($progress),
+                'subagent_progress' => $normalized,
                 'order_index' => $parentOrderIndex,
             ],
         );
