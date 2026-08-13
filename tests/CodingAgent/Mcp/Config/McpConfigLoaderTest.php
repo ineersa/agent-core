@@ -6,11 +6,11 @@ namespace Ineersa\CodingAgent\Tests\Mcp\Config;
 
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
-use Ineersa\CodingAgent\Mcp\Config\McpConfigValidator;
-use Ineersa\CodingAgent\Mcp\Config\McpEnvInterpolator;
 use Ineersa\CodingAgent\Mcp\Config\McpServerAvailabilityEnum;
 use Ineersa\CodingAgent\Mcp\Config\McpTransportTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -21,8 +21,6 @@ use PHPUnit\Framework\TestCase;
 class McpConfigLoaderTest extends TestCase
 {
     private SettingsPathResolver $pathResolver;
-    private McpConfigValidator $validator;
-    private McpEnvInterpolator $interpolator;
     private string $globalDir;
     private string $projectDir;
 
@@ -40,9 +38,6 @@ class McpConfigLoaderTest extends TestCase
             appRoot: '/app',  // irrelevant for these tests
             homeDir: $this->globalDir,
         );
-
-        $this->validator = new McpConfigValidator();
-        $this->interpolator = new McpEnvInterpolator();
 
         // Set up required env vars for interpolation tests
         putenv('MCP_TEST_TOKEN=test-token-value');
@@ -361,8 +356,8 @@ JSON;
             'mcpServers' => [
                 'test-server' => [
                     'command' => 'test-cmd',
-                    'headers' => [
-                        'Authorization' => 'Bearer ${NONEXISTENT_VAR}',
+                    'env' => [
+                        'TOKEN' => '${NONEXISTENT_VAR}',
                     ],
                 ],
             ],
@@ -407,8 +402,8 @@ JSON;
             'mcpServers' => [
                 'my-server' => [
                     'command' => 'test-cmd',
-                    'headers' => [
-                        'X-Key' => 'Bearer ${NONEXISTENT_SECRET}',
+                    'env' => [
+                        'X_KEY' => 'Bearer ${NONEXISTENT_SECRET}',
                     ],
                 ],
             ],
@@ -423,7 +418,7 @@ JSON;
             $msg = $e->getMessage();
             $this->assertStringContainsString('my-server', $msg);
             $this->assertStringContainsString('NONEXISTENT_SECRET', $msg);
-            $this->assertStringContainsString('headers.X-Key', $msg);
+            $this->assertStringContainsString('env.X_KEY', $msg);
             // Must NOT leak the secret value (which doesn't exist anyway, but the
             // error message pattern should not include surrounding values)
         }
@@ -564,15 +559,215 @@ JSON;
 
         $loader->load();
     }
+
+    /**
+     * Dense rejection matrix for Serializer/Validator trust-boundary field rules.
+     *
+     * @param array<string, mixed> $server
+     */
+    #[DataProvider('invalidServerFieldCases')]
+    public function testInvalidServerFieldsAreRejectedWithServerContext(array $server, string $messageNeedle): void
+    {
+        file_put_contents($this->projectDir.'/.hatfield/mcp.json', json_encode([
+            'mcpServers' => [
+                'broken-server' => $server,
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        try {
+            $this->createLoader()->load();
+            $this->fail('Expected RuntimeException was not thrown.');
+        } catch (\RuntimeException $e) {
+            $msg = $e->getMessage();
+            $this->assertStringContainsString('broken-server', $msg);
+            $this->assertStringContainsString($messageNeedle, $msg);
+            $this->assertStringNotContainsString('super-secret', $msg);
+        }
+    }
+
+    /**
+     * @return iterable<string, array{0: array<string, mixed>, 1: string}>
+     */
+    public static function invalidServerFieldCases(): iterable
+    {
+        // Scalar / type / constraint rejection
+        yield 'enabled non-bool' => [['command' => 'cmd', 'enabled' => 'yes'], 'enabled'];
+        yield 'command empty' => [['command' => ''], 'command'];
+        yield 'command non-string' => [['command' => 12], 'command'];
+        yield 'url empty' => [['url' => ''], 'url'];
+        yield 'url non-string' => [['url' => 99], 'url'];
+        yield 'cwd empty' => [['command' => 'cmd', 'cwd' => ''], 'cwd'];
+        yield 'timeoutMs zero' => [['command' => 'cmd', 'timeoutMs' => 0], 'timeoutMs'];
+        yield 'timeoutMs negative' => [['command' => 'cmd', 'timeoutMs' => -5], 'timeoutMs'];
+        yield 'timeoutMs non-int' => [['command' => 'cmd', 'timeoutMs' => '30'], 'timeoutMs'];
+        yield 'startupTimeoutMs zero' => [['command' => 'cmd', 'startupTimeoutMs' => 0], 'startupTimeoutMs'];
+        yield 'startupTimeoutMs negative' => [['command' => 'cmd', 'startupTimeoutMs' => -1], 'startupTimeoutMs'];
+        yield 'availability invalid' => [['command' => 'cmd', 'availability' => 'sometimes'], 'availability'];
+        yield 'availability non-string' => [['command' => 'cmd', 'availability' => 1], 'availability'];
+
+        // List rejection
+        yield 'args non-array' => [['command' => 'cmd', 'args' => 'a'], 'args'];
+        yield 'args non-list' => [['command' => 'cmd', 'args' => ['x' => 'y']], 'args'];
+        yield 'args non-string item' => [['command' => 'cmd', 'args' => [1]], 'args'];
+        yield 'excludeTools non-array' => [['command' => 'cmd', 'excludeTools' => 'tool'], 'excludeTools'];
+        yield 'excludeTools non-list' => [['command' => 'cmd', 'excludeTools' => ['a' => 'b']], 'excludeTools'];
+        yield 'excludeTools non-string item' => [['command' => 'cmd', 'excludeTools' => [false]], 'excludeTools'];
+
+        // Map rejection
+        yield 'env non-map' => [['command' => 'cmd', 'env' => 'TOKEN'], 'env'];
+        yield 'env non-string value' => [['command' => 'cmd', 'env' => ['TOKEN' => 1]], 'env'];
+        yield 'headers non-map' => [['url' => 'https://example.test', 'headers' => 'Bearer x'], 'headers'];
+        yield 'headers non-string value' => [['url' => 'https://example.test', 'headers' => ['Authorization' => 7]], 'headers'];
+    }
+
+    /**
+     * Source-aware inheritance/disable rules after Serializer/Validator hydration.
+     *
+     * @param array<string, mixed>|null $globalServers
+     * @param array<string, mixed>      $projectServers
+     */
+    #[DataProvider('inheritanceAndPriorityCases')]
+    public function testInheritanceDisableAndDiagnosticPriority(
+        ?array $globalServers,
+        array $projectServers,
+        ?string $messageNeedle,
+        bool $expectEmptyConfig,
+    ): void {
+        if (null !== $globalServers) {
+            file_put_contents($this->globalDir.'/.hatfield/mcp.json', json_encode([
+                'mcpServers' => $globalServers,
+            ], \JSON_THROW_ON_ERROR));
+        }
+
+        file_put_contents($this->projectDir.'/.hatfield/mcp.json', json_encode([
+            'mcpServers' => $projectServers,
+        ], \JSON_THROW_ON_ERROR));
+
+        if (null === $messageNeedle) {
+            $config = $this->createLoader()->load();
+            if ($expectEmptyConfig) {
+                $this->assertCount(0, $config->servers);
+            }
+
+            return;
+        }
+
+        try {
+            $this->createLoader()->load();
+            $this->fail('Expected RuntimeException was not thrown.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString($messageNeedle, $e->getMessage());
+        }
+    }
+
+    /**
+     * @return iterable<string, array{0: array<string, mixed>|null, 1: array<string, mixed>, 2: string|null, 3: bool}>
+     */
+    public static function inheritanceAndPriorityCases(): iterable
+    {
+        // Plain inherited disable marker still accepted (covered also by dedicated test).
+        yield 'plain inherited disable accepted' => [
+            ['filesystem' => ['command' => 'npx']],
+            ['filesystem' => ['enabled' => false]],
+            null,
+            true,
+        ];
+
+        // Malformed allowed fields on inherited disable markers are now rejected.
+        yield 'inherited disable rejects malformed allowed fields' => [
+            ['filesystem' => ['command' => 'npx']],
+            ['filesystem' => [
+                'enabled' => false,
+                'timeoutMs' => 0,
+            ]],
+            'timeoutMs',
+            false,
+        ];
+
+        // Unknown fields rejected on inherited disable markers via Serializer.
+        yield 'unknown field on inherited disable rejected' => [
+            ['filesystem' => ['command' => 'npx']],
+            ['filesystem' => ['enabled' => false, 'bogus' => true]],
+            'unknown field',
+            false,
+        ];
+
+        // Wrong-type enabled rejected by DTO/Serializer even without transport.
+        yield 'enabled type rejected without transport' => [
+            null,
+            ['ghost' => ['enabled' => 'false']],
+            'enabled',
+            false,
+        ];
+
+        // Invalid global is rejected even when project overrides the same name.
+        yield 'invalid global rejected despite project override' => [
+            ['broken' => ['command' => 'npx', 'timeoutMs' => 0]],
+            ['broken' => ['command' => 'fixed']],
+            'timeoutMs',
+            false,
+        ];
+    }
+
+    /**
+     * Transport-inapplicable raw fields are ignored (not rejected / not interpolated).
+     *
+     * @param array<string, mixed>   $server
+     * @param callable(object): void $assertServer
+     */
+    #[DataProvider('transportInapplicableFieldCases')]
+    public function testTransportInapplicableFieldsAreIgnored(array $server, callable $assertServer): void
+    {
+        // Ensure a missing env would throw if headers/env were incorrectly interpolated.
+        putenv('SHOULD_NOT_INTERPOLATE');
+
+        file_put_contents($this->projectDir.'/.hatfield/mcp.json', json_encode([
+            'mcpServers' => [
+                'srv' => $server,
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $config = $this->createLoader()->load();
+        $this->assertArrayHasKey('srv', $config->servers);
+        $assertServer($config->servers['srv']);
+    }
+
+    /**
+     * @return iterable<string, array{0: array<string, mixed>, 1: callable(object): void}>
+     */
+    public static function transportInapplicableFieldCases(): iterable
+    {
+        yield 'http ignores stdio fields' => [
+            [
+                'url' => 'https://example.test/mcp',
+                'args' => 'not-a-list',
+                'env' => ['TOKEN' => '${SHOULD_NOT_INTERPOLATE}'],
+                'cwd' => '',
+            ],
+            static function (object $srv): void {
+                self::assertSame(McpTransportTypeEnum::HTTP, $srv->transportType);
+                self::assertSame([], $srv->args);
+                self::assertSame([], $srv->env);
+                self::assertNull($srv->cwd);
+            },
+        ];
+
+        yield 'stdio ignores headers' => [
+            [
+                'command' => 'cmd',
+                'headers' => ['Authorization' => 'Bearer ${SHOULD_NOT_INTERPOLATE}'],
+            ],
+            static function (object $srv): void {
+                self::assertSame(McpTransportTypeEnum::STDIO, $srv->transportType);
+                self::assertSame([], $srv->headers);
+            },
+        ];
+    }
+
     // ─── Helper ───
 
     private function createLoader(): McpConfigLoader
     {
-        return new McpConfigLoader(
-            $this->pathResolver,
-            $this->validator,
-            $this->interpolator,
-            $this->projectDir,
-        );
+        return TestMcpConfigLoaderFactory::create($this->pathResolver, $this->projectDir);
     }
 }
