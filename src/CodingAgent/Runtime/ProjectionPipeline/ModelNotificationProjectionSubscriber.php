@@ -36,10 +36,8 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
 
     public function onModelNotification(TranscriptProjectionEvent $event): void
     {
+        /** @var ModelNotificationDTO $notification */
         $notification = $this->denormalizer->denormalize($event->payload(), ModelNotificationDTO::class);
-        if (!$notification instanceof ModelNotificationDTO) {
-            throw new \InvalidArgumentException('model_notification payload did not denormalize to ModelNotificationDTO.');
-        }
         $state = $event->state;
 
         $blockId = 'model_notification_'.('' !== $notification->id
