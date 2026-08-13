@@ -4,27 +4,59 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension\ChildRun\Metadata;
 
+use Symfony\Component\Serializer\Attribute\SerializedName;
+use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+
 /**
  * Typed RunStarted metadata (payload.payload.metadata) for CodingAgent consumers.
  *
- * Decoded once at the persisted event boundary. Does not replace generic
- * {@see \Ineersa\AgentCore\Domain\Run\RunMetadata} write-side construction.
+ * Hydrated by Symfony Serializer at the RunEvent boundary. Does not replace
+ * generic {@see \Ineersa\AgentCore\Domain\Run\RunMetadata} write-side construction.
  */
 final readonly class RunStartedMetadataDTO
 {
     /**
-     * @param list<string>|null $extensions Effective when extensionsKeyPresent is true
+     * @param list<string>|null $extensions
      */
     public function __construct(
         public RunStartedSessionMetadataDTO $session = new RunStartedSessionMetadataDTO(),
         public ?string $model = null,
         public ?string $reasoning = null,
+        #[SerializedName('tools_scope')]
         public ?RunStartedToolsScopeDTO $toolsScope = null,
+        #[SerializedName('context_window')]
         public ?int $contextWindow = null,
         public ?array $extensions = null,
-        public bool $extensionsKeyPresent = false,
         public ?string $provider = null,
     ) {
+    }
+
+    /**
+     * One generic-envelope extraction from RunEvent.payload, then Serializer
+     * denormalizes the stable nested metadata object graph.
+     *
+     * @param array<string, mixed> $eventPayload Full RunEvent.payload for run_started
+     */
+    public static function tryFromRunEventPayload(array $eventPayload, DenormalizerInterface $denormalizer): ?self
+    {
+        $inner = $eventPayload['payload'] ?? null;
+        if (!\is_array($inner)) {
+            return null;
+        }
+
+        $metadata = $inner['metadata'] ?? null;
+        if (!\is_array($metadata)) {
+            return null;
+        }
+
+        try {
+            $dto = $denormalizer->denormalize($metadata, self::class);
+        } catch (SerializerExceptionInterface|\TypeError|\ValueError|\InvalidArgumentException) {
+            return null;
+        }
+
+        return $dto instanceof self ? $dto : null;
     }
 
     public function isAgentChild(): bool
@@ -33,7 +65,7 @@ final readonly class RunStartedMetadataDTO
     }
 
     /**
-     * Child tool allowlist, or null when not a child / tools_scope.allowed_tools missing/invalid.
+     * Child tool allowlist, or null when not a child / tools_scope.allowed_tools missing.
      *
      * @return list<string>|null
      */
@@ -50,10 +82,10 @@ final readonly class RunStartedMetadataDTO
     }
 
     /**
-     * Child extension allowlist semantics matching historical SubagentRunMetadataReader:
+     * Child extension allowlist:
      * - null when not an agent child
-     * - empty list when extensions key absent (fail closed) or empty/invalid
-     * - non-empty list of trimmed class names when present
+     * - empty list when extensions absent (fail closed) or empty
+     * - non-empty list when present
      *
      * @return list<string>|null
      */
@@ -61,9 +93,6 @@ final readonly class RunStartedMetadataDTO
     {
         if (!$this->isAgentChild()) {
             return null;
-        }
-        if (!$this->extensionsKeyPresent) {
-            return [];
         }
 
         return $this->extensions ?? [];

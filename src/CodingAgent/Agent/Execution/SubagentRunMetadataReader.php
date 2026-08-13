@@ -6,26 +6,25 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDecoder;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Reads agent child metadata from RunStarted events.
  *
- * Encapsulates the correct payload-path traversal for the nested
- * RunStarted event shape produced by StartRunHandler:
+ * Encapsulates the nested RunStarted event shape produced by StartRunHandler:
  *
  *   $event->payload['payload']['metadata'][...]
  *
- * Decoding is delegated to {@see RunStartedMetadataDecoder} so consumers
- * share one typed representation instead of re-walking nested arrays.
+ * Stable nested metadata is denormalized once via Symfony Serializer into
+ * {@see RunStartedMetadataDTO}.
  */
 final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllowlistReaderInterface
 {
     public function __construct(
         private EventStoreInterface $eventStore,
-        private RunStartedMetadataDecoder $decoder = new RunStartedMetadataDecoder(),
+        private DenormalizerInterface $denormalizer,
     ) {
     }
 
@@ -90,7 +89,7 @@ final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllow
 
     /**
      * Typed RunStarted metadata for the run, or null when no RunStarted event
-     * / nested metadata envelope is available.
+     * / nested metadata envelope is available / denormalization fails.
      */
     public function readRunStartedMetadata(string $runId): ?RunStartedMetadataDTO
     {
@@ -101,7 +100,7 @@ final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllow
                 continue;
             }
 
-            return $this->decoder->fromRunEventPayload($event->payload);
+            return RunStartedMetadataDTO::tryFromRunEventPayload($event->payload, $this->denormalizer);
         }
 
         return null;

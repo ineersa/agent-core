@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
@@ -110,7 +111,7 @@ final class McpParentAvailabilityToolSetResolverTest extends TestCase
             $eventStore->method('allFor')->willReturn([]);
         }
 
-        $metadataReader = new SubagentRunMetadataReader($eventStore);
+        $metadataReader = new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
 
         return new McpParentAvailabilityToolSetResolver(
             inner: $inner,

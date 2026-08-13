@@ -8,7 +8,8 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildToolProgressPresentationFormatter;
-use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDecoder;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Incrementally reduces committed child event summaries into a compact lifecycle projection.
@@ -18,8 +19,8 @@ final class DeferredChildRunEventProjector
     private const int MAX_RECENT_TOOLS = 4;
 
     public function __construct(
+        private readonly DenormalizerInterface $denormalizer,
         private readonly SubagentChildToolProgressPresentationFormatter $presentationFormatter = new SubagentChildToolProgressPresentationFormatter(),
-        private readonly RunStartedMetadataDecoder $runStartedMetadataDecoder = new RunStartedMetadataDecoder(),
     ) {
     }
 
@@ -80,7 +81,7 @@ final class DeferredChildRunEventProjector
             }
 
             if (RunEventTypeEnum::RunStarted->value === $type) {
-                $metadata = $this->runStartedMetadataDecoder->fromRunEventPayload($payload);
+                $metadata = RunStartedMetadataDTO::tryFromRunEventPayload($payload, $this->denormalizer);
                 // RunStarted may confirm/update concrete identity; never clear to empty.
                 if (null !== $metadata) {
                     if (null !== $metadata->model && '' !== trim($metadata->model)) {

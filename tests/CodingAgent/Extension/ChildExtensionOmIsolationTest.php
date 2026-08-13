@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobMessage;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
@@ -76,7 +77,7 @@ final class ChildExtensionOmIsolationTest extends TestCase
         $subscriber = new ExtensionAfterTurnCommitHookSubscriber(
             $registry,
             new NullLogger(),
-            new SubagentRunMetadataReader($eventStore),
+            new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
         );
 
         $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
@@ -136,7 +137,7 @@ final class ChildExtensionOmIsolationTest extends TestCase
             $jobs,
             $this->createStub(ExtensionApiInterface::class),
             new NullLogger(),
-            new SubagentRunMetadataReader($eventStore),
+            new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
         );
 
         $worker(new ExtensionAgentJobMessage(

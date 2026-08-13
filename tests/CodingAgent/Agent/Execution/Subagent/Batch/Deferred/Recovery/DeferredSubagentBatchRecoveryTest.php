@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
@@ -108,7 +109,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         $observe = new ObserveDeferredSubagentBatchChildTurnHandler(
             $batchRepo,
             $childRepo,
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             $bus,
         );
@@ -133,7 +134,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             $batchRepo,
             $childRepo,
             self::getContainer()->get(AgentChildRunEventStoreFactory::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             $recoveryBus,
             new TestLogger(),
         );
@@ -340,7 +341,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             $batchRepo,
             self::getContainer()->get(DeferredSubagentChildRepository::class),
             self::getContainer()->get(AgentChildRunEventStoreFactory::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             $interruptRecoveryBus,
             new TestLogger(),
         );

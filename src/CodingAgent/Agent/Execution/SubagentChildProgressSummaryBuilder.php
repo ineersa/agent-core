@@ -11,7 +11,8 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathsDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
-use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDecoder;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Builds bounded child-run progress summaries by scanning parent-scoped artifact events.
@@ -28,8 +29,8 @@ final class SubagentChildProgressSummaryBuilder
 
     public function __construct(
         private readonly AgentChildRunEventStoreFactory $childEventStoreFactory,
+        private readonly DenormalizerInterface $denormalizer,
         private readonly SubagentChildToolProgressPresentationFormatter $presentationFormatter = new SubagentChildToolProgressPresentationFormatter(),
-        private readonly RunStartedMetadataDecoder $runStartedMetadataDecoder = new RunStartedMetadataDecoder(),
     ) {
     }
 
@@ -119,7 +120,7 @@ final class SubagentChildProgressSummaryBuilder
         foreach ($events as $event) {
             $payload = $event->payload;
             if (RunEventTypeEnum::RunStarted->value === $event->type) {
-                $metadata = $this->runStartedMetadataDecoder->fromRunEventPayload($payload);
+                $metadata = RunStartedMetadataDTO::tryFromRunEventPayload($payload, $this->denormalizer);
                 // RunStarted may confirm/update concrete identity; never clear to empty.
                 if (null !== $metadata) {
                     if (null !== $metadata->model && '' !== trim($metadata->model)) {

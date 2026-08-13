@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\ChildRun\Deferred;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressParallelChildReportDTO;
@@ -27,7 +28,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 {
     public function testCanonicalRunStartedModelOverridesStaleDefinitionAndSurvivesResume(): void
     {
-        $projector = new DeferredChildRunEventProjector();
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer());
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
@@ -85,14 +86,14 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertSame('xhigh', $resumed->reasoning);
         $this->assertSame(2, $resumed->llmStepCount);
         $this->assertSame(4, $resumed->childTurnNo);
-        [$serializer] = \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
+        [$serializer] = AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
         $wire = $serializer->normalize($resumed, null, [\Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
         $this->assertSame('xhigh', $serializer->denormalize($wire, DeferredChildRunLifecycleProjectionDTO::class)->reasoning);
     }
 
     public function testRetryableLlmStepFailedStaysRunningWhileExhaustedFailureIsTerminal(): void
     {
-        $projector = new DeferredChildRunEventProjector();
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer());
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
@@ -179,7 +180,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 
     public function testApplyEnforcesPrivacyStatusOverridesAndMalformedArgumentSafety(): void
     {
-        $projector = new DeferredChildRunEventProjector();
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer());
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
@@ -265,7 +266,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 
     public function testCompletedAndFailedLlmStepsIncrementDurableCounterAndRoundTrip(): void
     {
-        $projector = new DeferredChildRunEventProjector();
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer());
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
@@ -296,7 +297,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertSame(7, $projection->childTurnNo);
         $this->assertSame(30, $projection->inputTokens);
 
-        [$serializer] = \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
+        [$serializer] = AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
         $wire = $serializer->normalize($projection, null, [\Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
         $roundTrip = $serializer->denormalize($wire, DeferredChildRunLifecycleProjectionDTO::class);
         $this->assertSame(3, $roundTrip->llmStepCount);

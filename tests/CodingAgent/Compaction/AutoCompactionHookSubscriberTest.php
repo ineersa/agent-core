@@ -19,6 +19,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
@@ -86,7 +87,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $this->commandBus = new TestMessageBus();
         // Parent by default: empty event store so isAgentChild() is false.
         // Provider usage stays on the separate $this->eventStore mock.
-        $this->metadataReader = new SubagentRunMetadataReader(new InMemoryEventStore());
+        $this->metadataReader = new SubagentRunMetadataReader(new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::denormalizer());
 
         $this->subscriber = new AutoCompactionHookSubscriber(
             $this->runStore,
@@ -1172,7 +1173,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                 ],
             ),
         ]);
-        $childReader = new SubagentRunMetadataReader($childEventStore);
+        $childReader = new SubagentRunMetadataReader($childEventStore, AttributeSerializerValidatorTestFactory::denormalizer());
 
         // Fresh mock: child gate must return before prepare().
         $compactionService = $this->createMock(CompactionServiceInterface::class);

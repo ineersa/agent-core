@@ -29,6 +29,11 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  */
 final class AttributeSerializerValidatorTestFactory
 {
+    public static function denormalizer(bool $withBackedEnumNormalizer = false): DenormalizerInterface
+    {
+        return self::create($withBackedEnumNormalizer)[0];
+    }
+
     /**
      * @return array{0: SerializerInterface&NormalizerInterface&DenormalizerInterface, 1: ValidatorInterface}
      */

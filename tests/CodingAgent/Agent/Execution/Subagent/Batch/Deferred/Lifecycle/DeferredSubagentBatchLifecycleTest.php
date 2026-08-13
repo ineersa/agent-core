@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
@@ -83,7 +84,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -144,7 +145,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -220,7 +221,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -321,7 +322,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -561,7 +562,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $lateHandler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             $observeBus,
         );
@@ -707,7 +708,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -855,7 +856,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -1143,7 +1144,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             new TestMessageBus(),
         );

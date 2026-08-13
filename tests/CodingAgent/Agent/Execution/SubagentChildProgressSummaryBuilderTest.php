@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
@@ -81,7 +82,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             new NullLogger(),
             new FileRunSequenceAllocator(),
         );
-        $builder = new SubagentChildProgressSummaryBuilder($factory);
+        $builder = new SubagentChildProgressSummaryBuilder($factory, AttributeSerializerValidatorTestFactory::denormalizer());
 
         // Same stale definition model for both children; scanEvents must keep each launch model.
         $summaryA = $builder->summarize(
@@ -185,7 +186,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             new NullLogger(),
             new FileRunSequenceAllocator(),
         );
-        $builder = new SubagentChildProgressSummaryBuilder($factory);
+        $builder = new SubagentChildProgressSummaryBuilder($factory, AttributeSerializerValidatorTestFactory::denormalizer());
         $summary = $builder->summarize($parentRunId, $childRunId, $artifactId, $childState, 'deepseek/deepseek-v4-flash', 'medium');
 
         $this->assertSame(2, $summary->toolCount);
