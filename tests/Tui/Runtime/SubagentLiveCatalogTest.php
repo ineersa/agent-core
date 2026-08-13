@@ -23,6 +23,8 @@ final class SubagentLiveCatalogTest extends TestCase
             'artifact_id' => 'agent_a',
             'agent_run_id' => 'child-run-1',
             'task_summary' => 'Find files',
+            'model' => 'deepseek/deepseek-v4-flash',
+            'reasoning' => 'medium',
         ]));
 
         $all = $catalog->all();
@@ -37,10 +39,12 @@ final class SubagentLiveCatalogTest extends TestCase
         $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+            'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
         ]));
         $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
             'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'task_summary' => 'Task done',
+            'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
         ]));
 
         $child = $catalog->findByArtifactId('agent_a');
@@ -55,6 +59,7 @@ final class SubagentLiveCatalogTest extends TestCase
         $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'task_summary' => 'No id',
+            'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
         ]));
         $this->assertSame([], $catalog->all());
     }
@@ -65,8 +70,8 @@ final class SubagentLiveCatalogTest extends TestCase
         $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
             'mode' => 'parallel', 'status' => 'running',
             'children' => [
-                ['agent_name' => 'scout', 'artifact_id' => 'a1', 'agent_run_id' => 'run-1', 'status' => 'running', 'task_summary' => 'One'],
-                ['agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'completed', 'task_summary' => 'Two'],
+                ['agent_name' => 'scout', 'artifact_id' => 'a1', 'agent_run_id' => 'run-1', 'status' => 'running', 'task_summary' => 'One', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium'],
+                ['agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'completed', 'task_summary' => 'Two', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'high'],
             ],
         ]));
         $this->assertCount(2, $catalog->all());
@@ -79,6 +84,7 @@ final class SubagentLiveCatalogTest extends TestCase
         $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+            'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
         ]));
 
         $catalog->applyChildStatus('agent_a', SubagentLiveStatusEnum::Running);
@@ -94,10 +100,12 @@ final class SubagentLiveCatalogTest extends TestCase
         $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
             'mode' => 'single', 'status' => 'cancelled', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Done',
+            'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
         ]));
         $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Stale',
+            'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
         ]));
 
         $child = $catalog->findByArtifactId('agent_a');
@@ -112,12 +120,14 @@ final class SubagentLiveCatalogTest extends TestCase
         $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+            'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
         ]));
         $this->assertNotNull($catalog->firstChildNeedingAttention());
 
         $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
             'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Done',
+            'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
         ]));
 
         $this->assertNull($catalog->firstChildNeedingAttention());
@@ -130,8 +140,8 @@ final class SubagentLiveCatalogTest extends TestCase
         $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
             'mode' => 'parallel', 'status' => 'running',
             'children' => [
-                ['agent_name' => 'scout', 'artifact_id' => 'a1', 'agent_run_id' => 'run-1', 'status' => 'running', 'task_summary' => 'One'],
-                ['agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'waiting_human', 'task_summary' => 'Two'],
+                ['agent_name' => 'scout', 'artifact_id' => 'a1', 'agent_run_id' => 'run-1', 'status' => 'running', 'task_summary' => 'One', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium'],
+                ['agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'waiting_human', 'task_summary' => 'Two', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'high'],
             ],
         ]));
 
@@ -146,6 +156,7 @@ final class SubagentLiveCatalogTest extends TestCase
         $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+            'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
         ]));
         $removed = $catalog->dismissArtifactId('agent_a');
         $this->assertNotNull($removed);
@@ -155,6 +166,7 @@ final class SubagentLiveCatalogTest extends TestCase
         $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Stale',
+            'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
         ]));
         $this->assertNull($catalog->findByArtifactId('agent_a'));
     }
@@ -212,45 +224,12 @@ final class SubagentLiveCatalogTest extends TestCase
     /** @param array<string, mixed> $progress */
     private function progressEvent(string $runId, array $progress): RuntimeEvent
     {
-        $progress = $this->withConcreteIdentity($progress);
-
         return new RuntimeEvent(
             type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             runId: $runId,
             seq: 1,
             payload: ['tool_call_id' => 'tc1', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => $progress],
         );
-    }
-
-    /**
-     * @param array<string, mixed> $progress
-     *
-     * @return array<string, mixed>
-     */
-    private function withConcreteIdentity(array $progress): array
-    {
-        if ('parallel' === ($progress['mode'] ?? null) && isset($progress['children']) && \is_array($progress['children'])) {
-            $children = [];
-            foreach ($progress['children'] as $child) {
-                if (!\is_array($child)) {
-                    $children[] = $child;
-                    continue;
-                }
-                $children[] = $this->withConcreteIdentity($child);
-            }
-            $progress['children'] = $children;
-
-            return $progress;
-        }
-
-        if (!isset($progress['model']) || !\is_string($progress['model']) || '' === trim($progress['model'])) {
-            $progress['model'] = 'deepseek/deepseek-v4-flash';
-        }
-        if (!isset($progress['reasoning']) || !\is_string($progress['reasoning']) || '' === trim($progress['reasoning'])) {
-            $progress['reasoning'] = 'medium';
-        }
-
-        return $progress;
     }
 
     private function childContextString(\Ineersa\Tui\Runtime\SubagentLiveChildDTO $child, string $property): ?string

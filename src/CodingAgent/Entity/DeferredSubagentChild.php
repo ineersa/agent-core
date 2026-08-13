@@ -40,11 +40,13 @@ class DeferredSubagentChild
     #[ORM\Column(type: 'text')]
     public string $task = '';
 
+    // Concrete effective launch identity; set only via reservation insert / ORM hydrate.
+    // Uninitialized until assigned — never default to empty string.
     #[ORM\Column(name: 'launch_model', type: 'string', length: 255)]
-    public string $launchModel = '';
+    public string $launchModel;
 
     #[ORM\Column(name: 'launch_reasoning', type: 'string', length: 64)]
-    public string $launchReasoning = '';
+    public string $launchReasoning;
 
     #[ORM\Column(name: 'launch_status', type: 'string', length: 32, enumType: DeferredSubagentChildLaunchStatusEnum::class)]
     public DeferredSubagentChildLaunchStatusEnum $launchStatus = DeferredSubagentChildLaunchStatusEnum::Reserved;

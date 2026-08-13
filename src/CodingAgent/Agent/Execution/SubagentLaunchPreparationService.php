@@ -77,16 +77,15 @@ final class SubagentLaunchPreparationService
         $artifactId ??= 'agent_'.bin2hex(random_bytes(8));
         $childRunId ??= Uuid::v4()->toRfc4122();
 
-        // Seed identity carries ids/task only; buildPrepared rewrites with concrete launch model/reasoning.
-        $identity = $identityTemplate ?? new ChildRunIdentityDTO(
-            parentRunId: $parentRunId,
-            childRunId: $childRunId,
-            artifactId: $artifactId,
-            displayName: $agentName,
-            taskSummary: $task,
-            launchModel: $this->seedLaunchModel($definition->model, $parentModel),
-            launchReasoning: $this->seedLaunchReasoning($definition->thinking),
-            artifactKind: AgentArtifactKindEnum::Subagent,
+        // Resolve concrete identity once before DTO construction (or reuse deferred plan identity).
+        $identity = $identityTemplate ?? $this->newSubagentIdentity(
+            $parentRunId,
+            $childRunId,
+            $artifactId,
+            $agentName,
+            $task,
+            $definition,
+            $parentModel,
         );
 
         $policy = $this->definitionPolicy->resolveToolPolicy($definition, $parentRunId);
@@ -126,16 +125,13 @@ final class SubagentLaunchPreparationService
         $artifactId ??= 'agent_'.bin2hex(random_bytes(8));
         $childRunId ??= Uuid::v4()->toRfc4122();
 
-        // Seed identity carries ids/task only; buildPrepared rewrites with concrete launch model/reasoning.
-        $identity = $identityTemplate ?? new ChildRunIdentityDTO(
-            parentRunId: $parentRunId,
-            childRunId: $childRunId,
-            artifactId: $artifactId,
-            displayName: $profile->displayAgentName,
-            taskSummary: $task,
-            launchModel: $this->seedLaunchModel($profile->definition->model, $parentModel),
-            launchReasoning: $this->seedLaunchReasoning($profile->reasoningOverride ?? $profile->definition->thinking),
-            artifactKind: $profile->artifactKind,
+        $identity = $identityTemplate ?? $this->newForkIdentity(
+            $parentRunId,
+            $childRunId,
+            $artifactId,
+            $profile,
+            $task,
+            $parentModel,
         );
 
         $prepared = $this->forkLaunchInputBuilder->buildPrepared(
@@ -157,26 +153,53 @@ final class SubagentLaunchPreparationService
         return $prepared;
     }
 
-    private function seedLaunchModel(?string $definitionModel, ?string $parentModel): string
-    {
-        foreach ([$definitionModel, $parentModel] as $candidate) {
-            if (\is_string($candidate) && '' !== trim($candidate)) {
-                return trim($candidate);
-            }
-        }
+    private function newSubagentIdentity(
+        string $parentRunId,
+        string $childRunId,
+        string $artifactId,
+        string $agentName,
+        string $task,
+        AgentDefinitionDTO $definition,
+        ?string $parentModel,
+    ): ChildRunIdentityDTO {
+        $launch = $this->launchInputFactory->resolveLaunchIdentity($definition, $parentRunId, $parentModel);
 
-        // Temporary seed so ChildRunIdentityDTO can exist before factory resolution.
-        // buildPrepared always rewrites identity from canonical resolution.
-        return 'pending-model';
+        return new ChildRunIdentityDTO(
+            parentRunId: $parentRunId,
+            childRunId: $childRunId,
+            artifactId: $artifactId,
+            displayName: $agentName,
+            taskSummary: $task,
+            launchModel: $launch['model'],
+            launchReasoning: $launch['reasoning'],
+            artifactKind: AgentArtifactKindEnum::Subagent,
+        );
     }
 
-    private function seedLaunchReasoning(?string $thinking): string
-    {
-        if (\is_string($thinking) && '' !== trim($thinking)) {
-            return trim($thinking);
-        }
+    private function newForkIdentity(
+        string $parentRunId,
+        string $childRunId,
+        string $artifactId,
+        DeferredSubagentSingleChildLaunchProfileDTO $profile,
+        string $task,
+        ?string $parentModel,
+    ): ChildRunIdentityDTO {
+        $launch = $this->forkLaunchInputBuilder->resolveLaunchIdentity(
+            $parentRunId,
+            $profile->definition->model,
+            $profile->reasoningOverride,
+            $parentModel,
+        );
 
-        // Temporary seed; buildPrepared rewrites from canonical resolution.
-        return 'medium';
+        return new ChildRunIdentityDTO(
+            parentRunId: $parentRunId,
+            childRunId: $childRunId,
+            artifactId: $artifactId,
+            displayName: $profile->displayAgentName,
+            taskSummary: $task,
+            launchModel: $launch['model'],
+            launchReasoning: $launch['reasoning'],
+            artifactKind: $profile->artifactKind,
+        );
     }
 }

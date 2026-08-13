@@ -181,6 +181,69 @@ final class ApplicationMigrationExecutorTest extends TestCase
             $busyTimeout,
             'SQLite busy_timeout must be >= 5000ms after executor startup (#228)',
         );
+
+        $recordedLaunchIdentity = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260812190000'],
+        );
+        $this->assertNotFalse(
+            $recordedLaunchIdentity,
+            'Version20260812190000 (deferred child launch identity) must be recorded in doctrine_migration_versions',
+        );
+
+        $childColumns = array_keys($schemaManager->listTableColumns('deferred_subagent_child'));
+        $this->assertContains('launch_model', $childColumns);
+        $this->assertContains('launch_reasoning', $childColumns);
+        $this->assertNotContains('definition_model', $childColumns);
+    }
+
+    public function testLaunchIdentityMigrationFailsClosedWhenDeferredChildrenExist(): void
+    {
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/launch-identity-fail-closed.sqlite');
+        $connection->executeStatement(<<<'SQL'
+CREATE TABLE deferred_subagent_child (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    batch_lifecycle_id VARCHAR(36) NOT NULL,
+    batch_index INTEGER NOT NULL,
+    child_run_id VARCHAR(36) NOT NULL,
+    artifact_id VARCHAR(64) NOT NULL,
+    agent_name VARCHAR(255) NOT NULL,
+    task CLOB NOT NULL,
+    definition_model VARCHAR(255) DEFAULT NULL,
+    launch_status VARCHAR(32) NOT NULL,
+    child_event_cursor INTEGER NOT NULL,
+    child_lifecycle_projection CLOB DEFAULT NULL,
+    projection_version INTEGER NOT NULL,
+    started_at DATETIME DEFAULT NULL,
+    terminal_completed_at DATETIME DEFAULT NULL,
+    terminal_status VARCHAR(32) DEFAULT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+)
+SQL);
+        $now = '2026-08-12 00:00:00';
+        $connection->insert('deferred_subagent_child', [
+            'batch_lifecycle_id' => 'batch-1',
+            'batch_index' => 1,
+            'child_run_id' => 'child-1',
+            'artifact_id' => 'agent_1',
+            'agent_name' => 'scout',
+            'task' => 'inspect',
+            'definition_model' => 'deepseek/deepseek-v4-flash',
+            'launch_status' => 'reserved',
+            'child_event_cursor' => 0,
+            'projection_version' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        $this->recordAppliedMigrationsThrough($connection, 'Version20260723230000');
+
+        $executor = new ApplicationMigrationExecutor($connection, new NullLogger());
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Cannot migrate deferred_subagent_child to launch_model/launch_reasoning while rows exist');
+
+        $executor();
     }
 
     public function testIsAppliedAcceptsFqcnVersionRowsRecordedByConsoleMigrate(): void
@@ -369,6 +432,9 @@ SQL);
             'Version20260713160000',
             'Version20260714140000',
             'Version20260715120000',
+            'Version20260720120000',
+            'Version20260723230000',
+            'Version20260812190000',
         ];
 
         foreach ($ordered as $version) {
