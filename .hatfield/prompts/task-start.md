@@ -9,6 +9,11 @@ If the task argument is empty or still the literal placeholder `<task>`, ask the
 
 ## Orchestrator role
 
+## JetBrains checkout targeting (implementation/review)
+
+Prefer semantic JetBrains IDE tools (agent-visible `jetbrains-index_ide_*`; raw MCP names remain `ide_*`) for navigation, references/hierarchy, diagnostics, and semantic rename/move. Always pass the exact task worktree as `project_path`. Never assume the integration checkout or the aggregate sibling-worktree project. If the worktree is not open/indexed, open that exact path with `jetbrains-index_ide_open_project` before code work. Fall back to absolute-path filesystem tools when IDE tools are unavailable. Scouts do not need IDE tools.
+
+
 You are an **orchestrator**, not an implementor. Your job is to dispatch work to specialized agents and coordinate their results:
 
 - **Scout subagents** — for codebase exploration, dependency checks, architecture discovery, file search.
