@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Compaction\CodingAgentPreLlmCompactionGuard;
 use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use Ineersa\CodingAgent\Config\CompactionConfig;
@@ -34,6 +35,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
     private CompactionConfig $compactionConfig;
     /** @var RunModelResolverInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $modelResolver;
+    private SubagentRunMetadataReader $metadataReader;
 
     protected function setUp(): void
     {
@@ -47,10 +49,13 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         // Most tests don't care about the model; return null by default.
         $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
+        $this->metadataReader = new SubagentRunMetadataReader($this->eventStore);
+
         $this->guard = new CodingAgentPreLlmCompactionGuard(
             $this->compactionConfig,
             $this->providerUsageResolver,
             $this->modelResolver,
+            $this->metadataReader,
         );
     }
 
@@ -121,6 +126,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $disabledConfig,
             $this->providerUsageResolver,
             $this->modelResolver,
+            $this->metadataReader,
         );
 
         $messages = [
@@ -162,6 +168,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $configWithOverride,
             $this->providerUsageResolver,
             $modelResolver,
+            $this->metadataReader,
         );
 
         $messages = [
@@ -315,6 +322,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->compactionConfig,
             $this->providerUsageResolver,
             $this->modelResolver,
+            $this->metadataReader,
         );
 
         $this->assertFalse(
@@ -374,6 +382,44 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         $this->assertTrue(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 2, $messages, null),
             'Newer measurement at seq 5 must be eligible after auto start at seq 2',
+        );
+    }
+
+    /**
+     * Thesis: agent child runs never schedule pre-LLM CompactRun even when
+     * provider usage exceeds compact_after_tokens.
+     */
+    public function testReturnsFalseForAgentChildRunAboveThreshold(): void
+    {
+        // Child gate reads RunStarted; usage resolver would also see this store,
+        // but the child check short-circuits before threshold evaluation.
+        $this->eventStore->method('allFor')->willReturn([
+            new RunEvent(
+                runId: 'child-run',
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: [
+                    'step_id' => 'start-1',
+                    'payload' => [
+                        'system_prompt' => 'child',
+                        'messages' => [],
+                        'metadata' => [
+                            'session' => [
+                                'kind' => 'agent_child',
+                                'parent_run_id' => 'parent-1',
+                            ],
+                        ],
+                    ],
+                ],
+            ),
+            $this->makeLlmStepCompletedEvent(12000),
+        ]);
+
+        $messages = [$this->makeTextMessage('user', 'Hello')];
+        $this->assertFalse(
+            $this->guard->shouldCompactBeforeLlmStep('child-run', 1, $messages, null),
+            'Agent child runs must not trigger pre-LLM compaction.',
         );
     }
 

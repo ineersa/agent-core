@@ -80,6 +80,11 @@ final class SubagentLiveCatalog
             return;
         }
 
+        // Terminal catalog rows are monotonic: never re-open as running/waiting_human.
+        if ($existing->status->isTerminal() && !$status->isTerminal()) {
+            return;
+        }
+
         $this->byArtifactId[$artifactId] = new SubagentLiveChildDTO(
             agentRunId: $existing->agentRunId,
             artifactId: $existing->artifactId,

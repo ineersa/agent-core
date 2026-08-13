@@ -11,16 +11,22 @@ use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInter
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Export\SessionEventsExportService;
+use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -74,6 +80,129 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
 
         $this->assertSame(['begin:child-run-1'], $spy->calls);
         $this->assertTrue($state->subagentLiveView->active);
+    }
+
+    /**
+     * Leave silently drops coordinator questions; cached re-entry must re-dispatch HITL
+     * callbacks so the same waiting question is answerable again (poll would skip it
+     * once childLastSeq is advanced past the original event).
+     */
+    #[Test]
+    public function testCachedReentryReenqueuesChildHitlAfterLeaveRemovesQuestion(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'hitl-reentry');
+        $state = new TuiSessionState('hitl-reentry');
+        $childRunId = 'child-run-waiting';
+        $child = new SubagentLiveChildDTO(
+            $childRunId,
+            'art-waiting',
+            'scout',
+            SubagentLiveStatusEnum::WaitingHuman,
+            'needs human',
+            1,
+            'deepseek/deepseek-v4-flash',
+            'medium',
+        );
+        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+            type: 'tool_execution.output_delta',
+            runId: 'hitl-reentry',
+            seq: 1,
+            payload: [
+                'tool_call_id' => 'tc1',
+                'tool_name' => 'subagent',
+                'delta' => '',
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'waiting_human',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'art-waiting',
+                    'agent_run_id' => $childRunId,
+                    'task_summary' => 'needs human',
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'medium',
+                ],
+            ],
+        ));
+
+        $hitlEvent = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::HumanInputRequested->value,
+            runId: $childRunId,
+            seq: 5,
+            payload: [
+                'question_id' => 'q_reentry',
+                'ui_kind' => 'text',
+                'prompt' => 'Which path should the scout inspect?',
+                'schema' => ['type' => 'string'],
+            ],
+        );
+        $snapshot = new ChildRunTranscriptSnapshotDTO(
+            transcriptBlocks: [
+                new TranscriptBlock(
+                    'b-hitl',
+                    TranscriptBlockKindEnum::Progress,
+                    $childRunId,
+                    5,
+                    'Which path should the scout inspect?',
+                ),
+            ],
+            replayEvents: [$hitlEvent],
+            maxSeq: 5,
+        );
+
+        $coordinator = new QuestionCoordinator();
+        $handler = new RuntimeQuestionEventHandler();
+        $client = new ObservingSpyClient();
+        $onHuman = static function (RuntimeEvent $event) use ($handler, $client, $coordinator, $state, $harness): void {
+            $handler->handleHumanInputRequested($event, $client, $coordinator, $state, $harness->screen());
+        };
+        $onLeaving = static function (string $runId) use ($coordinator): void {
+            $coordinator->removeForRun($runId);
+        };
+
+        $snapshotProvider = new FixedChildRunTranscriptSnapshotProvider($snapshot);
+        $picker = new SubagentLivePickerController(
+            new SubagentLiveChildViewPoller(
+                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+                new NullLogger(),
+            ),
+            $snapshotProvider,
+            $this->createStub(ChildAgentEventsPathResolverInterface::class),
+            new SessionEventsExportService(),
+        );
+        $picker->setRuntimeRefs(
+            $harness->tui(),
+            $harness->screen(),
+            $state,
+            $client,
+            onHumanInputRequested: $onHuman,
+            onLeavingChildRun: $onLeaving,
+        );
+
+        $enter = new \ReflectionMethod(SubagentLivePickerController::class, 'enterLiveView');
+        $enter->invoke($picker, $child, $state, $harness->screen());
+
+        $requestId = 'hitl_'.substr(hash('sha256', $childRunId.'|q_reentry'), 0, 16);
+
+        $this->assertTrue($coordinator->actionRequired());
+        $this->assertSame($childRunId, $coordinator->activeRequest()?->runId);
+        $this->assertTrue($coordinator->hasRequest($requestId));
+
+        // Production leave: silent remove + exit (cache keeps transcript + lastSeq + replayEvents).
+        $onLeaving($childRunId);
+        $state->subagentLiveView->exit();
+        $this->assertFalse($state->subagentLiveView->active);
+        $this->assertFalse($coordinator->actionRequired());
+        $this->assertFalse($coordinator->hasRequest($requestId));
+        $this->assertArrayHasKey($childRunId, $state->subagentLiveView->childCaches);
+
+        // Cached re-entry must re-fire HITL callbacks even though snapshot provider is not called again.
+        $enter->invoke($picker, $child, $state, $harness->screen());
+
+        $this->assertTrue($state->subagentLiveView->active);
+        $this->assertTrue($coordinator->actionRequired());
+        $this->assertSame($childRunId, $coordinator->activeRequest()?->runId);
+        $this->assertTrue($coordinator->hasRequest($requestId));
+        $this->assertSame(5, $state->subagentLiveView->childLastSeq);
     }
 }
 

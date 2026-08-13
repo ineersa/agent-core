@@ -306,7 +306,12 @@ final class SubagentLiveScenarioHarness
 
     public function agentsMain(): void
     {
-        $handler = new AgentsMainCommandHandler($this->state, $this->screen);
+        $handler = new AgentsMainCommandHandler(
+            $this->state,
+            $this->screen,
+            $this->questionCoordinator,
+            $this->questionController,
+        );
         $handler->handle(new SlashCommand('agents-main', '', '/agents-main'));
     }
 

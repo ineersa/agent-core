@@ -1,90 +1,64 @@
 # Application architecture notes
 
-This README is an architecture map (not an index).
+Topology map for AgentCore application handlers. Authoritative routing: `config/packages/messenger.yaml`. Domain message list: `../Domain/Message/AGENTS.md`.
 
-## Command -> handler
+## Command → orchestrator entry
 
-- `StartRun` -> `RunOrchestrator::onStartRun()` on `agent.command.bus`
-- `ApplyCommand` -> `RunOrchestrator::onApplyCommand()` on `agent.command.bus`
-- `ApplyShellCommand` -> `RunOrchestrator::onApplyShellCommand()` on `agent.command.bus`
-- `AdvanceRun` -> `RunOrchestrator::onAdvanceRun()` on `agent.command.bus`
-- `LlmStepResult` -> routed `run_control`; `RunOrchestrator::onLlmStepResult()` on `agent.command.bus`
-- `ToolCallResult` -> routed `run_control`; `RunOrchestrator::onToolCallResult()` on `agent.command.bus`
-- `ExecuteLlmStep` -> `ExecuteLlmStepWorker::__invoke()` on `agent.execution.bus`
-- `ExecuteToolCall` -> `ExecuteToolCallWorker::__invoke()` on `agent.execution.bus`
-- `CompactRun` -> `RunOrchestrator::onCompactRun()` on `agent.command.bus`
-- `CompactionStepResult` -> routed `run_control`; `RunOrchestrator::onCompactionStepResult()` on `agent.command.bus`
-- `ExecuteCompactionStep` -> `ExecuteCompactionStepWorker::__invoke()` on `agent.execution.bus`
+`RunOrchestrator` (`Pipeline/RunOrchestrator.php`) is the bus facade; `RunMessageProcessor` owns lock/idempotency and dispatches tagged `RunMessageHandler` implementations.
 
-Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger.php`, but there is currently no `AsMessageHandler` consumer for this message in `src/`.
+| Message | Bus registration | Downstream handler |
+|---|---|---|
+| `StartRun` | `agent.command.bus` | `StartRunHandler` |
+| `ApplyCommand` | `agent.command.bus` | `ApplyCommandHandler` |
+| `ApplyShellCommand` | `agent.command.bus` | `ApplyShellCommandHandler` → effect `ExecuteShellToolCall` |
+| `AdvanceRun` | **sync** on `agent.command.bus` **and** `agent.execution.bus` (not transport-routed) | `AdvanceRunHandler` |
+| `LlmStepResult` | `agent.command.bus` (transport `run_control`) | `LlmStepResultHandler` |
+| `ToolCallResult` | `agent.command.bus` (transport `run_control`) | `ToolCallResultHandler` |
+| `CompactRun` | **sync** on both buses (not transport-routed) | `Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler` (App layer; depends on compaction services) |
+| `CompactionStepResult` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler` |
+| `CompleteDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler` |
 
-## Message -> dispatched-by / handled-by
+## Async workers (`agent.execution.bus`)
 
-- `StartRun`
-  - dispatched by: `AgentRunner::start()`
-  - handled by: `RunOrchestrator::onStartRun()` -> `RunMessageProcessor` -> `StartRunHandler`
-- `ApplyCommand`
-  - dispatched by: `AgentRunner::continue()/steer()/followUp()/cancel()/answerHuman()` via `applyCoreCommand()`
-  - handled by: `RunOrchestrator::onApplyCommand()` -> `RunMessageProcessor` -> `ApplyCommandHandler`
-- `ApplyShellCommand`
-  - dispatched by: `AgentRunner::shell()`, controller `ShellCommandHandler`, and in-process shell send path
-  - handled by: `RunOrchestrator::onApplyShellCommand()` -> `RunMessageProcessor` -> `ApplyShellCommandHandler`
-  - effect: `ExecuteShellToolCall` on `agent.execution.bus` (tool consumer writes tool lifecycle / optional AgentEnd)
-- `AdvanceRun`
-  - dispatched by: `StartRunHandler` (initial post-commit kickoff), `ApplyCommandHandler` and `LlmStepResultHandler` follow-up callbacks, plus `AgentLoopResumeStaleRunsCommand::execute()`
-  - handled by: `RunOrchestrator::onAdvanceRun()` -> `RunMessageProcessor` -> `AdvanceRunHandler`
-- `ExecuteLlmStep`
-  - dispatched by: `AdvanceRunHandler` through `RunMessageProcessor`/`RunCommit` effect dispatch
-  - handled by: `ExecuteLlmStepWorker::__invoke()`
-- `ExecuteToolCall`
-  - dispatched by: `LlmStepResultHandler` through `RunMessageProcessor`/`RunCommit` effect dispatch
-  - handled by: `ExecuteToolCallWorker::__invoke()`
-- `LlmStepResult`
-  - dispatched by: `ExecuteLlmStepWorker::__invoke()` on `agent.command.bus` (routed to `run_control`)
-  - handled by: `RunOrchestrator::onLlmStepResult()` in the `run_control` consumer -> `RunMessageProcessor` -> `LlmStepResultHandler`
-- `ToolCallResult`
-  - dispatched by: `ExecuteToolCallWorker::__invoke()` on `agent.command.bus` (routed to `run_control`)
-  - handled by: `RunOrchestrator::onToolCallResult()` in the `run_control` consumer -> `RunMessageProcessor` -> `ToolCallResultHandler`
-- `CompactRun`
-  - dispatched by: runtime/TUI compaction trigger (COMP-03)
-  - handled by: `RunOrchestrator::onCompactRun()` -> `RunMessageProcessor` -> `CompactRunHandler`
-- `ExecuteCompactionStep`
-  - dispatched by: `CompactRunHandler` through `RunMessageProcessor`/`RunCommit` effect dispatch
-  - handled by: `ExecuteCompactionStepWorker::__invoke()`
-- `CompactionStepResult`
-  - dispatched by: `ExecuteCompactionStepWorker::__invoke()` on `agent.command.bus` (routed to `run_control`)
-  - handled by: `RunOrchestrator::onCompactionStepResult()` in the `run_control` consumer -> `RunMessageProcessor` -> `CompactionStepResultHandler`
+| Message | Transport (messenger.yaml) | Worker |
+|---|---|---|
+| `ExecuteLlmStep` | `llm` | `ExecuteLlmStepWorker` |
+| `ExecuteToolCall` | `tool` (subagent/MCP middleware may re-stamp) | `ExecuteToolCallWorker` |
+| `ExecuteShellToolCall` | `tool` | `Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker` |
+| `ExecuteCompactionStep` | `llm` | `ExecuteCompactionStepWorker` |
 
-## Event -> listener (application side)
+Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`) back onto `agent.command.bus` → `run_control`.
 
-- `RunCommit::commit()` owns durable persistence and commits `RunEvent` instances through `EventStoreInterface`.
-- In-process event dispatch goes through `RunEventDispatcher` + `EventSubscriberRegistry`.
-- Extension event listeners are provided through `agent_loop.extension.event_subscriber` tagged services.
+## Dispatch ownership (producers)
 
-## Observability wiring
+- `StartRun` — `AgentRunner::start()`
+- `ApplyCommand` — `AgentRunner` continue/steer/followUp/cancel/answerHuman via `applyCoreCommand()`
+- `ApplyShellCommand` — `AgentRunner::shell()`, controller shell path, in-process shell send
+- `AdvanceRun` — post-commit kickoffs (`StartRunHandler`, apply/LLM follow-up callbacks), `ExecuteShellToolCallWorker` wake after standalone shell `AgentEnd`, stale-run resume command
+- `ExecuteLlmStep` / `ExecuteToolCall` / `ExecuteCompactionStep` — handler effects through `RunMessageProcessor` / `RunCommit`
+- `CompactRun` — auto-compaction hooks, manual `/compact`, pre-LLM compaction guard / overflow recovery paths
 
-- `RunOrchestrator` wraps command and turn processing in `RunTracer` root spans (`command.*`, `turn.*`), `RunMessageProcessor` owns lock/idempotency/handler dispatch, and `RunCommit` emits `persistence.commit` spans for durable commit work.
-- Commit persistence failures are surfaced through structured warnings (`agent_loop.commit.*`) and state rollback is attempted when event persistence fails before commit finalization.
-- `ExecuteLlmStepWorker` and `ExecuteToolCallWorker` emit execution spans (`llm.call`, `tool.call`) and feed latency/error metrics.
-- `RunMetrics` tracks active runs by status, turn-duration histogram, LLM/tool latency/error rates, command queue lag, stale-result count, and replay rebuild counters.
-- `HotPromptStateRebuilderInterface (SessionHotPromptReplayService in App)` increments rebuild counters and contributes replay tracing for hot-state rebuild operations.
+There is **no** `CollectToolBatch` message type in `src/` (stale historical name — do not reintroduce docs for it).
 
-## Linear history replay
+## Events and commit
 
-Ordered retained-history projection and filtering live in **CodingAgent session**
-(`CodingAgent\Session\History`). AgentCore emits canonical events
-(`turn_advanced`, `history_position_set`, `history_tail_discarded`) and depends on
-narrow history contracts (`HistoryTailDiscardInterface`, `HistorySelectionServiceInterface`
-under `AgentCore\Contract\History`). Replay filtering is CodingAgent-local
-(`HistoryReplayFilter`). See `docs/session-storage.md` "Linear history model".
+- `RunCommit::commit()` owns durable persistence of `RunEvent` via `EventStoreInterface` (`append` / `appendMany`), CAS on `RunStoreInterface`, effect dispatch via `StepDispatcher`, and after-turn hooks via `HookDispatcher`
+- Extension lifecycle hooks use `HookSubscriberInterface` / after-turn context from committed events; domain `Contract\Extension\EventSubscriberInterface` is the extension event-subscription contract (not a Symfony dispatcher registry class in-tree)
 
-Core replay integration:
-- `RunStateRebuilderInterface` (`SessionRunStateReplayService` in App) — required retained-history filter before reducing into `RunState`;
-  integrity checks use the full canonical stream, not the filtered stream. `rebuildAtPosition()` rebuilds at a selected tip.
-- `HotPromptStateRebuilderInterface (SessionHotPromptReplayService in App)` — required retained-history filter before replaying prompt messages; integrity from full stream.
-- `HistorySelectionServiceInterface` (`HistorySelectionService` in App) — positions before a selected user prompt (`history_position_set` + editor text).
-- `HistoryTailDiscardInterface` (`HistoryTailDiscardService` in App) — shared mutate-behind-tip choke point used by `RunMessageProcessor`.
+## Linear history / replay contracts
 
-## Maintenance rule
+Ordered retained-history projection lives in **CodingAgent** (`CodingAgent\Session\History`). AgentCore emits canonical history events (`turn_advanced`, `history_position_set`, `history_tail_discarded`) and depends on:
+
+- `RunStateRebuilderInterface` → App `SessionRunStateReplayService` (filter retained history before reducing `RunState`; integrity checks use full stream)
+- `HotPromptStateRebuilderInterface` → App `SessionHotPromptReplayService`
+- `HistorySelectionServiceInterface` / `HistoryTailDiscardInterface` → App history services; `HistoryTailDiscardInterface` is the mutate-behind-tip choke point used by `RunMessageProcessor`
+
+See `docs/session-storage.md` (linear history model).
+
+## Observability (wiring only)
+
+`RunOrchestrator` / `RunMessageProcessor` / `RunCommit` emit `RunTracer` spans; execution workers emit `llm.call` / `tool.call`; `RunMetrics` tracks run/turn/LLM/tool counters. Details in those classes — do not duplicate metric catalogs here.
+
+## Maintenance
 
 When routing, handlers, projector flow, or subscriber contracts change, update this file in the same change.

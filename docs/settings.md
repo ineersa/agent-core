@@ -768,7 +768,7 @@ run(s) to finish. This is enforced inside `SubagentExecutionService` (poll loop
 deadline). The `subagent` tool definition does not set a generic ToolExecutor
 budget; child work is bounded only by this tool-owned deadline (and cancellation).
 
-**Default:** `1800` (30 minutes). Must be an integer **>= 60**. Values below 60
+**Default:** `86400` (24 hours). Must be an integer **>= 60**. Values below 60
 are rejected at config load with an error (not silently adjusted).
 
 Set higher when child agents routinely run multi-minute reviews or large
@@ -1065,7 +1065,7 @@ exponential backoff between attempts.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `max_attempts` | int | `2` | Maximum agent-level auto-retry attempts per retryable failure episode (context overflow is excluded; overflow uses compaction recovery) |
+| `max_attempts` | int | `2` | Maximum agent-level auto-retry attempts per retryable failure episode (context overflow is excluded and fails visibly; no compaction recovery) |
 | `base_delay_ms` | int | `1000` | Base backoff delay in milliseconds |
 | `max_delay_ms` | int | `60000` | Cap for a single retry delay in milliseconds |
 
