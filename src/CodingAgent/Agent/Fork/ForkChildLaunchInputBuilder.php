@@ -42,14 +42,16 @@ final class ForkChildLaunchInputBuilder
         $inherited = $task->inheritedMessages;
 
         $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId);
+        // Explicit parent model still wins; otherwise inherit from parent RunStarted metadata.
+        // Fork historically trimmed model/reasoning here (not at the shared decoder).
         $effectiveParentModel = null !== $parentModel && '' !== trim($parentModel)
             ? trim($parentModel)
-            : $parentMetadata?->model;
+            : $this->trimInheritedForkConfigString($parentMetadata?->model);
         $resolved = $this->configResolver->resolve(
             explicitModel: $task->modelOverride,
             explicitThinking: $task->reasoningOverride,
             parentModel: $effectiveParentModel,
-            parentReasoning: $parentMetadata?->reasoning,
+            parentReasoning: $this->trimInheritedForkConfigString($parentMetadata?->reasoning),
         );
 
         $effectiveExtensions = $this->childExtensionSelection->resolveForFork();
@@ -97,6 +99,19 @@ final class ForkChildLaunchInputBuilder
                 metadata: $childMetadata,
             ),
         );
+    }
+
+    /**
+     * Historical fork inheritance: nonblank after trim → return trimmed value.
+     * Shared decoder preserves raw strings; fork trims only at this consumer.
+     */
+    private function trimInheritedForkConfigString(?string $value): ?string
+    {
+        if (null === $value || '' === trim($value)) {
+            return null;
+        }
+
+        return trim($value);
     }
 
     private function resolveContextWindowForModel(?string $model): ?int

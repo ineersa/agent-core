@@ -80,13 +80,14 @@ final class RunStartedMetadataDecoder
 
         return new RunStartedMetadataDTO(
             session: $session,
-            model: $this->nullableNonEmptyString($metadata['model'] ?? null),
-            reasoning: $this->nullableNonEmptyString($metadata['reasoning'] ?? null),
+            // Progress/deferred historically kept exact non-empty strings (no trim).
+            model: $this->exactNonEmptyString($metadata['model'] ?? null),
+            reasoning: $this->exactNonEmptyString($metadata['reasoning'] ?? null),
             toolsScope: $toolsScope,
             contextWindow: $contextWindow,
             extensions: $extensions,
             extensionsKeyPresent: $extensionsKeyPresent,
-            provider: $this->nullableNonEmptyString($metadata['provider'] ?? null),
+            provider: $this->exactNonEmptyString($metadata['provider'] ?? null),
         );
     }
 
@@ -95,20 +96,23 @@ final class RunStartedMetadataDecoder
      */
     private function decodeSession(array $session): RunStartedSessionMetadataDTO
     {
+        // kind: exact string match for agent_child (do not trim into classification).
         $kind = \is_string($session['kind'] ?? null) ? $session['kind'] : null;
-        $childKind = $this->nullableNonEmptyString($session['child_kind'] ?? null);
+        $childKind = $this->exactNonEmptyString($session['child_kind'] ?? null);
 
+        // Only literal bool is meaningful; non-bool (0/'0'/''/null) → null → probe defaults interactive.
         $interactive = null;
-        if (\array_key_exists('interactive', $session)) {
-            $interactive = (bool) $session['interactive'];
+        if (\array_key_exists('interactive', $session) && \is_bool($session['interactive'])) {
+            $interactive = $session['interactive'];
         }
 
         return new RunStartedSessionMetadataDTO(
             kind: $kind,
             childKind: $childKind,
-            parentRunId: $this->nullableNonEmptyString($session['parent_run_id'] ?? null),
-            agentName: $this->nullableNonEmptyString($session['agent_name'] ?? null),
-            artifactId: $this->nullableNonEmptyString($session['artifact_id'] ?? null),
+            // parent_run_id: nonblank after trim required, but return the exact original string.
+            parentRunId: $this->exactNonBlankString($session['parent_run_id'] ?? null),
+            agentName: $this->exactNonEmptyString($session['agent_name'] ?? null),
+            artifactId: $this->exactNonEmptyString($session['artifact_id'] ?? null),
             interactive: $interactive,
         );
     }
@@ -159,13 +163,26 @@ final class RunStartedMetadataDecoder
         return $classes;
     }
 
-    private function nullableNonEmptyString(mixed $value): ?string
+    /**
+     * Accept only non-empty strings and preserve the exact original value (no trim).
+     * Matches historical progress/deferred model/provider checks:
+     * is_string($v) && '' !== $v.
+     */
+    private function exactNonEmptyString(mixed $value): ?string
     {
-        if (!\is_string($value)) {
+        return \is_string($value) && '' !== $value ? $value : null;
+    }
+
+    /**
+     * Require nonblank content after trim, but return the exact original string.
+     * Matches historical SubagentRunMetadataReader::readParentRunId.
+     */
+    private function exactNonBlankString(mixed $value): ?string
+    {
+        if (!\is_string($value) || '' === trim($value)) {
             return null;
         }
-        $trimmed = trim($value);
 
-        return '' !== $trimmed ? $trimmed : null;
+        return $value;
     }
 }

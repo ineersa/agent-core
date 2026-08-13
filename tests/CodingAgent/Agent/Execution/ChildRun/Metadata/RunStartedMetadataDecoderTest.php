@@ -183,4 +183,139 @@ final class RunStartedMetadataDecoderTest extends TestCase
         $this->assertNull($reader->readAllowedTools('missing'));
         $this->assertNull($reader->readAllowedExtensions('missing'));
     }
+
+    public function testInteractiveOnlyLiteralBoolIsDecoded(): void
+    {
+        $decoder = new RunStartedMetadataDecoder();
+
+        $false = $decoder->fromMetadataArray([
+            'session' => ['kind' => 'agent_child', 'interactive' => false],
+        ]);
+        $this->assertFalse($false->session->interactive);
+
+        $true = $decoder->fromMetadataArray([
+            'session' => ['kind' => 'agent_child', 'interactive' => true],
+        ]);
+        $this->assertTrue($true->session->interactive);
+
+        $absent = $decoder->fromMetadataArray([
+            'session' => ['kind' => 'agent_child'],
+        ]);
+        $this->assertNull($absent->session->interactive);
+
+        foreach ([0, '0', '', null, 1, 'false', []] as $malformed) {
+            $dto = $decoder->fromMetadataArray([
+                'session' => ['kind' => 'agent_child', 'interactive' => $malformed],
+            ]);
+            $this->assertNull(
+                $dto->session->interactive,
+                'interactive='.var_export($malformed, true).' must not coerce to bool',
+            );
+            // Probe historical default: interactive=true when not literal false.
+            $this->assertFalse(false === ($dto->session->interactive ?? true));
+        }
+    }
+
+    public function testModelProviderPreserveExactNonEmptyIncludingWhitespace(): void
+    {
+        $decoder = new RunStartedMetadataDecoder();
+        $paddedModel = '  deepseek/deepseek-v4-flash  ';
+        $paddedProvider = ' deepseek ';
+
+        $dto = $decoder->fromMetadataArray([
+            'session' => ['kind' => 'agent_child', 'parent_run_id' => 'parent-1'],
+            'model' => $paddedModel,
+            'provider' => $paddedProvider,
+            'reasoning' => ' medium ',
+        ]);
+
+        $this->assertSame($paddedModel, $dto->model);
+        $this->assertSame($paddedProvider, $dto->provider);
+        $this->assertSame(' medium ', $dto->reasoning);
+
+        $empty = $decoder->fromMetadataArray([
+            'session' => ['kind' => 'agent_child'],
+            'model' => '',
+            'provider' => '',
+            'reasoning' => '',
+        ]);
+        $this->assertNull($empty->model);
+        $this->assertNull($empty->provider);
+        $this->assertNull($empty->reasoning);
+
+        // Whitespace-only is non-empty for progress/deferred (exact '' check only).
+        $wsOnly = $decoder->fromMetadataArray([
+            'session' => ['kind' => 'agent_child'],
+            'model' => '   ',
+            'provider' => "\t",
+        ]);
+        $this->assertSame('   ', $wsOnly->model);
+        $this->assertSame("\t", $wsOnly->provider);
+    }
+
+    public function testParentRunIdRequiresNonBlankButReturnsExactOriginal(): void
+    {
+        $decoder = new RunStartedMetadataDecoder();
+
+        $padded = $decoder->fromMetadataArray([
+            'session' => [
+                'kind' => 'agent_child',
+                'parent_run_id' => '  parent-xyz  ',
+            ],
+        ]);
+        $this->assertSame('  parent-xyz  ', $padded->session->parentRunId);
+
+        $blank = $decoder->fromMetadataArray([
+            'session' => [
+                'kind' => 'agent_child',
+                'parent_run_id' => '   ',
+            ],
+        ]);
+        $this->assertNull($blank->session->parentRunId);
+
+        $empty = $decoder->fromMetadataArray([
+            'session' => [
+                'kind' => 'agent_child',
+                'parent_run_id' => '',
+            ],
+        ]);
+        $this->assertNull($empty->session->parentRunId);
+    }
+
+    public function testKindAndChildFieldsPreserveExactStringsWithoutTrim(): void
+    {
+        $decoder = new RunStartedMetadataDecoder();
+
+        // Padded kind must NOT classify as agent_child.
+        $paddedKind = $decoder->fromMetadataArray([
+            'session' => ['kind' => ' agent_child '],
+        ]);
+        $this->assertSame(' agent_child ', $paddedKind->session->kind);
+        $this->assertFalse($paddedKind->isAgentChild());
+
+        $childFields = $decoder->fromMetadataArray([
+            'session' => [
+                'kind' => 'agent_child',
+                'child_kind' => ' fork ',
+                'agent_name' => ' scout ',
+                'artifact_id' => ' agent_abc ',
+            ],
+        ]);
+        $this->assertSame(' fork ', $childFields->session->childKind);
+        $this->assertSame(' scout ', $childFields->session->agentName);
+        $this->assertSame(' agent_abc ', $childFields->session->artifactId);
+        // isForkChild requires exact 'fork'.
+        $this->assertFalse($childFields->session->isForkChild());
+    }
+
+    public function testExtensionsStillTrimAndDropBlankEntries(): void
+    {
+        $decoder = new RunStartedMetadataDecoder();
+        $dto = $decoder->fromMetadataArray([
+            'session' => ['kind' => 'agent_child'],
+            'extensions' => ['  ExtA  ', '', '   ', 'ExtB', 12, null],
+        ]);
+
+        $this->assertSame(['ExtA', 'ExtB'], $dto->allowedExtensionsForChild());
+    }
 }
