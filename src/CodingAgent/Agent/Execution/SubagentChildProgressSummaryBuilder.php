@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathsDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDecoder;
 
 /**
  * Builds bounded child-run progress summaries by scanning parent-scoped artifact events.
@@ -28,6 +29,7 @@ final class SubagentChildProgressSummaryBuilder
     public function __construct(
         private readonly AgentChildRunEventStoreFactory $childEventStoreFactory,
         private readonly SubagentChildToolProgressPresentationFormatter $presentationFormatter = new SubagentChildToolProgressPresentationFormatter(),
+        private readonly RunStartedMetadataDecoder $runStartedMetadataDecoder = new RunStartedMetadataDecoder(),
     ) {
     }
 
@@ -110,19 +112,17 @@ final class SubagentChildProgressSummaryBuilder
         foreach ($events as $event) {
             $payload = $event->payload;
             if (RunEventTypeEnum::RunStarted->value === $event->type) {
-                $inner = \is_array($payload['payload'] ?? null) ? $payload['payload'] : [];
-                $metadata = \is_array($inner['metadata'] ?? null) ? $inner['metadata'] : [];
+                $metadata = $this->runStartedMetadataDecoder->fromRunEventPayload($payload);
                 // Canonical launch model from run_started must override definitionModel fallback.
-                if (\is_string($metadata['model'] ?? null) && '' !== $metadata['model']) {
-                    $model = $metadata['model'];
-                }
-                if (\is_string($metadata['provider'] ?? null) && '' !== $metadata['provider']) {
-                    $provider = $metadata['provider'];
-                }
-                if (isset($metadata['context_window']) && is_numeric($metadata['context_window'])) {
-                    $resolved = (int) $metadata['context_window'];
-                    if ($resolved > 0) {
-                        $contextWindow = $resolved;
+                if (null !== $metadata) {
+                    if (null !== $metadata->model) {
+                        $model = $metadata->model;
+                    }
+                    if (null !== $metadata->provider) {
+                        $provider = $metadata->provider;
+                    }
+                    if (null !== $metadata->contextWindow) {
+                        $contextWindow = $metadata->contextWindow;
                     }
                 }
                 continue;

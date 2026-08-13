@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDecoder;
 
 /**
  * Detects foreground non-interactive child subagent runs for extension hooks.
@@ -17,6 +18,7 @@ final readonly class NoninteractiveChildRunProbe
 {
     public function __construct(
         private EventStoreInterface $eventStore,
+        private RunStartedMetadataDecoder $decoder = new RunStartedMetadataDecoder(),
     ) {
     }
 
@@ -31,22 +33,13 @@ final readonly class NoninteractiveChildRunProbe
                 continue;
             }
 
-            $inner = $event->payload['payload'] ?? null;
-            if (!\is_array($inner)) {
+            $metadata = $this->decoder->fromRunEventPayload($event->payload);
+            if (null === $metadata || !$metadata->isAgentChild()) {
                 return false;
             }
 
-            $metadata = $inner['metadata'] ?? null;
-            if (!\is_array($metadata)) {
-                return false;
-            }
-
-            $session = $metadata['session'] ?? [];
-            if (!\is_array($session) || 'agent_child' !== ($session['kind'] ?? null)) {
-                return false;
-            }
-
-            return false === ($session['interactive'] ?? true);
+            // Historical default when interactive is absent: interactive=true.
+            return false === ($metadata->session->interactive ?? true);
         }
 
         return false;

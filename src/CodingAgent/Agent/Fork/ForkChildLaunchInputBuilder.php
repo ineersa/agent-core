@@ -41,15 +41,15 @@ final class ForkChildLaunchInputBuilder
         $parentRunId = $identity->parentRunId;
         $inherited = $task->inheritedMessages;
 
-        $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId) ?? [];
+        $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId);
         $effectiveParentModel = null !== $parentModel && '' !== trim($parentModel)
             ? trim($parentModel)
-            : $this->readParentModelFromMetadata($parentMetadata);
+            : $parentMetadata?->model;
         $resolved = $this->configResolver->resolve(
             explicitModel: $task->modelOverride,
             explicitThinking: $task->reasoningOverride,
             parentModel: $effectiveParentModel,
-            parentReasoning: $this->readParentReasoningFromMetadata($parentMetadata),
+            parentReasoning: $parentMetadata?->reasoning,
         );
 
         $effectiveExtensions = $this->childExtensionSelection->resolveForFork();
@@ -97,29 +97,6 @@ final class ForkChildLaunchInputBuilder
                 metadata: $childMetadata,
             ),
         );
-    }
-
-    /**
-     * @param array<string, mixed> $parentMetadata
-     */
-    /**
-     * @param array<string, mixed> $parentMetadata
-     */
-    private function readParentModelFromMetadata(array $parentMetadata): ?string
-    {
-        $model = $parentMetadata['model'] ?? null;
-
-        return \is_string($model) && '' !== trim($model) ? trim($model) : null;
-    }
-
-    /**
-     * @param array<string, mixed> $parentMetadata
-     */
-    private function readParentReasoningFromMetadata(array $parentMetadata): ?string
-    {
-        $reasoning = $parentMetadata['reasoning'] ?? null;
-
-        return \is_string($reasoning) && '' !== trim($reasoning) ? trim($reasoning) : null;
     }
 
     private function resolveContextWindowForModel(?string $model): ?int

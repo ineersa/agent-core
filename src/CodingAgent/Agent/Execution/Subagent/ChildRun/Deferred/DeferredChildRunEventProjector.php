@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildToolProgressPresentationFormatter;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDecoder;
 
 /**
  * Incrementally reduces committed child event summaries into a compact lifecycle projection.
@@ -18,6 +19,7 @@ final class DeferredChildRunEventProjector
 
     public function __construct(
         private readonly SubagentChildToolProgressPresentationFormatter $presentationFormatter = new SubagentChildToolProgressPresentationFormatter(),
+        private readonly RunStartedMetadataDecoder $runStartedMetadataDecoder = new RunStartedMetadataDecoder(),
     ) {
     }
 
@@ -78,20 +80,18 @@ final class DeferredChildRunEventProjector
             }
 
             if (RunEventTypeEnum::RunStarted->value === $type) {
-                $inner = \is_array($payload['payload'] ?? null) ? $payload['payload'] : [];
-                $metadata = \is_array($inner['metadata'] ?? null) ? $inner['metadata'] : [];
+                $metadata = $this->runStartedMetadataDecoder->fromRunEventPayload($payload);
                 // Canonical launch model from run_started must override definition/current fallback.
                 // definitionModel remains prelaunch-only; never let a stale snapshot win after start.
-                if (\is_string($metadata['model'] ?? null) && '' !== $metadata['model']) {
-                    $model = $metadata['model'];
-                }
-                if (\is_string($metadata['provider'] ?? null) && '' !== $metadata['provider']) {
-                    $provider = $metadata['provider'];
-                }
-                if (isset($metadata['context_window']) && is_numeric($metadata['context_window'])) {
-                    $resolved = (int) $metadata['context_window'];
-                    if ($resolved > 0) {
-                        $contextWindow = $resolved;
+                if (null !== $metadata) {
+                    if (null !== $metadata->model) {
+                        $model = $metadata->model;
+                    }
+                    if (null !== $metadata->provider) {
+                        $provider = $metadata->provider;
+                    }
+                    if (null !== $metadata->contextWindow) {
+                        $contextWindow = $metadata->contextWindow;
                     }
                 }
                 $status = RunStatus::Running;
