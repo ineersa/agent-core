@@ -297,13 +297,14 @@ final class ControllerReplayHttpClientFactory
                     // Return a minimal text-only stop response so the
                     // run can complete cleanly.
                     return new MockResponse(
-                        self::buildSSEFromDeltas(
+                        self::buildSSEBody(
                             model: 'llama_cpp/test',
                             deltas: [
                                 ['type' => 'text', 'content' => 'done'],
                             ],
                             stopReason: 'stop',
                             usage: null,
+                            sseChunkDelayMs: 0,
                         ),
                         [
                             'http_code' => 200,
@@ -334,7 +335,11 @@ final class ControllerReplayHttpClientFactory
                 $model = $fixture['model'] ?? 'llama_cpp/test';
 
                 $usage = $fixture['usage'] ?? null;
-                $body = self::buildSSEFromDeltas($model, $deltas, $stopReason, $usage);
+                // Optional test-only pacing: when sse_chunk_delay_ms is set, yield each
+                // SSE frame across MockResponse idle-timeout ticks so TUI can open
+                // overlays between streamed assistant chunks (still deterministic).
+                $sseChunkDelayMs = (int) ($fixture['sse_chunk_delay_ms'] ?? 0);
+                $body = self::buildSSEBody($model, $deltas, $stopReason, $usage, $sseChunkDelayMs);
 
                 return new MockResponse($body, [
                     'http_code' => 200,
@@ -387,11 +392,42 @@ final class ControllerReplayHttpClientFactory
 
     /**
      * Convert fixture deltas to an OpenAI-compatible SSE stream.
+     * When $sseChunkDelayMs > 0, yields frames with inter-chunk usleep for TUI overlay timing.
      *
      * @param list<array<string, mixed>> $deltas
-     * @param array<string, mixed>|null  $usage  Fixture usage payload (null if no usage)
+     * @param array<string, mixed>|null  $usage
+     *
+     * @return string|iterable<int, string>
      */
-    private static function buildSSEFromDeltas(string $model, array $deltas, string $stopReason, ?array $usage): string
+    private static function buildSSEBody(string $model, array $deltas, string $stopReason, ?array $usage, int $sseChunkDelayMs): string|iterable
+    {
+        $frames = self::buildSSEFrames($model, $deltas, $stopReason, $usage);
+        if ($sseChunkDelayMs <= 0) {
+            return implode('', $frames);
+        }
+
+        // MockResponse fully prebuffers iterable bodies on first read, so delays must live
+        // inside the generator. That keeps the consumer process busy long enough for the
+        // parent TUI to open overlays before STREAM markers are emitted.
+        return (static function () use ($frames, $sseChunkDelayMs): iterable {
+            $first = true;
+            foreach ($frames as $frame) {
+                if (!$first) {
+                    usleep($sseChunkDelayMs * 1000);
+                }
+                $first = false;
+                yield $frame;
+            }
+        })();
+    }
+
+    /**
+     * @param list<array<string, mixed>> $deltas
+     * @param array<string, mixed>|null  $usage
+     *
+     * @return list<string>
+     */
+    private static function buildSSEFrames(string $model, array $deltas, string $stopReason, ?array $usage): array
     {
         $chunks = [];
         $chunkId = 'chatcmpl-replay-'.bin2hex(random_bytes(4));
@@ -520,9 +556,9 @@ final class ControllerReplayHttpClientFactory
 
         $chunks[] = '[DONE]';
 
-        return implode("\n\n", array_map(
-            static fn (string $c): string => "data: {$c}",
+        return array_map(
+            static fn (string $c): string => "data: {$c}\n\n",
             $chunks,
-        ))."\n\n";
+        );
     }
 }
