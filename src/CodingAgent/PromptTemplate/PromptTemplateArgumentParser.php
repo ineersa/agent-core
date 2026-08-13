@@ -33,7 +33,7 @@ final class PromptTemplateArgumentParser
         $current = '';
         $inQuote = null;
 
-        $chars = $this->splitChars($argsString);
+        $chars = '' === $argsString ? [] : mb_str_split($argsString, 1, 'UTF-8');
         foreach ($chars as $char) {
             if (null !== $inQuote) {
                 if ($char === $inQuote) {
@@ -49,7 +49,7 @@ final class PromptTemplateArgumentParser
                 continue;
             }
 
-            if ($this->isWhitespace($char)) {
+            if (1 === preg_match('/\s/u', $char)) {
                 if ('' !== $current) {
                     $args[] = $current;
                     $current = '';
@@ -66,26 +66,5 @@ final class PromptTemplateArgumentParser
         }
 
         return $args;
-    }
-
-    /**
-     * Split a string into characters preserving multi-byte UTF-8.
-     *
-     * @return list<string>
-     */
-    private function splitChars(string $s): array
-    {
-        if ('' === $s) {
-            return [];
-        }
-
-        $result = preg_split('//u', $s, -1, \PREG_SPLIT_NO_EMPTY);
-
-        return false !== $result ? $result : [];
-    }
-
-    private function isWhitespace(string $char): bool
-    {
-        return 1 === preg_match('/\s/u', $char);
     }
 }

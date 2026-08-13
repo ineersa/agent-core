@@ -235,6 +235,8 @@ final class SubagentLiveScenarioHarness
                 status: $status,
                 taskSummary: 'Scenario task',
                 lastActivityAtMs: 1,
+                model: 'deepseek/deepseek-v4-flash',
+                reasoning: 'medium',
             );
         $this->state->subagentLiveView->enter($child);
         $this->state->subagentLiveView->childActivity = $childActivity;
@@ -296,6 +298,8 @@ final class SubagentLiveScenarioHarness
             'artifact_id' => $artifactId,
             'agent_run_id' => $childRunId,
             'task_summary' => $taskSummary,
+            'model' => 'deepseek/deepseek-v4-flash',
+            'reasoning' => 'medium',
         ]));
     }
 

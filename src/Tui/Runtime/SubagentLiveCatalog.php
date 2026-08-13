@@ -12,6 +12,9 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 
 /**
  * Indexes subagent child runs from parent runtime subagent_progress payloads.
+ *
+ * Model and reasoning follow upstream launch-identity semantics: non-empty after trim.
+ * Later progress rows may omit them; catalog preserves last known concrete values.
  */
 final class SubagentLiveCatalog
 {
@@ -108,6 +111,7 @@ final class SubagentLiveCatalog
             taskSummary: $existing->taskSummary,
             lastActivityAtMs: (int) (microtime(true) * 1000),
             model: $existing->model,
+            reasoning: $existing->reasoning,
             latestInputTokens: $existing->latestInputTokens,
             contextWindow: $existing->contextWindow,
         );
@@ -154,63 +158,33 @@ final class SubagentLiveCatalog
 
     private function upsertFromSingleSnapshot(SubagentProgressSingleSnapshotDTO $row, int $now): void
     {
-        $artifactId = trim($row->artifactId);
-        if ('' === $artifactId || $this->isDismissed($artifactId)) {
-            return;
-        }
-
-        $agentRunId = trim($row->agentRunId);
-        $agentName = trim($row->agentName);
-        if ('' === $agentName) {
-            $agentName = 'subagent';
-        }
-        $status = SubagentLiveStatusEnum::fromProgressString($row->status);
-        $taskSummary = trim($row->taskSummary);
-        $model = $row->model;
-        $latestInputTokens = (null !== $row->latestInputTokens && $row->latestInputTokens > 0) ? $row->latestInputTokens : 0;
-        $contextWindow = (null !== $row->contextWindow && $row->contextWindow > 0) ? $row->contextWindow : 0;
-
         $this->upsertCatalogRow(
-            artifactId: $artifactId,
-            agentRunId: $agentRunId,
-            agentName: $agentName,
-            status: $status,
-            taskSummary: $taskSummary,
+            artifactId: trim($row->artifactId),
+            agentRunId: trim($row->agentRunId),
+            agentName: trim($row->agentName),
+            status: SubagentLiveStatusEnum::fromProgressString($row->status),
+            taskSummary: trim($row->taskSummary),
             now: $now,
-            model: $model,
-            latestInputTokens: $latestInputTokens,
-            contextWindow: $contextWindow,
+            model: $this->optionalIdentityString($row->model),
+            reasoning: $this->optionalIdentityString($row->reasoning),
+            latestInputTokens: (null !== $row->latestInputTokens && $row->latestInputTokens > 0) ? $row->latestInputTokens : 0,
+            contextWindow: (null !== $row->contextWindow && $row->contextWindow > 0) ? $row->contextWindow : 0,
         );
     }
 
     private function upsertFromChildRow(SubagentProgressChildRowDTO $row, int $now): void
     {
-        $artifactId = trim($row->artifactId);
-        if ('' === $artifactId || $this->isDismissed($artifactId)) {
-            return;
-        }
-
-        $agentRunId = trim($row->agentRunId);
-        $agentName = trim($row->agentName);
-        if ('' === $agentName) {
-            $agentName = 'subagent';
-        }
-        $status = SubagentLiveStatusEnum::fromProgressString($row->status);
-        $taskSummary = trim($row->taskSummary);
-        $model = $row->model;
-        $latestInputTokens = (null !== $row->latestInputTokens && $row->latestInputTokens > 0) ? $row->latestInputTokens : 0;
-        $contextWindow = (null !== $row->contextWindow && $row->contextWindow > 0) ? $row->contextWindow : 0;
-
         $this->upsertCatalogRow(
-            artifactId: $artifactId,
-            agentRunId: $agentRunId,
-            agentName: $agentName,
-            status: $status,
-            taskSummary: $taskSummary,
+            artifactId: trim($row->artifactId),
+            agentRunId: trim($row->agentRunId),
+            agentName: trim($row->agentName),
+            status: SubagentLiveStatusEnum::fromProgressString($row->status),
+            taskSummary: trim($row->taskSummary),
             now: $now,
-            model: $model,
-            latestInputTokens: $latestInputTokens,
-            contextWindow: $contextWindow,
+            model: $this->optionalIdentityString($row->model),
+            reasoning: $this->optionalIdentityString($row->reasoning),
+            latestInputTokens: (null !== $row->latestInputTokens && $row->latestInputTokens > 0) ? $row->latestInputTokens : 0,
+            contextWindow: (null !== $row->contextWindow && $row->contextWindow > 0) ? $row->contextWindow : 0,
         );
     }
 
@@ -222,9 +196,18 @@ final class SubagentLiveCatalog
         string $taskSummary,
         int $now,
         ?string $model,
+        ?string $reasoning,
         int $latestInputTokens,
         int $contextWindow,
     ): void {
+        if ('' === $artifactId || $this->isDismissed($artifactId)) {
+            return;
+        }
+
+        if ('' === $agentName) {
+            $agentName = 'subagent';
+        }
+
         if ('' === $agentRunId) {
             $existing = $this->byArtifactId[$artifactId] ?? null;
             $agentRunId = null !== $existing ? $existing->agentRunId : '';
@@ -240,8 +223,16 @@ final class SubagentLiveCatalog
             return;
         }
 
-        if (null === $model && null !== $existing) {
-            $model = $existing->model;
+        // Progress rows may omit model/reasoning on later ticks; preserve last known concrete values.
+        if (null === $model) {
+            $model = null !== $existing ? $existing->model : null;
+        }
+        if (null === $reasoning) {
+            $reasoning = null !== $existing ? $existing->reasoning : null;
+        }
+        if (null === $model || null === $reasoning) {
+            // Cannot create a live child without concrete launch identity.
+            return;
         }
         if (0 === $latestInputTokens && null !== $existing) {
             $latestInputTokens = $existing->latestInputTokens;
@@ -258,8 +249,19 @@ final class SubagentLiveCatalog
             taskSummary: $taskSummary,
             lastActivityAtMs: $now,
             model: $model,
+            reasoning: $reasoning,
             latestInputTokens: $latestInputTokens,
             contextWindow: $contextWindow,
         );
+    }
+
+    private function optionalIdentityString(?string $value): ?string
+    {
+        if (null === $value) {
+            return null;
+        }
+        $trimmed = trim($value);
+
+        return '' !== $trimmed ? $trimmed : null;
     }
 }

@@ -969,8 +969,8 @@ services:
 
   # MCP lifecycle message handler is auto-discovered via #[AsMessageHandler]
   # and autowired.  McpConnectionManagerInterface is resolved via the
-  # alias above; McpToolNameMapper autowires; only McpToolCatalogStoreInterface
-  # needs explicit wiring (SessionFileMcpToolCatalogStore with projectCwd).
+  # alias above; only McpToolCatalogStoreInterface needs explicit wiring
+  # (SessionFileMcpToolCatalogStore with projectCwd).
   Ineersa\CodingAgent\Mcp\Handler\McpInitializeSessionHandler:
     arguments:
       $catalogStore: '@Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore'

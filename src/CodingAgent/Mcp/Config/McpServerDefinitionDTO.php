@@ -4,220 +4,119 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Mcp\Config;
 
+use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
+
 /**
  * Typed MCP server definition.
  *
  * Represents a single server entry from .hatfield/mcp.json.
- * Immutable value object constructed via {@see fromArray()}.
+ * Hydrated via Symfony Serializer + Validator from raw JSON fields.
+ * {@see $transportType} is derived from command/url and is not a user config field.
  */
 final readonly class McpServerDefinitionDTO
 {
+    public ?McpTransportTypeEnum $transportType;
+
     /**
-     * @param string                    $name             Server name key from mcpServers map
-     * @param bool                      $enabled          Whether this server is active
-     * @param string|null               $command          STDIO command path / binary name
-     * @param list<string>              $args             STDIO command arguments
-     * @param array<string, string>     $env              STDIO environment variables (interpolated)
-     * @param string|null               $cwd              STDIO working directory (resolved)
-     * @param string|null               $url              HTTP server endpoint URL
-     * @param array<string, string>     $headers          HTTP request headers (interpolated)
-     * @param int                       $timeoutMs        Tool-call timeout in milliseconds
-     * @param int                       $startupTimeoutMs STDIO startup timeout in milliseconds
-     * @param McpServerAvailabilityEnum $availability     Global (all) vs opt-in (specific) exposure for default runs
-     * @param list<string>              $excludeTools     Tool names to exclude from registration
-     * @param McpTransportTypeEnum|null $transportType    Resolved transport type; null only when neither command nor url is set (e.g. inherited disable-only)
+     * @param list<string>              $args
+     * @param array<string, string>     $env
+     * @param array<string, string>     $headers
+     * @param list<string>              $excludeTools
+     * @param McpTransportTypeEnum|null $transportType Explicit transport for direct construction; derived when null
      */
     public function __construct(
+        #[Assert\NotBlank(message: 'server name must be a non-empty string.')]
         public string $name,
+
+        #[Assert\Type('bool', message: '"enabled" must be a boolean.')]
         public bool $enabled = true,
+
+        #[Assert\When(
+            expression: 'this.command !== null',
+            constraints: [
+                new Assert\NotBlank(message: '"command" must be a non-empty string.'),
+            ],
+        )]
         public ?string $command = null,
+
+        #[Assert\All([
+            new Assert\Type('string', message: '"args" entries must be strings.'),
+        ])]
         public array $args = [],
+
+        #[Assert\All([
+            new Assert\Type('string', message: '"env" values must be strings.'),
+        ])]
         public array $env = [],
+
+        #[Assert\When(
+            expression: 'this.cwd !== null',
+            constraints: [
+                new Assert\NotBlank(message: '"cwd" must be a non-empty string.'),
+            ],
+        )]
         public ?string $cwd = null,
+
+        #[Assert\When(
+            expression: 'this.url !== null',
+            constraints: [
+                new Assert\NotBlank(message: '"url" must be a non-empty string.'),
+            ],
+        )]
         public ?string $url = null,
+
+        #[Assert\All([
+            new Assert\Type('string', message: '"headers" values must be strings.'),
+        ])]
         public array $headers = [],
+
+        #[Assert\Positive(message: '"timeoutMs" must be a positive integer.')]
         public int $timeoutMs = 30000,
+
+        #[Assert\Positive(message: '"startupTimeoutMs" must be a positive integer.')]
         public int $startupTimeoutMs = 30000,
+
         public McpServerAvailabilityEnum $availability = McpServerAvailabilityEnum::All,
+
+        #[Assert\All([
+            new Assert\Type('string', message: '"excludeTools" entries must be strings.'),
+        ])]
         public array $excludeTools = [],
-        public ?McpTransportTypeEnum $transportType = null,
+
+        ?McpTransportTypeEnum $transportType = null,
     ) {
-    }
+        $hasCommand = null !== $this->command && '' !== $this->command;
+        $hasUrl = null !== $this->url && '' !== $this->url;
 
-    /**
-     * Build from a raw JSON-decoded array for a single server definition.
-     *
-     * @param string              $name Server name key
-     * @param array<string,mixed> $data Raw config values
-     *
-     * @throws \RuntimeException when field types are invalid
-     *
-     * The DTO re-validates certain fields (e.g. enabled type) even though
-     * {@see McpConfigValidator} normally runs first, because fromArray() is
-     * a public standalone entry point that callers may use directly.
-     */
-    public static function fromArray(string $name, array $data): self
-    {
-        $enabled = true;
-        if (\array_key_exists('enabled', $data)) {
-            if (!\is_bool($data['enabled'])) {
-                throw new \RuntimeException(\sprintf('MCP server "%s": "enabled" must be a boolean, got %s.', $name, \gettype($data['enabled'])));
-            }
-            $enabled = $data['enabled'];
-        }
-
-        // Resolve transport type from field presence
-        $hasCommand = isset($data['command']);
-        $hasUrl = isset($data['url']);
-
-        $command = null;
-        $args = [];
-        $env = [];
-        $cwd = null;
-        $url = null;
-        $headers = [];
-        $transportType = null;
-
-        if ($hasCommand) {
-            $command = self::requireNonEmptyString($data['command'], $name, 'command');
-
-            if (isset($data['args'])) {
-                $args = self::requireStringList($data['args'], $name, 'args');
-            }
-
-            if (isset($data['env'])) {
-                $env = self::requireStringMap($data['env'], $name, 'env');
-            }
-
-            if (isset($data['cwd'])) {
-                $cwd = self::requireNonEmptyString($data['cwd'], $name, 'cwd');
-            }
-
-            $transportType = McpTransportTypeEnum::STDIO;
-        }
-
-        if ($hasUrl) {
-            $url = self::requireNonEmptyString($data['url'], $name, 'url');
-
-            if (isset($data['headers'])) {
-                $headers = self::requireStringMap($data['headers'], $name, 'headers');
-            }
-
-            $transportType = McpTransportTypeEnum::HTTP;
-        }
-
-        $timeoutMs = 30000;
-        if (\array_key_exists('timeoutMs', $data)) {
-            $timeoutMs = self::requirePositiveInt($data['timeoutMs'], $name, 'timeoutMs');
-        }
-
-        $startupTimeoutMs = 30000;
-        if (\array_key_exists('startupTimeoutMs', $data)) {
-            $startupTimeoutMs = self::requirePositiveInt($data['startupTimeoutMs'], $name, 'startupTimeoutMs');
-        }
-
-        $availability = McpServerAvailabilityEnum::All;
-        if (\array_key_exists('availability', $data)) {
-            $rawAvailability = $data['availability'];
-            if (!\is_string($rawAvailability)) {
-                throw new \RuntimeException(\sprintf('MCP server "%s": "availability" must be a string, got %s.', $name, \gettype($rawAvailability)));
-            }
-            $availability = McpServerAvailabilityEnum::tryFrom($rawAvailability)
-                ?? throw new \RuntimeException(\sprintf('MCP server "%s": "availability" must be one of: all, specific.', $name));
-        }
-
-        $excludeTools = [];
-        if (isset($data['excludeTools'])) {
-            $excludeTools = self::requireStringList($data['excludeTools'], $name, 'excludeTools');
-        }
-
-        return new self(
-            name: $name,
-            enabled: $enabled,
-            command: $command,
-            args: $args,
-            env: $env,
-            cwd: $cwd,
-            url: $url,
-            headers: $headers,
-            timeoutMs: $timeoutMs,
-            startupTimeoutMs: $startupTimeoutMs,
-            availability: $availability,
-            excludeTools: $excludeTools,
-            transportType: $transportType,
+        $this->transportType = $transportType ?? (
+            $hasCommand
+                ? McpTransportTypeEnum::STDIO
+                : ($hasUrl ? McpTransportTypeEnum::HTTP : null)
         );
     }
 
-    /**
-     * @throws \RuntimeException
-     */
-    private static function requireNonEmptyString(mixed $value, string $name, string $field): string
+    #[Assert\Callback]
+    public function validateShape(ExecutionContextInterface $context): void
     {
-        if (!\is_string($value) || '' === $value) {
-            throw new \RuntimeException(\sprintf('MCP server "%s": "%s" must be a non-empty string.', $name, $field));
+        $hasCommand = null !== $this->command && '' !== $this->command;
+        $hasUrl = null !== $this->url && '' !== $this->url;
+
+        if ($hasCommand && $hasUrl) {
+            $context->buildViolation('cannot define both "command" (STDIO) and "url" (HTTP). Choose exactly one transport.')
+                ->addViolation();
         }
 
-        return $value;
-    }
-
-    /**
-     * @return list<string>
-     *
-     * @throws \RuntimeException
-     */
-    private static function requireStringList(mixed $value, string $name, string $field): array
-    {
-        if (!\is_array($value)) {
-            throw new \RuntimeException(\sprintf('MCP server "%s": "%s" must be an array.', $name, $field));
+        if ([] !== $this->args && !array_is_list($this->args)) {
+            $context->buildViolation('"args" must be a list (sequential array).')
+                ->atPath('args')
+                ->addViolation();
         }
 
-        if ([] === $value) {
-            return [];
+        if ([] !== $this->excludeTools && !array_is_list($this->excludeTools)) {
+            $context->buildViolation('"excludeTools" must be a list (sequential array).')
+                ->atPath('excludeTools')
+                ->addViolation();
         }
-
-        if (!array_is_list($value)) {
-            throw new \RuntimeException(\sprintf('MCP server "%s": "%s" must be a list (sequential array).', $name, $field));
-        }
-
-        foreach ($value as $i => $item) {
-            if (!\is_string($item)) {
-                throw new \RuntimeException(\sprintf('MCP server "%s": "%s[%d]" must be a string, got %s.', $name, $field, $i, \gettype($item)));
-            }
-        }
-
-        return $value;
-    }
-
-    /**
-     * @return array<string, string>
-     *
-     * @throws \RuntimeException
-     */
-    private static function requireStringMap(mixed $value, string $name, string $field): array
-    {
-        if (!\is_array($value)) {
-            throw new \RuntimeException(\sprintf('MCP server "%s": "%s" must be an object with string values.', $name, $field));
-        }
-
-        foreach ($value as $k => $v) {
-            if (!\is_string($v)) {
-                throw new \RuntimeException(\sprintf('MCP server "%s": "%s.%s" must be a string, got %s.', $name, $field, (string) $k, \gettype($v)));
-            }
-        }
-
-        /* @var array<string, string> */
-        return $value;
-    }
-
-    /**
-     * @throws \RuntimeException
-     */
-    private static function requirePositiveInt(mixed $value, string $name, string $field): int
-    {
-        if (!\is_int($value) || $value < 1) {
-            throw new \RuntimeException(\sprintf('MCP server "%s": "%s" must be a positive integer, got %s.', $name, $field, \is_int($value) ? (string) $value : \gettype($value)));
-        }
-
-        return $value;
     }
 }

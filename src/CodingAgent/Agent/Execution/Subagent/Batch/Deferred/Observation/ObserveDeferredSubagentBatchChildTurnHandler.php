@@ -87,12 +87,13 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
                 childStatus: RunStatus::Running,
                 childTurnNo: $message->turnNo,
                 lastCommittedSeq: $cursor,
+                model: $child->launchModel,
+                reasoning: $child->launchReasoning,
             );
 
         $updated = $this->projector->apply(
             current: $current,
             summaries: $newEvents,
-            definitionModel: $child->definitionModel,
             committedStatus: $message->committedStatus,
             committedTurnNo: $message->turnNo,
         );

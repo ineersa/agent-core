@@ -302,6 +302,44 @@ final class SubagentLivePickerControllerTest extends TestCase
      * dismiss rebuilds plain items with a single native selection at index 0.
      */
     #[Test]
+    public function buildItemsSanitizesMultilineTaskSummaryBeforeTruncation(): void
+    {
+        $state = new TuiSessionState('picker-sanitize-row');
+        // Shared catalog path: both fork and subagent children reach buildItems() the same way.
+        $this->seedCatalogChild(
+            $state,
+            'agent_fork_nl',
+            'fork-run-nl',
+            'completed',
+            agentName: 'fork',
+            task: "Fork tool interactive test.\r\n\n\tYour task, in order, is to validate multiline rows",
+        );
+        $this->seedCatalogChild(
+            $state,
+            'agent_scout_nl',
+            'scout-run-nl',
+            'running',
+            agentName: 'scout',
+            task: "Inspect docs\n\twith   tabs and   spaces",
+        );
+
+        $items = SubagentLivePickerController::buildItems($state->subagentLiveCatalog->all());
+        $this->assertCount(2, $items);
+
+        foreach ($items as $item) {
+            $label = $item['label'];
+            $this->assertStringNotContainsString("\n", $label, 'Picker labels must be single-line (no LF)');
+            $this->assertStringNotContainsString("\r", $label, 'Picker labels must be single-line (no CR)');
+            $this->assertStringNotContainsString("\t", $label, 'Picker labels must collapse tabs');
+            $this->assertDoesNotMatchRegularExpression('/  +/', $label, 'Picker labels must collapse repeated whitespace');
+        }
+
+        $this->assertStringContainsString('Fork tool interactive test. Your task, in ord...', $items[0]['label']);
+        $this->assertStringContainsString('Inspect docs with tabs and spaces', $items[1]['label']);
+        $this->assertStringNotContainsString('Your task, in order', $items[0]['label'], 'Sanitized summary must truncate after whitespace collapse');
+    }
+
+    #[Test]
     public function testArrowNavigationMovesSingleNativeHighlight(): void
     {
         $palette = VirtualTuiHarness::defaultVirtualPalette()->withOverrides([
@@ -403,7 +441,8 @@ final class SubagentLivePickerControllerTest extends TestCase
                     'artifact_id' => 'agent_scout',
                     'agent_run_id' => 'scout-run',
                     'task_summary' => 'list docs',
-                ],
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'medium', ],
             ],
         );
 
@@ -616,6 +655,8 @@ final class SubagentLivePickerControllerTest extends TestCase
             taskSummary: $task,
             // Descending counter so seed order matches all() lastActivityAtMs DESC.
             lastActivityAtMs: $this->seedActivityMs--,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         );
         $byId->setValue($catalog, $rows);
     }

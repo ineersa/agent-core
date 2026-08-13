@@ -30,6 +30,22 @@ final class ForkChildLaunchInputBuilder
     }
 
     /**
+     * Resolve concrete non-empty fork launch model/thinking without building prompts.
+     *
+     * @return array{model: string, reasoning: string}
+     */
+    public function resolveLaunchIdentity(
+        string $parentRunId,
+        ?string $modelOverride,
+        ?string $reasoningOverride,
+        ?string $parentModel = null,
+    ): array {
+        $resolved = $this->resolveConfig($parentRunId, $modelOverride, $reasoningOverride, $parentModel);
+
+        return ['model' => $resolved->model, 'reasoning' => $resolved->thinking];
+    }
+
+    /**
      * @param array{tools: list<string>, mcp: array<string, mixed>} $policy
      */
     public function buildPrepared(
@@ -41,17 +57,11 @@ final class ForkChildLaunchInputBuilder
         $parentRunId = $identity->parentRunId;
         $inherited = $task->inheritedMessages;
 
-        $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId);
-        // Explicit parent model still wins; otherwise inherit from parent RunStarted metadata.
-        // Fork historically trimmed model/reasoning here (not at the shared decoder).
-        $effectiveParentModel = null !== $parentModel && '' !== trim($parentModel)
-            ? trim($parentModel)
-            : $this->trimInheritedForkConfigString($parentMetadata?->model);
-        $resolved = $this->configResolver->resolve(
-            explicitModel: $task->modelOverride,
-            explicitThinking: $task->reasoningOverride,
-            parentModel: $effectiveParentModel,
-            parentReasoning: $this->trimInheritedForkConfigString($parentMetadata?->reasoning),
+        $resolved = $this->resolveConfig(
+            $parentRunId,
+            $task->modelOverride,
+            $task->reasoningOverride,
+            $parentModel,
         );
 
         $effectiveExtensions = $this->childExtensionSelection->resolveForFork();
@@ -71,6 +81,7 @@ final class ForkChildLaunchInputBuilder
             allowedExtensions: $effectiveExtensions,
         );
 
+        // Resolver fails closed: model/thinking are concrete non-empty strings.
         $childMetadata = new RunMetadata(
             session: [
                 'kind' => 'agent_child',
@@ -90,14 +101,48 @@ final class ForkChildLaunchInputBuilder
             extensions: $effectiveExtensions,
         );
 
+        $launchIdentity = new ChildRunIdentityDTO(
+            parentRunId: $identity->parentRunId,
+            childRunId: $identity->childRunId,
+            artifactId: $identity->artifactId,
+            displayName: $identity->displayName,
+            taskSummary: $identity->taskSummary,
+            launchModel: $resolved->model,
+            launchReasoning: $resolved->thinking,
+            artifactKind: $identity->artifactKind,
+            batchIndex: $identity->batchIndex,
+        );
+
         return new PreparedAgentChildRunDTO(
-            identity: $identity,
+            identity: $launchIdentity,
             startRunInput: new StartRunInput(
                 systemPrompt: $composed['systemPrompt'],
                 messages: $composed['messages'],
                 runId: $identity->childRunId,
                 metadata: $childMetadata,
             ),
+        );
+    }
+
+    private function resolveConfig(
+        string $parentRunId,
+        ?string $modelOverride,
+        ?string $reasoningOverride,
+        ?string $parentModel,
+    ): ForkRuntimeResolvedConfigDTO {
+        $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId);
+        // Explicit parent model still wins; otherwise inherit from parent RunStarted metadata.
+        // Fork trims model/reasoning at this consumer (decoder preserves exact strings).
+        $effectiveParentModel = null !== $parentModel && '' !== trim($parentModel)
+            ? trim($parentModel)
+            : $this->trimInheritedForkConfigString($parentMetadata?->model);
+
+        return $this->configResolver->resolve(
+            explicitModel: $modelOverride,
+            explicitThinking: $reasoningOverride,
+            parentModel: $effectiveParentModel,
+            parentReasoning: $this->trimInheritedForkConfigString($parentMetadata?->reasoning),
+            parentRunId: $parentRunId,
         );
     }
 

@@ -73,8 +73,8 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             totalChildCount: 2,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'g-one', 'task' => 'G1', 'definitionModel' => null],
-                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'g-two', 'task' => 'G2', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'g-one', 'task' => 'G1', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
+                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'g-two', 'task' => 'G2', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $batchRepo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1, 2]);
@@ -85,6 +85,8 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             batchLifecycleId: $lifecycle,
             batchIndex: 1,
             projection: \Ineersa\CodingAgent\Tests\Support\DeferredChildRunLifecycleProjectionCodecTestFactory::create()->denormalize([
+                'model' => 'deepseek/deepseek-v4-flash',
+                'reasoning' => 'medium',
                 'child_status' => 'running',
                 'child_turn_no' => 1,
                 'last_committed_seq' => 1,
@@ -181,7 +183,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: $deadline,
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $u1['childRunId'], 'artifactId' => $u1['artifactId'], 'agentName' => 'w-one', 'task' => 'W1', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $u1['childRunId'], 'artifactId' => $u1['artifactId'], 'agentName' => 'w-one', 'task' => 'W1', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $batchRepo->applyLaunchSuccessState($sessionId, $unfinishedTool, $unfinishedLifecycle, new \DateTimeImmutable(), [1]);
@@ -199,7 +201,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: $deadline,
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $r1['childRunId'], 'artifactId' => $r1['artifactId'], 'agentName' => 'w-res', 'task' => 'WR', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $r1['childRunId'], 'artifactId' => $r1['artifactId'], 'agentName' => 'w-res', 'task' => 'WR', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
 
@@ -216,7 +218,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: $deadline,
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $i1['childRunId'], 'artifactId' => $i1['artifactId'], 'agentName' => 'w-int', 'task' => 'WI', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $i1['childRunId'], 'artifactId' => $i1['artifactId'], 'agentName' => 'w-int', 'task' => 'WI', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $batchRepo->applyLaunchSuccessState($sessionId, $interruptTool, $interruptLifecycle, new \DateTimeImmutable(), [1]);
@@ -241,7 +243,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: $deadline,
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $o1['childRunId'], 'artifactId' => $o1['artifactId'], 'agentName' => 'w-oth', 'task' => 'WO', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $o1['childRunId'], 'artifactId' => $o1['artifactId'], 'agentName' => 'w-oth', 'task' => 'WO', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $batchRepo->applyLaunchSuccessState($otherParent, $otherTool, $otherLifecycle, new \DateTimeImmutable(), [1]);

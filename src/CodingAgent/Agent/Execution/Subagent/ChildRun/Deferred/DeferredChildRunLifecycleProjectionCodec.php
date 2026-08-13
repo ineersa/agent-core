@@ -120,7 +120,7 @@ final class DeferredChildRunLifecycleProjectionCodec
      */
     private function applyHistoricalOmissionRules(array $payload): array
     {
-        foreach (['error_message', 'assistant_result_text', 'assistant_excerpt', 'model', 'provider', 'active_tool'] as $key) {
+        foreach (['error_message', 'assistant_result_text', 'assistant_excerpt', 'provider', 'active_tool'] as $key) {
             if (!\array_key_exists($key, $payload)) {
                 continue;
             }

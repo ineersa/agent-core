@@ -19,7 +19,6 @@ use Ineersa\Tui\Header\HeaderWidget;
 use Ineersa\Tui\Layout\TuiSlotRegistry;
 use Ineersa\Tui\Startup\LoadedResourcesWidget;
 use Ineersa\Tui\Status\StatusPanelWidget;
-use Ineersa\Tui\Status\WorkingStatusWidget;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Transcript\MarkdownThemeStyleSheetFactory;
@@ -31,11 +30,13 @@ use Ineersa\Tui\Widget\LiveTextWidget;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\WidgetPlacementEnum;
 use Symfony\Component\Tui\Render\RenderContext;
+use Symfony\Component\Tui\Style\Padding;
 use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Style\StyleSheet;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\EditorWidget;
+use Symfony\Component\Tui\Widget\LoaderWidget;
 
 /**
  * Production screen bridge between the TUI layout/widget system and Symfony TUI.
@@ -57,21 +58,16 @@ use Symfony\Component\Tui\Widget\EditorWidget;
  * Structural widgets (separators, header, footer, top margin, extension slots)
  * use {@see LiveTextWidget} with a producer closure that reads the current
  * {@see RenderContext} and re-computes content at the live terminal width.
- * Dynamic non-transcript sections (working status, status panel) also use
- * {@see LiveTextWidget}. The transcript is a mounted Symfony container whose
- * children re-render through the live widget tree (including MarkdownWidget
- * sub-element styles from the active stylesheet).
+ * Dynamic non-transcript sections (status panel) also use {@see LiveTextWidget}.
+ * Working status is a single mounted native {@see LoaderWidget} (circle spinner)
+ * driven through start/stop + finished-indicator states. The transcript is a
+ * mounted Symfony container whose children re-render through the live widget
+ * tree (including MarkdownWidget sub-element styles from the active stylesheet).
  */
 final class ChatScreen
 {
     /** Number of blank lines rendered before the header logo. */
     private const int TOP_MARGIN_LINES = 4;
-
-    /**
-     * Producer output when the working indicator is hidden: one blank row so
-     * {@see LiveTextWidget} does not collapse the slot to zero lines.
-     */
-    private const string HIDDEN_WORKING_ROW_RESERVE = '  ';
 
     /* ── Symfony widget refs (internal) ── */
     private readonly LiveTextWidget $topMarginWidget;
@@ -80,7 +76,7 @@ final class ChatScreen
     private readonly LiveTextWidget $loadedResourcesWidget;
     private readonly TranscriptMountedWidget $transcriptWidget;
     private readonly LiveTextWidget $pendingWidget;
-    private readonly LiveTextWidget $workingWidget;
+    private readonly LoaderWidget $workingWidget;
     private readonly LiveTextWidget $statusPanelWidget;
     private readonly LiveTextWidget $aboveEditorWidget;
     private readonly LiveTextWidget $editorSepWidget;
@@ -91,7 +87,6 @@ final class ChatScreen
     /* ── TUI renderables (theme-agnostic, read by producer closures) ── */
     private readonly HeaderWidget $headerRenderable;
     private readonly PendingMessagesWidget $pendingRenderable;
-    private readonly WorkingStatusWidget $workingRenderable;
     private readonly StatusPanelWidget $statusPanelRenderable;
     private readonly FooterDataProvider $footerDataProvider;
     private readonly FooterBarWidget $footerRenderable;
@@ -126,10 +121,16 @@ final class ChatScreen
             progressSnapshotCodec: $progressSnapshotCodec,
         );
         $this->pendingRenderable = new PendingMessagesWidget();
-        $this->workingRenderable = new WorkingStatusWidget();
         $this->statusPanelRenderable = new StatusPanelWidget();
         $this->footerDataProvider = new FooterDataProvider();
-        $this->extensionContext = new SlotBasedTuiExtensionContext($this->registry, $this->footerDataProvider);
+        // Route extension working-slot mutations through ChatScreen so the native
+        // LoaderWidget start/stop lifecycle stays in sync with the registry.
+        $this->extensionContext = new SlotBasedTuiExtensionContext(
+            $this->registry,
+            $this->footerDataProvider,
+            $this->setWorkingMessage(...),
+            $this->setWorkingVisible(...),
+        );
         $this->footerDataProvider->setProvider('_default', $this->createDefaultFooterProvider());
         $this->footerRenderable = new FooterBarWidget($this->footerDataProvider);
         $this->loadedResourcesRenderable = new LoadedResourcesWidget();
@@ -193,26 +194,10 @@ final class ChatScreen
         );
 
         // ── Working status ──
-        $this->workingWidget = new LiveTextWidget(
-            function (RenderContext $symfonyCtx): string {
-                $visible = $this->registry->isWorkingVisible();
-                $msg = $this->registry->getWorkingMessage();
-                $this->workingRenderable->setMessage($msg);
-                // Sync visibility on every render: WorkingStatusWidget is a cached
-                // renderable; registry is authoritative and may change between invalidations.
-                $this->workingRenderable->setVisible($visible);
-                $tuiCtx = $this->tuiContext($symfonyCtx);
-                $lines = $this->workingRenderable->render($tuiCtx);
-
-                // Reserve exactly one terminal row when the indicator is hidden so
-                // status-area visibility toggles do not shift the editor/footer.
-                if ([] === $lines) {
-                    return self::HIDDEN_WORKING_ROW_RESERVE;
-                }
-
-                return implode("\n", $lines);
-            },
-        );
+        // One native LoaderWidget for active/idle/hidden: start() while working,
+        // stop()+finished indicator for idle/hidden so the two-line footprint stays stable.
+        $this->workingWidget = (new LoaderWidget(''))->setSpinner('circle');
+        $this->syncWorkingSlot();
 
         // ── Status panel ──
         $this->statusPanelWidget = new LiveTextWidget(
@@ -304,6 +289,18 @@ final class ChatScreen
         // Install Markdown sub-element styles before mounting transcript children so
         // attached MarkdownWidget instances resolve Hatfield theme tokens.
         $tui->addStyleSheet((new MarkdownThemeStyleSheetFactory())->create($this->theme));
+
+        // Theme the native working loader with the existing Working palette token.
+        $workingColor = $this->theme->getPalette()->get(ThemeColorEnum::Working);
+        if ('' !== $workingColor) {
+            $workingStyle = new Style(color: $workingColor);
+            $tui->addStyleSheet(new StyleSheet([
+                LoaderWidget::class.'::spinner' => $workingStyle,
+                LoaderWidget::class.'::message' => $workingStyle,
+            ]));
+        }
+        // Indent spinner+message two columns to match the historical "  ◐ msg" layout.
+        $this->workingWidget->setStyle(new Style(padding: Padding::from([0, 0, 0, 2])));
 
         // Add widgets in display order (top → bottom).
         // LiveTextWidget producers already read live RenderContext columns,
@@ -436,13 +433,13 @@ final class ChatScreen
 
     public function setWorkingMessage(?string $message): void
     {
-        if (($message ?? '') === $this->workingRenderable->getMessage()) {
+        $normalized = $message ?? '';
+        if ($normalized === $this->registry->getWorkingMessage()) {
             return;
         }
 
         $this->registry->setWorkingMessage($message);
-        $this->workingRenderable->setMessage($message);
-        $this->workingWidget->invalidate();
+        $this->syncWorkingSlot();
     }
 
     public function setWorkingVisible(bool $visible): void
@@ -452,8 +449,7 @@ final class ChatScreen
         }
 
         $this->registry->setWorkingVisible($visible);
-        $this->workingRenderable->setVisible($visible);
-        $this->workingWidget->invalidate();
+        $this->syncWorkingSlot();
     }
 
     public function setStatus(string $key, ?string $text): void
@@ -689,6 +685,43 @@ final class ChatScreen
     {
         $this->sessionId = $sessionId;
         $this->footerDataProvider->setProvider('_default', $this->createDefaultFooterProvider());
+    }
+
+    /**
+     * Drive the single working-slot LoaderWidget from registry state.
+     *
+     * Visible + non-empty message → circle spinner + message (started).
+     * Visible + empty message → finished indicator "●" + "idle".
+     * Hidden → finished indicator space + empty message (native two-line reserve).
+     *
+     * stop() marks finished even when already stopped, so idle/hidden always go
+     * through the same finished-state path.
+     */
+    private function syncWorkingSlot(): void
+    {
+        $visible = $this->registry->isWorkingVisible();
+        $message = $this->registry->getWorkingMessage();
+
+        if (!$visible) {
+            $this->workingWidget->setFinishedIndicator(' ');
+            $this->workingWidget->setMessage('');
+            $this->workingWidget->stop();
+
+            return;
+        }
+
+        if ('' === $message) {
+            $this->workingWidget->setFinishedIndicator('●');
+            $this->workingWidget->setMessage('idle');
+            $this->workingWidget->stop();
+
+            return;
+        }
+
+        $this->workingWidget->setMessage($message);
+        if (!$this->workingWidget->isRunning()) {
+            $this->workingWidget->start();
+        }
     }
 
     /* ────────── Helpers ────────── */

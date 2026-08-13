@@ -12,12 +12,16 @@ use Symfony\Component\Validator\Constraints as Assert;
  * Compact durable child lifecycle projection for deferred child runs.
  *
  * Doctrine JSON shape is owned by {@see DeferredChildRunLifecycleProjectionCodec}.
+ * Launch model/reasoning are concrete non-empty identity seeded at preparation.
  * Optional enrichment fields are null when absent so Serializer
  * {@see \Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES}
  * plus codec omission rules preserve historical key omission.
  */
 final readonly class DeferredChildRunLifecycleProjectionDTO
 {
+    public string $model;
+    public string $reasoning;
+
     /**
      * @param list<string>                                 $recentTools
      * @param array<string, DeferredPendingToolCallRowDTO> $pendingToolCalls
@@ -31,6 +35,8 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         #[SerializedName('last_committed_seq')]
         #[Assert\GreaterThanOrEqual(0)]
         public int $lastCommittedSeq,
+        string $model,
+        string $reasoning,
         #[SerializedName('error_message')]
         #[Assert\Type('string')]
         public ?string $errorMessage = null,
@@ -67,8 +73,6 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         #[Assert\Type('float')]
         public ?float $cost = null,
         #[Assert\Type('string')]
-        public ?string $model = null,
-        #[Assert\Type('string')]
         public ?string $provider = null,
         #[SerializedName('recent_tools')]
         #[Assert\All([new Assert\Type('string')])]
@@ -81,5 +85,12 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         #[Assert\Valid]
         public array $pendingToolCalls = [],
     ) {
+        $model = trim($model);
+        $reasoning = trim($reasoning);
+        if ('' === $model || '' === $reasoning) {
+            throw new \InvalidArgumentException('Deferred child lifecycle projection requires non-empty model and reasoning.');
+        }
+        $this->model = $model;
+        $this->reasoning = $reasoning;
     }
 }

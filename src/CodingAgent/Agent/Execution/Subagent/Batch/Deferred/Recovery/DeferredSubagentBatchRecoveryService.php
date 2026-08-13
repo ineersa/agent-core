@@ -98,6 +98,8 @@ final readonly class DeferredSubagentBatchRecoveryService
                     childStatus: RunStatus::Running,
                     childTurnNo: 0,
                     lastCommittedSeq: $cursor,
+                    model: $childEntity->launchModel,
+                    reasoning: $childEntity->launchReasoning,
                 );
 
             $maxTurnNo = $current->childTurnNo;
@@ -108,7 +110,6 @@ final readonly class DeferredSubagentBatchRecoveryService
             $updated = $this->projector->apply(
                 current: $current,
                 summaries: $summaries,
-                definitionModel: $child->definitionModel,
                 committedStatus: null,
                 committedTurnNo: $maxTurnNo,
             );

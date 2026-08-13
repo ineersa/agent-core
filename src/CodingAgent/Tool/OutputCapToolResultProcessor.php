@@ -9,8 +9,6 @@ use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 
-use function Symfony\Component\String\u;
-
 /**
  * Post-execution output capping via the generic ModelNotification system.
  *
@@ -38,28 +36,24 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
             return $result;
         }
 
-        $path = OutputCapPathResolver::resolveCapPath(
+        $path = $this->outputCap->resolveCapPath(
             $toolCall->toolName,
             $toolCall->arguments,
             $result->isError,
         );
-        $cap = $this->outputCap->capForPath($path);
-        $charCount = u($text)->length();
-
-        if ($charCount <= $cap) {
-            // Text fits within the cap — return unchanged.
-            return $result;
-        }
 
         $capResult = $this->outputCap->capIfNeeded($text, $path);
-        // capIfNeeded returns null when under cap, so this path always has a result.
         if (null === $capResult) {
             return $result;
         }
 
         // Build context-aware notice: read tools get original-path guidance,
         // generic tools use the default saved-artifact inspection notice.
-        $noticeText = $this->buildContextualNotice($toolCall, $capResult);
+        $noticeText = $this->outputCap->buildContextualNotice(
+            $toolCall->toolName,
+            $toolCall->arguments,
+            $capResult,
+        );
 
         $notificationId = hash('sha256', implode('|', [
             $toolCall->toolCallId,
@@ -128,43 +122,6 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
     }
 
     /**
-     * Build a context-aware capping notice.
-     *
-     * For read tools: guides follow-up reads to the original file path with
-     * offset+limit, avoiding double line numbers from reading the saved
-     * rendered artifact.  For all other tools: uses the generic saved-output
-     * inspection notice from OutputCap.
-     */
-    private function buildContextualNotice(ToolCall $toolCall, OutputCapResult $capResult): string
-    {
-        if ('read' !== $toolCall->toolName) {
-            return $capResult->noticeText;
-        }
-
-        $originalPath = OutputCapPathResolver::extractPathFromArguments($toolCall->arguments);
-
-        // Only produce read-specific notice when we have the original path.
-        // Without it, fall back to the generic saved-artifact notice (head/grep).
-        if (null === $originalPath) {
-            return $capResult->noticeText;
-        }
-
-        $originalOffset = $this->extractOffsetFromArguments($toolCall->arguments);
-        $offset = (\is_int($originalOffset) && $originalOffset > 0) ? $originalOffset : 1;
-        $escapedGrepPath = escapeshellarg($originalPath);
-
-        return <<<STRING
-[Output capped: {$capResult->charCount} chars (~{$capResult->tokenEstimate} tokens) > {$capResult->cap}-char cap]
-Saved full output: {$capResult->savedPath}
-
-Next: use a focused follow-up, e.g.
-- read(path: "{$originalPath}", offset: {$offset}, limit: 200)
-- bash(command: "grep -n -- 'PATTERN' {$escapedGrepPath} | head -50")
-Do not repeat the original full read or read the saved output with read.
-STRING;
-    }
-
-    /**
      * Extract concatenated text from ToolResult content parts.
      *
      * @param array<int, array<string, mixed>> $content
@@ -186,29 +143,6 @@ STRING;
         }
 
         return implode("\n", $parts);
-    }
-
-    /**
-     * Extract a numeric offset from tool call arguments.
-     *
-     * The read tool accepts an 'offset' argument (positive integer)
-     * indicating the starting line for file read operations.  When
-     * available, it is used in the read-tool cap notice to suggest
-     * a reasonable follow-up starting point.
-     *
-     * @param array<string, mixed> $arguments
-     *
-     * @return int|null the offset value, or null when absent or non-integer
-     */
-    private function extractOffsetFromArguments(array $arguments): ?int
-    {
-        $offset = $arguments['offset'] ?? null;
-
-        if (\is_int($offset) && $offset > 0) {
-            return $offset;
-        }
-
-        return null;
     }
 
     /**

@@ -80,6 +80,7 @@ final class SubagentResultRendererTest extends TestCase
             'elapsed_ms' => 139000, 'tool_count' => 38, 'total_tokens' => 49000,
             'input_tokens' => 35000, 'output_tokens' => 14000, 'reasoning_tokens' => 584000,
             'cost' => 0.0104, 'model' => 'deepseek/deepseek-v4-flash',
+            'reasoning' => 'high',
             'artifact_path' => 'artifacts/agents/agent_01HX',
             'recent_tools' => ['read: path="RuntimeEventTranslator.php"'],
             'assistant_excerpt' => 'Found the projection hook.',
@@ -97,7 +98,7 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringContainsString('› read: path="RuntimeEventTranslator.php"', $joined);
         $this->assertStringNotContainsString('Last read:', $joined);
         $this->assertStringContainsString('in:35k', $joined);
-        $this->assertStringContainsString('deepseek/deepseek-v4-flash', $joined);
+        $this->assertStringContainsString('deepseek/deepseek-v4-flash (reasoning: high)', $joined);
         $this->assertStringContainsString('/agents-live', $joined);
     }
 

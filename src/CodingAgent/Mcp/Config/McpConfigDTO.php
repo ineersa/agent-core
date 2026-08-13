@@ -19,14 +19,4 @@ final readonly class McpConfigDTO
         public array $servers = [],
     ) {
     }
-
-    /**
-     * Build from a flat map of server definitions.
-     *
-     * @param array<string, McpServerDefinitionDTO> $servers
-     */
-    public static function fromServers(array $servers): self
-    {
-        return new self(servers: $servers);
-    }
 }

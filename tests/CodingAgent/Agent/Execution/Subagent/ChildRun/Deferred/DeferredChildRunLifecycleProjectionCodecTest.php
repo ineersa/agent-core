@@ -27,6 +27,8 @@ final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
             childStatus: RunStatus::WaitingHuman,
             childTurnNo: 4,
             lastCommittedSeq: 12,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
             errorMessage: 'boom',
             assistantResultText: 'hello world',
             assistantExcerpt: 'hello',
@@ -39,7 +41,6 @@ final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
             reasoningTokens: 5,
             totalTokens: 125,
             cost: 0.0123,
-            model: 'deepseek/deepseek-v4-flash',
             provider: 'deepseek',
             recentTools: ['read path.php', 'edit path.php'],
             activeToolLine: 'bash ls',
@@ -51,6 +52,8 @@ final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
         $wire = $codec->normalize($projection);
 
         $this->assertSame([
+            'model' => 'deepseek/deepseek-v4-flash',
+            'reasoning' => 'medium',
             'child_status' => 'waiting_human',
             'child_turn_no' => 4,
             'last_committed_seq' => 12,
@@ -66,7 +69,6 @@ final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
             'reasoning_tokens' => 5,
             'total_tokens' => 125,
             'cost' => 0.0123,
-            'model' => 'deepseek/deepseek-v4-flash',
             'provider' => 'deepseek',
             'recent_tools' => ['read path.php', 'edit path.php'],
             'active_tool' => 'bash ls',
@@ -87,6 +89,8 @@ final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
             'child_status' => 'running',
             'child_turn_no' => 1,
             'last_committed_seq' => 1,
+            'model' => 'deepseek/deepseek-v4-flash',
+            'reasoning' => 'medium',
             'input_tokens' => 1,
         ];
 
@@ -107,7 +111,8 @@ final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
         $this->assertArrayNotHasKey('assistant_excerpt', $rewritten);
         $this->assertArrayNotHasKey('context_window', $rewritten);
         $this->assertArrayNotHasKey('cost', $rewritten);
-        $this->assertArrayNotHasKey('model', $rewritten);
+        $this->assertSame('deepseek/deepseek-v4-flash', $rewritten['model']);
+        $this->assertSame('medium', $rewritten['reasoning']);
         $this->assertArrayNotHasKey('provider', $rewritten);
         $this->assertArrayNotHasKey('active_tool', $rewritten);
         $this->assertSame('running', $rewritten['child_status']);
@@ -123,12 +128,13 @@ final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
             childStatus: RunStatus::Running,
             childTurnNo: 0,
             lastCommittedSeq: 0,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
             errorMessage: '',
             assistantResultText: '',
             assistantExcerpt: '',
             contextWindow: 0,
             cost: 0.0,
-            model: '',
             provider: '',
             activeToolLine: '',
         );
@@ -139,7 +145,8 @@ final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
         $this->assertArrayNotHasKey('assistant_excerpt', $wire);
         $this->assertArrayNotHasKey('context_window', $wire);
         $this->assertArrayNotHasKey('cost', $wire);
-        $this->assertArrayNotHasKey('model', $wire);
+        $this->assertSame('deepseek/deepseek-v4-flash', $wire['model']);
+        $this->assertSame('medium', $wire['reasoning']);
         $this->assertArrayNotHasKey('provider', $wire);
         $this->assertArrayNotHasKey('active_tool', $wire);
     }
@@ -154,6 +161,8 @@ final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
             'child_status' => 'not-a-status',
             'child_turn_no' => 1,
             'last_committed_seq' => 1,
+            'model' => 'deepseek/deepseek-v4-flash',
+            'reasoning' => 'medium',
         ]);
     }
 
@@ -164,6 +173,8 @@ final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
             'child_status' => 'running',
             'child_turn_no' => 2,
             'last_committed_seq' => 3,
+            'model' => 'deepseek/deepseek-v4-flash',
+            'reasoning' => 'medium',
             'pending_tool_calls' => [
                 'tc-alias' => [
                     'name' => 'bash',
@@ -197,6 +208,8 @@ final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
             'child_status' => 'running',
             'child_turn_no' => 1,
             'last_committed_seq' => 1,
+            'model' => 'deepseek/deepseek-v4-flash',
+            'reasoning' => 'medium',
             'pending_tool_calls' => [
                 'tc1' => [
                     'name' => 'edit',
@@ -223,6 +236,8 @@ final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
                 'child_status' => 'running',
                 'child_turn_no' => 1,
                 'last_committed_seq' => 1,
+                'model' => 'deepseek/deepseek-v4-flash',
+                'reasoning' => 'medium',
                 'pending_tool_calls' => [
                     'tc1' => ['name' => '', 'displayLine' => ''],
                 ],
@@ -244,6 +259,8 @@ final class DeferredChildRunLifecycleProjectionCodecTest extends TestCase
             'child_status' => 'running',
             'child_turn_no' => 1,
             'last_committed_seq' => 1,
+            'model' => 'deepseek/deepseek-v4-flash',
+            'reasoning' => 'medium',
             'pending_tool_calls' => 'not-an-array',
         ]);
     }

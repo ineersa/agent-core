@@ -90,6 +90,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             $artifactA,
             new RunState(runId: $childA, status: RunStatus::Failed, version: 1, turnNo: 1, lastSeq: 2),
             'deepseek/deepseek-v4-flash',
+            'medium',
         );
         $summaryB = $builder->summarize(
             $parentRunId,
@@ -97,6 +98,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             $artifactB,
             new RunState(runId: $childB, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 2),
             'deepseek/deepseek-v4-flash',
+            'medium',
         );
 
         $this->assertSame('openai-codex/gpt-5.6-sol', $summaryA->model);
@@ -118,6 +120,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
                 'step_id' => 's0',
                 'payload' => ['metadata' => [
                     'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'high',
                     'context_window' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW,
                 ]],
             ]),
@@ -183,7 +186,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             new FileRunSequenceAllocator(),
         );
         $builder = new SubagentChildProgressSummaryBuilder($factory);
-        $summary = $builder->summarize($parentRunId, $childRunId, $artifactId, $childState, 'deepseek/deepseek-v4-flash');
+        $summary = $builder->summarize($parentRunId, $childRunId, $artifactId, $childState, 'deepseek/deepseek-v4-flash', 'medium');
 
         $this->assertSame(2, $summary->toolCount);
         $this->assertSame(2, $summary->llmStepCount);
@@ -209,6 +212,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
         $this->assertSame(2, $fields['llm_step_count'] ?? null);
         $this->assertSame(25000, $fields['latest_input_tokens'] ?? null);
         $this->assertSame('deepseek/deepseek-v4-flash', $fields['model'] ?? null);
+        $this->assertSame('high', $fields['reasoning'] ?? null, 'Canonical reasoning from child run_started must propagate into progress fields');
         $this->assertSame(
             \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW,
             $fields['context_window'] ?? null,

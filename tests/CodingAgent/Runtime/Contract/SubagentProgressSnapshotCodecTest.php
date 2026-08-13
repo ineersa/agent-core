@@ -29,6 +29,8 @@ final class SubagentProgressSnapshotCodecTest extends TestCase
             childTurnNo: 2,
             elapsedMs: 1500,
             enrichment: new SubagentChildProgressSummary(
+                model: 'test/model',
+                reasoning: 'medium',
                 toolCount: 3,
                 llmStepCount: 2,
                 inputTokens: 100,
@@ -38,7 +40,6 @@ final class SubagentProgressSnapshotCodecTest extends TestCase
                 reasoningTokens: 10,
                 totalTokens: 150,
                 cost: 0.01,
-                model: 'test/model',
                 recentTools: ['read: path="a.php"'],
             ),
         );
@@ -63,6 +64,7 @@ final class SubagentProgressSnapshotCodecTest extends TestCase
         $this->assertSame(['read: path="a.php"'], $payload['recent_tools']);
         $this->assertSame(0.01, $payload['cost']);
         $this->assertSame('test/model', $payload['model']);
+        $this->assertSame('medium', $payload['reasoning']);
         $this->assertSame(128000, $payload['context_window']);
         $this->assertArrayNotHasKey('provider', $payload);
         $this->assertArrayNotHasKey('active_tool', $payload);

@@ -72,6 +72,8 @@ final class SubagentLiveViewStateTest extends TestCase
             status: SubagentLiveStatusEnum::Completed,
             taskSummary: 'task',
             lastActivityAtMs: 1,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         );
     }
 }

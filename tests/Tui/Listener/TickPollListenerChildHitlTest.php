@@ -44,7 +44,8 @@ final class TickPollListenerChildHitlTest extends TestCase
             SubagentLiveStatusEnum::WaitingHuman,
             'task',
             1,
-        ));
+            'deepseek/deepseek-v4-flash',
+            'medium'));
 
         $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleHumanInputRequested');
         $event = new RuntimeEvent(
@@ -103,7 +104,8 @@ final class TickPollListenerChildHitlTest extends TestCase
                     'artifact_id' => 'agent_a',
                     'agent_run_id' => $childRunId,
                     'task_summary' => 'Task',
-                ],
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'medium', ],
             ],
         ));
         $state->subagentLiveView->enter(new SubagentLiveChildDTO(
@@ -113,7 +115,8 @@ final class TickPollListenerChildHitlTest extends TestCase
             SubagentLiveStatusEnum::Running,
             'Task',
             1,
-        ));
+            'deepseek/deepseek-v4-flash',
+            'medium'));
         $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
 
         $screen = new ChatScreen(

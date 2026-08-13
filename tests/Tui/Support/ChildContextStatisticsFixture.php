@@ -43,12 +43,10 @@ final class ChildContextStatisticsFixture
         $payload = [
             'latest_input_tokens' => $latestInputTokens,
             'context_window' => $contextWindow ?? self::CONTEXT_WINDOW,
+            'model' => $model ?? self::MODEL,
+            // Catalog identity requires concrete non-empty reasoning on first ingest.
+            'reasoning' => 'medium',
         ];
-        if (null !== $model) {
-            $payload['model'] = $model;
-        } else {
-            $payload['model'] = self::MODEL;
-        }
 
         return $payload;
     }
@@ -63,6 +61,7 @@ final class ChildContextStatisticsFixture
         return [
             'latest_input_tokens' => self::LATEST_INPUT_TOKENS,
             'model' => self::MODEL,
+            'reasoning' => 'medium',
         ];
     }
 
@@ -76,6 +75,7 @@ final class ChildContextStatisticsFixture
         return [
             'latest_input_tokens' => self::LATEST_INPUT_TOKENS,
             'model' => 'unknown-provider/no-context-window',
+            'reasoning' => 'medium',
             'context_window' => self::CONTEXT_WINDOW,
         ];
     }

@@ -22,8 +22,9 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
  *     ⌂ cwd (25)
  *     ⎇ branch (30)
  *
- * Reasoning level is NOT shown as a text segment — it only affects the
- * diamond AND model-name colour (matching Pi's thinking-level colouring).
+ * Reasoning level is NOT shown as a text segment on the main footer — it only
+ * affects the diamond AND model-name colour (matching Pi's thinking-level colouring).
+ * Live-child footer is different: selected child model text includes reasoning.
  */
 final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
 {
@@ -214,11 +215,16 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
             if (null !== $ctxFormatted) {
                 $segments[] = new FooterSegment(text: $ctxFormatted->text, priority: 6, color: $ctxFormatted->color);
             }
-            if (null !== $child->model && '' !== $child->model) {
+            if ('' !== $child->model) {
+                $childReasoning = $child->reasoning;
+                $modelText = FooterStateInitializer::shortModelName($child->model);
+                if ('' !== trim($childReasoning)) {
+                    $modelText .= ' (reasoning: '.trim($childReasoning).')';
+                }
                 $segments[] = new FooterSegment(
-                    text: FooterStateInitializer::shortModelName($child->model),
+                    text: $modelText,
                     priority: 7,
-                    color: ThemeColorEnum::Accent,
+                    color: self::thinkingColor($childReasoning),
                 );
             }
         }

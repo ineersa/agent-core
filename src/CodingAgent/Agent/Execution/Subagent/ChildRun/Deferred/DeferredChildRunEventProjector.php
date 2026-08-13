@@ -29,7 +29,6 @@ final class DeferredChildRunEventProjector
     public function apply(
         DeferredChildRunLifecycleProjectionDTO $current,
         array $summaries,
-        ?string $definitionModel,
         ?RunStatus $committedStatus,
         int $committedTurnNo,
     ): DeferredChildRunLifecycleProjectionDTO {
@@ -49,7 +48,9 @@ final class DeferredChildRunEventProjector
         $totalTokens = $current->totalTokens;
         $cost = $current->cost;
         $hasCost = null !== $cost && $cost > 0.0;
-        $model = $current->model ?? $definitionModel;
+        // Identity is always seeded from durable launch model/reasoning before RunStarted.
+        $model = $current->model;
+        $reasoning = $current->reasoning;
         $provider = $current->provider;
         $recentTools = $current->recentTools;
         $activeToolLine = $current->activeToolLine;
@@ -81,16 +82,18 @@ final class DeferredChildRunEventProjector
 
             if (RunEventTypeEnum::RunStarted->value === $type) {
                 $metadata = $this->runStartedMetadataDecoder->fromRunEventPayload($payload);
-                // Canonical launch model from run_started must override definition/current fallback.
-                // definitionModel remains prelaunch-only; never let a stale snapshot win after start.
+                // RunStarted may confirm/update concrete identity; never clear to empty.
                 if (null !== $metadata) {
-                    if (null !== $metadata->model) {
-                        $model = $metadata->model;
+                    if (null !== $metadata->model && '' !== trim($metadata->model)) {
+                        $model = trim($metadata->model);
                     }
-                    if (null !== $metadata->provider) {
+                    if (null !== $metadata->reasoning && '' !== trim($metadata->reasoning)) {
+                        $reasoning = trim($metadata->reasoning);
+                    }
+                    if (null !== $metadata->provider && '' !== $metadata->provider) {
                         $provider = $metadata->provider;
                     }
-                    if (null !== $metadata->contextWindow) {
+                    if (null !== $metadata->contextWindow && $metadata->contextWindow > 0) {
                         $contextWindow = $metadata->contextWindow;
                     }
                 }
@@ -223,6 +226,8 @@ final class DeferredChildRunEventProjector
             childStatus: $status,
             childTurnNo: $turnNo,
             lastCommittedSeq: $lastSeq,
+            model: $model,
+            reasoning: $reasoning,
             errorMessage: $errorMessage,
             assistantResultText: $assistantResultText,
             assistantExcerpt: $assistantExcerpt,
@@ -235,7 +240,6 @@ final class DeferredChildRunEventProjector
             reasoningTokens: $reasoningTokens,
             totalTokens: $totalTokens,
             cost: $hasCost ? $cost : null,
-            model: $model,
             provider: $provider,
             recentTools: $recentTools,
             activeToolLine: $activeToolLine,

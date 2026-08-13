@@ -9,7 +9,6 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
-use Ineersa\CodingAgent\Mcp\Catalog\McpToolNameMapper;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigDTO;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
@@ -51,7 +50,6 @@ final class McpInitializeSessionHandler
     public function __construct(
         private readonly McpConfigLoader $configLoader,
         private readonly McpConnectionManagerInterface $connectionManager,
-        private readonly McpToolNameMapper $nameMapper,
         private readonly McpToolCatalogStoreInterface $catalogStore,
         private readonly LoggerInterface $logger,
     ) {
@@ -318,7 +316,7 @@ final class McpInitializeSessionHandler
                 continue;
             }
 
-            $hatfieldName = $this->nameMapper->mapHatfieldName($serverName, $mcpName);
+            $hatfieldName = $this->mapHatfieldName($serverName, $mcpName);
 
             // Cross-catalog duplicate detection — sanitized names
             // from different servers can collide (e.g. "a.b/tool" and
@@ -444,6 +442,49 @@ final class McpInitializeSessionHandler
                 'error_message' => $this->sanitizeErrorMsg($inner),
             ]);
         }
+    }
+
+    /**
+     * Map a single tool to its Hatfield name: `{server}_{tool}` after sanitization.
+     */
+    private function mapHatfieldName(string $serverName, string $mcpToolName): string
+    {
+        return $this->sanitizeToolNameComponent($serverName).'_'.$this->sanitizeToolNameComponent($mcpToolName);
+    }
+
+    /**
+     * Sanitize a name component for use in LLM tool identifiers.
+     *
+     * Replacement rules:
+     *  - Allow: a-z, A-Z, 0-9, underscore, hyphen
+     *  - Replace any other character with underscore
+     *  - Collapse consecutive underscores
+     *  - Trim leading/trailing underscores
+     *  - Ensure non-empty result
+     */
+    private function sanitizeToolNameComponent(string $name): string
+    {
+        if ('' === $name) {
+            return 'unknown';
+        }
+
+        $sanitized = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $name);
+
+        if (null === $sanitized || '' === $sanitized) {
+            return 'unknown';
+        }
+
+        // Collapse consecutive underscores
+        $sanitized = preg_replace('/_+/', '_', $sanitized);
+
+        // Trim leading/trailing underscores
+        $sanitized = trim($sanitized, '_');
+
+        if ('' === $sanitized) {
+            return 'unknown';
+        }
+
+        return $sanitized;
     }
 
     /**

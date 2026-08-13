@@ -67,6 +67,7 @@ final readonly class SubagentProgressChildRowDTO
         public ?float $cost = null,
         #[Assert\Type('string')]
         public ?string $model = null,
+        public ?string $reasoning = null,
         #[SerializedName('context_window')]
         #[Assert\Type('int')]
         public ?int $contextWindow = null,
