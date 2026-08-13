@@ -84,7 +84,7 @@ Architecture boundaries are enforced by Deptrac. Public extension contracts live
 composer install
 composer install -d .hatfield/extensions   # when using project extensions
 
-castor check                 # full QA gate
+castor check                 # full QA gate (includes docs:validate)
 castor test                  # unit/integration
 castor test:controller-replay
 castor test:tui

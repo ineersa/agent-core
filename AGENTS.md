@@ -20,7 +20,7 @@ depfile.yaml      Deptrac rules (authoritative boundaries)
 
 **All QA, test, lint, static analysis, and formatting go through Castor.** Do not run raw `vendor/bin/*` except to isolate a Castor failure. Reports land under `var/reports/` (per-run dirs via `HATFIELD_QA_REPORTS_DIR`).
 
-Key commands: `castor check`, `castor test`, `castor test:tui`, `castor test:controller-replay`, `castor test:llm-real`, `castor deptrac`, `castor phpstan`, `castor cs-check`, `castor cs-fix`.
+Key commands: `castor check` (includes `docs:validate`), `castor test`, `castor test:tui`, `castor test:controller-replay`, `castor test:llm-real`, `castor deptrac`, `castor phpstan`, `castor cs-check`, `castor cs-fix`, `castor docs:validate`.
 
 Timeouts, check lock, llama-proxy cache guard, ParaTest budgets, preflight, and worker diagnostics: load the `testing` skill (`.agents/skills/testing/SKILL.md`).
 
