@@ -11,7 +11,6 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
-use Ineersa\CodingAgent\Config\ModelSettingsPersister;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
@@ -26,9 +25,8 @@ use Symfony\Component\PropertyAccess\PropertyAccess;
 /**
  * Coordinator-level tests for ModelSelectionService.
  *
- * Tests the integration between ModelResolver + ModelSettingsPersister
- * through the ModelSelectionService facade: validation, persistence,
- * and favorites with in-process cache consistency.
+ * Covers validation, YAML/session persistence, favorites with in-process
+ * cache consistency, and AppConfig synchronization.
  *
  * Uses {@see IsolatedKernelTestCase} for per-class kernel boot.
  * Per-method temp directories isolate settings files without
@@ -203,6 +201,10 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $this->assertSame('deepseek/deepseek-v4-flash', $session->model);
         $this->assertSame('deepseek', $session->modelProvider);
         $this->assertSame('deepseek-v4-flash', $session->modelName);
+
+        $homeContent = file_get_contents($this->homeSettingsPath());
+        $this->assertNotFalse($homeContent);
+        $this->assertStringContainsString('default_model: deepseek/deepseek-v4-flash', (string) $homeContent);
     }
 
     public function testChangeModelThrowsOnUnavailableModel(): void
@@ -229,16 +231,29 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $session = $this->findSessionEntity($this->sessionId);
         $this->assertNotNull($session);
         $this->assertSame('xhigh', $session->reasoning);
+
+        $homeContent = file_get_contents($this->homeSettingsPath());
+        $this->assertNotFalse($homeContent);
+        $this->assertStringContainsString('default_reasoning: xhigh', (string) $homeContent);
     }
 
     public function testChangeReasoningThrowsOnInvalidLevel(): void
     {
         $service = $this->buildService($this->standardAiData());
+        $before = file_get_contents($this->homeSettingsPath());
 
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid reasoning level');
+        try {
+            $service->changeReasoning('super-genius', $this->sessionId);
+            $this->fail('Expected InvalidArgumentException for invalid reasoning level.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('Invalid reasoning level', $e->getMessage());
+        }
 
-        $service->changeReasoning('super-genius', $this->sessionId);
+        $after = file_get_contents($this->homeSettingsPath());
+        $this->assertSame($before, $after);
+        $session = $this->findSessionEntity($this->sessionId);
+        $this->assertNotNull($session);
+        $this->assertNull($session->reasoning);
     }
 
     // ──────────────────────────────────────────────
@@ -280,6 +295,24 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $favs = $service->getFavoriteModels();
         $this->assertCount(1, $favs);
         $this->assertFalse($service->isFavorite('deepseek/deepseek-v4-pro'));
+    }
+
+    public function testToggleFavoritePersistsFavoriteModelsToHomeYaml(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro'];
+        $service = $this->buildService($aiData);
+
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        $homeContent = file_get_contents($this->homeSettingsPath());
+        $this->assertNotFalse($homeContent);
+        $parsed = \Symfony\Component\Yaml\Yaml::parse((string) $homeContent);
+        $this->assertIsArray($parsed);
+        $this->assertSame(
+            ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'],
+            $parsed['ai']['favorite_models'] ?? null,
+        );
     }
 
     public function testToggleFavoriteThrowsOnUnavailableModel(): void
@@ -570,9 +603,8 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $resolver = new ModelResolver($appConfig, $this->sessionMetaStore);
-        $persister = new ModelSettingsPersister($homeWriter, $this->sessionMetaStore);
 
-        return new ModelSelectionService($appConfig, $resolver, $persister);
+        return new ModelSelectionService($appConfig, $resolver, $homeWriter, $this->sessionMetaStore);
     }
 
     private function makeAppConfig(array $aiData): AppConfig
@@ -585,7 +617,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $ai = AiConfig::optionalFromArray($raw);
 
         return new AppConfig(
-            tui: TuiConfig::fromArray((array) ($raw['tui'] ?? [])),
+            tui: new TuiConfig(theme: (string) (($raw['tui'] ?? [])['theme'] ?? 'cyberpunk')),
             logging: new LoggingConfig(),
             sessions: new SessionsConfig(),
             ai: $ai,
@@ -648,10 +680,9 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $resolver = new ModelResolver($appConfig, $this->sessionMetaStore);
-        $persister = new ModelSettingsPersister($homeWriter, $this->sessionMetaStore);
 
         return [
-            new ModelSelectionService($appConfig, $resolver, $persister),
+            new ModelSelectionService($appConfig, $resolver, $homeWriter, $this->sessionMetaStore),
             $appConfig,
         ];
     }

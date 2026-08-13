@@ -356,7 +356,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         );
 
         return new AppConfig(
-            tui: TuiConfig::fromArray(['theme' => 'default']),
+            tui: new TuiConfig(theme: 'default'),
             logging: new LoggingConfig(),
             ai: $ai,
             catalog: new HatfieldModelCatalog($ai),

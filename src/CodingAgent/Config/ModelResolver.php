@@ -274,20 +274,4 @@ final class ModelResolver
 
         return end($mapKeys);
     }
-
-    /**
-     * Cycle to the next reasoning level.
-     */
-    public function cycleReasoning(string $currentLevel): string
-    {
-        $pos = array_search($currentLevel, self::LEVELS, true);
-
-        if (false === $pos) {
-            return self::LEVELS[0];
-        }
-
-        $nextIdx = ($pos + 1) % \count(self::LEVELS);
-
-        return self::LEVELS[$nextIdx];
-    }
 }

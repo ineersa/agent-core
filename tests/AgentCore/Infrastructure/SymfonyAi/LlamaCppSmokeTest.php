@@ -290,7 +290,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
     {
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
-        $selectionService = new ModelSelectionService($appConfig, new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $this->sessionMetaStore), new \Ineersa\CodingAgent\Config\ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
+        $selectionService = new ModelSelectionService($appConfig, new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $this->sessionMetaStore), $homeWriter, $this->sessionMetaStore);
         $catalog = $appConfig->catalog
             ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
@@ -356,7 +356,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
         $ai = AiConfig::optionalFromArray($raw);
 
         return new AppConfig(
-            tui: TuiConfig::fromArray((array) ($raw['tui'] ?? [])),
+            tui: new TuiConfig(theme: (string) (($raw['tui'] ?? [])['theme'] ?? 'cyberpunk')),
             logging: new LoggingConfig(),
             sessions: new SessionsConfig(),
             ai: $ai,

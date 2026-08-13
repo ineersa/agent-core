@@ -39,7 +39,7 @@ use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
-use Ineersa\CodingAgent\Config\ModelSettingsPersister;
+use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionCompactionHookDispatcher;
@@ -1443,11 +1443,10 @@ final class CompactRunHandlerTest extends TestCase
 
         $modelResolver = new ModelResolver($appConfig, $sessionMetaStore);
 
-        // ModelSettingsPersister is never accessed by getCurrentModel().
-        $persisterRc = new \ReflectionClass(ModelSettingsPersister::class);
-        $persister = $persisterRc->newInstanceWithoutConstructor();
+        // Persistence deps are never accessed by getCurrentModel().
+        $settingsWriter = (new \ReflectionClass(SettingsOverrideWriter::class))->newInstanceWithoutConstructor();
 
-        return new ModelSelectionService($appConfig, $modelResolver, $persister);
+        return new ModelSelectionService($appConfig, $modelResolver, $settingsWriter, $sessionMetaStore);
     }
 
     private function userMsg(string $text): AgentMessage
