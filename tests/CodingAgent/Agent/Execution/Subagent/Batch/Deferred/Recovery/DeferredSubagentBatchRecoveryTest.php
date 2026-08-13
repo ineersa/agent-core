@@ -84,7 +84,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         $batchRepo->applyBatchChildLifecycleProjection(
             batchLifecycleId: $lifecycle,
             batchIndex: 1,
-            projection: \Ineersa\CodingAgent\Tests\Support\DeferredChildRunLifecycleProjectionCodecTestFactory::create()->denormalize([
+            projection: $childRepo->decodeChildLifecycleProjection([
                 'model' => 'deepseek/deepseek-v4-flash',
                 'reasoning' => 'medium',
                 'child_status' => 'running',
@@ -109,7 +109,6 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             $batchRepo,
             $childRepo,
             new DeferredChildRunEventProjector(),
-            \Ineersa\CodingAgent\Tests\Support\DeferredChildRunLifecycleProjectionCodecTestFactory::create(),
             new TestLogger(),
             $bus,
         );
@@ -135,7 +134,6 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             $childRepo,
             self::getContainer()->get(AgentChildRunEventStoreFactory::class),
             new DeferredChildRunEventProjector(),
-            \Ineersa\CodingAgent\Tests\Support\DeferredChildRunLifecycleProjectionCodecTestFactory::create(),
             $recoveryBus,
             new TestLogger(),
         );
@@ -343,7 +341,6 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             self::getContainer()->get(DeferredSubagentChildRepository::class),
             self::getContainer()->get(AgentChildRunEventStoreFactory::class),
             new DeferredChildRunEventProjector(),
-            \Ineersa\CodingAgent\Tests\Support\DeferredChildRunLifecycleProjectionCodecTestFactory::create(),
             $interruptRecoveryBus,
             new TestLogger(),
         );

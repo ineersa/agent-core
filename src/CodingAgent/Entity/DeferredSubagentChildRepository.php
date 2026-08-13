@@ -11,9 +11,14 @@ use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionCodec;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Symfony\Component\Clock\Clock;
+use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * @extends ServiceEntityRepository<DeferredSubagentChild>
@@ -22,7 +27,8 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
 {
     public function __construct(
         ManagerRegistry $registry,
-        private readonly DeferredChildRunLifecycleProjectionCodec $lifecycleProjectionCodec,
+        private readonly NormalizerInterface&DenormalizerInterface $serializer,
+        private readonly ValidatorInterface $validator,
     ) {
         parent::__construct($registry, DeferredSubagentChild::class);
     }
@@ -160,6 +166,48 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         return $row instanceof DeferredSubagentChild ? $row : null;
     }
 
+    /**
+     * @param array<string, mixed>|null $raw
+     */
+    public function decodeChildLifecycleProjection(?array $raw): ?DeferredChildRunLifecycleProjectionDTO
+    {
+        if (null === $raw || [] === $raw) {
+            return null;
+        }
+
+        try {
+            $projection = $this->serializer->denormalize($raw, DeferredChildRunLifecycleProjectionDTO::class);
+        } catch (SerializerExceptionInterface|\TypeError|\ValueError $exception) {
+            throw new \InvalidArgumentException(\sprintf('Invalid deferred child lifecycle projection: %s', $exception->getMessage()), 0, $exception);
+        }
+
+        if (!$projection instanceof DeferredChildRunLifecycleProjectionDTO) {
+            throw new \InvalidArgumentException(\sprintf('Invalid deferred child lifecycle projection: expected %s, got %s.', DeferredChildRunLifecycleProjectionDTO::class, get_debug_type($projection)));
+        }
+
+        $violations = $this->validator->validate($projection);
+        if ($violations->count() > 0) {
+            throw new \InvalidArgumentException(\sprintf('Invalid deferred child lifecycle projection: validation failed with %d violation(s).', $violations->count()), 0, new ValidationFailedException($projection, $violations));
+        }
+
+        return $projection;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function encodeChildLifecycleProjection(DeferredChildRunLifecycleProjectionDTO $projection): array
+    {
+        /** @var array<string, mixed> $payload */
+        $payload = $this->serializer->normalize(
+            $projection,
+            null,
+            [AbstractObjectNormalizer::SKIP_NULL_VALUES => true],
+        );
+
+        return $payload;
+    }
+
     private function requireChild(string $batchLifecycleId, int $batchIndex): DeferredSubagentChild
     {
         $row = $this->findOneBy([
@@ -193,17 +241,5 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
             terminalStatus: $row->terminalStatus,
             projectionVersion: $row->projectionVersion,
         );
-    }
-
-    /**
-     * @param array<string, mixed>|null $raw
-     */
-    private function decodeChildLifecycleProjection(?array $raw): ?DeferredChildRunLifecycleProjectionDTO
-    {
-        if (!\is_array($raw) || [] === $raw) {
-            return null;
-        }
-
-        return $this->lifecycleProjectionCodec->denormalize($raw);
     }
 }

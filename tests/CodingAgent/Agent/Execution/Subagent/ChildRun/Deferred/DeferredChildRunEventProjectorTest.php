@@ -84,8 +84,9 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertSame('xhigh', $resumed->reasoning);
         $this->assertSame(2, $resumed->llmStepCount);
         $this->assertSame(4, $resumed->childTurnNo);
-        $codec = \Ineersa\CodingAgent\Tests\Support\DeferredChildRunLifecycleProjectionCodecTestFactory::create();
-        $this->assertSame('xhigh', $codec->denormalize($codec->normalize($resumed))->reasoning);
+        [$serializer] = \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
+        $wire = $serializer->normalize($resumed, null, [\Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
+        $this->assertSame('xhigh', $serializer->denormalize($wire, DeferredChildRunLifecycleProjectionDTO::class)->reasoning);
     }
 
     public function testRetryableLlmStepFailedStaysRunningWhileExhaustedFailureIsTerminal(): void
@@ -294,10 +295,11 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertSame(7, $projection->childTurnNo);
         $this->assertSame(30, $projection->inputTokens);
 
-        $codec = \Ineersa\CodingAgent\Tests\Support\DeferredChildRunLifecycleProjectionCodecTestFactory::create();
-        $roundTrip = $codec->denormalize($codec->normalize($projection));
+        [$serializer] = \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
+        $wire = $serializer->normalize($projection, null, [\Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
+        $roundTrip = $serializer->denormalize($wire, DeferredChildRunLifecycleProjectionDTO::class);
         $this->assertSame(3, $roundTrip->llmStepCount);
-        $this->assertSame(3, $codec->normalize($roundTrip)['llm_step_count'] ?? null);
+        $this->assertSame(3, $wire['llm_step_count'] ?? null);
         $this->assertSame(7, $roundTrip->childTurnNo);
 
         $summary = new \Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary(
@@ -307,7 +309,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             llmStepCount: $roundTrip->llmStepCount,
             inputTokens: $roundTrip->inputTokens,
             latestInputTokens: $roundTrip->latestInputTokens,
-            contextWindow: $roundTrip->contextWindow,
+            contextWindow: $roundTrip->contextWindow ?? 0,
             outputTokens: $roundTrip->outputTokens,
             reasoningTokens: $roundTrip->reasoningTokens,
             totalTokens: $roundTrip->totalTokens,

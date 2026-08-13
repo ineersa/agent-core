@@ -46,7 +46,7 @@ final class SubagentChildProgressSummaryBuilder
             llmStepCount: $projection->llmStepCount,
             inputTokens: $projection->inputTokens,
             latestInputTokens: $projection->latestInputTokens,
-            contextWindow: $projection->contextWindow,
+            contextWindow: $projection->contextWindow ?? 0,
             outputTokens: $projection->outputTokens,
             reasoningTokens: $projection->reasoningTokens,
             totalTokens: $projection->totalTokens,

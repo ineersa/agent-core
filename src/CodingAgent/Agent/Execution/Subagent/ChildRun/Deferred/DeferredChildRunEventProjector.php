@@ -47,7 +47,6 @@ final class DeferredChildRunEventProjector
         $reasoningTokens = $current->reasoningTokens;
         $totalTokens = $current->totalTokens;
         $cost = $current->cost;
-        $hasCost = null !== $cost && $cost > 0.0;
         // Identity is always seeded from durable launch model/reasoning before RunStarted.
         $model = $current->model;
         $reasoning = $current->reasoning;
@@ -112,8 +111,8 @@ final class DeferredChildRunEventProjector
                 $reasoningTokens += $this->intVal($usage['thinking_tokens'] ?? $usage['reasoning_tokens'] ?? 0);
                 $totalTokens += $this->intVal($usage['total_tokens'] ?? 0);
                 if (isset($usage['cost']) && is_numeric($usage['cost'])) {
-                    $cost = ($cost ?? 0.0) + (float) $usage['cost'];
-                    $hasCost = true;
+                    $nextCost = ($cost ?? 0.0) + (float) $usage['cost'];
+                    $cost = $nextCost > 0.0 ? $nextCost : null;
                 }
 
                 $assistantPayload = \is_array($payload['assistant_message'] ?? null) ? $payload['assistant_message'] : null;
@@ -239,7 +238,7 @@ final class DeferredChildRunEventProjector
             outputTokens: $outputTokens,
             reasoningTokens: $reasoningTokens,
             totalTokens: $totalTokens,
-            cost: $hasCost ? $cost : null,
+            cost: $cost,
             provider: $provider,
             recentTools: $recentTools,
             activeToolLine: $activeToolLine,

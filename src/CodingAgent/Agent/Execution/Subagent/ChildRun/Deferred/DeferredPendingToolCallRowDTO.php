@@ -15,10 +15,8 @@ final readonly class DeferredPendingToolCallRowDTO
 {
     public function __construct(
         #[Assert\NotBlank]
-        #[Assert\Type('string')]
         public string $name,
         #[Assert\NotBlank]
-        #[Assert\Type('string')]
         public string $displayLine,
     ) {
     }

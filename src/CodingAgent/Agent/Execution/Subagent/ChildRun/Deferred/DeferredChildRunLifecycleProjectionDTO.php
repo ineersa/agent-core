@@ -11,16 +11,36 @@ use Symfony\Component\Validator\Constraints as Assert;
 /**
  * Compact durable child lifecycle projection for deferred child runs.
  *
- * Doctrine JSON shape is owned by {@see DeferredChildRunLifecycleProjectionCodec}.
- * Launch model/reasoning are concrete non-empty identity seeded at preparation.
- * Optional enrichment fields are null when absent so Serializer
+ * Doctrine JSON column stores the Serializer-normalized shape of this DTO.
+ * Launch model/reasoning are required non-empty identity seeded at preparation.
+ * Optional enrichment fields are null when absent so
  * {@see \Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES}
- * plus codec omission rules preserve historical key omission.
+ * omits them on write.
  */
 final readonly class DeferredChildRunLifecycleProjectionDTO
 {
     public string $model;
     public string $reasoning;
+
+    #[SerializedName('error_message')]
+    public ?string $errorMessage;
+
+    #[SerializedName('assistant_result_text')]
+    public ?string $assistantResultText;
+
+    #[SerializedName('assistant_excerpt')]
+    public ?string $assistantExcerpt;
+
+    #[SerializedName('context_window')]
+    #[Assert\GreaterThanOrEqual(1)]
+    public ?int $contextWindow;
+
+    public ?float $cost;
+
+    public ?string $provider;
+
+    #[SerializedName('active_tool')]
+    public ?string $activeToolLine;
 
     /**
      * @param list<string>                                 $recentTools
@@ -37,15 +57,9 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         public int $lastCommittedSeq,
         string $model,
         string $reasoning,
-        #[SerializedName('error_message')]
-        #[Assert\Type('string')]
-        public ?string $errorMessage = null,
-        #[SerializedName('assistant_result_text')]
-        #[Assert\Type('string')]
-        public ?string $assistantResultText = null,
-        #[SerializedName('assistant_excerpt')]
-        #[Assert\Type('string')]
-        public ?string $assistantExcerpt = null,
+        ?string $errorMessage = null,
+        ?string $assistantResultText = null,
+        ?string $assistantExcerpt = null,
         #[SerializedName('tool_count')]
         #[Assert\GreaterThanOrEqual(0)]
         public int $toolCount = 0,
@@ -58,9 +72,7 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         #[SerializedName('latest_input_tokens')]
         #[Assert\GreaterThanOrEqual(0)]
         public int $latestInputTokens = 0,
-        #[SerializedName('context_window')]
-        #[Assert\GreaterThanOrEqual(0)]
-        public int $contextWindow = 0,
+        ?int $contextWindow = null,
         #[SerializedName('output_tokens')]
         #[Assert\GreaterThanOrEqual(0)]
         public int $outputTokens = 0,
@@ -70,18 +82,12 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         #[SerializedName('total_tokens')]
         #[Assert\GreaterThanOrEqual(0)]
         public int $totalTokens = 0,
-        #[Assert\Type('float')]
-        public ?float $cost = null,
-        #[Assert\Type('string')]
-        public ?string $provider = null,
+        ?float $cost = null,
+        ?string $provider = null,
         #[SerializedName('recent_tools')]
-        #[Assert\All([new Assert\Type('string')])]
         public array $recentTools = [],
-        #[SerializedName('active_tool')]
-        #[Assert\Type('string')]
-        public ?string $activeToolLine = null,
+        ?string $activeToolLine = null,
         #[SerializedName('pending_tool_calls')]
-        #[Assert\All([new Assert\Type(DeferredPendingToolCallRowDTO::class)])]
         #[Assert\Valid]
         public array $pendingToolCalls = [],
     ) {
@@ -92,5 +98,21 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         }
         $this->model = $model;
         $this->reasoning = $reasoning;
+        $this->errorMessage = self::nullIfEmptyString($errorMessage);
+        $this->assistantResultText = self::nullIfEmptyString($assistantResultText);
+        $this->assistantExcerpt = self::nullIfEmptyString($assistantExcerpt);
+        $this->provider = self::nullIfEmptyString($provider);
+        $this->activeToolLine = self::nullIfEmptyString($activeToolLine);
+        $this->contextWindow = (null !== $contextWindow && $contextWindow > 0) ? $contextWindow : null;
+        $this->cost = (null !== $cost && $cost > 0.0) ? $cost : null;
+    }
+
+    private static function nullIfEmptyString(?string $value): ?string
+    {
+        if (null === $value || '' === $value) {
+            return null;
+        }
+
+        return $value;
     }
 }
