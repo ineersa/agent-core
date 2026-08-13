@@ -21,7 +21,7 @@ final class SymfonyAiProviderRegistryTest extends TestCase
     {
         parent::setUp();
         $this->appConfig = new AppConfig(
-            tui: TuiConfig::fromArray(['theme' => 'cyberpunk']),
+            tui: new TuiConfig(theme: 'cyberpunk'),
             logging: new LoggingConfig(),
         );
     }
