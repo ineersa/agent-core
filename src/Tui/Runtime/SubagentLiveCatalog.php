@@ -15,17 +15,21 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
  */
 final class SubagentLiveCatalog
 {
-    private readonly SubagentProgressSnapshotCodec $progressCodec;
-
     /** @var array<string, SubagentLiveChildDTO> artifactId → child */
     private array $byArtifactId = [];
 
     /** @var array<string, true> */
     private array $dismissedArtifactIds = [];
 
-    public function __construct(?SubagentProgressSnapshotCodec $progressCodec = null)
-    {
-        $this->progressCodec = $progressCodec ?? SubagentProgressSnapshotCodec::createStandalone();
+    /**
+     * @param SubagentProgressSnapshotCodec|null $progressCodec required for {@see ingestRuntimeEvent()};
+     *                                                          production composition roots always inject the
+     *                                                          container-managed codec. Null is only for pure
+     *                                                          unit tests that seed rows without wire denorm.
+     */
+    public function __construct(
+        private readonly ?SubagentProgressSnapshotCodec $progressCodec = null,
+    ) {
     }
 
     public function dismissArtifactId(string $artifactId): ?SubagentLiveChildDTO
@@ -58,17 +62,7 @@ final class SubagentLiveCatalog
                 return $b->needsAttention() <=> $a->needsAttention();
             }
 
-            // Active rows still prefer most-recent activity; terminal rows sort
-            // deterministically so microsecond ingest jitter does not reshuffle.
-            $aActive = $a->status->isActive();
-            $bActive = $b->status->isActive();
-            if ($aActive || $bActive) {
-                if ($a->lastActivityAtMs !== $b->lastActivityAtMs) {
-                    return $b->lastActivityAtMs <=> $a->lastActivityAtMs;
-                }
-            }
-
-            return $a->artifactId <=> $b->artifactId;
+            return $b->lastActivityAtMs <=> $a->lastActivityAtMs;
         });
 
         return $items;
@@ -130,6 +124,10 @@ final class SubagentLiveCatalog
             return;
         }
 
+        if (null === $this->progressCodec) {
+            throw new \LogicException('SubagentLiveCatalog::ingestRuntimeEvent requires an injected SubagentProgressSnapshotCodec.');
+        }
+
         // Wire/public boundary: denormalize + validate once, then use typed properties.
         try {
             $snapshot = $this->progressCodec->denormalize($progress);
@@ -137,6 +135,8 @@ final class SubagentLiveCatalog
             // Invalid wire payloads are ignored; live catalog stays best-effort.
             return;
         }
+        // One wall-clock sample for the whole event so multi-child parallel
+        // rows share lastActivityAtMs (stable within-event tie; no product order change).
         $now = (int) (microtime(true) * 1000);
 
         if ($snapshot instanceof SubagentProgressParallelSnapshotDTO) {

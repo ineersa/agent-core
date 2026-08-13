@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\SlashCommand;
@@ -38,6 +39,7 @@ use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
+use Ineersa\Tui\Runtime\SubagentLiveCatalog;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -101,7 +103,7 @@ final class SubagentLiveScenarioHarness
         ?TuiSessionSwitchServiceInterface $switchService = null,
         ?HistoryProviderInterface $historyProvider = null,
     ): self {
-        $state = new TuiSessionState($parentSessionId);
+        $state = new TuiSessionState($parentSessionId, subagentLiveCatalog: new SubagentLiveCatalog(SubagentProgressSnapshotCodecTestFactory::create()));
         $state->handle = new RunHandle($parentRunId);
         $state->activity = RunActivityStateEnum::Running;
 
@@ -112,12 +114,14 @@ final class SubagentLiveScenarioHarness
         $tui = new Tui();
         $theme = new DefaultTheme(new ThemePalette('scenario'));
         $promptEditor = new PromptEditor();
+        $codec = SubagentProgressSnapshotCodecTestFactory::create();
         $screen = new ChatScreen(
             $theme,
             $parentSessionId,
             $promptEditor,
             new TranscriptDisplayConfig(),
             new TranscriptDisplayState(),
+            progressSnapshotCodec: $codec,
         );
 
         $registry = new SlashCommandRegistry();

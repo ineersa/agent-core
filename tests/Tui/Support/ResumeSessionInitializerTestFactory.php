@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\CancellationProjectionSubscriber;
@@ -27,6 +28,7 @@ use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\SessionHistoryProvider;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Session\SessionTranscriptProvider;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
@@ -67,7 +69,7 @@ final class ResumeSessionInitializerTestFactory
         $projectionState = new TranscriptProjectionState();
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber());
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(SubagentProgressSnapshotCodecTestFactory::create())));
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
@@ -88,6 +90,7 @@ final class ResumeSessionInitializerTestFactory
                 eventMapper: $mapper,
                 transcriptProjector: $projector,
             ),
+            progressSnapshotCodec: SubagentProgressSnapshotCodecTestFactory::create(),
         );
     }
 }

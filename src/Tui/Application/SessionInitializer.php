@@ -8,10 +8,12 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\SubagentLiveCatalog;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
@@ -43,6 +45,7 @@ final readonly class SessionInitializer
         private TuiRuntimeEventApplier $eventApplier,
         private HistoryProviderInterface $historyProvider,
         private SessionTranscriptProviderInterface $sessionTranscriptProvider,
+        private SubagentProgressSnapshotCodec $progressSnapshotCodec,
     ) {
     }
 
@@ -57,7 +60,7 @@ final readonly class SessionInitializer
      */
     public function initializeDraft(?StartRunRequest $request = null): TuiSessionState
     {
-        $state = new TuiSessionState('', false);
+        $state = $this->newSessionState('', false);
 
         if (null !== $request) {
             $state->request = $request;
@@ -83,7 +86,7 @@ final readonly class SessionInitializer
             $sessionId = $this->sessionStore->createSession($promptText);
         }
 
-        $state = new TuiSessionState($sessionId, $resuming);
+        $state = $this->newSessionState($sessionId, $resuming);
 
         // Inject session ID as the run ID when starting with an initial prompt
         if (null !== $request && '' !== $request->prompt && '' === $request->runId) {
@@ -129,6 +132,15 @@ final readonly class SessionInitializer
             text: 'Welcome to Hatfield. Type a message below to start.',
             seq: 1,
         )];
+    }
+
+    private function newSessionState(string $sessionId, bool $resuming): TuiSessionState
+    {
+        return new TuiSessionState(
+            sessionId: $sessionId,
+            resuming: $resuming,
+            subagentLiveCatalog: new SubagentLiveCatalog($this->progressSnapshotCodec),
+        );
     }
 
     /**

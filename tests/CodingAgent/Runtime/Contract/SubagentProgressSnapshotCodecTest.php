@@ -8,7 +8,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 
@@ -43,7 +43,7 @@ final class SubagentProgressSnapshotCodecTest extends TestCase
             ),
         );
 
-        $payload = SubagentProgressSnapshotCodec::createStandalone()->normalize($snapshot);
+        $payload = SubagentProgressSnapshotCodecTestFactory::create()->normalize($snapshot);
 
         $this->assertSame('single', $payload['mode']);
         $this->assertSame('running', $payload['status']);
@@ -100,7 +100,7 @@ final class SubagentProgressSnapshotCodecTest extends TestCase
             aggregateStatus: 'running',
         );
 
-        $payload = SubagentProgressSnapshotCodec::createStandalone()->normalize($snapshot);
+        $payload = SubagentProgressSnapshotCodecTestFactory::create()->normalize($snapshot);
 
         $this->assertSame('parallel', $payload['mode']);
         $this->assertSame(1, $payload['completed_count']);
@@ -118,7 +118,7 @@ final class SubagentProgressSnapshotCodecTest extends TestCase
 
     public function testDenormalizeRoundTripAndRejectsInvalidMode(): void
     {
-        $codec = SubagentProgressSnapshotCodec::createStandalone();
+        $codec = SubagentProgressSnapshotCodecTestFactory::create();
         $single = $codec->denormalize([
             'mode' => 'single',
             'status' => 'running',
@@ -165,7 +165,7 @@ final class SubagentProgressSnapshotCodecTest extends TestCase
 
     public function testValidatorRejectsBlankStatus(): void
     {
-        $codec = SubagentProgressSnapshotCodec::createStandalone();
+        $codec = SubagentProgressSnapshotCodecTestFactory::create();
 
         $this->expectException(ValidationFailedException::class);
         $codec->denormalize([

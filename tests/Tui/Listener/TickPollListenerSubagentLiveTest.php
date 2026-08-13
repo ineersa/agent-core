@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
@@ -24,6 +25,7 @@ use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
+use Ineersa\Tui\Runtime\SubagentLiveCatalog;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
@@ -64,7 +66,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
-        $state = new TuiSessionState($parentRun);
+        $state = new TuiSessionState($parentRun, subagentLiveCatalog: new SubagentLiveCatalog(SubagentProgressSnapshotCodecTestFactory::create()));
         $state->handle = new RunHandle($parentRun, 'running');
         $state->lastSeq = 1;
         $state->activity = RunActivityStateEnum::Running;
@@ -82,7 +84,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         );
 
         $tui = new Tui();
-        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState());
+        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState(), progressSnapshotCodec: SubagentProgressSnapshotCodecTestFactory::create());
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
 
         $listenerRef = new \ReflectionClass(TickPollListener::class);
@@ -134,7 +136,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
-        $state = new TuiSessionState($parentRun);
+        $state = new TuiSessionState($parentRun, subagentLiveCatalog: new SubagentLiveCatalog(SubagentProgressSnapshotCodecTestFactory::create()));
         $state->handle = null;
         $state->lastSeq = 0;
         $state->activity = RunActivityStateEnum::Completed;
@@ -168,7 +170,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         );
 
         $tui = new Tui();
-        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState());
+        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState(), progressSnapshotCodec: SubagentProgressSnapshotCodecTestFactory::create());
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
 
         $listenerRef = new \ReflectionClass(TickPollListener::class);

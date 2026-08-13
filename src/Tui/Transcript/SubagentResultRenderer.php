@@ -27,16 +27,13 @@ use Symfony\Component\Tui\Widget\TextWidget;
  */
 final readonly class SubagentResultRenderer
 {
-    private SubagentProgressSnapshotCodec $progressCodec;
-
     public function __construct(
+        private ?SubagentProgressSnapshotCodec $progressCodec = null,
         private SubagentTranscriptCardBuilder $cardBuilder = new SubagentTranscriptCardBuilder(),
         private TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         private TranscriptDisplayState $displayState = new TranscriptDisplayState(),
         private TranscriptLinePreviewService $linePreviewService = new TranscriptLinePreviewService(),
-        ?SubagentProgressSnapshotCodec $progressCodec = null,
     ) {
-        $this->progressCodec = $progressCodec ?? SubagentProgressSnapshotCodec::createStandalone();
     }
 
     public function supports(TranscriptBlock $block): bool
@@ -58,6 +55,10 @@ final readonly class SubagentResultRenderer
         $resultText = $this->resolveResultText($block);
 
         if (\is_array($progressRaw)) {
+            if (null === $this->progressCodec) {
+                throw new \LogicException('SubagentResultRenderer requires an injected SubagentProgressSnapshotCodec to render subagent_progress meta.');
+            }
+
             // Transcript meta is a public/persisted array boundary; denormalize once.
             return $this->buildProgressWidget(
                 $block,

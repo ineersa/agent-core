@@ -48,7 +48,7 @@ class CancelListenerTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->state = new TuiSessionState('test-session');
+        $this->state = new TuiSessionState('test-session', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
         $this->client = $this->createMock(AgentSessionClient::class);
         $this->logger = new NullLogger();
 

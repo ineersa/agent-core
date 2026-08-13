@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
@@ -28,6 +29,7 @@ use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\SessionHistoryProvider;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Session\SessionTranscriptProvider;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
@@ -98,6 +100,7 @@ final class SessionInitializerTest extends TestCase
             eventApplier: new TuiRuntimeEventApplier($transcriptProjector),
             historyProvider: $historyProvider,
             sessionTranscriptProvider: $sessionTranscriptProvider,
+            progressSnapshotCodec: SubagentProgressSnapshotCodecTestFactory::create(),
         );
     }
 
@@ -432,6 +435,7 @@ final class SessionInitializerTest extends TestCase
             eventApplier: new TuiRuntimeEventApplier($projector),
             historyProvider: $historyProvider,
             sessionTranscriptProvider: $sessionTranscriptProvider,
+            progressSnapshotCodec: SubagentProgressSnapshotCodecTestFactory::create(),
         );
 
         $state = new TuiSessionState($runId, true);
@@ -507,6 +511,7 @@ final class SessionInitializerTest extends TestCase
             eventApplier: new TuiRuntimeEventApplier($this->buildRealTranscriptProjector()),
             historyProvider: $historyProvider,
             sessionTranscriptProvider: $sessionTranscriptProvider,
+            progressSnapshotCodec: SubagentProgressSnapshotCodecTestFactory::create(),
         );
 
         $state = new TuiSessionState($runId, true);
@@ -661,6 +666,7 @@ final class SessionInitializerTest extends TestCase
             eventApplier: new TuiRuntimeEventApplier($projector),
             historyProvider: $historyProvider,
             sessionTranscriptProvider: $sessionTranscriptProvider,
+            progressSnapshotCodec: SubagentProgressSnapshotCodecTestFactory::create(),
         );
     }
 
@@ -673,7 +679,7 @@ final class SessionInitializerTest extends TestCase
         $projectionState = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
         $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber());
+        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(SubagentProgressSnapshotCodecTestFactory::create())));
 
         return new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($dispatcher, $projectionState);
     }

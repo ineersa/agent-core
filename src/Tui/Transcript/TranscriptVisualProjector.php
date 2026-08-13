@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
@@ -57,9 +58,11 @@ final class TranscriptVisualProjector
         TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         TranscriptDisplayState $displayState = new TranscriptDisplayState(),
         ?TranscriptBlockWidgetFactory $factory = null,
+        ?SubagentProgressSnapshotCodec $progressSnapshotCodec = null,
     ) {
         $this->factory = $factory ?? new TranscriptBlockWidgetFactory(
             subagentRenderer: new SubagentResultRenderer(
+                progressCodec: $progressSnapshotCodec,
                 displayConfig: $displayConfig,
                 displayState: $displayState,
             ),

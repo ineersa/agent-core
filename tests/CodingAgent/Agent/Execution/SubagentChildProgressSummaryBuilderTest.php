@@ -19,6 +19,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -203,7 +204,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             elapsedMs: 100,
             enrichment: $summary,
         );
-        $fields = \Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec::createStandalone()->normalize($snapshot);
+        $fields = SubagentProgressSnapshotCodecTestFactory::create()->normalize($snapshot);
         $this->assertSame(35000, $fields['input_tokens']);
         $this->assertSame(2, $fields['llm_step_count'] ?? null);
         $this->assertSame(25000, $fields['latest_input_tokens'] ?? null);

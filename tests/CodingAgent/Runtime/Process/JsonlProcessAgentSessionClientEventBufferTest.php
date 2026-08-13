@@ -504,7 +504,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
 
         $dispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
         $state = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
-        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber());
+        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber(new \Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create())));
         $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($dispatcher, $state);
         foreach ($childDrain as $event) {
             $projector->accept([

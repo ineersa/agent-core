@@ -37,7 +37,7 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
     public function testEnterLiveViewBeginsObservationBeforeSnapshotReplay(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'obs-before-snapshot');
-        $state = new TuiSessionState('obs-before-snapshot');
+        $state = new TuiSessionState('obs-before-snapshot', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
         $child = new SubagentLiveChildDTO('child-run-1', 'art-1', 'scout', SubagentLiveStatusEnum::Completed, 'task', 1);
         $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
             type: 'tool_execution.output_delta',
@@ -90,7 +90,7 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
     public function testCachedReentryReenqueuesChildHitlAfterLeaveRemovesQuestion(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'hitl-reentry');
-        $state = new TuiSessionState('hitl-reentry');
+        $state = new TuiSessionState('hitl-reentry', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
         $childRunId = 'child-run-waiting';
         $child = new SubagentLiveChildDTO(
             $childRunId,

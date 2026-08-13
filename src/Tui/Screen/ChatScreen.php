@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Screen;
 
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\Tui\Editor\PromptEditor;
@@ -112,6 +113,7 @@ final class ChatScreen
         private readonly PromptEditor $promptEditor,
         TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         TranscriptDisplayState $displayState = new TranscriptDisplayState(),
+        ?SubagentProgressSnapshotCodec $progressSnapshotCodec = null,
     ) {
         $this->registry = new TuiSlotRegistry();
 
@@ -121,6 +123,7 @@ final class ChatScreen
             theme: $theme,
             displayConfig: $displayConfig,
             displayState: $displayState,
+            progressSnapshotCodec: $progressSnapshotCodec,
         );
         $this->pendingRenderable = new PendingMessagesWidget();
         $this->workingRenderable = new WorkingStatusWidget();

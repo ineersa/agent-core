@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Projection;
 
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
@@ -18,7 +20,7 @@ final class SubagentProgressProjectionTest extends TestCase
     {
         $dispatcher = new EventDispatcher();
         $state = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber());
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(SubagentProgressSnapshotCodecTestFactory::create())));
         $this->projector = new TranscriptProjector($dispatcher, $state);
         $this->seq = 0;
     }

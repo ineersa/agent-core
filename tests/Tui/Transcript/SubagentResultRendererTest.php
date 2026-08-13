@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Transcript;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\SubagentResultRenderer;
@@ -289,7 +290,7 @@ final class SubagentResultRendererTest extends TestCase
 
     public function testSubagentResultRendererSupportsMetaOnly(): void
     {
-        $renderer = new SubagentResultRenderer();
+        $renderer = new SubagentResultRenderer(progressCodec: SubagentProgressSnapshotCodecTestFactory::create());
         $block = new TranscriptBlock(
             id: 'tr',
             kind: TranscriptBlockKindEnum::ToolResult,
@@ -373,6 +374,7 @@ final class SubagentResultRendererTest extends TestCase
         $displayState = new TranscriptDisplayState(previewableBlocksExpanded: $expanded);
         $factory = new TranscriptBlockWidgetFactory(
             subagentRenderer: new SubagentResultRenderer(
+                progressCodec: SubagentProgressSnapshotCodecTestFactory::create(),
                 displayConfig: $displayConfig,
                 displayState: $displayState,
             ),

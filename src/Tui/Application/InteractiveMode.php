@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
@@ -73,6 +74,7 @@ final readonly class InteractiveMode
         private AppConfig $appConfig,
         private TranscriptDisplayConfigMapper $transcriptConfigMapper,
         private HistoryProviderInterface $historyProvider,
+        private SubagentProgressSnapshotCodec $progressSnapshotCodec,
     ) {
     }
 
@@ -179,7 +181,14 @@ final readonly class InteractiveMode
 
             // ── Build screen and mount widget tree ──
             $tui = new Tui();
-            $screen = new ChatScreen($theme, $state->sessionId, $this->promptEditor, $displayConfig, $state->transcriptDisplayState);
+            $screen = new ChatScreen(
+                $theme,
+                $state->sessionId,
+                $this->promptEditor,
+                $displayConfig,
+                $state->transcriptDisplayState,
+                $this->progressSnapshotCodec,
+            );
             $screen->mount($tui);
 
             // Apply Ctrl+J as portable newline, overriding the default new_line

@@ -21,15 +21,16 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapsh
  */
 final class SubagentProgressDisplayFormatter
 {
-    private readonly SubagentProgressSnapshotCodec $codec;
-
-    public function __construct(?SubagentProgressSnapshotCodec $codec = null)
-    {
-        $this->codec = $codec ?? SubagentProgressSnapshotCodec::createStandalone();
+    public function __construct(
+        private readonly SubagentProgressSnapshotCodec $codec,
+    ) {
     }
 
     /**
      * @param SubagentProgressSnapshotInterface|array<string, mixed> $progress
+     *
+     * Array form is the transcript/meta public boundary; typed form is preferred
+     * for already-decoded internal callers
      */
     public function format(SubagentProgressSnapshotInterface|array $progress): string
     {

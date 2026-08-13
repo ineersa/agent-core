@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Session;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
@@ -17,6 +18,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscrib
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\ChildRunTranscriptSnapshotProvider;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -132,7 +134,7 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
         $projectionState = new TranscriptProjectionState();
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber());
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(SubagentProgressSnapshotCodecTestFactory::create())));
         $transcriptProjector = new TranscriptProjector($dispatcher, $projectionState);
 
         return new ChildRunTranscriptSnapshotProvider($store, $eventMapper, $transcriptProjector);

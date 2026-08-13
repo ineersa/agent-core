@@ -4,20 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Contract\SubagentProgress;
 
-use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
-use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
-use Symfony\Component\PropertyInfo\PropertyInfoExtractor;
-use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
-use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
-use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
-use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
-use Symfony\Component\Validator\Validation;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
@@ -25,6 +15,9 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  *
  * Normalize only when writing RunEvent/transcript/JSONL arrays.
  * Denormalize + validate once when reading wire/meta arrays into typed objects.
+ *
+ * Injected with the FrameworkBundle container serializer/validator — never construct
+ * a private normalizer stack in production.
  */
 final class SubagentProgressSnapshotCodec
 {
@@ -32,31 +25,6 @@ final class SubagentProgressSnapshotCodec
         private readonly NormalizerInterface&DenormalizerInterface $serializer,
         private readonly ValidatorInterface $validator,
     ) {
-    }
-
-    /**
-     * Standalone stack matching FrameworkBundle Serializer attributes + ArrayDenormalizer
-     * for non-container TUI/test construction paths.
-     */
-    public static function createStandalone(): self
-    {
-        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
-        $propertyTypeExtractor = new PropertyInfoExtractor(
-            typeExtractors: [new PhpDocExtractor(), new ReflectionExtractor()],
-        );
-        $serializer = new Serializer([
-            new ArrayDenormalizer(),
-            new ObjectNormalizer(
-                classMetadataFactory: $classMetadataFactory,
-                nameConverter: new MetadataAwareNameConverter($classMetadataFactory),
-                propertyTypeExtractor: $propertyTypeExtractor,
-            ),
-        ]);
-        $validator = Validation::createValidatorBuilder()
-            ->enableAttributeMapping()
-            ->getValidator();
-
-        return new self($serializer, $validator);
     }
 
     /**

@@ -18,7 +18,7 @@ class FooterStateSegmentProviderTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->state = new TuiSessionState('test-session');
+        $this->state = new TuiSessionState('test-session', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
     }
 
     #[Test]
@@ -331,7 +331,7 @@ class FooterStateSegmentProviderTest extends TestCase
         ];
 
         foreach ($cases as [$latestInput, $expectedColor]) {
-            $state = new TuiSessionState('child-ctx-threshold-'.$latestInput);
+            $state = new TuiSessionState('child-ctx-threshold-'.$latestInput, subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
             $state->subagentLiveCatalog->ingestRuntimeEvent(new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
                 type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
                 runId: 'parent-run',

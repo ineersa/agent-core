@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\SkillReadProjectionSubscriber;
@@ -17,6 +18,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -201,7 +203,7 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         $dispatcher = new EventDispatcher();
         $state = new TranscriptProjectionState();
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber());
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(SubagentProgressSnapshotCodecTestFactory::create())));
         $dispatcher->addSubscriber(new SkillReadProjectionSubscriber($discovery));
 
         return new TranscriptProjector($dispatcher, $state);

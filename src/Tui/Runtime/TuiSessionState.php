@@ -188,13 +188,16 @@ final class TuiSessionState
     public function __construct(
         string $sessionId,
         bool $resuming = false,
+        ?SubagentLiveCatalog $subagentLiveCatalog = null,
     ) {
         $this->sessionId = $sessionId;
         $this->resuming = $resuming;
         $this->usage = new UsageProjection();
         $this->transcriptDisplayConfig = new TranscriptDisplayConfig();
         $this->transcriptDisplayState = new TranscriptDisplayState();
-        $this->subagentLiveCatalog = new SubagentLiveCatalog();
+        // Production SessionInitializer injects a catalog wired to the container codec.
+        // Tests that only seed catalog rows (no wire denorm) may omit it.
+        $this->subagentLiveCatalog = $subagentLiveCatalog ?? new SubagentLiveCatalog();
         $this->subagentLiveView = new SubagentLiveViewState();
     }
 

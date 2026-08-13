@@ -17,7 +17,7 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 final readonly class ToolProjectionSubscriber implements EventSubscriberInterface
 {
     public function __construct(
-        private readonly SubagentProgressDisplayFormatter $subagentProgressFormatter = new SubagentProgressDisplayFormatter(),
+        private readonly SubagentProgressDisplayFormatter $subagentProgressFormatter,
     ) {
     }
 

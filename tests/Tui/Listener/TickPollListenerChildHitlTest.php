@@ -36,7 +36,7 @@ final class TickPollListenerChildHitlTest extends TestCase
         );
 
         $coordinator = new QuestionCoordinator();
-        $state = new \Ineersa\Tui\Runtime\TuiSessionState('parent-1');
+        $state = new \Ineersa\Tui\Runtime\TuiSessionState('parent-1', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
         $state->subagentLiveView->enter(new SubagentLiveChildDTO(
             $childRunId,
             'agent_a',
@@ -87,7 +87,7 @@ final class TickPollListenerChildHitlTest extends TestCase
         );
 
         $coordinator = new QuestionCoordinator();
-        $state = new \Ineersa\Tui\Runtime\TuiSessionState('parent-1');
+        $state = new \Ineersa\Tui\Runtime\TuiSessionState('parent-1', subagentLiveCatalog: new \Ineersa\Tui\Runtime\SubagentLiveCatalog(\Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory::create()));
         $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
             type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             runId: 'parent-1',

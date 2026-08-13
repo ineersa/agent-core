@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\Tui\Theme\TuiTheme;
@@ -35,10 +36,12 @@ final class TranscriptMountedWidget extends ContainerWidget
         private readonly TuiTheme $theme,
         TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         TranscriptDisplayState $displayState = new TranscriptDisplayState(),
+        ?SubagentProgressSnapshotCodec $progressSnapshotCodec = null,
     ) {
         $this->projector = new TranscriptVisualProjector(
             displayConfig: $displayConfig,
             displayState: $displayState,
+            progressSnapshotCodec: $progressSnapshotCodec,
         );
         $this->applyPatch($this->projector->replaceAll([]));
     }

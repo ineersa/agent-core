@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSnapshotCodecTestFactory;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -326,7 +327,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             elapsedMs: 1000,
             enrichment: $summary,
         );
-        $singlePayload = \Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec::createStandalone()->normalize($snapshot);
+        $singlePayload = SubagentProgressSnapshotCodecTestFactory::create()->normalize($snapshot);
         $this->assertSame(3, $singlePayload['llm_step_count'] ?? null);
         $this->assertSame(7, $singlePayload['turn_no'] ?? null);
 
@@ -348,7 +349,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             enrichmentByAgentRunId: ['child-run-llm-steps' => $summary],
             aggregateStatus: 'completed',
         );
-        $parallelPayload = \Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotCodec::createStandalone()->normalize($parallel);
+        $parallelPayload = SubagentProgressSnapshotCodecTestFactory::create()->normalize($parallel);
         $this->assertSame(3, $parallelPayload['children'][0]['llm_step_count'] ?? null);
         $this->assertSame(7, $parallelPayload['children'][0]['turn_no'] ?? null);
     }
