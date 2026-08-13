@@ -17,9 +17,15 @@ use Ineersa\Tui\Widget\WidgetPlacementEnum;
  */
 final class SlotBasedTuiExtensionContext implements TuiExtensionContext
 {
+    /**
+     * @param (\Closure(?string): void)|null $onWorkingMessage when set, owns registry + widget sync
+     * @param (\Closure(bool): void)|null    $onWorkingVisible when set, owns registry + widget sync
+     */
     public function __construct(
         private readonly TuiSlotRegistry $registry,
         private readonly ?FooterDataProvider $footerDataProvider = null,
+        private readonly ?\Closure $onWorkingMessage = null,
+        private readonly ?\Closure $onWorkingVisible = null,
     ) {
     }
 
@@ -57,11 +63,23 @@ final class SlotBasedTuiExtensionContext implements TuiExtensionContext
 
     public function setWorkingMessage(?string $message): void
     {
+        if (null !== $this->onWorkingMessage) {
+            ($this->onWorkingMessage)($message);
+
+            return;
+        }
+
         $this->registry->setWorkingMessage($message);
     }
 
     public function setWorkingVisible(bool $visible): void
     {
+        if (null !== $this->onWorkingVisible) {
+            ($this->onWorkingVisible)($visible);
+
+            return;
+        }
+
         $this->registry->setWorkingVisible($visible);
     }
 
