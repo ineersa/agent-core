@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Tests\Support\ToolBatchStateCodecTestFactory;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -88,14 +89,15 @@ final class ToolBatchStateCodecTest extends TestCase
         );
 
         $wire = $codec->normalize($batch);
+        // Exact historical toPersistedArray key order from pre-phase-6 ToolBatchStateDTO.
         $this->assertSame([
             'expected_order' => ['c1' => 0, 'c2' => 1, 'c3' => 2],
             'call_data' => [
                 'c1' => [
                     'toolCallId' => 'c1',
                     'toolName' => 'bash',
-                    'orderIndex' => 0,
                     'args' => ['command' => 'ls'],
+                    'orderIndex' => 0,
                     'mode' => 'read_only',
                     'timeoutSeconds' => 30,
                     'maxParallelism' => 2,
@@ -139,6 +141,45 @@ final class ToolBatchStateCodecTest extends TestCase
             'max_parallelism' => 2,
             'awaiting_human_input' => ['c1' => 'q-1'],
         ], $wire);
+        $this->assertSame(
+            [
+                'toolCallId',
+                'toolName',
+                'args',
+                'orderIndex',
+                'mode',
+                'timeoutSeconds',
+                'maxParallelism',
+                'toolsRef',
+                'toolIdempotencyKey',
+                'assistantMessage',
+                'argSchema',
+                'humanInputAnswer',
+                'parentModel',
+            ],
+            array_keys($wire['call_data']['c1']),
+        );
+        $this->assertSame(
+            ['toolCallId', 'orderIndex', 'result', 'isError', 'error'],
+            array_keys($wire['result_data']['c2']),
+        );
+        $this->assertSame(
+            ['question_id', 'answer', 'continuation_ref', 'request_payload'],
+            array_keys($wire['call_data']['c1']['humanInputAnswer']),
+        );
+        $this->assertSame(
+            [
+                'expected_order',
+                'call_data',
+                'pending_queue',
+                'in_flight',
+                'result_data',
+                'finalized',
+                'max_parallelism',
+                'awaiting_human_input',
+            ],
+            array_keys($wire),
+        );
 
         $restored = $codec->denormalize($wire, 'run-1', 2, 'step-a');
         $this->assertSame($wire, $codec->normalize($restored));
@@ -197,6 +238,24 @@ final class ToolBatchStateCodecTest extends TestCase
         $this->assertArrayHasKey('mode', $rewritten['call_data']['c1']);
         $this->assertNull($rewritten['call_data']['c1']['mode']);
         $this->assertSame([], $rewritten['call_data']['c1']['args']);
+        $this->assertSame(
+            [
+                'toolCallId',
+                'toolName',
+                'args',
+                'orderIndex',
+                'mode',
+                'timeoutSeconds',
+                'maxParallelism',
+                'toolsRef',
+                'toolIdempotencyKey',
+                'assistantMessage',
+                'argSchema',
+                'humanInputAnswer',
+                'parentModel',
+            ],
+            array_keys($rewritten['call_data']['c1']),
+        );
     }
 
     public function testMalformedRowsFailClosed(): void
@@ -262,5 +321,94 @@ final class ToolBatchStateCodecTest extends TestCase
         } catch (\UnexpectedValueException $exception) {
             $this->assertStringContainsString('isError', $exception->getMessage());
         }
+    }
+
+    /**
+     * @return iterable<string, array{0: string, 1: string}>
+     */
+    public static function missingRequiredTopLevelKeyProvider(): iterable
+    {
+        yield 'expected_order' => ['expected_order', 'Tool batch expected_order must be an array.'];
+        yield 'call_data' => ['call_data', 'Tool batch call_data must be an array.'];
+        yield 'pending_queue' => ['pending_queue', 'Tool batch pending_queue must be an array.'];
+        yield 'in_flight' => ['in_flight', 'Tool batch in_flight must be an array.'];
+        yield 'result_data' => ['result_data', 'Tool batch result_data must be an array.'];
+        yield 'finalized' => ['finalized', 'Tool batch finalized must be a boolean.'];
+        yield 'max_parallelism' => ['max_parallelism', 'Tool batch max_parallelism must be a positive integer.'];
+        yield 'awaiting_human_input' => ['awaiting_human_input', 'Tool batch awaiting_human_input must be an array.'];
+    }
+
+    #[DataProvider('missingRequiredTopLevelKeyProvider')]
+    public function testMissingRequiredTopLevelKeyIsRejected(string $missingKey, string $expectedMessage): void
+    {
+        $codec = ToolBatchStateCodecTestFactory::create();
+        $payload = [
+            'expected_order' => [],
+            'call_data' => [],
+            'pending_queue' => [],
+            'in_flight' => [],
+            'result_data' => [],
+            'finalized' => false,
+            'max_parallelism' => 1,
+            'awaiting_human_input' => [],
+        ];
+        unset($payload[$missingKey]);
+
+        try {
+            $codec->denormalize($payload, 'run-x', 1, 'step-x');
+            $this->fail(\sprintf('Expected UnexpectedValueException for missing %s.', $missingKey));
+        } catch (\UnexpectedValueException $exception) {
+            $this->assertSame($expectedMessage, $exception->getMessage());
+        }
+    }
+
+    public function testNonStringParentModelDegradesToNullWithoutMutatingCallerPayload(): void
+    {
+        $codec = ToolBatchStateCodecTestFactory::create();
+
+        foreach ([123, ['model' => 'x'], true, false] as $badParentModel) {
+            $historical = [
+                'expected_order' => ['c1' => 0],
+                'call_data' => [
+                    'c1' => [
+                        'toolCallId' => 'c1',
+                        'toolName' => 'read',
+                        'orderIndex' => 0,
+                        'parentModel' => $badParentModel,
+                    ],
+                ],
+                'pending_queue' => [],
+                'in_flight' => [],
+                'result_data' => [],
+                'finalized' => false,
+                'max_parallelism' => 1,
+                'awaiting_human_input' => [],
+            ];
+            $originalParentModel = $historical['call_data']['c1']['parentModel'];
+
+            $batch = $codec->denormalize($historical, 'run-p', 1, 'step-p');
+            $this->assertNull($batch->calls['c1']->parentModel);
+            $this->assertSame($originalParentModel, $historical['call_data']['c1']['parentModel']);
+        }
+
+        $stringHistorical = [
+            'expected_order' => ['c1' => 0],
+            'call_data' => [
+                'c1' => [
+                    'toolCallId' => 'c1',
+                    'toolName' => 'read',
+                    'orderIndex' => 0,
+                    'parentModel' => '  keep-exact-string  ',
+                ],
+            ],
+            'pending_queue' => [],
+            'in_flight' => [],
+            'result_data' => [],
+            'finalized' => false,
+            'max_parallelism' => 1,
+            'awaiting_human_input' => [],
+        ];
+        $batch = $codec->denormalize($stringHistorical, 'run-p', 1, 'step-p');
+        $this->assertSame('  keep-exact-string  ', $batch->calls['c1']->parentModel);
     }
 }

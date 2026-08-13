@@ -25,10 +25,13 @@ final readonly class ToolBatchCallRowDTO
         public string $toolCallId,
         #[Assert\Type('string')]
         public string $toolName,
-        #[Assert\Type('integer')]
-        public int $orderIndex,
+        // Historical normalized key order: args before orderIndex.
+        // orderIndex default exists only so args can stay optional for historical
+        // rows; codec rejects missing orderIndex before denormalize.
         #[Assert\Type('array')]
         public array $args = [],
+        #[Assert\Type('integer')]
+        public int $orderIndex = 0,
         #[Assert\Type('string')]
         public ?string $mode = null,
         #[Assert\Type('integer')]

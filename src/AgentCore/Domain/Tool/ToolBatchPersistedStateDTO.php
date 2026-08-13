@@ -51,7 +51,7 @@ final readonly class ToolBatchPersistedStateDTO
         public int $maxParallelism,
         #[SerializedName('awaiting_human_input')]
         #[Assert\Type('array')]
-        public array $awaitingHumanInput = [],
+        public array $awaitingHumanInput,
     ) {
     }
 }

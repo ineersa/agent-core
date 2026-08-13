@@ -51,7 +51,11 @@ final class ToolBatchStateCodec
      */
     public function denormalize(array $data, string $runId, int $turnNo, string $stepId): ToolBatchStateDTO
     {
+        $this->assertRequiredTopLevelKeys($data);
+        $this->assertRequiredCallRowKeys($data);
         $this->assertRequiredResultKeys($data);
+        // Input-only compatibility: never mutate caller payload.
+        $data = $this->normalizeHistoricalParentModel($data);
 
         try {
             $persisted = $this->serializer->denormalize($data, ToolBatchPersistedStateDTO::class);
@@ -78,8 +82,8 @@ final class ToolBatchStateCodec
             $callData[$callId] = new ToolBatchCallRowDTO(
                 toolCallId: $call->toolCallId,
                 toolName: $call->toolName,
-                orderIndex: $call->orderIndex,
                 args: $call->args,
+                orderIndex: $call->orderIndex,
                 mode: $call->mode,
                 timeoutSeconds: $call->timeoutSeconds,
                 maxParallelism: $call->maxParallelism,
@@ -199,6 +203,81 @@ final class ToolBatchStateCodec
     }
 
     /**
+     * Preserve pre-Serializer required top-level keys from ToolBatchStateDTO::fromPersistedArray().
+     *
+     * @param array<string, mixed> $data
+     */
+    private function assertRequiredTopLevelKeys(array $data): void
+    {
+        $required = [
+            'expected_order' => 'Tool batch expected_order must be an array.',
+            'call_data' => 'Tool batch call_data must be an array.',
+            'pending_queue' => 'Tool batch pending_queue must be an array.',
+            'in_flight' => 'Tool batch in_flight must be an array.',
+            'result_data' => 'Tool batch result_data must be an array.',
+            'finalized' => 'Tool batch finalized must be a boolean.',
+            'max_parallelism' => 'Tool batch max_parallelism must be a positive integer.',
+            'awaiting_human_input' => 'Tool batch awaiting_human_input must be an array.',
+        ];
+
+        foreach ($required as $key => $message) {
+            if (!\array_key_exists($key, $data)) {
+                throw new \UnexpectedValueException($message);
+            }
+        }
+
+        if (!\is_array($data['expected_order'])) {
+            throw new \UnexpectedValueException('Tool batch expected_order must be an array.');
+        }
+        if (!\is_array($data['call_data'])) {
+            throw new \UnexpectedValueException('Tool batch call_data must be an array.');
+        }
+        if (!\is_array($data['pending_queue'])) {
+            throw new \UnexpectedValueException('Tool batch pending_queue must be an array.');
+        }
+        if (!\is_array($data['in_flight'])) {
+            throw new \UnexpectedValueException('Tool batch in_flight must be an array.');
+        }
+        if (!\is_array($data['result_data'])) {
+            throw new \UnexpectedValueException('Tool batch result_data must be an array.');
+        }
+        if (!\is_bool($data['finalized'])) {
+            throw new \UnexpectedValueException('Tool batch finalized must be a boolean.');
+        }
+        if (!\is_int($data['max_parallelism']) || $data['max_parallelism'] < 1) {
+            throw new \UnexpectedValueException('Tool batch max_parallelism must be a positive integer.');
+        }
+        if (!\is_array($data['awaiting_human_input'])) {
+            throw new \UnexpectedValueException('Tool batch awaiting_human_input must be an array.');
+        }
+    }
+
+    /**
+     * Preserve pre-Serializer required call-row keys that constructor defaults would soft-fill.
+     * orderIndex has a PHP default only to keep historical args optional and key order correct.
+     *
+     * @param array<string, mixed> $data
+     */
+    private function assertRequiredCallRowKeys(array $data): void
+    {
+        if (!\is_array($data['call_data'] ?? null)) {
+            return;
+        }
+
+        foreach ($data['call_data'] as $callId => $callRow) {
+            if (!\is_string($callId) || '' === $callId) {
+                throw new \UnexpectedValueException('Tool batch call_data keys must be non-empty strings.');
+            }
+            if (!\is_array($callRow)) {
+                throw new \UnexpectedValueException(\sprintf('Tool batch call_data[%s] must be an object.', $callId));
+            }
+            if (!\array_key_exists('orderIndex', $callRow) || !\is_int($callRow['orderIndex'])) {
+                throw new \UnexpectedValueException(\sprintf('Tool batch call_data[%s].orderIndex must be an integer.', $callId));
+            }
+        }
+    }
+
+    /**
      * Preserve pre-Serializer required-key rejection for result_data.isError.
      * Serializer constructor defaults would otherwise accept missing isError as false.
      *
@@ -206,7 +285,7 @@ final class ToolBatchStateCodec
      */
     private function assertRequiredResultKeys(array $data): void
     {
-        if (!\array_key_exists('result_data', $data) || !\is_array($data['result_data'])) {
+        if (!\is_array($data['result_data'] ?? null)) {
             return;
         }
 
@@ -221,6 +300,44 @@ final class ToolBatchStateCodec
                 throw new \UnexpectedValueException(\sprintf('Tool batch result_data[%s].isError must be a boolean.', $callId));
             }
         }
+    }
+
+    /**
+     * Historical reconstructCall degraded non-string parentModel to null without rejecting the row.
+     * Apply only that soft-degrade on a copied payload before Serializer typing.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, mixed>
+     */
+    private function normalizeHistoricalParentModel(array $data): array
+    {
+        if (!\is_array($data['call_data'] ?? null)) {
+            return $data;
+        }
+
+        $callData = $data['call_data'];
+        $changed = false;
+        foreach ($callData as $callId => $row) {
+            if (!\is_array($row) || !\array_key_exists('parentModel', $row)) {
+                continue;
+            }
+            $parentModel = $row['parentModel'];
+            if (null === $parentModel || \is_string($parentModel)) {
+                continue;
+            }
+            $row['parentModel'] = null;
+            $callData[$callId] = $row;
+            $changed = true;
+        }
+
+        if (!$changed) {
+            return $data;
+        }
+
+        $data['call_data'] = $callData;
+
+        return $data;
     }
 
     private function toExecuteToolCall(
