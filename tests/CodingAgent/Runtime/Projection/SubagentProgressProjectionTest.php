@@ -77,13 +77,13 @@ final class SubagentProgressProjectionTest extends TestCase
             'mode' => 'parallel', 'status' => 'running', 'completed_count' => 1, 'total_count' => 2, 'elapsed_ms' => 42000,
             'children' => [
                 [
-                    'index' => 1, 'label' => 'Step 1', 'agent_name' => 'reviewer', 'status' => 'completed',
+                    'index' => 1, 'agent_name' => 'reviewer', 'status' => 'completed',
                     'artifact_id' => 'agent_a', 'task_summary' => 'Review code', 'turn_no' => 3,
                     'tool_count' => 5, 'total_tokens' => 12000, 'input_tokens' => 8000, 'output_tokens' => 4000,
                     'artifact_path' => 'artifacts/agents/agent_a', 'model' => 'test/model-a', 'reasoning' => 'medium',
                 ],
                 [
-                    'index' => 2, 'label' => 'Step 2', 'agent_name' => 'scout', 'status' => 'running',
+                    'index' => 2, 'agent_name' => 'scout', 'status' => 'running',
                     'artifact_id' => 'agent_b', 'task_summary' => 'Inspect TUI', 'turn_no' => 2, 'elapsed_ms' => 15000,
                     'tool_count' => 12, 'total_tokens' => 49000,
                     'artifact_path' => 'artifacts/agents/agent_b',

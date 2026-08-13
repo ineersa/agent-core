@@ -34,6 +34,7 @@ final class ToolBatchStateDTO
         public array $expectedOrder,
         #[SerializedName('call_data')]
         #[Groups([self::SNAPSHOT_GROUP])]
+        #[Assert\Valid]
         public array $calls,
         #[SerializedName('pending_queue')]
         #[Groups([self::SNAPSHOT_GROUP])]

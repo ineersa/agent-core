@@ -158,4 +158,62 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
             [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]],
         );
     }
+
+    public function testBlankHumanInputAnswerQuestionIdCascadesFromEnvelope(): void
+    {
+        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
+        $answer = new ToolCallHumanInputAnswerDTO(
+            questionId: '',
+            answer: ['approved' => true],
+            continuationRef: [
+                'run_id' => 'run-1',
+                'turn_no' => 2,
+                'step_id' => 'step-a',
+                'tool_call_id' => 'c1',
+            ],
+            requestPayload: ['hook' => 'safe_guard'],
+        );
+        $call = new ExecuteToolCall(
+            runId: 'run-1',
+            turnNo: 2,
+            stepId: 'step-a',
+            attempt: 1,
+            idempotencyKey: 'ik',
+            toolCallId: 'c1',
+            toolName: 'bash',
+            args: [],
+            orderIndex: 0,
+            humanInputAnswer: $answer,
+        );
+        $batch = new ToolBatchStateDTO(
+            expectedOrder: ['c1' => 0],
+            calls: ['c1' => $call],
+            pendingQueue: [],
+            inFlight: [],
+            results: [],
+            finalized: false,
+            maxParallelism: 1,
+        );
+        $envelope = new ToolBatchSnapshotEnvelopeDTO('run-1', 2, 'step-a', $batch);
+
+        $violations = $validator->validate($envelope);
+        $this->assertGreaterThan(0, $violations->count());
+        $paths = [];
+        foreach ($violations as $violation) {
+            $paths[] = $violation->getPropertyPath();
+        }
+        $this->assertContains('batchState.calls[c1].humanInputAnswer.questionId', $paths);
+
+        // Serializer path also hydrates blank nested answer; validate after deserialize.
+        $json = $serializer->serialize($envelope, 'json', [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]]);
+        $restored = $serializer->deserialize(
+            $json,
+            ToolBatchSnapshotEnvelopeDTO::class,
+            'json',
+            [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]],
+        );
+        $this->assertInstanceOf(ToolBatchSnapshotEnvelopeDTO::class, $restored);
+        $restoredViolations = $validator->validate($restored);
+        $this->assertGreaterThan(0, $restoredViolations->count());
+    }
 }

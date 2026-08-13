@@ -18,7 +18,7 @@ use Symfony\Component\Validator\Exception\ValidationFailedException;
  * Thesis: repository Serializer path preserves canonical keys/null omission;
  * corrupt rows fail closed without partial objects.
  */
-final class DeferredChildRunLifecycleProjectionCodecTest extends IsolatedKernelTestCase
+final class DeferredChildRunLifecycleProjectionSerializerTest extends IsolatedKernelTestCase
 {
     public function testFullProjectionRoundTripsCanonicalShape(): void
     {

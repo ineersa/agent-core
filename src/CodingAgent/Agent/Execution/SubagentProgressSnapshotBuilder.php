@@ -237,7 +237,6 @@ final class SubagentProgressSnapshotBuilder
         if (null === $enrichment) {
             return new SubagentProgressChildRowDTO(
                 index: $index,
-                label: 'Step '.$index,
                 agentName: $agentName,
                 status: $status,
                 artifactId: $artifactId,
@@ -249,7 +248,6 @@ final class SubagentProgressSnapshotBuilder
 
         return new SubagentProgressChildRowDTO(
             index: $index,
-            label: 'Step '.$index,
             agentName: $agentName,
             status: $status,
             artifactId: $artifactId,

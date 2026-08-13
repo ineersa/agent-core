@@ -17,7 +17,6 @@ final readonly class SubagentProgressChildRowDTO
      */
     public function __construct(
         public int $index = 0,
-        public string $label = 'Step 0',
         #[SerializedName('agent_name')]
         public string $agentName = 'subagent',
         #[Assert\NotBlank]

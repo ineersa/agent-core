@@ -146,7 +146,6 @@ final class SubagentProgressSnapshotSerializerTest extends TestCase
             'children' => [
                 [
                     'index' => 1,
-                    'label' => 'Step 1',
                     'agent_name' => 'scout',
                     'status' => 'running',
                     'artifact_id' => 'a1',

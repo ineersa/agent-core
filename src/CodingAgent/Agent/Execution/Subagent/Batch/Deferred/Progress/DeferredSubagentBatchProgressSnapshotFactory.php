@@ -291,8 +291,6 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
             terminal: $state->terminal,
             status: $state->artifactStatus,
             message: $state->message,
-            model: $child->launchModel,
-            reasoning: $child->launchReasoning,
         );
     }
 
