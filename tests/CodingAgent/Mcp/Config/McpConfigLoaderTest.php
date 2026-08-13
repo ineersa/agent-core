@@ -6,8 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Mcp\Config;
 
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
-use Ineersa\CodingAgent\Mcp\Config\McpConfigValidator;
-use Ineersa\CodingAgent\Mcp\Config\McpEnvInterpolator;
 use Ineersa\CodingAgent\Mcp\Config\McpServerAvailabilityEnum;
 use Ineersa\CodingAgent\Mcp\Config\McpTransportTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -21,8 +19,6 @@ use PHPUnit\Framework\TestCase;
 class McpConfigLoaderTest extends TestCase
 {
     private SettingsPathResolver $pathResolver;
-    private McpConfigValidator $validator;
-    private McpEnvInterpolator $interpolator;
     private string $globalDir;
     private string $projectDir;
 
@@ -40,9 +36,6 @@ class McpConfigLoaderTest extends TestCase
             appRoot: '/app',  // irrelevant for these tests
             homeDir: $this->globalDir,
         );
-
-        $this->validator = new McpConfigValidator();
-        $this->interpolator = new McpEnvInterpolator();
 
         // Set up required env vars for interpolation tests
         putenv('MCP_TEST_TOKEN=test-token-value');
@@ -570,8 +563,6 @@ JSON;
     {
         return new McpConfigLoader(
             $this->pathResolver,
-            $this->validator,
-            $this->interpolator,
             $this->projectDir,
         );
     }

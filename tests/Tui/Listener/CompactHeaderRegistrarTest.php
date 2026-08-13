@@ -16,8 +16,6 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
-use Ineersa\CodingAgent\Mcp\Config\McpConfigValidator;
-use Ineersa\CodingAgent\Mcp\Config\McpEnvInterpolator;
 use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
@@ -194,8 +192,6 @@ final class CompactHeaderRegistrarTest extends TestCase
     {
         return new McpConfigLoader(
             new SettingsPathResolver($this->tmpDir, $this->tmpDir),
-            new McpConfigValidator(),
-            new McpEnvInterpolator(),
             $this->tmpDir,
         );
     }

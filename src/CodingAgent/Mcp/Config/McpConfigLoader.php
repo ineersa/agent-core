@@ -9,6 +9,8 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 /**
  * Loads typed MCP configuration from global and project .hatfield/mcp.json files.
  *
+ * Owns trust-boundary normalization/validation and env/header interpolation.
+ *
  * Merge semantics:
  *  - Project server definitions replace whole global definitions by server name.
  *  - A project server with only `{ "enabled": false }` disables an inherited server.
@@ -24,8 +26,6 @@ final class McpConfigLoader
 {
     public function __construct(
         private readonly SettingsPathResolver $pathResolver,
-        private readonly McpConfigValidator $validator,
-        private readonly McpEnvInterpolator $interpolator,
         private readonly string $projectCwd,
     ) {
     }
@@ -46,12 +46,12 @@ final class McpConfigLoader
 
         $globalServers = $this->extractServers($globalRaw, '~/.hatfield/mcp.json');
         if ([] !== $globalServers) {
-            $globalServers = $this->validator->validate($globalServers, null);
+            $globalServers = $this->validate($globalServers, null);
         }
 
         $projectServers = $this->extractServers($projectRaw, $this->projectCwd.'/.hatfield/mcp.json');
         if ([] !== $projectServers) {
-            $projectServers = $this->validator->validate($projectServers, $globalServers);
+            $projectServers = $this->validate($projectServers, $globalServers);
         }
 
         // Merge: project overrides global by whole-server replacement
@@ -75,13 +75,13 @@ final class McpConfigLoader
             if (isset($data['env']) && \is_array($data['env'])) {
                 /** @var array<string, string> $env */
                 $env = $data['env'];
-                $data['env'] = $this->interpolator->interpolateMap($env, $name, 'env');
+                $data['env'] = $this->interpolateMap($env, $name, 'env');
             }
 
             if (isset($data['headers']) && \is_array($data['headers'])) {
                 /** @var array<string, string> $headers */
                 $headers = $data['headers'];
-                $data['headers'] = $this->interpolator->interpolateMap($headers, $name, 'headers');
+                $data['headers'] = $this->interpolateMap($headers, $name, 'headers');
             }
 
             // Resolve relative cwd to project CWD
@@ -92,7 +92,7 @@ final class McpConfigLoader
             $servers[$name] = McpServerDefinitionDTO::fromArray($name, $data);
         }
 
-        return McpConfigDTO::fromServers($servers);
+        return new McpConfigDTO(servers: $servers);
     }
 
     /**
@@ -149,6 +149,178 @@ final class McpConfigLoader
         }
 
         return $servers;
+    }
+
+    /**
+     * Validate the raw mcpServers map from parsed JSON.
+     *
+     * @param array<string, array<string, mixed>> $rawServers    Parsed mcpServers data
+     * @param array<string, mixed>|null           $globalServers Previously-loaded global servers (for inherited disable checks), or null if loading global config
+     *
+     * @return array<string, array<string, mixed>> The validated raw data (unchanged, throws on failure)
+     *
+     * @throws \RuntimeException for any invalid configuration
+     */
+    private function validate(array $rawServers, ?array $globalServers = null): array
+    {
+        foreach ($rawServers as $name => $data) {
+            if (!\is_string($name) || '' === $name) {
+                throw new \RuntimeException('MCP config: server name must be a non-empty string.');
+            }
+
+            if (!\is_array($data)) {
+                throw new \RuntimeException(\sprintf('MCP server "%s": server definition must be an object.', $name));
+            }
+
+            $this->validateServer($name, $data, $globalServers);
+        }
+
+        return $rawServers;
+    }
+
+    /**
+     * @param array<string, mixed>      $data          Server raw data
+     * @param array<string, mixed>|null $globalServers Global server definitions for inherited disable check
+     */
+    private function validateServer(string $name, array $data, ?array $globalServers): void
+    {
+        // Check for unexpected fields
+        $allowedFields = [
+            'enabled', 'command', 'args', 'env', 'cwd',
+            'url', 'headers', 'timeoutMs', 'startupTimeoutMs', 'availability', 'excludeTools',
+        ];
+
+        foreach (array_keys($data) as $key) {
+            if (!\in_array($key, $allowedFields, true)) {
+                throw new \RuntimeException(\sprintf('MCP server "%s": unknown field "%s". Allowed fields: %s.', $name, $key, implode(', ', $allowedFields)));
+            }
+        }
+
+        // Validate enabled is boolean if present
+        if (\array_key_exists('enabled', $data) && !\is_bool($data['enabled'])) {
+            throw new \RuntimeException(\sprintf('MCP server "%s": "enabled" must be a boolean, got %s.', $name, \gettype($data['enabled'])));
+        }
+
+        $enabled = $data['enabled'] ?? true;
+
+        $hasCommand = isset($data['command']);
+        $hasUrl = isset($data['url']);
+
+        // Both command and url defined → invalid
+        if ($hasCommand && $hasUrl) {
+            throw new \RuntimeException(\sprintf('MCP server "%s": cannot define both "command" (STDIO) and "url" (HTTP). Choose exactly one transport.', $name));
+        }
+
+        // No transport defined
+        if (!$hasCommand && !$hasUrl) {
+            // Special case: inherited disable-only override
+            if (null !== $globalServers && \array_key_exists($name, $globalServers)) {
+                // Project override only has enabled:false for an inherited server → valid
+                if (\array_key_exists('enabled', $data) && false === $data['enabled']) {
+                    return;
+                }
+
+                throw new \RuntimeException(\sprintf('MCP server "%s": missing transport (command or url). An inherited server override must define a transport or explicitly set "enabled": false.', $name));
+            }
+
+            // Non-inherited disable-only entry → invalid
+            if (!$enabled) {
+                throw new \RuntimeException(\sprintf('MCP server "%s": cannot define a server with only "enabled": false and no transport. This server is not inherited from global config.', $name));
+            }
+
+            // Non-inherited enabled server with no transport → invalid
+            throw new \RuntimeException(\sprintf('MCP server "%s": missing transport. Define "command" for a STDIO server or "url" for an HTTP server.', $name));
+        }
+
+        // Validate command is non-empty string (checked by DTO fromArray but validate early for consistency)
+        if ($hasCommand) {
+            if (!\is_string($data['command']) || '' === $data['command']) {
+                throw new \RuntimeException(\sprintf('MCP server "%s": "command" must be a non-empty string.', $name));
+            }
+        }
+
+        // Validate url is non-empty string
+        if ($hasUrl) {
+            if (!\is_string($data['url']) || '' === $data['url']) {
+                throw new \RuntimeException(\sprintf('MCP server "%s": "url" must be a non-empty string.', $name));
+            }
+        }
+
+        // Validate timeoutMs is positive int if present
+        if (\array_key_exists('timeoutMs', $data)) {
+            if (!\is_int($data['timeoutMs']) || $data['timeoutMs'] < 1) {
+                throw new \RuntimeException(\sprintf('MCP server "%s": "timeoutMs" must be a positive integer, got %s.', $name, \is_int($data['timeoutMs']) ? (string) $data['timeoutMs'] : \gettype($data['timeoutMs'])));
+            }
+        }
+
+        if (\array_key_exists('availability', $data)) {
+            if (!\is_string($data['availability']) || !\in_array($data['availability'], ['all', 'specific'], true)) {
+                throw new \RuntimeException(\sprintf('MCP server "%s": "availability" must be one of: all, specific.', $name));
+            }
+        }
+
+        // Validate startupTimeoutMs is positive int if present
+        if (\array_key_exists('startupTimeoutMs', $data)) {
+            if (!\is_int($data['startupTimeoutMs']) || $data['startupTimeoutMs'] < 1) {
+                throw new \RuntimeException(\sprintf('MCP server "%s": "startupTimeoutMs" must be a positive integer, got %s.', $name, \is_int($data['startupTimeoutMs']) ? (string) $data['startupTimeoutMs'] : \gettype($data['startupTimeoutMs'])));
+            }
+        }
+    }
+
+    /**
+     * Interpolate `${VAR}` references in all values of a string map.
+     *
+     * Missing or empty interpolated variables are configuration errors.
+     * Literal empty-string values without `${...}` are allowed unchanged.
+     * Error messages include var name and server/field context, never secret values.
+     *
+     * @param array<string, string> $map    The map to interpolate (e.g. env or headers)
+     * @param string                $server Server name for error context
+     * @param string                $field  Field name for error context (e.g. "env" or "headers")
+     *
+     * @return array<string, string>
+     *
+     * @throws \RuntimeException when a referenced env var is missing or resolves to an empty string
+     */
+    private function interpolateMap(array $map, string $server, string $field): array
+    {
+        $result = [];
+
+        foreach ($map as $key => $value) {
+            $result[$key] = $this->interpolateValue($value, $server, \sprintf('%s.%s', $field, $key));
+        }
+
+        return $result;
+    }
+
+    /**
+     * @throws \RuntimeException when a referenced env var is missing or empty
+     */
+    private function interpolateValue(string $value, string $server, string $context): string
+    {
+        // Fast path: no interpolation needed
+        if (!str_contains($value, '${')) {
+            return $value;
+        }
+
+        return preg_replace_callback(
+            '/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/',
+            static function (array $matches) use ($server, $context): string {
+                $varName = $matches[1];
+                $resolved = getenv($varName);
+
+                if (false === $resolved) {
+                    throw new \RuntimeException(\sprintf('MCP server "%s": environment variable "%s" referenced in "%s" is not set.', $server, $varName, $context));
+                }
+
+                if ('' === $resolved) {
+                    throw new \RuntimeException(\sprintf('MCP server "%s": environment variable "%s" referenced in "%s" is empty. Set the variable or remove the interpolation reference.', $server, $varName, $context));
+                }
+
+                return $resolved;
+            },
+            $value,
+        );
     }
 
     /**

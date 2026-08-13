@@ -18,6 +18,9 @@ use function Symfony\Component\String\u;
  * Settings (defaults, storage path, caps, retention) hydrate from Hatfield
  * config via {@see OutputCapConfig} which is injected through DI.
  *
+ * Also owns path/category classification and read-specific notice construction
+ * shared by {@see OutputCapToolResultProcessor} and {@see OutputCapLlmTransformHook}.
+ *
  * @see .pi/plans/toolbox-design-plan.md § "Output capping (OutputCap)"
  */
 final class OutputCap
@@ -26,6 +29,20 @@ final class OutputCap
      * File extensions treated as "doc-like" (higher cap).
      */
     private const DOC_EXTENSIONS = ['md', 'txt', 'toon'];
+
+    /**
+     * Conventional tool argument keys used to determine path-specific caps.
+     *
+     * @var list<string>
+     */
+    private const array PATH_ARGUMENT_KEYS = ['path', 'file_path', 'file'];
+
+    /**
+     * Tools whose successful result is a dense document-style report/handoff.
+     *
+     * @var list<string>
+     */
+    private const array DOCUMENT_REPORT_TOOL_NAMES = ['fork', 'subagent', 'agent_retrieve'];
 
     private bool $cleanedUp = false;
 
@@ -37,37 +54,6 @@ final class OutputCap
     public function __construct(
         private readonly OutputCapConfig $config,
     ) {
-    }
-
-    /**
-     * Process text through output capping.
-     *
-     * If the text fits within the applicable cap (determined by $path
-     * extension), it is returned unchanged. Otherwise the full text is
-     * persisted to disk and a model-facing capped notice is returned.
-     *
-     * Cleanup of stale persisted files runs once on first call.
-     *
-     * @param string      $text the raw tool output
-     * @param string|null $path Optional file path used to determine doc vs.
-     *                          code cap. Null paths use the default cap.
-     *
-     * @return string the original text, or a capped notice with saved path
-     *                and inspection hints
-     */
-    public function process(string $text, ?string $path = null): string
-    {
-        $this->maybeCleanup();
-
-        $cap = $this->resolveCap($path);
-
-        if (u($text)->length() <= $cap) {
-            return $text;
-        }
-
-        $savedPath = $this->persist($text);
-
-        return $this->buildCappedNotice($text, $cap, $savedPath);
     }
 
     /**
@@ -106,15 +92,114 @@ final class OutputCap
     }
 
     /**
-     * Determine which character cap applies based on file extension.
+     * Resolve the path used for cap selection.
      *
-     * Doc-like extensions (.md, .txt, .toon) use {@see docCap}.
-     * Everything else uses {@see defaultCap}.
-     * Null paths (no file context) use {@see defaultCap}.
+     * Preference order:
+     * 1. Explicit filesystem path-like tool argument (read/write file context),
+     *    except native settings which uses dotted keys that must never be
+     *    treated as filesystem paths even when they end in .md/.txt/.toon.
+     * 2. Synthetic .md path for successful hatfield_docs read (not list).
+     * 3. Synthetic .md path for successful document-report tools
+     *    (fork/subagent/agent_retrieve) so resolveCap applies docCap without
+     *    changing defaultCap.
+     * 4. null → defaultCap.
+     *
+     * Error results from report/docs tools keep defaultCap (null path): failed
+     * envelopes are short status text, not handoff documents.
+     *
+     * @param array<string, mixed> $arguments
      */
-    public function capForPath(?string $path): int
+    public function resolveCapPath(
+        ?string $toolName,
+        array $arguments,
+        bool $isError = false,
+    ): ?string {
+        if ('settings' === $toolName) {
+            // settings.path is a dotted config key (e.g. docs.foo.md), never a file path.
+            return null;
+        }
+
+        $path = $this->extractPathFromArguments($arguments);
+        if (null !== $path) {
+            return $path;
+        }
+
+        if ($isError) {
+            return null;
+        }
+
+        if ('hatfield_docs' === $toolName) {
+            // Only successful document reads are doc-like; list stays defaultCap.
+            return ('read' === ($arguments['operation'] ?? null))
+                ? 'hatfield-docs-read.md'
+                : null;
+        }
+
+        if (null !== $toolName && \in_array($toolName, self::DOCUMENT_REPORT_TOOL_NAMES, true)) {
+            // Virtual doc path: only used for extension-based docCap selection.
+            return 'handoff-report.md';
+        }
+
+        return null;
+    }
+
+    /**
+     * Find a file-path value from tool call arguments.
+     *
+     * Checks known path-carrying argument keys and returns the first
+     * string value found.  Returns null when no path argument exists.
+     *
+     * @param array<string, mixed> $arguments
+     */
+    public function extractPathFromArguments(array $arguments): ?string
     {
-        return $this->resolveCap($path);
+        foreach (self::PATH_ARGUMENT_KEYS as $key) {
+            $value = $arguments[$key] ?? null;
+            if (\is_string($value) && '' !== $value) {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Build a context-aware capping notice.
+     *
+     * For read tools: guides follow-up reads to the original file path with
+     * offset+limit, avoiding double line numbers from reading the saved
+     * rendered artifact.  For all other tools: uses the generic saved-output
+     * inspection notice from {@see buildCappedNotice()}.
+     *
+     * @param array<string, mixed> $arguments
+     */
+    public function buildContextualNotice(?string $toolName, array $arguments, OutputCapResult $capResult): string
+    {
+        if ('read' !== $toolName) {
+            return $capResult->noticeText;
+        }
+
+        $originalPath = $this->extractPathFromArguments($arguments);
+
+        // Only produce read-specific notice when we have the original path.
+        // Without it, fall back to the generic saved-artifact notice (head/grep).
+        if (null === $originalPath) {
+            return $capResult->noticeText;
+        }
+
+        $originalOffset = $arguments['offset'] ?? null;
+        $offset = (\is_int($originalOffset) && $originalOffset > 0) ? $originalOffset : 1;
+        $escapedGrepPath = escapeshellarg($originalPath);
+
+        return <<<STRING
+[Output capped: {$capResult->charCount} chars (~{$capResult->tokenEstimate} tokens) > {$capResult->cap}-char cap]
+Saved full output: {$capResult->savedPath}
+
+Next: use a focused follow-up, e.g.
+- read(path: "{$originalPath}", offset: {$offset}, limit: 200)
+- bash(command: "grep -n -- 'PATTERN' {$escapedGrepPath} | head -50")
+Do not repeat the original full read or read the saved output with read.
+STRING;
     }
 
     /**
@@ -123,7 +208,7 @@ final class OutputCap
      * Useful when a consumer (e.g. bash tool) always wants full output
      * saved regardless of whether it exceeds the cap.
      *
-     * Stale-file cleanup runs once on first call, matching process()
+     * Stale-file cleanup runs once on first call, matching capIfNeeded()
      * behaviour.
      *
      * @param string $text the text to persist
@@ -148,15 +233,6 @@ final class OutputCap
         }
 
         return $filePath;
-    }
-
-    /**
-     * Expose the config for consumers that need to check the default cap
-     * threshold before capping, or access config values for custom capping.
-     */
-    public function config(): OutputCapConfig
-    {
-        return $this->config;
     }
 
     /**
@@ -196,7 +272,7 @@ final class OutputCap
     }
 
     /**
-     * Run cleanup once on first use (process() or persist()).
+     * Run cleanup once on first use (capIfNeeded() or persist()).
      *
      * Chose first-use invocation over constructor because cleanup is an
      * I/O operation that should not happen during container/DI wiring.
@@ -242,9 +318,9 @@ final class OutputCap
     /**
      * Determine which character cap applies based on file extension.
      *
-     * Doc-like extensions (.md, .txt, .toon) use {@see docCap}.
-     * Everything else uses {@see defaultCap}.
-     * Null paths use {@see defaultCap}.
+     * Doc-like extensions (.md, .txt, .toon) use docCap.
+     * Everything else uses defaultCap.
+     * Null paths use defaultCap.
      */
     private function resolveCap(?string $path): int
     {
@@ -267,9 +343,9 @@ final class OutputCap
      *
      * Generic fallback for non-read tools.  Suggests inspecting the saved
      * output artefact with read (offset+limit) for chunked inspection and
-     * grep for targeted search.  Read-tool callers should use a
-     * context-aware notice via their own builder that points follow-up
-     * reads at the original file, not this artefact.
+     * grep for targeted search.  Read-tool callers should use
+     * {@see buildContextualNotice()} that points follow-up reads at the
+     * original file, not this artefact.
      */
     private function buildCappedNotice(string $fullText, int $cap, string $savedPath): string
     {

@@ -19,8 +19,6 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
-use Ineersa\CodingAgent\Mcp\Config\McpConfigValidator;
-use Ineersa\CodingAgent\Mcp\Config\McpEnvInterpolator;
 use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface;
 use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCommand;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
@@ -309,8 +307,6 @@ JSON;
     {
         return new McpConfigLoader(
             new SettingsPathResolver($this->tmpDir, $this->tmpDir),
-            new McpConfigValidator(),
-            new McpEnvInterpolator(),
             $this->tmpDir,
         );
     }

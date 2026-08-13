@@ -53,7 +53,7 @@ final readonly class McpServerDefinitionDTO
      * @throws \RuntimeException when field types are invalid
      *
      * The DTO re-validates certain fields (e.g. enabled type) even though
-     * {@see McpConfigValidator} normally runs first, because fromArray() is
+     * {@see McpConfigLoader} validation normally runs first, because fromArray() is
      * a public standalone entry point that callers may use directly.
      */
     public static function fromArray(string $name, array $data): self

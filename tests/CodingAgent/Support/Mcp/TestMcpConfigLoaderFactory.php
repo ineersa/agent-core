@@ -6,8 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Support\Mcp;
 
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
-use Ineersa\CodingAgent\Mcp\Config\McpConfigValidator;
-use Ineersa\CodingAgent\Mcp\Config\McpEnvInterpolator;
 use Ineersa\CodingAgent\Mcp\Config\McpServerAvailabilityEnum;
 use Ineersa\CodingAgent\Mcp\Config\McpServerDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Config\McpTransportTypeEnum;
@@ -31,12 +29,7 @@ final class TestMcpConfigLoaderFactory
         }
         file_put_contents($root.'/.hatfield/mcp.json', json_encode($payload, \JSON_THROW_ON_ERROR));
 
-        return new McpConfigLoader(
-            new SettingsPathResolver(getenv('HOME') ?: '/tmp'),
-            new McpConfigValidator(),
-            new McpEnvInterpolator(),
-            $root,
-        );
+        return new McpConfigLoader(new SettingsPathResolver(getenv('HOME') ?: '/tmp'), $root);
     }
 
     public static function smokeLoader(): McpConfigLoader
