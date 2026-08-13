@@ -45,7 +45,7 @@ final class TranscriptProjectorTest extends TestCase
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
-        $dispatcher->addSubscriber(new ModelNotificationProjectionSubscriber());
+        $dispatcher->addSubscriber(new ModelNotificationProjectionSubscriber(\Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer()));
 
         $this->projector = new TranscriptProjector($dispatcher, $state);
         $this->seq = 0;

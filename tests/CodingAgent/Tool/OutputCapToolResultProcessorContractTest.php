@@ -50,7 +50,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         // Cap set low so our test text triggers capping.
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 50);
         $outputCap = new OutputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap);
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $rawSentinel = 'RAW_SENTINEL_'.bin2hex(random_bytes(8));
         $largeText = str_repeat('A', 300).$rawSentinel;
@@ -134,7 +134,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         // cap artefact is rendered tool output text (plain content; read the original path for follow-up inspection).
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 50);
         $outputCap = new OutputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap);
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $largeText = str_repeat('B', 300).'GENERIC_SENTINEL_'.bin2hex(random_bytes(8));
 
@@ -177,7 +177,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 5000, docCap: 5000);
         $outputCap = new OutputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap);
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $smallText = 'Small result text';
 
@@ -215,7 +215,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 5000);
         $outputCap = new OutputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap);
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $result = new ToolResult(
             toolCallId: 'call-3',
@@ -245,7 +245,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         // not defaultCap (20k), even though the tool call has no path argument.
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
         $outputCap = new OutputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap);
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $handoff = str_repeat('H', 25000)."\n## 1. Result / status\n";
         $this->assertGreaterThan(20000, u($handoff)->length());
@@ -277,7 +277,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
         $outputCap = new OutputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap);
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $handoff = str_repeat('S', 30000);
         $result = new ToolResult(
@@ -306,7 +306,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         // Thesis: non-report tools without a path still cap at defaultCap.
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
         $outputCap = new OutputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap);
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $large = str_repeat('B', 25000);
         $result = new ToolResult(

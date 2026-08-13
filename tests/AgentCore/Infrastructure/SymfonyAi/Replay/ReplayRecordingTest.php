@@ -332,6 +332,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
     }
 }

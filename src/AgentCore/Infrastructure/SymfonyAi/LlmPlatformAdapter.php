@@ -43,6 +43,7 @@ use Symfony\AI\Platform\Result\Stream\Delta\ToolInputDelta;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\AI\Platform\Tool\Tool;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 final readonly class LlmPlatformAdapter implements PlatformInterface
 {
@@ -60,6 +61,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private ?LlmStreamObserverInterface $streamObserver,
         private ?CostCalculatorInterface $costCalculator,
         private LoggerInterface $logger,
+        private DenormalizerInterface $denormalizer,
         private ?ModelResolverInterface $modelResolver = null,
         private readonly LlmProviderErrorClassifier $errorClassifier = new LlmProviderErrorClassifier(),
         private readonly AgentMessageToolCallSequenceValidator $toolCallSequenceValidator = new AgentMessageToolCallSequenceValidator(),
@@ -303,12 +305,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $ids = [];
 
         foreach ($messages as $message) {
-            foreach (ModelNotificationDTO::listFromMixed(
-                \is_array($message->details['model_notifications'] ?? null)
-                    ? $message->details['model_notifications']
-                    : null,
-            ) as $notif) {
-                if ($notif->hasNonEmptyId()) {
+            foreach ($this->denormalizeModelNotifications($message->details) as $notif) {
+                if ('' !== $notif->id) {
                     $ids[$notif->id] = true;
                 }
             }
@@ -335,17 +333,31 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $notifications = [];
 
         foreach ($messages as $message) {
-            foreach (ModelNotificationDTO::listFromMixed(
-                \is_array($message->details['model_notifications'] ?? null)
-                    ? $message->details['model_notifications']
-                    : null,
-            ) as $notif) {
-                if ($notif->hasNonEmptyId() && !isset($seenIds[$notif->id])) {
+            foreach ($this->denormalizeModelNotifications($message->details) as $notif) {
+                if ('' !== $notif->id && !isset($seenIds[$notif->id])) {
                     $notifications[] = $notif;
                     $seenIds[$notif->id] = true;
                 }
             }
         }
+
+        return $notifications;
+    }
+
+    /**
+     * @param array<string, mixed>|null $details AgentMessage.details array boundary
+     *
+     * @return list<ModelNotificationDTO>
+     */
+    private function denormalizeModelNotifications(?array $details): array
+    {
+        $raw = \is_array($details) ? ($details['model_notifications'] ?? null) : null;
+        if (!\is_array($raw) || [] === $raw) {
+            return [];
+        }
+
+        /** @var list<ModelNotificationDTO> $notifications */
+        $notifications = $this->denormalizer->denormalize($raw, ModelNotificationDTO::class.'[]');
 
         return $notifications;
     }

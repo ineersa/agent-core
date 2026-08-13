@@ -226,6 +226,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         // ── Invoke ──

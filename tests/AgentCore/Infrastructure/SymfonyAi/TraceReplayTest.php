@@ -143,6 +143,7 @@ final class TraceReplayTest extends KernelTestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $result = $adapter->invoke(new ModelInvocationRequest(
@@ -357,6 +358,7 @@ final class TraceReplayTest extends KernelTestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $result = $adapter->invoke(new ModelInvocationRequest(

@@ -31,6 +31,8 @@ use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final class LlmStepResultHandler implements RunMessageHandler
 {
@@ -41,6 +43,7 @@ final class LlmStepResultHandler implements RunMessageHandler
         private ToolCallExtractor $toolCallExtractor,
         private AgentMessageNormalizer $messageNormalizer,
         private StepDispatcher $stepDispatcher,
+        private NormalizerInterface $normalizer,
         private ?ToolSetResolverInterface $toolSetResolver = null,
         private ?ToolboxInterface $toolbox = null,
         private ?RunMetrics $metrics = null,
@@ -608,7 +611,7 @@ final class LlmStepResultHandler implements RunMessageHandler
      * Collect model_notification RunEvent specs from an LlmStepResult's
      * generic model notifications (produced by transform context hooks).
      *
-     * Encode once at the canonical RunEvent boundary via {@see ModelNotificationDTO::toArray()}.
+     * Encode once at the canonical RunEvent boundary via Serializer normalize.
      *
      * @param list<ModelNotificationDTO> $notifications
      *
@@ -622,9 +625,13 @@ final class LlmStepResultHandler implements RunMessageHandler
 
         $specs = [];
         foreach ($notifications as $notif) {
+            /** @var array<string, mixed> $payload */
+            $payload = $this->normalizer->normalize($notif, null, [
+                AbstractObjectNormalizer::SKIP_NULL_VALUES => true,
+            ]);
             $specs[] = [
                 'type' => RunEventTypeEnum::ModelNotification->value,
-                'payload' => $notif->toArray(),
+                'payload' => $payload,
             ];
         }
 

@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Projects generic model_notification events into System transcript blocks.
@@ -21,6 +22,11 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  */
 final readonly class ModelNotificationProjectionSubscriber implements EventSubscriberInterface
 {
+    public function __construct(
+        private DenormalizerInterface $denormalizer,
+    ) {
+    }
+
     public static function getSubscribedEvents(): array
     {
         return [
@@ -30,9 +36,10 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
 
     public function onModelNotification(TranscriptProjectionEvent $event): void
     {
-        // Projection soft-casts (via fromArray typed fields) match pre-typed
-        // consumer casts; do not use raw-sensitive predicates here.
-        $notification = ModelNotificationDTO::fromArray($event->payload());
+        $notification = $this->denormalizer->denormalize($event->payload(), ModelNotificationDTO::class);
+        if (!$notification instanceof ModelNotificationDTO) {
+            throw new \InvalidArgumentException('model_notification payload did not denormalize to ModelNotificationDTO.');
+        }
         $state = $event->state;
 
         $blockId = 'model_notification_'.('' !== $notification->id

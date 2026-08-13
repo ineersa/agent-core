@@ -9,6 +9,9 @@ use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ToolResultType;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /**
  * Defense-in-depth LLM-bound output capping for tool-result text.
@@ -35,6 +38,7 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
 {
     public function __construct(
         private OutputCap $outputCap,
+        private NormalizerInterface&DenormalizerInterface $serializer,
     ) {
     }
 
@@ -168,7 +172,10 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
                 'saved_path' => $capResult->savedPath,
             ],
         );
-        $notificationArray = $notification->toArray();
+        /** @var array<string, mixed> $notificationArray */
+        $notificationArray = $this->serializer->normalize($notification, null, [
+            AbstractObjectNormalizer::SKIP_NULL_VALUES => true,
+        ]);
 
         // Attach the generic notification to both metadata (for the model history)
         // and details (so downstream skip detection works on re-capping).
@@ -213,8 +220,14 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
      */
     private function hasDeliveryToolResultReplace(?array $notifications): bool
     {
-        foreach (ModelNotificationDTO::listFromMixed($notifications) as $notif) {
-            if ($notif->isToolResultReplace()) {
+        if (null === $notifications || [] === $notifications) {
+            return false;
+        }
+
+        /** @var list<ModelNotificationDTO> $typed */
+        $typed = $this->serializer->denormalize($notifications, ModelNotificationDTO::class.'[]');
+        foreach ($typed as $notif) {
+            if ('tool_result_replace' === $notif->delivery) {
                 return true;
             }
         }

@@ -176,6 +176,7 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -398,6 +399,7 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: $costCalculator,
             modelResolver: $modelResolver,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -508,6 +510,7 @@ final class PlatformIntegrationTest extends TestCase
                 streamObserver: null,
                 costCalculator: null,
                 logger: new NullLogger(),
+                denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             );
 
             $adapter->invoke(new ModelInvocationRequest(
@@ -551,6 +554,7 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -866,6 +870,7 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -939,6 +944,7 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -1004,6 +1010,7 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
     }
 

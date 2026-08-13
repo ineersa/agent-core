@@ -99,24 +99,19 @@ final readonly class AgentMessageNormalizer
         );
     }
 
-    public function toolMessage(ToolCallResult $result): AgentMessage
+    /**
+     * @param list<ModelNotificationDTO> $modelNotifications typed notifications already
+     *                                                       decoded at the ToolCallResult details boundary
+     */
+    public function toolMessage(ToolCallResult $result, array $modelNotifications = []): AgentMessage
     {
-        // Check for model_notifications with delivery=tool_result_replace.
-        // When present, the model-facing tool content is the exact
-        // notification text — not the raw/full output and not a JSON
-        // envelope.  The notification text is identical to what appears
-        // in the model_notification event for TUI projection.
-        // First array row whose raw delivery is exactly tool_result_replace wins,
-        // even when its text is empty/non-string (then fall back to normal content).
-        // Do not continue to a later valid replacement row.
+        // When a typed notification with delivery=tool_result_replace is present,
+        // the model-facing tool content is that notification text — not the raw/full
+        // output and not a JSON envelope. First matching typed row wins.
         $notificationText = null;
-        foreach (ModelNotificationDTO::listFromMixed(
-            \is_array($result->result['details']['model_notifications'] ?? null)
-                ? $result->result['details']['model_notifications']
-                : null,
-        ) as $notif) {
-            if ($notif->isToolResultReplace()) {
-                $notificationText = $notif->hasNonEmptyText() ? $notif->text : null;
+        foreach ($modelNotifications as $notif) {
+            if ('tool_result_replace' === $notif->delivery) {
+                $notificationText = '' !== $notif->text ? $notif->text : null;
                 break;
             }
         }

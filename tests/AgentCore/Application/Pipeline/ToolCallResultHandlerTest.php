@@ -87,6 +87,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $state = RunStateBuilder::running('run-tool-handler-1')
@@ -167,6 +168,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $state = RunStateBuilder::running('run-extract-single')
@@ -223,6 +225,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $state = RunStateBuilder::running('run-extract-multi')
@@ -282,6 +285,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $state = RunStateBuilder::running('run-extract-empty')
@@ -343,6 +347,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $state = RunStateBuilder::running('run-extract-malformed')
@@ -400,6 +405,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $state = RunStateBuilder::running('run-extract-nonarr-content')
@@ -459,6 +465,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $state = RunStateBuilder::running('run-extract-nonarr-part')
@@ -518,6 +525,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $state = RunStateBuilder::running('run-extract-nokey')
@@ -576,6 +584,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $state = RunStateBuilder::running('run-extract-error')
@@ -616,6 +625,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $assistantMsg = new AgentMessage(
@@ -694,6 +704,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $assistantMsg = new AgentMessage(
@@ -742,6 +753,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $assistantMsg = new AgentMessage(
@@ -822,6 +834,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $assistantMsg = new AgentMessage(
@@ -871,6 +884,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $assistantMsg = new AgentMessage(
@@ -934,6 +948,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $assistantMsg = new AgentMessage(
@@ -1005,6 +1020,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $message = ToolCallResultBuilder::success('run-redeliver-post')
@@ -1069,6 +1085,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $message = ToolCallResultBuilder::success('run-redeliver-pre')
@@ -1118,6 +1135,7 @@ final class ToolCallResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $assistantMsg = new AgentMessage(

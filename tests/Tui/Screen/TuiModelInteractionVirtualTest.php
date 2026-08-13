@@ -83,7 +83,7 @@ final class TuiModelInteractionVirtualTest extends TestCase
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
-        $dispatcher->addSubscriber(new ModelNotificationProjectionSubscriber());
+        $dispatcher->addSubscriber(new ModelNotificationProjectionSubscriber(\Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer()));
 
         return new TranscriptProjector($dispatcher, $state);
     }
