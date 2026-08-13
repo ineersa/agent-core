@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Result\ToolCall;
@@ -105,22 +106,15 @@ final readonly class AgentMessageNormalizer
         // notification text — not the raw/full output and not a JSON
         // envelope.  The notification text is identical to what appears
         // in the model_notification event for TUI projection.
-        $notifications = \is_array($result->result['details']['model_notifications'] ?? null)
-            ? $result->result['details']['model_notifications']
-            : null;
-
         $notificationText = null;
-        if (null !== $notifications) {
-            foreach ($notifications as $notif) {
-                if (!\is_array($notif)) {
-                    continue;
-                }
-                if (($notif['delivery'] ?? null) === 'tool_result_replace') {
-                    $notificationText = \is_string($notif['text'] ?? null) && '' !== $notif['text']
-                        ? $notif['text']
-                        : null;
-                    break;
-                }
+        foreach (ModelNotificationDTO::listFromMixed(
+            \is_array($result->result['details']['model_notifications'] ?? null)
+                ? $result->result['details']['model_notifications']
+                : null,
+        ) as $notif) {
+            if ($notif->isToolResultReplace() && $notif->hasNonEmptyText()) {
+                $notificationText = $notif->text;
+                break;
             }
         }
 

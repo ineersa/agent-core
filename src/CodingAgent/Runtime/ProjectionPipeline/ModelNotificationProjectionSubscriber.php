@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\ProjectionPipeline;
 
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -29,42 +30,28 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
 
     public function onModelNotification(TranscriptProjectionEvent $event): void
     {
-        $p = $event->payload();
+        $notification = ModelNotificationDTO::fromArray($event->payload());
         $state = $event->state;
 
-        $notificationId = (string) ($p['id'] ?? '');
-        $text = (string) ($p['text'] ?? '');
-        $source = (string) ($p['source'] ?? '');
-        $kind = (string) ($p['kind'] ?? '');
-        $severity = (string) ($p['severity'] ?? 'info');
-        $delivery = (string) ($p['delivery'] ?? '');
-        $toolCallId = isset($p['tool_call_id']) && \is_string($p['tool_call_id'])
-            ? $p['tool_call_id']
-            : null;
-        $toolName = isset($p['tool_name']) && \is_string($p['tool_name'])
-            ? $p['tool_name']
-            : null;
-
-        $blockId = 'model_notification_'.('' !== $notificationId
-            ? $notificationId
-            : hash('sha256', $text));
+        $blockId = 'model_notification_'.($notification->hasNonEmptyId()
+            ? $notification->id
+            : hash('sha256', $notification->text));
 
         // Build metadata for downstream renderers.
         $meta = [
-            'source' => $source,
-            'kind' => $kind,
-            'severity' => $severity,
-            'notification_id' => $notificationId,
+            'source' => $notification->source,
+            'kind' => $notification->kind,
+            'severity' => $notification->severity,
+            'notification_id' => $notification->id,
         ];
 
-        if (null !== $toolCallId) {
-            $meta['tool_call_id'] = $toolCallId;
+        if (null !== $notification->toolCallId) {
+            $meta['tool_call_id'] = $notification->toolCallId;
         }
 
         // Carry through any extra producer metadata.
-        $producerMeta = $p['metadata'] ?? null;
-        if (\is_array($producerMeta) && [] !== $producerMeta) {
-            $meta['producer_metadata'] = $producerMeta;
+        if ([] !== $notification->metadata) {
+            $meta['producer_metadata'] = $notification->metadata;
         }
 
         $state->addBlock(new TranscriptBlock(
@@ -72,7 +59,7 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
             kind: TranscriptBlockKindEnum::System,
             runId: $event->runId(),
             seq: $state->nextSeq(),
-            text: $text,
+            text: $notification->text,
             meta: $meta,
             streaming: false,
         ));
@@ -82,8 +69,15 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
         // ToolResult block so the TUI does not show raw/full output that
         // the model never saw.  The exact model-facing notification is
         // already visible in the System block above.
-        if ('tool_result_replace' === $delivery && null !== $toolCallId && '' !== $toolCallId) {
-            $this->compactCappedToolResult($state, $event->runId(), $toolCallId, $toolName);
+        if ($notification->isToolResultReplace()
+            && null !== $notification->toolCallId
+            && '' !== $notification->toolCallId) {
+            $this->compactCappedToolResult(
+                $state,
+                $event->runId(),
+                $notification->toolCallId,
+                $notification->toolName,
+            );
         }
     }
 

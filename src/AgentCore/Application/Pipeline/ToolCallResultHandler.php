@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -686,29 +687,28 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
      * When a tool result processor attached model_notifications to the
      * result details, this helper produces generic ModelNotification
      * RunEvent specs that flow through to the runtime event stream and
-     * TUI projection.
+     * TUI projection. Decode once from the array details boundary, then
+     * re-encode exactly once into the canonical RunEvent payload.
      *
      * @return list<array{type: string, payload: array<string, mixed>}>
      */
     private function collectModelNotificationEventSpecs(ToolCallResult $result): array
     {
-        $notifications = \is_array($result->result['details']['model_notifications'] ?? null)
-            ? $result->result['details']['model_notifications']
-            : null;
+        $notifications = ModelNotificationDTO::listFromMixed(
+            \is_array($result->result['details']['model_notifications'] ?? null)
+                ? $result->result['details']['model_notifications']
+                : null,
+        );
 
-        if (null === $notifications || [] === $notifications) {
+        if ([] === $notifications) {
             return [];
         }
 
         $specs = [];
         foreach ($notifications as $notif) {
-            if (!\is_array($notif)) {
-                continue;
-            }
-
             $specs[] = [
                 'type' => RunEventTypeEnum::ModelNotification->value,
-                'payload' => $notif,
+                'payload' => $notif->toArray(),
             ];
         }
 

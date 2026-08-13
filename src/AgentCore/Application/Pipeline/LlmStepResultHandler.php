@@ -20,6 +20,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
@@ -607,7 +608,9 @@ final class LlmStepResultHandler implements RunMessageHandler
      * Collect model_notification RunEvent specs from an LlmStepResult's
      * generic model notifications (produced by transform context hooks).
      *
-     * @param list<array<string, mixed>> $notifications
+     * Encode once at the canonical RunEvent boundary via {@see ModelNotificationDTO::toArray()}.
+     *
+     * @param list<ModelNotificationDTO> $notifications
      *
      * @return list<array{type: string, payload: array<string, mixed>}>
      */
@@ -619,13 +622,9 @@ final class LlmStepResultHandler implements RunMessageHandler
 
         $specs = [];
         foreach ($notifications as $notif) {
-            if (!\is_array($notif)) {
-                continue;
-            }
-
             $specs[] = [
                 'type' => RunEventTypeEnum::ModelNotification->value,
-                'payload' => $notif,
+                'payload' => $notif->toArray(),
             ];
         }
 

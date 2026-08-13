@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\Platform\Result\CancellableRawResultInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
@@ -302,17 +303,13 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $ids = [];
 
         foreach ($messages as $message) {
-            $notifications = \is_array($message->details['model_notifications'] ?? null)
-                ? $message->details['model_notifications']
-                : null;
-
-            if (null === $notifications) {
-                continue;
-            }
-
-            foreach ($notifications as $notif) {
-                if (\is_array($notif) && isset($notif['id']) && \is_string($notif['id'])) {
-                    $ids[$notif['id']] = true;
+            foreach (ModelNotificationDTO::listFromMixed(
+                \is_array($message->details['model_notifications'] ?? null)
+                    ? $message->details['model_notifications']
+                    : null,
+            ) as $notif) {
+                if ($notif->hasNonEmptyId()) {
+                    $ids[$notif->id] = true;
                 }
             }
         }
@@ -331,30 +328,21 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      * @param list<AgentMessage>  $messages
      * @param array<string, true> $seenIds  Notification IDs present pre-transform
      *
-     * @return list<array<string, mixed>>
+     * @return list<ModelNotificationDTO>
      */
     private function extractNewModelNotifications(array $messages, array $seenIds): array
     {
         $notifications = [];
 
         foreach ($messages as $message) {
-            $modelNotifs = \is_array($message->details['model_notifications'] ?? null)
-                ? $message->details['model_notifications']
-                : null;
-
-            if (null === $modelNotifs) {
-                continue;
-            }
-
-            foreach ($modelNotifs as $notif) {
-                if (!\is_array($notif)) {
-                    continue;
-                }
-
-                $id = $notif['id'] ?? null;
-                if (\is_string($id) && '' !== $id && !isset($seenIds[$id])) {
+            foreach (ModelNotificationDTO::listFromMixed(
+                \is_array($message->details['model_notifications'] ?? null)
+                    ? $message->details['model_notifications']
+                    : null,
+            ) as $notif) {
+                if ($notif->hasNonEmptyId() && !isset($seenIds[$notif->id])) {
                     $notifications[] = $notif;
-                    $seenIds[$id] = true;
+                    $seenIds[$notif->id] = true;
                 }
             }
         }
@@ -420,7 +408,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
     /**
      * @param array<string, mixed>       $requestSummary     Privacy-safe request summary for error diagnostics
-     * @param list<array<string, mixed>> $modelNotifications generic model notifications
+     * @param list<ModelNotificationDTO> $modelNotifications generic model notifications
      *                                                       produced by transform context hooks
      * @param list<string>               $availableTools
      */
@@ -675,7 +663,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     /**
      * @param list<DeltaInterface>       $deltas
      * @param array<string, mixed>       $requestSummary     Privacy-safe request summary
-     * @param list<array<string, mixed>> $modelNotifications generic model notifications
+     * @param list<ModelNotificationDTO> $modelNotifications generic model notifications
      *                                                       from transform context hooks
      * @param list<string>               $availableTools
      */

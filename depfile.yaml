@@ -659,6 +659,8 @@ parameters:
       - AppRuntimeProjection
       - AppRuntimeContract
       - AppSkills
+      # Model notification projection decodes fixed RunEvent payload shape once.
+      - AgentCore
       - SymfonyEventDispatcher
 
     AppRuntimeProjection:
