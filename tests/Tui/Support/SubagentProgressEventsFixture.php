@@ -49,6 +49,10 @@ final class SubagentProgressEventsFixture
                 'messages' => [
                     ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Run a scout subagent.']]],
                 ],
+                // Parent (non-child) RunStarted requires typed metadata for SubagentRunMetadataReader.
+                'metadata' => [
+                    'session' => [],
+                ],
             ],
         ], $now);
         $events[] = self::event($sessionId, 2, 1, 'turn_advanced', ['step_id' => 'turn-1', 'turn_no' => 1], $now);
@@ -199,6 +203,10 @@ final class SubagentProgressEventsFixture
             'payload' => [
                 'messages' => [
                     ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Run fork and scout with multiline tasks.']]],
+                ],
+                // Parent (non-child) RunStarted requires typed metadata for SubagentRunMetadataReader.
+                'metadata' => [
+                    'session' => [],
                 ],
             ],
         ], $now);
@@ -370,6 +378,10 @@ final class SubagentProgressEventsFixture
             'payload' => [
                 'messages' => [
                     ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Run three parallel subagents.']]],
+                ],
+                // Parent (non-child) RunStarted requires typed metadata for SubagentRunMetadataReader.
+                'metadata' => [
+                    'session' => [],
                 ],
             ],
         ], $now);
