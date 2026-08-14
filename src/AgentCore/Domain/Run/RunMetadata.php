@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Run;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
-
 final readonly class RunMetadata
 {
     /**
@@ -17,9 +15,7 @@ final readonly class RunMetadata
         public array $session = [],
         public ?string $model = null,
         public ?string $reasoning = null,
-        #[SerializedName('tools_scope')]
         public ?array $toolsScope = null,
-        #[SerializedName('context_window')]
         public ?int $contextWindow = null,
         public ?array $extensions = null,
     ) {

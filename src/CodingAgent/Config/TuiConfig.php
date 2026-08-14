@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
-
 /**
  * TUI settings resolved from Hatfield config.
  *
@@ -25,9 +23,7 @@ final readonly class TuiConfig
      */
     public function __construct(
         public string $theme,
-        #[SerializedName('theme_paths')]
         public array $themePaths = [],
-        #[SerializedName('transcript')]
         public TuiTranscriptConfig $transcript = new TuiTranscriptConfig(),
     ) {
     }

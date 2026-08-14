@@ -206,12 +206,7 @@ final class RuntimeEventPerRunCompactBufferTest extends TestCase
         $projector = new TranscriptProjector($dispatcher, $state);
 
         foreach ($events as $event) {
-            $projector->accept([
-                'type' => $event->type,
-                'runId' => $event->runId,
-                'seq' => $event->seq,
-                'payload' => $event->payload,
-            ]);
+            $projector->accept($event);
         }
 
         $text = '';

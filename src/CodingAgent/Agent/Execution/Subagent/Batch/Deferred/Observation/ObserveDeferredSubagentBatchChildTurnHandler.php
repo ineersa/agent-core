@@ -57,7 +57,13 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
         $cursor = $child->childEventCursor;
         $newEvents = $this->filterNewEvents($message->committedEvents, $cursor);
         if ([] === $newEvents) {
-            $this->enqueueDeliveryIfNeeded($batch->lifecycleId, $batch->aggregateProgressRevision, $batch->deliveredProgressRevision, $batch->terminalCompletionEnqueuedAt, $child->childLifecycleProjection);
+            $this->enqueueDeliveryIfNeeded(
+                $batch->lifecycleId,
+                $batch->aggregateProgressRevision,
+                $batch->deliveredProgressRevision,
+                $batch->terminalCompletionEnqueuedAt,
+                $this->childRepository->decodeChildLifecycleProjection($child->childLifecycleProjection),
+            );
 
             return;
         }
@@ -78,10 +84,8 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
             return;
         }
 
-        $rawProjection = $child->childLifecycleProjection;
-        $current = \is_array($rawProjection) && [] !== $rawProjection
-            ? DeferredChildRunLifecycleProjectionDTO::fromArray($rawProjection)
-            : new DeferredChildRunLifecycleProjectionDTO(
+        $current = $this->childRepository->decodeChildLifecycleProjection($child->childLifecycleProjection)
+            ?? new DeferredChildRunLifecycleProjectionDTO(
                 childStatus: RunStatus::Running,
                 childTurnNo: $message->turnNo,
                 lastCommittedSeq: $cursor,
@@ -150,21 +154,17 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
         }
     }
 
-    /**
-     * @param array<string, mixed>|null $rawChildProjection
-     */
     private function enqueueDeliveryIfNeeded(
         string $batchLifecycleId,
         int $aggregateRevision,
         int $deliveredRevision,
         ?\DateTimeImmutable $terminalMarker,
-        ?array $rawChildProjection,
+        ?DeferredChildRunLifecycleProjectionDTO $childProjection,
     ): void {
         $needsProgress = $aggregateRevision > $deliveredRevision;
         $needsTerminal = null === $terminalMarker
-            && \is_array($rawChildProjection)
-            && [] !== $rawChildProjection
-            && (RunStatus::tryFrom((string) ($rawChildProjection['child_status'] ?? 'running')) ?? RunStatus::Running)->isTerminal();
+            && null !== $childProjection
+            && $childProjection->childStatus->isTerminal();
 
         if (!$needsProgress && !$needsTerminal) {
             return;

@@ -94,8 +94,7 @@ class ChatScreenTest extends TestCase
         $this->screen = new ChatScreen(
             theme: $theme,
             sessionId: 'test-session',
-            promptEditor: new PromptEditor(),
-        );
+            promptEditor: new PromptEditor());
     }
 
     // ── Pre-mount safety ──
@@ -230,8 +229,7 @@ class ChatScreenTest extends TestCase
         $draftScreen = new ChatScreen(
             theme: $this->getTestTheme(),
             sessionId: '',
-            promptEditor: new PromptEditor(),
-        );
+            promptEditor: new PromptEditor());
 
         $draftScreen->mount($this->tui);
 

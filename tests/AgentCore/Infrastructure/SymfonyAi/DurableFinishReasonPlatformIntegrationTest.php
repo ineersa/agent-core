@@ -110,6 +110,7 @@ final class DurableFinishReasonPlatformIntegrationTest extends TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
     }
 }

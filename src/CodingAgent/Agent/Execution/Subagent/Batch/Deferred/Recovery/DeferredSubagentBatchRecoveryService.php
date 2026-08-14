@@ -89,10 +89,8 @@ final readonly class DeferredSubagentBatchRecoveryService
                 $tailEvents,
             );
 
-            $rawProjection = $childEntity->childLifecycleProjection;
-            $current = \is_array($rawProjection) && [] !== $rawProjection
-                ? DeferredChildRunLifecycleProjectionDTO::fromArray($rawProjection)
-                : new DeferredChildRunLifecycleProjectionDTO(
+            $current = $this->childRepository->decodeChildLifecycleProjection($childEntity->childLifecycleProjection)
+                ?? new DeferredChildRunLifecycleProjectionDTO(
                     childStatus: RunStatus::Running,
                     childTurnNo: 0,
                     lastCommittedSeq: $cursor,

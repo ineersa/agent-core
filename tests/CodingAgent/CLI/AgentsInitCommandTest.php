@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\CLI;
 
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
 use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser;
 use Ineersa\CodingAgent\CLI\AgentsInitCommand;
@@ -17,13 +18,6 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\Filesystem\Filesystem;
-use Symfony\Component\PropertyAccess\PropertyAccess;
-use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
-use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
-use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
-use Symfony\Component\Validator\Validation;
 
 /**
  * Thesis: agents:init copies all bundled definitions into an isolated home,
@@ -149,18 +143,7 @@ final class AgentsInitCommandTest extends TestCase
 
     private function createParser(): AgentDefinitionParser
     {
-        $reflectionExtractor = new ReflectionExtractor();
-        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
-        $objectNormalizer = new ObjectNormalizer(
-            classMetadataFactory: $classMetadataFactory,
-            nameConverter: null,
-            propertyAccessor: PropertyAccess::createPropertyAccessor(),
-            propertyTypeExtractor: $reflectionExtractor,
-        );
-        $serializer = new Serializer(normalizers: [$objectNormalizer], encoders: []);
-        $validator = Validation::createValidatorBuilder()
-            ->enableAttributeMapping()
-            ->getValidator();
+        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
 
         return new AgentDefinitionParser(
             frontmatterParser: new AgentFrontmatterParser(new MarkdownFrontmatterExtractor()),

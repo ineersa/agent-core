@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Run;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
-
 /**
  * Durable pending human-input request owned by RunState.
  *
@@ -28,13 +26,11 @@ final readonly class PendingHumanInputRequestDTO
      * @param array<string, mixed>|null $continuationRef canonical ToolCall correlation (run_id/turn_no/step_id/tool_call_id); null for ModelTurn
      */
     public function __construct(
-        #[SerializedName('question_id')]
         public string $questionId,
         public HumanInputContinuationKindEnum $continuationKind,
         /** @var array<string, mixed> */
         public array $payload,
         /** @var array<string, mixed>|null */
-        #[SerializedName('continuation_ref')]
         public ?array $continuationRef = null,
     ) {
     }

@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
-
 /**
  * Nested child-run extension selection under agents.extensions / forks.extensions.
  *
@@ -19,7 +17,6 @@ final readonly class ChildExtensionsConfigDTO
      * @param list<string> $enabled
      */
     public function __construct(
-        #[SerializedName('always_on')]
         public array $alwaysOn = [],
         public array $enabled = [],
     ) {

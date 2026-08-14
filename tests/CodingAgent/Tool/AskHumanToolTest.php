@@ -11,6 +11,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
@@ -32,7 +33,7 @@ final class AskHumanToolTest extends TestCase
         $serializer = new Serializer([
             new ObjectNormalizer(
                 classMetadataFactory: $classMetadataFactory,
-                nameConverter: new MetadataAwareNameConverter($classMetadataFactory),
+                nameConverter: new MetadataAwareNameConverter($classMetadataFactory, new CamelCaseToSnakeCaseNameConverter()),
                 propertyTypeExtractor: new ReflectionExtractor(),
             ),
         ]);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -286,7 +287,7 @@ class FooterStateSegmentProviderTest extends TestCase
     public function testLiveViewFooterShowsChildContextUsageAndModel(): void
     {
         $state = $this->state;
-        $state->subagentLiveCatalog->ingestRuntimeEvent(new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
             type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             runId: 'parent-run',
             seq: 1,
@@ -342,7 +343,7 @@ class FooterStateSegmentProviderTest extends TestCase
 
         foreach ($cases as [$latestInput, $expectedColor]) {
             $state = new TuiSessionState('child-ctx-threshold-'.$latestInput);
-            $state->subagentLiveCatalog->ingestRuntimeEvent(new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+            SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
                 type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
                 runId: 'parent-run',
                 seq: 1,
@@ -356,7 +357,7 @@ class FooterStateSegmentProviderTest extends TestCase
                         'agent_name' => 'scout',
                         'artifact_id' => 'agent_ctx_thr',
                         'agent_run_id' => 'child-run-ctx-thr',
-                        'task_summary' => 'Threshold',
+                        'task_summary' => 'Threshold', 'model' => 'test/model', 'reasoning' => 'medium',
                     ], \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverridesWithLatestInput($latestInput)),
                 ],
             ));

@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Runtime;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Reduces non-transcript TUI session state from runtime events.
@@ -16,11 +18,15 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
  * for each retained-prefix replay event so usage, activity, queued messages, and
  * subagent catalog match live processing. History-position transcript blocks are
  * assigned wholesale from SessionTranscriptProviderInterface, not from this projector.
+ *
+ * Wire array {@code subagent_progress} is denormalized once here before the typed
+ * snapshot reaches {@see SubagentLiveCatalog}. Malformed present payloads fail visibly.
  */
 final readonly class TuiRuntimeEventApplier
 {
     public function __construct(
         private TranscriptProjectorInterface $projector,
+        private DenormalizerInterface $denormalizer,
     ) {
     }
 
@@ -77,8 +83,8 @@ final readonly class TuiRuntimeEventApplier
         }
 
         $state->applyQueuedUserMessageEvent($event);
-        $state->subagentLiveCatalog->ingestRuntimeEvent($event);
-        $this->projector->accept($event->toArray());
+        $this->ingestSubagentProgress($state, $event);
+        $this->projector->accept($event);
     }
 
     /** @return list<\Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock> */
@@ -96,5 +102,25 @@ final readonly class TuiRuntimeEventApplier
     public function drainProjectedChanges(): TranscriptChangeSet
     {
         return $this->projector->drainChanges();
+    }
+
+    private function ingestSubagentProgress(TuiSessionState $state, RuntimeEvent $event): void
+    {
+        if (!str_contains($event->type, 'tool_execution')) {
+            return;
+        }
+
+        if (!\array_key_exists('subagent_progress', $event->payload)) {
+            return;
+        }
+
+        $progress = $event->payload['subagent_progress'];
+        if (!\is_array($progress)) {
+            throw new \InvalidArgumentException('subagent_progress payload must be an array when present.');
+        }
+
+        /** @var SubagentProgressSnapshotInterface $snapshot */
+        $snapshot = $this->denormalizer->denormalize($progress, SubagentProgressSnapshotInterface::class);
+        $state->subagentLiveCatalog->ingestSnapshot($snapshot);
     }
 }

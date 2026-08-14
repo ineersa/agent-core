@@ -47,11 +47,11 @@ final readonly class TaskWorkflowExtension implements HatfieldExtensionInterface
 
         $api->registerTool(new ToolRegistrationDTO(
             name: 'task_list',
-            description: 'List workflow tasks from the external task board (TODO, IN-PROGRESS, CODE-REVIEW, DONE, CANCELLED; ARCHIVE only when include_archive is true or status=ARCHIVE).',
+            description: 'List workflow tasks from the external task board (TODO, IN-PROGRESS, CODE-REVIEW, DONE). CANCELLED and ARCHIVE are omitted by default; pass status=CANCELLED to list cancelled tasks, include_archive=true or status=ARCHIVE to list archived tasks.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
-                    'status' => ['type' => 'string', 'enum' => $statusEnum, 'description' => 'Filter by status; omit to return all statuses except ARCHIVE.'],
+                    'status' => ['type' => 'string', 'enum' => $statusEnum, 'description' => 'Filter by status; omit to return all statuses except CANCELLED and ARCHIVE.'],
                     'include_archive' => [
                         'type' => 'boolean',
                         'description' => 'When true, include ARCHIVE tasks in addition to the selected status; without status, include all statuses. Default false.',

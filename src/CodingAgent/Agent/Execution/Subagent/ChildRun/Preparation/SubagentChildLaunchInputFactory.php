@@ -185,9 +185,9 @@ final class SubagentChildLaunchInputFactory
         // Prefer durable parent run_started reasoning when definition has no override,
         // then fall through the canonical ModelResolver session/default/product chain.
         if (null === $explicit) {
-            $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId) ?? [];
-            $parentReasoning = $parentMetadata['reasoning'] ?? null;
-            if (\is_string($parentReasoning) && '' !== trim($parentReasoning)) {
+            $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId);
+            $parentReasoning = $parentMetadata?->reasoning;
+            if (null !== $parentReasoning && '' !== trim($parentReasoning)) {
                 return trim($parentReasoning);
             }
         }

@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Compaction\CodingAgentPreLlmCompactionGuard;
 use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
@@ -49,7 +50,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         // Most tests don't care about the model; return null by default.
         $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
-        $this->metadataReader = new SubagentRunMetadataReader($this->eventStore);
+        $this->metadataReader = new SubagentRunMetadataReader($this->eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
 
         $this->guard = new CodingAgentPreLlmCompactionGuard(
             $this->compactionConfig,
@@ -408,7 +409,12 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
                             'session' => [
                                 'kind' => 'agent_child',
                                 'parent_run_id' => 'parent-1',
+                                'agent_name' => 'scout',
+                                'artifact_id' => 'agent_child1',
                             ],
+                            'model' => 'deepseek/deepseek-v4-flash',
+                            'reasoning' => 'medium',
+                            'tools_scope' => ['allowed_tools' => []],
                         ],
                     ],
                 ],

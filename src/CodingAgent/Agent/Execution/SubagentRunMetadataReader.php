@@ -6,25 +6,21 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Reads agent child metadata from RunStarted events.
  *
- * Encapsulates the correct payload-path traversal for the nested
- * RunStarted event shape produced by StartRunHandler:
- *
- *   $event->payload['payload']['metadata']['session'][...]
- *   $event->payload['payload']['metadata']['tools_scope'][...]
- *
- * Consumers (SubagentToolSetResolver, SubagentExecutionService) use this reader instead of raw
- * array access to avoid drift between the StartRunHandler
- * serialization shape and downstream consumers.
+ * Root RunEvent.payload is denormalized via Symfony Serializer into
+ * {@see RunStartedMetadataDTO} using SerializedPath attributes.
  */
 final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllowlistReaderInterface
 {
     public function __construct(
         private EventStoreInterface $eventStore,
+        private DenormalizerInterface $denormalizer,
     ) {
     }
 
@@ -34,18 +30,8 @@ final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllow
     public function isAgentChild(string $runId): bool
     {
         $metadata = $this->readRunStartedMetadata($runId);
-        if (null === $metadata) {
-            return false;
-        }
 
-        $session = $metadata['session'] ?? [];
-        if (!\is_array($session)) {
-            return false;
-        }
-
-        $kind = $session['kind'] ?? null;
-
-        return 'agent_child' === $kind;
+        return null !== $metadata && $metadata->isAgentChild();
     }
 
     /**
@@ -54,21 +40,11 @@ final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllow
     public function readParentRunId(string $runId): ?string
     {
         $metadata = $this->readRunStartedMetadata($runId);
-        if (null === $metadata) {
+        if (null === $metadata || !$metadata->isAgentChild()) {
             return null;
         }
 
-        $session = $metadata['session'] ?? [];
-        if (!\is_array($session) || 'agent_child' !== ($session['kind'] ?? null)) {
-            return null;
-        }
-
-        $parentRunId = $session['parent_run_id'] ?? null;
-        if (!\is_string($parentRunId) || '' === trim($parentRunId)) {
-            return null;
-        }
-
-        return $parentRunId;
+        return $metadata->session->parentRunId;
     }
 
     /**
@@ -86,27 +62,7 @@ final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllow
             return null;
         }
 
-        $session = $metadata['session'] ?? [];
-        if (!\is_array($session)) {
-            return null;
-        }
-
-        if ('agent_child' !== ($session['kind'] ?? null)) {
-            return null;
-        }
-
-        $toolsScope = $metadata['tools_scope'] ?? null;
-        if (!\is_array($toolsScope)) {
-            return null;
-        }
-
-        $tools = $toolsScope['allowed_tools'] ?? null;
-        if (!\is_array($tools)) {
-            return null;
-        }
-
-        /* @var list<string> */
-        return $tools;
+        return $metadata->allowedToolsForChild();
     }
 
     /**
@@ -124,47 +80,14 @@ final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllow
             return null;
         }
 
-        $session = $metadata['session'] ?? [];
-        if (!\is_array($session) || 'agent_child' !== ($session['kind'] ?? null)) {
-            return null;
-        }
-
-        if (!\array_key_exists('extensions', $metadata)) {
-            // Pre-selection metadata: treat as empty allowlist (fail closed).
-            return [];
-        }
-
-        $extensions = $metadata['extensions'];
-        if (!\is_array($extensions) || !array_is_list($extensions)) {
-            return [];
-        }
-
-        $classes = [];
-        foreach ($extensions as $item) {
-            if (\is_string($item) && '' !== trim($item)) {
-                $classes[] = trim($item);
-            }
-        }
-
-        return $classes;
+        return $metadata->allowedExtensionsForChild();
     }
 
     /**
-     * Read and return the nested metadata payload from the RunStarted
-     * event of the given run, or null if not available.
-     *
-     * The returned shape matches what StartRunHandler normalizes:
-     *
-     *   [
-     *       'session'      => [...],
-     *       'model'        => '...',
-     *       'reasoning'    => '...',
-     *       'tools_scope'  => [...],
-     *   ]
-     *
-     * @return array<string, mixed>|null
+     * Typed RunStarted metadata for the run, or null when no RunStarted event exists.
+     * Malformed RunStarted payloads propagate Serializer type errors.
      */
-    public function readRunStartedMetadata(string $runId): ?array
+    public function readRunStartedMetadata(string $runId): ?RunStartedMetadataDTO
     {
         $events = $this->eventStore->allFor($runId);
 
@@ -173,17 +96,7 @@ final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllow
                 continue;
             }
 
-            $inner = $event->payload['payload'] ?? null;
-            if (!\is_array($inner)) {
-                return null;
-            }
-
-            $metadata = $inner['metadata'] ?? null;
-            if (!\is_array($metadata)) {
-                return null;
-            }
-
-            return $metadata;
+            return $this->denormalizer->denormalize($event->payload, RunStartedMetadataDTO::class);
         }
 
         return null;

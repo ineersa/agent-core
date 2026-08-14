@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Listener;
 use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
@@ -51,10 +52,7 @@ final class SubagentLiveCommandRegistrarTest extends TestCase
     private function createRegistrar(SlashCommandRegistry $registry): SubagentLiveCommandRegistrar
     {
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(
-                $this->createStub(TranscriptProjectorInterface::class),
-                new NullLogger(),
-            ),
+            new SubagentLiveChildViewPoller($this->createStub(TranscriptProjectorInterface::class), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Symfony\AI\Platform\Message\AssistantMessage;
 
 final readonly class LlmStepResult extends AbstractAgentBusMessage
@@ -11,7 +12,7 @@ final readonly class LlmStepResult extends AbstractAgentBusMessage
     /**
      * @param array<string, int|float>   $usage
      * @param array<string, mixed>|null  $error
-     * @param list<array<string, mixed>> $modelNotifications                 generic model notifications
+     * @param list<ModelNotificationDTO> $modelNotifications                 generic model notifications
      *                                                                       produced by transform context hooks
      *                                                                       during this LLM step
      * @param list<string>               $availableTools                     compact final provider-visible tool names for this request

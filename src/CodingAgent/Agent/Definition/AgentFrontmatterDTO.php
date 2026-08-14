@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Definition;
 
+use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
@@ -90,15 +91,18 @@ final class AgentFrontmatterDTO
         )]
         public readonly ?array $extensions = null,
 
+        #[SerializedName('inheritProjectContext')]
         #[Assert\Type('bool', '"inheritProjectContext" must be a boolean.')]
         public readonly bool $inheritProjectContext = true,
 
+        #[SerializedName('systemPromptMode')]
         #[Assert\Choice(
             choices: ['replace', 'append'],
             message: '"systemPromptMode" must be one of replace|append.',
         )]
         public readonly string $systemPromptMode = 'replace',
 
+        #[SerializedName('parallelAllowed')]
         #[Assert\Type('bool', '"parallelAllowed" must be a boolean.')]
         public readonly bool $parallelAllowed = true,
     ) {

@@ -46,7 +46,10 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
@@ -348,7 +351,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
     private function artifactRegistry(HatfieldSessionStore $sessionStore): AgentArtifactRegistry
     {
         $serializer = new Serializer(
-            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter())],
+            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(classMetadataFactory: new ClassMetadataFactory(new AttributeLoader()), nameConverter: new MetadataAwareNameConverter(new ClassMetadataFactory(new AttributeLoader()), new CamelCaseToSnakeCaseNameConverter()))],
             [new JsonEncoder()],
         );
 

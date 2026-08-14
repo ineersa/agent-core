@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
-
 /**
  * Provider-neutral context-budget wrap-up reminder thresholds.
  *
@@ -24,10 +22,8 @@ final readonly class ContextBudgetReminderConfig
     public const int DEFAULT_URGENT_REMAINING_TOKENS = 25000;
 
     public function __construct(
-        #[SerializedName('early_input_tokens')]
         public int $earlyInputTokens = self::DEFAULT_EARLY_INPUT_TOKENS,
 
-        #[SerializedName('urgent_remaining_tokens')]
         public int $urgentRemainingTokens = self::DEFAULT_URGENT_REMAINING_TOKENS,
     ) {
     }

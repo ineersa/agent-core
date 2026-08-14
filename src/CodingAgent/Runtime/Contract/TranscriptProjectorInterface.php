@@ -6,19 +6,19 @@ namespace Ineersa\CodingAgent\Runtime\Contract;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 
 /**
- * Projects stable runtime event arrays into transcript blocks.
+ * Projects typed runtime events into transcript blocks.
  *
  * The interface lives at the runtime boundary so TUI code can consume the
  * projector without importing the concrete Symfony EventDispatcher pipeline.
+ * Wire/JSONL arrays are decoded to {@see RuntimeEvent} once at the protocol
+ * boundary; callers that already hold a RuntimeEvent pass it directly.
  */
 interface TranscriptProjectorInterface
 {
-    /**
-     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
-     */
-    public function accept(array $event): void;
+    public function accept(RuntimeEvent $event): void;
 
     /**
      * Ordered snapshot for bootstrap/resume/history-position replacement.

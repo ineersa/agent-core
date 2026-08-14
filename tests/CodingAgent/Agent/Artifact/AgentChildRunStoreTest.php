@@ -17,7 +17,10 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
@@ -61,7 +64,8 @@ final class AgentChildRunStoreTest extends TestCase
 
         $this->serializer = new Serializer(
             [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(
-                nameConverter: new CamelCaseToSnakeCaseNameConverter(),
+                classMetadataFactory: ($__cmf = new ClassMetadataFactory(new AttributeLoader())),
+                nameConverter: new MetadataAwareNameConverter($__cmf, new CamelCaseToSnakeCaseNameConverter()),
             )],
             [new JsonEncoder()],
         );

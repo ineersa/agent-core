@@ -10,6 +10,9 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
 /**
  * Validated tool arguments for the ask_human tool.
  *
+ * LLM-provided snake_case argument keys are mapped to camelCase DTO
+ * properties via the global Serializer camel_case_to_snake_case name converter.
+ *
  * Answer schema is not accepted as raw input — free-form omits kind/choices,
  * confirm uses kind=confirm, and a non-empty choices list selects choice mode.
  */

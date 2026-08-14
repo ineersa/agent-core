@@ -9,6 +9,10 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\Exception\MissingConstructorArgumentsException;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
@@ -23,7 +27,7 @@ final class TranscriptBlockTest extends TestCase
     protected function setUp(): void
     {
         $this->serializer = new Serializer(
-            [new BackedEnumNormalizer(), new ObjectNormalizer()],
+            [new BackedEnumNormalizer(), new ObjectNormalizer(classMetadataFactory: ($cmf = new ClassMetadataFactory(new AttributeLoader())), nameConverter: new MetadataAwareNameConverter($cmf, new CamelCaseToSnakeCaseNameConverter()))],
             [],
         );
     }
@@ -95,7 +99,7 @@ final class TranscriptBlockTest extends TestCase
 
         $this->assertSame('msg_2', $arr['id']);
         $this->assertSame('assistant_message', $arr['kind']);
-        $this->assertSame('run_a', $arr['runId']);
+        $this->assertSame('run_a', $arr['run_id']);
         $this->assertSame(3, $arr['seq']);
         $this->assertSame('Hello, world!', $arr['text']);
         $this->assertSame(['model' => 'claude-3'], $arr['meta']);
@@ -108,7 +112,7 @@ final class TranscriptBlockTest extends TestCase
         $data = [
             'id' => 'msg_3',
             'kind' => 'assistant_thinking',
-            'runId' => 'run_b',
+            'run_id' => 'run_b',
             'seq' => 7,
             'text' => 'Let me think about this...',
             'meta' => ['reasoning' => 'high'],
