@@ -102,13 +102,13 @@ ParaTest (`castor test` default) shares SQLite with DAMA transaction isolation; 
 
 All QA goes through Castor — never raw `vendor/bin/*` except isolating a Castor failure. PHPUnit flags and the full matrix live in the testing skill.
 
-Common entries: `castor test`, `castor test:tui`, `castor test:controller-replay`, `castor test:llm-real`, `castor test:controller`, `castor llm:fixtures:record`, `castor llm:fixtures:info`, `castor deptrac`, `castor phpstan`, `castor cs-check` / `castor cs-fix`, `castor check`, `castor cleanup`.
+Common entries: `castor test`, `castor test:tui`, `castor test:controller-replay`, `castor test:llm-real`, `castor test:controller`, `castor llm:fixtures:record`, `castor llm:fixtures:info`, `castor deptrac`, `castor phpstan`, `castor cs-check` / `castor cs-fix`, `castor check`, `castor clean:cleanup`.
 
 ## Snapshots and artifacts
 
 - Passing TUI E2E snapshots: `var/tmp/tui-e2e-*/` (do **not** delete in `tearDown()`)
 - Failures: `var/tmp/tui-failures/`
-- `castor cleanup` removes generated temp/test artifacts when intentional cleanup is needed — not routine pre-retry worker killing (see root safety rules)
+- `castor clean:cleanup` removes generated temp/test artifacts when intentional cleanup is needed — not routine pre-retry worker killing (see root safety rules)
 
 ## Real LLM prompts (smoke robustness)
 

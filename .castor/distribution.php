@@ -1364,7 +1364,7 @@ function distribution_verify(
     $phar = $dist.'/hatfield.phar';
     if (is_file($phar)) {
         distribution_smoke_artifact($phar, isPhar: true);
-        // Hard packaged-content proof: defaults/themes/migrations/internal-docs present.
+        // Hard packaged-content proof: defaults/themes/migrations/selected docs present.
         distribution_assert_phar_bundled_resources($phar);
     } elseif (!$allowMissingPhar) {
         throw new RuntimeException('distribution:verify requires hatfield.phar in '.$dist);
@@ -1394,7 +1394,7 @@ function distribution_verify(
 }
 
 /**
- * Assert the PHAR archive contains bundled defaults, themes, migrations, internal docs.
+ * Assert the PHAR archive contains bundled defaults, themes, migrations, selected docs.
  */
 function distribution_assert_phar_bundled_resources(string $pharPath): void
 {
@@ -1406,8 +1406,6 @@ function distribution_assert_phar_bundled_resources(string $pharPath): void
         'config/hatfield.defaults.yaml',
         'config/themes/catppuccin-mocha.yaml',
         'migrations/Version20260601152619.php',
-        'internal-docs/settings.md',
-        'internal-docs/agents.md',
     ];
     foreach ($required as $entry) {
         if (!isset($phar[$entry])) {
@@ -1417,7 +1415,66 @@ function distribution_assert_phar_bundled_resources(string $pharPath): void
             throw new RuntimeException('PHAR entry must be materialized file, not symlink: '.$entry);
         }
     }
-    echo "  phar bundled resources: ok\n";
+
+    $root = \CastorTasks\project_root_dir();
+    $catalog = (new Ineersa\CodingAgent\Docs\BuiltinDocsCatalog())->discover($root);
+    $expected = [];
+    foreach ($catalog as $entry) {
+        $expected[$entry['relativePath']] = true;
+        if (!isset($phar[$entry['relativePath']])) {
+            throw new RuntimeException('PHAR missing selected built-in doc: '.$entry['relativePath']);
+        }
+        if ($phar[$entry['relativePath']]->isLink()) {
+            throw new RuntimeException('PHAR built-in doc must be regular file: '.$entry['relativePath']);
+        }
+        $uri = 'phar://'.$pharPath.'/'.$entry['relativePath'];
+        $packaged = file_get_contents($uri);
+        $source = file_get_contents($entry['absolutePath']);
+        if (false === $packaged || false === $source || $packaged !== $source) {
+            throw new RuntimeException('PHAR built-in doc bytes must match source: '.$entry['relativePath']);
+        }
+    }
+    // Exact Markdown inventory under both canonical archive doc roots, and
+    // reject ANY archive entry under the vendor path-package Extension API docs tree.
+    $canonicalPrefixes = [
+        Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::CORE_DOCS_RELATIVE.'/',
+        Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::EXTENSION_API_DOCS_RELATIVE.'/',
+    ];
+    $vendorApiDocsPrefix = 'vendor/ineersa/hatfield-extension-api/docs/';
+    foreach (new RecursiveIteratorIterator($phar) as $file) {
+        /** @var PharFileInfo $file */
+        if (!$file->isFile()) {
+            continue;
+        }
+        $rel = str_replace('\\', '/', $file->getPathname());
+        if (str_contains($rel, '.phar/')) {
+            $rel = substr($rel, strpos($rel, '.phar/') + strlen('.phar/'));
+        }
+        if (str_starts_with($rel, $vendorApiDocsPrefix) || $rel === rtrim($vendorApiDocsPrefix, '/')) {
+            throw new RuntimeException('PHAR must not ship vendor path-package Extension API docs entry: '.$rel);
+        }
+        if (!str_ends_with($rel, '.md')) {
+            continue;
+        }
+        $isCanonical = false;
+        foreach ($canonicalPrefixes as $prefix) {
+            if (str_starts_with($rel, $prefix)) {
+                $isCanonical = true;
+                break;
+            }
+        }
+        if (!$isCanonical) {
+            continue;
+        }
+        if (!isset($expected[$rel])) {
+            throw new RuntimeException('PHAR contains unmarked/extra documentation file: '.$rel);
+        }
+    }
+
+    if (isset($phar['internal-docs/settings.md'])) {
+        throw new RuntimeException('PHAR must not contain legacy internal-docs projection');
+    }
+    echo '  phar bundled resources: ok ('.count($expected)." selected docs)\n";
 }
 
 #[AsTask(name: 'distribution:clean', description: 'Remove dist artifacts and static build caches')]

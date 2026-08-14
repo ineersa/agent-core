@@ -15,6 +15,9 @@ namespace Ineersa\CodingAgent\Config;
  * Project-local files (e.g. {@see .hatfield/settings.yaml}) are always
  * resolved from the active project cwd supplied at resolution time, not
  * from the app resource root.
+ *
+ * Built-in documentation roots and selection live in {@see \Ineersa\CodingAgent\Docs\BuiltinDocsCatalog}
+ * (use {@see getAppRoot()} + catalog constants/discovery; no docs path helpers here).
  */
 final readonly class AppResourceLocator
 {
@@ -37,14 +40,6 @@ final readonly class AppResourceLocator
     public function getBuiltinThemesPath(): string
     {
         return $this->appRoot.'/config/themes';
-    }
-
-    /**
-     * Absolute path to the curated internal documentation directory.
-     */
-    public function getInternalDocsPath(): string
-    {
-        return $this->appRoot.'/internal-docs';
     }
 
     /**
