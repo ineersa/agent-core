@@ -10,11 +10,13 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapsh
 use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Canonical parent subagent_progress append using explicit stored parent tool correlation.
  *
- * Accepts a typed snapshot and normalizes to the canonical snake_case array only
+ * Validates the typed snapshot, then normalizes to the canonical snake_case array only
  * when writing the RunEvent payload (persisted/public boundary).
  */
 class SubagentProgressEventAppender
@@ -22,6 +24,7 @@ class SubagentProgressEventAppender
     public function __construct(
         private CommittedRunEventAppender $committedRunEventAppender,
         private NormalizerInterface $normalizer,
+        private ValidatorInterface $validator,
     ) {
     }
 
@@ -33,6 +36,11 @@ class SubagentProgressEventAppender
         string $toolName,
         SubagentProgressSnapshotInterface $progress,
     ): RunEvent {
+        $violations = $this->validator->validate($progress);
+        if ($violations->count() > 0) {
+            throw new ValidationFailedException($progress, $violations);
+        }
+
         /** @var array<string, mixed> $normalized */
         $normalized = $this->normalizer->normalize(
             $progress,

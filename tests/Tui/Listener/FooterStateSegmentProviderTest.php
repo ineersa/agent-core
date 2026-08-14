@@ -357,7 +357,7 @@ class FooterStateSegmentProviderTest extends TestCase
                         'agent_name' => 'scout',
                         'artifact_id' => 'agent_ctx_thr',
                         'agent_run_id' => 'child-run-ctx-thr',
-                        'task_summary' => 'Threshold',
+                        'task_summary' => 'Threshold', 'model' => 'test/model', 'reasoning' => 'medium',
                     ], \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverridesWithLatestInput($latestInput)),
                 ],
             ));

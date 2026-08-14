@@ -352,7 +352,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
                     agentRunId: 'child-run-llm-steps',
                     terminal: true,
                     status: \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum::Completed,
-                    message: 'done',
                 ),
             ],
             activeTurns: ['child-run-llm-steps' => $roundTrip->childTurnNo],

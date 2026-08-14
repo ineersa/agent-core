@@ -204,7 +204,7 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         $dispatcher = new EventDispatcher();
         $state = new TranscriptProjectionState();
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()));
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $dispatcher->addSubscriber(new SkillReadProjectionSubscriber($discovery));
 
         return new TranscriptProjector($dispatcher, $state);

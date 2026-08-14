@@ -969,7 +969,7 @@ final class TickPollListenerTest extends TestCase
 
     private function createIsolatedSubagentLiveChildPoller(): SubagentLiveChildViewPoller
     {
-        return new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator());
+        return new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
     }
 
     /** @return array<string, string> */

@@ -17,7 +17,6 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
-use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
@@ -113,14 +112,14 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'runStore' => $runStore,
             'parentRunStore' => $parentRunStore,
             'eventStore' => $eventStore,
-            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class), self::getContainer()->get(\Symfony\Component\Serializer\Normalizer\NormalizerInterface::class)),
+            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class), self::getContainer()->get(\Symfony\Component\Serializer\Normalizer\NormalizerInterface::class), self::getContainer()->get(\Symfony\Component\Validator\Validator\ValidatorInterface::class)),
             'metadataReader' => $metadataReader,
             'childRunDirectory' => $directory,
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),
             'agentsConfig' => new AgentsConfig(),
             'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
-            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class), AttributeSerializerValidatorTestFactory::denormalizer()),
+            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
             'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
             'appConfig' => self::getContainer()->get(AppConfig::class),
             'modelResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
@@ -150,14 +149,14 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'runStore' => $this->createStub(RunStoreInterface::class),
             'parentRunStore' => $this->createStub(RunStoreInterface::class),
             'eventStore' => $eventStore,
-            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class), self::getContainer()->get(\Symfony\Component\Serializer\Normalizer\NormalizerInterface::class)),
+            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class), self::getContainer()->get(\Symfony\Component\Serializer\Normalizer\NormalizerInterface::class), self::getContainer()->get(\Symfony\Component\Validator\Validator\ValidatorInterface::class)),
             'metadataReader' => new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
             'childRunDirectory' => $directory,
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),
             'agentsConfig' => new AgentsConfig(),
             'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
-            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class), AttributeSerializerValidatorTestFactory::denormalizer()),
+            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
             'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
             'appConfig' => self::getContainer()->get(AppConfig::class),
         ]);
@@ -251,14 +250,14 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'runStore' => $this->createStub(RunStoreInterface::class),
             'parentRunStore' => $this->createStub(RunStoreInterface::class),
             'eventStore' => $this->createStub(EventStoreInterface::class),
-            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class), self::getContainer()->get(\Symfony\Component\Serializer\Normalizer\NormalizerInterface::class)),
+            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class), self::getContainer()->get(\Symfony\Component\Serializer\Normalizer\NormalizerInterface::class), self::getContainer()->get(\Symfony\Component\Validator\Validator\ValidatorInterface::class)),
             'metadataReader' => new SubagentRunMetadataReader($this->createStub(EventStoreInterface::class), AttributeSerializerValidatorTestFactory::denormalizer()),
             'childRunDirectory' => self::getContainer()->get(AgentChildRunDirectory::class),
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),
             'agentsConfig' => new AgentsConfig(maxAgents: 8),
             'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
-            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class), AttributeSerializerValidatorTestFactory::denormalizer()),
+            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
             'appConfig' => self::getContainer()->get(AppConfig::class),
             'modelResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
             'clock' => new NativeClock(),

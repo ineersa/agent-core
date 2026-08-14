@@ -1028,8 +1028,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 $this->assertCount(1, $appended);
                 $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
             } else {
-                $this->assertCount('no_projection' === $variant ? 0 : 1, $appended);
-                $this->assertNull($batchDone->interruptionProgressEnqueuedAt);
+                // no_projection still emits identity-only forced progress from launch model/reasoning.
+                $this->assertCount(1, $appended);
+                $this->assertSame('failed', $appended[0]['status']);
+                $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
             }
         } else {
             $this->assertTrue($complete->isError);
@@ -1050,8 +1052,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                     $this->assertCount(1, $appended);
                     $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
                 } else {
-                    $this->assertCount('no_projection' === $variant ? 0 : 1, $appended);
-                    $this->assertNull($batchDone->interruptionProgressEnqueuedAt);
+                    // no_projection still emits identity-only forced progress from launch model/reasoning.
+                    $this->assertCount(1, $appended);
+                    $this->assertSame('cancelled', $appended[0]['status']);
+                    $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
                 }
             }
         }
@@ -1191,7 +1195,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         return new class(self::getContainer()->get(CommittedRunEventAppender::class), $appended) extends SubagentProgressEventAppender {
             public function __construct(CommittedRunEventAppender $inner, private array &$appended)
             {
-                parent::__construct($inner, SubagentProgressSerializerTestSupport::normalizer());
+                parent::__construct($inner, SubagentProgressSerializerTestSupport::normalizer(), SubagentProgressSerializerTestSupport::validator());
             }
 
             public function append(

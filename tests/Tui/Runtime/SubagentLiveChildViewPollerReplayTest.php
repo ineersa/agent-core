@@ -34,7 +34,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
     public function replaySnapshotSetsChildLastSeqAndFiresHitlCallback(): void
     {
         $projector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
-        $poller = new SubagentLiveChildViewPoller($projector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator());
+        $poller = new SubagentLiveChildViewPoller($projector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
 
         $snapshot = new ChildRunTranscriptSnapshotDTO(
             transcriptBlocks: [
@@ -86,7 +86,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
     public function pollUsesOnlyLiveClientEventsAndPersistsCache(): void
     {
         $projector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
-        $poller = new SubagentLiveChildViewPoller($projector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator());
+        $poller = new SubagentLiveChildViewPoller($projector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
 
         $live = $this->liveState();
         $poller->replaySnapshot(
@@ -120,7 +120,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
     public function pollSkipsEventsAtOrBelowChildLastSeqAfterReplay(): void
     {
         $projector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
-        $poller = new SubagentLiveChildViewPoller($projector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator());
+        $poller = new SubagentLiveChildViewPoller($projector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
 
         $live = $this->liveState();
         $poller->replaySnapshot(
@@ -159,7 +159,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
     public function cachedReentryReprojectsReplayAndLiveEvents(): void
     {
         $projector = $this->childLiveProjector();
-        $poller = new SubagentLiveChildViewPoller($projector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator());
+        $poller = new SubagentLiveChildViewPoller($projector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
 
         $live = $this->liveState();
         $poller->replaySnapshot(

@@ -92,7 +92,7 @@ final class SessionInitializerReplayTest extends TestCase
         $state = new TranscriptProjectionState();
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()));
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
@@ -113,7 +113,7 @@ final class SessionInitializerReplayTest extends TestCase
             eventStore: $this->eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
+            eventApplier: new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer()),
             historyProvider: $historyProvider,
             sessionTranscriptProvider: new SessionTranscriptProvider(
                 eventStore: $this->eventStore,

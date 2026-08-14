@@ -46,22 +46,51 @@ final class SubagentProgressSerializerTestSupport
         if (!str_contains($event->type, 'tool_execution')) {
             return;
         }
-        $progress = $event->payload['subagent_progress'] ?? null;
+        if (!\array_key_exists('subagent_progress', $event->payload)) {
+            return;
+        }
+        $progress = $event->payload['subagent_progress'];
         if (!\is_array($progress)) {
-            return;
+            throw new \InvalidArgumentException('subagent_progress payload must be an array when present.');
         }
-        try {
-            $snapshot = self::denormalizer()->denormalize($progress, SubagentProgressSnapshotInterface::class);
-            if (!$snapshot instanceof SubagentProgressSnapshotInterface) {
-                return;
-            }
-            $violations = self::validator()->validate($snapshot);
-            if ($violations->count() > 0) {
-                return;
-            }
-        } catch (\Throwable) {
-            return;
-        }
+        /** @var SubagentProgressSnapshotInterface $snapshot */
+        $snapshot = self::denormalizer()->denormalize($progress, SubagentProgressSnapshotInterface::class);
         $catalog->ingestSnapshot($snapshot);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function canonicalSingleWire(
+        string $agentName = 'scout',
+        string $artifactId = 'agent_abc',
+        string $agentRunId = 'child-run-1',
+        string $taskSummary = 'Inspect TUI',
+        string $model = 'test/model',
+        string $reasoning = 'medium',
+        string $status = 'running',
+        int $turnNo = 1,
+        int $elapsedMs = 100,
+    ): array {
+        return [
+            'mode' => 'single',
+            'status' => $status,
+            'agent_name' => $agentName,
+            'artifact_id' => $artifactId,
+            'agent_run_id' => $agentRunId,
+            'task_summary' => $taskSummary,
+            'model' => $model,
+            'reasoning' => $reasoning,
+            'turn_no' => $turnNo,
+            'elapsed_ms' => $elapsedMs,
+            'tool_count' => 0,
+            'llm_step_count' => 0,
+            'input_tokens' => 0,
+            'latest_input_tokens' => 0,
+            'output_tokens' => 0,
+            'reasoning_tokens' => 0,
+            'total_tokens' => 0,
+            'recent_tools' => [],
+        ];
     }
 }

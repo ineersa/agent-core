@@ -134,7 +134,7 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
         $projectionState = new TranscriptProjectionState();
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()));
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $transcriptProjector = new TranscriptProjector($dispatcher, $projectionState);
 
         return new ChildRunTranscriptSnapshotProvider($store, $eventMapper, $transcriptProjector);

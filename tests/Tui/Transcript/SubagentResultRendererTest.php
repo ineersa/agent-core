@@ -25,7 +25,7 @@ final class SubagentResultRendererTest extends TestCase
     {
         $progress = [
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_01HX', 'task_summary' => 'inspect runtime events',
+            'artifact_id' => 'agent_01HX', 'task_summary' => 'inspect runtime events', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium',
             'turn_no' => 3, 'llm_step_count' => 3, 'elapsed_ms' => 18000,
         ];
         $block = new TranscriptBlock(
@@ -53,7 +53,7 @@ final class SubagentResultRendererTest extends TestCase
     {
         $progress = [
             'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_one', 'task_summary' => 'one step',
+            'artifact_id' => 'agent_one', 'task_summary' => 'one step', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium',
             'turn_no' => 99, 'llm_step_count' => 1,
             'input_tokens' => 100, 'output_tokens' => 20, 'model' => 'deepseek/deepseek-v4-flash',
         ];
@@ -77,7 +77,7 @@ final class SubagentResultRendererTest extends TestCase
         $progress = [
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
             'artifact_id' => 'agent_01HX', 'agent_run_id' => 'run-child-abc',
-            'task_summary' => 'inspect runtime events', 'turn_no' => 17,
+            'task_summary' => 'inspect runtime events', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 17,
             'elapsed_ms' => 139000, 'tool_count' => 38, 'total_tokens' => 49000,
             'input_tokens' => 35000, 'output_tokens' => 14000, 'reasoning_tokens' => 584000,
             'cost' => 0.0104, 'model' => 'deepseek/deepseek-v4-flash',
@@ -107,7 +107,7 @@ final class SubagentResultRendererTest extends TestCase
     {
         $progress = [
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_wait', 'task_summary' => 'approve edit', 'turn_no' => 2,
+            'artifact_id' => 'agent_wait', 'task_summary' => 'approve edit', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 2,
         ];
         $block = new TranscriptBlock(
             id: 'tool_result_wait', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
@@ -123,7 +123,7 @@ final class SubagentResultRendererTest extends TestCase
         $task = "You are a scout. Complete the following steps:\n\n1. Use `read` to list docs\n2. Summarize";
         $progress = [
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a70', 'task_summary' => $task, 'turn_no' => 1,
+            'artifact_id' => 'agent_a70', 'task_summary' => $task, 'turn_no' => 1, 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium',
         ];
         $block = new TranscriptBlock(
             id: 'tool_result_multiline_task', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
@@ -143,7 +143,7 @@ final class SubagentResultRendererTest extends TestCase
     {
         $progress = [
             'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_done', 'task_summary' => 'task', 'turn_no' => 3,
+            'artifact_id' => 'agent_done', 'task_summary' => 'task', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 3,
         ];
         $handoff = "# Handoff title\n\nUnique handoff body.\n\n- bullet one\n- bullet two\n- bullet three\n- bullet four\n- bullet five\n- bullet six\n- bullet seven\n- bullet eight\n- bullet nine";
         $block = new TranscriptBlock(
@@ -168,7 +168,7 @@ final class SubagentResultRendererTest extends TestCase
     {
         $progress = [
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_run', 'task_summary' => 'task', 'turn_no' => 1,
+            'artifact_id' => 'agent_run', 'task_summary' => 'task', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 1,
         ];
         $handoff = "# Premature handoff\n\nShould not show while running.";
         $block = new TranscriptBlock(
@@ -191,7 +191,7 @@ final class SubagentResultRendererTest extends TestCase
     {
         $progress = [
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_wait', 'task_summary' => 'approve', 'turn_no' => 2,
+            'artifact_id' => 'agent_wait', 'task_summary' => 'approve', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 2,
         ];
         $block = new TranscriptBlock(
             id: 'tool_result_wait_handoff', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
@@ -214,11 +214,11 @@ final class SubagentResultRendererTest extends TestCase
             'children' => [
                 [
                     'index' => 1, 'agent_name' => 'scout', 'status' => 'running', 'artifact_id' => 'agent_1',
-                    'task_summary' => 'Read docs', 'turn_no' => 4, 'tool_count' => 3, 'total_tokens' => 9000,
+                    'agent_run_id' => 'run-1', 'task_summary' => 'Read docs', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 4, 'tool_count' => 3, 'total_tokens' => 9000,
                     'artifact_path' => 'artifacts/agents/agent_1',
                 ],
                 [
-                    'index' => 2, 'agent_name' => 'reviewer', 'status' => 'completed', 'artifact_id' => 'agent_2',
+                    'index' => 2, 'agent_name' => 'reviewer', 'status' => 'completed', 'artifact_id' => 'agent_2', 'agent_run_id' => 'run-1', 'model' => 'test/model', 'reasoning' => 'medium',
                     'task_summary' => 'Review patch', 'turn_no' => 1, 'active_tool' => 'read: path="AGENTS.md"',
                 ],
             ],
@@ -243,7 +243,7 @@ final class SubagentResultRendererTest extends TestCase
     {
         $progress = [
             'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_done', 'task_summary' => 'task', 'turn_no' => 3,
+            'artifact_id' => 'agent_done', 'task_summary' => 'task', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 3,
             'artifact_path' => 'artifacts/agents/agent_done',
         ];
         $handoff = "# Handoff title\n\nUnique handoff body.\n\n- bullet one\n- bullet two\n- bullet three\n- bullet four\n- bullet five\n- bullet six\n- bullet seven\n- bullet eight\n- bullet nine";
@@ -273,7 +273,7 @@ final class SubagentResultRendererTest extends TestCase
     {
         $progress = [
             'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_done', 'task_summary' => 'task', 'turn_no' => 3,
+            'artifact_id' => 'agent_done', 'task_summary' => 'task', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 3,
         ];
         $handoff = "line0\nline1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9";
         $block = new TranscriptBlock(
@@ -309,7 +309,7 @@ final class SubagentResultRendererTest extends TestCase
         $base = [
             'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
             'artifact_id' => 'agent_ctx', 'agent_run_id' => 'child-run-ctx',
-            'task_summary' => 'Context stats', 'turn_no' => 3,
+            'task_summary' => 'Context stats', 'reasoning' => 'medium', 'turn_no' => 3,
             'input_tokens' => 35000, 'output_tokens' => 14000,
         ];
 
@@ -322,14 +322,7 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringNotContainsString('CTX ', $plainMissingLatest, 'Missing latest_input_tokens must not fabricate a CTX line');
         $this->assertDoesNotMatchRegularExpression('/\b\d+%\s+\d/', $plainMissingLatest, 'Missing latest tokens must not show a context percentage');
 
-        $missingModel = array_merge($base, \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverridesWithLatestInput(
-            \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS,
-            '',
-        ));
-        unset($missingModel['model']);
-        $plainMissingModel = $this->plainRenderedSubagentCard($missingModel);
-        $this->assertStringNotContainsString('CTX ', $plainMissingModel, 'Missing model must not fabricate a CTX line');
-
+        // Canonical progress always carries model; CTX still requires latest tokens + window.
         $missingWindow = array_merge($base, \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverridesMissingContextWindow());
         $plainMissingWindow = $this->plainRenderedSubagentCard($missingWindow);
         $this->assertStringNotContainsString('CTX ', $plainMissingWindow, 'Missing context_window must not fabricate a CTX line');

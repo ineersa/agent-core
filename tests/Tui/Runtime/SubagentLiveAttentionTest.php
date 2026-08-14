@@ -39,7 +39,7 @@ final class SubagentLiveAttentionTest extends TestCase
         $state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
         SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task', 'model' => 'test/model', 'reasoning' => 'medium',
         ]));
 
         $screen = new ChatScreen(
@@ -62,7 +62,7 @@ final class SubagentLiveAttentionTest extends TestCase
         $state = new TuiSessionState('parent-session');
         SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task', 'model' => 'test/model', 'reasoning' => 'medium',
         ]));
 
         $screen = new ChatScreen(
@@ -88,7 +88,7 @@ final class SubagentLiveAttentionTest extends TestCase
         $state = new TuiSessionState('parent-session');
         SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
             'mode' => 'single', 'status' => 'cancelled', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Done',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Done', 'model' => 'test/model', 'reasoning' => 'medium',
         ]));
 
         $screen = new ChatScreen(
@@ -129,7 +129,7 @@ final class SubagentLiveAttentionTest extends TestCase
         $state = new TuiSessionState('parent-session');
         SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task', 'model' => 'test/model', 'reasoning' => 'medium',
         ]));
         $this->assertFalse($state->subagentLiveView->active);
 
@@ -153,7 +153,7 @@ final class SubagentLiveAttentionTest extends TestCase
         $state = new TuiSessionState('parent-session');
         SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task', 'model' => 'test/model', 'reasoning' => 'medium',
         ]));
         $state->subagentLiveView->enter(new SubagentLiveChildDTO(
             agentRunId: 'child-run-1',

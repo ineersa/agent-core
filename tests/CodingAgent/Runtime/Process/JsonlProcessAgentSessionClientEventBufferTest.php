@@ -503,7 +503,6 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber(
             new \Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter(),
             SubagentProgressSerializerTestSupport::denormalizer(),
-            SubagentProgressSerializerTestSupport::validator(),
         ));
         $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($dispatcher, $state);
         foreach ($childDrain as $event) {

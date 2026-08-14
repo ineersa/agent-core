@@ -258,6 +258,7 @@ line9';
                         'status' => 'completed',
                         'agent_name' => 'scout',
                         'artifact_id' => 'agent_done',
+                        'agent_run_id' => 'child-run-1',
                         'task_summary' => 'task',
                         'model' => 'deepseek/deepseek-v4-flash',
                         'reasoning' => 'medium',

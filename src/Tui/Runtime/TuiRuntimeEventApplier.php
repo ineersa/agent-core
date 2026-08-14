@@ -9,10 +9,7 @@ use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
-use Symfony\Component\Validator\Exception\ValidationFailedException;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Reduces non-transcript TUI session state from runtime events.
@@ -23,14 +20,13 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  * assigned wholesale from SessionTranscriptProviderInterface, not from this projector.
  *
  * Wire array {@code subagent_progress} is denormalized once here before the typed
- * snapshot reaches {@see SubagentLiveCatalog}.
+ * snapshot reaches {@see SubagentLiveCatalog}. Malformed present payloads fail visibly.
  */
 final readonly class TuiRuntimeEventApplier
 {
     public function __construct(
         private TranscriptProjectorInterface $projector,
         private DenormalizerInterface $denormalizer,
-        private ValidatorInterface $validator,
     ) {
     }
 
@@ -114,25 +110,17 @@ final readonly class TuiRuntimeEventApplier
             return;
         }
 
-        $progress = $event->payload['subagent_progress'] ?? null;
+        if (!\array_key_exists('subagent_progress', $event->payload)) {
+            return;
+        }
+
+        $progress = $event->payload['subagent_progress'];
         if (!\is_array($progress)) {
-            return;
+            throw new \InvalidArgumentException('subagent_progress payload must be an array when present.');
         }
 
-        try {
-            $snapshot = $this->denormalizer->denormalize($progress, SubagentProgressSnapshotInterface::class);
-            if (!$snapshot instanceof SubagentProgressSnapshotInterface) {
-                return;
-            }
-            $violations = $this->validator->validate($snapshot);
-            if ($violations->count() > 0) {
-                return;
-            }
-        } catch (SerializerExceptionInterface|ValidationFailedException|\TypeError|\ValueError|\InvalidArgumentException) {
-            // Invalid wire payloads are ignored; live catalog stays best-effort.
-            return;
-        }
-
+        /** @var SubagentProgressSnapshotInterface $snapshot */
+        $snapshot = $this->denormalizer->denormalize($progress, SubagentProgressSnapshotInterface::class);
         $state->subagentLiveCatalog->ingestSnapshot($snapshot);
     }
 }

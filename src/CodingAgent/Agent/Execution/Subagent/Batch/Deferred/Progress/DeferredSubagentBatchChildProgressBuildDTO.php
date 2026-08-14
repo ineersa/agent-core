@@ -15,7 +15,7 @@ final readonly class DeferredSubagentBatchChildProgressBuildDTO
         public ChildRunBatchItemSnapshotDTO $snapshot,
         public SubagentProgressParallelChildReportDTO $report,
         public int $turnNo,
-        public ?SubagentChildProgressSummary $enrichment,
+        public SubagentChildProgressSummary $enrichment,
     ) {
     }
 }

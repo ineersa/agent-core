@@ -79,7 +79,7 @@ final class TuiModelInteractionVirtualTest extends TestCase
 
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()));
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());

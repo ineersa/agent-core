@@ -10,10 +10,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
-use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
-use Symfony\Component\Validator\Exception\ValidationFailedException;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Projects tool-call and tool-execution events into ToolCall and
@@ -24,7 +21,6 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
     public function __construct(
         private readonly SubagentProgressDisplayFormatter $subagentProgressFormatter,
         private readonly DenormalizerInterface $denormalizer,
-        private readonly ValidatorInterface $validator,
     ) {
     }
 
@@ -227,8 +223,13 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             return;
         }
 
-        $progress = $this->decodeSubagentProgress($p['subagent_progress'] ?? null);
-        if (null !== $progress) {
+        if (\array_key_exists('subagent_progress', $p)) {
+            $rawProgress = $p['subagent_progress'];
+            if (!\is_array($rawProgress)) {
+                throw new \InvalidArgumentException('subagent_progress payload must be an array when present.');
+            }
+            /** @var SubagentProgressSnapshotInterface $progress */
+            $progress = $this->denormalizer->denormalize($rawProgress, SubagentProgressSnapshotInterface::class);
             $meta = $block->meta;
             $meta['subagent_progress'] = $progress;
             if (isset($p['tool_name']) && \is_string($p['tool_name']) && '' !== $p['tool_name']) {
@@ -398,35 +399,5 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
     public function onRunCancelled(TranscriptProjectionEvent $event): void
     {
         $event->state->removeOrphanedToolCallBlocks();
-    }
-
-    /**
-     * Decode RuntimeEvent payload subagent_progress once at the projector boundary.
-     * Invalid payloads are ignored so projection stays resilient.
-     */
-    private function decodeSubagentProgress(mixed $progress): ?SubagentProgressSnapshotInterface
-    {
-        if (!\is_array($progress)) {
-            return null;
-        }
-
-        try {
-            $snapshot = $this->denormalizer->denormalize($progress, SubagentProgressSnapshotInterface::class);
-        } catch (SerializerExceptionInterface|\TypeError|\ValueError|\InvalidArgumentException) {
-            return null;
-        }
-        if (!$snapshot instanceof SubagentProgressSnapshotInterface) {
-            return null;
-        }
-        try {
-            $violations = $this->validator->validate($snapshot);
-            if ($violations->count() > 0) {
-                return null;
-            }
-        } catch (ValidationFailedException) {
-            return null;
-        }
-
-        return $snapshot;
     }
 }

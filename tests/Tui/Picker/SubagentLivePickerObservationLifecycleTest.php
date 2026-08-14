@@ -66,7 +66,7 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
         );
 
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
+            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $snapshotProvider,
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),
@@ -159,7 +159,7 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
 
         $snapshotProvider = new FixedChildRunTranscriptSnapshotProvider($snapshot);
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
+            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $snapshotProvider,
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),

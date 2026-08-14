@@ -44,7 +44,7 @@ final class SubagentLiveCatalogTest extends TestCase
         ]));
         SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, $this->progressEvent('parent-1', [
             'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'task_summary' => 'Task done',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task done',
             'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
         ]));
 
@@ -54,15 +54,15 @@ final class SubagentLiveCatalogTest extends TestCase
         $this->assertSame(SubagentLiveStatusEnum::Completed, $child->status);
     }
 
-    public function testIgnoresRowWithoutResolvableAgentRunId(): void
+    public function testMalformedMissingAgentRunIdFailsVisibly(): void
     {
         $catalog = new SubagentLiveCatalog();
+        $this->expectException(\Throwable::class);
         SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, $this->progressEvent('parent-1', [
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'task_summary' => 'No id',
             'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
         ]));
-        $this->assertSame([], $catalog->all());
     }
 
     public function testIngestsParallelChildrenRows(): void
@@ -71,8 +71,8 @@ final class SubagentLiveCatalogTest extends TestCase
         SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, $this->progressEvent('parent-1', [
             'mode' => 'parallel', 'status' => 'running',
             'children' => [
-                ['agent_name' => 'scout', 'artifact_id' => 'a1', 'agent_run_id' => 'run-1', 'status' => 'running', 'task_summary' => 'One', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium'],
-                ['agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'completed', 'task_summary' => 'Two', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'high'],
+                ['index' => 1, 'agent_name' => 'scout', 'artifact_id' => 'a1', 'agent_run_id' => 'run-1', 'status' => 'running', 'task_summary' => 'One', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium'],
+                ['index' => 2, 'agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'completed', 'task_summary' => 'Two', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'high'],
             ],
         ]));
         $this->assertCount(2, $catalog->all());
@@ -159,8 +159,8 @@ final class SubagentLiveCatalogTest extends TestCase
         SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, $this->progressEvent('parent-1', [
             'mode' => 'parallel', 'status' => 'running',
             'children' => [
-                ['agent_name' => 'scout', 'artifact_id' => 'a1', 'agent_run_id' => 'run-1', 'status' => 'running', 'task_summary' => 'One', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium'],
-                ['agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'waiting_human', 'task_summary' => 'Two', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'high'],
+                ['index' => 1, 'agent_name' => 'scout', 'artifact_id' => 'a1', 'agent_run_id' => 'run-1', 'status' => 'running', 'task_summary' => 'One', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium'],
+                ['index' => 2, 'agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'waiting_human', 'task_summary' => 'Two', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'high'],
             ],
         ]));
 
@@ -247,8 +247,8 @@ final class SubagentLiveCatalogTest extends TestCase
         SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, $this->progressEvent('parent-1', [
             'mode' => 'parallel', 'status' => 'running',
             'children' => [
-                ['agent_name' => 'scout', 'artifact_id' => 'zzz', 'agent_run_id' => 'run-z', 'status' => 'completed', 'task_summary' => 'Later id', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium'],
-                ['agent_name' => 'worker', 'artifact_id' => 'aaa', 'agent_run_id' => 'run-a', 'status' => 'waiting_human', 'task_summary' => 'Needs input', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'high'],
+                ['index' => 1, 'agent_name' => 'scout', 'artifact_id' => 'zzz', 'agent_run_id' => 'run-z', 'status' => 'completed', 'task_summary' => 'Later id', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium'],
+                ['index' => 2, 'agent_name' => 'worker', 'artifact_id' => 'aaa', 'agent_run_id' => 'run-a', 'status' => 'waiting_human', 'task_summary' => 'Needs input', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'high'],
             ],
         ]));
 

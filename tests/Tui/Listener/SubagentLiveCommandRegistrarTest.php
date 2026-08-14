@@ -52,7 +52,7 @@ final class SubagentLiveCommandRegistrarTest extends TestCase
     private function createRegistrar(SlashCommandRegistry $registry): SubagentLiveCommandRegistrar
     {
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller($this->createStub(TranscriptProjectorInterface::class), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
+            new SubagentLiveChildViewPoller($this->createStub(TranscriptProjectorInterface::class), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),

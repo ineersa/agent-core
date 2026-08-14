@@ -46,9 +46,6 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
 
         if (ChildRunBatchExecutionModeEnum::Single === $batch->executionMode) {
             $payload = $this->snapshotFactory->buildSingleForcedPayload($batch, $kind);
-            if (null === $payload) {
-                return false;
-            }
         } else {
             if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
                 return false;

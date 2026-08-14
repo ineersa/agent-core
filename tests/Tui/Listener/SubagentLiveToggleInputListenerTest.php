@@ -35,7 +35,7 @@ final class SubagentLiveToggleInputListenerTest extends TestCase
         $state->subagentLiveView->active = true;
 
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
+            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),

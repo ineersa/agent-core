@@ -12,29 +12,44 @@ use Symfony\Component\Validator\Constraints as Assert;
 final readonly class SubagentProgressChildRowDTO
 {
     /**
-     * @param list<string>|null $recentTools
+     * @param list<string> $recentTools
      */
     public function __construct(
-        public int $index = 0,
-        public string $agentName = 'subagent',
+        #[Assert\GreaterThanOrEqual(1)]
+        public int $index,
         #[Assert\NotBlank]
-        public string $status = 'running',
-        public string $artifactId = '',
-        public string $agentRunId = '',
-        public string $taskSummary = '',
+        public string $agentName,
+        #[Assert\NotBlank]
+        public string $status,
+        #[Assert\NotBlank]
+        public string $artifactId,
+        #[Assert\NotBlank]
+        public string $agentRunId,
+        #[Assert\NotBlank]
+        public string $taskSummary,
+        #[Assert\NotBlank]
+        public string $model,
+        #[Assert\NotBlank]
+        public string $reasoning,
         public int $turnNo = 0,
-        public ?int $toolCount = null,
-        public ?int $llmStepCount = null,
-        public ?int $inputTokens = null,
-        public ?int $latestInputTokens = null,
-        public ?int $outputTokens = null,
-        public ?int $reasoningTokens = null,
-        public ?int $totalTokens = null,
-        #[Assert\All([new Assert\Type('string')])]
-        public ?array $recentTools = null,
+        #[Assert\GreaterThanOrEqual(0)]
+        public int $toolCount = 0,
+        #[Assert\GreaterThanOrEqual(0)]
+        public int $llmStepCount = 0,
+        #[Assert\GreaterThanOrEqual(0)]
+        public int $inputTokens = 0,
+        #[Assert\GreaterThanOrEqual(0)]
+        public int $latestInputTokens = 0,
+        #[Assert\GreaterThanOrEqual(0)]
+        public int $outputTokens = 0,
+        #[Assert\GreaterThanOrEqual(0)]
+        public int $reasoningTokens = 0,
+        #[Assert\GreaterThanOrEqual(0)]
+        public int $totalTokens = 0,
+        /** @var list<string> */
+        #[Assert\All([new Assert\NotBlank()])]
+        public array $recentTools = [],
         public ?float $cost = null,
-        public ?string $model = null,
-        public ?string $reasoning = null,
         public ?int $contextWindow = null,
         public ?string $artifactPath = null,
         public ?string $assistantExcerpt = null,

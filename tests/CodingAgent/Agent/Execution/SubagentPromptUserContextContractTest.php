@@ -16,7 +16,6 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
-use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
@@ -346,7 +345,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),
             'agentsConfig' => new AgentsConfig(subagentToolTimeoutSeconds: 2),
-            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class), AttributeSerializerValidatorTestFactory::denormalizer()),
+            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
             'appConfig' => self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class),
             'modelResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
             'batchRepository' => self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),

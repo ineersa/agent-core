@@ -274,7 +274,7 @@ final class SubagentLivePickerControllerTest extends TestCase
             ->willReturn(new ChildRunTranscriptSnapshotDTO([$block], [], 4));
 
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
+            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $snapshotProvider,
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),
@@ -438,7 +438,7 @@ final class SubagentLivePickerControllerTest extends TestCase
                     'agent_name' => 'scout',
                     'artifact_id' => 'agent_scout',
                     'agent_run_id' => 'scout-run',
-                    'task_summary' => 'list docs',
+                    'task_summary' => 'list docs', 'model' => 'test/model', 'reasoning' => 'medium',
                     'model' => 'deepseek/deepseek-v4-flash',
                     'reasoning' => 'medium', ],
             ],
@@ -488,7 +488,7 @@ final class SubagentLivePickerControllerTest extends TestCase
                     'agent_name' => 'scout',
                     'artifact_id' => 'agent_ctx',
                     'agent_run_id' => 'child-run-ctx',
-                    'task_summary' => 'Context stats',
+                    'task_summary' => 'Context stats', 'reasoning' => 'medium',
                 ], \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverrides()),
             ],
         ));
@@ -601,7 +601,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     private function picker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
     {
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
+            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),
@@ -708,7 +708,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     private function exportPicker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
     {
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
+            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->childEventsPathResolver(),
             new SessionEventsExportService(),

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution;
 
-use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
@@ -14,6 +13,7 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingle
  * Builds typed subagent_progress snapshots for parent transcript projection.
  *
  * Canonical snake_case arrays are produced only at event boundaries via Symfony Serializer.
+ * Every snapshot carries required launch identity (model/reasoning) via enrichment.
  */
 final class SubagentProgressSnapshotBuilder
 {
@@ -24,7 +24,7 @@ final class SubagentProgressSnapshotBuilder
         string $taskSummary,
         int $childTurnNo,
         int $elapsedMs,
-        ?SubagentChildProgressSummary $enrichment = null,
+        SubagentChildProgressSummary $enrichment,
         string $status = 'running',
     ): SubagentProgressSingleSnapshotDTO {
         return $this->single(
@@ -47,7 +47,7 @@ final class SubagentProgressSnapshotBuilder
         string $taskSummary,
         int $childTurnNo,
         int $elapsedMs,
-        ?SubagentChildProgressSummary $enrichment = null,
+        SubagentChildProgressSummary $enrichment,
     ): SubagentProgressSingleSnapshotDTO {
         return $this->single(
             status: $status,
@@ -61,32 +61,6 @@ final class SubagentProgressSnapshotBuilder
         );
     }
 
-    public function singleRunning(
-        string $agentName,
-        string $artifactId,
-        string $agentRunId,
-        string $taskSummary,
-        RunState $childState,
-        int $elapsedMs,
-        ?SubagentChildProgressSummary $enrichment = null,
-        string $status = 'running',
-    ): SubagentProgressSingleSnapshotDTO {
-        return $this->singleRunningFromChildTurn($agentName, $artifactId, $agentRunId, $taskSummary, $childState->turnNo, $elapsedMs, $enrichment, $status);
-    }
-
-    public function singleTerminal(
-        string $status,
-        string $agentName,
-        string $artifactId,
-        string $agentRunId,
-        string $taskSummary,
-        RunState $childState,
-        int $elapsedMs,
-        ?SubagentChildProgressSummary $enrichment = null,
-    ): SubagentProgressSingleSnapshotDTO {
-        return $this->singleTerminalFromChildTurn($status, $agentName, $artifactId, $agentRunId, $taskSummary, $childState->turnNo, $elapsedMs, $enrichment);
-    }
-
     /**
      * @param array<string, SubagentProgressParallelChildReportDTO> $reports
      * @param array<string, int>                                    $activeTurns
@@ -96,7 +70,7 @@ final class SubagentProgressSnapshotBuilder
         array $reports,
         array $activeTurns,
         int $elapsedMs,
-        array $enrichmentByAgentRunId = [],
+        array $enrichmentByAgentRunId,
         string $aggregateStatus = 'running',
     ): SubagentProgressParallelSnapshotDTO {
         $sorted = array_values($reports);
@@ -123,7 +97,7 @@ final class SubagentProgressSnapshotBuilder
             $childStatus = 'running';
             if (!$terminal && AgentArtifactStatusEnum::NeedsClarification === $report->status) {
                 $childStatus = 'waiting_human';
-            } elseif ($terminal && null !== $report->status) {
+            } elseif ($terminal) {
                 $childStatus = match ($report->status) {
                     AgentArtifactStatusEnum::Completed => 'completed',
                     AgentArtifactStatusEnum::Failed => 'failed',
@@ -133,16 +107,18 @@ final class SubagentProgressSnapshotBuilder
             }
 
             $enrichment = $enrichmentByAgentRunId[$agentRunId] ?? null;
-            if (null !== $enrichment) {
-                $aggToolCount += $enrichment->toolCount;
-                $aggInput += $enrichment->inputTokens;
-                $aggOutput += $enrichment->outputTokens;
-                $aggReasoning += $enrichment->reasoningTokens;
-                $aggTotal += $enrichment->totalTokens;
-                if (null !== $enrichment->cost) {
-                    $aggCost += $enrichment->cost;
-                    $hasCost = true;
-                }
+            if (null === $enrichment) {
+                throw new \InvalidArgumentException(\sprintf('Missing required progress enrichment for agent run "%s".', $agentRunId));
+            }
+
+            $aggToolCount += $enrichment->toolCount;
+            $aggInput += $enrichment->inputTokens;
+            $aggOutput += $enrichment->outputTokens;
+            $aggReasoning += $enrichment->reasoningTokens;
+            $aggTotal += $enrichment->totalTokens;
+            if (null !== $enrichment->cost) {
+                $aggCost += $enrichment->cost;
+                $hasCost = true;
             }
 
             $children[] = $this->childRow(
@@ -181,29 +157,18 @@ final class SubagentProgressSnapshotBuilder
         string $taskSummary,
         int $childTurnNo,
         int $elapsedMs,
-        ?SubagentChildProgressSummary $enrichment,
+        SubagentChildProgressSummary $enrichment,
     ): SubagentProgressSingleSnapshotDTO {
-        if (null === $enrichment) {
-            return new SubagentProgressSingleSnapshotDTO(
-                mode: 'single',
-                status: $status,
-                elapsedMs: max(0, $elapsedMs),
-                agentName: $agentName,
-                artifactId: $artifactId,
-                agentRunId: $agentRunId,
-                taskSummary: $taskSummary,
-                turnNo: $childTurnNo,
-            );
-        }
-
         return new SubagentProgressSingleSnapshotDTO(
             mode: 'single',
             status: $status,
-            elapsedMs: max(0, $elapsedMs),
             agentName: $agentName,
             artifactId: $artifactId,
             agentRunId: $agentRunId,
             taskSummary: $taskSummary,
+            model: $enrichment->model,
+            reasoning: $enrichment->reasoning,
+            elapsedMs: max(0, $elapsedMs),
             turnNo: $childTurnNo,
             toolCount: $enrichment->toolCount,
             llmStepCount: $enrichment->llmStepCount,
@@ -214,8 +179,6 @@ final class SubagentProgressSnapshotBuilder
             totalTokens: $enrichment->totalTokens,
             recentTools: $enrichment->recentTools,
             cost: (null !== $enrichment->cost && $enrichment->cost > 0.0) ? $enrichment->cost : null,
-            model: ('' !== $enrichment->model) ? $enrichment->model : null,
-            reasoning: ('' !== $enrichment->reasoning) ? $enrichment->reasoning : null,
             contextWindow: $enrichment->contextWindow > 0 ? $enrichment->contextWindow : null,
             artifactPath: (null !== $enrichment->artifactPath && '' !== $enrichment->artifactPath) ? $enrichment->artifactPath : null,
             assistantExcerpt: (null !== $enrichment->assistantExcerpt && '' !== $enrichment->assistantExcerpt) ? $enrichment->assistantExcerpt : null,
@@ -231,20 +194,8 @@ final class SubagentProgressSnapshotBuilder
         string $agentRunId,
         string $taskSummary,
         int $turnNo,
-        ?SubagentChildProgressSummary $enrichment,
+        SubagentChildProgressSummary $enrichment,
     ): SubagentProgressChildRowDTO {
-        if (null === $enrichment) {
-            return new SubagentProgressChildRowDTO(
-                index: $index,
-                agentName: $agentName,
-                status: $status,
-                artifactId: $artifactId,
-                agentRunId: $agentRunId,
-                taskSummary: $taskSummary,
-                turnNo: $turnNo,
-            );
-        }
-
         return new SubagentProgressChildRowDTO(
             index: $index,
             agentName: $agentName,
@@ -252,6 +203,8 @@ final class SubagentProgressSnapshotBuilder
             artifactId: $artifactId,
             agentRunId: $agentRunId,
             taskSummary: $taskSummary,
+            model: $enrichment->model,
+            reasoning: $enrichment->reasoning,
             turnNo: $turnNo,
             toolCount: $enrichment->toolCount,
             llmStepCount: $enrichment->llmStepCount,
@@ -262,8 +215,6 @@ final class SubagentProgressSnapshotBuilder
             totalTokens: $enrichment->totalTokens,
             recentTools: $enrichment->recentTools,
             cost: (null !== $enrichment->cost && $enrichment->cost > 0.0) ? $enrichment->cost : null,
-            model: ('' !== $enrichment->model) ? $enrichment->model : null,
-            reasoning: ('' !== $enrichment->reasoning) ? $enrichment->reasoning : null,
             contextWindow: $enrichment->contextWindow > 0 ? $enrichment->contextWindow : null,
             artifactPath: (null !== $enrichment->artifactPath && '' !== $enrichment->artifactPath) ? $enrichment->artifactPath : null,
             assistantExcerpt: (null !== $enrichment->assistantExcerpt && '' !== $enrichment->assistantExcerpt) ? $enrichment->assistantExcerpt : null,

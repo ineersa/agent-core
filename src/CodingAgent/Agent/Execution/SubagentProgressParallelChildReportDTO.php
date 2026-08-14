@@ -18,8 +18,7 @@ final readonly class SubagentProgressParallelChildReportDTO
         public string $artifactId,
         public string $agentRunId,
         public bool $terminal,
-        public ?AgentArtifactStatusEnum $status,
-        public string $message = '',
+        public AgentArtifactStatusEnum $status,
     ) {
     }
 }

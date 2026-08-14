@@ -41,7 +41,7 @@ final class TranscriptProjectorTest extends TestCase
 
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()));
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
@@ -1174,8 +1174,8 @@ final class TranscriptProjectorTest extends TestCase
             'subagent_progress' => [
                 'mode' => 'single',
                 'status' => 'running',
-                'agent_name' => 'scout',
-                'task_summary' => 'Inspect resume path',
+                'agent_name' => 'scout', 'artifact_id' => 'agent_abc',
+                'task_summary' => 'Inspect resume path', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium',
             ],
         ]);
         $this->accept('tool_execution.completed', [

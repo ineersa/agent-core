@@ -15,8 +15,7 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapsh
  * RuntimeEvent payload arrays are denormalized once at the TUI RuntimeEvent
  * boundary ({@see TuiRuntimeEventApplier}) before reaching this catalog.
  *
- * Model and reasoning follow upstream launch-identity semantics: non-empty after trim.
- * Later progress rows may omit them; catalog preserves last known concrete values.
+ * Canonical snapshots always carry non-empty model/reasoning launch identity.
  */
 final class SubagentLiveCatalog
 {
@@ -116,123 +115,49 @@ final class SubagentLiveCatalog
 
         if ($snapshot instanceof SubagentProgressParallelSnapshotDTO) {
             foreach ($snapshot->children as $child) {
-                $this->upsertFromChildRow($child, $now);
+                $this->upsertFromProgressRow($child, $now);
             }
 
             return;
         }
 
         if ($snapshot instanceof SubagentProgressSingleSnapshotDTO) {
-            $this->upsertFromSingleSnapshot($snapshot, $now);
+            $this->upsertFromProgressRow($snapshot, $now);
         }
     }
 
-    private function upsertFromSingleSnapshot(SubagentProgressSingleSnapshotDTO $row, int $now): void
+    private function upsertFromProgressRow(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $row, int $now): void
     {
-        $this->upsertCatalogRow(
-            artifactId: trim($row->artifactId),
-            agentRunId: trim($row->agentRunId),
-            agentName: trim($row->agentName),
-            status: SubagentLiveStatusEnum::fromProgressString($row->status),
-            taskSummary: trim($row->taskSummary),
-            now: $now,
-            model: $this->optionalIdentityString($row->model),
-            reasoning: $this->optionalIdentityString($row->reasoning),
-            latestInputTokens: (null !== $row->latestInputTokens && $row->latestInputTokens > 0) ? $row->latestInputTokens : 0,
-            contextWindow: (null !== $row->contextWindow && $row->contextWindow > 0) ? $row->contextWindow : 0,
-        );
-    }
-
-    private function upsertFromChildRow(SubagentProgressChildRowDTO $row, int $now): void
-    {
-        $this->upsertCatalogRow(
-            artifactId: trim($row->artifactId),
-            agentRunId: trim($row->agentRunId),
-            agentName: trim($row->agentName),
-            status: SubagentLiveStatusEnum::fromProgressString($row->status),
-            taskSummary: trim($row->taskSummary),
-            now: $now,
-            model: $this->optionalIdentityString($row->model),
-            reasoning: $this->optionalIdentityString($row->reasoning),
-            latestInputTokens: (null !== $row->latestInputTokens && $row->latestInputTokens > 0) ? $row->latestInputTokens : 0,
-            contextWindow: (null !== $row->contextWindow && $row->contextWindow > 0) ? $row->contextWindow : 0,
-        );
-    }
-
-    private function upsertCatalogRow(
-        string $artifactId,
-        string $agentRunId,
-        string $agentName,
-        SubagentLiveStatusEnum $status,
-        string $taskSummary,
-        int $now,
-        ?string $model,
-        ?string $reasoning,
-        int $latestInputTokens,
-        int $contextWindow,
-    ): void {
+        $artifactId = $row->artifactId;
         if ('' === $artifactId || $this->isDismissed($artifactId)) {
             return;
         }
 
-        if ('' === $agentName) {
-            $agentName = 'subagent';
-        }
-
-        if ('' === $agentRunId) {
-            $existing = $this->byArtifactId[$artifactId] ?? null;
-            $agentRunId = null !== $existing ? $existing->agentRunId : '';
-        }
-
-        if ('' === $agentRunId) {
-            return;
-        }
-
+        $status = SubagentLiveStatusEnum::fromProgressString($row->status);
         $existing = $this->byArtifactId[$artifactId] ?? null;
         if (null !== $existing && $existing->status->isTerminal() && !$status->isTerminal()) {
             // Stale in-flight progress rows must not downgrade terminal/cancelled catalog entries.
             return;
         }
 
-        // Progress rows may omit model/reasoning on later ticks; preserve last known concrete values.
-        if (null === $model) {
-            $model = null !== $existing ? $existing->model : null;
-        }
-        if (null === $reasoning) {
-            $reasoning = null !== $existing ? $existing->reasoning : null;
-        }
-        if (null === $model || null === $reasoning) {
-            // Cannot create a live child without concrete launch identity.
-            return;
-        }
-        if (0 === $latestInputTokens && null !== $existing) {
-            $latestInputTokens = $existing->latestInputTokens;
-        }
-        if (0 === $contextWindow && null !== $existing) {
-            $contextWindow = $existing->contextWindow;
-        }
+        $latestInputTokens = $row->latestInputTokens > 0
+            ? $row->latestInputTokens
+            : (null !== $existing ? $existing->latestInputTokens : 0);
+        $contextWindow = (null !== $row->contextWindow && $row->contextWindow > 0)
+            ? $row->contextWindow
+            : (null !== $existing ? $existing->contextWindow : 0);
 
         $this->byArtifactId[$artifactId] = new SubagentLiveChildDTO(
-            agentRunId: $agentRunId,
+            agentRunId: $row->agentRunId,
             artifactId: $artifactId,
-            agentName: $agentName,
+            agentName: $row->agentName,
             status: $status,
-            taskSummary: $taskSummary,
+            taskSummary: $row->taskSummary,
             lastActivityAtMs: $now,
-            model: $model,
-            reasoning: $reasoning,
+            model: $row->model,
+            reasoning: $row->reasoning,
             latestInputTokens: $latestInputTokens,
             contextWindow: $contextWindow,
         );
-    }
-
-    private function optionalIdentityString(?string $value): ?string
-    {
-        if (null === $value) {
-            return null;
-        }
-        $trimmed = trim($value);
-
-        return '' !== $trimmed ? $trimmed : null;
     }
 }

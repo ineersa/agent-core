@@ -97,11 +97,15 @@ final class SubagentProgressSnapshotSerializerTest extends TestCase
                     artifactId: 'a2',
                     agentRunId: 'r2',
                     terminal: false,
-                    status: null,
+                    status: AgentArtifactStatusEnum::Running,
                 ),
             ],
             activeTurns: ['r1' => 3, 'r2' => 1],
             elapsedMs: 9000,
+            enrichmentByAgentRunId: [
+                'r1' => new SubagentChildProgressSummary(model: 'test/model', reasoning: 'medium'),
+                'r2' => new SubagentChildProgressSummary(model: 'test/model', reasoning: 'low'),
+            ],
             aggregateStatus: 'running',
         );
 
@@ -131,6 +135,8 @@ final class SubagentProgressSnapshotSerializerTest extends TestCase
             'artifact_id' => 'a1',
             'agent_run_id' => 'r1',
             'task_summary' => 'Task',
+            'model' => 'test/model',
+            'reasoning' => 'medium',
             'turn_no' => 1,
             'elapsed_ms' => 100,
         ], SubagentProgressSnapshotInterface::class);
@@ -151,6 +157,8 @@ final class SubagentProgressSnapshotSerializerTest extends TestCase
                     'artifact_id' => 'a1',
                     'agent_run_id' => 'r1',
                     'task_summary' => 'T',
+                    'model' => 'test/model',
+                    'reasoning' => 'medium',
                     'turn_no' => 0,
                 ],
             ],
@@ -177,6 +185,8 @@ final class SubagentProgressSnapshotSerializerTest extends TestCase
             'artifact_id' => 'a',
             'agent_run_id' => 'r',
             'task_summary' => 't',
+            'model' => 'test/model',
+            'reasoning' => 'medium',
             'turn_no' => 0,
         ], SubagentProgressSnapshotInterface::class);
 

@@ -98,7 +98,7 @@ final class SessionInitializerTest extends TestCase
             eventStore: $this->eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($transcriptProjector, SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
+            eventApplier: new TuiRuntimeEventApplier($transcriptProjector, SubagentProgressSerializerTestSupport::denormalizer()),
             historyProvider: $historyProvider,
             sessionTranscriptProvider: $sessionTranscriptProvider
         );
@@ -432,7 +432,7 @@ final class SessionInitializerTest extends TestCase
             eventStore: $this->eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
+            eventApplier: new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer()),
             historyProvider: $historyProvider,
             sessionTranscriptProvider: $sessionTranscriptProvider
         );
@@ -507,7 +507,7 @@ final class SessionInitializerTest extends TestCase
             eventStore: $this->eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($this->buildRealTranscriptProjector(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
+            eventApplier: new TuiRuntimeEventApplier($this->buildRealTranscriptProjector(), SubagentProgressSerializerTestSupport::denormalizer()),
             historyProvider: $historyProvider,
             sessionTranscriptProvider: $sessionTranscriptProvider
         );
@@ -661,7 +661,7 @@ final class SessionInitializerTest extends TestCase
             eventStore: $this->eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
+            eventApplier: new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer()),
             historyProvider: $historyProvider,
             sessionTranscriptProvider: $sessionTranscriptProvider
         );
@@ -676,7 +676,7 @@ final class SessionInitializerTest extends TestCase
         $projectionState = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
         $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()));
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
 
         return new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($dispatcher, $projectionState);
     }

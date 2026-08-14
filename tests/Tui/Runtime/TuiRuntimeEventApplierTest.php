@@ -152,6 +152,54 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Cancelled, $resumeState->activity);
     }
 
+    public function testPresentMalformedSubagentProgressPropagates(): void
+    {
+        $applier = $this->buildApplier();
+        $state = new TuiSessionState('run-progress-bad', true, subagentLiveCatalog: new SubagentLiveCatalog());
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('subagent_progress payload must be an array when present.');
+        $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            runId: 'run-progress-bad',
+            seq: 1,
+            payload: [
+                'tool_call_id' => 'call_bad',
+                'tool_name' => 'subagent',
+                'subagent_progress' => 'nope',
+            ],
+        ));
+    }
+
+    public function testPresentCanonicalProgressIngestsLiveCatalog(): void
+    {
+        $applier = $this->buildApplier();
+        $state = new TuiSessionState('run-progress-ok', true, subagentLiveCatalog: new SubagentLiveCatalog());
+
+        $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            runId: 'run-progress-ok',
+            seq: 1,
+            payload: [
+                'tool_call_id' => 'call_ok',
+                'tool_name' => 'subagent',
+                'subagent_progress' => SubagentProgressSerializerTestSupport::canonicalSingleWire(
+                    agentName: 'scout',
+                    artifactId: 'agent_live',
+                    agentRunId: 'child-live-1',
+                    taskSummary: 'Live catalog',
+                ),
+            ],
+        ));
+
+        $items = $state->subagentLiveCatalog->all();
+        $this->assertCount(1, $items);
+        $this->assertSame('agent_live', $items[0]->artifactId);
+        $this->assertSame('scout', $items[0]->agentName);
+        $this->assertSame('test/model', $items[0]->model);
+        $this->assertSame('medium', $items[0]->reasoning);
+    }
+
     /** @return list<string> */
     private function canonicalFixtureLines(string $runId): array
     {
@@ -164,9 +212,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
             ['seq' => 3, 'turn_no' => 1, 'type' => 'history_position_set', 'payload' => ['position_turn_no' => 1, 'reason' => 'continue']],
             ['seq' => 4, 'turn_no' => 1, 'type' => 'llm_step_completed', 'payload' => ['step_id' => 's2', 'text' => '', 'tool_calls_count' => 1, 'assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [['id' => 'call_sub_1', 'name' => 'subagent', 'arguments' => ['task' => 'x']]]], 'usage' => ['input_tokens' => 12, 'output_tokens' => 4]]],
             ['seq' => 5, 'turn_no' => 1, 'type' => 'tool_execution_start', 'payload' => ['tool_call_id' => 'call_sub_1', 'tool_name' => 'subagent', 'order_index' => 0]],
-            ['seq' => 6, 'turn_no' => 1, 'type' => 'tool_execution_update', 'payload' => ['tool_call_id' => 'call_sub_1', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => ['mode' => 'single', 'status' => 'running', 'agent' => 'scout', 'task_preview' => 'task',
-                'model' => 'deepseek/deepseek-v4-flash',
-                'reasoning' => 'medium', ]]],
+            ['seq' => 6, 'turn_no' => 1, 'type' => 'tool_execution_update', 'payload' => ['tool_call_id' => 'call_sub_1', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => ['mode' => 'single', 'status' => 'running', 'agent_name' => 'scout', 'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'task', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium']]],
             ['seq' => 7, 'turn_no' => 1, 'type' => 'tool_execution_end', 'payload' => ['tool_call_id' => 'call_sub_1', 'order_index' => 0, 'is_error' => false, 'result' => 'Final subagent handoff text']],
             ['seq' => 8, 'turn_no' => 1, 'type' => 'agent_command_applied', 'payload' => ['kind' => 'cancel']],
             ['seq' => 9, 'turn_no' => 1, 'type' => 'agent_end', 'payload' => ['reason' => 'cancelled']],
@@ -189,7 +235,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
 
     private function buildApplier(): TuiRuntimeEventApplier
     {
-        return new TuiRuntimeEventApplier($this->buildProjector(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator());
+        return new TuiRuntimeEventApplier($this->buildProjector(), SubagentProgressSerializerTestSupport::denormalizer());
     }
 
     private function buildInitializer(): SessionInitializer
@@ -205,7 +251,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
             eventStore: $eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()),
+            eventApplier: new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer()),
             historyProvider: new \Ineersa\CodingAgent\Session\SessionHistoryProvider($eventStore, new \Ineersa\CodingAgent\Session\History\HistoryProjector()),
             sessionTranscriptProvider: new \Ineersa\CodingAgent\Session\SessionTranscriptProvider(
                 eventStore: $eventStore,
@@ -236,7 +282,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $state = new TranscriptProjectionState();
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer(), SubagentProgressSerializerTestSupport::validator()));
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
