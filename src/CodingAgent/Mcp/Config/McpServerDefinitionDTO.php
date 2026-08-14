@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Mcp\Config;
 
+use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
@@ -71,14 +72,17 @@ final readonly class McpServerDefinitionDTO
         ])]
         public array $headers = [],
 
+        #[SerializedName('timeoutMs')]
         #[Assert\Positive(message: '"timeoutMs" must be a positive integer.')]
         public int $timeoutMs = 30000,
 
+        #[SerializedName('startupTimeoutMs')]
         #[Assert\Positive(message: '"startupTimeoutMs" must be a positive integer.')]
         public int $startupTimeoutMs = 30000,
 
         public McpServerAvailabilityEnum $availability = McpServerAvailabilityEnum::All,
 
+        #[SerializedName('excludeTools')]
         #[Assert\All([
             new Assert\Type('string', message: '"excludeTools" entries must be strings.'),
         ])]

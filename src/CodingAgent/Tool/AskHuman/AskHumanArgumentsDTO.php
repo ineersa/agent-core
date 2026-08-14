@@ -11,7 +11,7 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  * Validated tool arguments for the ask_human tool.
  *
  * LLM-provided snake_case argument keys are mapped to camelCase DTO
- * properties via the Serializer's SerializedName attribute.
+ * properties via the global Serializer camel_case_to_snake_case name converter.
  *
  * Note: The answer schema is NOT accepted as raw input — it is derived
  * internally from kind and choices. This avoids LLM errors with
