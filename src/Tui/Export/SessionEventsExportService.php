@@ -320,7 +320,6 @@ HTML;
             } else {
                 $html .= $toolDefinitionsHtml;
             }
-            $toolDefinitionsPending = false;
         }
 
         if ($currentTurn >= 0) {

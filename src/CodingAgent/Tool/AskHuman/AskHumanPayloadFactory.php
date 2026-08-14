@@ -74,7 +74,7 @@ final class AskHumanPayloadFactory
         $questionId = $this->generateQuestionId($dto);
         $schema = $this->resolveSchema($dto);
         $choices = $this->normalizeChoices($dto);
-        $kind = $this->resolveKind($dto, $schema, $choices);
+        $kind = $this->resolveKind($dto, $choices);
 
         $payload = [
             'kind' => 'interrupt',
@@ -150,16 +150,11 @@ final class AskHumanPayloadFactory
      * Resolve output ui_kind: confirm when requested, choice from non-empty
      * choices, otherwise text for free-form.
      *
-     * @param array<string, mixed>                            $schema
      * @param list<array{label: string, description: string}> $choices
      */
-    private function resolveKind(AskHumanArgumentsDTO $dto, array $schema, array $choices): string
+    private function resolveKind(AskHumanArgumentsDTO $dto, array $choices): string
     {
         if ('confirm' === $dto->kind) {
-            return 'confirm';
-        }
-
-        if (isset($schema['type']) && 'boolean' === $schema['type']) {
             return 'confirm';
         }
 
