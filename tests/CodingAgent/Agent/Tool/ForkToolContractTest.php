@@ -37,6 +37,13 @@ final class ForkToolContractTest extends TestCase
 
         $this->assertSame(['task'], $schema['required']);
         $this->assertFalse($schema['additionalProperties']);
+        $this->assertSame(1, $schema['properties']['task']['minLength']);
+        $this->assertSame(1, $schema['properties']['model']['minLength']);
+        $this->assertNotContains('model', $schema['required']);
+        $this->assertSame(
+            'Launch an isolated fork child with inherited parent conversation context. Blocks until completion and returns a dense handoff.',
+            $definition->description,
+        );
         $this->assertSame(ModelResolver::LEVELS, $schema['properties']['thinking']['enum']);
     }
 
@@ -142,22 +149,22 @@ final class ForkToolContractTest extends TestCase
 
     public function testPromptGuidelinesAndParallelModeExposeSafetyGuidance(): void
     {
-        // Thesis C: fork definition is Parallel and exposes implementation-delegation,
-        // no-same-worktree, and max-3 concurrent safety/load guidelines.
+        // Thesis C: fork definition is Parallel and exposes no-same-worktree,
+        // max-3 concurrent, no-child-spawn, and override-only-when-requested safety/load guidelines.
         $handler = new ForkToolHandler(
             new StackToolExecutionContextAccessor(),
             new ToolRuntime(new StackToolExecutionContextAccessor()),
             new NarrowExecutionServiceLocator(new FakeForkExecutionService(new DeferredToolCompletionOutcome('x'))),
         );
         $definition = ForkToolDefinitionBuilder::build($handler);
-        $joined = implode("\n", $definition->promptGuidelines);
 
         $this->assertSame(ToolExecutionMode::Parallel, $definition->executionMode);
-        $this->assertStringContainsString('implementation delegation', strtolower($joined));
-        $this->assertStringContainsString('cannot launch fork or subagent', strtolower($joined));
-        $this->assertStringContainsString('never target the same worktree/directory', strtolower($joined));
-        $this->assertStringContainsString('never launch more than 3 forks concurrently', strtolower($joined));
-        $this->assertStringContainsString('do not set model or thinking', strtolower($joined));
+        $this->assertSame([
+            'Fork children cannot launch fork or subagent; do not instruct them to spawn child agents.',
+            'Parallel forks must NEVER target the same worktree/directory because concurrent edits can corrupt it.',
+            'Never launch more than 3 forks concurrently because forks impose high load.',
+            'Do not set model or thinking unless the user explicitly requested overrides.',
+        ], $definition->promptGuidelines);
     }
 }
 

@@ -267,7 +267,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                 'properties' => [
                     'command' => [
                         'type' => 'string',
-                        'description' => 'Shell command to execute (e.g., "ls -la", "cat file.txt", "git status")',
+                        'description' => 'Shell command executed through bash -c; use shell quoting as needed.',
                     ],
                     'timeout' => [
                         'type' => 'integer',
@@ -283,12 +283,8 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
             executionMode: ToolExecutionMode::Parallel,
             promptLine: 'bash command [timeout=N] — execute a shell command with foreground supervision and optional timeout',
             promptGuidelines: [
-                'Use bash for running shell commands, scripts, build tools, and git operations.',
                 'For file operations such as reading, writing, editing, or viewing files, prefer the dedicated read/write/edit/view_image tools instead of bash cat/echo/editor pipelines.',
-                'Commands run until completion. Use the optional timeout parameter for commands that may hang (e.g., network operations, long builds).',
-                \sprintf('Long-running commands (over %d seconds) may be offered to the user to move to background. The model does not control backgrounding — the user chooses when prompted. When the user accepts, the tool returns a backgrounding notice with PID and log path. Use bg_status log/stop on the returned PID to inspect or terminate already-backgrounded processes.', $this->config->backgroundPromptThresholdSeconds),
-                'There is no run_in_background parameter. Do not attempt to background a command through tool arguments.',
-                'The command string is passed directly to bash -c. Use proper escaping for special characters.',
+                'The user controls backgrounding; there is no run_in_background argument. Backgrounded commands report completion automatically, so do not poll; use bg_status with the returned PID only to inspect progress or stop the process when needed.',
                 'Output is capped to prevent excessively large responses. Very large output may be truncated and saved to a file for inspection.',
             ],
         );
@@ -332,7 +328,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
         }
 
         if (!\is_int($timeout) || $timeout < 1) {
-            throw new ToolCallException('The "timeout" argument must be a positive integer.', retryable: false, hint: 'Provide a positive integer for timeout seconds, or omit to use the default (300).');
+            throw new ToolCallException('The "timeout" argument must be a positive integer.', retryable: false, hint: 'Provide a positive integer for timeout seconds, or omit it to use the default.');
         }
 
         $maxTimeout = $this->config->maxTimeoutSeconds;

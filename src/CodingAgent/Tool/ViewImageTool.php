@@ -197,7 +197,7 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
     {
         return new ToolDefinitionDTO(
             name: 'view_image',
-            description: 'View an image file and return its metadata (media type, dimensions, file size). Only JPEG, PNG, GIF, and WebP formats are supported.',
+            description: 'View an image file by attaching it to the next provider request and return compact metadata (media type, dimensions, file size). Supports JPEG, PNG, GIF, and WebP.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -214,11 +214,9 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
             promptGuidelines: [
                 'Only JPEG, PNG, GIF, and WebP formats are supported — other file types are rejected.',
                 'Image type is determined from file content (magic bytes), not file extension.',
-                'Returns image metadata: path, media type, file size, width, and height.',
                 'Large images may be rejected if they exceed configured size or dimension limits.',
                 'Images are automatically resized and optimized for safe provider delivery before attachment.',
                 'The actual image data is attached to the next provider request as a real image attachment; the tool result contains only compact metadata.',
-                'Use when you need to inspect image dimensions, verify file type, or load an image for the model to see.',
             ],
         );
     }
