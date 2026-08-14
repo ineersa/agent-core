@@ -1,125 +1,48 @@
 ---
+builtin: true
 description: Background process tracking, logs, stop behavior, and related settings.
 ---
 
 # Background Processes
 
-Background processes let the agent run long-running shell commands without
-blocking the conversation loop.
+Long-running shell work can detach into tracked background processes so the conversation loop stays responsive.
 
-## Architecture
+There is **no** model-facing `bg_start` tool. Backgrounding is offered from **`bash`** when a
+command exceeds `tools.bash.background_prompt_threshold_seconds` (default `15`). The **user**
+chooses whether to move the command to the background; the model does not control that choice.
+After backgrounding, inspect or stop processes with `bg_status`.
 
-### BackgroundProcessManager
+## Model / user tool: `bg_status`
 
-SQLite-backed process lifecycle manager (`src/CodingAgent/Tool/BackgroundProcessManager.php`).
+| Action | Meaning |
+|---|---|
+| `list` | Show tracked processes for the session |
+| `log` | Read recent log output for a process (`pid` required) |
+| `stop` | TERM the process group, wait grace, then KILL if needed (`pid` required) |
 
-Each background process gets:
+## Lifecycle
 
-- A unique PID tracked in a per-session SQLite database (`.hatfield/tmp/bg/<session_id>.db`)
-- A log file under `.hatfield/tmp/bg/` capturing stdout and stderr
-- A TERM-forwarding wrapper script that:
-  1. Traps SIGTERM and forwards it to the child workload
-  2. Writes a status sidecar file (`<log>.status`) with the workload's exit code on exit
-  3. Ensures clean process tree teardown
+1. `bash` runs a command; after the threshold, the TUI may prompt the user to background it.
+2. On accept, Hatfield persists a durable `background_process` row in `.hatfield/state.sqlite` and returns a notice with PID + log path.
+3. PID / status / log sidecars are written under `tools.background_process.path` (default `.hatfield/tmp/bg`): `.pid`, `.status`, and `.log` companions for the live process.
+4. `bg_status stop` resolves the process group, sends `SIGTERM`, waits `tools.background_process.stop_grace_seconds`, then `SIGKILL` if still alive.
 
-### Process lifecycle
+Tracking is **session-scoped**. Durable records live in `.hatfield/state.sqlite`; filesystem sidecars (PID/status/log) live under the configured tool path.
 
-```
-start(command, sessionId)
-  → validate setsid available
-  → create DB record (status: running)
-  → write bash wrapper script to temp file
-  → launch via Symfony Process (setsid, detached)
-  → write .pid file
+## Settings
 
-stop(pid, sessionId)
-  → resolve PGID from PID
-  → send SIGTERM to process group (-pgid)
-  → wait grace_seconds for exit
-  → if still running: SIGKILL
-  → write status sidecar if missing
-  → update DB record (status: stopped/finished)
-
-shutdownCleanup(sessionId?)
-  → find all running processes (optionally filtered by session)
-  → stop each one
-  → delete stale log files older than 24h
-```
-
-### Session ownership
-
-Every process is owned by the session that started it (`session_id` column).
-The `bg_status` tool scopes list/log/stop operations to the current session
-using `ToolContext::runId()`. Cross-session visibility is blocked.
-
-### Cleanup on exit
-
-Two-layer shutdown strategy:
-
-| Layer | When | Scope |
+| Key | Role | Default |
 |---|---|---|
-| `HeadlessController::shutdown()` | SIGTERM/SIGINT signal handler | Session-scoped cleanup |
-| `register_shutdown_function` (via `registerShutdownHandler()`) | Normal exit, `exit()`, fatal error | All sessions in this PHP process |
-| None | SIGKILL, OOM, segfault | Processes survive for resume |
+| `tools.bash.background_prompt_threshold_seconds` | When bash may offer backgrounding | `15` |
+| `tools.background_process.path` | Storage directory | `.hatfield/tmp/bg` |
+| `tools.background_process.retention` | Stale log/record retention seconds | `86400` |
+| `tools.background_process.stop_grace_seconds` | TERM grace period | `5` |
+| `tools.background_process.log_tail_chars` | Default log tail size | `5000` |
 
-On crash (SIGKILL/OOM/segfault), background processes survive because:
+See [settings.md](settings.md).
 
-- They run in their own session (`setsid`)
-- Their log files persist on disk
-- The agent can inspect/stop them on resume via `bg_status`
+## Safety
 
-### Configuration
-
-Settings in `.hatfield/settings.yaml` under `background_process`:
-
-```yaml
-background_process:
-  storage_dir: ".hatfield/tmp/bg"     # Log and DB storage
-  stop_grace_seconds: 5               # Grace period before SIGKILL
-  log_tail_chars: 5000                # Max chars returned by log action
-```
-
-## bg_status tool
-
-The `bg_status` tool provides three actions for the LLM.
-
-### list
-
-Lists background processes for the current session.
-
-```json
-{"action": "list"}
-```
-
-Returns a table of running processes with PID, command, status, start time,
-and log path.
-
-### log
-
-Tails the log of a background process.
-
-```json
-{"action": "log", "pid": 12345}
-```
-
-Returns the last N characters of the process log (configurable via
-`log_tail_chars`). Includes truncation indicator if the log exceeds the limit.
-
-### stop
-
-Gracefully stops a background process.
-
-```json
-{"action": "stop", "pid": 12345}
-```
-
-Sends SIGTERM to the process group, waits the configured grace period, then
-SIGKILL if still running. Returns the final exit status.
-
-## Stale process handling
-
-- `cleanupStale()` removes DB records for processes finished more than 24
-  hours ago
-- `cleanupOrphanedPidFiles()` removes `.pid` files with no matching running
-  process
-- Stale cleanup runs automatically during `start()` and `shutdownCleanup()`
+- Prefer stop via `bg_status` rather than guessing PIDs.
+- Background workloads may outlive a single LLM turn; still stop them when finished.
+- Never signal unrelated host processes; tracking is limited to Hatfield-managed records for the session.

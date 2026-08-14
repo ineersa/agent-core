@@ -91,8 +91,6 @@ return function (string $appName, string $appVersion) {
 castor repack --logo-file repack/my-complex-logo.php
 ```
 
-![img.png](../../../assets/custom-logo.png)
-
 ## Going further
 
 Packaging your Castor app as a phar simplifies distribution but requires PHP

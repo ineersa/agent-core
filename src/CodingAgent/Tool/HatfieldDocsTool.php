@@ -8,17 +8,17 @@ use HelgeSverre\Toon\Toon;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
+use Ineersa\CodingAgent\Docs\BuiltinDocsCatalog;
+use Ineersa\CodingAgent\Docs\BuiltinDocsCatalogException;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
-use Symfony\Component\Finder\Finder;
-use Symfony\Component\Yaml\Exception\ParseException;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Read-only parent-agent catalog for curated Hatfield documentation.
  *
- * Documents are discovered once from the bundled internal-docs root and
- * cached for the process lifetime. Lookup is by logical ID only; arbitrary
- * filesystem paths are never accepted.
+ * Documents are discovered once from the approved built-in roots
+ * ({@see docs/*.md} and Extension API docs) and cached for the process
+ * lifetime. Lookup is by logical ID only; arbitrary filesystem paths are
+ * never accepted.
  */
 final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
@@ -125,64 +125,24 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
             return $this->catalog;
         }
 
-        $catalog = [];
-        $files = Finder::create()
-            ->files()
-            ->in($this->resources->getInternalDocsPath())
-            ->depth('== 0')
-            ->name('*.md')
-            ->sortByName();
-
-        foreach ($files as $file) {
-            $id = $file->getBasename('.md');
-            if ('' === $id) {
-                continue;
-            }
-
-            $catalog[$id] = $this->parseDocument($file->getPathname(), $id);
+        try {
+            $entries = (new BuiltinDocsCatalog($this->extractor))->discover($this->resources->getAppRoot());
+        } catch (BuiltinDocsCatalogException $e) {
+            throw new ToolCallException($e->getMessage(), retryable: false, previous: $e);
         }
 
-        ksort($catalog);
+        $catalog = [];
+        foreach ($entries as $entry) {
+            $catalog[$entry['id']] = [
+                'id' => $entry['id'],
+                'title' => $entry['title'],
+                'description' => $entry['description'],
+                'body' => $entry['body'],
+            ];
+        }
+
         $this->catalog = $catalog;
 
         return $this->catalog;
-    }
-
-    /**
-     * @return array{id: string, title: string, description: string, body: string}
-     */
-    private function parseDocument(string $path, string $id): array
-    {
-        $raw = @file_get_contents($path);
-        if (false === $raw) {
-            throw new ToolCallException(\sprintf('Unable to read bundled document "%s".', $id), retryable: false);
-        }
-
-        $extraction = $this->extractor->extract($raw);
-        if (null === $extraction['yamlBlock'] || !$extraction['hasOpeningDelimiter'] || !$extraction['hasClosingDelimiter']) {
-            throw new ToolCallException(\sprintf('Document "%s" is missing YAML frontmatter.', $id), retryable: false);
-        }
-
-        try {
-            $parsed = Yaml::parse($extraction['yamlBlock']);
-        } catch (ParseException $e) {
-            throw new ToolCallException(\sprintf('Document "%s" has invalid YAML frontmatter.', $id), retryable: false, previous: $e);
-        }
-
-        if (!\is_array($parsed) || !isset($parsed['description']) || !\is_string($parsed['description']) || '' === trim($parsed['description'])) {
-            throw new ToolCallException(\sprintf('Document "%s" frontmatter must include a non-empty string description.', $id), retryable: false);
-        }
-
-        $body = $extraction['body'];
-        if (!preg_match('/^#\s+(.+)$/m', $body, $matches)) {
-            throw new ToolCallException(\sprintf('Document "%s" is missing an H1 title.', $id), retryable: false);
-        }
-
-        return [
-            'id' => $id,
-            'title' => trim($matches[1]),
-            'description' => trim($parsed['description']),
-            'body' => $body,
-        ];
     }
 }
