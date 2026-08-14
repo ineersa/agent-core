@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -29,7 +28,6 @@ final readonly class RuntimeConfig
      *                            launched by HeadlessController at startup
      */
     public function __construct(
-        #[SerializedName('llm_worker_count')]
         #[Assert\Range(
             min: self::MIN_LLM_WORKER_COUNT,
             max: self::MAX_LLM_WORKER_COUNT,

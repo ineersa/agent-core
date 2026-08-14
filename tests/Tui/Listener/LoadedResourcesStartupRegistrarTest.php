@@ -35,6 +35,8 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Tui\Event\TickEvent;
 
 final class LoadedResourcesStartupRegistrarTest extends TestCase
@@ -182,7 +184,7 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
     private function agentDefinitionParser(): \Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser
     {
         $reflectionExtractor = new \Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor();
-        $classMetadataFactory = new \Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory(new \Symfony\Component\Serializer\Mapping\Loader\AttributeLoader());
+        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
         $objectNormalizer = new \Symfony\Component\Serializer\Normalizer\ObjectNormalizer(
             classMetadataFactory: $classMetadataFactory,
             nameConverter: null,

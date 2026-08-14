@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\AskHuman;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
@@ -12,7 +11,7 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  * Validated tool arguments for the ask_human tool.
  *
  * LLM-provided snake_case argument keys are mapped to camelCase DTO
- * properties via the Serializer's SerializedName attribute.
+ * properties via the global Serializer camel_case_to_snake_case name converter.
  *
  * Note: The answer schema is NOT accepted as raw input — it is derived
  * internally from kind and choices. This avoids LLM errors with
@@ -27,7 +26,6 @@ final class AskHumanArgumentsDTO
         public readonly string $question = '',
         public readonly ?string $prompt = null,
         #[Assert\Choice(choices: ['text', 'confirm', 'choice', 'approval'], message: 'Unsupported ui_kind "{{ value }}". Allowed: text, confirm, choice, approval.')]
-        #[SerializedName('ui_kind')]
         public readonly ?string $uiKind = null,
         #[Assert\Choice(choices: ['text', 'confirm', 'choice', 'approval'], message: 'Unsupported kind "{{ value }}". Allowed: text, confirm, choice, approval.')]
         public readonly ?string $kind = null,
@@ -36,7 +34,6 @@ final class AskHumanArgumentsDTO
          */
         public readonly ?array $choices = null,
         public readonly mixed $default = null,
-        #[SerializedName('question_id')]
         public readonly ?string $questionId = null,
         public readonly ?string $header = null,
     ) {

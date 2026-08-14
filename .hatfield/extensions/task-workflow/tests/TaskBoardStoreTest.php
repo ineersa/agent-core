@@ -97,10 +97,10 @@ final class TaskBoardStoreTest extends TestCase
     }
 
     #[Test]
-    public function listTasksOmitsArchiveByDefaultAndCanIncludeIt(): void
+    public function listTasksOmitsCancelledAndArchiveByDefault(): void
     {
-        // Thesis: without this test, archived tasks could leak into default listings
-        // or become unlistable when include_archive/status filters are used.
+        // Thesis: without this test, cancelled or archived tasks could leak into default
+        // listings, or become unlistable when status/include_archive filters are used.
         file_put_contents($this->boardRoot.'/TODO/active.md', TaskMarkdown::renderTask('Active'));
         file_put_contents($this->boardRoot.'/ARCHIVE/old.md', TaskMarkdown::renderTask('Old'));
         file_put_contents($this->boardRoot.'/CANCELLED/dropped.md', TaskMarkdown::renderTask('Dropped'));
@@ -108,12 +108,16 @@ final class TaskBoardStoreTest extends TestCase
         $default = $this->store->listTasks($this->boardRoot);
         $defaultFiles = array_map(static fn ($t): string => $t->status->value.'/'.$t->file, $default);
         $this->assertContains('TODO/active.md', $defaultFiles);
-        $this->assertContains('CANCELLED/dropped.md', $defaultFiles);
+        $this->assertNotContains('CANCELLED/dropped.md', $defaultFiles);
         $this->assertNotContains('ARCHIVE/old.md', $defaultFiles);
 
         $withArchive = $this->store->listTasks($this->boardRoot, null, true);
         $withArchiveFiles = array_map(static fn ($t): string => $t->status->value.'/'.$t->file, $withArchive);
         $this->assertContains('ARCHIVE/old.md', $withArchiveFiles);
+
+        $cancelledOnly = $this->store->listTasks($this->boardRoot, TaskStatusEnum::CANCELLED);
+        $cancelledOnlyFiles = array_map(static fn ($t): string => $t->status->value.'/'.$t->file, $cancelledOnly);
+        $this->assertSame(['CANCELLED/dropped.md'], $cancelledOnlyFiles);
 
         $todoPlusArchive = $this->store->listTasks($this->boardRoot, TaskStatusEnum::TODO, true);
         $todoPlusArchiveFiles = array_map(static fn ($t): string => $t->status->value.'/'.$t->file, $todoPlusArchive);

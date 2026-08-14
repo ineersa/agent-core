@@ -14,8 +14,10 @@ use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
@@ -28,6 +30,7 @@ use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\SessionHistoryProvider;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Session\SessionTranscriptProvider;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
@@ -62,11 +65,11 @@ final class SessionInitializerTest extends TestCase
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),
             logging: new LoggingConfig(),
-            cwd: $this->projectDir,
+            cwd: $this->projectDir
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class)
         );
 
         $this->eventStore = new SessionRunEventStore(
@@ -74,11 +77,11 @@ final class SessionInitializerTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),
-            sequenceAllocator: new FileRunSequenceAllocator(),
+            sequenceAllocator: new FileRunSequenceAllocator()
         );
 
         $mapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher()),
+            new RuntimeEventTranslator(new EventDispatcher())
         );
 
         $transcriptProjector = $this->buildRealTranscriptProjector();
@@ -87,7 +90,7 @@ final class SessionInitializerTest extends TestCase
             eventStore: $this->eventStore,
             replayFilter: new HistoryReplayFilter(new HistoryProjector()),
             eventMapper: $mapper,
-            transcriptProjector: $transcriptProjector,
+            transcriptProjector: $transcriptProjector
         );
 
         $this->sessionInit = new SessionInitializer(
@@ -95,9 +98,9 @@ final class SessionInitializerTest extends TestCase
             eventStore: $this->eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($transcriptProjector),
+            eventApplier: new TuiRuntimeEventApplier($transcriptProjector, SubagentProgressSerializerTestSupport::denormalizer()),
             historyProvider: $historyProvider,
-            sessionTranscriptProvider: $sessionTranscriptProvider,
+            sessionTranscriptProvider: $sessionTranscriptProvider
         );
     }
 
@@ -156,14 +159,14 @@ final class SessionInitializerTest extends TestCase
                     'role' => 'user',
                     'content' => [['type' => 'text', 'text' => 'Hello from replayed steer']],
                 ]]],
-            ],
+            ]
         ));
         $this->seedCanonicalEvent(new RunEvent(
             runId: $runId,
             seq: 5,
             turnNo: 1,
             type: 'turn_advanced',
-            payload: ['turn_no' => 1],
+            payload: ['turn_no' => 1]
         ));
         $this->seedCanonicalEvent(new RunEvent(
             runId: $runId,
@@ -177,13 +180,13 @@ final class SessionInitializerTest extends TestCase
                     'role' => 'user',
                     'content' => [['type' => 'text', 'text' => 'Hello from replayed steer']],
                 ],
-            ],
+            ]
         ));
         $this->seedCanonicalEvent(new RunEvent(
             runId: $runId,
             seq: 7,
             turnNo: 0,
-            type: 'tool_batch_committed',
+            type: 'tool_batch_committed'
         ));
 
         $state = new TuiSessionState($runId, true);
@@ -211,7 +214,7 @@ final class SessionInitializerTest extends TestCase
             runId: $runId,
             seq: 3,
             turnNo: 0,
-            type: 'agent_command_queued',
+            type: 'agent_command_queued'
         ));
 
         $state = new TuiSessionState($runId, true);
@@ -279,7 +282,7 @@ final class SessionInitializerTest extends TestCase
             cwd: $stateRequest->cwd ?? '',
             options: $stateRequest->options ?? [],
             model: $stateRequest?->model,
-            reasoning: $stateRequest?->reasoning,
+            reasoning: $stateRequest?->reasoning
         );
 
         $this->assertSame('Hello from draft', $request->prompt);
@@ -305,7 +308,7 @@ final class SessionInitializerTest extends TestCase
             cwd: '/custom/path',
             options: ['foo' => 'bar'],
             model: 'gpt-4',
-            reasoning: 'high',
+            reasoning: 'high'
         );
         $sessionId = 'promo-test-43';
         $text = 'Real user message';
@@ -316,7 +319,7 @@ final class SessionInitializerTest extends TestCase
             cwd: $stateRequest->cwd,
             options: $stateRequest->options,
             model: $stateRequest->model,
-            reasoning: $stateRequest->reasoning,
+            reasoning: $stateRequest->reasoning
         );
 
         $this->assertSame('Real user message', $request->prompt);
@@ -351,7 +354,7 @@ final class SessionInitializerTest extends TestCase
                 'kind' => 'steer',
                 'idempotency_key' => 'ik_t1',
                 'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Turn 1']]],
-            ],
+            ]
         ));
         // Turn 2 (later discarded, seq 8)
         $this->seedCanonicalEvent(new RunEvent(
@@ -363,7 +366,7 @@ final class SessionInitializerTest extends TestCase
                 'kind' => 'steer',
                 'idempotency_key' => 'ik_t2',
                 'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Turn 2 — discarded']]],
-            ],
+            ]
         ));
         // history_position_set (select T1, seq 12)
         $this->seedCanonicalEvent(new RunEvent(
@@ -371,7 +374,7 @@ final class SessionInitializerTest extends TestCase
             seq: 12,
             turnNo: 1,
             type: 'history_position_set',
-            payload: ['position_turn_no' => 1, 'previous_position_turn_no' => 2],
+            payload: ['position_turn_no' => 1, 'previous_position_turn_no' => 2]
         ));
         // Turn 3 (active new tail, seq 15)
         $this->seedCanonicalEvent(new RunEvent(
@@ -383,7 +386,7 @@ final class SessionInitializerTest extends TestCase
                 'kind' => 'steer',
                 'idempotency_key' => 'ik_t3',
                 'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Turn 3 — new tail']]],
-            ],
+            ]
         ));
 
         // ── HistoryProvider providing selected position ──
@@ -405,7 +408,7 @@ final class SessionInitializerTest extends TestCase
                     new TranscriptBlock(id: 'b1', kind: TranscriptBlockKindEnum::UserMessage, runId: $runId, seq: 5, text: 'Turn 1'),
                     new TranscriptBlock(id: 'b3', kind: TranscriptBlockKindEnum::UserMessage, runId: $runId, seq: 15, text: 'Turn 3 — new tail'),
                 ],
-                replayEvents: [],
+                replayEvents: []
             ));
 
         // ── Build a fresh initializer with real projector + custom provider ──
@@ -414,14 +417,14 @@ final class SessionInitializerTest extends TestCase
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),
             logging: new LoggingConfig(),
-            cwd: $this->projectDir,
+            cwd: $this->projectDir
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class)
         );
         $mapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher()),
+            new RuntimeEventTranslator(new EventDispatcher())
         );
 
         $sessionInit = new SessionInitializer(
@@ -429,9 +432,9 @@ final class SessionInitializerTest extends TestCase
             eventStore: $this->eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($projector),
+            eventApplier: new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer()),
             historyProvider: $historyProvider,
-            sessionTranscriptProvider: $sessionTranscriptProvider,
+            sessionTranscriptProvider: $sessionTranscriptProvider
         );
 
         $state = new TuiSessionState($runId, true);
@@ -462,14 +465,14 @@ final class SessionInitializerTest extends TestCase
                 'kind' => 'follow_up',
                 'idempotency_key' => 'ik_follow',
                 'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]],
-            ],
+            ]
         ));
         $this->seedCanonicalEvent(new RunEvent(
             runId: $runId,
             seq: 2,
             turnNo: 1,
             type: 'agent_end',
-            payload: ['reason' => 'cancelled'],
+            payload: ['reason' => 'cancelled']
         ));
 
         $historyProvider = $this->createMock(HistoryProviderInterface::class);
@@ -483,20 +486,20 @@ final class SessionInitializerTest extends TestCase
             ->with($runId, 1)
             ->willReturn(new SessionTranscriptSnapshotDTO(
                 transcriptBlocks: [new TranscriptBlock(id: 'b1', kind: TranscriptBlockKindEnum::UserMessage, runId: $runId, seq: 1, text: 'Hello')],
-                replayEvents: [],
+                replayEvents: []
             ));
 
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),
             logging: new LoggingConfig(),
-            cwd: $this->projectDir,
+            cwd: $this->projectDir
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class)
         );
         $mapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher()),
+            new RuntimeEventTranslator(new EventDispatcher())
         );
 
         $sessionInit = new SessionInitializer(
@@ -504,9 +507,9 @@ final class SessionInitializerTest extends TestCase
             eventStore: $this->eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($this->buildRealTranscriptProjector()),
+            eventApplier: new TuiRuntimeEventApplier($this->buildRealTranscriptProjector(), SubagentProgressSerializerTestSupport::denormalizer()),
             historyProvider: $historyProvider,
-            sessionTranscriptProvider: $sessionTranscriptProvider,
+            sessionTranscriptProvider: $sessionTranscriptProvider
         );
 
         $state = new TuiSessionState($runId, true);
@@ -566,7 +569,7 @@ final class SessionInitializerTest extends TestCase
             transcriptBlocks: [
                 new TranscriptBlock(id: 'b1', kind: TranscriptBlockKindEnum::UserMessage, runId: $runId, seq: 1, text: 'Turn 1'),
             ],
-            replayEvents: [],
+            replayEvents: []
         ));
 
         $sessionInit = $this->buildSessionInitializerWithProviders($historyProvider, $sessionTranscriptProvider);
@@ -599,7 +602,7 @@ final class SessionInitializerTest extends TestCase
             type: RuntimeEventTypeEnum::AssistantMessageCompleted->value,
             runId: $runId,
             seq: 2,
-            payload: ['text' => 'Hello', 'usage' => ['input_tokens' => 120, 'output_tokens' => 30]],
+            payload: ['text' => 'Hello', 'usage' => ['input_tokens' => 120, 'output_tokens' => 30]]
         );
 
         $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
@@ -607,7 +610,7 @@ final class SessionInitializerTest extends TestCase
             transcriptBlocks: [
                 new TranscriptBlock(id: 'b1', kind: TranscriptBlockKindEnum::AssistantMessage, runId: $runId, seq: 1, text: 'Hello'),
             ],
-            replayEvents: [$usageEvent],
+            replayEvents: [$usageEvent]
         ));
 
         $projector = $this->buildRealTranscriptProjector();
@@ -645,11 +648,11 @@ final class SessionInitializerTest extends TestCase
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),
             logging: new LoggingConfig(),
-            cwd: $this->projectDir,
+            cwd: $this->projectDir
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class)
         );
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
 
@@ -658,9 +661,9 @@ final class SessionInitializerTest extends TestCase
             eventStore: $this->eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($projector),
+            eventApplier: new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer()),
             historyProvider: $historyProvider,
-            sessionTranscriptProvider: $sessionTranscriptProvider,
+            sessionTranscriptProvider: $sessionTranscriptProvider
         );
     }
 
@@ -673,7 +676,7 @@ final class SessionInitializerTest extends TestCase
         $projectionState = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
         $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber());
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
 
         return new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($dispatcher, $projectionState);
     }
@@ -689,7 +692,7 @@ final class SessionInitializerTest extends TestCase
 
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
+            \RecursiveIteratorIterator::CHILD_FIRST
         );
 
         foreach ($iterator as $entry) {

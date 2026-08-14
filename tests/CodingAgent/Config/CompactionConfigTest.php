@@ -15,6 +15,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
@@ -175,7 +176,7 @@ final class CompactionConfigTest extends TestCase
             // ClassMetadataFactory + AttributeLoader reads #[SerializedName] so
             // snake_case YAML keys map to camelCase constructor parameters.
             $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
-            $nameConverter = new MetadataAwareNameConverter($classMetadataFactory);
+            $nameConverter = new MetadataAwareNameConverter($classMetadataFactory, new CamelCaseToSnakeCaseNameConverter());
             $reflectionExtractor = new ReflectionExtractor();
             $serializer = new Serializer(
                 normalizers: [

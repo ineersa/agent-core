@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
-use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
@@ -87,9 +86,6 @@ final readonly class ExecuteCompactionStepWorker
         $startedAt = hrtime(true);
         $model = $message->model;
 
-        // Deserialise summarization messages from transport-safe array shapes.
-        $summarizationMessages = $this->deserializeMessages($message->summarizationMessages);
-
         RunLogContext::enter([
             'event_type' => 'compaction.request.started',
             'model' => $model,
@@ -103,7 +99,7 @@ final readonly class ExecuteCompactionStepWorker
                     runId: $message->runId(),
                     turnNo: $message->turnNo(),
                     stepId: $message->stepId(),
-                    messages: $summarizationMessages,
+                    messages: $message->summarizationMessages,
                     // toolsRef is intentionally null — the toolsEnabled:false
                     // flag in ModelInvocationOptions below explicitly disables
                     // all tool resolution, providing a stronger guarantee than
@@ -212,30 +208,5 @@ final readonly class ExecuteCompactionStepWorker
         } finally {
             RunLogContext::leave();
         }
-    }
-
-    /**
-     * Deserialise AgentMessage array shapes from transport-safe array payloads.
-     *
-     * @param list<array<string, mixed>> $rawMessages
-     *
-     * @return list<AgentMessage>
-     */
-    private function deserializeMessages(array $rawMessages): array
-    {
-        $messages = [];
-
-        foreach ($rawMessages as $raw) {
-            if (!\is_array($raw)) {
-                continue;
-            }
-
-            $msg = AgentMessage::fromPayload($raw);
-            if (null !== $msg) {
-                $messages[] = $msg;
-            }
-        }
-
-        return $messages;
     }
 }

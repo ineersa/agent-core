@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\CancellationProjectionSubscriber;
@@ -27,6 +28,7 @@ use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\SessionHistoryProvider;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Session\SessionTranscriptProvider;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
@@ -43,12 +45,12 @@ final class ResumeSessionInitializerTestFactory
             tui: new TuiConfig(theme: 'default'),
             logging: new LoggingConfig(),
             cwd: $projectDir,
-            sessions: new SessionsConfig(path: '.hatfield/sessions'),
+            sessions: new SessionsConfig(path: '.hatfield/sessions')
         );
 
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $entityManager,
+            entityManager: $entityManager
         );
 
         $eventStore = new SessionRunEventStore(
@@ -56,18 +58,18 @@ final class ResumeSessionInitializerTestFactory
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),
-            sequenceAllocator: new FileRunSequenceAllocator(),
+            sequenceAllocator: new FileRunSequenceAllocator()
         );
 
         $mapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher()),
+            new RuntimeEventTranslator(new EventDispatcher())
         );
 
         $dispatcher = new EventDispatcher();
         $projectionState = new TranscriptProjectionState();
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber());
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
@@ -80,14 +82,14 @@ final class ResumeSessionInitializerTestFactory
             eventStore: $eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($projector),
+            eventApplier: new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer()),
             historyProvider: $historyProvider,
             sessionTranscriptProvider: new SessionTranscriptProvider(
                 eventStore: $eventStore,
                 replayFilter: new HistoryReplayFilter(new HistoryProjector()),
                 eventMapper: $mapper,
-                transcriptProjector: $projector,
-            ),
+                transcriptProjector: $projector
+            )
         );
     }
 }

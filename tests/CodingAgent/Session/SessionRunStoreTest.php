@@ -22,6 +22,10 @@ use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\PropertyInfo\PropertyInfoExtractor;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
@@ -233,7 +237,7 @@ final class SessionRunStoreTest extends TestCase
 
         // Write a tampered state.json with a different embedded runId
         $statePath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/state.json';
-        $tampered = json_encode(['runId' => 'wrong-id', 'status' => 'queued', 'version' => 1]);
+        $tampered = json_encode(['run_id' => 'wrong-id', 'status' => 'queued', 'version' => 1]);
         file_put_contents($statePath, $tampered);
 
         $this->expectException(\RuntimeException::class);
@@ -277,7 +281,11 @@ final class SessionRunStoreTest extends TestCase
                 new DateTimeNormalizer(),
                 new BackedEnumNormalizer(),
                 new ArrayDenormalizer(),
-                new ObjectNormalizer(propertyTypeExtractor: $propertyInfo),
+                new ObjectNormalizer(
+                    classMetadataFactory: ($cmf = new ClassMetadataFactory(new AttributeLoader())),
+                    nameConverter: new MetadataAwareNameConverter($cmf, new CamelCaseToSnakeCaseNameConverter()),
+                    propertyTypeExtractor: $propertyInfo,
+                ),
             ],
             [new JsonEncoder()],
         );

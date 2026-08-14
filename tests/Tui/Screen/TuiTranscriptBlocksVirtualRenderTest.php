@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
@@ -289,16 +290,16 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $dispatcher = new EventDispatcher();
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
-        $projector->accept([
-            'type' => 'user.message_submitted',
-            'runId' => self::SESSION_ID,
-            'seq' => 1,
-            'payload' => [
+        $projector->accept(new RuntimeEvent(
+            type: 'user.message_submitted',
+            runId: self::SESSION_ID,
+            seq: 1,
+            payload: [
                 'message_id' => 'reminder-virtual-1',
                 'text' => $wrapped,
                 'metadata' => ['system_reminder' => true],
             ],
-        ]);
+        ));
 
         $blocks = $projector->blocks();
         $this->assertCount(1, $blocks);

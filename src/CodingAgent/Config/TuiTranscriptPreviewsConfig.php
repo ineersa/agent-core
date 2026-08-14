@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
-
 /**
  * Hatfield config DTO for tui.transcript.previews.* settings.
  *
@@ -25,11 +23,8 @@ final readonly class TuiTranscriptPreviewsConfig
      * @param int  $diffLines         Max lines shown for diff-rendered tool result previews
      */
     public function __construct(
-        #[SerializedName('expanded_by_default')]
         public bool $expandedByDefault = false,
-        #[SerializedName('tool_result_lines')]
         public int $toolResultLines = 8,
-        #[SerializedName('diff_lines')]
         public int $diffLines = 20,
     ) {
     }

@@ -225,8 +225,8 @@ final class OutputCapTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
         $outputCap = new OutputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap);
-        $hook = new OutputCapLlmTransformHook($outputCap);
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $hook = new OutputCapLlmTransformHook($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $body = str_repeat('D', 25000);
         $this->assertGreaterThan(20000, u($body)->length());
@@ -316,7 +316,7 @@ final class OutputCapTest extends TestCase
     public function testHatfieldDocsReadOverDocCapIsCappedAtFiftyK(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
-        $processor = new OutputCapToolResultProcessor(new OutputCap($cfg));
+        $processor = new OutputCapToolResultProcessor(new OutputCap($cfg), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
         $body = str_repeat('Z', 50001);
         $toolCall = new ToolCall(
             toolCallId: 'call-docs-over',

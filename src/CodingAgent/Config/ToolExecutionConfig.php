@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
-
 /**
  * Typed DTO for the tools.execution.* settings section.
  *
@@ -27,10 +25,8 @@ final readonly class ToolExecutionConfig
      * @param int    $maxParallelism Maximum concurrent tool calls
      */
     public function __construct(
-        #[SerializedName('default_mode')]
         public string $defaultMode = self::DEFAULT_MODE,
 
-        #[SerializedName('max_parallelism')]
         public int $maxParallelism = self::DEFAULT_MAX_PARALLELISM,
     ) {
     }

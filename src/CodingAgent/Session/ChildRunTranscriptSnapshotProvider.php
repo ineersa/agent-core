@@ -51,7 +51,7 @@ final readonly class ChildRunTranscriptSnapshotProvider implements ChildRunTrans
         $this->transcriptProjector->reset();
 
         foreach ($replayEvents as $runtimeEvent) {
-            $this->transcriptProjector->accept($runtimeEvent->toArray());
+            $this->transcriptProjector->accept($runtimeEvent);
         }
 
         return new ChildRunTranscriptSnapshotDTO(

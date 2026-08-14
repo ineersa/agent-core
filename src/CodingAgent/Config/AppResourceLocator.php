@@ -64,4 +64,12 @@ final readonly class AppResourceLocator
     {
         return $this->appRoot.'/src/CodingAgent/Resources/agents';
     }
+
+    /**
+     * The application installation root directory.
+     */
+    public function getAppRoot(): string
+    {
+        return $this->appRoot;
+    }
 }

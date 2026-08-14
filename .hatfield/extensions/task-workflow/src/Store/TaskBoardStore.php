@@ -74,7 +74,7 @@ final class TaskBoardStore
      * List tasks for one status or a status set.
      *
      * When $status is null:
-     * - includeArchive false (default): TODO, IN-PROGRESS, CODE-REVIEW, DONE, CANCELLED
+     * - includeArchive false (default): TODO, IN-PROGRESS, CODE-REVIEW, DONE (CANCELLED and ARCHIVE omitted)
      * - includeArchive true: all six statuses including ARCHIVE
      *
      * When $status is set:

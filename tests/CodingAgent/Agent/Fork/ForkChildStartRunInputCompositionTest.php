@@ -268,6 +268,8 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
                             'artifact_id' => $identity->artifactId,
                             'interactive' => true,
                         ],
+                        'model' => 'deepseek/deepseek-v4-flash',
+                        'reasoning' => 'medium',
                         'tools_scope' => [
                             'allowed_tools' => $allowed,
                             'mcp' => ['mode' => 'inherit', 'tools' => []],

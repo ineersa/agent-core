@@ -465,6 +465,8 @@ parameters:
       - TuiTheme
 
     TuiTranscript:
+      # Typed subagent_progress DTOs live under Runtime/Contract (serializer boundary).
+      - AppRuntimeContract
       - AppRuntimeProjection
       - TuiWidget
       - TuiTheme
@@ -657,9 +659,13 @@ parameters:
       - AppRuntimeProjection
       - AppRuntimeContract
       - AppSkills
+      # Model notification projection decodes fixed RunEvent payload shape once.
+      - AgentCore
       - SymfonyEventDispatcher
 
-    AppRuntimeProjection: ~
+    AppRuntimeProjection:
+      # Shared typed subagent_progress contracts live under Runtime/Contract.
+      - AppRuntimeContract
 
     AppExtension:
       - AppExtensionApi
@@ -774,6 +780,7 @@ parameters:
     AgentCore:
       - SymfonyLock
       - SymfonySerializer
+      - SymfonyValidator
       - SymfonyAiPlatform
     SymfonyTui: ~
     SymfonyAiPlatform:

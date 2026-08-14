@@ -448,7 +448,7 @@ class CancelListenerTest extends TestCase
         );
         $this->state->subagentLiveView->enter($child);
         $this->state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
-        $this->state->subagentLiveCatalog->ingestRuntimeEvent(new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+        \Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport::ingestCatalogEvent($this->state->subagentLiveCatalog, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
             type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             runId: 'parent-run-confirm',
             seq: 1,
@@ -464,7 +464,8 @@ class CancelListenerTest extends TestCase
                     'agent_run_id' => 'child-run-confirm',
                     'task_summary' => 'task',
                     'model' => 'deepseek/deepseek-v4-flash',
-                    'reasoning' => 'medium', ],
+                    'reasoning' => 'medium',
+                ],
             ],
         ));
 

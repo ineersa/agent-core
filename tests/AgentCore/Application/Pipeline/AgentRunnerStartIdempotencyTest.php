@@ -10,6 +10,10 @@ use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 
@@ -18,7 +22,7 @@ final class AgentRunnerStartIdempotencyTest extends TestCase
     public function testExplicitRunIdUsesStableStartStepAndIdempotencyKeyOnRepeat(): void
     {
         $bus = new TestMessageBus();
-        $runner = new AgentRunner($bus, new Serializer([new ObjectNormalizer()]));
+        $runner = new AgentRunner($bus, new Serializer([new ObjectNormalizer(classMetadataFactory: ($cmf = new ClassMetadataFactory(new AttributeLoader())), nameConverter: new MetadataAwareNameConverter($cmf, new CamelCaseToSnakeCaseNameConverter()))]));
 
         $runId = '11111111-1111-4111-8111-111111111111';
         $input = new StartRunInput(
@@ -46,7 +50,7 @@ final class AgentRunnerStartIdempotencyTest extends TestCase
     public function testGeneratedRunIdUsesDistinctHrtimeSteps(): void
     {
         $bus = new TestMessageBus();
-        $runner = new AgentRunner($bus, new Serializer([new ObjectNormalizer()]));
+        $runner = new AgentRunner($bus, new Serializer([new ObjectNormalizer(classMetadataFactory: ($cmf = new ClassMetadataFactory(new AttributeLoader())), nameConverter: new MetadataAwareNameConverter($cmf, new CamelCaseToSnakeCaseNameConverter()))]));
 
         $input = new StartRunInput(systemPrompt: 'sys', messages: [], metadata: new RunMetadata(model: 'test-model'));
         $runner->start($input);

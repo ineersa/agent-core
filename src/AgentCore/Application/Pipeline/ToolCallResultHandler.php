@@ -12,12 +12,16 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final readonly class ToolCallResultHandler implements RunMessageHandler
 {
@@ -28,6 +32,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
         private EventFactory $eventFactory,
         private ToolCallExtractor $toolCallExtractor,
         private AgentMessageNormalizer $messageNormalizer,
+        private NormalizerInterface&DenormalizerInterface $serializer,
         private ?RunMetrics $metrics = null,
         private ?MessageBusInterface $commandBus = null,
     ) {
@@ -281,7 +286,8 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             $interruptPayload = null;
 
             foreach ($outcome->orderedResults as $orderedResult) {
-                $toolMsg = $this->messageNormalizer->toolMessage($orderedResult);
+                $notifications = $this->denormalizeModelNotifications($orderedResult);
+                $toolMsg = $this->messageNormalizer->toolMessage($orderedResult, $notifications);
                 $messages[] = $toolMsg;
                 $toolMsgArray = $toolMsg->toArray();
 
@@ -304,7 +310,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
 
                 // Emit model_notification events for any notifications
                 // attached to this tool result.
-                foreach ($this->collectModelNotificationEventSpecs($orderedResult) as $notifSpec) {
+                foreach ($this->collectModelNotificationEventSpecs($notifications) as $notifSpec) {
                     $eventSpecs[] = $notifSpec;
                 }
 
@@ -556,7 +562,8 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             'payload' => $toolExecutionEndPayload,
         ];
 
-        $toolMsg = $this->messageNormalizer->toolMessage($result);
+        $notifications = $this->denormalizeModelNotifications($result);
+        $toolMsg = $this->messageNormalizer->toolMessage($result, $notifications);
         $messages[] = $toolMsg;
         $toolMsgArray = $toolMsg->toArray();
 
@@ -681,34 +688,45 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
     }
 
     /**
-     * Collect model_notification event specs from a ToolCallResult.
+     * Decode model_notifications once from the ToolCallResult details array boundary.
      *
-     * When a tool result processor attached model_notifications to the
-     * result details, this helper produces generic ModelNotification
-     * RunEvent specs that flow through to the runtime event stream and
-     * TUI projection.
+     * @return list<ModelNotificationDTO>
+     */
+    private function denormalizeModelNotifications(ToolCallResult $result): array
+    {
+        $raw = $result->result['details']['model_notifications'] ?? null;
+        if (!\is_array($raw) || [] === $raw) {
+            return [];
+        }
+
+        /** @var list<ModelNotificationDTO> $notifications */
+        $notifications = $this->serializer->denormalize($raw, ModelNotificationDTO::class.'[]');
+
+        return $notifications;
+    }
+
+    /**
+     * Collect model_notification RunEvent specs from typed notifications.
+     *
+     * @param list<ModelNotificationDTO> $notifications
      *
      * @return list<array{type: string, payload: array<string, mixed>}>
      */
-    private function collectModelNotificationEventSpecs(ToolCallResult $result): array
+    private function collectModelNotificationEventSpecs(array $notifications): array
     {
-        $notifications = \is_array($result->result['details']['model_notifications'] ?? null)
-            ? $result->result['details']['model_notifications']
-            : null;
-
-        if (null === $notifications || [] === $notifications) {
+        if ([] === $notifications) {
             return [];
         }
 
         $specs = [];
         foreach ($notifications as $notif) {
-            if (!\is_array($notif)) {
-                continue;
-            }
-
+            /** @var array<string, mixed> $payload */
+            $payload = $this->serializer->normalize($notif, null, [
+                AbstractObjectNormalizer::SKIP_NULL_VALUES => true,
+            ]);
             $specs[] = [
                 'type' => RunEventTypeEnum::ModelNotification->value,
-                'payload' => $notif,
+                'payload' => $payload,
             ];
         }
 

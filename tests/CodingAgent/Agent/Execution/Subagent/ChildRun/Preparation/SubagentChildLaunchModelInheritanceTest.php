@@ -93,7 +93,10 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
     {
         $eventStore = self::getContainer()->get(EventStoreInterface::class);
         \assert($eventStore instanceof EventStoreInterface);
-        $metadata = ['model' => 'deepseek/deepseek-v4-flash'];
+        $metadata = [
+            'session' => ['kind' => 'parent'],
+            'model' => 'deepseek/deepseek-v4-flash',
+        ];
         if (null !== $reasoning) {
             $metadata['reasoning'] = $reasoning;
         }

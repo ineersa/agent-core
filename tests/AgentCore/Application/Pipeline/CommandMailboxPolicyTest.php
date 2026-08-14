@@ -544,6 +544,7 @@ final class CommandMailboxPolicyTest extends TestCase
                     toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
                     messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
                     stepDispatcher: $stepDispatcher,
+                    normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
                     commandBus: $commandBus,
                 ),
                 new ToolCallResultHandler(
@@ -551,6 +552,7 @@ final class CommandMailboxPolicyTest extends TestCase
                     eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
                     toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
                     messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
+                    serializer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
                 ),
             ],
         );

@@ -130,38 +130,20 @@ final class ForkChildLaunchInputBuilder
         ?string $reasoningOverride,
         ?string $parentModel,
     ): ForkRuntimeResolvedConfigDTO {
-        $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId) ?? [];
+        $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId);
+        // Explicit parent model still wins; otherwise inherit from parent RunStarted metadata.
+        // Model/reasoning are already canonicalized (trim/nonblank) by the metadata DTO.
         $effectiveParentModel = null !== $parentModel && '' !== trim($parentModel)
             ? trim($parentModel)
-            : $this->readParentModelFromMetadata($parentMetadata);
+            : $parentMetadata?->model;
 
         return $this->configResolver->resolve(
             explicitModel: $modelOverride,
             explicitThinking: $reasoningOverride,
             parentModel: $effectiveParentModel,
-            parentReasoning: $this->readParentReasoningFromMetadata($parentMetadata),
+            parentReasoning: $parentMetadata?->reasoning,
             parentRunId: $parentRunId,
         );
-    }
-
-    /**
-     * @param array<string, mixed> $parentMetadata
-     */
-    private function readParentModelFromMetadata(array $parentMetadata): ?string
-    {
-        $model = $parentMetadata['model'] ?? null;
-
-        return \is_string($model) && '' !== trim($model) ? trim($model) : null;
-    }
-
-    /**
-     * @param array<string, mixed> $parentMetadata
-     */
-    private function readParentReasoningFromMetadata(array $parentMetadata): ?string
-    {
-        $reasoning = $parentMetadata['reasoning'] ?? null;
-
-        return \is_string($reasoning) && '' !== trim($reasoning) ? trim($reasoning) : null;
     }
 
     private function resolveContextWindowForModel(?string $model): ?int

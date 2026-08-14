@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\Platform\Result\CancellableRawResultInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
@@ -42,6 +43,7 @@ use Symfony\AI\Platform\Result\Stream\Delta\ToolInputDelta;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\AI\Platform\Tool\Tool;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 final readonly class LlmPlatformAdapter implements PlatformInterface
 {
@@ -59,6 +61,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private ?LlmStreamObserverInterface $streamObserver,
         private ?CostCalculatorInterface $costCalculator,
         private LoggerInterface $logger,
+        private DenormalizerInterface $denormalizer,
         private ?ModelResolverInterface $modelResolver = null,
         private readonly LlmProviderErrorClassifier $errorClassifier = new LlmProviderErrorClassifier(),
         private readonly AgentMessageToolCallSequenceValidator $toolCallSequenceValidator = new AgentMessageToolCallSequenceValidator(),
@@ -302,18 +305,9 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $ids = [];
 
         foreach ($messages as $message) {
-            $notifications = \is_array($message->details['model_notifications'] ?? null)
-                ? $message->details['model_notifications']
-                : null;
-
-            if (null === $notifications) {
-                continue;
-            }
-
-            foreach ($notifications as $notif) {
-                if (\is_array($notif) && isset($notif['id']) && \is_string($notif['id'])) {
-                    $ids[$notif['id']] = true;
-                }
+            foreach ($this->denormalizeModelNotifications($message->details) as $notif) {
+                // DTO construction guarantees nonblank id.
+                $ids[$notif->id] = true;
             }
         }
 
@@ -331,33 +325,39 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      * @param list<AgentMessage>  $messages
      * @param array<string, true> $seenIds  Notification IDs present pre-transform
      *
-     * @return list<array<string, mixed>>
+     * @return list<ModelNotificationDTO>
      */
     private function extractNewModelNotifications(array $messages, array $seenIds): array
     {
         $notifications = [];
 
         foreach ($messages as $message) {
-            $modelNotifs = \is_array($message->details['model_notifications'] ?? null)
-                ? $message->details['model_notifications']
-                : null;
-
-            if (null === $modelNotifs) {
-                continue;
-            }
-
-            foreach ($modelNotifs as $notif) {
-                if (!\is_array($notif)) {
-                    continue;
-                }
-
-                $id = $notif['id'] ?? null;
-                if (\is_string($id) && '' !== $id && !isset($seenIds[$id])) {
+            foreach ($this->denormalizeModelNotifications($message->details) as $notif) {
+                // DTO construction guarantees nonblank id.
+                if (!isset($seenIds[$notif->id])) {
                     $notifications[] = $notif;
-                    $seenIds[$id] = true;
+                    $seenIds[$notif->id] = true;
                 }
             }
         }
+
+        return $notifications;
+    }
+
+    /**
+     * @param array<string, mixed>|null $details AgentMessage.details array boundary
+     *
+     * @return list<ModelNotificationDTO>
+     */
+    private function denormalizeModelNotifications(?array $details): array
+    {
+        $raw = \is_array($details) ? ($details['model_notifications'] ?? null) : null;
+        if (!\is_array($raw) || [] === $raw) {
+            return [];
+        }
+
+        /** @var list<ModelNotificationDTO> $notifications */
+        $notifications = $this->denormalizer->denormalize($raw, ModelNotificationDTO::class.'[]');
 
         return $notifications;
     }
@@ -420,7 +420,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
     /**
      * @param array<string, mixed>       $requestSummary     Privacy-safe request summary for error diagnostics
-     * @param list<array<string, mixed>> $modelNotifications generic model notifications
+     * @param list<ModelNotificationDTO> $modelNotifications generic model notifications
      *                                                       produced by transform context hooks
      * @param list<string>               $availableTools
      */
@@ -675,7 +675,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     /**
      * @param list<DeltaInterface>       $deltas
      * @param array<string, mixed>       $requestSummary     Privacy-safe request summary
-     * @param list<array<string, mixed>> $modelNotifications generic model notifications
+     * @param list<ModelNotificationDTO> $modelNotifications generic model notifications
      *                                                       from transform context hooks
      * @param list<string>               $availableTools
      */

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Definition;
 
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionValidationException;
@@ -12,14 +13,7 @@ use Ineersa\CodingAgent\Agent\Definition\SystemPromptModeEnum;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\PropertyAccess\PropertyAccess;
-use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
-use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
-use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Serializer\SerializerInterface;
-use Symfony\Component\Validator\Validation;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
@@ -40,23 +34,8 @@ final class AgentDefinitionParserTest extends TestCase
 
     protected function setUp(): void
     {
-        $reflectionExtractor = new ReflectionExtractor();
-
-        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
-
-        $objectNormalizer = new ObjectNormalizer(
-            classMetadataFactory: $classMetadataFactory,
-            nameConverter: null,
-            propertyAccessor: PropertyAccess::createPropertyAccessor(),
-            propertyTypeExtractor: $reflectionExtractor,
-        );
-
-        // Full Serializer keeps denormalization path identical to production wiring.
-        $this->serializer = new Serializer(normalizers: [$objectNormalizer], encoders: []);
-
-        $this->validator = Validation::createValidatorBuilder()
-            ->enableAttributeMapping()
-            ->getValidator();
+        // Production-mirroring Serializer (MetadataAware + camel_case_to_snake_case).
+        [$this->serializer, $this->validator] = AttributeSerializerValidatorTestFactory::create();
 
         $this->parser = new AgentDefinitionParser(
             frontmatterParser: new AgentFrontmatterParser(new MarkdownFrontmatterExtractor()),

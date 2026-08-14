@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Session;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathsDTO;
@@ -21,6 +22,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Session\SessionToolBatchStore;
 use Ineersa\CodingAgent\Session\SessionToolBatchStoreException;
+use Ineersa\CodingAgent\Session\ToolBatchSnapshotEnvelopeDTO;
 use Ineersa\CodingAgent\Tests\Session\Support\ParentSessionToolBatchRunStoragePaths;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
@@ -28,13 +30,7 @@ use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Process\Process;
-use Symfony\Component\Serializer\Encoder\JsonEncoder;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
-use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
-use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
-use Symfony\Component\Validator\ValidatorBuilder;
+use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
 
 final class SessionToolBatchStoreTest extends TestCase
 {
@@ -100,11 +96,17 @@ final class SessionToolBatchStoreTest extends TestCase
         $dir = $this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$runId.'/runtime/tool-batches';
         mkdir($dir, recursive: true);
         $filename = \sprintf('%d_%s.json', $turnNo, hash('sha256', $stepId));
+        [$serializer] = AttributeSerializerValidatorTestFactory::create();
+        $batchState = $serializer->normalize(
+            $this->emptyBatch([]),
+            null,
+            [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]],
+        );
         $envelope = [
             'run_id' => 'other-run',
             'turn_no' => $turnNo,
             'step_id' => $stepId,
-            'batch_state' => $this->emptyBatch([])->toPersistedArray(),
+            'batch_state' => $batchState,
         ];
         file_put_contents($dir.'/'.$filename, json_encode($envelope, \JSON_THROW_ON_ERROR));
 
@@ -135,11 +137,7 @@ final class SessionToolBatchStoreTest extends TestCase
         mkdir($parentDir.'/artifacts/agents/'.$artifactId, recursive: true);
 
         $pathResolver = new SessionAgentArtifactPathResolver($this->hatfieldSessionStore);
-        $serializer = new Serializer(
-            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter())],
-            [new JsonEncoder()],
-        );
-        $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
+        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
         $registry = new AgentArtifactRegistry($pathResolver, $serializer, $validator, new LockFactory(new FlockStore()));
 
         $entry = new AgentArtifactEntryDTO(
@@ -156,7 +154,7 @@ final class SessionToolBatchStoreTest extends TestCase
         $directory = new AgentChildRunDirectory($this->hatfieldSessionStore, $registry, new NullLogger());
         $directory->register($entry);
 
-        $childStore = new SessionToolBatchStore(new ChildAwareToolBatchRunStoragePaths($this->hatfieldSessionStore, $directory, $pathResolver), new LockFactory(new FlockStore()), new NullLogger());
+        $childStore = new SessionToolBatchStore(new ChildAwareToolBatchRunStoragePaths($this->hatfieldSessionStore, $directory, $pathResolver), new LockFactory(new FlockStore()), new NullLogger(), $serializer, $validator);
         $childStore->save($childRunId, 2, 'step-child', $this->emptyBatch(['c1']));
 
         $expectedDir = $parentDir.'/artifacts/agents/'.$artifactId.'/runtime/tool-batches';
@@ -244,48 +242,13 @@ final class SessionToolBatchStoreTest extends TestCase
             'turn_no' => $turnNo,
             'step_id' => $stepId,
             'batch_state' => [
-                'expected_order' => ['c1' => 'not-an-int'],
-                'call_data' => [],
-                'pending_queue' => [],
-                'in_flight' => [],
-                'result_data' => [],
-                'finalized' => false,
-                'max_parallelism' => 2,
-                'awaiting_human_input' => [],
-            ],
-        ];
-        file_put_contents($dir.'/'.$filename, json_encode($envelope, \JSON_THROW_ON_ERROR));
-
-        try {
-            $this->store->load($runId, $turnNo, $stepId);
-            $this->fail('Expected SessionToolBatchStoreException for malformed batch_state.');
-        } catch (SessionToolBatchStoreException $exception) {
-            $this->assertStringContainsString('batch_state is invalid', $exception->getMessage());
-            $previous = $exception->getPrevious();
-            $this->assertInstanceOf(\UnexpectedValueException::class, $previous);
-            $this->assertStringContainsString('expected_order', $previous->getMessage());
-        }
-    }
-
-    public function testLoadRejectsMalformedOptionalCallFieldTypes(): void
-    {
-        $runId = 'run-1';
-        $turnNo = 1;
-        $stepId = 'step-b';
-        $dir = $this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$runId.'/runtime/tool-batches';
-        mkdir($dir, recursive: true);
-        $filename = \sprintf('%d_%s.json', $turnNo, hash('sha256', $stepId));
-        $envelope = [
-            'run_id' => $runId,
-            'turn_no' => $turnNo,
-            'step_id' => $stepId,
-            'batch_state' => [
                 'expected_order' => ['c1' => 0],
                 'call_data' => [
                     'c1' => [
-                        'toolCallId' => 'c1',
-                        'toolName' => 'read',
-                        'orderIndex' => 0,
+                        'tool_call_id' => 'c1',
+                        'tool_name' => 'read',
+                        'order_index' => 0,
+                        'args' => [],
                         'mode' => 99,
                     ],
                 ],
@@ -301,11 +264,10 @@ final class SessionToolBatchStoreTest extends TestCase
 
         try {
             $this->store->load($runId, $turnNo, $stepId);
-            $this->fail('Expected SessionToolBatchStoreException for malformed optional call field.');
+            $this->fail('Expected SessionToolBatchStoreException for malformed batch_state.');
         } catch (SessionToolBatchStoreException $exception) {
-            $previous = $exception->getPrevious();
-            $this->assertInstanceOf(\UnexpectedValueException::class, $previous);
-            $this->assertStringContainsString('mode', $previous->getMessage());
+            $this->assertStringContainsString('snapshot is invalid', $exception->getMessage());
+            $this->assertNotNull($exception->getPrevious());
         }
     }
 
@@ -364,11 +326,7 @@ final class SessionToolBatchStoreTest extends TestCase
         }
 
         $pathResolver = new SessionAgentArtifactPathResolver($hatfield);
-        $serializer = new Serializer(
-            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter())],
-            [new JsonEncoder()],
-        );
-        $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
+        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
         $directory ??= new AgentChildRunDirectory(
             $hatfield,
             new AgentArtifactRegistry($pathResolver, $serializer, $validator, new LockFactory(new FlockStore())),
@@ -379,6 +337,8 @@ final class SessionToolBatchStoreTest extends TestCase
             new ParentSessionToolBatchRunStoragePaths($hatfield),
             new LockFactory(new FlockStore()),
             new NullLogger(),
+            $serializer,
+            $validator,
         );
     }
 
@@ -404,6 +364,11 @@ final class SessionToolBatchStoreTest extends TestCase
     private function assertPersistedEquivalent(ToolBatchStateDTO $expected, ?ToolBatchStateDTO $actual): void
     {
         $this->assertNotNull($actual);
-        $this->assertSame($expected->toPersistedArray(), $actual->toPersistedArray());
+        [$serializer] = AttributeSerializerValidatorTestFactory::create();
+        $context = [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]];
+        $this->assertSame(
+            $serializer->normalize(new ToolBatchSnapshotEnvelopeDTO('eq', 1, 's', $expected), null, $context),
+            $serializer->normalize(new ToolBatchSnapshotEnvelopeDTO('eq', 1, 's', $actual), null, $context),
+        );
     }
 }

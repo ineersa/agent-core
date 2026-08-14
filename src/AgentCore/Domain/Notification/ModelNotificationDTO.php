@@ -10,31 +10,18 @@ namespace Ineersa\AgentCore\Domain\Notification;
  *
  * Producers (OutputCap, SafeGuard, extensions, internal guidance) create
  * instances that flow through tool-result envelopes, canonical agent-message
- * history, and model_notification events.  Consumers (TUI projection, audit
+ * history, and model_notification events. Consumers (TUI projection, audit
  * log, model history) render the exact text without text parsing or
  * heuristics.
  *
- * Every notification has a deterministic {@see id} for dedup and replay.
- * The same id appears in the canonical AgentMessage history and in
- * model_notification RunEvents so downstream consumers can correlate them.
+ * Every notification has a deterministic {@see $id} for dedup and replay.
+ * Wire/persisted shape uses snake_case optional tool fields; null optionals
+ * are omitted by Serializer SKIP_NULL_VALUES at array boundaries.
  */
 final readonly class ModelNotificationDTO
 {
     /**
-     * @param string               $id         deterministic dedup/replay identifier
-     * @param string               $source     Producer identity: output_cap, safeguard, extension, system, …
-     * @param string               $kind       Sub-type within the source: output_capped, tool_blocked, …
-     * @param string               $severity   info | warning | error (drives TUI icon/theme color)
-     * @param string               $delivery   how the notification reaches the model:
-     *                                         tool_result_replace — replaces tool-result content;
-     *                                         context_message — free-standing user/system message
-     * @param string               $text       Exact text the model receives.  Must be a single
-     *                                         non-empty string (no parse-then-reconstruct).
-     * @param string|null          $toolCallId related tool call, when delivery= tool_result_replace
-     * @param string|null          $toolName   name of the related tool
-     * @param int|null             $orderIndex tool call order index from the assistant message
-     * @param array<string, mixed> $metadata   Arbitrary producer/consumer payload
-     *                                         (cap limit, char count, saved path, policy ref, etc.).
+     * @param array<string, mixed> $metadata Arbitrary producer/consumer payload
      */
     public function __construct(
         public string $id,
@@ -43,42 +30,36 @@ final readonly class ModelNotificationDTO
         public string $severity,
         public string $delivery,
         public string $text,
+        public array $metadata = [],
         public ?string $toolCallId = null,
         public ?string $toolName = null,
         public ?int $orderIndex = null,
-        public array $metadata = [],
     ) {
+        $this->assertNonBlank($id, 'id');
+        $this->assertNonBlank($source, 'source');
+        $this->assertNonBlank($kind, 'kind');
+        $this->assertNonBlank($severity, 'severity');
+        $this->assertNonBlank($delivery, 'delivery');
+        // Preserve exact model-facing text; reject blank without trimming/rebuilding.
+        if ('' === $text) {
+            throw new \InvalidArgumentException('ModelNotificationDTO.text must be nonblank.');
+        }
+
+        if (null !== $toolCallId && '' === trim($toolCallId)) {
+            throw new \InvalidArgumentException('ModelNotificationDTO.toolCallId must be nonblank when provided.');
+        }
+        if (null !== $toolName && '' === trim($toolName)) {
+            throw new \InvalidArgumentException('ModelNotificationDTO.toolName must be nonblank when provided.');
+        }
+        if ('tool_result_replace' === $delivery && (null === $toolCallId || '' === trim($toolCallId))) {
+            throw new \InvalidArgumentException('ModelNotificationDTO.toolCallId is required and nonblank when delivery is tool_result_replace.');
+        }
     }
 
-    /**
-     * Serialize to a plain array for storage in events / details.
-     *
-     * @return array<string, mixed>
-     */
-    public function toArray(): array
+    private function assertNonBlank(string $value, string $field): void
     {
-        $payload = [
-            'id' => $this->id,
-            'source' => $this->source,
-            'kind' => $this->kind,
-            'severity' => $this->severity,
-            'delivery' => $this->delivery,
-            'text' => $this->text,
-            'metadata' => $this->metadata,
-        ];
-
-        if (null !== $this->toolCallId) {
-            $payload['tool_call_id'] = $this->toolCallId;
+        if ('' === trim($value)) {
+            throw new \InvalidArgumentException(\sprintf('ModelNotificationDTO.%s must be nonblank.', $field));
         }
-
-        if (null !== $this->toolName) {
-            $payload['tool_name'] = $this->toolName;
-        }
-
-        if (null !== $this->orderIndex) {
-            $payload['order_index'] = $this->orderIndex;
-        }
-
-        return $payload;
     }
 }
