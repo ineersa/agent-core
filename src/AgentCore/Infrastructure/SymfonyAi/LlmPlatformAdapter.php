@@ -306,9 +306,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         foreach ($messages as $message) {
             foreach ($this->denormalizeModelNotifications($message->details) as $notif) {
-                if ('' !== $notif->id) {
-                    $ids[$notif->id] = true;
-                }
+                // DTO construction guarantees nonblank id.
+                $ids[$notif->id] = true;
             }
         }
 
@@ -334,7 +333,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         foreach ($messages as $message) {
             foreach ($this->denormalizeModelNotifications($message->details) as $notif) {
-                if ('' !== $notif->id && !isset($seenIds[$notif->id])) {
+                // DTO construction guarantees nonblank id.
+                if (!isset($seenIds[$notif->id])) {
                     $notifications[] = $notif;
                     $seenIds[$notif->id] = true;
                 }

@@ -93,6 +93,52 @@ final class ModelNotificationDTOTest extends TestCase
             'severity' => 'info',
             'delivery' => 'tool_result_replace',
             'text' => 'x',
+            'tool_call_id' => 'call-1',
+        ], ModelNotificationDTO::class);
+    }
+
+    public function testBlankRequiredFieldIsRejected(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('ModelNotificationDTO.text must be nonblank');
+
+        new ModelNotificationDTO(
+            id: 'nid-1',
+            source: 'output_cap',
+            kind: 'output_capped',
+            severity: 'warning',
+            delivery: 'context_message',
+            text: '',
+        );
+    }
+
+    public function testToolResultReplaceWithoutToolCallIdIsRejected(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('toolCallId is required');
+
+        new ModelNotificationDTO(
+            id: 'nid-1',
+            source: 'output_cap',
+            kind: 'output_capped',
+            severity: 'warning',
+            delivery: 'tool_result_replace',
+            text: 'replacement text',
+        );
+    }
+
+    public function testSerializerRejectsBlankIdOnDenormalize(): void
+    {
+        $serializer = AttributeSerializerValidatorTestFactory::denormalizer();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $serializer->denormalize([
+            'id' => '   ',
+            'source' => 'output_cap',
+            'kind' => 'output_capped',
+            'severity' => 'warning',
+            'delivery' => 'context_message',
+            'text' => 'hello',
         ], ModelNotificationDTO::class);
     }
 }

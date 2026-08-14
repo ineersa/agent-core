@@ -40,9 +40,8 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
         $notification = $this->denormalizer->denormalize($event->payload(), ModelNotificationDTO::class);
         $state = $event->state;
 
-        $blockId = 'model_notification_'.('' !== $notification->id
-            ? $notification->id
-            : hash('sha256', $notification->text));
+        // DTO construction guarantees nonblank id; use it directly for stable block identity.
+        $blockId = 'model_notification_'.$notification->id;
 
         // Build metadata for downstream renderers.
         $meta = [
@@ -52,6 +51,7 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
             'notification_id' => $notification->id,
         ];
 
+        // Generic notifications only attach tool_call_id when present; tool_result_replace always has it.
         if (null !== $notification->toolCallId) {
             $meta['tool_call_id'] = $notification->toolCallId;
         }
@@ -76,13 +76,14 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
         // ToolResult block so the TUI does not show raw/full output that
         // the model never saw.  The exact model-facing notification is
         // already visible in the System block above.
-        if ('tool_result_replace' === $notification->delivery
-            && null !== $notification->toolCallId
-            && '' !== $notification->toolCallId) {
+        // DTO invariant requires nonblank toolCallId for this delivery.
+        if ('tool_result_replace' === $notification->delivery) {
+            /** @var non-empty-string $toolCallId */
+            $toolCallId = $notification->toolCallId;
             $this->compactCappedToolResult(
                 $state,
                 $event->runId(),
-                $notification->toolCallId,
+                $toolCallId,
                 $notification->toolName,
             );
         }

@@ -143,6 +143,13 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
             $newContent[] = $part;
         }
 
+        // Canonical tool_result_replace requires a nonblank toolCallId. Fail clearly
+        // rather than synthesizing 'none' or soft-compat IDs.
+        $toolCallId = $message->toolCallId;
+        if (null === $toolCallId || '' === trim($toolCallId)) {
+            throw new \InvalidArgumentException('OutputCapLlmTransformHook cannot emit tool_result_replace without a nonblank toolCallId on the tool-role message.');
+        }
+
         // Build a generic model notification for downstream consumers
         // (agent message history preserves exact model-facing text).
         // Stable ID from tool_call_id + cap + original content hash so repeated
@@ -150,7 +157,7 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
         // ID and do not produce duplicate TUI blocks/events.  The ID does NOT
         // include savedPath or noticeText, both of which vary per invocation.
         $notificationId = hash('sha256', implode('|', [
-            $message->toolCallId ?? 'none',
+            $toolCallId,
             'output_cap',
             (string) $capResult->cap,
             hash('sha256', $combinedText),
@@ -163,7 +170,7 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
             severity: 'warning',
             delivery: 'tool_result_replace',
             text: $noticeText,
-            toolCallId: $message->toolCallId,
+            toolCallId: $toolCallId,
             toolName: $message->toolName,
             metadata: [
                 'cap' => $capResult->cap,

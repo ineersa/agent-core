@@ -107,11 +107,12 @@ final readonly class AgentMessageNormalizer
     {
         // When a typed notification with delivery=tool_result_replace is present,
         // the model-facing tool content is that notification text — not the raw/full
-        // output and not a JSON envelope. First matching typed row wins.
+        // output and not a JSON envelope. First matching typed row wins; DTO guarantees
+        // nonblank text + toolCallId for this delivery.
         $notificationText = null;
         foreach ($modelNotifications as $notif) {
             if ('tool_result_replace' === $notif->delivery) {
-                $notificationText = '' !== $notif->text ? $notif->text : null;
+                $notificationText = $notif->text;
                 break;
             }
         }
