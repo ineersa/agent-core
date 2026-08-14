@@ -86,14 +86,14 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
         $this->assertSame(['run_id', 'turn_no', 'step_id', 'batch_state'], array_keys($wire));
         $this->assertArrayHasKey('call_data', $batchWire);
         $this->assertArrayHasKey('result_data', $batchWire);
-        $this->assertSame('run-1', $batchWire['call_data']['c1']['runId']);
-        $this->assertSame(2, $batchWire['call_data']['c1']['turnNo']);
-        $this->assertSame('step-a', $batchWire['call_data']['c1']['stepId']);
+        $this->assertSame('run-1', $batchWire['call_data']['c1']['run_id']);
+        $this->assertSame(2, $batchWire['call_data']['c1']['turn_no']);
+        $this->assertSame('step-a', $batchWire['call_data']['c1']['step_id']);
         $this->assertSame(3, $batchWire['call_data']['c1']['attempt']);
-        $this->assertSame('live-ik', $batchWire['call_data']['c1']['idempotencyKey']);
-        $this->assertArrayNotHasKey('pendingHumanInput', $batchWire['result_data']['c2']);
-        $this->assertSame('deepseek/deepseek-v4-flash', $batchWire['call_data']['c1']['parentModel']);
-        $this->assertSame('q-1', $batchWire['call_data']['c1']['humanInputAnswer']['question_id']);
+        $this->assertSame('live-ik', $batchWire['call_data']['c1']['idempotency_key']);
+        $this->assertArrayNotHasKey('pending_human_input', $batchWire['result_data']['c2']);
+        $this->assertSame('deepseek/deepseek-v4-flash', $batchWire['call_data']['c1']['parent_model']);
+        $this->assertSame('q-1', $batchWire['call_data']['c1']['human_input_answer']['question_id']);
 
         $restoredEnvelope = $serializer->deserialize(
             $json,
@@ -138,9 +138,9 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
                     'expected_order' => ['c1' => 0],
                     'call_data' => [
                         'c1' => [
-                            'toolCallId' => 'c1',
-                            'toolName' => 'read',
-                            'orderIndex' => 0,
+                            'tool_call_id' => 'c1',
+                            'tool_name' => 'read',
+                            'order_index' => 0,
                             'args' => [],
                             'mode' => 99,
                         ],

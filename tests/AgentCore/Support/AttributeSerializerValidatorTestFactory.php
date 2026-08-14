@@ -10,6 +10,7 @@ use Symfony\Component\PropertyInfo\PropertyInfoExtractor;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
@@ -50,7 +51,7 @@ final class AttributeSerializerValidatorTestFactory
         }
         $normalizers[] = new ObjectNormalizer(
             classMetadataFactory: $classMetadataFactory,
-            nameConverter: new MetadataAwareNameConverter($classMetadataFactory),
+            nameConverter: new MetadataAwareNameConverter($classMetadataFactory, new CamelCaseToSnakeCaseNameConverter()),
             propertyTypeExtractor: $propertyTypeExtractor,
         );
 

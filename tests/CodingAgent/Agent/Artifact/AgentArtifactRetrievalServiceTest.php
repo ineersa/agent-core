@@ -25,7 +25,10 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
@@ -50,7 +53,8 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
 
         $serializer = new Serializer(
             [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(
-                nameConverter: new CamelCaseToSnakeCaseNameConverter(),
+                classMetadataFactory: ($__cmf = new ClassMetadataFactory(new AttributeLoader())),
+                nameConverter: new MetadataAwareNameConverter($__cmf, new CamelCaseToSnakeCaseNameConverter()),
             )],
             [new JsonEncoder()],
         );
@@ -353,7 +357,8 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
     ): AgentArtifactRetrievalService {
         $serializer = new Serializer(
             [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(
-                nameConverter: new CamelCaseToSnakeCaseNameConverter(),
+                classMetadataFactory: ($__cmf = new ClassMetadataFactory(new AttributeLoader())),
+                nameConverter: new MetadataAwareNameConverter($__cmf, new CamelCaseToSnakeCaseNameConverter()),
             ), new ArrayDenormalizer()],
             [new JsonEncoder()],
         );

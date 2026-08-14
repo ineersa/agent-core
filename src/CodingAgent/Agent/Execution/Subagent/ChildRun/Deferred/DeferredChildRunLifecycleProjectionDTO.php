@@ -22,16 +22,12 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
     public string $model;
     public string $reasoning;
 
-    #[SerializedName('error_message')]
     public ?string $errorMessage;
 
-    #[SerializedName('assistant_result_text')]
     public ?string $assistantResultText;
 
-    #[SerializedName('assistant_excerpt')]
     public ?string $assistantExcerpt;
 
-    #[SerializedName('context_window')]
     #[Assert\GreaterThanOrEqual(1)]
     public ?int $contextWindow;
 
@@ -47,12 +43,9 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
      * @param array<string, DeferredPendingToolCallRowDTO> $pendingToolCalls
      */
     public function __construct(
-        #[SerializedName('child_status')]
         public RunStatus $childStatus,
-        #[SerializedName('child_turn_no')]
         #[Assert\GreaterThanOrEqual(0)]
         public int $childTurnNo,
-        #[SerializedName('last_committed_seq')]
         #[Assert\GreaterThanOrEqual(0)]
         public int $lastCommittedSeq,
         string $model,
@@ -60,34 +53,25 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         ?string $errorMessage = null,
         ?string $assistantResultText = null,
         ?string $assistantExcerpt = null,
-        #[SerializedName('tool_count')]
         #[Assert\GreaterThanOrEqual(0)]
         public int $toolCount = 0,
-        #[SerializedName('llm_step_count')]
         #[Assert\GreaterThanOrEqual(0)]
         public int $llmStepCount = 0,
-        #[SerializedName('input_tokens')]
         #[Assert\GreaterThanOrEqual(0)]
         public int $inputTokens = 0,
-        #[SerializedName('latest_input_tokens')]
         #[Assert\GreaterThanOrEqual(0)]
         public int $latestInputTokens = 0,
         ?int $contextWindow = null,
-        #[SerializedName('output_tokens')]
         #[Assert\GreaterThanOrEqual(0)]
         public int $outputTokens = 0,
-        #[SerializedName('reasoning_tokens')]
         #[Assert\GreaterThanOrEqual(0)]
         public int $reasoningTokens = 0,
-        #[SerializedName('total_tokens')]
         #[Assert\GreaterThanOrEqual(0)]
         public int $totalTokens = 0,
         ?float $cost = null,
         ?string $provider = null,
-        #[SerializedName('recent_tools')]
         public array $recentTools = [],
         ?string $activeToolLine = null,
-        #[SerializedName('pending_tool_calls')]
         #[Assert\Valid]
         public array $pendingToolCalls = [],
     ) {

@@ -29,17 +29,14 @@ final class ToolBatchStateDTO
      * @param array<string, string>          $awaitingHumanInput tool_call_id => request question_id
      */
     public function __construct(
-        #[SerializedName('expected_order')]
         #[Groups([self::SNAPSHOT_GROUP])]
         public array $expectedOrder,
         #[SerializedName('call_data')]
         #[Groups([self::SNAPSHOT_GROUP])]
         #[Assert\Valid]
         public array $calls,
-        #[SerializedName('pending_queue')]
         #[Groups([self::SNAPSHOT_GROUP])]
         public array $pendingQueue,
-        #[SerializedName('in_flight')]
         #[Groups([self::SNAPSHOT_GROUP])]
         public array $inFlight,
         #[SerializedName('result_data')]
@@ -47,11 +44,9 @@ final class ToolBatchStateDTO
         public array $results,
         #[Groups([self::SNAPSHOT_GROUP])]
         public bool $finalized,
-        #[SerializedName('max_parallelism')]
         #[Groups([self::SNAPSHOT_GROUP])]
         #[Assert\GreaterThanOrEqual(1)]
         public int $maxParallelism,
-        #[SerializedName('awaiting_human_input')]
         #[Groups([self::SNAPSHOT_GROUP])]
         public array $awaitingHumanInput = [],
     ) {

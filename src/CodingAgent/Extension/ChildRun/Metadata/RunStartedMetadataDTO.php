@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension\ChildRun\Metadata;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
-
 /**
  * Typed RunStarted metadata (payload.payload.metadata) for CodingAgent consumers.
  *
@@ -21,9 +19,7 @@ final readonly class RunStartedMetadataDTO
         public RunStartedSessionMetadataDTO $session,
         public ?string $model = null,
         public ?string $reasoning = null,
-        #[SerializedName('tools_scope')]
         public ?RunStartedToolsScopeDTO $toolsScope = null,
-        #[SerializedName('context_window')]
         public ?int $contextWindow = null,
         public ?array $extensions = null,
         public ?string $provider = null,

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Contract\SubagentProgress;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -24,25 +23,17 @@ final readonly class SubagentProgressParallelSnapshotDTO implements SubagentProg
         public string $mode,
         #[Assert\NotBlank]
         public string $status,
-        #[SerializedName('completed_count')]
         public int $completedCount = 0,
-        #[SerializedName('total_count')]
         public int $totalCount = 0,
-        #[SerializedName('elapsed_ms')]
         #[Assert\GreaterThanOrEqual(0)]
         public int $elapsedMs = 0,
         /** @var list<SubagentProgressChildRowDTO> */
         #[Assert\Valid]
         public array $children = [],
-        #[SerializedName('tool_count')]
         public int $toolCount = 0,
-        #[SerializedName('input_tokens')]
         public int $inputTokens = 0,
-        #[SerializedName('output_tokens')]
         public int $outputTokens = 0,
-        #[SerializedName('reasoning_tokens')]
         public int $reasoningTokens = 0,
-        #[SerializedName('total_tokens')]
         public int $totalTokens = 0,
         public ?float $cost = null,
     ) {

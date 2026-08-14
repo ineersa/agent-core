@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Notification;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
-
 /**
  * Generic model-facing notification carrying exact provider-bound text
  * and structured source/kind/severity/delivery metadata.
@@ -33,11 +31,8 @@ final readonly class ModelNotificationDTO
         public string $delivery,
         public string $text,
         public array $metadata = [],
-        #[SerializedName('tool_call_id')]
         public ?string $toolCallId = null,
-        #[SerializedName('tool_name')]
         public ?string $toolName = null,
-        #[SerializedName('order_index')]
         public ?int $orderIndex = null,
     ) {
     }

@@ -72,7 +72,7 @@ final class DeferredChildRunLifecycleProjectionSerializerTest extends IsolatedKe
         $this->assertSame(['read path.php', 'edit path.php'], $wire['recent_tools']);
         $this->assertSame('bash ls', $wire['active_tool']);
         $this->assertSame(
-            ['tc1' => ['name' => 'bash', 'displayLine' => 'bash ls']],
+            ['tc1' => ['name' => 'bash', 'display_line' => 'bash ls']],
             $wire['pending_tool_calls'],
         );
 
@@ -141,7 +141,7 @@ final class DeferredChildRunLifecycleProjectionSerializerTest extends IsolatedKe
                 'model' => 'deepseek/deepseek-v4-flash',
                 'reasoning' => 'medium',
                 'pending_tool_calls' => [
-                    'tc1' => ['name' => '', 'displayLine' => ''],
+                    'tc1' => ['name' => '', 'display_line' => ''],
                 ],
             ]);
             $this->fail('Expected domain validation failure for blank pending tool call fields.');
@@ -172,7 +172,7 @@ final class DeferredChildRunLifecycleProjectionSerializerTest extends IsolatedKe
             \Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES => true,
         ]);
         $this->assertSame(
-            ['tc1' => ['name' => 'bash', 'displayLine' => 'bash ls']],
+            ['tc1' => ['name' => 'bash', 'display_line' => 'bash ls']],
             $wire['pending_tool_calls'],
         );
 

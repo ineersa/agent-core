@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
-
 /**
  * Bash tool settings resolved from Hatfield config.
  *
@@ -25,19 +23,14 @@ final readonly class BashToolConfig
      * @param int $logTailChars                     Max chars to read from background process log
      */
     public function __construct(
-        #[SerializedName('default_timeout_seconds')]
         public int $defaultTimeoutSeconds = 300,
 
-        #[SerializedName('max_timeout_seconds')]
         public int $maxTimeoutSeconds = 3600,
 
-        #[SerializedName('background_prompt_threshold_seconds')]
         public int $backgroundPromptThresholdSeconds = 15,
 
-        #[SerializedName('poll_interval_micros')]
         public int $pollIntervalMicros = 100_000,
 
-        #[SerializedName('log_tail_chars')]
         public int $logTailChars = 20000,
     ) {
     }

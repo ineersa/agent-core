@@ -20,6 +20,10 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
@@ -80,7 +84,7 @@ final class AggregateResumeTest extends TestCase
 
         // Phase 1: Write data
         $serializer1 = new Serializer(
-            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer()],
+            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(classMetadataFactory: ($cmf = new ClassMetadataFactory(new AttributeLoader())), nameConverter: new MetadataAwareNameConverter($cmf, new CamelCaseToSnakeCaseNameConverter()))],
             [new JsonEncoder()],
         );
         $lockFactory1 = new LockFactory(new FlockStore());
@@ -105,7 +109,7 @@ final class AggregateResumeTest extends TestCase
 
         // Phase 3: Create fresh store instances
         $serializer2 = new Serializer(
-            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer()],
+            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(classMetadataFactory: ($cmf = new ClassMetadataFactory(new AttributeLoader())), nameConverter: new MetadataAwareNameConverter($cmf, new CamelCaseToSnakeCaseNameConverter()))],
             [new JsonEncoder()],
         );
         $lockFactory2 = new LockFactory(new FlockStore());

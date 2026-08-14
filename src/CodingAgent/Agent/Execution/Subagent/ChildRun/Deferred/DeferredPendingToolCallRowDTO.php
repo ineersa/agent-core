@@ -8,8 +8,6 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * Fixed pending-tool-call row stored under child_lifecycle_projection.pending_tool_calls.
- *
- * Wire keys remain camelCase ({@see displayLine}) to match historical JSON rows.
  */
 final readonly class DeferredPendingToolCallRowDTO
 {

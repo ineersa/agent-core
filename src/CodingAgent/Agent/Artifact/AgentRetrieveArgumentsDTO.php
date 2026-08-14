@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
@@ -16,9 +15,7 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
 final class AgentRetrieveArgumentsDTO
 {
     public function __construct(
-        #[SerializedName('artifact_id')]
         public readonly ?string $artifactId = null,
-        #[SerializedName('agent_run_id')]
         public readonly ?string $agentRunId = null,
         public readonly ?string $mode = null,
         public readonly ?int $limit = null,

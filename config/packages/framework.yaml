@@ -44,6 +44,7 @@ framework:
     serializer:
         enabled: true
         enable_attributes: true
+        name_converter: serializer.name_converter.camel_case_to_snake_case
 
     property_info:
         enabled: true

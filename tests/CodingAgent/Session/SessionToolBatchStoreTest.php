@@ -31,7 +31,10 @@ use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
@@ -145,7 +148,7 @@ final class SessionToolBatchStoreTest extends TestCase
 
         $pathResolver = new SessionAgentArtifactPathResolver($this->hatfieldSessionStore);
         $serializer = new Serializer(
-            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter())],
+            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(classMetadataFactory: new ClassMetadataFactory(new AttributeLoader()), nameConverter: new MetadataAwareNameConverter(new ClassMetadataFactory(new AttributeLoader()), new CamelCaseToSnakeCaseNameConverter()))],
             [new JsonEncoder()],
         );
         $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
@@ -257,9 +260,9 @@ final class SessionToolBatchStoreTest extends TestCase
                 'expected_order' => ['c1' => 0],
                 'call_data' => [
                     'c1' => [
-                        'toolCallId' => 'c1',
-                        'toolName' => 'read',
-                        'orderIndex' => 0,
+                        'tool_call_id' => 'c1',
+                        'tool_name' => 'read',
+                        'order_index' => 0,
                         'args' => [],
                         'mode' => 99,
                     ],
@@ -339,7 +342,7 @@ final class SessionToolBatchStoreTest extends TestCase
 
         $pathResolver = new SessionAgentArtifactPathResolver($hatfield);
         $serializer = new Serializer(
-            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter())],
+            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(classMetadataFactory: new ClassMetadataFactory(new AttributeLoader()), nameConverter: new MetadataAwareNameConverter(new ClassMetadataFactory(new AttributeLoader()), new CamelCaseToSnakeCaseNameConverter()))],
             [new JsonEncoder()],
         );
         $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
