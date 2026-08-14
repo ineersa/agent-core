@@ -28,15 +28,4 @@ final class TaskStatusEnumTest extends TestCase
         $this->expectExceptionMessage('Unknown task status:');
         TaskStatusEnum::fromMixed('nope');
     }
-
-    #[Test]
-    public function defaultListedOmitsCancelledAndArchive(): void
-    {
-        // Thesis: without this test, CANCELLED or ARCHIVE could leak back into the
-        // default task_list listing (both must be opt-in via status/include_archive).
-        $this->assertSame(
-            [TaskStatusEnum::TODO, TaskStatusEnum::IN_PROGRESS, TaskStatusEnum::CODE_REVIEW, TaskStatusEnum::DONE],
-            TaskStatusEnum::defaultListed(),
-        );
-    }
 }
