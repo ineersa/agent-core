@@ -120,7 +120,7 @@ export function normalizeStatus(value: string): TaskStatus {
  * Resolve which status directories to scan for listTasks.
  *
  * When status is omitted:
- * - includeArchive false (default): TODO, IN-PROGRESS, CODE-REVIEW, DONE, CANCELLED
+ * - includeArchive false (default): TODO, IN-PROGRESS, CODE-REVIEW, DONE
  * - includeArchive true: all six statuses including ARCHIVE
  *
  * When status is set:

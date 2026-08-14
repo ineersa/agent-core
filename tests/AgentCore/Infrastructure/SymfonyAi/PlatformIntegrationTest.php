@@ -176,6 +176,7 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -398,6 +399,7 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: $costCalculator,
             modelResolver: $modelResolver,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -508,6 +510,7 @@ final class PlatformIntegrationTest extends TestCase
                 streamObserver: null,
                 costCalculator: null,
                 logger: new NullLogger(),
+                denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             );
 
             $adapter->invoke(new ModelInvocationRequest(
@@ -551,6 +554,7 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -649,10 +653,10 @@ final class PlatformIntegrationTest extends TestCase
         // The transform hook's notification must appear in the
         // PlatformInvocationResult.
         $this->assertCount(1, $response->modelNotifications);
-        $this->assertSame('output_cap', $response->modelNotifications[0]['source']);
-        $this->assertSame('output_capped', $response->modelNotifications[0]['kind']);
-        $this->assertSame('tool_result_replace', $response->modelNotifications[0]['delivery']);
-        $this->assertSame('call-def-1', $response->modelNotifications[0]['tool_call_id']);
+        $this->assertSame('output_cap', $response->modelNotifications[0]->source);
+        $this->assertSame('output_capped', $response->modelNotifications[0]->kind);
+        $this->assertSame('tool_result_replace', $response->modelNotifications[0]->delivery);
+        $this->assertSame('call-def-1', $response->modelNotifications[0]->toolCallId);
 
         // Normal (success) response.
         $this->assertNull($response->error);
@@ -716,7 +720,7 @@ final class PlatformIntegrationTest extends TestCase
         // Notifications must still be present even on error.
         $this->assertNotNull($response->error);
         $this->assertCount(1, $response->modelNotifications);
-        $this->assertSame('call-err', $response->modelNotifications[0]['tool_call_id']);
+        $this->assertSame('call-err', $response->modelNotifications[0]->toolCallId);
     }
 
     public function testNotificationsPresentPreTransformAreNotReEmitted(): void
@@ -814,8 +818,8 @@ final class PlatformIntegrationTest extends TestCase
 
         // Only the NEW notification must be in modelNotifications.
         $this->assertCount(1, $response->modelNotifications);
-        $this->assertNotSame($existingNid, $response->modelNotifications[0]['id']);
-        $this->assertStringContainsString('defense', $response->modelNotifications[0]['text']);
+        $this->assertNotSame($existingNid, $response->modelNotifications[0]->id);
+        $this->assertStringContainsString('defense', $response->modelNotifications[0]->text);
     }
 
     /**
@@ -866,6 +870,7 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -939,6 +944,7 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -1004,6 +1010,7 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
     }
 

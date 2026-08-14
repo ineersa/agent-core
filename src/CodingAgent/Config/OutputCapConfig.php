@@ -23,13 +23,10 @@ final readonly class OutputCapConfig
     public function __construct(
         #[SerializedName('path')]
         public string $storageDir = '.hatfield/tmp/output-cap',
-        #[SerializedName('default_cap')]
         public int $defaultCap = 20000,
-        #[SerializedName('doc_cap')]
         public int $docCap = 50000,
         #[SerializedName('retention')]
         public int $retentionSeconds = 86400,
-        #[SerializedName('session_prefix')]
         public ?string $sessionPrefix = null,
     ) {
     }

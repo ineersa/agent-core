@@ -47,7 +47,7 @@ final readonly class TaskWorkflowExtension implements HatfieldExtensionInterface
 
         $api->registerTool(new ToolRegistrationDTO(
             name: 'task_list',
-            description: 'List workflow tasks from the external task board (TODO, IN-PROGRESS, CODE-REVIEW, DONE, CANCELLED; ARCHIVE only when include_archive is true or status=ARCHIVE).',
+            description: 'List workflow tasks from the external task board (TODO, IN-PROGRESS, CODE-REVIEW, DONE). CANCELLED and ARCHIVE are omitted by default; pass status=CANCELLED to list cancelled tasks, include_archive=true or status=ARCHIVE to list archived tasks.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -63,7 +63,7 @@ final readonly class TaskWorkflowExtension implements HatfieldExtensionInterface
             promptSummary: 'List project workflow tasks from the external task board',
             promptGuidelines: [
                 'Use task_list before starting tracked project work to understand TODO and IN-PROGRESS tasks.',
-                'ARCHIVE is omitted by default; pass include_archive=true or status=ARCHIVE to list archived tasks.',
+                'CANCELLED and ARCHIVE are omitted by default; pass status=CANCELLED to list cancelled tasks, and include_archive=true or status=ARCHIVE to list archived tasks.',
             ],
         ));
 

@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Question\QuestionCoordinator;
@@ -89,7 +90,7 @@ final class TickPollListenerChildHitlTest extends TestCase
 
         $coordinator = new QuestionCoordinator();
         $state = new \Ineersa\Tui\Runtime\TuiSessionState('parent-1');
-        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, new RuntimeEvent(
             type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             runId: 'parent-1',
             seq: 1,

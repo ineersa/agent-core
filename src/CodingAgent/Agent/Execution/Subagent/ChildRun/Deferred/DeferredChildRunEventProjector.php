@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildToolProgressPresentationFormatter;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Incrementally reduces committed child event summaries into a compact lifecycle projection.
@@ -17,6 +19,7 @@ final class DeferredChildRunEventProjector
     private const int MAX_RECENT_TOOLS = 4;
 
     public function __construct(
+        private readonly DenormalizerInterface $denormalizer,
         private readonly SubagentChildToolProgressPresentationFormatter $presentationFormatter = new SubagentChildToolProgressPresentationFormatter(),
     ) {
     }
@@ -45,15 +48,13 @@ final class DeferredChildRunEventProjector
         $reasoningTokens = $current->reasoningTokens;
         $totalTokens = $current->totalTokens;
         $cost = $current->cost;
-        $hasCost = null !== $cost && $cost > 0.0;
         // Identity is always seeded from durable launch model/reasoning before RunStarted.
         $model = $current->model;
         $reasoning = $current->reasoning;
-        $provider = $current->provider;
         $recentTools = $current->recentTools;
         $activeToolLine = $current->activeToolLine;
 
-        /** @var array<string, array{name: string, displayLine: string}> $pendingById */
+        /** @var array<string, DeferredPendingToolCallRowDTO> $pendingById */
         $pendingById = $current->pendingToolCalls;
 
         // When the processed tail ends on a still-retryable llm_step_failed, child lifecycle
@@ -79,24 +80,11 @@ final class DeferredChildRunEventProjector
             }
 
             if (RunEventTypeEnum::RunStarted->value === $type) {
-                $inner = \is_array($payload['payload'] ?? null) ? $payload['payload'] : [];
-                $metadata = \is_array($inner['metadata'] ?? null) ? $inner['metadata'] : [];
-                // RunStarted may confirm/update concrete identity; never clear to empty.
-                if (\is_string($metadata['model'] ?? null) && '' !== trim($metadata['model'])) {
-                    $model = trim($metadata['model']);
-                }
-                if (\is_string($metadata['reasoning'] ?? null) && '' !== trim($metadata['reasoning'])) {
-                    $reasoning = trim($metadata['reasoning']);
-                }
-                if (\is_string($metadata['provider'] ?? null) && '' !== $metadata['provider']) {
-                    $provider = $metadata['provider'];
-                }
-                if (isset($metadata['context_window']) && is_numeric($metadata['context_window'])) {
-                    $resolved = (int) $metadata['context_window'];
-                    if ($resolved > 0) {
-                        $contextWindow = $resolved;
-                    }
-                }
+                // DTO constructor already trims/requires nonblank model (and child reasoning).
+                $metadata = $this->denormalizer->denormalize($payload, RunStartedMetadataDTO::class);
+                $model = $metadata->model;
+                $reasoning = $metadata->reasoning ?? $reasoning;
+                $contextWindow = $metadata->contextWindow ?? $contextWindow;
                 $status = RunStatus::Running;
                 $endsWithRetryPendingLlmFailure = false;
                 continue;
@@ -112,8 +100,8 @@ final class DeferredChildRunEventProjector
                 $reasoningTokens += $this->intVal($usage['thinking_tokens'] ?? $usage['reasoning_tokens'] ?? 0);
                 $totalTokens += $this->intVal($usage['total_tokens'] ?? 0);
                 if (isset($usage['cost']) && is_numeric($usage['cost'])) {
-                    $cost = ($cost ?? 0.0) + (float) $usage['cost'];
-                    $hasCost = true;
+                    $nextCost = ($cost ?? 0.0) + (float) $usage['cost'];
+                    $cost = $nextCost > 0.0 ? $nextCost : null;
                 }
 
                 $assistantPayload = \is_array($payload['assistant_message'] ?? null) ? $payload['assistant_message'] : null;
@@ -137,7 +125,7 @@ final class DeferredChildRunEventProjector
                         $args = $this->presentationFormatter->normalizeToolArguments($toolCall['arguments'] ?? $toolCall['args'] ?? []);
                         $displayLine = $this->presentationFormatter->formatToolDisplayLine($name, $args);
                         if (null !== $id) {
-                            $pendingById[$id] = ['name' => $name, 'displayLine' => $displayLine];
+                            $pendingById[$id] = new DeferredPendingToolCallRowDTO(name: $name, displayLine: $displayLine);
                         }
                     }
                 }
@@ -151,7 +139,7 @@ final class DeferredChildRunEventProjector
                 $toolCallId = \is_string($payload['tool_call_id'] ?? null) ? $payload['tool_call_id'] : null;
                 $displayLine = null;
                 if (null !== $toolCallId && isset($pendingById[$toolCallId])) {
-                    $displayLine = $pendingById[$toolCallId]['displayLine'];
+                    $displayLine = $pendingById[$toolCallId]->displayLine;
                     unset($pendingById[$toolCallId]);
                 }
                 if (null === $displayLine) {
@@ -206,7 +194,7 @@ final class DeferredChildRunEventProjector
         if ([] !== $pendingById) {
             $lastPending = array_values($pendingById);
             $last = $lastPending[\count($lastPending) - 1];
-            $activeToolLine = $last['displayLine'];
+            $activeToolLine = $last->displayLine;
         }
 
         if (null !== $committedStatus) {
@@ -239,8 +227,7 @@ final class DeferredChildRunEventProjector
             outputTokens: $outputTokens,
             reasoningTokens: $reasoningTokens,
             totalTokens: $totalTokens,
-            cost: $hasCost ? $cost : null,
-            provider: $provider,
+            cost: $cost,
             recentTools: $recentTools,
             activeToolLine: $activeToolLine,
             pendingToolCalls: $pendingById,

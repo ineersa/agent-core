@@ -8,16 +8,15 @@ use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Public API facade for the transcript projection.
  *
- * Accepts raw runtime event arrays, wraps them in a
+ * Accepts typed {@see RuntimeEvent} instances, wraps them in a
  * {@see TranscriptProjectionEvent}, and dispatches through Symfony's
- * EventDispatcher to family-grouped subscriber classes.  The facade
- * preserves the same public API (`accept(array)`, `blocks()`, `reset()`)
- * as the previous monolithic projector so callers are unaffected.
+ * EventDispatcher to family-grouped subscriber classes.
  */
 final readonly class TranscriptProjector implements TranscriptProjectorInterface
 {
@@ -31,10 +30,8 @@ final readonly class TranscriptProjector implements TranscriptProjectorInterface
      * Accept a single runtime event and update the projection.
      *
      * Unknown event types are silently ignored (no subscriber matches).
-     *
-     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
      */
-    public function accept(array $event): void
+    public function accept(RuntimeEvent $event): void
     {
         $projEvent = new TranscriptProjectionEvent($event, $this->state);
         $this->eventDispatcher->dispatch($projEvent, $projEvent->type());

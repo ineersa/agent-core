@@ -49,6 +49,11 @@ final class SubagentProgressEventsFixture
                 'messages' => [
                     ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Run a scout subagent.']]],
                 ],
+                // Parent (non-child) RunStarted requires typed metadata for SubagentRunMetadataReader.
+                'metadata' => [
+                    'session' => [],
+                    'model' => 'deepseek/deepseek-v4-flash',
+                ],
             ],
         ], $now);
         $events[] = self::event($sessionId, 2, 1, 'turn_advanced', ['step_id' => 'turn-1', 'turn_no' => 1], $now);
@@ -200,6 +205,11 @@ final class SubagentProgressEventsFixture
                 'messages' => [
                     ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Run fork and scout with multiline tasks.']]],
                 ],
+                // Parent (non-child) RunStarted requires typed metadata for SubagentRunMetadataReader.
+                'metadata' => [
+                    'session' => [],
+                    'model' => 'deepseek/deepseek-v4-flash',
+                ],
             ],
         ], $now);
         $events[] = self::event($sessionId, 2, 1, 'turn_advanced', ['step_id' => 'turn-1', 'turn_no' => 1], $now);
@@ -285,20 +295,20 @@ final class SubagentProgressEventsFixture
         // Hot checkpoint matching completed terminal events so follow-up AdvanceRun
         // does not bail on a missing/stale rebuild path during pure --resume boots.
         file_put_contents($sessionDir.'/state.json', json_encode([
-            'runId' => $sessionId,
+            'run_id' => $sessionId,
             'status' => 'completed',
             'version' => 1,
-            'turnNo' => 2,
-            'lastSeq' => $maxSeq,
-            'isStreaming' => false,
-            'streamingMessage' => null,
-            'pendingToolCalls' => [],
-            'errorMessage' => null,
+            'turn_no' => 2,
+            'last_seq' => $maxSeq,
+            'is_streaming' => false,
+            'streaming_message' => null,
+            'pending_tool_calls' => [],
+            'error_message' => null,
             'messages' => [],
-            'activeStepId' => null,
-            'retryableFailure' => false,
-            'retryAttempts' => 0,
-            'pendingHumanInputRequests' => [],
+            'active_step_id' => null,
+            'retryable_failure' => false,
+            'retry_attempts' => 0,
+            'pending_human_input_requests' => [],
             'model' => 'llama_cpp_test/test',
         ], \JSON_THROW_ON_ERROR | \JSON_PRETTY_PRINT)."\n");
     }
@@ -370,6 +380,11 @@ final class SubagentProgressEventsFixture
             'payload' => [
                 'messages' => [
                     ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Run three parallel subagents.']]],
+                ],
+                // Parent (non-child) RunStarted requires typed metadata for SubagentRunMetadataReader.
+                'metadata' => [
+                    'session' => [],
+                    'model' => 'deepseek/deepseek-v4-flash',
                 ],
             ],
         ], $now);

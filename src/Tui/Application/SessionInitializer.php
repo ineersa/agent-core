@@ -57,7 +57,7 @@ final readonly class SessionInitializer
      */
     public function initializeDraft(?StartRunRequest $request = null): TuiSessionState
     {
-        $state = new TuiSessionState('', false);
+        $state = new TuiSessionState(sessionId: '', resuming: false);
 
         if (null !== $request) {
             $state->request = $request;
@@ -83,7 +83,7 @@ final readonly class SessionInitializer
             $sessionId = $this->sessionStore->createSession($promptText);
         }
 
-        $state = new TuiSessionState($sessionId, $resuming);
+        $state = new TuiSessionState(sessionId: $sessionId, resuming: $resuming);
 
         // Inject session ID as the run ID when starting with an initial prompt
         if (null !== $request && '' !== $request->prompt && '' === $request->runId) {

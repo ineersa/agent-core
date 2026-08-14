@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Extension;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Extension\NoninteractiveChildRunProbe;
 use PHPUnit\Framework\TestCase;
 
@@ -27,7 +28,12 @@ final class NoninteractiveChildRunProbeTest extends TestCase
                             'kind' => 'agent_child',
                             'interactive' => false,
                             'parent_run_id' => 'parent-1',
+                            'agent_name' => 'scout',
+                            'artifact_id' => 'agent_child1',
                         ],
+                        'model' => 'deepseek/deepseek-v4-flash',
+                        'reasoning' => 'medium',
+                        'tools_scope' => ['allowed_tools' => []],
                     ],
                 ],
             ],
@@ -40,8 +46,8 @@ final class NoninteractiveChildRunProbeTest extends TestCase
         $emptyStore = $this->createStub(EventStoreInterface::class);
         $emptyStore->method('allFor')->willReturn([]);
 
-        $probeChild = new NoninteractiveChildRunProbe($childStore);
-        $probeEmpty = new NoninteractiveChildRunProbe($emptyStore);
+        $probeChild = new NoninteractiveChildRunProbe($childStore, AttributeSerializerValidatorTestFactory::denormalizer());
+        $probeEmpty = new NoninteractiveChildRunProbe($emptyStore, AttributeSerializerValidatorTestFactory::denormalizer());
 
         $this->assertTrue($probeChild->isNoninteractiveChildRun($runId));
         $this->assertFalse($probeEmpty->isNoninteractiveChildRun('parent-1'));
@@ -62,7 +68,12 @@ final class NoninteractiveChildRunProbeTest extends TestCase
                             'kind' => 'agent_child',
                             'interactive' => true,
                             'parent_run_id' => 'parent-1',
+                            'agent_name' => 'scout',
+                            'artifact_id' => 'agent_child1',
                         ],
+                        'model' => 'deepseek/deepseek-v4-flash',
+                        'reasoning' => 'medium',
+                        'tools_scope' => ['allowed_tools' => []],
                     ],
                 ],
             ],
@@ -71,7 +82,7 @@ final class NoninteractiveChildRunProbeTest extends TestCase
 
         $store = $this->createStub(EventStoreInterface::class);
         $store->method('allFor')->willReturn([$event]);
-        $probe = new NoninteractiveChildRunProbe($store);
+        $probe = new NoninteractiveChildRunProbe($store, AttributeSerializerValidatorTestFactory::denormalizer());
 
         $this->assertFalse($probe->isNoninteractiveChildRun($runId));
     }

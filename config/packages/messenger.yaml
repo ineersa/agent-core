@@ -46,8 +46,9 @@ parameters:
     env(HATFIELD_AGENT_TRANSPORT_DSN): 'sync://'
     env(HATFIELD_MCP_TRANSPORT_DSN): 'in-memory://'
     env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN): 'sync://'
-# llm and tool transports use the default Symfony Serializer since
-# their messages contain only scalar/array properties.
+# llm and tool transports use the default Symfony Serializer.
+# ExecuteCompactionStep nests list<AgentMessage>; ArrayDenormalizer +
+# PhpDocExtractor on the container serializer reconstruct those objects.
 
 framework:
     messenger:

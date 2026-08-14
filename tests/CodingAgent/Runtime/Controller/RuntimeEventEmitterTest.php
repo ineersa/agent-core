@@ -211,7 +211,7 @@ final class RuntimeEventEmitterTest extends TestCase
                     'artifact_id' => 'a1',
                     'agent_name' => 'scout',
                     'status' => 'running',
-                    'task_summary' => 't',
+                    'task_summary' => 't', 'model' => 'test/model', 'reasoning' => 'medium',
                 ],
             ],
         ));

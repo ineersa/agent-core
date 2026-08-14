@@ -194,6 +194,7 @@ final class TuiSessionState
         $this->usage = new UsageProjection();
         $this->transcriptDisplayConfig = new TranscriptDisplayConfig();
         $this->transcriptDisplayState = new TranscriptDisplayState();
+        // Catalog is typed-only; wire denorm happens in TuiRuntimeEventApplier.
         $this->subagentLiveCatalog = new SubagentLiveCatalog();
         $this->subagentLiveView = new SubagentLiveViewState();
     }

@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
-
 /**
  * Top-level Hatfield `agents:` settings.
  *
@@ -30,13 +28,10 @@ final readonly class AgentsConfig
     public function __construct(
         public bool $enabled = true,
         public array $paths = [],
-        #[SerializedName('max_agents')]
         public int $maxAgents = 4,
 
-        #[SerializedName('subagent_tool_timeout_seconds')]
         public int $subagentToolTimeoutSeconds = 86400,
 
-        #[SerializedName('subagent_excluded_tools')]
         public array $subagentExcludedTools = ['settings', 'hatfield_docs'],
 
         public ChildExtensionsConfigDTO $extensions = new ChildExtensionsConfigDTO(),

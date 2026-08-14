@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
@@ -36,9 +37,9 @@ final class SubagentLiveAttentionTest extends TestCase
             reasoning: 'medium',
         ));
         $state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
-        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task', 'model' => 'test/model', 'reasoning' => 'medium',
         ]));
 
         $screen = new ChatScreen(
@@ -59,9 +60,9 @@ final class SubagentLiveAttentionTest extends TestCase
     public function testMarkActiveChildrenCancelledForParentCancelClearsWaitingHumanOnMain(): void
     {
         $state = new TuiSessionState('parent-session');
-        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task', 'model' => 'test/model', 'reasoning' => 'medium',
         ]));
 
         $screen = new ChatScreen(
@@ -85,9 +86,9 @@ final class SubagentLiveAttentionTest extends TestCase
     public function testClearWaitingHumanDoesNotDowngradeTerminalCatalog(): void
     {
         $state = new TuiSessionState('parent-session');
-        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
             'mode' => 'single', 'status' => 'cancelled', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Done',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Done', 'model' => 'test/model', 'reasoning' => 'medium',
         ]));
 
         $screen = new ChatScreen(
@@ -126,9 +127,9 @@ final class SubagentLiveAttentionTest extends TestCase
     public function testRefreshAttentionFooterKeepsSubagentLiveMarkerWhileClearingAgentsLiveOnMain(): void
     {
         $state = new TuiSessionState('parent-session');
-        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task', 'model' => 'test/model', 'reasoning' => 'medium',
         ]));
         $this->assertFalse($state->subagentLiveView->active);
 
@@ -150,9 +151,9 @@ final class SubagentLiveAttentionTest extends TestCase
     public function testRefreshAttentionFooterClearsAgentsLiveEvenWhenLiveViewActive(): void
     {
         $state = new TuiSessionState('parent-session');
-        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task', 'model' => 'test/model', 'reasoning' => 'medium',
         ]));
         $state->subagentLiveView->enter(new SubagentLiveChildDTO(
             agentRunId: 'child-run-1',

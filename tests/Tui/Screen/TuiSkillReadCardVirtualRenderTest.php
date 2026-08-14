@@ -10,13 +10,16 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\SkillReadProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -201,7 +204,7 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         $dispatcher = new EventDispatcher();
         $state = new TranscriptProjectionState();
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber());
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $dispatcher->addSubscriber(new SkillReadProjectionSubscriber($discovery));
 
         return new TranscriptProjector($dispatcher, $state);
@@ -225,47 +228,47 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         }
 
         ++$seq;
-        $projector->accept([
-            'type' => 'tool_call.started',
-            'runId' => 'skill-read-run',
-            'seq' => $seq,
-            'payload' => [
+        $projector->accept(new RuntimeEvent(
+            type: 'tool_call.started',
+            runId: 'skill-read-run',
+            seq: $seq,
+            payload: [
                 'tool_call_id' => $toolCallId,
                 'tool_name' => 'read',
             ],
-        ]);
+        ));
         ++$seq;
-        $projector->accept([
-            'type' => 'tool_call.arguments_completed',
-            'runId' => 'skill-read-run',
-            'seq' => $seq,
-            'payload' => [
+        $projector->accept(new RuntimeEvent(
+            type: 'tool_call.arguments_completed',
+            runId: 'skill-read-run',
+            seq: $seq,
+            payload: [
                 'tool_call_id' => $toolCallId,
                 'tool_name' => 'read',
                 'arguments' => $arguments,
             ],
-        ]);
+        ));
         ++$seq;
-        $projector->accept([
-            'type' => 'tool_execution.started',
-            'runId' => 'skill-read-run',
-            'seq' => $seq,
-            'payload' => [
+        $projector->accept(new RuntimeEvent(
+            type: 'tool_execution.started',
+            runId: 'skill-read-run',
+            seq: $seq,
+            payload: [
                 'tool_call_id' => $toolCallId,
                 'tool_name' => 'read',
             ],
-        ]);
+        ));
         ++$seq;
-        $projector->accept([
-            'type' => 'tool_execution.completed',
-            'runId' => 'skill-read-run',
-            'seq' => $seq,
-            'payload' => [
+        $projector->accept(new RuntimeEvent(
+            type: 'tool_execution.completed',
+            runId: 'skill-read-run',
+            seq: $seq,
+            payload: [
                 'tool_call_id' => $toolCallId,
                 'tool_name' => 'read',
                 'result' => $result,
                 'duration_ms' => 12,
             ],
-        ]);
+        ));
     }
 }

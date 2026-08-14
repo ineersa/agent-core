@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Projection;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
@@ -18,7 +22,7 @@ final class SubagentProgressProjectionTest extends TestCase
     {
         $dispatcher = new EventDispatcher();
         $state = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber());
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $this->projector = new TranscriptProjector($dispatcher, $state);
         $this->seq = 0;
     }
@@ -31,7 +35,8 @@ final class SubagentProgressProjectionTest extends TestCase
 
         $progress1 = [
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_abc', 'task_summary' => 'Inspect TUI', 'turn_no' => 1,
+            'artifact_id' => 'agent_abc', 'agent_run_id' => 'child-1', 'task_summary' => 'Inspect TUI',
+            'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 1,
             'llm_step_count' => 1, 'elapsed_ms' => 1000,
         ];
         $progress2 = $progress1;
@@ -58,7 +63,9 @@ final class SubagentProgressProjectionTest extends TestCase
         $this->assertStringContainsString('Artifacts:', $block->text);
         $this->assertStringContainsString('agent_abc', $block->text);
         $this->assertStringNotContainsString('subagent scout running | turn 1', $block->text);
-        $this->assertSame(2, $block->meta['subagent_progress']['llm_step_count'] ?? null);
+        $progress = $block->meta['subagent_progress'] ?? null;
+        $this->assertInstanceOf(SubagentProgressSingleSnapshotDTO::class, $progress);
+        $this->assertSame(2, $progress->llmStepCount);
     }
 
     public function testParallelSubagentProgressRendersChildSingleWidgetSections(): void
@@ -71,14 +78,15 @@ final class SubagentProgressProjectionTest extends TestCase
             'mode' => 'parallel', 'status' => 'running', 'completed_count' => 1, 'total_count' => 2, 'elapsed_ms' => 42000,
             'children' => [
                 [
-                    'index' => 1, 'label' => 'Step 1', 'agent_name' => 'reviewer', 'status' => 'completed',
-                    'artifact_id' => 'agent_a', 'task_summary' => 'Review code', 'turn_no' => 3,
+                    'index' => 1, 'agent_name' => 'reviewer', 'status' => 'completed',
+                    'artifact_id' => 'agent_a', 'agent_run_id' => 'run-a', 'task_summary' => 'Review code',
+                    'model' => 'test/model-a', 'reasoning' => 'medium', 'turn_no' => 3,
                     'tool_count' => 5, 'total_tokens' => 12000, 'input_tokens' => 8000, 'output_tokens' => 4000,
-                    'artifact_path' => 'artifacts/agents/agent_a', 'model' => 'test/model-a',
+                    'artifact_path' => 'artifacts/agents/agent_a',
                 ],
                 [
-                    'index' => 2, 'label' => 'Step 2', 'agent_name' => 'scout', 'status' => 'running',
-                    'artifact_id' => 'agent_b', 'task_summary' => 'Inspect TUI', 'turn_no' => 2, 'elapsed_ms' => 15000,
+                    'index' => 2, 'agent_name' => 'scout', 'status' => 'running',
+                    'artifact_id' => 'agent_b', 'agent_run_id' => 'run-b', 'task_summary' => 'Inspect TUI', 'model' => 'test/model-b', 'reasoning' => 'low', 'turn_no' => 2,
                     'tool_count' => 12, 'total_tokens' => 49000,
                     'artifact_path' => 'artifacts/agents/agent_b',
                     'active_tool' => 'bash: command="grep -n Subagent src/Tui"',
@@ -115,10 +123,10 @@ final class SubagentProgressProjectionTest extends TestCase
 
         $progress1 = [
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_rich', 'task_summary' => 'Inspect docs', 'turn_no' => 2, 'elapsed_ms' => 139000,
+            'artifact_id' => 'agent_rich', 'agent_run_id' => 'run-rich', 'task_summary' => 'Inspect docs',
+            'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'high', 'turn_no' => 2, 'elapsed_ms' => 139000,
             'tool_count' => 5, 'total_tokens' => 49000, 'input_tokens' => 35000, 'output_tokens' => 14000,
-            'reasoning_tokens' => 584000, 'cost' => 0.0104, 'model' => 'deepseek/deepseek-v4-flash',
-            'reasoning' => 'high',
+            'reasoning_tokens' => 584000, 'cost' => 0.0104,
             'artifact_path' => 'artifacts/agents/agent_rich',
             'recent_tools' => ['read: path="docs/agents.md"'],
             'assistant_excerpt' => 'Scanning agent docs.',
@@ -154,7 +162,8 @@ final class SubagentProgressProjectionTest extends TestCase
 
         $running = [
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_done', 'task_summary' => 'Inspect TUI', 'turn_no' => 2, 'elapsed_ms' => 5000,
+            'artifact_id' => 'agent_done', 'agent_run_id' => 'run-done', 'task_summary' => 'Inspect TUI',
+            'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 2, 'elapsed_ms' => 5000,
         ];
         $completed = $running;
         $completed['status'] = 'completed';
@@ -190,7 +199,8 @@ final class SubagentProgressProjectionTest extends TestCase
 
         $failed = [
             'mode' => 'single', 'status' => 'failed', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_fail', 'task_summary' => 'Inspect TUI', 'turn_no' => 2, 'elapsed_ms' => 5000,
+            'artifact_id' => 'agent_fail', 'agent_run_id' => 'run-fail', 'task_summary' => 'Inspect TUI',
+            'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 2, 'elapsed_ms' => 5000,
             'artifact_path' => 'artifacts/agents/agent_fail',
         ];
 
@@ -209,15 +219,70 @@ final class SubagentProgressProjectionTest extends TestCase
         $this->assertSame('subagent', $block->meta['tool_name'] ?? null);
     }
 
+    public function testPresentMalformedSubagentProgressPropagates(): void
+    {
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_bad', 'tool_name' => 'subagent',
+        ]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('subagent_progress payload must be an array when present.');
+        $this->accept('tool_execution.output_delta', [
+            'tool_call_id' => 'tc_bad', 'tool_name' => 'subagent', 'subagent_progress' => 'not-an-array',
+        ]);
+    }
+
+    public function testPresentIncompleteSubagentProgressPropagatesOnDenormalize(): void
+    {
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_incomplete', 'tool_name' => 'subagent',
+        ]);
+
+        $this->expectException(\Throwable::class);
+        $this->accept('tool_execution.output_delta', [
+            'tool_call_id' => 'tc_incomplete',
+            'tool_name' => 'subagent',
+            'subagent_progress' => [
+                'mode' => 'single',
+                'status' => 'running',
+                // missing required identity fields
+            ],
+        ]);
+    }
+
+    public function testPresentValidProgressStoresTypedMeta(): void
+    {
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_typed', 'tool_name' => 'subagent',
+        ]);
+
+        $this->accept('tool_execution.output_delta', [
+            'tool_call_id' => 'tc_typed',
+            'tool_name' => 'subagent',
+            'subagent_progress' => SubagentProgressSerializerTestSupport::canonicalSingleWire(
+                agentName: 'scout',
+                artifactId: 'agent_typed',
+                agentRunId: 'run-typed',
+                taskSummary: 'Inspect typed meta',
+            ),
+        ]);
+
+        $block = $this->projector->blocks()[0];
+        $progress = $block->meta['subagent_progress'] ?? null;
+        $this->assertInstanceOf(SubagentProgressSingleSnapshotDTO::class, $progress);
+        $this->assertSame('scout', $progress->agentName);
+        $this->assertSame('test/model', $progress->model);
+        $this->assertStringContainsString('subagent scout', $block->text);
+    }
+
     /** @param array<string, mixed> $payload */
     private function accept(string $type, array $payload): void
     {
-        $this->projector->accept([
-            'type' => $type,
-            'runId' => 'run_subagent',
-            'seq' => $this->seq++,
-            'payload' => $payload,
-            'v' => 1,
-        ]);
+        $this->projector->accept(new RuntimeEvent(
+            type: $type,
+            runId: 'run_subagent',
+            seq: $this->seq++,
+            payload: $payload,
+        ));
     }
 }
