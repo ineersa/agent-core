@@ -33,8 +33,6 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
 
     public ?float $cost;
 
-    public ?string $provider;
-
     #[SerializedName('active_tool')]
     public ?string $activeToolLine;
 
@@ -69,7 +67,6 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         #[Assert\GreaterThanOrEqual(0)]
         public int $totalTokens = 0,
         ?float $cost = null,
-        ?string $provider = null,
         public array $recentTools = [],
         ?string $activeToolLine = null,
         #[Assert\Valid]
@@ -85,7 +82,6 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         $this->errorMessage = self::nullIfEmptyString($errorMessage);
         $this->assistantResultText = self::nullIfEmptyString($assistantResultText);
         $this->assistantExcerpt = self::nullIfEmptyString($assistantExcerpt);
-        $this->provider = self::nullIfEmptyString($provider);
         $this->activeToolLine = self::nullIfEmptyString($activeToolLine);
         $this->contextWindow = (null !== $contextWindow && $contextWindow > 0) ? $contextWindow : null;
         $this->cost = (null !== $cost && $cost > 0.0) ? $cost : null;

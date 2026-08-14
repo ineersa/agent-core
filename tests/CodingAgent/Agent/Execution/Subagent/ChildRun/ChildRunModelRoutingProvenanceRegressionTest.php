@@ -74,8 +74,12 @@ final class ChildRunModelRoutingProvenanceRegressionTest extends IsolatedKernelT
                         'session' => [
                             'kind' => 'agent_child',
                             'parent_run_id' => '1',
+                            'agent_name' => 'scout',
+                            'artifact_id' => 'agent_child1',
                         ],
                         'model' => self::CHILD_MODEL,
+                        'reasoning' => 'medium',
+                        'tools_scope' => ['allowed_tools' => []],
                     ],
                 ],
             ],

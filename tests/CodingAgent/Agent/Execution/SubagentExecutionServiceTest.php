@@ -88,8 +88,12 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
                                 'session' => [
                                     'kind' => 'agent_child',
                                     'parent_run_id' => 'grandparent',
+                                    'agent_name' => 'scout',
                                     'artifact_id' => 'agent_abc',
                                 ],
+                                'model' => 'deepseek/deepseek-v4-flash',
+                                'reasoning' => 'medium',
+                                'tools_scope' => ['allowed_tools' => []],
                             ],
                         ],
                     ],

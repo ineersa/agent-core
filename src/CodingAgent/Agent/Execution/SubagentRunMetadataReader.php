@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedEventPayloadDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
@@ -14,8 +13,8 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 /**
  * Reads agent child metadata from RunStarted events.
  *
- * Nested RunStarted envelope produced by StartRunHandler is denormalized via
- * Symfony Serializer into {@see RunStartedEventPayloadDTO} → metadata.
+ * Root RunEvent.payload is denormalized via Symfony Serializer into
+ * {@see RunStartedMetadataDTO} using SerializedPath attributes.
  */
 final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllowlistReaderInterface
 {
@@ -97,10 +96,7 @@ final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllow
                 continue;
             }
 
-            return $this->denormalizer
-                ->denormalize($event->payload, RunStartedEventPayloadDTO::class)
-                ->payload
-                ->metadata;
+            return $this->denormalizer->denormalize($event->payload, RunStartedMetadataDTO::class);
         }
 
         return null;

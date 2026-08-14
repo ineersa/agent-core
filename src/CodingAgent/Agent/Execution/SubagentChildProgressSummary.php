@@ -31,7 +31,6 @@ final readonly class SubagentChildProgressSummary
         public int $reasoningTokens = 0,
         public int $totalTokens = 0,
         public ?float $cost = null,
-        public ?string $provider = null,
         public ?string $artifactPath = null,
         public ?string $assistantExcerpt = null,
         public array $recentTools = [],

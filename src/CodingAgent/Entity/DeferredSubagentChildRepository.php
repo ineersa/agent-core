@@ -14,9 +14,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
-use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
-use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
@@ -27,7 +25,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
 {
     public function __construct(
         ManagerRegistry $registry,
-        private readonly NormalizerInterface&DenormalizerInterface $serializer,
+        private readonly DenormalizerInterface $serializer,
         private readonly ValidatorInterface $validator,
     ) {
         parent::__construct($registry, DeferredSubagentChild::class);
@@ -176,13 +174,10 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         }
 
         try {
+            /** @var DeferredChildRunLifecycleProjectionDTO $projection */
             $projection = $this->serializer->denormalize($raw, DeferredChildRunLifecycleProjectionDTO::class);
         } catch (SerializerExceptionInterface|\TypeError|\ValueError $exception) {
             throw new \InvalidArgumentException(\sprintf('Invalid deferred child lifecycle projection: %s', $exception->getMessage()), 0, $exception);
-        }
-
-        if (!$projection instanceof DeferredChildRunLifecycleProjectionDTO) {
-            throw new \InvalidArgumentException(\sprintf('Invalid deferred child lifecycle projection: expected %s, got %s.', DeferredChildRunLifecycleProjectionDTO::class, get_debug_type($projection)));
         }
 
         $violations = $this->validator->validate($projection);
@@ -191,21 +186,6 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         }
 
         return $projection;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    public function encodeChildLifecycleProjection(DeferredChildRunLifecycleProjectionDTO $projection): array
-    {
-        /** @var array<string, mixed> $payload */
-        $payload = $this->serializer->normalize(
-            $projection,
-            null,
-            [AbstractObjectNormalizer::SKIP_NULL_VALUES => true],
-        );
-
-        return $payload;
     }
 
     private function requireChild(string $batchLifecycleId, int $batchIndex): DeferredSubagentChild

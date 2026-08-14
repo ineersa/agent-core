@@ -57,8 +57,15 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
         $storeA = $this->createChildEventStore($parentRunId, $childA, $artifactA);
         $storeA->append(new RunEvent($childA, 1, 0, RunEventTypeEnum::RunStarted->value, [
             'payload' => ['metadata' => [
-                'session' => ['kind' => 'agent_child'],
+                'session' => [
+                    'kind' => 'agent_child',
+                    'parent_run_id' => $parentRunId,
+                    'agent_name' => 'scout',
+                    'artifact_id' => $artifactA,
+                ],
                 'model' => 'openai-codex/gpt-5.6-sol',
+                'reasoning' => 'medium',
+                'tools_scope' => ['allowed_tools' => []],
             ]],
         ]));
         $storeA->append(new RunEvent($childA, 2, 1, RunEventTypeEnum::LlmStepFailed->value, [
@@ -68,8 +75,15 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
         $storeB = $this->createChildEventStore($parentRunId, $childB, $artifactB);
         $storeB->append(new RunEvent($childB, 1, 0, RunEventTypeEnum::RunStarted->value, [
             'payload' => ['metadata' => [
-                'session' => ['kind' => 'agent_child'],
+                'session' => [
+                    'kind' => 'agent_child',
+                    'parent_run_id' => $parentRunId,
+                    'agent_name' => 'scout',
+                    'artifact_id' => $artifactB,
+                ],
                 'model' => 'deepseek/deepseek-v4-flash',
+                'reasoning' => 'medium',
+                'tools_scope' => ['allowed_tools' => []],
             ]],
         ]));
         $storeB->append(new RunEvent($childB, 2, 1, RunEventTypeEnum::LlmStepCompleted->value, [
@@ -126,10 +140,16 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             new RunEvent($childRunId, 1, 0, RunEventTypeEnum::RunStarted->value, [
                 'step_id' => 's0',
                 'payload' => ['metadata' => [
-                    'session' => ['kind' => 'agent_child'],
+                    'session' => [
+                        'kind' => 'agent_child',
+                        'parent_run_id' => $parentRunId,
+                        'agent_name' => 'scout',
+                        'artifact_id' => $artifactId,
+                    ],
                     'model' => 'deepseek/deepseek-v4-flash',
                     'reasoning' => 'high',
                     'context_window' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW,
+                    'tools_scope' => ['allowed_tools' => []],
                 ]],
             ]),
             new RunEvent($childRunId, 2, 1, RunEventTypeEnum::LlmStepCompleted->value, [

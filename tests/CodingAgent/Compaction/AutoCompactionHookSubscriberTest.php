@@ -1167,7 +1167,12 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                             'session' => [
                                 'kind' => 'agent_child',
                                 'parent_run_id' => 'parent-1',
+                                'agent_name' => 'scout',
+                                'artifact_id' => 'agent_child1',
                             ],
+                            'model' => 'deepseek/deepseek-v4-flash',
+                            'reasoning' => 'medium',
+                            'tools_scope' => ['allowed_tools' => []],
                         ],
                     ],
                 ],

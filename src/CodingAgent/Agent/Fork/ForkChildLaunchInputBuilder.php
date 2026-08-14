@@ -132,31 +132,18 @@ final class ForkChildLaunchInputBuilder
     ): ForkRuntimeResolvedConfigDTO {
         $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId);
         // Explicit parent model still wins; otherwise inherit from parent RunStarted metadata.
-        // Fork trims model/reasoning at this consumer (decoder preserves exact strings).
+        // Model/reasoning are already canonicalized (trim/nonblank) by the metadata DTO.
         $effectiveParentModel = null !== $parentModel && '' !== trim($parentModel)
             ? trim($parentModel)
-            : $this->trimInheritedForkConfigString($parentMetadata?->model);
+            : $parentMetadata?->model;
 
         return $this->configResolver->resolve(
             explicitModel: $modelOverride,
             explicitThinking: $reasoningOverride,
             parentModel: $effectiveParentModel,
-            parentReasoning: $this->trimInheritedForkConfigString($parentMetadata?->reasoning),
+            parentReasoning: $parentMetadata?->reasoning,
             parentRunId: $parentRunId,
         );
-    }
-
-    /**
-     * Historical fork inheritance: nonblank after trim → return trimmed value.
-     * Shared decoder preserves raw strings; fork trims only at this consumer.
-     */
-    private function trimInheritedForkConfigString(?string $value): ?string
-    {
-        if (null === $value || '' === trim($value)) {
-            return null;
-        }
-
-        return trim($value);
     }
 
     private function resolveContextWindowForModel(?string $model): ?int

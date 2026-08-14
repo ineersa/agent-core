@@ -42,10 +42,15 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             [
                 new AfterTurnCommitEventSummary(1, RunEventTypeEnum::RunStarted->value, [
                     'payload' => ['metadata' => [
-                        'session' => ['kind' => 'agent_child'],
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'parent_run_id' => 'parent-1',
+                            'agent_name' => 'scout',
+                            'artifact_id' => 'agent_1',
+                        ],
                         'model' => 'openai-codex/gpt-5.6-sol',
                         'reasoning' => 'xhigh',
-                        'provider' => 'openai-codex',
+                        'tools_scope' => ['allowed_tools' => []],
                     ]],
                 ]),
                 new AfterTurnCommitEventSummary(2, RunEventTypeEnum::LlmStepFailed->value, [
@@ -64,7 +69,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertSame(RunStatus::Failed, $failed->childStatus);
         $this->assertSame('openai-codex/gpt-5.6-sol', $failed->model);
         $this->assertSame('xhigh', $failed->reasoning);
-        $this->assertSame('openai-codex', $failed->provider);
         $this->assertSame(1, $failed->llmStepCount);
 
         // Recovery/resume apply without another run_started must keep launch model/reasoning.
@@ -317,7 +321,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             reasoningTokens: $roundTrip->reasoningTokens,
             totalTokens: $roundTrip->totalTokens,
             cost: $roundTrip->cost,
-            provider: $roundTrip->provider,
             artifactPath: 'artifacts/agents/agent_llm_steps',
             assistantExcerpt: $roundTrip->assistantExcerpt,
             recentTools: $roundTrip->recentTools,

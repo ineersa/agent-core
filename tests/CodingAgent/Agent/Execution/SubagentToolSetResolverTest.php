@@ -184,8 +184,8 @@ final class SubagentToolSetResolverTest extends TestCase
                         'artifact_id' => 'agent_abc123',
                         'interactive' => false,
                     ],
-                    'model' => null,
-                    'reasoning' => null,
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'medium',
                     'tools_scope' => [
                         'allowed_tools' => $allowedTools,
                         'mcp' => [

@@ -41,7 +41,6 @@ final class DeferredChildRunLifecycleProjectionSerializerTest extends IsolatedKe
             reasoningTokens: 5,
             totalTokens: 125,
             cost: 0.0123,
-            provider: 'deepseek',
             recentTools: ['read path.php', 'edit path.php'],
             activeToolLine: 'bash ls',
             pendingToolCalls: [
@@ -49,7 +48,7 @@ final class DeferredChildRunLifecycleProjectionSerializerTest extends IsolatedKe
             ],
         );
 
-        $wire = $repo->encodeChildLifecycleProjection($projection);
+        $wire = $this->encodeProjection($projection);
 
         $this->assertSame('deepseek/deepseek-v4-flash', $wire['model']);
         $this->assertSame('medium', $wire['reasoning']);
@@ -68,7 +67,7 @@ final class DeferredChildRunLifecycleProjectionSerializerTest extends IsolatedKe
         $this->assertSame(5, $wire['reasoning_tokens']);
         $this->assertSame(125, $wire['total_tokens']);
         $this->assertSame(0.0123, $wire['cost']);
-        $this->assertSame('deepseek', $wire['provider']);
+        $this->assertArrayNotHasKey('provider', $wire);
         $this->assertSame(['read path.php', 'edit path.php'], $wire['recent_tools']);
         $this->assertSame('bash ls', $wire['active_tool']);
         $this->assertSame(
@@ -78,12 +77,11 @@ final class DeferredChildRunLifecycleProjectionSerializerTest extends IsolatedKe
 
         $roundTrip = $repo->decodeChildLifecycleProjection($wire);
         $this->assertEquals($projection, $roundTrip);
-        $this->assertSame($wire, $repo->encodeChildLifecycleProjection($roundTrip));
+        $this->assertSame($wire, $this->encodeProjection($roundTrip));
     }
 
     public function testOptionalNullsAreOmittedOnWrite(): void
     {
-        $repo = self::getContainer()->get(DeferredSubagentChildRepository::class);
         $projection = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
@@ -95,11 +93,10 @@ final class DeferredChildRunLifecycleProjectionSerializerTest extends IsolatedKe
             assistantExcerpt: '',
             contextWindow: 0,
             cost: 0.0,
-            provider: '',
             activeToolLine: '',
         );
 
-        $wire = $repo->encodeChildLifecycleProjection($projection);
+        $wire = $this->encodeProjection($projection);
         $this->assertArrayNotHasKey('error_message', $wire);
         $this->assertArrayNotHasKey('assistant_result_text', $wire);
         $this->assertArrayNotHasKey('assistant_excerpt', $wire);
@@ -180,5 +177,23 @@ final class DeferredChildRunLifecycleProjectionSerializerTest extends IsolatedKe
         $this->assertInstanceOf(DeferredChildRunLifecycleProjectionDTO::class, $decoded);
         $this->assertCount(0, $validator->validate($decoded));
         $this->assertEquals($projection, $decoded);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function encodeProjection(DeferredChildRunLifecycleProjectionDTO $projection): array
+    {
+        $serializer = self::getContainer()->get(\Symfony\Component\Serializer\SerializerInterface::class);
+        $json = $serializer->serialize(
+            $projection,
+            'json',
+            [\Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES => true],
+        );
+
+        /** @var array<string, mixed> $wire */
+        $wire = json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
+
+        return $wire;
     }
 }

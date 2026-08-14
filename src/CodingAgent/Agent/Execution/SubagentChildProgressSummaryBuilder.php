@@ -11,7 +11,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathsDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
-use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedEventPayloadDTO;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
@@ -52,7 +52,6 @@ final class SubagentChildProgressSummaryBuilder
             reasoningTokens: $projection->reasoningTokens,
             totalTokens: $projection->totalTokens,
             cost: $projection->cost,
-            provider: $projection->provider,
             artifactPath: AgentArtifactPathsDTO::forArtifactId($artifactId)->artifactDir,
             assistantExcerpt: $projection->assistantExcerpt,
             recentTools: $recentTools,
@@ -108,7 +107,6 @@ final class SubagentChildProgressSummaryBuilder
         if ('' === $model || '' === $reasoning) {
             throw new \InvalidArgumentException('Subagent progress scan requires non-empty launch model and reasoning.');
         }
-        $provider = null;
 
         /** @var array<string, array{name: string, args: array<string, mixed>}> $pendingById */
         $pendingById = [];
@@ -120,20 +118,10 @@ final class SubagentChildProgressSummaryBuilder
         foreach ($events as $event) {
             $payload = $event->payload;
             if (RunEventTypeEnum::RunStarted->value === $event->type) {
-                // RunStarted may confirm/update concrete identity; never clear to empty.
-                $metadata = $this->denormalizer
-                    ->denormalize($payload, RunStartedEventPayloadDTO::class)
-                    ->payload
-                    ->metadata;
-                if (null !== $metadata->model && '' !== trim($metadata->model)) {
-                    $model = trim($metadata->model);
-                }
-                if (null !== $metadata->reasoning && '' !== trim($metadata->reasoning)) {
-                    $reasoning = trim($metadata->reasoning);
-                }
-                if (null !== $metadata->provider && '' !== $metadata->provider) {
-                    $provider = $metadata->provider;
-                }
+                // DTO constructor already trims/requires nonblank model (and child reasoning).
+                $metadata = $this->denormalizer->denormalize($payload, RunStartedMetadataDTO::class);
+                $model = $metadata->model;
+                $reasoning = $metadata->reasoning ?? $reasoning;
                 if (null !== $metadata->contextWindow && $metadata->contextWindow > 0) {
                     $contextWindow = $metadata->contextWindow;
                 }
@@ -230,7 +218,6 @@ final class SubagentChildProgressSummaryBuilder
             reasoningTokens: $reasoningTokens,
             totalTokens: $totalTokens,
             cost: $hasCost ? $cost : null,
-            provider: $provider,
             artifactPath: $artifactPath,
             assistantExcerpt: $assistantExcerpt,
             recentTools: $recentLines,

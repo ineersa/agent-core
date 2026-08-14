@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedEventPayloadDTO;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
@@ -34,16 +34,13 @@ final readonly class NoninteractiveChildRunProbe
                 continue;
             }
 
-            $metadata = $this->denormalizer
-                ->denormalize($event->payload, RunStartedEventPayloadDTO::class)
-                ->payload
-                ->metadata;
+            $metadata = $this->denormalizer->denormalize($event->payload, RunStartedMetadataDTO::class);
             if (!$metadata->isAgentChild()) {
                 return false;
             }
 
-            // Historical default when interactive is absent: interactive=true.
-            return false === ($metadata->session->interactive ?? true);
+            // Child session.interactive defaults to true when omitted.
+            return false === $metadata->session->interactive;
         }
 
         return false;

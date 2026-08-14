@@ -8,7 +8,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildToolProgressPresentationFormatter;
-use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedEventPayloadDTO;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
@@ -51,7 +51,6 @@ final class DeferredChildRunEventProjector
         // Identity is always seeded from durable launch model/reasoning before RunStarted.
         $model = $current->model;
         $reasoning = $current->reasoning;
-        $provider = $current->provider;
         $recentTools = $current->recentTools;
         $activeToolLine = $current->activeToolLine;
 
@@ -81,23 +80,11 @@ final class DeferredChildRunEventProjector
             }
 
             if (RunEventTypeEnum::RunStarted->value === $type) {
-                // RunStarted may confirm/update concrete identity; never clear to empty.
-                $metadata = $this->denormalizer
-                    ->denormalize($payload, RunStartedEventPayloadDTO::class)
-                    ->payload
-                    ->metadata;
-                if (null !== $metadata->model && '' !== trim($metadata->model)) {
-                    $model = trim($metadata->model);
-                }
-                if (null !== $metadata->reasoning && '' !== trim($metadata->reasoning)) {
-                    $reasoning = trim($metadata->reasoning);
-                }
-                if (null !== $metadata->provider && '' !== $metadata->provider) {
-                    $provider = $metadata->provider;
-                }
-                if (null !== $metadata->contextWindow && $metadata->contextWindow > 0) {
-                    $contextWindow = $metadata->contextWindow;
-                }
+                // DTO constructor already trims/requires nonblank model (and child reasoning).
+                $metadata = $this->denormalizer->denormalize($payload, RunStartedMetadataDTO::class);
+                $model = $metadata->model;
+                $reasoning = $metadata->reasoning ?? $reasoning;
+                $contextWindow = $metadata->contextWindow ?? $contextWindow;
                 $status = RunStatus::Running;
                 $endsWithRetryPendingLlmFailure = false;
                 continue;
@@ -241,7 +228,6 @@ final class DeferredChildRunEventProjector
             reasoningTokens: $reasoningTokens,
             totalTokens: $totalTokens,
             cost: $cost,
-            provider: $provider,
             recentTools: $recentTools,
             activeToolLine: $activeToolLine,
             pendingToolCalls: $pendingById,

@@ -63,7 +63,12 @@ final class ChildExtensionOmIsolationTest extends TestCase
                             'session' => [
                                 'kind' => 'agent_child',
                                 'parent_run_id' => 'parent',
+                                'agent_name' => 'scout',
+                                'artifact_id' => 'agent_om',
                             ],
+                            'model' => 'deepseek/deepseek-v4-flash',
+                            'reasoning' => 'medium',
+                            'tools_scope' => ['allowed_tools' => []],
                             // SafeGuard only — OM absent.
                             'extensions' => [
                                 'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
@@ -123,7 +128,12 @@ final class ChildExtensionOmIsolationTest extends TestCase
                             'session' => [
                                 'kind' => 'agent_child',
                                 'parent_run_id' => 'parent',
+                                'agent_name' => 'scout',
+                                'artifact_id' => 'agent_om',
                             ],
+                            'model' => 'deepseek/deepseek-v4-flash',
+                            'reasoning' => 'medium',
+                            'tools_scope' => ['allowed_tools' => []],
                             'extensions' => [
                                 'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
                             ],

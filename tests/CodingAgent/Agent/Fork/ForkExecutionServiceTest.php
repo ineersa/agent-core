@@ -151,7 +151,15 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             payload: [
                 'payload' => [
                     'metadata' => [
-                        'session' => ['kind' => 'agent_child', 'parent_run_id' => 'parent-1'],
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'parent_run_id' => 'parent-1',
+                            'agent_name' => 'fork',
+                            'artifact_id' => 'agent_fork1',
+                        ],
+                        'model' => 'deepseek/deepseek-v4-flash',
+                        'reasoning' => 'medium',
+                        'tools_scope' => ['allowed_tools' => []],
                     ],
                 ],
             ],

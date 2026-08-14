@@ -43,7 +43,6 @@ final readonly class SubagentProgressSingleSnapshotDTO implements SubagentProgre
         public ?string $model = null,
         public ?string $reasoning = null,
         public ?int $contextWindow = null,
-        public ?string $provider = null,
         public ?string $artifactPath = null,
         public ?string $assistantExcerpt = null,
         public ?string $activeTool = null,

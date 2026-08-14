@@ -4,26 +4,60 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension\ChildRun\Metadata;
 
+use Symfony\Component\Serializer\Attribute\SerializedPath;
+
 /**
- * Typed RunStarted metadata (payload.payload.metadata) for CodingAgent consumers.
+ * Typed RunStarted metadata extracted from the root RunEvent.payload via SerializedPath.
  *
- * Hydrated by Symfony Serializer as part of {@see RunStartedEventPayloadDTO}.
+ * Canonical successful RunStarted always has a nonblank model (StartRunHandler enforces it).
+ * Child runs (session.kind=agent_child) also require reasoning, tools_scope, and session identity.
  * Does not replace generic {@see \Ineersa\AgentCore\Domain\Run\RunMetadata} write-side construction.
+ *
+ * SerializedPath attributes live on properties (AttributeLoader does not read constructor params).
  */
 final readonly class RunStartedMetadataDTO
 {
+    #[SerializedPath('[payload][metadata][model]')]
+    public string $model;
+
+    #[SerializedPath('[payload][metadata][reasoning]')]
+    public ?string $reasoning;
+
     /**
      * @param list<string>|null $extensions
      */
     public function __construct(
+        #[SerializedPath('[payload][metadata][session]')]
         public RunStartedSessionMetadataDTO $session,
-        public ?string $model = null,
-        public ?string $reasoning = null,
+        string $model,
+        ?string $reasoning = null,
+        #[SerializedPath('[payload][metadata][tools_scope]')]
         public ?RunStartedToolsScopeDTO $toolsScope = null,
+        #[SerializedPath('[payload][metadata][context_window]')]
         public ?int $contextWindow = null,
+        #[SerializedPath('[payload][metadata][extensions]')]
         public ?array $extensions = null,
-        public ?string $provider = null,
     ) {
+        $model = trim($model);
+        if ('' === $model) {
+            throw new \InvalidArgumentException('RunStarted metadata.model is required and must be non-blank.');
+        }
+        $this->model = $model;
+
+        if (null !== $reasoning) {
+            $reasoning = trim($reasoning);
+            $reasoning = '' === $reasoning ? null : $reasoning;
+        }
+        $this->reasoning = $reasoning;
+
+        if ($this->session->isAgentChild()) {
+            if (null === $this->reasoning) {
+                throw new \InvalidArgumentException('RunStarted child metadata.reasoning is required and must be non-blank.');
+            }
+            if (null === $this->toolsScope) {
+                throw new \InvalidArgumentException('RunStarted child metadata.tools_scope is required.');
+            }
+        }
     }
 
     public function isAgentChild(): bool
@@ -32,7 +66,7 @@ final readonly class RunStartedMetadataDTO
     }
 
     /**
-     * Child tool allowlist, or null when not a child / tools_scope.allowed_tools missing.
+     * Child tool allowlist, or null when not a child.
      *
      * @return list<string>|null
      */
@@ -41,10 +75,8 @@ final readonly class RunStartedMetadataDTO
         if (!$this->isAgentChild()) {
             return null;
         }
-        if (null === $this->toolsScope || null === $this->toolsScope->allowedTools) {
-            return null;
-        }
 
+        // Child constructor requires tools_scope; empty list means none.
         return $this->toolsScope->allowedTools;
     }
 

@@ -52,6 +52,7 @@ final class SubagentProgressEventsFixture
                 // Parent (non-child) RunStarted requires typed metadata for SubagentRunMetadataReader.
                 'metadata' => [
                     'session' => [],
+                    'model' => 'deepseek/deepseek-v4-flash',
                 ],
             ],
         ], $now);
@@ -207,6 +208,7 @@ final class SubagentProgressEventsFixture
                 // Parent (non-child) RunStarted requires typed metadata for SubagentRunMetadataReader.
                 'metadata' => [
                     'session' => [],
+                    'model' => 'deepseek/deepseek-v4-flash',
                 ],
             ],
         ], $now);
@@ -382,6 +384,7 @@ final class SubagentProgressEventsFixture
                 // Parent (non-child) RunStarted requires typed metadata for SubagentRunMetadataReader.
                 'metadata' => [
                     'session' => [],
+                    'model' => 'deepseek/deepseek-v4-flash',
                 ],
             ],
         ], $now);
