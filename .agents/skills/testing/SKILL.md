@@ -7,17 +7,20 @@ description: "E2E and validation testing strategy. Load this skill when: writing
 
 ## Castor command reference
 
-All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues`.
+Castor-wrapped PHPUnit lanes that pass `phpunit_strict_issue_flags()` include
+`--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues`.
+Not every Castor task adds those flags (for example `test:tui-update` runs a fixed
+snapshot-update command without a Castor `--filter` option).
 
 ```bash
-castor check                # Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real smoke (ParaTest, port 9052 / llama-proxy), phpstan, cs-check; lanes parallel; logs under per-run `var/reports/qa-<id>/check-*.log`. Absolute 180s wall from task entry (lock wait + setup/preflight + lanes + finalizers). Deterministic mode: Symfony Lock across sibling worktrees (60s acquire timeout clamped by remaining wall, `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT`), cache-growth guard, post-run `HATFIELD_QA_RUN_ID` leak assertion (no auto-kill), lane log integrity. Stress overrides (`HATFIELD_CASTOR_CHECK_LOCK=0`, `HATFIELD_LLM_CACHE_GUARD=0`, concurrency envs) are investigation-only — not CODE-REVIEW evidence. Worker budgets under check: unit=4 (max 8, `HATFIELD_CHECK_UNIT_PARATEST_PROCESSES`), TUI=2 (max 4, `HATFIELD_CHECK_TUI_PARATEST_PROCESSES` / legacy `HATFIELD_TUI_PARATEST_PROCESSES`), llm-real=1 (max 4, `HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES`); controller-replay sequential. Warm proxy before gate: `castor test:llm-real`.
+castor check                # Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real smoke (ParaTest, port 9052 / llama-proxy), phpstan, cs-check, docs:validate; lanes parallel; logs under per-run `var/reports/qa-<id>/check-*.log`. Absolute 180s wall from task entry (lock wait + setup/preflight + lanes + finalizers). Deterministic mode: Symfony Lock across sibling worktrees (60s acquire timeout clamped by remaining wall, `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT`), cache-growth guard, post-run `HATFIELD_QA_RUN_ID` leak assertion (no auto-kill), lane log integrity. Stress overrides (`HATFIELD_CASTOR_CHECK_LOCK=0`, `HATFIELD_LLM_CACHE_GUARD=0`, concurrency envs) are investigation-only — not CODE-REVIEW evidence. Worker budgets under check: unit=4 (max 8, `HATFIELD_CHECK_UNIT_PARATEST_PROCESSES`), TUI=2 (max 4, `HATFIELD_CHECK_TUI_PARATEST_PROCESSES` / legacy `HATFIELD_TUI_PARATEST_PROCESSES`), llm-real=1 (max 4, `HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES`); controller-replay sequential. Warm proxy before gate: `castor test:llm-real`.
 castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups; internal hard timeout ≤180s with process-tree reaping
 castor test --filter=X      # filter tests by name
 castor test --suite=X       # target a specific phpunit.xml test suite (ParaTest parallel)
 castor test:tui [--filter=X]    # TUI E2E journey tests (replay-backed, no live LLM); full group uses ParaTest (default 2 workers; under `castor check` uses `HATFIELD_CHECK_TUI_PARATEST_PROCESSES`, legacy `HATFIELD_TUI_PARATEST_PROCESSES` still honored, max 4); --filter stays sequential PHPUnit; hard timeout ≤180s
-castor test:tui-update [--filter=X]  # update TUI snapshot baselines (filter optional)
+castor test:tui-update      # update TUI snapshot baselines (no Castor --filter; fixed tui-e2e-replay group)
 castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional); standalone full group ParaTest 4 workers; filtered sequential; hard timeout ≤180s
-castor test:controller [--filter=X] # controller E2E smoke test (live LLM, opt-in)
+castor test:controller      # controller E2E smoke (live LLM, opt-in; fixed ControllerSmokeTest filter inside Castor — no Castor --filter option)
 castor test:controller-replay      # controller E2E smoke tests with replay fixtures (no live LLM, default controller validation)
 castor llm:fixtures:record         # Re-record LLM replay fixtures from live LLM
 castor llm:fixtures:info           # List available LLM replay fixtures
@@ -26,6 +29,7 @@ castor phpstan [path]       # static analysis (optionally scoped to a path)
 castor phpstan:baseline     # regenerate phpstan baseline
 castor cs-fix [path]        # auto-fix coding style
 castor cs-check             # check coding style (dry-run)
+castor docs:validate        # built-in docs catalog, package-safe links, ≤25k chars (also a castor check lane)
 castor phar:build           # Build hatfield.phar (worktree-local by default)
 castor phar:ensure           # Ensure PHAR exists (build if missing or stale)
 castor phar:clean            # Remove worktree-local hatfield.phar
@@ -176,7 +180,7 @@ artifact boots and responds to basic commands.
 Run PHAR smoke tests manually:
 ```bash
 castor phar:build
-HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --group phar
+castor test --filter=PharSmokeTest
 ```
 
 ## Isolation
@@ -198,14 +202,14 @@ E2E, live-LLM, recording, and PHAR groups).
 - DB path: `HATFIELD_TEST_DATABASE_PATH` (defaults to `app_test.sqlite`).
 - ParaTest cache dir: `HATFIELD_CACHE_DIR=.hatfield/cache-paraT{token}` (per-worker).
 - `doctrine:migrations:migrate` runs once before the suite.
-- Standalone `vendor/bin/phpunit` runs without Castor must export `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite`.
+- If you must isolate a Castor PHPUnit failure with raw `vendor/bin/phpunit`, export `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite`. Normal workflow stays on Castor.
 - Filtered runs (`castor test --filter=...`) use sequential PHPUnit (shared single DB).
 
 ## What each command tests
 
 | Command | What it tests | Requires |
 |---|---|---|
-| `castor check` | Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real (ParaTest, port 9052), phpstan, cs-check. No PHAR. | tmux, llama.cpp/proxy on 9052 |
+| `castor check` | Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real (ParaTest, port 9052), phpstan, cs-check, docs:validate. No PHAR. | tmux, llama.cpp/proxy on 9052 |
 | `castor test` | Unit/integration tests (ParaTest parallel by default) | Nothing (pure PHP) |
 | `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` (excludes `recording` group). Run as focused opt-in validation when changes touch provider/LLM-visible code — NOT required for every normal task. | llama.cpp on port 9052 |
 | `castor test:controller-replay` | Controller replay E2E: spawns `--controller`, JSONL protocol, replay fixtures (no live LLM) | Nothing (pure PHP) |
@@ -336,7 +340,7 @@ After `castor test:tui`, passing test snapshots are kept at `var/tmp/tui-e2e-*/`
 
 After failures, diagnostics go to `var/tmp/tui-failures/` (ANSI snapshots + plain text dumps).
 
-Run `castor cleanup` to remove all temp/test artifacts. See `tests/AGENTS.md` for full test standards: shared helpers, directory isolation, fast E2E waits, what not to test, one-class-per-file rules.
+Run `castor clean:cleanup` to remove all temp/test artifacts. See `tests/AGENTS.md` for full test standards: shared helpers, directory isolation, fast E2E waits, what not to test, one-class-per-file rules.
 
 TUI E2E waits should target exact visible proof with short caps (typically 2-5s for startup/status/UI assertions on the local test model). Avoid broad 30-60s waits and fixed `usleep()` calls unless the delay itself is the behavior under test.
 

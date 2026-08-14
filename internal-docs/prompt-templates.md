@@ -1,1 +1,0 @@
-../docs/prompt-templates.md

@@ -1,4 +1,5 @@
 ---
+builtin: true
 description: Prompt templates, slash invocation, expansion, and discovery.
 ---
 
