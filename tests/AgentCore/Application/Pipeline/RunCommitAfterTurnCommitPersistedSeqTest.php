@@ -28,6 +28,8 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
@@ -108,7 +110,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
     {
         return new Serializer([
             new ArrayDenormalizer(),
-            new ObjectNormalizer(new ClassMetadataFactory(new AttributeLoader())),
+            new ObjectNormalizer(new ClassMetadataFactory(new AttributeLoader()), new MetadataAwareNameConverter(new ClassMetadataFactory(new AttributeLoader()), new CamelCaseToSnakeCaseNameConverter())),
         ], [new JsonEncoder()]);
     }
 }

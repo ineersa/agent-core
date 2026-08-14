@@ -13,6 +13,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
@@ -168,7 +169,7 @@ final class RuntimeConfigLlmWorkerCountTest extends TestCase
             normalizers: [
                 new \Symfony\Component\Serializer\Normalizer\ObjectNormalizer(
                     classMetadataFactory: $classMetadataFactory,
-                    nameConverter: new MetadataAwareNameConverter($classMetadataFactory),
+                    nameConverter: new MetadataAwareNameConverter($classMetadataFactory, new CamelCaseToSnakeCaseNameConverter()),
                     propertyAccessor: \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),
                     propertyTypeExtractor: $reflectionExtractor,
                 ),

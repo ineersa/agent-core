@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Detects foreground non-interactive child subagent runs for extension hooks.
@@ -17,6 +19,7 @@ final readonly class NoninteractiveChildRunProbe
 {
     public function __construct(
         private EventStoreInterface $eventStore,
+        private DenormalizerInterface $denormalizer,
     ) {
     }
 
@@ -31,22 +34,13 @@ final readonly class NoninteractiveChildRunProbe
                 continue;
             }
 
-            $inner = $event->payload['payload'] ?? null;
-            if (!\is_array($inner)) {
+            $metadata = $this->denormalizer->denormalize($event->payload, RunStartedMetadataDTO::class);
+            if (!$metadata->isAgentChild()) {
                 return false;
             }
 
-            $metadata = $inner['metadata'] ?? null;
-            if (!\is_array($metadata)) {
-                return false;
-            }
-
-            $session = $metadata['session'] ?? [];
-            if (!\is_array($session) || 'agent_child' !== ($session['kind'] ?? null)) {
-                return false;
-            }
-
-            return false === ($session['interactive'] ?? true);
+            // Child session.interactive defaults to true when omitted.
+            return false === $metadata->session->interactive;
         }
 
         return false;

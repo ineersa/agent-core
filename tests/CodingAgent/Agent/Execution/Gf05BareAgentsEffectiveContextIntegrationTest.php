@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
@@ -151,12 +152,12 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             'parentRunStore' => $parentRunStore,
             'eventStore' => $childEventStore,
             'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
-            'metadataReader' => new SubagentRunMetadataReader($childEventStore),
+            'metadataReader' => new SubagentRunMetadataReader($childEventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
             'childRunDirectory' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),
             'agentsConfig' => new AgentsConfig(subagentToolTimeoutSeconds: 2),
-            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory::class)),
+            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
             'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
             'appConfig' => self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class),
             'modelResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),

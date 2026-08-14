@@ -33,9 +33,7 @@ final readonly class LoggingConfig
     public function __construct(
         #[SerializedName('path')]
         public string $logDir = '',
-        #[SerializedName('level')]
         public string|Level $level = Level::Info,
-        #[SerializedName('max_files')]
         public int $maxFiles = 14,
     ) {
     }

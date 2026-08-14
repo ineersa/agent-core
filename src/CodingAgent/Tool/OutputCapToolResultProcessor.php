@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /**
  * Post-execution output capping via the generic ModelNotification system.
@@ -26,6 +28,7 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
 {
     public function __construct(
         private OutputCap $outputCap,
+        private NormalizerInterface $normalizer,
     ) {
     }
 
@@ -101,7 +104,11 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
         $existingNotifications = \is_array($originalDetails['model_notifications'] ?? null)
             ? $originalDetails['model_notifications']
             : [];
-        $existingNotifications[] = $notification->toArray();
+        /** @var array<string, mixed> $notificationArray */
+        $notificationArray = $this->normalizer->normalize($notification, null, [
+            AbstractObjectNormalizer::SKIP_NULL_VALUES => true,
+        ]);
+        $existingNotifications[] = $notificationArray;
         $safeDetails['model_notifications'] = $existingNotifications;
         $safeDetails['output_cap'] = [
             'capped' => true,

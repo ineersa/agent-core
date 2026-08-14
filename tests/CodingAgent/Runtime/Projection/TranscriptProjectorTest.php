@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Projection;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
@@ -15,6 +17,8 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscri
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -37,11 +41,11 @@ final class TranscriptProjectorTest extends TestCase
 
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber());
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
-        $dispatcher->addSubscriber(new ModelNotificationProjectionSubscriber());
+        $dispatcher->addSubscriber(new ModelNotificationProjectionSubscriber(\Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer()));
 
         $this->projector = new TranscriptProjector($dispatcher, $state);
         $this->seq = 0;
@@ -1170,8 +1174,8 @@ final class TranscriptProjectorTest extends TestCase
             'subagent_progress' => [
                 'mode' => 'single',
                 'status' => 'running',
-                'agent' => 'scout',
-                'task_preview' => 'Inspect resume path',
+                'agent_name' => 'scout', 'artifact_id' => 'agent_abc',
+                'task_summary' => 'Inspect resume path', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium',
             ],
         ]);
         $this->accept('tool_execution.completed', [
@@ -1183,7 +1187,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertStringContainsString('HANDOFF: resume uses shared applier', $block->text);
         $this->assertFalse($block->streaming);
         $this->assertTrue($block->meta['subagent_final'] ?? false);
-        $this->assertIsArray($block->meta['subagent_progress'] ?? null);
+        $this->assertInstanceOf(SubagentProgressSnapshotInterface::class, $block->meta['subagent_progress'] ?? null);
     }
 
     public function testToolExecutionEmptyResultPreservesProgressText(): void
@@ -2034,6 +2038,28 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame('Free-standing informational nudge', $blocks[1]->text);
     }
 
+    public function testAcceptsTypedRuntimeEventWithoutArrayRoundTrip(): void
+    {
+        $event = new RuntimeEvent(
+            type: 'user.message_submitted',
+            runId: self::RUN_ID,
+            seq: 7,
+            payload: [
+                'message_id' => 'typed-1',
+                'text' => 'typed projector path',
+            ],
+        );
+
+        $this->projector->accept($event);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks);
+        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
+        $this->assertSame('typed projector path', $blocks[0]->text);
+        // Projector-local ordering seq is independent of RuntimeEvent.seq.
+        $this->assertSame(0, $blocks[0]->seq);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /**
@@ -2055,20 +2081,17 @@ final class TranscriptProjectorTest extends TestCase
     }
 
     /**
-     * Build a RuntimeEvent-shaped array.
+     * Build a typed RuntimeEvent for projector acceptance.
      *
      * @param array<string, mixed> $payload
-     *
-     * @return array{type: string, runId: string, seq: int, payload: array<string, mixed>, v: int}
      */
-    private function event(string $type, array $payload = [], string $runId = self::RUN_ID): array
+    private function event(string $type, array $payload = [], string $runId = self::RUN_ID): RuntimeEvent
     {
-        return [
-            'type' => $type,
-            'runId' => $runId,
-            'seq' => $this->seq++,
-            'payload' => $payload,
-            'v' => 1,
-        ];
+        return new RuntimeEvent(
+            type: $type,
+            runId: $runId,
+            seq: $this->seq++,
+            payload: $payload,
+        );
     }
 }

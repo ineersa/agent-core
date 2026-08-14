@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
@@ -124,7 +125,7 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
     private function runOneTick(TuiSessionState $state, ChatScreen $screen, SubagentLivePickerController $picker): void
     {
         $poller = new RuntimeEventPoller(
-            new TuiRuntimeEventApplier(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState())),
+            new TuiRuntimeEventApplier(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), SubagentProgressSerializerTestSupport::denormalizer()),
             new NullLogger(),
             new RuntimeExceptionBoundary(new EventDispatcher()),
             $this->createStub(SessionTranscriptProviderInterface::class),
@@ -134,10 +135,7 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
         $listener = $listenerRef->newInstanceWithoutConstructor();
         $listenerRef->getProperty('subagentLivePickerController')->setValue($listener, $picker);
         $listenerRef->getProperty('poller')->setValue($listener, $poller);
-        $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, new SubagentLiveChildViewPoller(
-            new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-            new NullLogger(),
-        ));
+        $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()));
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
         $listenerRef->getProperty('questionController')->setValue($listener, (new \ReflectionClass(QuestionController::class))->newInstanceWithoutConstructor());
         $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Result\ToolCall;
@@ -98,29 +99,21 @@ final readonly class AgentMessageNormalizer
         );
     }
 
-    public function toolMessage(ToolCallResult $result): AgentMessage
+    /**
+     * @param list<ModelNotificationDTO> $modelNotifications typed notifications already
+     *                                                       decoded at the ToolCallResult details boundary
+     */
+    public function toolMessage(ToolCallResult $result, array $modelNotifications = []): AgentMessage
     {
-        // Check for model_notifications with delivery=tool_result_replace.
-        // When present, the model-facing tool content is the exact
-        // notification text — not the raw/full output and not a JSON
-        // envelope.  The notification text is identical to what appears
-        // in the model_notification event for TUI projection.
-        $notifications = \is_array($result->result['details']['model_notifications'] ?? null)
-            ? $result->result['details']['model_notifications']
-            : null;
-
+        // When a typed notification with delivery=tool_result_replace is present,
+        // the model-facing tool content is that notification text — not the raw/full
+        // output and not a JSON envelope. First matching typed row wins; DTO guarantees
+        // nonblank text + toolCallId for this delivery.
         $notificationText = null;
-        if (null !== $notifications) {
-            foreach ($notifications as $notif) {
-                if (!\is_array($notif)) {
-                    continue;
-                }
-                if (($notif['delivery'] ?? null) === 'tool_result_replace') {
-                    $notificationText = \is_string($notif['text'] ?? null) && '' !== $notif['text']
-                        ? $notif['text']
-                        : null;
-                    break;
-                }
+        foreach ($modelNotifications as $notif) {
+            if ('tool_result_replace' === $notif->delivery) {
+                $notificationText = $notif->text;
+                break;
             }
         }
 
@@ -144,12 +137,7 @@ final readonly class AgentMessageNormalizer
                 $text = \is_string($errorMessage) ? $errorMessage : 'Tool error';
             }
 
-            // If still empty, produce a compact label so the model knows what
-            // happened.  Do NOT JSON-encode the full ToolCallResult with
-            // details.raw_result — that duplication inflates model-facing text
-            // and triggers false late-hook capping.  The raw_result lives on
-            // the AgentMessage details for persistence but is not sent as
-            // provider text.
+            // If still empty, produce a compact label so the model knows what happened.
             if ('' === $text) {
                 $toolLabel = \is_string($result->result['tool_name'] ?? null) && '' !== $result->result['tool_name']
                     ? $result->result['tool_name']

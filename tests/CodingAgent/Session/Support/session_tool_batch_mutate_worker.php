@@ -59,7 +59,8 @@ $paths = new class($base) implements ToolBatchRunStoragePathsInterface {
     }
 };
 
-$store = new SessionToolBatchStore($paths, new LockFactory(new FlockStore()), new NullLogger());
+[$serializer, $validator] = Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::create();
+$store = new SessionToolBatchStore($paths, new LockFactory(new FlockStore()), new NullLogger(), $serializer, $validator);
 
 try {
     $store->mutate('run-par', 1, 'step-1', static function (?ToolBatchStateDTO $current) use ($callId): ToolBatchStoreMutation {

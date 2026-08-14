@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -45,9 +46,6 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
 
         if (ChildRunBatchExecutionModeEnum::Single === $batch->executionMode) {
             $payload = $this->snapshotFactory->buildSingleForcedPayload($batch, $kind);
-            if (null === $payload) {
-                return false;
-            }
         } else {
             if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
                 return false;
@@ -75,10 +73,7 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
             && $this->markDeliveredRevision($batch);
     }
 
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function appendProgress(DeferredSubagentBatchProjectionDTO $batch, array $payload, string $failureEventType): bool
+    private function appendProgress(DeferredSubagentBatchProjectionDTO $batch, SubagentProgressSnapshotInterface $payload, string $failureEventType): bool
     {
         try {
             $this->progressEventAppender->append(

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
@@ -16,6 +17,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
@@ -77,11 +79,11 @@ final class TuiModelInteractionVirtualTest extends TestCase
 
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber());
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
-        $dispatcher->addSubscriber(new ModelNotificationProjectionSubscriber());
+        $dispatcher->addSubscriber(new ModelNotificationProjectionSubscriber(\Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer()));
 
         return new TranscriptProjector($dispatcher, $state);
     }
@@ -91,12 +93,12 @@ final class TuiModelInteractionVirtualTest extends TestCase
         $seq = 0;
         $accept = static function (string $type, array $payload) use ($projector, &$seq): void {
             ++$seq;
-            $projector->accept([
-                'type' => $type,
-                'runId' => self::RUN_ID,
-                'seq' => $seq,
-                'payload' => $payload,
-            ]);
+            $projector->accept(new RuntimeEvent(
+                type: $type,
+                runId: self::RUN_ID,
+                seq: $seq,
+                payload: $payload,
+            ));
         };
 
         $accept('assistant.text_started', [

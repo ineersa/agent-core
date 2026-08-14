@@ -4,24 +4,23 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Support\Mcp;
 
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Ineersa\CodingAgent\Mcp\Config\McpServerAvailabilityEnum;
 use Ineersa\CodingAgent\Mcp\Config\McpServerDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Config\McpTransportTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Symfony\Component\PropertyAccess\PropertyAccess;
-use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
-use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
-use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
-use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
-use Symfony\Component\Validator\Validation;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Builds real McpConfigLoader instances for tests (Serializer + Validator, no kernel).
+ *
+ * Uses AttributeSerializerValidatorTestFactory so MetadataAwareNameConverter +
+ * camel_case_to_snake_case match production (public MCP camelCase keys stay via SerializedName).
  */
 final class TestMcpConfigLoaderFactory
 {
@@ -54,35 +53,14 @@ final class TestMcpConfigLoaderFactory
 
     public static function create(SettingsPathResolver $pathResolver, string $projectCwd): McpConfigLoader
     {
+        /** @var array{0: SerializerInterface&NormalizerInterface&DenormalizerInterface, 1: ValidatorInterface} $stack */
+        $stack = AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
+
         return new McpConfigLoader(
             $pathResolver,
             $projectCwd,
-            self::serializer(),
-            self::validator(),
+            $stack[0],
+            $stack[1],
         );
-    }
-
-    public static function serializer(): Serializer
-    {
-        $reflectionExtractor = new ReflectionExtractor();
-        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
-        $objectNormalizer = new ObjectNormalizer(
-            classMetadataFactory: $classMetadataFactory,
-            nameConverter: null,
-            propertyAccessor: PropertyAccess::createPropertyAccessor(),
-            propertyTypeExtractor: $reflectionExtractor,
-        );
-
-        return new Serializer(
-            normalizers: [new BackedEnumNormalizer(), $objectNormalizer],
-            encoders: [],
-        );
-    }
-
-    public static function validator(): ValidatorInterface
-    {
-        return Validation::createValidatorBuilder()
-            ->enableAttributeMapping()
-            ->getValidator();
     }
 }

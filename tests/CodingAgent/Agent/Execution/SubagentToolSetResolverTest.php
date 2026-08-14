@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
@@ -30,7 +31,7 @@ final class SubagentToolSetResolverTest extends TestCase
 
         $eventStore = $this->createStub(EventStoreInterface::class);
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new ToolRegistry());
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
         $result = $resolver->resolve('ref');
 
         $this->assertSame(['read', 'write'], $result->toolNames);
@@ -49,7 +50,7 @@ final class SubagentToolSetResolverTest extends TestCase
             ->with('parent-run')
             ->willReturn([]); // No RunStarted event at all
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new ToolRegistry());
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'parent-run');
 
         $this->assertSame(['read', 'write'], $result->toolNames);
@@ -85,7 +86,7 @@ final class SubagentToolSetResolverTest extends TestCase
                 ),
             ]);
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new ToolRegistry());
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'child-run');
 
         $this->assertSame(['read', 'bash'], $result->toolNames);
@@ -122,7 +123,7 @@ final class SubagentToolSetResolverTest extends TestCase
                 ),
             ]);
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new ToolRegistry());
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'child-run');
 
         $this->assertSame([], $result->toolNames);
@@ -154,7 +155,7 @@ final class SubagentToolSetResolverTest extends TestCase
                 ),
             ]);
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new ToolRegistry());
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'child-run');
 
         $this->assertNotContains('subagent', $result->toolNames);
@@ -183,8 +184,8 @@ final class SubagentToolSetResolverTest extends TestCase
                         'artifact_id' => 'agent_abc123',
                         'interactive' => false,
                     ],
-                    'model' => null,
-                    'reasoning' => null,
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'medium',
                     'tools_scope' => [
                         'allowed_tools' => $allowedTools,
                         'mcp' => [

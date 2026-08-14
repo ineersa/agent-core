@@ -8,7 +8,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary;
 
 /**
- * Normalized durable child row state before parallel snapshot/report assembly (Piece 4B).
+ * Normalized durable child row state before parallel snapshot/report assembly.
  */
 final readonly class DeferredSubagentBatchChildProgressStateDTO
 {
@@ -17,7 +17,7 @@ final readonly class DeferredSubagentBatchChildProgressStateDTO
         public AgentArtifactStatusEnum $artifactStatus,
         public string $message,
         public int $turnNo,
-        public ?SubagentChildProgressSummary $enrichment,
+        public SubagentChildProgressSummary $enrichment,
     ) {
     }
 }

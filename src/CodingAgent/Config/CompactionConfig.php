@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
-
 /**
  * Compaction settings resolved from Hatfield config.
  *
@@ -35,13 +33,10 @@ final readonly class CompactionConfig
      * @param array<string, array<string, mixed>> $modelOverrides     Per-model compaction overrides (wins over provider, which wins over global)
      */
     public function __construct(
-        #[SerializedName('auto_enabled')]
         public bool $autoEnabled = self::DEFAULT_AUTO_ENABLED,
 
-        #[SerializedName('compact_after_tokens')]
         public int $compactAfterTokens = self::DEFAULT_COMPACT_AFTER_TOKENS,
 
-        #[SerializedName('keep_recent_tokens')]
         public int $keepRecentTokens = self::DEFAULT_KEEP_RECENT_TOKENS,
 
         /**
@@ -59,7 +54,6 @@ final readonly class CompactionConfig
          * When null, the session's active thinking level is used.
          * Typical values: off, minimal, low, medium, high, xhigh, max.
          */
-        #[SerializedName('thinking_level')]
         public ?string $thinkingLevel = null,
 
         /**
@@ -71,7 +65,6 @@ final readonly class CompactionConfig
          *
          * @var array<string, array<string, mixed>>
          */
-        #[SerializedName('provider_overrides')]
         public array $providerOverrides = [],
 
         /**
@@ -84,7 +77,6 @@ final readonly class CompactionConfig
          *
          * @var array<string, array<string, mixed>>
          */
-        #[SerializedName('model_overrides')]
         public array $modelOverrides = [],
     ) {
     }

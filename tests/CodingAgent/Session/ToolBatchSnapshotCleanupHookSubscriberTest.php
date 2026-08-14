@@ -20,6 +20,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -40,6 +41,7 @@ use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\PropertyInfo\PropertyInfoExtractor;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
@@ -175,10 +177,14 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         );
         $hatfield = new HatfieldSessionStore($appConfig, $entityManager);
 
+        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
+
         return new SessionToolBatchStore(
             new ParentSessionToolBatchRunStoragePaths($hatfield),
             new LockFactory(new FlockStore()),
             new NullLogger(),
+            $serializer,
+            $validator,
         );
     }
 
@@ -208,7 +214,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             new ArrayDenormalizer(),
             new ObjectNormalizer(
                 classMetadataFactory: $classMetadataFactory,
-                nameConverter: new MetadataAwareNameConverter($classMetadataFactory),
+                nameConverter: new MetadataAwareNameConverter($classMetadataFactory, new CamelCaseToSnakeCaseNameConverter()),
                 propertyTypeExtractor: new PropertyInfoExtractor([new PhpDocExtractor(), new ReflectionExtractor()]),
             ),
         ]);

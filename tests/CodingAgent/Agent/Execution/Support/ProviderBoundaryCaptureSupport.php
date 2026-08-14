@@ -66,6 +66,7 @@ final class ProviderBoundaryCaptureSupport
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         return new self($adapter, $client);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Definition;
 
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiscovery;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
 use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser;
@@ -12,13 +13,6 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\PropertyAccess\PropertyAccess;
-use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
-use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
-use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
-use Symfony\Component\Validator\Validation;
 
 /**
  * Tests for AgentDefinitionDiscovery covering discovery from user,
@@ -45,19 +39,7 @@ final class AgentDefinitionDiscoveryTest extends TestCase
         mkdir($this->homeDir, 0755, true);
         mkdir($this->cwd, 0755, true);
 
-        // Set up parser
-        $reflectionExtractor = new ReflectionExtractor();
-        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
-        $objectNormalizer = new ObjectNormalizer(
-            classMetadataFactory: $classMetadataFactory,
-            nameConverter: null,
-            propertyAccessor: PropertyAccess::createPropertyAccessor(),
-            propertyTypeExtractor: $reflectionExtractor,
-        );
-        $serializer = new Serializer(normalizers: [$objectNormalizer], encoders: []);
-        $validator = Validation::createValidatorBuilder()
-            ->enableAttributeMapping()
-            ->getValidator();
+        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
 
         $this->parser = new AgentDefinitionParser(
             frontmatterParser: new AgentFrontmatterParser(new MarkdownFrontmatterExtractor()),

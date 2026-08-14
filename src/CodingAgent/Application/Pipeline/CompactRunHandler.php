@@ -282,17 +282,8 @@ final readonly class CompactRunHandler implements RunMessageHandler
 
         $nextState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId(), status: RunStatus::Compacting);
 
-        // Serialize AgentMessage lists as array shapes for transport safety
-        // (the llm transport uses default Symfony Serializer, not PhpSerializer).
-        $serializedSummarization = array_map(
-            static fn (AgentMessage $msg): array => $msg->toArray(),
-            $summarizationMessages,
-        );
-        $serializedRetained = array_map(
-            static fn (AgentMessage $msg): array => $msg->toArray(),
-            $preparation->retainedTailMessages ?? [],
-        );
-
+        // Pass typed AgentMessage lists; llm transport Symfony Serializer
+        // denormalizes them via ArrayDenormalizer + PhpDoc list types.
         $workerRequest = new ExecuteCompactionStep(
             runId: $runId,
             turnNo: $state->turnNo,
@@ -301,8 +292,8 @@ final readonly class CompactRunHandler implements RunMessageHandler
             idempotencyKey: hash('sha256', \sprintf('%s|compaction|%d|%s', $runId, $state->turnNo, $message->stepId())),
             model: $resolvedModel ?? '',
             modelOptions: $modelOptions,
-            summarizationMessages: $serializedSummarization,
-            retainedTailMessages: $serializedRetained,
+            summarizationMessages: $summarizationMessages,
+            retainedTailMessages: $preparation->retainedTailMessages ?? [],
             messagesCompacted: $preparation->messagesCompacted,
             messagesRetained: $preparation->messagesRetained,
             firstRetainedIndex: $preparation->firstRetainedIndex,

@@ -65,6 +65,7 @@ final class LlmPlatformAdapterTest extends TestCase
             streamObserver: null,
             costCalculator: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $result = $adapter->invoke(new ModelInvocationRequest(

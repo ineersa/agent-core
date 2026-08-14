@@ -409,6 +409,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
                     eventFactory: new EventFactory(),
                     toolCallExtractor: new ToolCallExtractor(),
                     messageNormalizer: new AgentMessageNormalizer(),
+                    serializer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
                 ),
             ],
             logger: new NullLogger(),

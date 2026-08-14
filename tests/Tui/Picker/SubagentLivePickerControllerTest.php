@@ -17,11 +17,14 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Picker\PickerOverlay;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
+use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
+use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\ChildAgentExportEventsFixture;
@@ -40,6 +43,8 @@ final class SubagentLivePickerControllerTest extends TestCase
     private string $projectDir;
 
     private string $previousCwd;
+
+    private int $seedActivityMs = 1_000_000;
 
     protected function setUp(): void
     {
@@ -269,10 +274,7 @@ final class SubagentLivePickerControllerTest extends TestCase
             ->willReturn(new ChildRunTranscriptSnapshotDTO([$block], [], 4));
 
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(
-                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-                new NullLogger(),
-            ),
+            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $snapshotProvider,
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),
@@ -436,21 +438,21 @@ final class SubagentLivePickerControllerTest extends TestCase
                     'agent_name' => 'scout',
                     'artifact_id' => 'agent_scout',
                     'agent_run_id' => 'scout-run',
-                    'task_summary' => 'list docs',
+                    'task_summary' => 'list docs', 'model' => 'test/model', 'reasoning' => 'medium',
                     'model' => 'deepseek/deepseek-v4-flash',
                     'reasoning' => 'medium', ],
             ],
         );
 
         for ($i = 0; $i < 5; ++$i) {
-            $state->subagentLiveCatalog->ingestRuntimeEvent($event);
+            SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $event);
         }
 
         $this->assertCount(1, $state->subagentLiveCatalog->all());
 
         $harness = new VirtualTuiHarness(sessionId: 'parent-picker-dedupe');
         $this->seedCatalogChild($state, 'agent_fork', 'fork-run', 'running');
-        $state->subagentLiveCatalog->ingestRuntimeEvent($event);
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $event);
 
         $picker = $this->picker($harness, $state);
         $picker->open();
@@ -472,7 +474,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-child-ctx');
         $state = new TuiSessionState('picker-child-ctx');
-        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, new RuntimeEvent(
             type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             runId: 'parent-run',
             seq: 1,
@@ -486,7 +488,7 @@ final class SubagentLivePickerControllerTest extends TestCase
                     'agent_name' => 'scout',
                     'artifact_id' => 'agent_ctx',
                     'agent_run_id' => 'child-run-ctx',
-                    'task_summary' => 'Context stats',
+                    'task_summary' => 'Context stats', 'reasoning' => 'medium',
                 ], \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverrides()),
             ],
         ));
@@ -599,10 +601,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     private function picker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
     {
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(
-                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-                new NullLogger(),
-            ),
+            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),
@@ -637,26 +636,24 @@ final class SubagentLivePickerControllerTest extends TestCase
         string $agentName = 'scout',
         string $task = 'task',
     ): void {
-        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
-            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
-            runId: 'parent-run',
-            seq: 1,
-            payload: [
-                'tool_call_id' => 'tc_subagent',
-                'tool_name' => 'subagent',
-                'delta' => '',
-                'subagent_progress' => [
-                    'mode' => 'single',
-                    'status' => $status,
-                    'agent_name' => $agentName,
-                    'artifact_id' => $artifactId,
-                    'agent_run_id' => $runId,
-                    'task_summary' => $task,
-                    'model' => 'deepseek/deepseek-v4-flash',
-                    'reasoning' => 'medium',
-                ],
-            ],
-        ));
+        // Deterministic lastActivityAtMs at the test seam: restore attention+activity ordering
+        // without relying on wall-clock uniqueness between sequential seeds.
+        $catalog = $state->subagentLiveCatalog;
+        $byId = new \ReflectionProperty($catalog, 'byArtifactId');
+        /** @var array<string, SubagentLiveChildDTO> $rows */
+        $rows = $byId->getValue($catalog);
+        $rows[$artifactId] = new SubagentLiveChildDTO(
+            agentRunId: $runId,
+            artifactId: $artifactId,
+            agentName: $agentName,
+            status: SubagentLiveStatusEnum::fromProgressString($status),
+            taskSummary: $task,
+            // Descending counter so seed order matches all() lastActivityAtMs DESC.
+            lastActivityAtMs: $this->seedActivityMs--,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
+        );
+        $byId->setValue($catalog, $rows);
     }
 
     private function selectedIndex(SelectListWidget $list): int
@@ -711,10 +708,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     private function exportPicker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
     {
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(
-                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-                new NullLogger(),
-            ),
+            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->childEventsPathResolver(),
             new SessionEventsExportService(),

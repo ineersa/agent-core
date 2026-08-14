@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\SlashCommand;
@@ -117,8 +118,7 @@ final class SubagentLiveScenarioHarness
             $parentSessionId,
             $promptEditor,
             new TranscriptDisplayConfig(),
-            new TranscriptDisplayState(),
-        );
+            new TranscriptDisplayState());
 
         $registry = new SlashCommandRegistry();
         foreach (['agents-main', 'agents-live', 'tasks'] as $name) {
@@ -287,7 +287,7 @@ final class SubagentLiveScenarioHarness
         string $agentName = 'scout',
         string $taskSummary = 'Scenario task',
     ): void {
-        $this->state->subagentLiveCatalog->ingestRuntimeEvent($this->parentProgressEvent([
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($this->state->subagentLiveCatalog, $this->parentProgressEvent([
             'mode' => 'single',
             'status' => $status,
             'agent_name' => $agentName,

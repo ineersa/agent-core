@@ -8,6 +8,10 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ToolResultType;
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /**
  * Defense-in-depth LLM-bound output capping for tool-result text.
@@ -34,6 +38,7 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
 {
     public function __construct(
         private OutputCap $outputCap,
+        private NormalizerInterface&DenormalizerInterface $serializer,
     ) {
     }
 
@@ -56,13 +61,11 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
 
         // Skip messages already capped by the primary tool-result processor.
         // Detection uses structured model_notifications in details instead of text markers.
-        $alreadyCapped = $this->hasDeliveryToolResultReplace(
+        if ($this->hasDeliveryToolResultReplace(
             \is_array($message->details['model_notifications'] ?? null)
                 ? $message->details['model_notifications']
                 : null,
-        );
-
-        if ($alreadyCapped) {
+        )) {
             return $message;
         }
 
@@ -140,6 +143,13 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
             $newContent[] = $part;
         }
 
+        // Canonical tool_result_replace requires a nonblank toolCallId. Fail clearly
+        // rather than synthesizing 'none' or soft-compat IDs.
+        $toolCallId = $message->toolCallId;
+        if (null === $toolCallId || '' === trim($toolCallId)) {
+            throw new \InvalidArgumentException('OutputCapLlmTransformHook cannot emit tool_result_replace without a nonblank toolCallId on the tool-role message.');
+        }
+
         // Build a generic model notification for downstream consumers
         // (agent message history preserves exact model-facing text).
         // Stable ID from tool_call_id + cap + original content hash so repeated
@@ -147,43 +157,43 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
         // ID and do not produce duplicate TUI blocks/events.  The ID does NOT
         // include savedPath or noticeText, both of which vary per invocation.
         $notificationId = hash('sha256', implode('|', [
-            $message->toolCallId ?? 'none',
+            $toolCallId,
             'output_cap',
             (string) $capResult->cap,
             hash('sha256', $combinedText),
         ]));
 
-        $notification = [
-            'id' => $notificationId,
-            'source' => 'output_cap',
-            'kind' => 'output_capped',
-            'severity' => 'warning',
-            'delivery' => 'tool_result_replace',
-            'text' => $noticeText,
-            'metadata' => [
+        $notification = new ModelNotificationDTO(
+            id: $notificationId,
+            source: 'output_cap',
+            kind: 'output_capped',
+            severity: 'warning',
+            delivery: 'tool_result_replace',
+            text: $noticeText,
+            toolCallId: $toolCallId,
+            toolName: $message->toolName,
+            metadata: [
                 'cap' => $capResult->cap,
                 'char_count' => $capResult->charCount,
                 'token_estimate' => $capResult->tokenEstimate,
                 'saved_path' => $capResult->savedPath,
             ],
-        ];
-        if (null !== $message->toolCallId) {
-            $notification['tool_call_id'] = $message->toolCallId;
-        }
-        if (null !== $message->toolName) {
-            $notification['tool_name'] = $message->toolName;
-        }
+        );
+        /** @var array<string, mixed> $notificationArray */
+        $notificationArray = $this->serializer->normalize($notification, null, [
+            AbstractObjectNormalizer::SKIP_NULL_VALUES => true,
+        ]);
 
         // Attach the generic notification to both metadata (for the model history)
         // and details (so downstream skip detection works on re-capping).
         $metadata = $message->metadata;
-        $metadata['model_notifications'] = [$notification];
+        $metadata['model_notifications'] = [$notificationArray];
 
         $details = \is_array($message->details) ? $message->details : [];
         $existing = \is_array($details['model_notifications'] ?? null)
             ? $details['model_notifications']
             : [];
-        $existing[] = $notification;
+        $existing[] = $notificationArray;
         $details['model_notifications'] = $existing;
 
         return new AgentMessage(
@@ -213,19 +223,18 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
     /**
      * Check whether any notification in the list uses delivery=tool_result_replace.
      *
-     * @param list<array<string, mixed>>|null $notifications
+     * @param list<mixed>|array<int|string, mixed>|null $notifications
      */
     private function hasDeliveryToolResultReplace(?array $notifications): bool
     {
-        if (null === $notifications) {
+        if (null === $notifications || [] === $notifications) {
             return false;
         }
 
-        foreach ($notifications as $notif) {
-            if (!\is_array($notif)) {
-                continue;
-            }
-            if (($notif['delivery'] ?? null) === 'tool_result_replace') {
+        /** @var list<ModelNotificationDTO> $typed */
+        $typed = $this->serializer->denormalize($notifications, ModelNotificationDTO::class.'[]');
+        foreach ($typed as $notif) {
+            if ('tool_result_replace' === $notif->delivery) {
                 return true;
             }
         }

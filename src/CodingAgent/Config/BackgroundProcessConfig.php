@@ -26,10 +26,8 @@ final readonly class BackgroundProcessConfig
         #[SerializedName('retention')]
         public int $retentionSeconds = 86400,
 
-        #[SerializedName('stop_grace_seconds')]
         public int $stopGraceSeconds = 5,
 
-        #[SerializedName('log_tail_chars')]
         public int $logTailChars = 5000,
     ) {
     }

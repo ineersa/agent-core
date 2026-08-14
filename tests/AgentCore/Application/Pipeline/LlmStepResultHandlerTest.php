@@ -46,6 +46,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $state = new RunState(
@@ -115,6 +116,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $existingMessages = [
@@ -198,6 +200,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $existingMessages = [
@@ -282,6 +285,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $state = new RunState(
@@ -352,6 +356,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $existingMessages = [
@@ -442,6 +447,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             commandBus: $commandBus,
             errorClassifier: $classifier,
             agentRetryMaxAttempts: 2,
@@ -537,6 +543,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             commandBus: $commandBus,
             errorClassifier: $classifier,
             agentRetryMaxAttempts: 2,
@@ -624,6 +631,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             commandBus: $commandBus,
             errorClassifier: $classifier,
             agentRetryMaxAttempts: 2,
@@ -715,6 +723,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             toolSetResolver: $toolSetResolver,
             maxParallelism: 4,
         );
@@ -769,6 +778,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $state = new RunState(
