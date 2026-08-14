@@ -16,7 +16,7 @@ Tasks live at an **external task board directory** (separate from this code repo
 
 Code operations (branches, worktrees, PRs) still run against this code repository.
 
-- Use task_list to inspect existing tasks before starting planned work. ARCHIVE is omitted by default; pass include_archive=true or status=ARCHIVE to list archived tasks.
+- Use task_list to inspect existing tasks before starting planned work. CANCELLED and ARCHIVE are omitted by default; pass status=CANCELLED to list cancelled tasks, and include_archive=true or status=ARCHIVE to list archived tasks.
 - Use create_task when the user asks to track new follow-up work.
 - Use update_task to update task metadata or append work log entries without moving the task file.
 - Use move_task to change task status instead of moving task files manually.
