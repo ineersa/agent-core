@@ -128,15 +128,15 @@ composer update ineersa/hatfield-ext-observational-memory
 - **OM SQLite** (`.hatfield/extensions-data/observational-memory/om.sqlite`) owns
   observations, coverage, reflections, and generations. Historical compaction
   request/result tables may still exist from older migrations and are inert.
-- **Hatfield** owns canonical `events.jsonl`, model infrastructure, generic
-  `extension_agent` FIFO/worker supervision, and `/tree`. OM does **not** own a
-  private consumer or failure transport.
+- **Hatfield** owns canonical `events.jsonl`, model infrastructure, and generic
+  `extension_agent` FIFO/worker supervision. Session tree UI/command (`/tree`) is
+  **not** shipped. OM does **not** own a private consumer or failure transport.
 - **Replacement summaries** are deterministic PHP projections of current durable
   active memory. Reflector/Dropper models never author final compact text.
 - **Source refs** stay SQLite-only; compact summaries do not include footnotes.
   Model-facing compacted-memory IDs are lowercase first-12-char prefixes (same as `/om-view`);
   full SHA-256 identities remain in SQLite/generation links only.
-- **Session-global MVP:** non-branch-aware. Rewind/tree does not rewind the OM pool.
+- **Session-global MVP:** non-branch-aware. Rewind (package-local) does not rewind the OM pool.
 - **Delivery gap:** events and OM SQLite can diverge after worker loss; later turn
   boundaries advance Observer coverage asynchronously.
 

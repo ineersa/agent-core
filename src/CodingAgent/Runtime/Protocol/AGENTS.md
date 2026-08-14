@@ -11,10 +11,10 @@ Stable **runtime** event contract for TUI projection and process JSONL transport
 ## Ownership invariants
 
 - **Transient vs canonical:** stream deltas and many runtime events are TUI/JSONL-facing. Canonical session replay remains `.hatfield/sessions/<id>/events.jsonl` via `EventStoreInterface` (AgentCore `RunEvent` stream). Keep them separate.
-- **HITL vs local TUI prompts:** `human_input.*` / `approval.*` cover AgentCore `waiting_human` that pauses a run. Local TUI prompts (settings, confirmations) may share widget schema but must **not** become transcript blocks or persisted HITL `RuntimeEvent`s. HITL `source` is `agent_core`; `transcript` is true for HITL instances.
+- **HITL vs local TUI prompts:** AgentCore `waiting_human` maps to `human_input.requested` (then `human_input.answered` / related). Enum cases `approval.*` exist for the HITL family but are **currently reserved / not emitted** by the translator — live tool-approval suspensions use the human_input path with tool-call continuation metadata. Local TUI prompts (settings, confirmations) may share widget schema but must **not** become transcript blocks or persisted HITL `RuntimeEvent`s. HITL `source` is `agent_core`; `transcript` is true for HITL instances.
 - **Extension agent jobs:** `extension_agent.job_failed` is JSONL/TUI-only (`seq=0`); does **not** append canonical RunEvents and does **not** alone mark the main run failed. Emit only when job `payload.run_id` is a validated non-empty scalar; missing `run_id` → structured log only. Privacy-safe fixed message/reason fields (no raw prompts/tool dumps).
 - **Subagent progress:** tool payloads may carry structured `subagent_progress` (replaces delta-append semantics in projection). Built/appended by CodingAgent subagent progress services; projected by `ToolProjectionSubscriber` / formatters — treat as structured meta, not free-form tool text.
-- **Tool questions / bg process:** `tool_question.requested` and `bg_process.completed` are first-class runtime types (see enum); local tool-question flow is separate from AgentCore HITL approvals — see `docs/hitl-and-approvals.md`.
+- **Tool questions / bg process:** `tool_question.requested` and `bg_process.completed` are first-class runtime types (see enum); local tool-question flow is separate from AgentCore HITL approvals — see [approvals.md](../../../../docs/approvals.md) and [human-input.md](../../../../docs/human-input.md).
 
 ## Payload families (shapes only)
 
