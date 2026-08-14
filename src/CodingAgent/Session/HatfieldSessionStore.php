@@ -86,6 +86,9 @@ final class HatfieldSessionStore
         $sessionId = (string) $session->id;
 
         try {
+            // Never truncate an existing session directory (orphan recovery,
+            // concurrent create, or ID collision after catalog rebuild).
+            $this->assertSessionDirectoryAvailable($sessionId);
             $this->writeSessionFiles($sessionId, $prompt);
         } catch (\Throwable $e) {
             // Roll back the DB row — no silently inconsistent state.
@@ -355,6 +358,8 @@ final class HatfieldSessionStore
      * Write session files (state.json, events.jsonl).
      *
      * Session metadata is the DB row; no metadata.yaml is written.
+     * Callers must {@see assertSessionDirectoryAvailable()} first so an
+     * existing orphan directory is never truncated by empty placeholders.
      */
     private function writeSessionFiles(string $sessionId, string $prompt): void
     {
@@ -369,6 +374,24 @@ final class HatfieldSessionStore
 
         chmod($sessionPath.'/state.json', 0644);
         chmod($sessionPath.'/events.jsonl', 0644);
+    }
+
+    /**
+     * Fail closed when the allocated session id already has on-disk state.
+     *
+     * After state DB loss, recovered catalog rows preserve explicit numeric IDs
+     * from existing directories. A new create must never wipe those files —
+     * including malformed/unrecoverable orphans that still occupy a path.
+     */
+    private function assertSessionDirectoryAvailable(string $sessionId): void
+    {
+        $sessionPath = $this->getSessionDir($sessionId);
+
+        if (!file_exists($sessionPath) && !is_link($sessionPath)) {
+            return;
+        }
+
+        throw new \RuntimeException(\sprintf('Refusing to create session "%s": path already exists at "%s".', $sessionId, $sessionPath));
     }
 
     /**

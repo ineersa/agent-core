@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Migrations;
 
+use Ineersa\CodingAgent\Session\SessionCatalogRecoveryService;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -12,6 +13,10 @@ use Psr\Log\LoggerInterface;
  * Delegates to ApplicationMigrationExecutor which applies known migration
  * classes directly via DBAL without filesystem scanning or the Symfony
  * Doctrine Migrations console command.
+ *
+ * After schema migrations, reconciles orphan session directories into the
+ * hatfield_session catalog so existing events.jsonl streams remain resumable
+ * when state.sqlite rows were lost.
  *
  * This approach avoids:
  *   - Extracting migration files from the PHAR to a writable directory
@@ -22,6 +27,7 @@ use Psr\Log\LoggerInterface;
  * Safe for concurrent controller+consumer processes because the migration
  * executor records applied versions in the doctrine_migration_versions table.
  * Only one process executes migrations; others skip when already applied.
+ * Session catalog recovery is independently idempotent (INSERT OR IGNORE).
  */
 final class StartupDatabaseMigrator
 {
@@ -30,6 +36,7 @@ final class StartupDatabaseMigrator
     public function __construct(
         private readonly ApplicationMigrationExecutor $executor,
         private readonly MessengerTransportSchemaEnsurer $transportSchemaEnsurer,
+        private readonly SessionCatalogRecoveryService $sessionCatalogRecovery,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -49,6 +56,9 @@ final class StartupDatabaseMigrator
 
         try {
             ($this->executor)();
+            // Catalog recovery needs hatfield_session DDL from application migrations
+            // and must finish before interactive create/resume/list paths run.
+            ($this->sessionCatalogRecovery)();
             ($this->transportSchemaEnsurer)();
         } catch (\Throwable $e) {
             $this->logger->error('migration_runner.failed', [
