@@ -67,6 +67,7 @@ use function CastorTasks\assert_castor_check_llama_proxy_cache_unchanged;
 use function CastorTasks\assert_castor_check_run_no_process_leaks;
 use function CastorTasks\begin_castor_check_llama_proxy_cache_guard;
 use function CastorTasks\castor_check_lock_enabled;
+use function CastorTasks\castor_cli_executable;
 use function CastorTasks\check_llm_generation_ready;
 use function CastorTasks\cleanup_exact_qa_run_cache_roots;
 use function CastorTasks\finalize_qa_run_tui_tmux_sessions;

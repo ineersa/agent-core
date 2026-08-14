@@ -848,7 +848,9 @@ function phar_packaged_inputs(string $root): array
     $extensionApiFiles = [];
     $extensionApiRoot = $root.'/.hatfield/extensions/extension-api';
     if (is_dir($extensionApiRoot)) {
-        $extensionApiRootReal = realpath($extensionApiRoot) ?: $extensionApiRoot;
+        $extensionApiRootReal = false !== ($extensionApiRootResolved = realpath($extensionApiRoot))
+            ? $extensionApiRootResolved
+            : $extensionApiRoot;
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveCallbackFilterIterator(
                 new \RecursiveDirectoryIterator($extensionApiRoot, \FilesystemIterator::SKIP_DOTS),
@@ -861,7 +863,9 @@ function phar_packaged_inputs(string $root): array
                         return true;
                     }
                     $parent = \dirname($current->getPathname());
-                    $parentReal = realpath($parent) ?: $parent;
+                    $parentReal = false !== ($parentResolved = realpath($parent))
+                        ? $parentResolved
+                        : $parent;
 
                     return $parentReal !== $extensionApiRootReal;
                 },
