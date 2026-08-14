@@ -328,8 +328,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         );
         $this->assertSame(3, $summary->llmStepCount);
 
-        $snapshot = (new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder())->singleTerminalFromChildTurn(
-            status: 'completed',
+        $snapshot = (new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder())->singleFromChildTurn(
             agentName: 'scout',
             artifactId: 'agent_llm_steps',
             agentRunId: 'child-run-llm-steps',
@@ -337,6 +336,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             childTurnNo: $roundTrip->childTurnNo,
             elapsedMs: 1000,
             enrichment: $summary,
+            status: 'completed',
         );
         $singlePayload = SubagentProgressSerializerTestSupport::normalizer()->normalize($snapshot);
         $this->assertSame(3, $singlePayload['llm_step_count'] ?? null);

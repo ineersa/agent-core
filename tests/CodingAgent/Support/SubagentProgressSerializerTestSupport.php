@@ -43,18 +43,11 @@ final class SubagentProgressSerializerTestSupport
 
     public static function ingestCatalogEvent(SubagentLiveCatalog $catalog, RuntimeEvent $event): void
     {
-        if (!str_contains($event->type, 'tool_execution')) {
-            return;
-        }
-        if (!\array_key_exists('subagent_progress', $event->payload)) {
-            return;
-        }
-        $progress = $event->payload['subagent_progress'];
-        if (!\is_array($progress)) {
-            throw new \InvalidArgumentException('subagent_progress payload must be an array when present.');
-        }
         /** @var SubagentProgressSnapshotInterface $snapshot */
-        $snapshot = self::denormalizer()->denormalize($progress, SubagentProgressSnapshotInterface::class);
+        $snapshot = self::denormalizer()->denormalize(
+            $event->payload['subagent_progress'],
+            SubagentProgressSnapshotInterface::class,
+        );
         $catalog->ingestSnapshot($snapshot);
     }
 

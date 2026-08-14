@@ -188,7 +188,6 @@ final class TuiSessionState
     public function __construct(
         string $sessionId,
         bool $resuming = false,
-        ?SubagentLiveCatalog $subagentLiveCatalog = null,
     ) {
         $this->sessionId = $sessionId;
         $this->resuming = $resuming;
@@ -196,8 +195,7 @@ final class TuiSessionState
         $this->transcriptDisplayConfig = new TranscriptDisplayConfig();
         $this->transcriptDisplayState = new TranscriptDisplayState();
         // Catalog is typed-only; wire denorm happens in TuiRuntimeEventApplier.
-        // Tests that only seed catalog rows may omit the dependency.
-        $this->subagentLiveCatalog = $subagentLiveCatalog ?? new SubagentLiveCatalog();
+        $this->subagentLiveCatalog = new SubagentLiveCatalog();
         $this->subagentLiveView = new SubagentLiveViewState();
     }
 

@@ -17,7 +17,7 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingle
  */
 final class SubagentProgressSnapshotBuilder
 {
-    public function singleRunningFromChildTurn(
+    public function singleFromChildTurn(
         string $agentName,
         string $artifactId,
         string $agentRunId,
@@ -27,37 +27,30 @@ final class SubagentProgressSnapshotBuilder
         SubagentChildProgressSummary $enrichment,
         string $status = 'running',
     ): SubagentProgressSingleSnapshotDTO {
-        return $this->single(
+        return new SubagentProgressSingleSnapshotDTO(
+            mode: 'single',
             status: $status,
             agentName: $agentName,
             artifactId: $artifactId,
             agentRunId: $agentRunId,
             taskSummary: $taskSummary,
-            childTurnNo: $childTurnNo,
-            elapsedMs: $elapsedMs,
-            enrichment: $enrichment,
-        );
-    }
-
-    public function singleTerminalFromChildTurn(
-        string $status,
-        string $agentName,
-        string $artifactId,
-        string $agentRunId,
-        string $taskSummary,
-        int $childTurnNo,
-        int $elapsedMs,
-        SubagentChildProgressSummary $enrichment,
-    ): SubagentProgressSingleSnapshotDTO {
-        return $this->single(
-            status: $status,
-            agentName: $agentName,
-            artifactId: $artifactId,
-            agentRunId: $agentRunId,
-            taskSummary: $taskSummary,
-            childTurnNo: $childTurnNo,
-            elapsedMs: $elapsedMs,
-            enrichment: $enrichment,
+            model: $enrichment->model,
+            reasoning: $enrichment->reasoning,
+            elapsedMs: max(0, $elapsedMs),
+            turnNo: $childTurnNo,
+            toolCount: $enrichment->toolCount,
+            llmStepCount: $enrichment->llmStepCount,
+            inputTokens: $enrichment->inputTokens,
+            latestInputTokens: $enrichment->latestInputTokens,
+            outputTokens: $enrichment->outputTokens,
+            reasoningTokens: $enrichment->reasoningTokens,
+            totalTokens: $enrichment->totalTokens,
+            recentTools: $enrichment->recentTools,
+            cost: (null !== $enrichment->cost && $enrichment->cost > 0.0) ? $enrichment->cost : null,
+            contextWindow: $enrichment->contextWindow > 0 ? $enrichment->contextWindow : null,
+            artifactPath: (null !== $enrichment->artifactPath && '' !== $enrichment->artifactPath) ? $enrichment->artifactPath : null,
+            assistantExcerpt: (null !== $enrichment->assistantExcerpt && '' !== $enrichment->assistantExcerpt) ? $enrichment->assistantExcerpt : null,
+            activeTool: (null !== $enrichment->activeToolLine && '' !== $enrichment->activeToolLine) ? $enrichment->activeToolLine : null,
         );
     }
 
@@ -146,43 +139,6 @@ final class SubagentProgressSnapshotBuilder
             reasoningTokens: $aggReasoning,
             totalTokens: $aggTotal,
             cost: $hasCost && $aggCost > 0.0 ? $aggCost : null,
-        );
-    }
-
-    private function single(
-        string $status,
-        string $agentName,
-        string $artifactId,
-        string $agentRunId,
-        string $taskSummary,
-        int $childTurnNo,
-        int $elapsedMs,
-        SubagentChildProgressSummary $enrichment,
-    ): SubagentProgressSingleSnapshotDTO {
-        return new SubagentProgressSingleSnapshotDTO(
-            mode: 'single',
-            status: $status,
-            agentName: $agentName,
-            artifactId: $artifactId,
-            agentRunId: $agentRunId,
-            taskSummary: $taskSummary,
-            model: $enrichment->model,
-            reasoning: $enrichment->reasoning,
-            elapsedMs: max(0, $elapsedMs),
-            turnNo: $childTurnNo,
-            toolCount: $enrichment->toolCount,
-            llmStepCount: $enrichment->llmStepCount,
-            inputTokens: $enrichment->inputTokens,
-            latestInputTokens: $enrichment->latestInputTokens,
-            outputTokens: $enrichment->outputTokens,
-            reasoningTokens: $enrichment->reasoningTokens,
-            totalTokens: $enrichment->totalTokens,
-            recentTools: $enrichment->recentTools,
-            cost: (null !== $enrichment->cost && $enrichment->cost > 0.0) ? $enrichment->cost : null,
-            contextWindow: $enrichment->contextWindow > 0 ? $enrichment->contextWindow : null,
-            artifactPath: (null !== $enrichment->artifactPath && '' !== $enrichment->artifactPath) ? $enrichment->artifactPath : null,
-            assistantExcerpt: (null !== $enrichment->assistantExcerpt && '' !== $enrichment->assistantExcerpt) ? $enrichment->assistantExcerpt : null,
-            activeTool: (null !== $enrichment->activeToolLine && '' !== $enrichment->activeToolLine) ? $enrichment->activeToolLine : null,
         );
     }
 

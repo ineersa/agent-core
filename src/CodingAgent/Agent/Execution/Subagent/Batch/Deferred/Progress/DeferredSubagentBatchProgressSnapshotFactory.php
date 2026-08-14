@@ -63,8 +63,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
             : $this->identityOnlyEnrichment($child);
         $forcedStatus = DeferredSubagentInterruptionKindEnum::Timeout === $kind ? 'failed' : 'cancelled';
 
-        return $this->progressSnapshotBuilder->singleTerminalFromChildTurn(
-            $forcedStatus,
+        return $this->progressSnapshotBuilder->singleFromChildTurn(
             $child->agentName,
             $child->artifactId,
             $child->childRunId,
@@ -72,6 +71,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
             null !== $cp ? $cp->childTurnNo : 0,
             $this->elapsedMsSince($batch->startedAt),
             $enrichment,
+            $forcedStatus,
         );
     }
 
@@ -122,24 +122,11 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         $turnNo = null !== $cp ? $cp->childTurnNo : 0;
         $elapsed = $this->elapsedMsSince($batch->startedAt);
 
-        if (null !== $cp && $cp->childStatus->isTerminal()) {
-            return $this->progressSnapshotBuilder->singleTerminalFromChildTurn(
-                $this->mapChildProgressStatus($cp->childStatus),
-                $child->agentName,
-                $child->artifactId,
-                $child->childRunId,
-                $child->task,
-                $turnNo,
-                $elapsed,
-                $enrichment,
-            );
-        }
-
         $status = null !== $cp
             ? $this->mapChildProgressStatus($cp->childStatus)
             : 'running';
 
-        return $this->progressSnapshotBuilder->singleRunningFromChildTurn(
+        return $this->progressSnapshotBuilder->singleFromChildTurn(
             $child->agentName,
             $child->artifactId,
             $child->childRunId,

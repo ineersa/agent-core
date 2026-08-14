@@ -53,7 +53,7 @@ final class SubagentChildProgressSummaryBuilderTest extends TestCase
         $this->assertSame('bash: command="ls"', $summary->activeToolLine);
         $this->assertNotNull($summary->artifactPath);
 
-        $snapshot = (new SubagentProgressSnapshotBuilder())->singleRunningFromChildTurn(
+        $snapshot = (new SubagentProgressSnapshotBuilder())->singleFromChildTurn(
             agentName: 'scout',
             artifactId: 'agent_summary',
             agentRunId: 'child-run-1',

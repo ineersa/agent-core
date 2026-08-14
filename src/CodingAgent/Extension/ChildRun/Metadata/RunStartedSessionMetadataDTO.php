@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension\ChildRun\Metadata;
 
 /**
- * Typed session block from RunStarted metadata (payload.payload.metadata.session).
+ * Typed session block from RunStarted metadata (payload.metadata.session).
  *
  * Child launches set kind=agent_child; forks also set child_kind=fork.
  * childKind stays a string so AppExtension can own this DTO without depending

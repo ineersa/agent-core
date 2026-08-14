@@ -30,17 +30,7 @@ use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Process\Process;
-use Symfony\Component\Serializer\Encoder\JsonEncoder;
-use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
-use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
-use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
-use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
-use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
-use Symfony\Component\Validator\ValidatorBuilder;
 
 final class SessionToolBatchStoreTest extends TestCase
 {
@@ -147,11 +137,7 @@ final class SessionToolBatchStoreTest extends TestCase
         mkdir($parentDir.'/artifacts/agents/'.$artifactId, recursive: true);
 
         $pathResolver = new SessionAgentArtifactPathResolver($this->hatfieldSessionStore);
-        $serializer = new Serializer(
-            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(classMetadataFactory: new ClassMetadataFactory(new AttributeLoader()), nameConverter: new MetadataAwareNameConverter(new ClassMetadataFactory(new AttributeLoader()), new CamelCaseToSnakeCaseNameConverter()))],
-            [new JsonEncoder()],
-        );
-        $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
+        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
         $registry = new AgentArtifactRegistry($pathResolver, $serializer, $validator, new LockFactory(new FlockStore()));
 
         $entry = new AgentArtifactEntryDTO(
@@ -168,7 +154,6 @@ final class SessionToolBatchStoreTest extends TestCase
         $directory = new AgentChildRunDirectory($this->hatfieldSessionStore, $registry, new NullLogger());
         $directory->register($entry);
 
-        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
         $childStore = new SessionToolBatchStore(new ChildAwareToolBatchRunStoragePaths($this->hatfieldSessionStore, $directory, $pathResolver), new LockFactory(new FlockStore()), new NullLogger(), $serializer, $validator);
         $childStore->save($childRunId, 2, 'step-child', $this->emptyBatch(['c1']));
 
@@ -341,18 +326,12 @@ final class SessionToolBatchStoreTest extends TestCase
         }
 
         $pathResolver = new SessionAgentArtifactPathResolver($hatfield);
-        $serializer = new Serializer(
-            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(classMetadataFactory: new ClassMetadataFactory(new AttributeLoader()), nameConverter: new MetadataAwareNameConverter(new ClassMetadataFactory(new AttributeLoader()), new CamelCaseToSnakeCaseNameConverter()))],
-            [new JsonEncoder()],
-        );
-        $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
+        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
         $directory ??= new AgentChildRunDirectory(
             $hatfield,
             new AgentArtifactRegistry($pathResolver, $serializer, $validator, new LockFactory(new FlockStore())),
             new NullLogger(),
         );
-
-        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
 
         return new SessionToolBatchStore(
             new ParentSessionToolBatchRunStoragePaths($hatfield),

@@ -26,7 +26,7 @@ final class SubagentProgressSnapshotSerializerTest extends TestCase
     public function testNormalizeSingleMatchesHistoricalKeysAndOmissions(): void
     {
         $builder = new SubagentProgressSnapshotBuilder();
-        $snapshot = $builder->singleRunningFromChildTurn(
+        $snapshot = $builder->singleFromChildTurn(
             agentName: 'scout',
             artifactId: 'agent_abc',
             agentRunId: 'child-run-1',

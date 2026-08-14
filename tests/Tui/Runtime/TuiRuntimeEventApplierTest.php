@@ -27,7 +27,6 @@ use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
-use Ineersa\Tui\Runtime\SubagentLiveCatalog;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
@@ -118,10 +117,10 @@ final class TuiRuntimeEventApplierTest extends TestCase
         file_put_contents($this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl', implode('', $events));
 
         $initializer = $this->buildInitializer();
-        $resumeState = new TuiSessionState($runId, true, subagentLiveCatalog: new SubagentLiveCatalog());
+        $resumeState = new TuiSessionState($runId, true);
         $resumeBlocks = $initializer->buildInitialTranscript($resumeState);
 
-        $applierState = new TuiSessionState($runId, true, subagentLiveCatalog: new SubagentLiveCatalog());
+        $applierState = new TuiSessionState($runId, true);
         $applier = $this->buildApplier();
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
         $store = $this->buildEventStore();
@@ -155,7 +154,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
     public function testPresentMalformedSubagentProgressPropagates(): void
     {
         $applier = $this->buildApplier();
-        $state = new TuiSessionState('run-progress-bad', true, subagentLiveCatalog: new SubagentLiveCatalog());
+        $state = new TuiSessionState('run-progress-bad', true);
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('subagent_progress payload must be an array when present.');
@@ -174,7 +173,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
     public function testPresentCanonicalProgressIngestsLiveCatalog(): void
     {
         $applier = $this->buildApplier();
-        $state = new TuiSessionState('run-progress-ok', true, subagentLiveCatalog: new SubagentLiveCatalog());
+        $state = new TuiSessionState('run-progress-ok', true);
 
         $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
             type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
