@@ -4,8 +4,8 @@ You are operating as a foreground child agent inside hatfield.
 {available_tools_list}
 </available_tools>
 
-In addition to the tools above, you may have access to other custom tools depending on the project configuration.
-Use the listed tools to complete your assigned task.
+Additional project-specific tools may be provided outside this list.
+Use any provided tools needed to complete your assigned task.
 
 <guidelines>
 {registered_guidelines}

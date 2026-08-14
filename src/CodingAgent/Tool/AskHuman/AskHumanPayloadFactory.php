@@ -13,9 +13,9 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  *
  * Uses Symfony Serializer for type-safe argument denormalization and Symfony
  * Validator for upfront validation. The answer schema is always derived
- * internally from kind and choices — no raw JSON Schema is accepted as input.
- * The output payload preserves all UI metadata (header, choices, default)
- * alongside the core interrupt fields.
+ * internally (boolean for kind=confirm, enum from non-empty choices, else string).
+ * No raw JSON Schema is accepted as input. The output payload preserves UI
+ * metadata (header, choices) alongside the core interrupt fields.
  *
  * The factory is the single canonical source of payload normalization.
  * AgentCore's ToolExecutor does not fabricate ask_human payloads — it only
@@ -62,18 +62,16 @@ final class AskHumanPayloadFactory
             throw new ToolCallException(implode('; ', $messages), retryable: false);
         }
 
-        return $this->buildPayload($dto, $arguments);
+        return $this->buildPayload($dto);
     }
 
     /**
-     * @param array<string, mixed> $arguments Raw arguments (needed for default presence check)
-     *
      * @return array<string, mixed>
      */
-    private function buildPayload(AskHumanArgumentsDTO $dto, array $arguments): array
+    private function buildPayload(AskHumanArgumentsDTO $dto): array
     {
-        $prompt = $this->resolvePrompt($dto);
-        $questionId = $this->resolveQuestionId($dto, $arguments, $prompt);
+        $prompt = $dto->question;
+        $questionId = $this->generateQuestionId($dto);
         $schema = $this->resolveSchema($dto);
         $choices = $this->normalizeChoices($dto);
         $kind = $this->resolveKind($dto, $schema, $choices);
@@ -94,48 +92,26 @@ final class AskHumanPayloadFactory
             $payload['choices'] = $choices;
         }
 
-        // Use the raw arguments to detect if 'default' was provided, since
-        // the DTO's mixed type cannot distinguish null-as-value from absent.
-        if (\array_key_exists('default', $arguments)) {
-            $payload['default'] = $dto->default;
-        }
-
         return $payload;
     }
 
-    private function resolvePrompt(AskHumanArgumentsDTO $dto): string
-    {
-        if (null !== $dto->prompt && '' !== $dto->prompt) {
-            return $dto->prompt;
-        }
-
-        // Validation guarantees question is non-empty when prompt is absent.
-        return $dto->question;
-    }
-
     /**
-     * Generate a stable question_id when one is not explicitly provided.
+     * Always generate a stable output question_id from question content.
      *
-     * The hash includes prompt, kind, choices, and header so that
+     * The hash includes question, kind, choices, and header so that
      * semantically identical questions (even across retries) resolve to the
-     * same question_id. Explicit question_id always wins.
-     *
-     * @param array<string, mixed> $arguments Raw arguments
+     * same question_id. Model-supplied IDs are not accepted.
      */
-    private function resolveQuestionId(AskHumanArgumentsDTO $dto, array $arguments, string $prompt): string
+    private function generateQuestionId(AskHumanArgumentsDTO $dto): string
     {
-        if (null !== $dto->questionId && '' !== $dto->questionId) {
-            return $dto->questionId;
-        }
+        $hashInput = $dto->question;
 
-        $hashInput = $prompt;
-
-        $kind = $dto->kind ?? $dto->uiKind ?? null;
+        $kind = $dto->kind;
         if (null !== $kind) {
             $hashInput .= '/kind:'.$kind;
         }
 
-        $choices = $arguments['choices'] ?? null;
+        $choices = $dto->choices;
         if (\is_array($choices) && [] !== $choices) {
             $encoded = json_encode($choices, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
             $hashInput .= '/choices:'.(\is_string($encoded) ? $encoded : '');
@@ -149,7 +125,7 @@ final class AskHumanPayloadFactory
     }
 
     /**
-     * Resolve the answer schema from kind and choices.
+     * Resolve the answer schema from confirm kind or non-empty choices.
      *
      * The schema is always derived internally — no raw JSON Schema is
      * accepted as input to avoid LLM errors with embedded schema syntax.
@@ -158,9 +134,7 @@ final class AskHumanPayloadFactory
      */
     private function resolveSchema(AskHumanArgumentsDTO $dto): array
     {
-        $kind = $dto->kind ?? $dto->uiKind ?? null;
-
-        if ('confirm' === $kind || 'approval' === $kind) {
+        if ('confirm' === $dto->kind) {
             return ['type' => 'boolean'];
         }
 
@@ -173,16 +147,16 @@ final class AskHumanPayloadFactory
     }
 
     /**
-     * Resolve the UI kind from explicit kind/ui_kind, schema, or choices.
+     * Resolve output ui_kind: confirm when requested, choice from non-empty
+     * choices, otherwise text for free-form.
      *
      * @param array<string, mixed>                            $schema
      * @param list<array{label: string, description: string}> $choices
      */
     private function resolveKind(AskHumanArgumentsDTO $dto, array $schema, array $choices): string
     {
-        $explicit = $dto->kind ?? $dto->uiKind ?? null;
-        if (null !== $explicit && '' !== $explicit) {
-            return $explicit;
+        if ('confirm' === $dto->kind) {
+            return 'confirm';
         }
 
         if (isset($schema['type']) && 'boolean' === $schema['type']) {

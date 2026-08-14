@@ -20,7 +20,7 @@ use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
  *
  * Inherited project context (parent agents_context / AGENTS.md hierarchy) is injected as user-context, not system text.
  * Messages: system, optional agents_context, optional skills_context,
- * optional agents_definitions_context, agent_child_contract, user task.
+ * agent_child_contract, user task.
  */
 final readonly class AgentPromptBuilder
 {
@@ -42,7 +42,6 @@ final readonly class AgentPromptBuilder
         array $allowedTools,
         string $agentsMd,
         string $skillsContext = '',
-        string $agentsDefinitionsContext = '',
         ?array $allowedExtensions = null,
     ): array {
         $systemPrompt = $this->buildSystemPrompt(
@@ -57,7 +56,6 @@ final readonly class AgentPromptBuilder
             systemPrompt: $systemPrompt,
             agentsMd: $agentsMd,
             skillsContext: $skillsContext,
-            agentsDefinitionsContext: $agentsDefinitionsContext,
         );
 
         return [
@@ -103,7 +101,6 @@ final readonly class AgentPromptBuilder
         string $systemPrompt,
         string $agentsMd,
         string $skillsContext,
-        string $agentsDefinitionsContext,
     ): array {
         $messages = [];
 
@@ -136,17 +133,6 @@ final readonly class AgentPromptBuilder
                     'text' => $skillsContext,
                 ]],
                 metadata: ['source' => 'skills_context'],
-            );
-        }
-
-        if ('' !== trim($agentsDefinitionsContext)) {
-            $messages[] = new AgentMessage(
-                role: 'user-context',
-                content: [[
-                    'type' => 'text',
-                    'text' => $agentsDefinitionsContext,
-                ]],
-                metadata: ['source' => 'agents_definitions_context'],
             );
         }
 
