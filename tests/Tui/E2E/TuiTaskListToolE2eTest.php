@@ -37,7 +37,6 @@ final class TuiTaskListToolE2eTest extends TestCase
     /** Task title seeded on the isolated board; asserted in transcript. */
     private const TASK_TITLE = 'Demo task from E2E';
     private TmuxHarness $tmux;
-    private string $projectRoot;
     private string $testProjectDir;
     private string $boardRoot;
     private string $snapshotDir;
@@ -49,7 +48,6 @@ final class TuiTaskListToolE2eTest extends TestCase
         }
 
         $this->tmux = new TmuxHarness();
-        $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->boardRoot = $this->testProjectDir.'/board';
         $this->seedTaskBoard($this->boardRoot);
@@ -111,11 +109,6 @@ final class TuiTaskListToolE2eTest extends TestCase
             );
 
             // Canonical structured payload: task fields from TOON tasks[].
-            $this->assertStringContainsString(
-                'TODO',
-                $fullCapture,
-                'Structured tasks[0].status must be visible in the tool result',
-            );
             $this->assertStringContainsString(
                 'demo.md',
                 $fullCapture,

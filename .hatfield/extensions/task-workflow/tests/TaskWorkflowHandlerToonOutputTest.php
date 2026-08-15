@@ -89,7 +89,6 @@ final class TaskWorkflowHandlerToonOutputTest extends TestCase
 
         $decoded = $this->assertTopLevelToon($result);
         $this->assertStringContainsString('Created TODO/2026-01-01-created-via-toon-test.md', (string) $decoded['message']);
-        $this->assertArrayHasKey('message', $decoded);
         $this->assertSame(
             $this->boardRoot.'/TODO/2026-01-01-created-via-toon-test.md',
             $decoded['path'] ?? null,
@@ -113,7 +112,6 @@ final class TaskWorkflowHandlerToonOutputTest extends TestCase
 
         $decoded = $this->assertTopLevelToon($result);
         $this->assertSame('No updates to apply (no fields provided).', $decoded['message'] ?? null);
-        $this->assertArrayHasKey('message', $decoded);
         $this->assertIsArray($decoded['task'] ?? null);
         $this->assertSame('TODO', $decoded['task']['status'] ?? null);
         $this->assertSame('noop.md', $decoded['task']['file'] ?? null);
