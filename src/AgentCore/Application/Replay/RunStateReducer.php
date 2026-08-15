@@ -37,43 +37,16 @@ final readonly class RunStateReducer
             $state = $this->applyEvent($state, $event, $messages, $pendingToolCalls);
 
             // Advance lastSeq to the current event's sequence number.
-            $state = new RunState(
-                runId: $state->runId,
-                status: $state->status,
-                version: $state->version,
-                turnNo: $state->turnNo,
-                lastSeq: $event->seq,
-                isStreaming: $state->isStreaming,
-                streamingMessage: $state->streamingMessage,
-                pendingToolCalls: $state->pendingToolCalls,
-                errorMessage: $state->errorMessage,
-                messages: $state->messages,
-                activeStepId: $state->activeStepId,
-                retryableFailure: $state->retryableFailure,
-                retryAttempts: $state->retryAttempts,
-                pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                model: $state->model,
-            );
+            $state = $state->with(['lastSeq' => $event->seq]);
         }
 
         // Copy mutable collections back into a new RunState with final values.
-        return new RunState(
-            runId: $state->runId,
-            status: $state->status,
-            version: $state->version,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq,
-            isStreaming: false,
-            streamingMessage: null,
-            pendingToolCalls: $pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: $state->retryableFailure,
-            retryAttempts: $state->retryAttempts,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        return $state->with([
+            'isStreaming' => false,
+            'streamingMessage' => null,
+            'pendingToolCalls' => $pendingToolCalls,
+            'messages' => $messages,
+        ]);
     }
 
     /**
@@ -190,23 +163,7 @@ final readonly class RunStateReducer
             return $state;
         }
 
-        return new RunState(
-            runId: $state->runId,
-            status: $state->status,
-            version: $state->version,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $state->messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: $state->retryableFailure,
-            retryAttempts: $state->retryAttempts,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $model,
-        );
+        return $state->with(['model' => $model]);
     }
 
     /**
@@ -217,23 +174,13 @@ final readonly class RunStateReducer
         $turnNo = \is_int($payload['turn_no'] ?? null) ? $payload['turn_no'] : $state->turnNo;
         $stepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : $state->activeStepId;
 
-        return new RunState(
-            runId: $state->runId,
-            status: RunStatus::Running,
-            version: $state->version,
-            turnNo: $turnNo,
-            lastSeq: $state->lastSeq,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: null,
-            messages: $state->messages,
-            activeStepId: $stepId,
-            retryableFailure: false,
-            retryAttempts: $state->retryAttempts,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        return $state->with([
+            'status' => RunStatus::Running,
+            'turnNo' => $turnNo,
+            'errorMessage' => null,
+            'activeStepId' => $stepId,
+            'retryableFailure' => false,
+        ]);
     }
 
     /**
@@ -254,22 +201,11 @@ final readonly class RunStateReducer
                 }
             }
 
-            return new RunState(
-                runId: $state->runId,
-                status: RunStatus::Running,
-                version: $state->version,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq,
-                isStreaming: $state->isStreaming,
-                streamingMessage: $state->streamingMessage,
-                pendingToolCalls: $state->pendingToolCalls,
-                errorMessage: null,
-                messages: $state->messages,
-                activeStepId: $state->activeStepId,
-                retryableFailure: false,
-                pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                model: $state->model,
-            );
+            return $state->with([
+                'status' => RunStatus::Running,
+                'errorMessage' => null,
+                'retryableFailure' => false,
+            ]);
         }
 
         // human_response: clear only the active matching request.
@@ -298,44 +234,25 @@ final readonly class RunStateReducer
 
             // Intermediate RunState.messages stay stale; final replay() copies the
             // by-ref $messages accumulator (ModelTurn may have appended above).
-            return new RunState(
-                runId: $state->runId,
-                status: [] !== $remaining ? RunStatus::WaitingHuman : RunStatus::Running,
-                version: $state->version,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq,
-                isStreaming: $state->isStreaming,
-                streamingMessage: $state->streamingMessage,
-                pendingToolCalls: $state->pendingToolCalls,
-                errorMessage: null,
-                messages: $state->messages,
-                activeStepId: $state->activeStepId,
-                retryableFailure: false,
-                pendingHumanInputRequests: $remaining,
-                model: $state->model,
-            );
+            return $state->with([
+                'status' => [] !== $remaining ? RunStatus::WaitingHuman : RunStatus::Running,
+                'errorMessage' => null,
+                'retryableFailure' => false,
+                'retryAttempts' => 0,
+                'pendingHumanInputRequests' => $remaining,
+            ]);
         }
 
         // cancel: transition to Cancelling
         if ('cancel' === $kind) {
             $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
 
-            return new RunState(
-                runId: $state->runId,
-                status: RunStatus::Cancelling,
-                version: $state->version,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq,
-                isStreaming: $state->isStreaming,
-                streamingMessage: $state->streamingMessage,
-                pendingToolCalls: $state->pendingToolCalls,
-                errorMessage: $reason,
-                messages: $state->messages,
-                activeStepId: $state->activeStepId,
-                retryableFailure: false,
-                pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                model: $state->model,
-            );
+            return $state->with([
+                'status' => RunStatus::Cancelling,
+                'errorMessage' => $reason,
+                'retryableFailure' => false,
+                'retryAttempts' => 0,
+            ]);
         }
 
         // continue: restore to Running from WaitingHuman/Failed
@@ -344,23 +261,12 @@ final readonly class RunStateReducer
             $isAutoRetry = true === ($cmdPayload['auto_retry'] ?? false);
             $retryAttempts = $isAutoRetry ? $state->retryAttempts : 0;
 
-            return new RunState(
-                runId: $state->runId,
-                status: RunStatus::Running,
-                version: $state->version,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq,
-                isStreaming: $state->isStreaming,
-                streamingMessage: $state->streamingMessage,
-                pendingToolCalls: $state->pendingToolCalls,
-                errorMessage: null,
-                messages: $state->messages,
-                activeStepId: $state->activeStepId,
-                retryableFailure: false,
-                retryAttempts: $retryAttempts,
-                pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                model: $state->model,
-            );
+            return $state->with([
+                'status' => RunStatus::Running,
+                'errorMessage' => null,
+                'retryableFailure' => false,
+                'retryAttempts' => $retryAttempts,
+            ]);
         }
 
         return $state;
@@ -373,22 +279,7 @@ final readonly class RunStateReducer
     {
         $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
 
-        return new RunState(
-            runId: $state->runId,
-            status: $state->status,
-            version: $state->version,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $reason ?? $state->errorMessage,
-            messages: $state->messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: $state->retryableFailure,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        return $state->with(['errorMessage' => $reason ?? $state->errorMessage]);
     }
 
     /**
@@ -426,23 +317,12 @@ final readonly class RunStateReducer
             }
         }
 
-        return new RunState(
-            runId: $state->runId,
-            status: RunStatus::Running,
-            version: $state->version,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: null,
-            messages: $state->messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: false,
-            retryAttempts: 0,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        return $state->with([
+            'status' => RunStatus::Running,
+            'errorMessage' => null,
+            'retryableFailure' => false,
+            'retryAttempts' => 0,
+        ]);
     }
 
     /**
@@ -457,23 +337,15 @@ final readonly class RunStateReducer
         $retryable = \is_bool($payload['retryable'] ?? null) ? $payload['retryable'] : false;
         $retryAttempt = isset($payload['retry_attempt']) && is_numeric($payload['retry_attempt']) ? (int) $payload['retry_attempt'] : 0;
 
-        return new RunState(
-            runId: $state->runId,
-            status: RunStatus::Failed,
-            version: $state->version,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq,
-            isStreaming: false,
-            streamingMessage: null,
-            pendingToolCalls: [],
-            errorMessage: $errorMessage,
-            messages: $state->messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: $retryable,
-            retryAttempts: $retryAttempt,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        return $state->with([
+            'status' => RunStatus::Failed,
+            'isStreaming' => false,
+            'streamingMessage' => null,
+            'pendingToolCalls' => [],
+            'errorMessage' => $errorMessage,
+            'retryableFailure' => $retryable,
+            'retryAttempts' => $retryAttempt,
+        ]);
     }
 
     /**
@@ -566,22 +438,10 @@ final readonly class RunStateReducer
             $request = PendingHumanInputRequestDTO::modelTurnFromInterruptPayload($payload);
         }
 
-        return new RunState(
-            runId: $state->runId,
-            status: RunStatus::WaitingHuman,
-            version: $state->version,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $state->messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: $state->retryableFailure,
-            pendingHumanInputRequests: [...$state->pendingHumanInputRequests, $request],
-            model: $state->model,
-        );
+        return $state->with([
+            'status' => RunStatus::WaitingHuman,
+            'pendingHumanInputRequests' => [...$state->pendingHumanInputRequests, $request],
+        ]);
     }
 
     /**
@@ -597,22 +457,15 @@ final readonly class RunStateReducer
             default => RunStatus::Completed,
         };
 
-        return new RunState(
-            runId: $state->runId,
-            status: $status,
-            version: $state->version,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq,
-            isStreaming: false,
-            streamingMessage: null,
-            pendingToolCalls: [],
-            errorMessage: $state->errorMessage,
-            messages: $state->messages,
-            activeStepId: null,
-            retryableFailure: false,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        return $state->with([
+            'status' => $status,
+            'isStreaming' => false,
+            'streamingMessage' => null,
+            'pendingToolCalls' => [],
+            'activeStepId' => null,
+            'retryableFailure' => false,
+            'retryAttempts' => 0,
+        ]);
     }
 
     /**
@@ -634,22 +487,11 @@ final readonly class RunStateReducer
     {
         $stepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : $state->activeStepId;
 
-        return new RunState(
-            runId: $state->runId,
-            status: RunStatus::Compacting,
-            version: $state->version,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $state->messages,
-            activeStepId: $stepId,
-            retryableFailure: $state->retryableFailure,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        return $state->with([
+            'status' => RunStatus::Compacting,
+            'activeStepId' => $stepId,
+            'retryAttempts' => 0,
+        ]);
     }
 
     /**
@@ -693,22 +535,11 @@ final readonly class RunStateReducer
         $continueAfterCompaction = (bool) ($payload['continue_after_compaction'] ?? false);
         $finalStatus = $continueAfterCompaction ? RunStatus::Running : RunStatus::Completed;
 
-        return new RunState(
-            runId: $state->runId,
-            status: $finalStatus,
-            version: $state->version,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $state->messages,
-            activeStepId: null,
-            retryableFailure: $state->retryableFailure,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        return $state->with([
+            'status' => $finalStatus,
+            'activeStepId' => null,
+            'retryAttempts' => 0,
+        ]);
     }
 
     /**
@@ -744,22 +575,7 @@ final readonly class RunStateReducer
         // They happen before the worker is dispatched — preserve activeStepId
         // and prior status (no Compacting transition occurred in live handler).
         if (null === $payloadStepId) {
-            return new RunState(
-                runId: $state->runId,
-                status: $state->status,
-                version: $state->version,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq,
-                isStreaming: $state->isStreaming,
-                streamingMessage: $state->streamingMessage,
-                pendingToolCalls: $state->pendingToolCalls,
-                errorMessage: $state->errorMessage,
-                messages: $state->messages,
-                activeStepId: $state->activeStepId,
-                retryableFailure: $state->retryableFailure,
-                pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                model: $state->model,
-            );
+            return $state->with(['retryAttempts' => 0]);
         }
 
         // Resolve Compacting status: the terminal failure event ends the
@@ -780,44 +596,21 @@ final readonly class RunStateReducer
         // Step_id matches AND not stale → clear the step (compaction
         // lifecycle complete).  Resolve Compacting if applicable.
         if ($isTerminal) {
-            return new RunState(
-                runId: $state->runId,
-                status: $resolveCompacting ?? $state->status,
-                version: $state->version,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq,
-                isStreaming: $state->isStreaming,
-                streamingMessage: $state->streamingMessage,
-                pendingToolCalls: $state->pendingToolCalls,
-                errorMessage: $state->errorMessage,
-                messages: $state->messages,
-                activeStepId: null,
-                retryableFailure: $state->retryableFailure,
-                pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                model: $state->model,
-            );
+            return $state->with([
+                'status' => $resolveCompacting ?? $state->status,
+                'activeStepId' => null,
+                'retryAttempts' => 0,
+            ]);
         }
 
         // Step_id mismatch OR stale_result: preserve activeStepId.
         // Resolve Compacting to Running if stuck (stale or crossed step
         // arrived while a newer compaction may be in flight).  The newer
         // compaction's own started event will set Compacting again.
-        return new RunState(
-            runId: $state->runId,
-            status: $resolveCompacting ?? $state->status,
-            version: $state->version,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $state->messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: $state->retryableFailure,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        return $state->with([
+            'status' => $resolveCompacting ?? $state->status,
+            'retryAttempts' => 0,
+        ]);
     }
 
     private function applyNoMutation(RunEvent $event, RunState $state): RunState

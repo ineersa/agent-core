@@ -201,7 +201,7 @@ final readonly class CommandMailboxPolicy
         }
 
         return new CommandApplicationResult(
-            $this->copyState($state, ['messages' => $messages]),
+            $state->with(['messages' => $messages]),
             $eventSpecs,
             $shouldContinue,
             $effects,
@@ -285,36 +285,6 @@ final readonly class CommandMailboxPolicy
         $lastMessage = $state->messages[\count($state->messages) - 1] ?? null;
 
         return $lastMessage instanceof AgentMessage ? $lastMessage->role : null;
-    }
-
-    /**
-     * @param array<string, mixed> $overrides
-     */
-    private function copyState(RunState $state, array $overrides = []): RunState
-    {
-        return new RunState(
-            runId: $overrides['runId'] ?? $state->runId,
-            status: $overrides['status'] ?? $state->status,
-            version: $overrides['version'] ?? $state->version,
-            turnNo: $overrides['turnNo'] ?? $state->turnNo,
-            lastSeq: $overrides['lastSeq'] ?? $state->lastSeq,
-            isStreaming: $overrides['isStreaming'] ?? $state->isStreaming,
-            streamingMessage: \array_key_exists('streamingMessage', $overrides)
-                ? $overrides['streamingMessage']
-                : $state->streamingMessage,
-            pendingToolCalls: $overrides['pendingToolCalls'] ?? $state->pendingToolCalls,
-            errorMessage: \array_key_exists('errorMessage', $overrides)
-                ? $overrides['errorMessage']
-                : $state->errorMessage,
-            messages: $overrides['messages'] ?? $state->messages,
-            activeStepId: \array_key_exists('activeStepId', $overrides)
-                ? $overrides['activeStepId']
-                : $state->activeStepId,
-            retryableFailure: $overrides['retryableFailure'] ?? $state->retryableFailure,
-            retryAttempts: $overrides['retryAttempts'] ?? $state->retryAttempts,
-            pendingHumanInputRequests: $overrides['pendingHumanInputRequests'] ?? $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
     }
 
     /**

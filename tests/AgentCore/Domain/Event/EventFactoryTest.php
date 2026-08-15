@@ -86,6 +86,7 @@ final class EventFactoryTest extends TestCase
             ->withErrorMessage('prev error')
             ->withActiveStepId('step-99')
             ->withRetryableFailure(true)
+            ->withRetryAttempts(4)
             ->build();
 
         $factory = new EventFactory();
@@ -103,6 +104,7 @@ final class EventFactoryTest extends TestCase
         $this->assertSame([], $newState->messages);                           // unchanged (was empty)
         $this->assertSame('step-99', $newState->activeStepId);                // unchanged
         $this->assertTrue($newState->retryableFailure);                        // unchanged
+        $this->assertSame(4, $newState->retryAttempts);                        // unchanged: stale-result/version bump must not reset the retry counter
     }
 
     public function testIncrementStateVersionWithZeroEventCount(): void
