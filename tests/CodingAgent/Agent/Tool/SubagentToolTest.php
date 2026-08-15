@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 use Ineersa\CodingAgent\Agent\Tool\SubagentToolDefinitionProvider;
 use Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use PHPUnit\Framework\Attributes\CoversClass;
 
 #[CoversClass(SubagentToolDefinitionProvider::class)]
@@ -24,8 +25,10 @@ final class SubagentToolTest extends IsolatedKernelTestCase
         $def = $tool->definition();
 
         $this->assertSame('subagent', $def->name);
-        $this->assertArrayHasKey('properties', $def->parametersJsonSchema);
-        $this->assertSame(4, $def->parametersJsonSchema['properties']['tasks']['maxItems']);
+        // Typed DTO tool: schema is generated natively from SubagentArgumentsDTO.
+        // The settings-derived tasks maxItems bound is a runtime check in
+        // SubagentToolHandler (see TODO in SubagentArgumentsDTO).
+        $this->assertNull($def->parametersJsonSchema);
         $this->assertStringContainsString('4', $def->description);
     }
 
@@ -41,11 +44,14 @@ final class SubagentToolTest extends IsolatedKernelTestCase
     public function testSchemaRejectsUnknownConcurrencyAndBackgroundProperties(): void
     {
         $tool = self::getContainer()->get(SubagentToolDefinitionProvider::class);
-        $schema = $tool->definition()->parametersJsonSchema;
+        $this->assertNull($tool->definition()->parametersJsonSchema);
 
-        $this->assertFalse($schema['additionalProperties']);
-        $this->assertArrayNotHasKey('concurrency', $schema['properties']);
-        $this->assertArrayNotHasKey('background', $schema['properties']);
+        $schema = NativeToolSchemaProbe::for($tool);
+        $args = $schema['properties']['arguments'];
+
+        $this->assertFalse($args['additionalProperties']);
+        $this->assertArrayNotHasKey('concurrency', $args['properties']);
+        $this->assertArrayNotHasKey('background', $args['properties']);
     }
 
     public function testDtoRejectsMixedSingleAndParallelMode(): void

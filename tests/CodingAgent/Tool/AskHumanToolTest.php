@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
 use Ineersa\CodingAgent\Tool\AskHumanTool;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -65,36 +66,45 @@ final class AskHumanToolTest extends TestCase
     public function testDefinitionHasRequiredQuestionProperty(): void
     {
         $definition = $this->tool->definition();
-        $schema = $definition->parametersJsonSchema;
+        // Typed DTO tool: schema is generated natively from AskHumanArgumentsDTO.
+        $this->assertNull($definition->parametersJsonSchema);
+
+        $schema = NativeToolSchemaProbe::for($this->tool);
+        $args = $schema['properties']['arguments']['properties'];
 
         $this->assertSame('object', $schema['type']);
-        $this->assertArrayHasKey('question', $schema['properties']);
-        $this->assertArrayNotHasKey('prompt', $schema['properties']);
-        $this->assertContains('question', $schema['required']);
-        $this->assertArrayHasKey('additionalProperties', $schema);
-        $this->assertFalse($schema['additionalProperties']);
+        $this->assertArrayHasKey('question', $args);
+        $this->assertArrayNotHasKey('prompt', $args);
+        $this->assertContains('question', $schema['properties']['arguments']['required']);
+        $this->assertFalse($schema['properties']['arguments']['additionalProperties']);
     }
 
     public function testDefinitionSchemaHasNoSchemaProperty(): void
     {
         $definition = $this->tool->definition();
-        $properties = $definition->parametersJsonSchema['properties'];
+        $this->assertNull($definition->parametersJsonSchema);
 
-        $this->assertArrayNotHasKey('schema', $properties);
-        $this->assertArrayHasKey('kind', $properties);
-        $this->assertSame(['confirm'], $properties['kind']['enum']);
-        $this->assertArrayNotHasKey('ui_kind', $properties);
-        $this->assertArrayHasKey('choices', $properties);
-        $this->assertArrayNotHasKey('default', $properties);
-        $this->assertArrayNotHasKey('question_id', $properties);
-        $this->assertArrayHasKey('header', $properties);
-        $this->assertArrayNotHasKey('allow_other', $properties);
+        $schema = NativeToolSchemaProbe::for($this->tool);
+        $args = $schema['properties']['arguments']['properties'];
+
+        $this->assertArrayNotHasKey('schema', $args);
+        $this->assertArrayHasKey('kind', $args);
+        $this->assertSame(['confirm'], $args['kind']['enum']);
+        $this->assertArrayNotHasKey('ui_kind', $args);
+        $this->assertArrayHasKey('choices', $args);
+        $this->assertArrayNotHasKey('default', $args);
+        $this->assertArrayNotHasKey('question_id', $args);
+        $this->assertArrayHasKey('header', $args);
+        $this->assertArrayNotHasKey('allow_other', $args);
     }
 
     public function testDefinitionChoicesItemsIsStringOnly(): void
     {
         $definition = $this->tool->definition();
-        $items = $definition->parametersJsonSchema['properties']['choices']['items'];
+        $this->assertNull($definition->parametersJsonSchema);
+
+        $schema = NativeToolSchemaProbe::for($this->tool);
+        $items = $schema['properties']['arguments']['properties']['choices']['items'];
 
         $this->assertSame(['type' => 'string'], $items);
     }

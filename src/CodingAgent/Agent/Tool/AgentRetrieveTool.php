@@ -9,17 +9,22 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRetrievalService;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
-use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
+use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * Model-visible `agent_retrieve` tool for parent-scoped subagent artifacts.
  */
-#[AsTool('agent_retrieve', 'Retrieve a completed or failed subagent artifact handoff, metadata, or bounded event/history summary from the current parent session.')]
+#[AsTool(self::NAME, self::DESCRIPTION)]
 final class AgentRetrieveTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'agent_retrieve';
+
+    /** Provider-visible description; shared with the registry definition. */
+    public const string DESCRIPTION = 'Retrieve a completed or failed subagent artifact handoff, metadata, or bounded event/history summary from the current parent session.';
+
     public function __construct(
         private readonly AgentArtifactRetrievalService $retrievalService,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
@@ -47,8 +52,8 @@ final class AgentRetrieveTool implements HatfieldToolProviderInterface
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'agent_retrieve',
-            description: 'Retrieve a completed or failed subagent artifact handoff, metadata, or bounded event/history summary from the current parent session.',
+            name: self::NAME,
+            description: self::DESCRIPTION,
             handler: $this,
             executionMode: ToolExecutionMode::Sequential,
             promptLine: 'agent_retrieve artifact_id=<id>|agent_run_id=<uuid> [mode] [limit=N] — retrieve a subagent artifact',

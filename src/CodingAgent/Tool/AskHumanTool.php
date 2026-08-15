@@ -34,9 +34,14 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  *   interrupt result. AgentCore only generically preserves `kind=interrupt`
  *   payloads from any toolbox tool result.
  */
-#[AsTool('ask_human', 'Ask the user for input, confirmation, a choice, or approval when you need their response before continuing.')]
+#[AsTool(self::NAME, self::DESCRIPTION)]
 final class AskHumanTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'ask_human';
+
+    /** Provider-visible description; shared with the registry definition. */
+    public const string DESCRIPTION = 'Ask the user for input, confirmation, a choice, or approval when you need their response before continuing.';
+
     public function __construct(
         private readonly AskHumanPayloadFactory $payloadFactory,
     ) {
@@ -61,8 +66,8 @@ final class AskHumanTool implements HatfieldToolProviderInterface
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'ask_human',
-            description: 'Ask the user for input, confirmation, a choice, or approval when you need their response before continuing.',
+            name: self::NAME,
+            description: self::DESCRIPTION,
             handler: $this,
             promptLine: 'ask_human question [kind] [choices] — ask the user for input, confirmation, a choice, or approval',
             promptGuidelines: [

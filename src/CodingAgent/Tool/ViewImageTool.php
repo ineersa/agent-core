@@ -10,10 +10,10 @@ use Ineersa\AgentCore\Domain\Message\ToolResultType;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
-use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 use Ineersa\CodingAgent\Tool\ImageProcessing\ImageAttachmentProcessor;
 use Ineersa\CodingAgent\Tool\ImageProcessing\RunVisionCheckService;
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
+use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * View an image file and return compact metadata (no base64/data_url).
@@ -33,9 +33,14 @@ use League\MimeTypeDetection\FinfoMimeTypeDetector;
  * - File size and image dimensions are checked against configurable limits.
  * - Cancellation is checked via ToolRuntime::run() before reading the file.
  */
-#[AsTool('view_image', 'View image metadata and details for an image file. Returns compact metadata (dimensions, format, size); never returns image bytes.')]
+#[AsTool(self::NAME, self::DESCRIPTION)]
 final class ViewImageTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'view_image';
+
+    /** Provider-visible description; shared with the registry definition. */
+    public const string DESCRIPTION = 'View an image file by attaching it to the next provider request and return compact metadata (media type, dimensions, file size). Supports JPEG, PNG, GIF, and WebP.';
+
     /** @var list<string> */
     private const array SUPPORTED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
@@ -193,19 +198,8 @@ final class ViewImageTool implements HatfieldToolProviderInterface
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'view_image',
-            description: 'View an image file by attaching it to the next provider request and return compact metadata (media type, dimensions, file size). Supports JPEG, PNG, GIF, and WebP.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'path' => [
-                        'type' => 'string',
-                        'description' => 'Path to the image file (absolute, or relative to the working directory)',
-                    ],
-                ],
-                'required' => ['path'],
-                'additionalProperties' => false,
-            ],
+            name: self::NAME,
+            description: self::DESCRIPTION,
             handler: $this,
             promptLine: 'view_image path — view an image file and return its metadata (media type, dimensions, file size); supports JPEG, PNG, GIF, WebP',
             promptGuidelines: [

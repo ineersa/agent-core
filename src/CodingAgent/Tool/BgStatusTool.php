@@ -32,9 +32,14 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  * to every BackgroundProcessManager call. This ensures the LLM only sees
  * and operates on processes it owns.
  */
-#[AsTool('bg_status', 'Inspect background processes started by bash: list all, show the log of one PID, or stop one PID.')]
+#[AsTool(self::NAME, self::DESCRIPTION)]
 final class BgStatusTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'bg_status';
+
+    /** Provider-visible description; shared with the registry definition. */
+    public const string DESCRIPTION = 'List background processes in the current session, inspect their logs, or stop them.';
+
     public function __construct(
         private readonly BackgroundProcessManager $manager,
         private readonly BackgroundProcessConfig $config,
@@ -70,8 +75,8 @@ final class BgStatusTool implements HatfieldToolProviderInterface
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'bg_status',
-            description: 'List background processes in the current session, inspect their logs, or stop them.',
+            name: self::NAME,
+            description: self::DESCRIPTION,
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
             promptLine: 'bg_status action [pid] — list, view logs for, or stop background processes',

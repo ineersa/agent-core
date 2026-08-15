@@ -27,9 +27,14 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  * - Continuation hint appended when truncation occurs.
  * - Cancellation checkpoints wrap the read path.
  */
-#[AsTool('read', 'Read a text file and return plain content. Supports offset (starting line) and limit (max lines) for reading specific sections. Binary files, image files, PDFs, and device paths are rejected.')]
+#[AsTool(self::NAME, self::DESCRIPTION)]
 final class ReadFileTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'read';
+
+    /** Provider-visible description; shared with the registry definition. */
+    public const string DESCRIPTION = 'Read a text file and return plain content. Supports offset (starting line) and limit (max lines) for reading specific sections. Binary files, image files, PDFs, and device paths are rejected.';
+
     /** Default maximum lines for an unrestricted read. */
     private const int DEFAULT_LINE_LIMIT = 2000;
 
@@ -113,8 +118,8 @@ final class ReadFileTool implements HatfieldToolProviderInterface
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'read',
-            description: 'Read a text file and return plain content. Supports offset (starting line) and limit (max lines) for reading specific sections. Binary files, image files, PDFs, and device paths are rejected.',
+            name: self::NAME,
+            description: self::DESCRIPTION,
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
             promptLine: 'read path [offset=N] [limit=N] — read all or part of a text file as plain content; use view_image for images',

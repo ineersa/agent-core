@@ -23,9 +23,9 @@ final class SubagentToolDefinitionBuilder
         $maxAgents = $agentsConfig->maxAgents;
 
         return new ToolDefinitionDTO(
-            name: 'subagent',
+            name: SubagentToolHandler::NAME,
             description: \sprintf(
-                'Launch interactive foreground subagent(s). Single mode uses "agent" and "task". Parallel mode uses "tasks" with up to %d agents per call (agents.max_agents). The tool blocks until all children finish. Single-mode results include the full child handoff inline; parallel results are bounded summaries — use agent_retrieve for complete parallel handoffs or extra detail.',
+                SubagentToolHandler::DESCRIPTION_TEMPLATE,
                 $maxAgents,
             ),
             handler: $handler,

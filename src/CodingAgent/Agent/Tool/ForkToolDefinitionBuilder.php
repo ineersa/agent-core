@@ -12,8 +12,8 @@ final class ForkToolDefinitionBuilder
     public static function build(object $handler): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'fork',
-            description: 'Launch an isolated fork child with inherited parent conversation context. Blocks until completion and returns a dense handoff.',
+            name: ForkToolHandler::NAME,
+            description: ForkToolHandler::DESCRIPTION,
             handler: $handler,
             executionMode: ToolExecutionMode::Parallel,
             timeoutSeconds: null,

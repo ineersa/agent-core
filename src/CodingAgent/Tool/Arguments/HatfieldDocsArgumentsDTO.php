@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\Arguments;
 
+use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -12,9 +13,11 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class HatfieldDocsArgumentsDTO
 {
     public function __construct(
+        #[Schema(description: 'list catalog entries, or read one document by id.')]
         #[Assert\NotBlank(message: 'The "operation" argument must be one of: list, read.')]
         #[Assert\Choice(choices: ['list', 'read'], message: 'The "operation" argument must be one of: list, read.')]
         public readonly string $operation = '',
+        #[Schema(description: 'Logical document ID (required for read).')]
         #[Assert\When(
             expression: 'this.operation === "read"',
             constraints: [

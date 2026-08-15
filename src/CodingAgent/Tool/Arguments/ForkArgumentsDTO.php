@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\Arguments;
 
 use Ineersa\CodingAgent\Config\ModelResolver;
+use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -13,13 +14,16 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class ForkArgumentsDTO
 {
     public function __construct(
+        #[Schema(description: 'Delegated task for the fork child (required).')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'fork requires a non-empty task string.')]
         public readonly string $task = '',
+        #[Schema(description: 'Optional model override.')]
         #[Assert\When(
             expression: 'this.model !== null',
             constraints: [new Assert\NotBlank(normalizer: 'trim', message: 'fork model must be a non-empty string when provided.')],
         )]
         public readonly ?string $model = null,
+        #[Schema(description: 'Optional reasoning/thinking level.')]
         #[Assert\Choice(choices: ModelResolver::LEVELS, message: 'fork thinking must be one of: {{ choices }}.')]
         public readonly ?string $thinking = null,
     ) {

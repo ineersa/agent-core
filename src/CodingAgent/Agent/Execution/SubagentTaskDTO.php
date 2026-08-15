@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution;
 
+use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -12,8 +13,10 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class SubagentTaskDTO
 {
     public function __construct(
+        #[Schema(description: 'Agent definition name.')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'Each task must include a non-empty "agent" string.')]
         public readonly string $agent = '',
+        #[Schema(description: 'Task text.')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'Each task must include a non-empty "task" string.')]
         public readonly string $task = '',
     ) {

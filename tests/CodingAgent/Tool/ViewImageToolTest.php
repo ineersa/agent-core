@@ -19,6 +19,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Config\ToolSettings;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ImageProcessing\RunVisionCheckService;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
@@ -31,6 +32,7 @@ use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Platform\Message\Content\Image;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\UserMessage;
+use Symfony\Component\Validator\Validation;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\ViewImageTool
@@ -78,21 +80,30 @@ final class ViewImageToolTest extends TestCase
         $this->assertSame('view_image', $definition->name);
     }
 
-    public function testDefinitionJsonSchemaHasPathOnly(): void
+    /**
+     * Regression (PR #387 review): view_image used to ship a leftover manual
+     * flat parametersJsonSchema that misclassified it as a raw-array tool and
+     * bypassed DTO resolution. The definition must now route through the
+     * native DTO path and the provider schema must be the native nested
+     * {arguments: {path}} shape carrying the exact crafted path description.
+     */
+    public function testDefinitionUsesNativeNestedSchemaWithCraftedPathDescription(): void
     {
         $definition = $this->viewImageTool->definition();
-        $schema = $definition->parametersJsonSchema;
 
-        $this->assertArrayHasKey('type', $schema);
-        $this->assertSame('object', $schema['type']);
-        $this->assertArrayHasKey('properties', $schema);
-        $this->assertArrayHasKey('path', $schema['properties']);
-        $this->assertArrayNotHasKey('content', $schema['properties']);
-        $this->assertArrayHasKey('required', $schema);
-        $this->assertContains('path', $schema['required']);
-        $this->assertCount(1, $schema['required']);
-        $this->assertArrayHasKey('additionalProperties', $schema);
-        $this->assertFalse($schema['additionalProperties']);
+        $this->assertSame(ViewImageTool::DESCRIPTION, $definition->description);
+        $this->assertNull($definition->parametersJsonSchema);
+
+        $schema = NativeToolSchemaProbe::for($this->viewImageTool);
+        $args = $schema['properties']['arguments'];
+
+        $this->assertSame('object', $args['type']);
+        $this->assertSame(
+            'Path to the image file (absolute, or relative to the working directory)',
+            $args['properties']['path']['description'],
+        );
+        $this->assertSame(['path'], $args['required']);
+        $this->assertFalse($args['additionalProperties']);
     }
 
     /* ── __invoke() success tests (metadata only, no base64/data_url) ── */
@@ -319,22 +330,23 @@ final class ViewImageToolTest extends TestCase
         $tool(new ViewImageArgumentsDTO(path: $imagePath));
     }
 
-    /* ── Argument validation tests ── */
+    /* ── Static argument validation lives in the DTO (enforced by the native
+           ValidateToolCallArgumentsListener before the handler runs) ── */
 
-    public function testThrowsOnMissingPath(): void
+    public function testDtoRejectsBlankPath(): void
     {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"path" argument is required');
+        $violations = $this->validateDto(new ViewImageArgumentsDTO());
 
-        ($this->viewImageTool)(new ViewImageArgumentsDTO());
+        $this->assertCount(1, $violations);
+        $this->assertStringContainsString('"path" argument is required', $violations[0]->getMessage());
     }
 
-    public function testThrowsOnEmptyPath(): void
+    public function testDtoRejectsBlankPathWithWhitespace(): void
     {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"path" argument is required');
+        $violations = $this->validateDto(new ViewImageArgumentsDTO(path: '   '));
 
-        ($this->viewImageTool)(new ViewImageArgumentsDTO(path: ''));
+        $this->assertCount(1, $violations);
+        $this->assertStringContainsString('"path" argument is required', $violations[0]->getMessage());
     }
 
     public function testThrowsOnNonExistentFile(): void
@@ -919,6 +931,11 @@ final class ViewImageToolTest extends TestCase
             $result = $tool(new ViewImageArgumentsDTO(path: $imagePath));
             self::assertSame('image/png', $result['media_type'], 'Tool should succeed when vision check is skipped');
         });
+    }
+
+    private function validateDto(object $dto): array
+    {
+        return iterator_to_array(Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator()->validate($dto));
     }
 
     /* ── helper: create tiny test images ── */

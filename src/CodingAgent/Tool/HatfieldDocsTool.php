@@ -22,9 +22,14 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  * lifetime. Lookup is by logical ID only; arbitrary filesystem paths are
  * never accepted.
  */
-#[AsTool('hatfield_docs', 'List or read bundled Hatfield documentation by logical document ID.')]
+#[AsTool(self::NAME, self::DESCRIPTION)]
 final class HatfieldDocsTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'hatfield_docs';
+
+    /** Provider-visible description; shared with the registry definition. */
+    public const string DESCRIPTION = 'List or read bundled Hatfield documentation by logical document ID.';
+
     /**
      * Lazy catalog keyed by logical document ID (filename stem).
      *
@@ -56,8 +61,8 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'hatfield_docs',
-            description: 'List or read bundled Hatfield documentation by logical document ID.',
+            name: self::NAME,
+            description: self::DESCRIPTION,
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
             promptLine: 'hatfield_docs list|read [id] — list or read bundled Hatfield docs',

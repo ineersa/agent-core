@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\Arguments\WriteFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Ineersa\CodingAgent\Tool\WriteFileTool;
@@ -53,18 +54,19 @@ final class WriteFileToolTest extends TestCase
     public function testDefinitionJsonSchemaHasPathAndContent(): void
     {
         $definition = $this->writeFileTool->definition();
-        $schema = $definition->parametersJsonSchema;
+        // Typed DTO tool: schema is generated natively from WriteFileArgumentsDTO.
+        $this->assertNull($definition->parametersJsonSchema);
 
-        $this->assertArrayHasKey('type', $schema);
+        $schema = NativeToolSchemaProbe::for($this->writeFileTool);
+        $args = $schema['properties']['arguments']['properties'];
+
         $this->assertSame('object', $schema['type']);
         $this->assertArrayHasKey('properties', $schema);
-        $this->assertArrayHasKey('path', $schema['properties']);
-        $this->assertArrayHasKey('content', $schema['properties']);
-        $this->assertArrayHasKey('required', $schema);
-        $this->assertContains('path', $schema['required']);
-        $this->assertContains('content', $schema['required']);
-        $this->assertArrayHasKey('additionalProperties', $schema);
-        $this->assertFalse($schema['additionalProperties']);
+        $this->assertArrayHasKey('path', $args);
+        $this->assertArrayHasKey('content', $args);
+        $this->assertContains('path', $schema['properties']['arguments']['required']);
+        $this->assertContains('content', $schema['properties']['arguments']['required']);
+        $this->assertFalse($schema['properties']['arguments']['additionalProperties']);
     }
 
     /* ── __invoke() success tests ── */
@@ -172,11 +174,6 @@ final class WriteFileToolTest extends TestCase
         $this->assertStringContainsString('"content" argument is required', $violations[0]->getMessage());
     }
 
-    private function validateDto(object $dto): array
-    {
-        return iterator_to_array(Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator()->validate($dto));
-    }
-
     public function testWriteThrowsWhenParentExistsAsFile(): void
     {
         $existingFile = $this->tmpDir.'/existing_file.txt';
@@ -270,6 +267,11 @@ final class WriteFileToolTest extends TestCase
         // but the toll runtime still throws to prevent the stale result from
         // reaching the LLM.
         $this->assertFileExists($targetPath);
+    }
+
+    private function validateDto(object $dto): array
+    {
+        return iterator_to_array(Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator()->validate($dto));
     }
 
     /* ── helpers ── */

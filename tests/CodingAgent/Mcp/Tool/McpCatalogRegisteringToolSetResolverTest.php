@@ -84,7 +84,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
             name: 'perm',
             description: 'Permanent',
             parametersJsonSchema: [],
-            handler: new class implements \Ineersa\CodingAgent\Tool\ToolHandlerInterface {
+            handler: new class {
                 public function __invoke(array $arguments = []): string
                 {
                     return 'perm';
@@ -158,7 +158,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
             name: 'perm',
             description: 'Permanent',
             parametersJsonSchema: [],
-            handler: new class implements \Ineersa\CodingAgent\Tool\ToolHandlerInterface {
+            handler: new class {
                 public function __invoke(array $arguments = []): string
                 {
                     return 'perm';

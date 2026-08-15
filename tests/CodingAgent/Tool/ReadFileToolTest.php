@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\ReadFileTool;
@@ -57,18 +58,19 @@ final class ReadFileToolTest extends TestCase
     public function testDefinitionJsonSchemaHasPathOffsetLimit(): void
     {
         $definition = $this->readFileTool->definition();
-        $schema = $definition->parametersJsonSchema;
+        // Typed DTO tool: schema is generated natively from ReadFileArgumentsDTO.
+        $this->assertNull($definition->parametersJsonSchema);
 
-        $this->assertArrayHasKey('type', $schema);
+        $schema = NativeToolSchemaProbe::for($this->readFileTool);
+        $args = $schema['properties']['arguments']['properties'];
+
         $this->assertSame('object', $schema['type']);
         $this->assertArrayHasKey('properties', $schema);
-        $this->assertArrayHasKey('path', $schema['properties']);
-        $this->assertArrayHasKey('offset', $schema['properties']);
-        $this->assertArrayHasKey('limit', $schema['properties']);
-        $this->assertArrayHasKey('required', $schema);
-        $this->assertContains('path', $schema['required']);
-        $this->assertArrayHasKey('additionalProperties', $schema);
-        $this->assertFalse($schema['additionalProperties']);
+        $this->assertArrayHasKey('path', $args);
+        $this->assertArrayHasKey('offset', $args);
+        $this->assertArrayHasKey('limit', $args);
+        $this->assertContains('path', $schema['properties']['arguments']['required']);
+        $this->assertFalse($schema['properties']['arguments']['additionalProperties']);
     }
 
     public function testDefinitionExecutionModeIsParallel(): void
@@ -260,11 +262,6 @@ final class ReadFileToolTest extends TestCase
         $this->assertCount(2, $violations);
         $this->assertStringContainsString('positive integer', $violations[0]->getMessage());
         $this->assertStringContainsString('positive integer', $violations[1]->getMessage());
-    }
-
-    private function validateDto(object $dto): array
-    {
-        return iterator_to_array(Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator()->validate($dto));
     }
 
     /* ── __invoke() target validation tests ── */
@@ -564,6 +561,11 @@ final class ReadFileToolTest extends TestCase
         $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
 
         $this->assertStringContainsString('Hello, UTF-8 BOM world!', $result);
+    }
+
+    private function validateDto(object $dto): array
+    {
+        return iterator_to_array(Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator()->validate($dto));
     }
 
     /* ── helpers ── */

@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
@@ -187,7 +188,15 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     {
         $definition = $this->tool->definition();
         $this->assertSame('bg_status', $definition->name);
-        $this->assertSame(1, $definition->parametersJsonSchema['properties']['pid']['minimum']);
+        // Typed DTO tool: schema is generated natively from BgStatusArgumentsDTO
+        // (parametersJsonSchema === null routes through the native factory).
+        $this->assertNull($definition->parametersJsonSchema);
+
+        $schema = NativeToolSchemaProbe::for($this->tool);
+        $pid = $schema['properties']['arguments']['properties']['pid'];
+        // Assert\Positive maps to minimum:0 + exclusiveMinimum:true.
+        $this->assertSame(0, $pid['minimum']);
+        $this->assertTrue($pid['exclusiveMinimum']);
     }
 
     public function testDefinitionUsesParallelExecutionMode(): void

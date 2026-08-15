@@ -41,15 +41,15 @@ interface ToolRegistryInterface
      * handler) is idempotent. Re-registration with different metadata
      * for an existing name is a no-op (first wins).
      *
-     * @param string               $name                 Model-visible tool name
-     * @param string               $description          Provider-schema description
+     * @param string                    $name                 Model-visible tool name
+     * @param string                    $description          Provider-schema description
      * @param array<string, mixed>|null $parametersJsonSchema JSON Schema for raw-array handlers; null for typed DTO handlers (native generation)
-     * @param object               $handler              Invokable execution handler
-     * @param string               $promptLine           Single-line description for <available_tools>
-     * @param list<string>         $promptGuidelines     Zero or more guideline strings for <guidelines>
-     * @param ToolExecutionMode    $executionMode        Execution mode (default: Sequential)
-     * @param int|null             $timeoutSeconds       Optional cooperative timeout budget for this tool; null means no ambient deadline
-     * @param string|null          $extensionOwnerClass  Owning extension FQCN when registered by an extension; null for built-ins
+     * @param object                    $handler              Invokable execution handler
+     * @param string                    $promptLine           Single-line description for <available_tools>
+     * @param list<string>              $promptGuidelines     Zero or more guideline strings for <guidelines>
+     * @param ToolExecutionMode         $executionMode        Execution mode (default: Sequential)
+     * @param int|null                  $timeoutSeconds       Optional cooperative timeout budget for this tool; null means no ambient deadline
+     * @param string|null               $extensionOwnerClass  Owning extension FQCN when registered by an extension; null for built-ins
      *
      * @throws \InvalidArgumentException on empty name or description
      */

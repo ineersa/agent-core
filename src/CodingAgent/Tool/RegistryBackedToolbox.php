@@ -190,7 +190,9 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
      * Symfony AI's JsonSchema generation marks every DTO property required,
      * including nullable-with-default optional ones. Nullable properties are
      * optional by definition, so drop them from `required` to keep the
-     * provider schema faithful to the DTO contract.
+     * provider schema faithful to the DTO contract. Applied recursively so
+     * nested object schemas (e.g. the {arguments} envelope or subagent task
+     * items) get the same treatment.
      *
      * @param array<string, mixed> $schema
      *
@@ -210,7 +212,9 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
         }
 
         foreach ($schema as $key => $value) {
-            if (\is_array($value) && 'properties' !== $key) {
+            // Recurse into nested object schemas (including `properties`);
+            // `required` is a flat list of names and needs no recursion.
+            if (\is_array($value) && 'required' !== $key) {
                 $schema[$key] = $this->normalizeNullableRequired($value);
             }
         }
@@ -218,12 +222,16 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
         return $schema;
     }
 
-    /**
-     * @param mixed $propertySchema
-     */
     private static function isNullableProperty(mixed $propertySchema): bool
     {
         if (!\is_array($propertySchema)) {
+            return false;
+        }
+
+        // A NotNull/NotBlank constraint marks the property semantically
+        // required (`nullable: false`) even when the PHP type admits null;
+        // such properties must stay in `required`.
+        if (false === ($propertySchema['nullable'] ?? null)) {
             return false;
         }
 

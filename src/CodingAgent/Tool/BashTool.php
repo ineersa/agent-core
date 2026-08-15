@@ -57,9 +57,18 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  * string directly — the model is treated as a trusted caller within the
  * same agent session.
  */
-#[AsTool('bash', 'Execute a shell command with timeout.')]
+#[AsTool(self::NAME, self::DESCRIPTION_TEMPLATE)]
 final class BashTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'bash';
+
+    /**
+     * Provider-visible description template; definition() formats the %d
+     * with the configured background-prompt threshold so AsTool and the
+     * registry metadata can never drift.
+     */
+    public const string DESCRIPTION_TEMPLATE = 'Execute a shell command with timeout. The command runs until completion, hits the timeout, or is cancelled. Long-running commands may be offered to move to background after %d seconds.';
+
     public function __construct(
         private readonly BackgroundProcessManager $manager,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
@@ -262,8 +271,8 @@ final class BashTool implements HatfieldToolProviderInterface
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'bash',
-            description: \sprintf('Execute a shell command with timeout. The command runs until completion, hits the timeout, or is cancelled. Long-running commands may be offered to move to background after %d seconds.', $this->config->backgroundPromptThresholdSeconds),
+            name: self::NAME,
+            description: \sprintf(self::DESCRIPTION_TEMPLATE, $this->config->backgroundPromptThresholdSeconds),
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
             promptLine: 'bash command [timeout=N] — execute a shell command with foreground supervision and optional timeout',

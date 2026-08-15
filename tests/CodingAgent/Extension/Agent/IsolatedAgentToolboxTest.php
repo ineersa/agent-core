@@ -16,14 +16,6 @@ use Symfony\AI\Platform\Result\ToolCall;
 
 final class IsolatedAgentToolboxTest extends TestCase
 {
-    private function createToolbox(array $tools): IsolatedAgentToolbox
-    {
-        return new IsolatedAgentToolbox(
-            $tools,
-            new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
-        );
-    }
-
     public function testGetToolsExposesAgentToolMetadata(): void
     {
         $toolbox = $this->createToolbox([
@@ -144,5 +136,13 @@ final class IsolatedAgentToolboxTest extends TestCase
         $result = $toolbox->execute(new ToolCall('c3', 'ext_read', ['extra' => true]));
         $this->assertSame(1, $handler->calls);
         $this->assertSame('called:{"extra":true}', $result->getResult());
+    }
+
+    private function createToolbox(array $tools): IsolatedAgentToolbox
+    {
+        return new IsolatedAgentToolbox(
+            $tools,
+            new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+        );
     }
 }

@@ -13,9 +13,14 @@ use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
 use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
-#[AsTool('fork', 'Launch an isolated fork child with inherited parent conversation context. Blocks until completion and returns a dense handoff.')]
+#[AsTool(self::NAME, self::DESCRIPTION)]
 final class ForkToolHandler
 {
+    public const string NAME = 'fork';
+
+    /** Provider-visible description; shared with the registry definition. */
+    public const string DESCRIPTION = 'Launch an isolated fork child with inherited parent conversation context. Blocks until completion and returns a dense handoff.';
+
     private const string EXECUTION_SERVICE_LOCATOR_KEY = 'execution';
 
     public function __construct(

@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\Arguments\HatfieldDocsArgumentsDTO;
 use Ineersa\CodingAgent\Tool\HatfieldDocsTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
@@ -67,11 +68,15 @@ final class HatfieldDocsToolTest extends TestCase
         $def = $this->tool->definition();
         $this->assertSame('hatfield_docs', $def->name);
         $this->assertSame(ToolExecutionMode::Parallel, $def->executionMode);
-        $this->assertSame(['operation'], $def->parametersJsonSchema['required']);
-        $this->assertFalse($def->parametersJsonSchema['additionalProperties']);
-        $this->assertSame(['list', 'read'], $def->parametersJsonSchema['properties']['operation']['enum']);
-        $this->assertArrayNotHasKey('enum', $def->parametersJsonSchema['properties']['id']);
-        $this->assertSame(1, $def->parametersJsonSchema['properties']['id']['minLength']);
+        // Typed DTO tool: schema is generated natively from HatfieldDocsArgumentsDTO.
+        $this->assertNull($def->parametersJsonSchema);
+
+        $schema = NativeToolSchemaProbe::for($this->tool);
+        $args = $schema['properties']['arguments']['properties'];
+        $this->assertSame(['operation'], $schema['properties']['arguments']['required']);
+        $this->assertFalse($schema['properties']['arguments']['additionalProperties']);
+        $this->assertSame(['list', 'read'], $args['operation']['enum']);
+        $this->assertArrayNotHasKey('enum', $args['id']);
         $this->assertSame(
             ['Use hatfield_docs for questions about Hatfield behavior, configuration, or usage; call list first when the relevant document ID is unknown.'],
             $def->promptGuidelines,

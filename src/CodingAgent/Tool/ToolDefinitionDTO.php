@@ -26,6 +26,12 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
  * The executionMode defaults to sequential. Tool authors/providers should
  * set it in their definition() return when non-default behavior is needed.
  * File-mutation tools (write, edit) must always run sequentially.
+ *
+ * The description is required because dynamic/raw registrations (MCP,
+ * extensions) only carry it here. Typed built-in tools reference the same
+ * per-tool class constants (NAME / DESCRIPTION or DESCRIPTION_TEMPLATE) from
+ * both their #[AsTool] attribute and definition() so the two sources cannot
+ * drift; the registry description stays canonical for provider metadata.
  */
 final readonly class ToolDefinitionDTO
 {

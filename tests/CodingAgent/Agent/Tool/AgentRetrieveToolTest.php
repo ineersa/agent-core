@@ -19,13 +19,10 @@ final class AgentRetrieveToolTest extends IsolatedKernelTestCase
         $def = $tool->definition();
 
         $this->assertSame('agent_retrieve', $def->name);
-        $this->assertFalse($def->parametersJsonSchema['additionalProperties']);
-        $this->assertSame(
-            ['handoff', 'metadata', 'events', 'history', 'debug'],
-            $def->parametersJsonSchema['properties']['mode']['enum'] ?? [],
-        );
-        $this->assertSame(1, $def->parametersJsonSchema['properties']['artifact_id']['minLength']);
-        $this->assertSame(1, $def->parametersJsonSchema['properties']['agent_run_id']['minLength']);
+        // Typed DTO tool: schema is generated natively from
+        // AgentRetrieveArgumentsDTO (parametersJsonSchema === null routes
+        // through the native factory).
+        $this->assertNull($def->parametersJsonSchema);
         $this->assertSame(
             'agent_retrieve artifact_id=<id>|agent_run_id=<uuid> [mode] [limit=N] — retrieve a subagent artifact',
             $def->promptLine,

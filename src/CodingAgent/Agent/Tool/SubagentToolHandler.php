@@ -21,9 +21,18 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  * service locator so ToolRegistry can register the tool definition without
  * constructing the heavy subagent execution graph at container compile time.
  */
-#[AsTool('subagent', 'Launch interactive foreground subagent(s) in single or parallel mode; blocks until all children finish.')]
+#[AsTool(self::NAME, self::DESCRIPTION_TEMPLATE)]
 final class SubagentToolHandler
 {
+    public const string NAME = 'subagent';
+
+    /**
+     * Provider-visible description template; SubagentToolDefinitionBuilder
+     * formats the %d with agents.max_agents so AsTool and the registry
+     * metadata can never drift.
+     */
+    public const string DESCRIPTION_TEMPLATE = 'Launch interactive foreground subagent(s). Single mode uses "agent" and "task". Parallel mode uses "tasks" with up to %d agents per call (agents.max_agents). The tool blocks until all children finish. Single-mode results include the full child handoff inline; parallel results are bounded summaries — use agent_retrieve for complete parallel handoffs or extra detail.';
+
     private const string EXECUTION_SERVICE_LOCATOR_KEY = 'execution';
 
     public function __construct(

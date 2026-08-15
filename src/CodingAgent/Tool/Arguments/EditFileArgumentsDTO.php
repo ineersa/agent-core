@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\Arguments;
 
+use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -12,8 +13,10 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class EditFileArgumentsDTO
 {
     public function __construct(
+        #[Schema(description: 'File path to edit (absolute, or relative to the working directory)')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'The "path" argument is required and must be a non-empty string.')]
         public readonly string $path = '',
+        #[Schema(description: 'Codex-style hunk body beginning with `@@`; prefix each body line with a space for unchanged context, `-` for removal, or `+` for addition. Multiple sequential, non-overlapping hunks are allowed.')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'The "patch" argument is required and must be a non-empty string.')]
         public readonly string $patch = '',
     ) {

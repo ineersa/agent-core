@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Tool\EditFileTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
@@ -56,7 +57,10 @@ final class EditFileToolTest extends TestCase
         $this->assertStringContainsString('diff prefix', $definition->description);
         $this->assertStringContainsString('leading space', $definition->description);
 
-        $patchSchema = $definition->parametersJsonSchema['properties']['patch']['description'] ?? '';
+        // The crafted patch description now lives as a #[Schema] attribute on
+        // EditFileArgumentsDTO (native schema generation source of truth).
+        $patchProperty = new \ReflectionProperty(EditFileArgumentsDTO::class, 'patch');
+        $patchSchema = $patchProperty->getAttributes(Schema::class)[0]->newInstance()->description ?? '';
         $this->assertStringContainsString('Codex-style', $patchSchema);
         $this->assertStringContainsString('@@', $patchSchema);
         $this->assertStringContainsString('space for unchanged context', $patchSchema);

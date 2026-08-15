@@ -22,9 +22,14 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  * - Checks cancellation before writing and before returning.
  * - Uses LOCK_EX for safe concurrent writes.
  */
-#[AsTool('write', 'Create a new file or overwrite an existing file with the given text content. Creates parent directories automatically if they do not exist. Non-empty text content is automatically newline-terminated for POSIX compatibility.')]
+#[AsTool(self::NAME, self::DESCRIPTION)]
 final class WriteFileTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'write';
+
+    /** Provider-visible description; shared with the registry definition. */
+    public const string DESCRIPTION = 'Create a new file or overwrite an existing file with the given text content. Creates parent directories automatically if they do not exist. Non-empty text content is automatically newline-terminated for POSIX compatibility.';
+
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
     ) {
@@ -75,8 +80,8 @@ final class WriteFileTool implements HatfieldToolProviderInterface
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'write',
-            description: 'Create a new file or overwrite an existing file with the given text content. Creates parent directories automatically if they do not exist. Non-empty text content is automatically newline-terminated for POSIX compatibility.',
+            name: self::NAME,
+            description: self::DESCRIPTION,
             handler: $this,
             executionMode: ToolExecutionMode::Sequential,
             promptLine: 'write path content — create or overwrite a text file',

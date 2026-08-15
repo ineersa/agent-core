@@ -16,7 +16,6 @@ use Ineersa\CodingAgent\Mcp\Tool\McpToolHandler;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolHandlerFactory;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolInvoker;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -586,9 +585,9 @@ final class McpToolRegistrarTest extends TestCase
         };
     }
 
-    private function dummyHandler(): ToolHandlerInterface
+    private function dummyHandler(): object
     {
-        return new class implements ToolHandlerInterface {
+        return new class {
             public function __invoke(array $arguments = []): string
             {
                 return 'dummy';

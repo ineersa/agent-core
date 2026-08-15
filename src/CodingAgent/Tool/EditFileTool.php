@@ -16,9 +16,14 @@ use Symfony\Component\Lock\LockFactory;
 /**
  * Edit an existing file by applying Codex-style @@ hunks.
  */
-#[AsTool('edit', 'Apply @@ hunks to an existing file. Every hunk body line must start with a diff prefix: a leading space for unchanged context, `-` for removal, or `+` for addition. The target file must exist; use the write tool for new files.')]
+#[AsTool(self::NAME, self::DESCRIPTION)]
 final class EditFileTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'edit';
+
+    /** Provider-visible description; shared with the registry definition. */
+    public const string DESCRIPTION = 'Apply @@ hunks to an existing file. Every hunk body line must start with a diff prefix: a leading space for unchanged context, `-` for removal, or `+` for addition. The target file must exist; use the write tool for new files.';
+
     private readonly PatchApplier $applier;
 
     public function __construct(
@@ -60,8 +65,8 @@ final class EditFileTool implements HatfieldToolProviderInterface
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'edit',
-            description: 'Apply @@ hunks to an existing file. Every hunk body line must start with a diff prefix: a leading space for unchanged context, `-` for removal, or `+` for addition. The target file must exist; use the write tool for new files.',
+            name: self::NAME,
+            description: self::DESCRIPTION,
             handler: $this,
             executionMode: ToolExecutionMode::Sequential,
             promptLine: 'edit path patch — apply @@ hunks to an existing file',

@@ -42,20 +42,20 @@ final class Gf05ChildAppendStructuralPermanentSubsetContractTest extends \PHPUni
     public function testChildAppendRendersPermanentSubsetPlaceholdersWithoutTextScrubbing(): void
     {
         $registry = new ToolRegistry();
-        $registry->registerTool('read', 'Read', ['type' => 'object'], $this->handler(), promptLine: 'ALLOWED_READ_PROMPT_LINE');
+        $registry->registerTool(name: 'read', description: 'Read', handler: $this->handler(), parametersJsonSchema: ['type' => 'object'], promptLine: 'ALLOWED_READ_PROMPT_LINE');
         $registry->registerTool(
-            'fork',
-            'Fork parent tool',
-            ['type' => 'object'],
-            $this->handler(),
+            name: 'fork',
+            description: 'Fork parent tool',
+            handler: $this->handler(),
+            parametersJsonSchema: ['type' => 'object'],
             promptLine: 'DISALLOWED_FORK_PROMPT_LINE',
             promptGuidelines: ['DISALLOWED_FORK_GUIDELINE_BLOCK'],
         );
         $registry->addDynamicTool(
-            'mcp_dynamic',
-            'GF05_DYNAMIC_PROVIDER_DESCRIPTION_MUST_NOT_LEAK',
-            ['type' => 'object'],
-            $this->handler(),
+            name: 'mcp_dynamic',
+            description: 'GF05_DYNAMIC_PROVIDER_DESCRIPTION_MUST_NOT_LEAK',
+            handler: $this->handler(),
+            parametersJsonSchema: ['type' => 'object'],
         );
 
         $benignContributor = 'GF05_BENIGN_CONTRIBUTOR_PROSE_KEEP_ME';

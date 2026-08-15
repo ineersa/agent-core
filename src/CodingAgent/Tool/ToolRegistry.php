@@ -168,10 +168,10 @@ final class ToolRegistry implements ToolRegistryInterface
 
         foreach ($tools as $tool) {
             $this->addDynamicTool(
-                $tool['name'],
-                $tool['description'],
-                $tool['parametersJsonSchema'],
-                $tool['handler'],
+                name: $tool['name'],
+                description: $tool['description'],
+                handler: $tool['handler'],
+                parametersJsonSchema: $tool['parametersJsonSchema'],
             );
         }
     }
