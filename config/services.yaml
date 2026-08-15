@@ -373,6 +373,7 @@ services:
     arguments:
       $executor: '@Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor'
       $transportSchemaEnsurer: '@Ineersa\CodingAgent\Migrations\MessengerTransportSchemaEnsurer'
+      $sessionCatalogRecovery: '@Ineersa\CodingAgent\Session\SessionCatalogRecoveryService'
 
   # HatfieldModelCatalog — build from AppConfig.ai so all consumers share the
   # same catalog populated from settings, not an auto-wired empty default.

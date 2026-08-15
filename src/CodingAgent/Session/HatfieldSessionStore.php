@@ -86,6 +86,8 @@ final class HatfieldSessionStore
         $sessionId = (string) $session->id;
 
         try {
+            // Atomic exclusive mkdir inside writeSessionFiles — never truncate
+            // an existing orphan directory (file/dir/symlink or concurrent winner).
             $this->writeSessionFiles($sessionId, $prompt);
         } catch (\Throwable $e) {
             // Roll back the DB row — no silently inconsistent state.
@@ -352,16 +354,27 @@ final class HatfieldSessionStore
     }
 
     /**
-     * Write session files (state.json, events.jsonl).
+     * Create the session directory exclusively and write empty state/events files.
      *
      * Session metadata is the DB row; no metadata.yaml is written.
+     * Uses a non-recursive atomic mkdir on the leaf path so an existing
+     * orphan directory/file/symlink (or concurrent create winner) fails closed
+     * before any state.json / events.jsonl writes can truncate content.
      */
     private function writeSessionFiles(string $sessionId, string $prompt): void
     {
-        $sessionPath = $this->getSessionDir($sessionId);
+        unset($prompt);
 
-        if (!is_dir($sessionPath)) {
-            mkdir($sessionPath, 0777, true);
+        $sessionPath = $this->getSessionDir($sessionId);
+        $parent = \dirname($sessionPath);
+
+        if (!is_dir($parent) && !@mkdir($parent, 0777, true) && !is_dir($parent)) {
+            throw new \RuntimeException(\sprintf('Failed to create sessions parent directory for session "%s" at "%s".', $sessionId, $parent));
+        }
+
+        // Atomic exclusive create of the leaf session directory itself.
+        if (!@mkdir($sessionPath, 0777)) {
+            throw new \RuntimeException(\sprintf('Refusing to create session "%s": path already exists at "%s".', $sessionId, $sessionPath));
         }
 
         file_put_contents($sessionPath.'/state.json', '');

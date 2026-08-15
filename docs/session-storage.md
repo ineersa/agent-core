@@ -58,6 +58,19 @@ Deferred subagent supervision (single and parallel) uses durable batch records a
 | `/new` | Start a new session identity |
 | Lazy draft | New interactive session without an initial prompt may delay DB row creation until first message |
 | Process restart | Controller/runtime recover from session dir + DB; event projection rebuilds |
+| Catalog recovery | On startup after schema migrations, orphan numeric `sessions/<id>/events.jsonl` dirs without a `hatfield_session` row are reinserted into the catalog (same id) |
+
+### Catalog recovery after state DB loss
+
+If `.hatfield/state.sqlite` is deleted or loses `hatfield_session` rows while session directories remain, startup reconciles **canonical** positive-digit directories that contain `events.jsonl`:
+
+- **Canonical IDs only:** directory name must be a positive decimal whose integer round-trip equals the original string (rejects `0`, `007`, non-digits, and integer-overflow aliases).
+- **Preserved:** directory name as `session_id` / `run_id`; existing `events.jsonl` / `state.json` bytes are never rewritten or truncated.
+- **Recovered into the row when present in events:** initial user prompt (and default display name from it), current model (including later `model_changed`), reasoning from `run_started` metadata, child `parent_run_id` when present.
+- **Not event-backed:** a fresh UUIDv7 `provider_cache_key` is generated; renames and other DB-only fields are not restored when absent from events.
+- **Not recoverable from session events (SQLite-only):** deferred subagent batches/children, background processes, pending tool questions, messenger queues, and other app-state tables.
+
+New session creation uses atomic exclusive `mkdir` of the leaf session path and fails closed before writing `state.json` / `events.jsonl` when any directory, file, or symlink already occupies that path (including malformed orphans). Concurrent recovery inserts are idempotent via `ON CONFLICT(id) DO NOTHING` on the primary key. Corrupt event logs are skipped with privacy-safe diagnostics; DB/storage infrastructure failures hard-fail startup.
 
 ## History (`/history`)
 
