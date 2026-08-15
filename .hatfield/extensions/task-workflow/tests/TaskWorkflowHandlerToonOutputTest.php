@@ -13,7 +13,6 @@ use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskMarkdown;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskStatusEnum;
 use Ineersa\HatfieldExt\TaskWorkflow\Tool\CreateTaskHandler;
 use Ineersa\HatfieldExt\TaskWorkflow\Tool\ListTasksHandler;
-use Ineersa\HatfieldExt\TaskWorkflow\Tool\TaskListFormatter;
 use Ineersa\HatfieldExt\TaskWorkflow\Tool\UpdateTaskHandler;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -49,26 +48,30 @@ final class TaskWorkflowHandlerToonOutputTest extends TestCase
     #[Test]
     public function listTasksReturnsTopLevelToonStringNotJsonEnvelope(): void
     {
-        // Thesis: without this test, list_tasks could keep returning a content/details
-        // array that ToolExecutor JSON-encodes, so Hatfield still shows JSON.
+        // Thesis: without this test, task_list could keep returning a redundant
+        // formatted message alongside the canonical tasks[] payload, so the model
+        // sees the full task list twice (TOON text + tasks[]).
         file_put_contents(
             $this->boardRoot.'/TODO/demo.md',
             TaskMarkdown::renderTask('Demo task'),
         );
 
         $store = $this->store();
-        $handler = new ListTasksHandler($store, new TaskListFormatter($store));
+        $handler = new ListTasksHandler($store);
         $result = ($handler)([]);
 
         $decoded = $this->assertTopLevelToon($result);
-        $this->assertIsString($decoded['message'] ?? null);
-        $this->assertStringContainsString('TODO/demo.md', (string) $decoded['message']);
+        $this->assertArrayNotHasKey('message', $decoded, 'task_list must not duplicate the list in a formatted message');
         $this->assertFalse($decoded['include_archive'] ?? true);
         $this->assertIsArray($decoded['tasks'] ?? null);
         $this->assertCount(1, $decoded['tasks']);
         $this->assertSame('TODO', $decoded['tasks'][0]['status'] ?? null);
         $this->assertSame('demo.md', $decoded['tasks'][0]['file'] ?? null);
         $this->assertSame('Demo task', $decoded['tasks'][0]['title'] ?? null);
+        $this->assertSame(
+            $this->boardRoot.'/TODO/demo.md',
+            $decoded['tasks'][0]['path'] ?? null,
+        );
     }
 
     #[Test]
@@ -86,6 +89,7 @@ final class TaskWorkflowHandlerToonOutputTest extends TestCase
 
         $decoded = $this->assertTopLevelToon($result);
         $this->assertStringContainsString('Created TODO/2026-01-01-created-via-toon-test.md', (string) $decoded['message']);
+        $this->assertArrayHasKey('message', $decoded);
         $this->assertSame(
             $this->boardRoot.'/TODO/2026-01-01-created-via-toon-test.md',
             $decoded['path'] ?? null,
@@ -109,6 +113,7 @@ final class TaskWorkflowHandlerToonOutputTest extends TestCase
 
         $decoded = $this->assertTopLevelToon($result);
         $this->assertSame('No updates to apply (no fields provided).', $decoded['message'] ?? null);
+        $this->assertArrayHasKey('message', $decoded);
         $this->assertIsArray($decoded['task'] ?? null);
         $this->assertSame('TODO', $decoded['task']['status'] ?? null);
         $this->assertSame('noop.md', $decoded['task']['file'] ?? null);
@@ -128,7 +133,6 @@ final class TaskWorkflowHandlerToonOutputTest extends TestCase
 
         $decoded = Toon::decode($result);
         $this->assertIsArray($decoded);
-        $this->assertArrayHasKey('message', $decoded);
 
         return $decoded;
     }

@@ -59,7 +59,7 @@ final readonly class TaskWorkflowExtension implements HatfieldExtensionInterface
                 ],
                 'additionalProperties' => false,
             ],
-            handler: new ListTasksHandler($store, $formatter),
+            handler: new ListTasksHandler($store),
             promptSummary: 'List project workflow tasks from the external task board',
             promptGuidelines: [
                 'Use task_list before starting tracked project work to understand TODO and IN-PROGRESS tasks.',
