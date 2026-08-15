@@ -172,7 +172,7 @@ final class TuiTaskListToolE2eTest extends TestCase
         $transportDbPath = $paths['transport'];
 
         return \sprintf(
-            'APP_ENV=test %sHATFIELD_TASK_WORKFLOW_ROOT=%s %sHOME=%s %s %s %s agent '
+            'APP_ENV=test %sHATFIELD_TASK_WORKFLOW_ROOT=%s %sHOME=%s %s %s agent '
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
             TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
@@ -181,7 +181,6 @@ final class TuiTaskListToolE2eTest extends TestCase
             escapeshellarg($this->testProjectDir.'/home'),
             escapeshellarg($php),
             escapeshellarg($script),
-            escapeshellarg($projectDir),
         );
     }
 
@@ -266,7 +265,7 @@ final class TuiTaskListToolE2eTest extends TestCase
         @mkdir($boardRoot.'/TODO', 0o777, true);
         file_put_contents(
             $boardRoot.'/TODO/demo.md',
-            "# ".self::TASK_TITLE."\n\n## Goal\nDemo task for E2E.\n",
+            '# '.self::TASK_TITLE."\n\n## Goal\nDemo task for E2E.\n",
         );
     }
 
