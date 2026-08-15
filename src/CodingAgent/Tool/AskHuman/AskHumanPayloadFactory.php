@@ -22,17 +22,11 @@ namespace Ineersa\CodingAgent\Tool\AskHuman;
 final class AskHumanPayloadFactory
 {
     /**
-     * @return array<string, mixed> Normalized interrupt payload with kind=interrupt
-     */
-    public function createPayload(AskHumanArgumentsDTO $dto): array
-    {
-        return $this->buildPayload($dto);
-    }
-
-    /**
+     * Build the normalized interrupt payload from validated ask_human arguments.
+     *
      * @return array<string, mixed>
      */
-    private function buildPayload(AskHumanArgumentsDTO $dto): array
+    public function createPayload(AskHumanArgumentsDTO $dto): array
     {
         $prompt = $dto->question;
         $questionId = $this->generateQuestionId($dto);

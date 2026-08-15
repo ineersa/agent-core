@@ -9,23 +9,26 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
+use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * Read a text file as plain UTF-8 content.
  *
  * Implements both HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and ToolHandlerInterface for execution.
+ * as a permanent tool and the Symfony AI native tool contract (AsTool).
+ * The provider schema is generated natively from ReadFileArgumentsDTO.
  *
  * Features:
  * - Output is plain file text (no line-number prefix).
- * - Offset and limit are 1-indexed and validated.
+ * - Offset and limit are 1-indexed (DTO-validated).
  * - Binary, non-UTF-8, image, and device files are rejected.
  * - Output passes through OutputCap for character-based capping.
  * - Large output is truncated at 2000 lines by default (via head).
  * - Continuation hint appended when truncation occurs.
  * - Cancellation checkpoints wrap the read path.
  */
-final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+#[AsTool('read', 'Read a text file and return plain content. Supports offset (starting line) and limit (max lines) for reading specific sections. Binary files, image files, PDFs, and device paths are rejected.')]
+final class ReadFileTool implements HatfieldToolProviderInterface
 {
     /** Default maximum lines for an unrestricted read. */
     private const int DEFAULT_LINE_LIMIT = 2000;
@@ -75,18 +78,9 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     public function __invoke(ReadFileArgumentsDTO $arguments): string
     {
         return $this->toolRuntime->run(function () use ($arguments): string {
-            $path = trim($arguments->path);
-            if ('' === $path) {
-                throw new ToolCallException('The "path" argument is required and must be a non-empty string.', retryable: false);
-            }
+            $path = $arguments->path;
             $offset = $arguments->offset;
             $limit = $arguments->limit;
-            if (null !== $offset && $offset < 1) {
-                throw new ToolCallException('The "offset" argument must be a positive integer.', retryable: false);
-            }
-            if (null !== $limit && $limit < 1) {
-                throw new ToolCallException('The "limit" argument must be a positive integer.', retryable: false);
-            }
 
             // Resolve the path to an absolute, normalized form
             $resolvedPath = PathResolver::resolve($path);
@@ -121,27 +115,6 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         return new ToolDefinitionDTO(
             name: 'read',
             description: 'Read a text file and return plain content. Supports offset (starting line) and limit (max lines) for reading specific sections. Binary files, image files, PDFs, and device paths are rejected.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'path' => [
-                        'type' => 'string',
-                        'description' => 'File path to read (absolute, or relative to the working directory)',
-                    ],
-                    'offset' => [
-                        'type' => 'integer',
-                        'description' => 'Starting line number (1-indexed). Omit to read from the beginning.',
-                        'minimum' => 1,
-                    ],
-                    'limit' => [
-                        'type' => 'integer',
-                        'description' => 'Maximum number of lines to return. Omit to use the default cap (2000 lines).',
-                        'minimum' => 1,
-                    ],
-                ],
-                'required' => ['path'],
-                'additionalProperties' => false,
-            ],
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
             promptLine: 'read path [offset=N] [limit=N] — read all or part of a text file as plain content; use view_image for images',

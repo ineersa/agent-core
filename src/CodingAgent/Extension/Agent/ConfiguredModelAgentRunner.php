@@ -14,6 +14,8 @@ use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Agent;
 use Symfony\AI\Agent\Toolbox\AgentProcessor;
+use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
+use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\PlatformInterface;
@@ -33,6 +35,7 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         private PlatformInterface $platform,
         private ?HatfieldModelCatalog $modelCatalog,
         private LoggerInterface $logger,
+        private ToolCallArgumentResolverInterface $argumentResolver,
     ) {
     }
 
@@ -68,9 +71,9 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         if ([] !== $request->tools) {
             // Omit maxToolCalls when null so AgentProcessor keeps its default (50).
             // Passing null explicitly would mean unlimited iterations.
-            $isolated = new IsolatedAgentToolbox(array_values($request->tools));
-            // Fault-tolerant so schema validation failures are model-visible tool results.
-            $toolbox = IsolatedAgentToolbox::faultTolerant($isolated);
+            $isolated = new IsolatedAgentToolbox(array_values($request->tools), $this->argumentResolver);
+            // Fault-tolerant so execution failures are model-visible tool results.
+            $toolbox = new FaultTolerantToolbox($isolated);
             $processor = null === $request->maxToolCalls
                 ? new AgentProcessor($toolbox)
                 : new AgentProcessor(

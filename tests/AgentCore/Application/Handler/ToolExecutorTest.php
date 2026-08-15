@@ -12,9 +12,8 @@ use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
+use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
-use Ineersa\CodingAgent\Tool\ToolCallArgumentsValidator;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
@@ -395,7 +394,7 @@ final class ToolExecutorTest extends TestCase
         // FaultTolerantToolbox, which only converts ToolExecutionExceptionInterface.
         // A handler ToolCallException must survive unchanged so ToolExecutor
         // classifies error_type/retryable/hint instead of a generic fault message.
-        $handler = new class implements ToolHandlerInterface {
+        $handler = new class {
             public function __invoke(array $arguments): mixed
             {
                 throw new ToolCallException('Registry tool failed', retryable: true, hint: 'Adjust the arguments');
@@ -406,8 +405,7 @@ final class ToolExecutorTest extends TestCase
 
         $toolbox = new RegistryBackedToolbox(
             registry: $registry,
-            argumentResolver: new ToolCallArgumentResolver(),
-            argumentsValidator: new ToolCallArgumentsValidator(),
+            argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
         );
         $executor = new ToolExecutor(
             defaultMode: 'parallel',

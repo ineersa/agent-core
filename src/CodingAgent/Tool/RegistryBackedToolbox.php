@@ -5,19 +5,20 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
-use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
-use Symfony\AI\Agent\Toolbox\Event\ToolCallFailed;
-use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
-use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
-use Symfony\AI\Agent\Toolbox\Exception\InvalidToolCallArgumentsException;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\Exception\ToolException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionException;
-use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
+use Symfony\AI\Agent\Toolbox\Toolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
+use Symfony\AI\Agent\Toolbox\ToolFactory\ReflectionToolFactory;
+use Symfony\AI\Agent\Toolbox\ToolFactoryInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Tool\ExecutionReference;
@@ -28,32 +29,34 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * Registry-backed Symfony AI Toolbox.
  *
  * Reads all active tool definitions (permanent, dynamic, and extension-registered)
- * from ToolRegistryInterface and makes them available for execution through the
- * Symfony AI ToolboxInterface contract.
+ * from ToolRegistryInterface and delegates execution to the native Symfony AI
+ * Toolbox: native ToolCallArgumentResolver, ToolCallArgumentsResolved with
+ * ValidateToolCallArgumentsListener, and native lifecycle events.
  *
- * Execution lifecycle (rewrites preserved before policy):
- *   rewrite hooks → ToolCallRequested (policy sees rewritten raw args)
- *   → JSON Schema validation against the canonical provider schema
- *   → native ToolCallArgumentResolver (typed DTO for built-ins; flat array for dynamic)
- *   → ToolCallArgumentsResolved (ValidateToolCallArgumentsListener for objects)
- *   → handler invoke → succeeded/failed
+ * Execution lifecycle:
+ *   rewrite hooks (rewrite the ToolCall arguments first)
+ *   → native Toolbox::execute()
+ *     → ToolCallRequested (policy hooks see rewritten args)
+ *     → native ToolCallArgumentResolver (DTO for typed tools; raw map for
+ *       raw-array tools via RawAwareToolCallArgumentResolver)
+ *     → ToolCallArgumentsResolved (ValidateToolCallArgumentsListener)
+ *     → handler invoke → ToolCallSucceeded/Failed
  *
- * Mutable registry semantics are preserved: getTools()/toolDefinition() always
- * read the live registry (no long-lived native Toolbox metadata cache).
- *
- * @see ToolDefinitionDTO
- * @see ToolHandlerInterface
+ * Mutable registry semantics are preserved: getTools() and execute() always
+ * read the live registry, and a fresh native Toolbox is built per execution
+ * so dynamic tool changes are never served from a stale metadata cache.
  */
 final readonly class RegistryBackedToolbox implements ToolboxInterface
 {
     public function __construct(
         private ToolRegistryInterface $registry,
         private ToolCallArgumentResolverInterface $argumentResolver,
-        private ToolCallArgumentsValidator $argumentsValidator,
+        private ToolFactoryInterface $nativeToolFactory = new ReflectionToolFactory(),
         private ?EventDispatcherInterface $eventDispatcher = null,
         private ?ExtensionHookRegistry $rewriteHookProvider = null,
         private ?StackToolExecutionContextAccessor $contextAccessor = null,
         private ?ChildRunExtensionAllowlistReaderInterface $extensionAllowlistReader = null,
+        private ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -62,14 +65,10 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
      */
     public function getTools(): array
     {
-        $definitions = $this->registry->activeToolDefinitions();
-        $tools = [];
-
-        foreach ($definitions as $definition) {
-            $tools[] = $this->toSymfonyTool($definition);
-        }
-
-        return $tools;
+        return array_map(
+            fn (ToolDefinitionDTO $definition): Tool => $this->metadataFor($definition),
+            $this->registry->activeToolDefinitions(),
+        );
     }
 
     /**
@@ -83,10 +82,35 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             throw ToolNotFoundException::notFoundForToolCall($toolCall);
         }
 
-        $metadata = $this->toSymfonyTool($definition);
-        $handler = $definition->handler;
+        $rewrittenCall = $this->applyRewrites($toolCall);
 
-        // ── Pre-event rewrite phase ──
+        $toolbox = new Toolbox(
+            tools: [$definition->handler],
+            toolFactory: new DefinitionToolFactory($this->metadataFor($definition)),
+            argumentResolver: $this->argumentResolver,
+            logger: $this->logger ?? new NullLogger(),
+            eventDispatcher: $this->eventDispatcher,
+        );
+
+        try {
+            return $toolbox->execute($rewrittenCall);
+        } catch (ToolExecutionException $e) {
+            // Thin outer translation: the native Toolbox wraps every handler
+            // throwable in ToolExecutionException. A handler-thrown
+            // ToolCallException must survive unchanged so ToolExecutor keeps
+            // message/hint/retryable classification. All other failures keep
+            // their native wrapping (FaultTolerantToolbox makes them
+            // deterministic model-visible results).
+            if ($e->getPrevious() instanceof ToolCallException) {
+                throw $e->getPrevious();
+            }
+
+            throw $e;
+        }
+    }
+
+    private function applyRewrites(ToolCall $toolCall): ToolCall
+    {
         $arguments = $toolCall->getArguments();
 
         if (null !== $this->rewriteHookProvider) {
@@ -111,110 +135,101 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             }
         }
 
-        $eventToolCall = $arguments !== $toolCall->getArguments()
-            ? new ToolCall($toolCall->getId(), $toolCall->getName(), $arguments)
-            : $toolCall;
-
-        $requestedEvent = new ToolCallRequested($eventToolCall, $metadata);
-        $this->eventDispatcher?->dispatch($requestedEvent);
-
-        if ($requestedEvent->isDenied()) {
-            return new ToolResult($toolCall, $requestedEvent->getDenialReason() ?? 'Tool execution denied.');
+        if ($arguments === $toolCall->getArguments()) {
+            return $toolCall;
         }
 
-        if ($requestedEvent->hasResult()) {
-            return $requestedEvent->getResult() ?? new ToolResult($toolCall, null);
-        }
-
-        // Lifecycle succeeded/failed events keep the rewritten flat provider args
-        // (pre-task contract). Only ToolCallArgumentsResolved gets the native map.
-        $flatArguments = $arguments;
-        $resolvedArguments = null;
-
-        try {
-            // Schema validation on the final rewritten flat provider args.
-            $this->argumentsValidator->assertValid(
-                $flatArguments,
-                $definition->parametersJsonSchema,
-                $toolCall->getName(),
-            );
-
-            $resolutionCall = $this->toolCallForResolution($handler, $eventToolCall, $flatArguments);
-            $resolvedArguments = $this->argumentResolver->resolveArguments($metadata, $resolutionCall);
-
-            $this->eventDispatcher?->dispatch(new ToolCallArgumentsResolved($handler, $metadata, $resolvedArguments));
-
-            $result = new ToolResult($toolCall, $handler(...$resolvedArguments));
-
-            $this->eventDispatcher?->dispatch(new ToolCallSucceeded($handler, $metadata, $flatArguments, $result));
-
-            return $result;
-        } catch (ToolExecutionExceptionInterface $exception) {
-            // Schema / explicit tool-execution failures: model-visible via FaultTolerantToolbox.
-            $this->eventDispatcher?->dispatch(new ToolCallFailed($handler, $metadata, $flatArguments, $exception));
-
-            throw $exception;
-        } catch (\Throwable $exception) {
-            if (null === $resolvedArguments) {
-                // Resolver/denormalizer failed before handler invoke — wrap for FaultTolerantToolbox.
-                $wrapped = ToolExecutionException::executionFailed($toolCall, $exception);
-                $this->eventDispatcher?->dispatch(new ToolCallFailed($handler, $metadata, $flatArguments, $wrapped));
-
-                throw $wrapped;
-            }
-
-            // Handler threw (ToolCallException, cancellation, runtime, …) — rethrow unchanged
-            // so ToolExecutor preserves message/hint/retryable classification.
-            $this->eventDispatcher?->dispatch(new ToolCallFailed($handler, $metadata, $flatArguments, $exception));
-
-            throw $exception;
-        }
-    }
-
-    private function toSymfonyTool(ToolDefinitionDTO $definition): Tool
-    {
-        return new Tool(
-            reference: new ExecutionReference(
-                class: $definition->handler::class,
-                method: '__invoke',
-            ),
-            name: $definition->name,
-            description: $definition->description,
-            parameters: $definition->parametersJsonSchema,
-        );
+        return new ToolCall($toolCall->getId(), $toolCall->getName(), $arguments);
     }
 
     /**
-     * Bridge flat provider schemas into native resolver parameter names.
+     * Build the native Symfony AI Tool metadata for one registered definition.
      *
-     * Built-in handlers take one aggregate DTO parameter (e.g. $arguments).
-     * Provider schemas are flat, so wrap the flat object under that parameter
-     * name for denormalization without changing the provider-visible schema.
+     * Typed DTO handlers (parametersJsonSchema === null) get their metadata
+     * from Symfony AI's native ReflectionToolFactory (AsTool + JsonSchema
+     * Factory) so DTO types/constraints and the provider-visible schema cannot
+     * drift. The registry definition remains canonical for name/description.
      *
-     * Array-parameter handlers (MCP/extension adapters) already match the flat schema.
-     *
-     * @param array<string, mixed> $arguments
+     * Raw-array handlers (runtime-provided schema) keep their schema and are
+     * flagged so the argument resolver passes the flat provider map through.
      */
-    private function toolCallForResolution(ToolHandlerInterface $handler, ToolCall $toolCall, array $arguments): ToolCall
+    private function metadataFor(ToolDefinitionDTO $definition): Tool
     {
-        try {
-            $method = new \ReflectionMethod($handler, '__invoke');
-        } catch (\ReflectionException $e) {
-            throw new InvalidToolCallArgumentsException(\sprintf('Tool handler "%s" is not invokable.', $handler::class), 0, $e);
+        if (null !== $definition->parametersJsonSchema) {
+            return new Tool(
+                reference: new ExecutionReference($definition->handler::class, '__invoke'),
+                name: $definition->name,
+                description: $definition->description,
+                parameters: $definition->parametersJsonSchema,
+                metadata: ['raw_arguments' => true],
+            );
         }
 
-        $parameters = $method->getParameters();
-        if (1 !== \count($parameters)) {
-            throw new InvalidToolCallArgumentsException(\sprintf('Tool handler "%s::__invoke" must declare exactly one parameter.', $handler::class));
-        }
+        $native = $this->nativeMetadataFor($definition);
 
-        // Provider schemas are flat; handlers take one aggregate parameter (DTO or array).
-        // Always nest under that parameter name so ToolCallArgumentResolver can resolve it.
-        return new ToolCall(
-            $toolCall->getId(),
-            $toolCall->getName(),
-            [$parameters[0]->getName() => $arguments],
+        return new Tool(
+            reference: $native->getReference(),
+            name: $definition->name,
+            description: $definition->description,
+            parameters: $this->normalizeNullableRequired($native->getParameters() ?? []),
         );
+    }
+
+    private function nativeMetadataFor(ToolDefinitionDTO $definition): Tool
+    {
+        $metadata = iterator_to_array($this->nativeToolFactory->getTool($definition->handler), false);
+
+        if ([] === $metadata) {
+            throw ToolException::missingAttribute($definition->handler::class);
+        }
+
+        return $metadata[0];
+    }
+
+    /**
+     * Symfony AI's JsonSchema generation marks every DTO property required,
+     * including nullable-with-default optional ones. Nullable properties are
+     * optional by definition, so drop them from `required` to keep the
+     * provider schema faithful to the DTO contract.
+     *
+     * @param array<string, mixed> $schema
+     *
+     * @return array<string, mixed>
+     */
+    private function normalizeNullableRequired(array $schema): array
+    {
+        if (isset($schema['required'], $schema['properties']) && \is_array($schema['properties'])) {
+            $schema['required'] = array_values(array_filter(
+                $schema['required'],
+                static fn (mixed $name): bool => !\is_string($name) || !self::isNullableProperty($schema['properties'][$name] ?? null),
+            ));
+
+            if ([] === $schema['required']) {
+                unset($schema['required']);
+            }
+        }
+
+        foreach ($schema as $key => $value) {
+            if (\is_array($value) && 'properties' !== $key) {
+                $schema[$key] = $this->normalizeNullableRequired($value);
+            }
+        }
+
+        return $schema;
+    }
+
+    /**
+     * @param mixed $propertySchema
+     */
+    private static function isNullableProperty(mixed $propertySchema): bool
+    {
+        if (!\is_array($propertySchema)) {
+            return false;
+        }
+
+        $type = $propertySchema['type'] ?? null;
+
+        return \is_array($type) && \in_array('null', $type, true);
     }
 
     /**

@@ -69,6 +69,13 @@ final class SafeGuardClassifier
         string $cwd,
         SafeGuardPolicy $policy,
     ): SafeGuardDecision {
+        // Typed DTO tools are invoked with the native nested shape
+        // {arguments: {...}}; raw-array tools stay flat. Normalize to the
+        // effective argument map so classification sees the real values.
+        if (isset($arguments['arguments']) && \is_array($arguments['arguments'])) {
+            $arguments = $arguments['arguments'];
+        }
+
         if ($toolName === $this->bashToolName) {
             return $this->classifyBash($arguments, $policy);
         }

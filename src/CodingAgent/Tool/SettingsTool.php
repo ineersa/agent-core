@@ -22,7 +22,7 @@ use Ineersa\CodingAgent\Config\SettingsValueResolver;
  * writable. Disk changes require a Hatfield restart to take effect.
  * Do not use generic file tools to read or edit settings YAML.
  */
-final class SettingsTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+final class SettingsTool implements HatfieldToolProviderInterface
 {
     public function __construct(
         private readonly ToolRuntime $toolRuntime,

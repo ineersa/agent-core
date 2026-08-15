@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -675,7 +674,7 @@ final class ToolRegistryTest extends TestCase
     private function createProvider(
         string $name,
         string $description,
-        ToolHandlerInterface $handler,
+        object $handler,
         string $promptLine,
         array $promptGuidelines = [],
     ): HatfieldToolProviderInterface {
@@ -701,9 +700,9 @@ final class ToolRegistryTest extends TestCase
         };
     }
 
-    private function dummyHandler(): ToolHandlerInterface
+    private function dummyHandler(): object
     {
-        return new class implements ToolHandlerInterface {
+        return new class {
             public function __invoke(array $arguments = []): string
             {
                 return 'handler result';

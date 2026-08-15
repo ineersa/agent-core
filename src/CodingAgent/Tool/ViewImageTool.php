@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Message\ToolResultType;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
+use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 use Ineersa\CodingAgent\Tool\ImageProcessing\ImageAttachmentProcessor;
 use Ineersa\CodingAgent\Tool\ImageProcessing\RunVisionCheckService;
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
@@ -17,8 +18,8 @@ use League\MimeTypeDetection\FinfoMimeTypeDetector;
 /**
  * View an image file and return compact metadata (no base64/data_url).
  *
- * Implements both HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and ToolHandlerInterface for execution.
+ * Implements HatfieldToolProviderInterface for automatic registration
+ * as a permanent tool and the Symfony AI native tool contract (AsTool).
  *
  * The tool returns only image metadata (path, media_type, bytes, width, height)
  * as a JSON text result. The actual image data is NOT included in the tool
@@ -32,7 +33,8 @@ use League\MimeTypeDetection\FinfoMimeTypeDetector;
  * - File size and image dimensions are checked against configurable limits.
  * - Cancellation is checked via ToolRuntime::run() before reading the file.
  */
-final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+#[AsTool('view_image', 'View image metadata and details for an image file. Returns compact metadata (dimensions, format, size); never returns image bytes.')]
+final class ViewImageTool implements HatfieldToolProviderInterface
 {
     /** @var list<string> */
     private const array SUPPORTED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -67,10 +69,7 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
                 }
             }
 
-            $path = trim($arguments->path);
-            if ('' === $path) {
-                throw new ToolCallException('The "path" argument is required and must be a non-empty string.', retryable: false);
-            }
+            $path = $arguments->path;
 
             // Resolve to absolute normalized path
             $resolvedPath = PathResolver::resolve($path);

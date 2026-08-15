@@ -12,9 +12,9 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class SubagentTaskDTO
 {
     public function __construct(
-        #[Assert\NotBlank(message: 'Each task must include a non-empty "agent" string.')]
+        #[Assert\NotBlank(normalizer: 'trim', message: 'Each task must include a non-empty "agent" string.')]
         public readonly string $agent = '',
-        #[Assert\NotBlank(message: 'Each task must include a non-empty "task" string.')]
+        #[Assert\NotBlank(normalizer: 'trim', message: 'Each task must include a non-empty "task" string.')]
         public readonly string $task = '',
     ) {
     }

@@ -27,8 +27,6 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
  */
 final class ToolRegistry implements ToolRegistryInterface
 {
-    private readonly ToolCallArgumentsValidator $argumentsValidator;
-
     /**
      * @var array<string, ToolDefinitionDTO>
      */
@@ -65,10 +63,7 @@ final class ToolRegistry implements ToolRegistryInterface
      */
     public function __construct(
         iterable $providers = [],
-        ?ToolCallArgumentsValidator $argumentsValidator = null,
     ) {
-        $this->argumentsValidator = $argumentsValidator ?? new ToolCallArgumentsValidator();
-
         foreach ($providers as $provider) {
             $definition = $provider->definition();
 
@@ -88,9 +83,9 @@ final class ToolRegistry implements ToolRegistryInterface
     public function registerTool(
         string $name,
         string $description,
-        array $parametersJsonSchema,
-        ToolHandlerInterface $handler,
+        object $handler,
         string $promptLine,
+        ?array $parametersJsonSchema = null,
         array $promptGuidelines = [],
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
         ?int $timeoutSeconds = null,
@@ -105,13 +100,11 @@ final class ToolRegistry implements ToolRegistryInterface
             return;
         }
 
-        $this->argumentsValidator->assertSchemaIsUsable($parametersJsonSchema, $name);
-
         $this->permanentTools[$name] = new ToolDefinitionDTO(
             name: $name,
             description: $description,
-            parametersJsonSchema: $parametersJsonSchema,
             handler: $handler,
+            parametersJsonSchema: $parametersJsonSchema,
             promptLine: $promptLine,
             promptGuidelines: $promptGuidelines,
             executionMode: $executionMode,
@@ -124,8 +117,8 @@ final class ToolRegistry implements ToolRegistryInterface
     public function addDynamicTool(
         string $name,
         string $description,
+        object $handler,
         array $parametersJsonSchema,
-        ToolHandlerInterface $handler,
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
     ): void {
         if ('' === $name || '' === $description) {
@@ -136,8 +129,6 @@ final class ToolRegistry implements ToolRegistryInterface
             throw new \InvalidArgumentException(\sprintf('Cannot register dynamic tool "%s": a permanent tool with the same name already exists.', $name));
         }
 
-        $this->argumentsValidator->assertSchemaIsUsable($parametersJsonSchema, $name);
-
         // Replace if already a dynamic tool (update in place)
         if (!isset($this->dynamicTools[$name])) {
             $this->dynamicOrder[] = $name;
@@ -146,8 +137,8 @@ final class ToolRegistry implements ToolRegistryInterface
         $this->dynamicTools[$name] = new ToolDefinitionDTO(
             name: $name,
             description: $description,
-            parametersJsonSchema: $parametersJsonSchema,
             handler: $handler,
+            parametersJsonSchema: $parametersJsonSchema,
             promptLine: '',  // dynamic tools have no prompt metadata
             promptGuidelines: [],
             executionMode: $executionMode,

@@ -21,8 +21,8 @@ use Ineersa\CodingAgent\Config\ToolSettings;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ImageProcessing\RunVisionCheckService;
+use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
-use Ineersa\CodingAgent\Tool\ToolCallArgumentsValidator;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Ineersa\CodingAgent\Tool\ViewImageTool;
@@ -404,7 +404,10 @@ final class ViewImageToolTest extends TestCase
         $toolRuntime = new ToolRuntime($contextAccessor);
         $tool = new ViewImageTool($toolRuntime, $this->imageConfig, $contextAccessor);
         $registry = new ToolRegistry([$tool]);
-        $toolbox = new RegistryBackedToolbox($registry, new ToolCallArgumentResolver(), new ToolCallArgumentsValidator());
+        $toolbox = new RegistryBackedToolbox(
+            $registry,
+            new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+        );
 
         $tokenCancelledFirst = $this->createStub(CancellationTokenInterface::class);
         $tokenCancelledFirst->method('isCancellationRequested')->willReturn(false);
@@ -422,7 +425,8 @@ final class ViewImageToolTest extends TestCase
         $toolCall = new ToolCall(
             toolCallId: 'view_image_call_1',
             toolName: 'view_image',
-            arguments: ['path' => $imagePath],
+            // Native nested shape for DTO-typed tools.
+            arguments: ['arguments' => ['path' => $imagePath]],
             orderIndex: 0,
             runId: 'test_run_1',
             mode: null,

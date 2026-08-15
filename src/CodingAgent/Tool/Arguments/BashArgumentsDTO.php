@@ -14,7 +14,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class BashArgumentsDTO
 {
     public function __construct(
-        #[Assert\NotBlank(message: 'The "command" argument is required and must be a non-empty string.')]
+        #[Assert\NotBlank(normalizer: 'trim', message: 'The "command" argument is required and must be a non-empty string.')]
         public readonly string $command = '',
         #[Assert\Positive(message: 'The "timeout" argument must be a positive integer.')]
         public readonly ?int $timeout = null,

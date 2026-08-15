@@ -9,15 +9,16 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRetrievalService;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
+use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 
 /**
  * Model-visible `agent_retrieve` tool for parent-scoped subagent artifacts.
  */
-final class AgentRetrieveTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+#[AsTool('agent_retrieve', 'Retrieve a completed or failed subagent artifact handoff, metadata, or bounded event/history summary from the current parent session.')]
+final class AgentRetrieveTool implements HatfieldToolProviderInterface
 {
     public function __construct(
         private readonly AgentArtifactRetrievalService $retrievalService,
@@ -48,34 +49,6 @@ final class AgentRetrieveTool implements HatfieldToolProviderInterface, ToolHand
         return new ToolDefinitionDTO(
             name: 'agent_retrieve',
             description: 'Retrieve a completed or failed subagent artifact handoff, metadata, or bounded event/history summary from the current parent session.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'artifact_id' => [
-                        'type' => 'string',
-                        'description' => 'Child artifact id (e.g. agent_abc123) within the current parent session.',
-                        'minLength' => 1,
-                    ],
-                    'agent_run_id' => [
-                        'type' => 'string',
-                        'description' => 'Child AgentCore run id (UUID) for the subagent run.',
-                        'minLength' => 1,
-                    ],
-                    'mode' => [
-                        'type' => 'string',
-                        'enum' => ['handoff', 'metadata', 'events', 'history', 'debug'],
-                        'description' => 'Output mode. Default handoff.',
-                    ],
-                    'limit' => [
-                        'type' => 'integer',
-                        'minimum' => 1,
-                        'maximum' => AgentArtifactRetrievalService::MAX_LIMIT,
-                        'description' => \sprintf('Max rows for events/history modes (default %d).', AgentArtifactRetrievalService::DEFAULT_LIMIT),
-                    ],
-                ],
-                'required' => [],
-                'additionalProperties' => false,
-            ],
             handler: $this,
             executionMode: ToolExecutionMode::Sequential,
             promptLine: 'agent_retrieve artifact_id=<id>|agent_run_id=<uuid> [mode] [limit=N] — retrieve a subagent artifact',

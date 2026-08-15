@@ -12,7 +12,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class WriteFileArgumentsDTO
 {
     public function __construct(
-        #[Assert\NotBlank(message: 'The "path" argument is required and must be a non-empty string.')]
+        #[Assert\NotBlank(normalizer: 'trim', message: 'The "path" argument is required and must be a non-empty string.')]
         public readonly string $path = '',
         #[Assert\NotNull(message: 'The "content" argument is required and must be a string.')]
         #[Assert\Type(type: 'string', message: 'The "content" argument is required and must be a string.')]

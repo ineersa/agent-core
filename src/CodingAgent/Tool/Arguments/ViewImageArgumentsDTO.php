@@ -12,7 +12,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class ViewImageArgumentsDTO
 {
     public function __construct(
-        #[Assert\NotBlank(message: 'The "path" argument is required and must be a non-empty string.')]
+        #[Assert\NotBlank(normalizer: 'trim', message: 'The "path" argument is required and must be a non-empty string.')]
         public readonly string $path = '',
     ) {
     }

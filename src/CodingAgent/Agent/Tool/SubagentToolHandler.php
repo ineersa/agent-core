@@ -10,9 +10,9 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Execution\SubagentArgumentsDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Config\AgentsConfig;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
+use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * Execution handler for the `subagent` tool.
@@ -21,7 +21,8 @@ use Psr\Container\ContainerInterface;
  * service locator so ToolRegistry can register the tool definition without
  * constructing the heavy subagent execution graph at container compile time.
  */
-final class SubagentToolHandler implements ToolHandlerInterface
+#[AsTool('subagent', 'Launch interactive foreground subagent(s) in single or parallel mode; blocks until all children finish.')]
+final class SubagentToolHandler
 {
     private const string EXECUTION_SERVICE_LOCATOR_KEY = 'execution';
 

@@ -12,9 +12,9 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class EditFileArgumentsDTO
 {
     public function __construct(
-        #[Assert\NotBlank(message: 'The "path" argument is required and must be a non-empty string.')]
+        #[Assert\NotBlank(normalizer: 'trim', message: 'The "path" argument is required and must be a non-empty string.')]
         public readonly string $path = '',
-        #[Assert\NotBlank(message: 'The "patch" argument is required and must be a non-empty string.')]
+        #[Assert\NotBlank(normalizer: 'trim', message: 'The "patch" argument is required and must be a non-empty string.')]
         public readonly string $patch = '',
     ) {
     }

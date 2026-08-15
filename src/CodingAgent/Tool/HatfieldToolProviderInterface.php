@@ -22,8 +22,7 @@ interface HatfieldToolProviderInterface
      * Return the tool's full definition for registration.
      *
      * Called when ToolRegistry is constructed. The returned ToolDefinitionDTO
-     * must be fully populated including a valid ToolHandlerInterface
-     * implementation for execution.
+     * must be fully populated including a valid invokable handler for execution.
      */
     public function definition(): ToolDefinitionDTO;
 }

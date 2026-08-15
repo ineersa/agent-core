@@ -10,12 +10,14 @@ use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\Edit\PatchApplier;
 use Ineersa\CodingAgent\Tool\Edit\PatchFailureFormatter;
+use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 use Symfony\Component\Lock\LockFactory;
 
 /**
  * Edit an existing file by applying Codex-style @@ hunks.
  */
-final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+#[AsTool('edit', 'Apply @@ hunks to an existing file. Every hunk body line must start with a diff prefix: a leading space for unchanged context, `-` for removal, or `+` for addition. The target file must exist; use the write tool for new files.')]
+final class EditFileTool implements HatfieldToolProviderInterface
 {
     private readonly PatchApplier $applier;
 
@@ -36,14 +38,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     public function __invoke(EditFileArgumentsDTO $arguments): string
     {
         return $this->toolRuntime->run(function () use ($arguments): string {
-            $path = trim($arguments->path);
+            $path = $arguments->path;
             $patch = $arguments->patch;
-            if ('' === $path) {
-                throw new ToolCallException('The "path" argument is required and must be a non-empty string.', retryable: false);
-            }
-            if ('' === trim($patch)) {
-                throw new ToolCallException('The "patch" argument is required and must be a non-empty string.', retryable: false);
-            }
             $targetPath = $this->resolveAndVerifyTarget($path);
             $result = $this->applier->apply($targetPath, $patch);
 
@@ -66,21 +62,6 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         return new ToolDefinitionDTO(
             name: 'edit',
             description: 'Apply @@ hunks to an existing file. Every hunk body line must start with a diff prefix: a leading space for unchanged context, `-` for removal, or `+` for addition. The target file must exist; use the write tool for new files.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'path' => [
-                        'type' => 'string',
-                        'description' => 'File path to edit (absolute, or relative to the working directory)',
-                    ],
-                    'patch' => [
-                        'type' => 'string',
-                        'description' => 'Codex-style hunk body beginning with `@@`; prefix each body line with a space for unchanged context, `-` for removal, or `+` for addition. Multiple sequential, non-overlapping hunks are allowed.',
-                    ],
-                ],
-                'required' => ['path', 'patch'],
-                'additionalProperties' => false,
-            ],
             handler: $this,
             executionMode: ToolExecutionMode::Sequential,
             promptLine: 'edit path patch — apply @@ hunks to an existing file',

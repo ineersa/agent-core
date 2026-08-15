@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Docs\BuiltinDocsCatalog;
 use Ineersa\CodingAgent\Docs\BuiltinDocsCatalogException;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Tool\Arguments\HatfieldDocsArgumentsDTO;
+use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * Read-only parent-agent catalog for curated Hatfield documentation.
@@ -21,7 +22,8 @@ use Ineersa\CodingAgent\Tool\Arguments\HatfieldDocsArgumentsDTO;
  * lifetime. Lookup is by logical ID only; arbitrary filesystem paths are
  * never accepted.
  */
-final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+#[AsTool('hatfield_docs', 'List or read bundled Hatfield documentation by logical document ID.')]
+final class HatfieldDocsTool implements HatfieldToolProviderInterface
 {
     /**
      * Lazy catalog keyed by logical document ID (filename stem).
@@ -56,23 +58,6 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
         return new ToolDefinitionDTO(
             name: 'hatfield_docs',
             description: 'List or read bundled Hatfield documentation by logical document ID.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'operation' => [
-                        'type' => 'string',
-                        'enum' => ['list', 'read'],
-                        'description' => 'list catalog entries, or read one document by id.',
-                    ],
-                    'id' => [
-                        'type' => 'string',
-                        'description' => 'Logical document ID (required for read).',
-                        'minLength' => 1,
-                    ],
-                ],
-                'required' => ['operation'],
-                'additionalProperties' => false,
-            ],
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
             promptLine: 'hatfield_docs list|read [id] — list or read bundled Hatfield docs',
@@ -101,10 +86,7 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
 
     private function readDocument(HatfieldDocsArgumentsDTO $arguments): string
     {
-        $id = $arguments->id;
-        if (null === $id || '' === trim($id)) {
-            throw new ToolCallException('The "id" argument is required for read.', retryable: false, hint: 'Use operation=list to see approved IDs.');
-        }
+        $id = (string) $arguments->id;
 
         $catalog = $this->catalog();
         if (!isset($catalog[$id])) {

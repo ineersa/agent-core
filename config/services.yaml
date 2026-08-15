@@ -823,14 +823,21 @@ services:
   # RegistryBackedToolbox — reads ToolRegistry definitions and exposes them through
   # the Symfony AI ToolboxInterface so the existing Execution pipeline can invoke
   # registered handlers (permanent, dynamic, and extension-registered tools).
-  Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface:
-    class: Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver
+  # Execution itself is delegated to the native Symfony AI Toolbox.
+  #
+  # The concrete resolver gets the app serializer (camel_case_to_snake_case)
+  # so provider keys like artifact_id denormalize onto DTO properties like
+  # artifactId. The interface alias points to the raw-array-aware decorator.
+  Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver:
     arguments:
-      # App serializer carries camel_case_to_snake_case so provider keys like
-      # artifact_id denormalize onto DTO properties like artifactId.
       $denormalizer: '@serializer'
 
-  Ineersa\CodingAgent\Tool\ToolCallArgumentsValidator: ~
+  Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface:
+    alias: Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver
+
+  Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver:
+    arguments:
+      $inner: '@Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver'
 
   # Native Symfony AI object validation for resolved DTO tool arguments.
   Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener:
@@ -843,7 +850,6 @@ services:
     arguments:
       $registry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
       $argumentResolver: '@Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface'
-      $argumentsValidator: '@Ineersa\CodingAgent\Tool\ToolCallArgumentsValidator'
       $eventDispatcher: '@event_dispatcher'
       $rewriteHookProvider: '@Ineersa\CodingAgent\Extension\ExtensionHookRegistry'
       $contextAccessor: '@Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor'

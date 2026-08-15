@@ -13,11 +13,11 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class ForkArgumentsDTO
 {
     public function __construct(
-        #[Assert\NotBlank(message: 'fork requires a non-empty task string.')]
+        #[Assert\NotBlank(normalizer: 'trim', message: 'fork requires a non-empty task string.')]
         public readonly string $task = '',
         #[Assert\When(
             expression: 'this.model !== null',
-            constraints: [new Assert\NotBlank(message: 'fork model must be a non-empty string when provided.')],
+            constraints: [new Assert\NotBlank(normalizer: 'trim', message: 'fork model must be a non-empty string when provided.')],
         )]
         public readonly ?string $model = null,
         #[Assert\Choice(choices: ModelResolver::LEVELS, message: 'fork thinking must be one of: {{ choices }}.')]

@@ -8,12 +8,13 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\WriteFileArgumentsDTO;
+use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * Write (create or replace) a file at the specified path.
  *
- * Implements both HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and ToolHandlerInterface for execution.
+ * Implements HatfieldToolProviderInterface for automatic registration
+ * as a permanent tool and the Symfony AI native tool contract (AsTool).
  *
  * Features:
  * - Creates parent directories when they do not exist.
@@ -21,7 +22,8 @@ use Ineersa\CodingAgent\Tool\Arguments\WriteFileArgumentsDTO;
  * - Checks cancellation before writing and before returning.
  * - Uses LOCK_EX for safe concurrent writes.
  */
-final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+#[AsTool('write', 'Create a new file or overwrite an existing file with the given text content. Creates parent directories automatically if they do not exist. Non-empty text content is automatically newline-terminated for POSIX compatibility.')]
+final class WriteFileTool implements HatfieldToolProviderInterface
 {
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
@@ -38,13 +40,7 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
     public function __invoke(WriteFileArgumentsDTO $arguments): string
     {
         return $this->toolRuntime->run(static function () use ($arguments): string {
-            $path = trim($arguments->path);
-            if ('' === $path) {
-                throw new ToolCallException('The "path" argument is required and must be a non-empty string.', retryable: false);
-            }
-            if (null === $arguments->content) {
-                throw new ToolCallException('The "content" argument is required and must be a string.', retryable: false);
-            }
+            $path = $arguments->path;
             $content = $arguments->content;
 
             // Resolve the path to an absolute normalized form
@@ -81,21 +77,6 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
         return new ToolDefinitionDTO(
             name: 'write',
             description: 'Create a new file or overwrite an existing file with the given text content. Creates parent directories automatically if they do not exist. Non-empty text content is automatically newline-terminated for POSIX compatibility.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'path' => [
-                        'type' => 'string',
-                        'description' => 'File path to write (absolute, or relative to the working directory)',
-                    ],
-                    'content' => [
-                        'type' => 'string',
-                        'description' => 'Text content to write to the file',
-                    ],
-                ],
-                'required' => ['path', 'content'],
-                'additionalProperties' => false,
-            ],
             handler: $this,
             executionMode: ToolExecutionMode::Sequential,
             promptLine: 'write path content — create or overwrite a text file',

@@ -43,8 +43,8 @@ interface ToolRegistryInterface
      *
      * @param string               $name                 Model-visible tool name
      * @param string               $description          Provider-schema description
-     * @param array<string, mixed> $parametersJsonSchema JSON Schema for tool parameters
-     * @param ToolHandlerInterface $handler              Typed execution handler
+     * @param array<string, mixed>|null $parametersJsonSchema JSON Schema for raw-array handlers; null for typed DTO handlers (native generation)
+     * @param object               $handler              Invokable execution handler
      * @param string               $promptLine           Single-line description for <available_tools>
      * @param list<string>         $promptGuidelines     Zero or more guideline strings for <guidelines>
      * @param ToolExecutionMode    $executionMode        Execution mode (default: Sequential)
@@ -56,9 +56,9 @@ interface ToolRegistryInterface
     public function registerTool(
         string $name,
         string $description,
-        array $parametersJsonSchema,
-        ToolHandlerInterface $handler,
+        object $handler,
         string $promptLine,
+        ?array $parametersJsonSchema = null,
         array $promptGuidelines = [],
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
         ?int $timeoutSeconds = null,
@@ -76,7 +76,7 @@ interface ToolRegistryInterface
      *                                                   conflict with a permanent tool name)
      * @param string               $description          Provider-schema description
      * @param array<string, mixed> $parametersJsonSchema JSON Schema for tool parameters
-     * @param ToolHandlerInterface $handler              Typed execution handler
+     * @param object               $handler              Invokable execution handler
      * @param ToolExecutionMode    $executionMode        Execution mode (default: Sequential)
      *
      * @throws \InvalidArgumentException on name conflict with permanent tool
@@ -84,8 +84,8 @@ interface ToolRegistryInterface
     public function addDynamicTool(
         string $name,
         string $description,
+        object $handler,
         array $parametersJsonSchema,
-        ToolHandlerInterface $handler,
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
     ): void;
 

@@ -12,12 +12,13 @@ use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Psr\Log\LoggerInterface;
+use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * Execute a shell command with foreground supervision via BackgroundProcessManager.
  *
- * Implements both HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and ToolHandlerInterface for execution.
+ * Implements HatfieldToolProviderInterface for automatic registration
+ * as a permanent tool and the Symfony AI native tool contract (AsTool).
  *
  * Key design:
  * - Every bash command starts immediately through
@@ -56,7 +57,8 @@ use Psr\Log\LoggerInterface;
  * string directly — the model is treated as a trusted caller within the
  * same agent session.
  */
-final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+#[AsTool('bash', 'Execute a shell command with timeout.')]
+final class BashTool implements HatfieldToolProviderInterface
 {
     public function __construct(
         private readonly BackgroundProcessManager $manager,
@@ -82,9 +84,6 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
     {
         return $this->toolRuntime->run(function () use ($arguments): string {
             $command = trim($arguments->command);
-            if ('' === $command) {
-                throw new ToolCallException('The "command" argument is required and must be a non-empty string.', retryable: false);
-            }
             $timeout = $this->resolveTimeout($arguments);
 
             // Resolve session context.
@@ -265,23 +264,6 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
         return new ToolDefinitionDTO(
             name: 'bash',
             description: \sprintf('Execute a shell command with timeout. The command runs until completion, hits the timeout, or is cancelled. Long-running commands may be offered to move to background after %d seconds.', $this->config->backgroundPromptThresholdSeconds),
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'command' => [
-                        'type' => 'string',
-                        'description' => 'Shell command executed through bash -c; use shell quoting as needed.',
-                    ],
-                    'timeout' => [
-                        'type' => 'integer',
-                        'description' => \sprintf('Timeout in seconds (default: %d, max: %d). Use for commands that may hang.', $this->config->defaultTimeoutSeconds, $this->config->maxTimeoutSeconds),
-                        'minimum' => 1,
-                        'maximum' => $this->config->maxTimeoutSeconds,
-                    ],
-                ],
-                'required' => ['command'],
-                'additionalProperties' => false,
-            ],
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
             promptLine: 'bash command [timeout=N] — execute a shell command with foreground supervision and optional timeout',

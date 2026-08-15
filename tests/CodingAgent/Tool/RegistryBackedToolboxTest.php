@@ -6,25 +6,24 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
-use Ineersa\CodingAgent\Agent\Tool\SubagentToolDefinitionBuilder;
-use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
+use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
+use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
-use Ineersa\CodingAgent\Tool\ToolCallArgumentsValidator;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallFailed;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
-use Symfony\AI\Agent\Toolbox\Exception\InvalidToolCallArgumentsException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Result\ToolCall;
@@ -42,9 +41,10 @@ use Symfony\Component\Serializer\Serializer;
 /**
  * Tests for RegistryBackedToolbox.
  *
- * Covers definition-to-Symfony-Tool conversion, handler invocation
- * for permanent, dynamic, and extension-registered tools, and the
- * tool-not-found path.
+ * RegistryBackedToolbox is a thin registry/rewrite decorator that delegates
+ * execution to the native Symfony AI Toolbox. DTO-typed tools use the native
+ * nested argument shape ({arguments: {...}}); raw-array tools (MCP, extension
+ * adapters) receive the flat provider map through the raw-arguments resolver.
  */
 final class RegistryBackedToolboxTest extends TestCase
 {
@@ -68,15 +68,16 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertSame([], $toolbox->getTools());
     }
 
-    public function testGetToolsConvertsPermanentToolsToSymfonyTools(): void
+    public function testGetToolsConvertsRawToolToSymfonyTool(): void
     {
         $handler = $this->dummyHandler('permanent result');
         $registry = new ToolRegistry();
+        $schema = ['type' => 'object', 'properties' => ['path' => ['type' => 'string']]];
 
         $registry->registerTool(
             name: 'read',
             description: 'Read file contents',
-            parametersJsonSchema: ['type' => 'object', 'properties' => ['path' => ['type' => 'string']]],
+            parametersJsonSchema: $schema,
             handler: $handler,
             promptLine: 'read: Read files',
             promptGuidelines: ['Use read for files'],
@@ -88,9 +89,45 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertCount(1, $tools);
         $this->assertSame('read', $tools[0]->getName());
         $this->assertSame('Read file contents', $tools[0]->getDescription());
-        $this->assertSame(['type' => 'object', 'properties' => ['path' => ['type' => 'string']]], $tools[0]->getParameters());
+        $this->assertSame($schema, $tools[0]->getParameters());
         $this->assertSame($handler::class, $tools[0]->getReference()->getClass());
         $this->assertSame('__invoke', $tools[0]->getReference()->getMethod());
+        $this->assertTrue($tools[0]->getMetadataValue('raw_arguments', false));
+    }
+
+    public function testGetToolsForDtoToolUsesNativeGeneratedSchema(): void
+    {
+        $handler = new #[AsTool('view_image', 'View an image')] class {
+            public function __invoke(ViewImageArgumentsDTO $arguments): string
+            {
+                return 'ok';
+            }
+        };
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'view_image',
+            description: 'View an image',
+            handler: $handler,
+            promptLine: 'view_image: View',
+        );
+
+        $toolbox = $this->createToolbox($registry);
+        $tools = $toolbox->getTools();
+
+        $this->assertCount(1, $tools);
+        $tool = $tools[0];
+        $this->assertSame('view_image', $tool->getName());
+        $this->assertSame('View an image', $tool->getDescription());
+        $this->assertFalse($tool->getMetadataValue('raw_arguments', false));
+
+        // Native nested schema generated from the DTO parameter.
+        $parameters = $tool->getParameters();
+        $this->assertSame('object', $parameters['type']);
+        $this->assertArrayHasKey('arguments', $parameters['properties']);
+        $this->assertSame('object', $parameters['properties']['arguments']['type']);
+        $this->assertArrayHasKey('path', $parameters['properties']['arguments']['properties']);
+        // path is required; nullable-with-default props are not.
+        $this->assertSame(['path'], $parameters['properties']['arguments']['required']);
     }
 
     public function testGetToolsIncludesDynamicAfterPermanent(): void
@@ -133,12 +170,12 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertSame(['a', 'b', 'c'], $names);
     }
 
-    /* ───────── execute() ───────── */
+    /* ───────── execute(): raw-array tools ───────── */
 
-    public function testExecuteCallsHandlerWithArguments(): void
+    public function testExecuteCallsRawHandlerWithFlatArguments(): void
     {
         $registry = new ToolRegistry();
-        $handler = $this->dummyHandler(['status' => 'ok', 'input' => 'worked']);
+        $handler = $this->capturingHandler();
 
         $registry->registerTool(
             name: 'search',
@@ -153,8 +190,8 @@ final class RegistryBackedToolboxTest extends TestCase
 
         $result = $toolbox->execute($toolCall);
 
-        $this->assertSame($toolCall, $result->getToolCall());
-        $this->assertSame(['status' => 'ok', 'input' => 'worked'], $result->getResult());
+        $this->assertSame('ok', $result->getResult());
+        $this->assertSame(['query' => 'hello'], $handler->lastArgs);
     }
 
     public function testExecuteForDynamicTool(): void
@@ -174,19 +211,6 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertSame('dynamic result', $result->getResult());
     }
 
-    public function testExecuteForHandlerWithNoArguments(): void
-    {
-        $registry = new ToolRegistry();
-
-        $handler = $this->dummyHandler('no-args result');
-        $registry->registerTool(name: 'ping', description: 'Ping', parametersJsonSchema: [], handler: $handler, promptLine: 'ping: Ping');
-
-        $toolbox = $this->createToolbox($registry);
-        $result = $toolbox->execute(new ToolCall('call-3', 'ping', []));
-
-        $this->assertSame('no-args result', $result->getResult());
-    }
-
     public function testExecuteThrowsToolNotFoundException(): void
     {
         $registry = new ToolRegistry();
@@ -196,7 +220,89 @@ final class RegistryBackedToolboxTest extends TestCase
         $toolbox->execute(new ToolCall('call-4', 'nonexistent', []));
     }
 
-    public function testExecuteDispatchesSymfonyAiToolLifecycleEvents(): void
+    /* ───────── execute(): typed DTO tools through native resolution ───────── */
+
+    public function testExecuteResolvesDtoToolThroughNativeResolver(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = new #[AsTool('view_image', 'View')] class {
+            public ?ViewImageArgumentsDTO $seen = null;
+
+            public function __invoke(ViewImageArgumentsDTO $arguments): string
+            {
+                $this->seen = $arguments;
+
+                return 'ok:'.$arguments->path;
+            }
+        };
+        $registry->registerTool(
+            name: 'view_image',
+            description: 'View',
+            handler: $handler,
+            promptLine: 'view_image',
+        );
+
+        $toolbox = $this->createToolbox($registry);
+        $result = $toolbox->execute(new ToolCall('call-dto', 'view_image', ['arguments' => ['path' => 'img.png']]));
+
+        $this->assertSame('ok:img.png', $result->getResult());
+        $this->assertInstanceOf(ViewImageArgumentsDTO::class, $handler->seen);
+        $this->assertSame('img.png', $handler->seen->path);
+    }
+
+    public function testSnakeCaseProviderKeysDenormalizeToCamelCaseDtoProperties(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = new #[AsTool('agent_retrieve', 'Retrieve')] class {
+            public ?AgentRetrieveArgumentsDTO $seen = null;
+
+            public function __invoke(AgentRetrieveArgumentsDTO $arguments): string
+            {
+                $this->seen = $arguments;
+
+                return 'ok:'.$arguments->artifactId;
+            }
+        };
+        $registry->registerTool(
+            name: 'agent_retrieve',
+            description: 'Retrieve',
+            handler: $handler,
+            promptLine: 'agent_retrieve',
+        );
+
+        // Real resolver path with the app serializer stack (camel_case_to_snake_case
+        // name converter) — no hand-written key mapping anywhere.
+        $toolbox = $this->createToolbox($registry, resolver: $this->createNameConverterResolver());
+        $result = $toolbox->execute(new ToolCall('call-snake', 'agent_retrieve', ['arguments' => ['artifact_id' => 'agent_abc', 'limit' => 5]]));
+
+        $this->assertSame('ok:agent_abc', $result->getResult());
+        $this->assertInstanceOf(AgentRetrieveArgumentsDTO::class, $handler->seen);
+        $this->assertSame('agent_abc', $handler->seen->artifactId);
+        $this->assertNull($handler->seen->agentRunId);
+        $this->assertSame(5, $handler->seen->limit);
+    }
+
+    public function testUnknownArgumentsAreIgnoredByNativeResolver(): void
+    {
+        // Native Symfony AI behavior: unknown keys are not resolved onto the DTO.
+        $registry = new ToolRegistry();
+        $handler = new #[AsTool('view_image', 'View')] class {
+            public function __invoke(ViewImageArgumentsDTO $arguments): string
+            {
+                return 'ok:'.$arguments->path;
+            }
+        };
+        $registry->registerTool(name: 'view_image', description: 'View', handler: $handler, promptLine: 'view_image');
+
+        $toolbox = $this->createToolbox($registry);
+        $result = $toolbox->execute(new ToolCall('call-unknown', 'view_image', ['arguments' => ['path' => 'a.png', 'extra' => true]]));
+
+        $this->assertSame('ok:a.png', $result->getResult());
+    }
+
+    /* ───────── Lifecycle events ───────── */
+
+    public function testExecuteDispatchesNativeLifecycleEventsWithNativeArgumentShapes(): void
     {
         $registry = new ToolRegistry();
         $handler = $this->dummyHandler('evented result');
@@ -222,8 +328,8 @@ final class RegistryBackedToolboxTest extends TestCase
             ['requested', 'evented', 'evented'],
             // Native resolution nests flat provider args under the sole handler parameter name.
             ['arguments_resolved', true, ['arguments' => ['query' => 'hello']]],
-            // Succeeded keeps the flat rewritten provider args (pre-task contract).
-            ['succeeded', true, ['query' => 'hello'], 'evented result'],
+            // Succeeded carries the native resolved argument shape.
+            ['succeeded', true, ['arguments' => ['query' => 'hello']], 'evented result'],
         ], $events);
     }
 
@@ -269,11 +375,11 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertSame(0, $handler->calls);
     }
 
-    public function testExecuteDispatchesSymfonyAiToolFailedEvent(): void
+    public function testHandlerRuntimeExceptionDispatchesFailedEventAndIsWrapped(): void
     {
         $registry = new ToolRegistry();
         $exception = new \RuntimeException('boom');
-        $handler = new class($exception) implements ToolHandlerInterface {
+        $handler = new class($exception) {
             public function __construct(
                 private readonly \RuntimeException $exception,
             ) {
@@ -292,48 +398,124 @@ final class RegistryBackedToolboxTest extends TestCase
             $failedEvent = $event;
         });
 
-        $toolbox = $this->createToolbox($registry, $dispatcher);
+        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry, $dispatcher));
+        $result = $toolbox->execute(new ToolCall('call-failed', 'failing', ['path' => 'x']));
 
-        try {
-            $toolbox->execute(new ToolCall('call-failed', 'failing', ['path' => 'x']));
-            $this->fail('Expected handler exception to be re-thrown unchanged.');
-        } catch (\RuntimeException $caught) {
-            // Pre-task contract: handler throwables propagate unchanged so ToolExecutor
-            // classifies message/hint/retryable (FaultTolerantToolbox only converts
-            // ToolExecutionExceptionInterface).
-            $this->assertSame($exception, $caught);
-        }
-
+        // Native Toolbox wraps non-ToolExecutionExceptionInterface throwables.
+        $this->assertSame('An error occurred while executing tool "failing".', (string) $result->getResult());
         $this->assertInstanceOf(ToolCallFailed::class, $failedEvent);
         $this->assertSame($handler, $failedEvent->getTool());
         $this->assertSame('failing', $failedEvent->getDefinition()->getName());
-        // Lifecycle failed event keeps the flat provider args (pre-task contract).
-        $this->assertSame(['path' => 'x'], $failedEvent->getArguments());
         $this->assertSame($exception, $failedEvent->getException());
     }
 
-    /* ───────── Extension-registered tools are the same path ───────── */
-
-    public function testExecuteForExtensionRegisteredTool(): void
+    public function testHandlerToolCallExceptionSurvivesFaultTolerantToolbox(): void
     {
-        // Extension tools are registered through ExtensionToolRegistryBridge which
-        // calls registerTool() on the same ToolRegistry. Verify the registry
-        // path works with a direct registerTool() equivalent.
         $registry = new ToolRegistry();
-        $handler = $this->dummyHandler('extension result');
+        $exception = new ToolCallException('Something went wrong', retryable: true, hint: 'Try again with different input');
+        $handler = new class($exception) {
+            public function __construct(
+                private readonly ToolCallException $exception,
+            ) {
+            }
 
+            public function __invoke(array $arguments): mixed
+            {
+                throw $this->exception;
+            }
+        };
+        $registry->registerTool(name: 'failing', description: 'Failing', parametersJsonSchema: [], handler: $handler, promptLine: 'failing');
+
+        $dispatcher = new EventDispatcher();
+        $failedEvent = null;
+        $dispatcher->addListener(ToolCallFailed::class, static function (ToolCallFailed $event) use (&$failedEvent): void {
+            $failedEvent = $event;
+        });
+
+        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry, $dispatcher));
+
+        try {
+            $toolbox->execute(new ToolCall('call-failing', 'failing', ['path' => 'x']));
+            $this->fail('Expected the ToolCallException to propagate unchanged.');
+        } catch (ToolCallException $caught) {
+            // FaultTolerantToolbox only converts ToolExecutionExceptionInterface, so
+            // ToolCallException must reach ToolExecutor with full fidelity.
+            $this->assertSame($exception, $caught);
+            $this->assertSame('Something went wrong', $caught->getMessage());
+            $this->assertTrue($caught->retryable());
+            $this->assertSame('Try again with different input', $caught->hint());
+        }
+
+        $this->assertSame($exception, $failedEvent?->getException());
+    }
+
+    /* ───────── Fault tolerance for invalid arguments ───────── */
+
+    public function testMissingMandatoryArgumentsBecomeFaultTolerantResult(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = new #[AsTool('view_image', 'View')] class {
+            public function __invoke(ViewImageArgumentsDTO $arguments): string
+            {
+                return 'nope';
+            }
+        };
+        $registry->registerTool(name: 'view_image', description: 'View', handler: $handler, promptLine: 'view_image');
+
+        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
+        $result = $toolbox->execute(new ToolCall('call-missing', 'view_image', []));
+
+        // Native resolver rejects the missing mandatory `arguments` parameter;
+        // the native Toolbox wraps it into a deterministic model-visible fault.
+        $this->assertSame('An error occurred while executing tool "view_image".', (string) $result->getResult());
+    }
+
+    public function testDtoConstraintViolationBecomesFaultTolerantResultWithViolations(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = new #[AsTool('view_image', 'View')] class {
+            public function __invoke(ViewImageArgumentsDTO $arguments): string
+            {
+                return 'nope';
+            }
+        };
+        $registry->registerTool(name: 'view_image', description: 'View', handler: $handler, promptLine: 'view_image');
+
+        // Production wires ValidateToolCallArgumentsListener on the app dispatcher
+        // (config/services.yaml); mirror it here.
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(ToolCallArgumentsResolved::class, new ValidateToolCallArgumentsListener());
+
+        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry, $dispatcher));
+        $result = $toolbox->execute(new ToolCall('call-blank', 'view_image', ['arguments' => ['path' => ' ']]));
+
+        // ValidateToolCallArgumentsListener rejects the DTO; the violations
+        // are stringified into the model-visible result.
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('The "path" argument is required and must be a non-empty string.', $message);
+    }
+
+    public function testDenormalizerFailureWrappedAsToolExecutionException(): void
+    {
+        $registry = new ToolRegistry();
         $registry->registerTool(
-            name: 'ext_tool',
-            description: 'Extension tool',
-            parametersJsonSchema: [],
-            handler: $handler,
-            promptLine: 'ext_tool: Extension tool',
+            name: 'fragile',
+            description: 'Fragile',
+            handler: new #[AsTool('fragile', 'Fragile')] class {
+                public function __invoke(int $count): string
+                {
+                    return 'count:'.$count;
+                }
+            },
+            promptLine: 'fragile',
         );
 
-        $toolbox = $this->createToolbox($registry);
-        $result = $toolbox->execute(new ToolCall('call-5', 'ext_tool', ['foo' => 'bar']));
+        // Resolver/denormalizer failure before handler invoke → wrapped as
+        // ToolExecutionException → deterministic model-visible fault.
+        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
+        $result = $toolbox->execute(new ToolCall('call-fragile', 'fragile', ['count' => 'abc']));
 
-        $this->assertSame('extension result', $result->getResult());
+        $this->assertSame('An error occurred while executing tool "fragile".', (string) $result->getResult());
     }
 
     /* ───────── Visibility filtering (excluded/allowlist) ───────── */
@@ -343,13 +525,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $registry = new ToolRegistry();
         $handler = $this->countingHandler('should not run');
 
-        $registry->registerTool(
-            name: 'bash',
-            description: 'Bash',
-            parametersJsonSchema: [],
-            handler: $handler,
-            promptLine: 'bash: Shell',
-        );
+        $registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $handler, promptLine: 'bash: Shell');
         $registry->setExcludedToolNames(['bash']);
 
         // Excluded tool must remain invisible to active listings
@@ -371,20 +547,8 @@ final class RegistryBackedToolboxTest extends TestCase
         $registry = new ToolRegistry();
         $handler = $this->countingHandler('should not run');
 
-        $registry->registerTool(
-            name: 'bash',
-            description: 'Bash',
-            parametersJsonSchema: [],
-            handler: $handler,
-            promptLine: 'bash: Shell',
-        );
-        $registry->registerTool(
-            name: 'read',
-            description: 'Read',
-            parametersJsonSchema: [],
-            handler: $this->dummyHandler('ok'),
-            promptLine: 'read: Read',
-        );
+        $registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $handler, promptLine: 'bash: Shell');
+        $registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler('ok'), promptLine: 'read: Read');
 
         // Only 'read' is allowed
         $registry->setAllowedToolNames(['read']);
@@ -408,20 +572,8 @@ final class RegistryBackedToolboxTest extends TestCase
         $registry = new ToolRegistry();
         $handler = $this->dummyHandler('allowlisted result');
 
-        $registry->registerTool(
-            name: 'read',
-            description: 'Read',
-            parametersJsonSchema: [],
-            handler: $handler,
-            promptLine: 'read: Read',
-        );
-        $registry->registerTool(
-            name: 'bash',
-            description: 'Bash',
-            parametersJsonSchema: [],
-            handler: $this->dummyHandler('should not be called'),
-            promptLine: 'bash: Shell',
-        );
+        $registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $handler, promptLine: 'read: Read');
+        $registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $this->dummyHandler('should not be called'), promptLine: 'bash: Shell');
 
         $registry->setAllowedToolNames(['read']);
 
@@ -433,7 +585,7 @@ final class RegistryBackedToolboxTest extends TestCase
 
     /* ───────── Rewrite phase ───────── */
 
-    public function testRewriteHookMutatesArguments(): void
+    public function testRewriteHookMutatesArgumentsBeforeNativeExecution(): void
     {
         $registry = new ToolRegistry();
         $handler = $this->capturingHandler();
@@ -505,7 +657,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $toolbox = $this->createToolbox($registry, $dispatcher, $rewriteProvider);
         $toolbox->execute(new ToolCall('call-rw-3', 'bash', ['command' => 'castor test']));
 
-        // The event listener must see the rewritten arguments
+        // The native ToolCallRequested event must see the rewritten arguments.
         $this->assertSame(['command' => 'LLM_MODE=true castor test'], $requestedArgs);
     }
 
@@ -539,7 +691,6 @@ final class RegistryBackedToolboxTest extends TestCase
         $toolbox = $this->createToolbox($registry, rewriteHookProvider: $rewriteProvider);
         $toolbox->execute(new ToolCall('call-rw-4', 'bash', ['command' => 'test']));
 
-        // Both hooks composed: first adds 'first|', second sees it and adds 'second'
         $this->assertSame(
             ['command' => 'test', 'prefix' => 'first|second'],
             $handler->lastArgs,
@@ -612,383 +763,60 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertSame(['arg' => 'val'], $handler->lastArgs);
     }
 
-    public function testSchemaValidationRejectsMissingRequiredAndDoesNotInvokeHandler(): void
+    public function testRewriteOfDtoToolRewritesNestedArgumentsBeforeResolution(): void
     {
         $registry = new ToolRegistry();
-        $handler = $this->countingHandler('should not run');
-        $registry->registerTool(
-            name: 'write',
-            description: 'Write',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'path' => ['type' => 'string'],
-                    'content' => ['type' => 'string'],
-                ],
-                'required' => ['path', 'content'],
-                'additionalProperties' => false,
-            ],
-            handler: $handler,
-            promptLine: 'write',
-        );
+        $handler = new #[AsTool('view_image', 'View')] class {
+            public ?string $seen = null;
 
-        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
-        $result = $toolbox->execute(new ToolCall('call-missing', 'write', ['path' => 'a.txt']));
+            public function __invoke(ViewImageArgumentsDTO $arguments): string
+            {
+                $this->seen = $arguments->path;
 
-        $this->assertSame(0, $handler->calls);
-        $this->assertIsString($result->getResult());
-        $this->assertStringContainsString('Invalid arguments for tool "write"', (string) $result->getResult());
-    }
+                return 'ok';
+            }
+        };
+        $registry->registerTool(name: 'view_image', description: 'View', handler: $handler, promptLine: 'view_image');
 
-    public function testSchemaValidationRejectsUnknownProperties(): void
-    {
-        $registry = new ToolRegistry();
-        $handler = $this->countingHandler('should not run');
-        $registry->registerTool(
-            name: 'view',
-            description: 'View',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'path' => ['type' => 'string'],
-                ],
-                'required' => ['path'],
-                'additionalProperties' => false,
-            ],
-            handler: $handler,
-            promptLine: 'view',
-        );
-
-        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
-        $result = $toolbox->execute(new ToolCall('call-unknown', 'view', ['path' => 'a.png', 'extra' => true]));
-
-        $this->assertSame(0, $handler->calls);
-        $this->assertStringContainsString('Invalid arguments for tool "view"', (string) $result->getResult());
-    }
-
-    public function testSchemaValidationRejectsConstrainedInvalidInput(): void
-    {
-        $registry = new ToolRegistry();
-        $handler = $this->countingHandler('should not run');
-        $registry->registerTool(
-            name: 'bg',
-            description: 'Bg',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'action' => ['type' => 'string', 'enum' => ['list', 'log', 'stop']],
-                    'pid' => ['type' => 'integer', 'minimum' => 1],
-                ],
-                'required' => ['action'],
-                'additionalProperties' => false,
-            ],
-            handler: $handler,
-            promptLine: 'bg',
-        );
-
-        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
-        $result = $toolbox->execute(new ToolCall('call-enum', 'bg', ['action' => 'pause']));
-
-        $this->assertSame(0, $handler->calls);
-        $this->assertStringContainsString('Invalid arguments for tool "bg"', (string) $result->getResult());
-    }
-
-    public function testRewriteThenSchemaValidationUsesRewrittenArgsForPolicyAndValidation(): void
-    {
-        $registry = new ToolRegistry();
-        $handler = $this->capturingHandler();
-        $registry->registerTool(
-            name: 'bash',
-            description: 'Bash',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'command' => ['type' => 'string'],
-                ],
-                'required' => ['command'],
-                'additionalProperties' => false,
-            ],
-            handler: $handler,
-            promptLine: 'bash',
-        );
-
-        $rewriteProvider = $this->stubRewriteProvider('bash', [
+        $rewriteProvider = $this->stubRewriteProvider('view_image', [
             new readonly class implements ToolCallRewriteHookInterface {
                 public function rewriteArguments(ToolCallContextDTO $context): ?array
                 {
-                    return ['command' => 'rewritten-'.$context->arguments['command']];
+                    return ['arguments' => ['path' => 'rewritten.png']];
                 }
             },
         ]);
 
-        $dispatcher = new EventDispatcher();
-        $requested = null;
-        $dispatcher->addListener(ToolCallRequested::class, static function (ToolCallRequested $event) use (&$requested): void {
-            $requested = $event->getToolCall()->getArguments();
-        });
+        $toolbox = $this->createToolbox($registry, rewriteHookProvider: $rewriteProvider);
+        $result = $toolbox->execute(new ToolCall('call-rw-dto', 'view_image', ['arguments' => ['path' => 'original.png']]));
 
-        $toolbox = $this->createToolbox($registry, $dispatcher, $rewriteProvider);
-        $toolbox->execute(new ToolCall('call-rw-valid', 'bash', ['command' => 'echo']));
-
-        $this->assertSame(['command' => 'rewritten-echo'], $requested);
-        $this->assertSame(['command' => 'rewritten-echo'], $handler->lastArgs);
+        $this->assertSame('ok', $result->getResult());
+        // The rewritten nested args were resolved into the DTO before invoke.
+        $this->assertSame('rewritten.png', $handler->seen);
     }
 
-    public function testRewriteToInvalidArgsBecomesFaultTolerantResultWithoutHandler(): void
+    /* ───────── Extension-registered tools are the same path ───────── */
+
+    public function testExecuteForExtensionRegisteredTool(): void
     {
+        // Extension tools are registered through ExtensionToolRegistryBridge which
+        // calls registerTool() on the same ToolRegistry. Verify the registry
+        // path works with a direct registerTool() equivalent.
         $registry = new ToolRegistry();
-        $handler = $this->countingHandler('nope');
+        $handler = $this->dummyHandler('extension result');
+
         $registry->registerTool(
-            name: 'bash',
-            description: 'Bash',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'command' => ['type' => 'string'],
-                ],
-                'required' => ['command'],
-                'additionalProperties' => false,
-            ],
+            name: 'ext_tool',
+            description: 'Extension tool',
+            parametersJsonSchema: [],
             handler: $handler,
-            promptLine: 'bash',
+            promptLine: 'ext_tool: Extension tool',
         );
 
-        $rewriteProvider = $this->stubRewriteProvider('bash', [
-            new readonly class implements ToolCallRewriteHookInterface {
-                public function rewriteArguments(ToolCallContextDTO $context): ?array
-                {
-                    return ['command' => 123];
-                }
-            },
-        ]);
+        $toolbox = $this->createToolbox($registry);
+        $result = $toolbox->execute(new ToolCall('call-5', 'ext_tool', ['foo' => 'bar']));
 
-        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry, rewriteHookProvider: $rewriteProvider));
-        $result = $toolbox->execute(new ToolCall('call-rw-invalid', 'bash', ['command' => 'echo']));
-
-        $this->assertSame(0, $handler->calls);
-        $this->assertStringContainsString('Invalid arguments for tool "bash"', (string) $result->getResult());
-    }
-
-    public function testNativeDtoResolutionDispatchesResolvedObjectArguments(): void
-    {
-        $registry = new ToolRegistry();
-        $handler = new class implements ToolHandlerInterface {
-            public ?object $seen = null;
-
-            public function __invoke(\Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO $arguments): string
-            {
-                $this->seen = $arguments;
-
-                return 'ok:'.$arguments->path;
-            }
-        };
-        $registry->registerTool(
-            name: 'view_image',
-            description: 'View',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => ['path' => ['type' => 'string']],
-                'required' => ['path'],
-                'additionalProperties' => false,
-            ],
-            handler: $handler,
-            promptLine: 'view_image',
-        );
-
-        $dispatcher = new EventDispatcher();
-        $resolved = null;
-        $dispatcher->addListener(ToolCallArgumentsResolved::class, static function (ToolCallArgumentsResolved $event) use (&$resolved): void {
-            $resolved = $event->getArguments();
-        });
-
-        $toolbox = $this->createToolbox($registry, $dispatcher);
-        $result = $toolbox->execute(new ToolCall('call-dto', 'view_image', ['path' => 'img.png']));
-
-        $this->assertSame('ok:img.png', $result->getResult());
-        $this->assertIsArray($resolved);
-        $this->assertArrayHasKey('arguments', $resolved);
-        $this->assertInstanceOf(\Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO::class, $resolved['arguments']);
-        $this->assertSame('img.png', $resolved['arguments']->path);
-        $this->assertInstanceOf(\Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO::class, $handler->seen);
-    }
-
-    /* ───────── Reviewer regressions: serializer, exception survival, flat events ───────── */
-
-    public function testSnakeCaseProviderKeysDenormalizeToCamelCaseDtoProperties(): void
-    {
-        $registry = new ToolRegistry();
-        $handler = new class implements ToolHandlerInterface {
-            public ?AgentRetrieveArgumentsDTO $seen = null;
-
-            public function __invoke(AgentRetrieveArgumentsDTO $arguments): string
-            {
-                $this->seen = $arguments;
-
-                return 'ok:'.$arguments->artifactId;
-            }
-        };
-        $registry->registerTool(
-            name: 'agent_retrieve',
-            description: 'Retrieve',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'artifact_id' => ['type' => 'string', 'minLength' => 1],
-                    'agent_run_id' => ['type' => 'string', 'minLength' => 1],
-                    'mode' => ['type' => 'string', 'enum' => ['handoff', 'metadata', 'events', 'history', 'debug']],
-                    'limit' => ['type' => 'integer', 'minimum' => 1],
-                ],
-                'required' => [],
-                'additionalProperties' => false,
-            ],
-            handler: $handler,
-            promptLine: 'agent_retrieve',
-        );
-
-        // Real resolver path with the app serializer stack (camel_case_to_snake_case
-        // name converter) — no hand-written key mapping anywhere.
-        $toolbox = $this->createToolbox($registry, resolver: $this->createNameConverterResolver());
-        $result = $toolbox->execute(new ToolCall('call-snake', 'agent_retrieve', ['artifact_id' => 'agent_abc', 'limit' => 5]));
-
-        $this->assertSame('ok:agent_abc', $result->getResult());
-        $this->assertInstanceOf(AgentRetrieveArgumentsDTO::class, $handler->seen);
-        $this->assertSame('agent_abc', $handler->seen->artifactId);
-        $this->assertNull($handler->seen->agentRunId);
-        $this->assertSame(5, $handler->seen->limit);
-    }
-
-    public function testHandlerToolCallExceptionPropagatesUnchangedThroughFaultTolerantToolbox(): void
-    {
-        $registry = new ToolRegistry();
-        $exception = new ToolCallException('Something went wrong', retryable: true, hint: 'Try again with different input');
-        $handler = new class($exception) implements ToolHandlerInterface {
-            public function __construct(
-                private readonly ToolCallException $exception,
-            ) {
-            }
-
-            public function __invoke(array $arguments): mixed
-            {
-                throw $this->exception;
-            }
-        };
-        $registry->registerTool(name: 'failing', description: 'Failing', parametersJsonSchema: [], handler: $handler, promptLine: 'failing');
-
-        $dispatcher = new EventDispatcher();
-        $failedEvent = null;
-        $dispatcher->addListener(ToolCallFailed::class, static function (ToolCallFailed $event) use (&$failedEvent): void {
-            $failedEvent = $event;
-        });
-
-        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry, $dispatcher));
-
-        try {
-            $toolbox->execute(new ToolCall('call-failing', 'failing', ['path' => 'x']));
-            $this->fail('Expected the ToolCallException to propagate unchanged.');
-        } catch (ToolCallException $caught) {
-            // FaultTolerantToolbox only converts ToolExecutionExceptionInterface, so
-            // ToolCallException must reach ToolExecutor with full fidelity.
-            $this->assertSame($exception, $caught);
-            $this->assertSame('Something went wrong', $caught->getMessage());
-            $this->assertTrue($caught->retryable());
-            $this->assertSame('Try again with different input', $caught->hint());
-        }
-
-        $this->assertSame($exception, $failedEvent?->getException());
-        $this->assertSame(['path' => 'x'], $failedEvent?->getArguments());
-    }
-
-    public function testSchemaFailureDispatchesFailedEventWithFlatInvalidArguments(): void
-    {
-        $registry = new ToolRegistry();
-        $handler = $this->countingHandler('should not run');
-        $registry->registerTool(
-            name: 'write',
-            description: 'Write',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => ['path' => ['type' => 'string'], 'content' => ['type' => 'string']],
-                'required' => ['path', 'content'],
-                'additionalProperties' => false,
-            ],
-            handler: $handler,
-            promptLine: 'write',
-        );
-
-        $dispatcher = new EventDispatcher();
-        $failedEvent = null;
-        $dispatcher->addListener(ToolCallFailed::class, static function (ToolCallFailed $event) use (&$failedEvent): void {
-            $failedEvent = $event;
-        });
-
-        $invalidArguments = ['path' => 'a.txt'];
-        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry, $dispatcher));
-        $result = $toolbox->execute(new ToolCall('call-schema-fail', 'write', $invalidArguments));
-
-        $this->assertSame(0, $handler->calls);
-        $this->assertInstanceOf(ToolCallFailed::class, $failedEvent);
-        // Schema-failure event carries the flat invalid final arguments.
-        $this->assertSame($invalidArguments, $failedEvent->getArguments());
-        $this->assertInstanceOf(InvalidToolCallArgumentsException::class, $failedEvent->getException());
-        $this->assertIsString($result->getResult());
-        $this->assertStringContainsString('Invalid arguments for tool "write"', (string) $result->getResult());
-    }
-
-    public function testResolverDenormalizerFailureWrappedAsToolExecutionException(): void
-    {
-        $registry = new ToolRegistry();
-        $registry->registerTool(
-            name: 'fragile',
-            description: 'Fragile',
-            // Provider schema says string; the handler parameter demands int, so the
-            // value passes the schema but the resolver's denormalizer rejects it
-            // (NotNormalizableValueException) — the resolver-failure path.
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => ['count' => ['type' => 'string']],
-                'additionalProperties' => false,
-            ],
-            handler: new class implements ToolHandlerInterface {
-                public function __invoke(int $count): string
-                {
-                    return 'count:'.$count;
-                }
-            },
-            promptLine: 'fragile',
-        );
-
-        // Resolver/denormalizer failure before handler invoke → wrapped as
-        // ToolExecutionException → deterministic model-visible fault.
-        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
-        $result = $toolbox->execute(new ToolCall('call-fragile', 'fragile', ['count' => 'abc']));
-
-        $this->assertSame('An error occurred while executing tool "fragile".', (string) $result->getResult());
-    }
-
-    public function testOldSubagentBackgroundKeyRejectedByCanonicalSchema(): void
-    {
-        $registry = new ToolRegistry();
-        $handler = $this->countingHandler('should not run');
-        $definition = SubagentToolDefinitionBuilder::build(new AgentsConfig(), $handler);
-        $registry->registerTool(
-            name: $definition->name,
-            description: $definition->description,
-            parametersJsonSchema: $definition->parametersJsonSchema,
-            handler: $definition->handler,
-            promptLine: $definition->promptLine,
-        );
-
-        // 'background' was rejected by the pre-task factory; the canonical schema
-        // (additionalProperties: false) now produces the deterministic fault.
-        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
-        $result = $toolbox->execute(new ToolCall('call-old-key', 'subagent', ['agent' => 'scout', 'task' => 'x', 'background' => true]));
-
-        $this->assertSame(0, $handler->calls);
-        $message = (string) $result->getResult();
-        $this->assertStringContainsString('Invalid arguments for tool "subagent"', $message);
-        // Opis reports additionalProperties violations on the root pointer:
-        // "/: Additional object properties are not allowed: background."
-        $this->assertStringContainsString('Additional object properties are not allowed: background', $message);
+        $this->assertSame('extension result', $result->getResult());
     }
 
     /* ───────── Private helpers ───────── */
@@ -997,12 +825,11 @@ final class RegistryBackedToolboxTest extends TestCase
         ToolRegistry $registry,
         ?EventDispatcher $dispatcher = null,
         ?ExtensionHookRegistry $rewriteHookProvider = null,
-        ?ToolCallArgumentResolver $resolver = null,
+        ?\Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface $resolver = null,
     ): RegistryBackedToolbox {
         return new RegistryBackedToolbox(
             registry: $registry,
-            argumentResolver: $resolver ?? new ToolCallArgumentResolver(),
-            argumentsValidator: new ToolCallArgumentsValidator(),
+            argumentResolver: new RawAwareToolCallArgumentResolver($resolver ?? new ToolCallArgumentResolver()),
             eventDispatcher: $dispatcher,
             rewriteHookProvider: $rewriteHookProvider,
         );
@@ -1012,11 +839,11 @@ final class RegistryBackedToolboxTest extends TestCase
      * Real resolver with the app serializer stack: camel_case_to_snake_case
      * name converter + property type extractors (same as the @serializer service).
      */
-    private function createNameConverterResolver(): ToolCallArgumentResolver
+    private function createNameConverterResolver(): RawAwareToolCallArgumentResolver
     {
         $propertyTypeExtractor = new PropertyInfoExtractor([], [new PhpDocExtractor(), new ReflectionExtractor()]);
 
-        return new ToolCallArgumentResolver(new Serializer([
+        return new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver(new Serializer([
             new DateTimeNormalizer(),
             new BackedEnumNormalizer(),
             new ObjectNormalizer(
@@ -1024,12 +851,12 @@ final class RegistryBackedToolboxTest extends TestCase
                 propertyTypeExtractor: $propertyTypeExtractor,
             ),
             new ArrayDenormalizer(),
-        ]));
+        ])));
     }
 
-    private function dummyHandler(mixed $result): ToolHandlerInterface
+    private function dummyHandler(mixed $result): object
     {
-        return new class($result) implements ToolHandlerInterface {
+        return new class($result) {
             public function __construct(
                 private readonly mixed $result,
             ) {
@@ -1042,9 +869,9 @@ final class RegistryBackedToolboxTest extends TestCase
         };
     }
 
-    private function countingHandler(mixed $result): ToolHandlerInterface
+    private function countingHandler(mixed $result): object
     {
-        return new class($result) implements ToolHandlerInterface {
+        return new class($result) {
             public int $calls = 0;
 
             public function __construct(
@@ -1064,9 +891,9 @@ final class RegistryBackedToolboxTest extends TestCase
     /**
      * Handler that records the last arguments it was called with.
      */
-    private function capturingHandler(): ToolHandlerInterface
+    private function capturingHandler(): object
     {
-        return new class implements ToolHandlerInterface {
+        return new class {
             public ?array $lastArgs = null;
 
             public function __invoke(array $arguments): mixed

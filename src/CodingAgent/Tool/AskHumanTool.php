@@ -7,13 +7,14 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO;
 use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
+use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * Model-visible ask_human tool — returns an interrupt payload immediately
  * so the AgentCore pipeline pauses the run and waits for human input.
  *
- * Implements both HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and ToolHandlerInterface for execution.
+ * Implements HatfieldToolProviderInterface for automatic registration
+ * as a permanent tool and the Symfony AI native tool contract (AsTool).
  *
  * This is a thin non-blocking tool. It does NOT wait for user input;
  * AgentCore's existing WaitingHuman / HumanResponse flow owns pausing
@@ -23,8 +24,8 @@ use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
  * ## Key design
  *
  * - Returns `kind=interrupt` payload immediately; no oneshot/blocking path.
- * - Arguments are resolved/validated by RegistryBackedToolbox (schema + DTO
- *   + Symfony Validator); AskHumanPayloadFactory only builds the interrupt payload.
+ * - Arguments are resolved/validated natively by Symfony AI (DTO + Symfony
+ *   Validator); AskHumanPayloadFactory only builds the interrupt payload.
  * - Always generates stable output `question_id` from question/kind/choices/header hash.
  * - Normalizes bare string choices to structured `{label, description}` objects.
  * - Preserves UI metadata: header, kind, choices.
@@ -33,7 +34,8 @@ use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
  *   interrupt result. AgentCore only generically preserves `kind=interrupt`
  *   payloads from any toolbox tool result.
  */
-final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+#[AsTool('ask_human', 'Ask the user for input, confirmation, a choice, or approval when you need their response before continuing.')]
+final class AskHumanTool implements HatfieldToolProviderInterface
 {
     public function __construct(
         private readonly AskHumanPayloadFactory $payloadFactory,
@@ -61,33 +63,6 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
         return new ToolDefinitionDTO(
             name: 'ask_human',
             description: 'Ask the user for input, confirmation, a choice, or approval when you need their response before continuing.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'question' => [
-                        'type' => 'string',
-                        'description' => 'The clear, concise question to display to the user.',
-                    ],
-                    'kind' => [
-                        'type' => 'string',
-                        'enum' => ['confirm'],
-                        'description' => 'Optional. Set to "confirm" for yes/no or approval questions (boolean). Omit for free-form text or when providing "choices". Mutually exclusive with "choices".',
-                    ],
-                    'choices' => [
-                        'type' => 'array',
-                        'items' => [
-                            'type' => 'string',
-                        ],
-                        'description' => 'Non-empty list of answer choices as simple strings. Providing choices selects choice mode; omit kind. Mutually exclusive with kind="confirm". Do not pass an empty list.',
-                    ],
-                    'header' => [
-                        'type' => 'string',
-                        'description' => 'Optional header text shown above the question in the UI.',
-                    ],
-                ],
-                'required' => ['question'],
-                'additionalProperties' => false,
-            ],
             handler: $this,
             promptLine: 'ask_human question [kind] [choices] — ask the user for input, confirmation, a choice, or approval',
             promptGuidelines: [

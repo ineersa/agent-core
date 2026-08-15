@@ -11,12 +11,13 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
+use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * Inspect, tail-log, and stop background processes.
  *
- * Implements both HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and ToolHandlerInterface for execution.
+ * Implements HatfieldToolProviderInterface for automatic registration
+ * as a permanent tool and the Symfony AI native tool contract (AsTool).
  *
  * Actions:
  *  - list:  Show all tracked background processes with status, scoped to
@@ -31,7 +32,8 @@ use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
  * to every BackgroundProcessManager call. This ensures the LLM only sees
  * and operates on processes it owns.
  */
-final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+#[AsTool('bg_status', 'Inspect background processes started by bash: list all, show the log of one PID, or stop one PID.')]
+final class BgStatusTool implements HatfieldToolProviderInterface
 {
     public function __construct(
         private readonly BackgroundProcessManager $manager,
@@ -70,23 +72,6 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
         return new ToolDefinitionDTO(
             name: 'bg_status',
             description: 'List background processes in the current session, inspect their logs, or stop them.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'action' => [
-                        'type' => 'string',
-                        'enum' => ['list', 'log', 'stop'],
-                        'description' => "Action: list session processes, log a process's output tail, or stop a process.",
-                    ],
-                    'pid' => [
-                        'type' => 'integer',
-                        'minimum' => 1,
-                        'description' => 'Process PID (required for log and stop actions)',
-                    ],
-                ],
-                'required' => ['action'],
-                'additionalProperties' => false,
-            ],
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
             promptLine: 'bg_status action [pid] — list, view logs for, or stop background processes',

@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Tool\Arguments\WriteFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Ineersa\CodingAgent\Tool\WriteFileTool;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Validator\Validation;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\WriteFileTool
@@ -152,30 +153,28 @@ final class WriteFileToolTest extends TestCase
         }
     }
 
-    /* ── __invoke() argument validation tests ── */
+    /* ── Static argument validation lives in the DTO (enforced by the native
+       ValidateToolCallArgumentsListener before the handler runs) ── */
 
-    public function testWriteThrowsOnMissingPath(): void
+    public function testDtoRejectsBlankPath(): void
     {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"path" argument is required');
+        $violations = $this->validateDto(new WriteFileArgumentsDTO(content: 'some content'));
 
-        ($this->writeFileTool)(new WriteFileArgumentsDTO(content: 'some content'));
+        $this->assertCount(1, $violations);
+        $this->assertStringContainsString('"path" argument is required', $violations[0]->getMessage());
     }
 
-    public function testWriteThrowsOnEmptyPath(): void
+    public function testDtoRejectsMissingContent(): void
     {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"path" argument is required');
+        $violations = $this->validateDto(new WriteFileArgumentsDTO(path: $this->tmpDir.'/test.txt'));
 
-        ($this->writeFileTool)(new WriteFileArgumentsDTO(path: '', content: 'content'));
+        $this->assertCount(1, $violations);
+        $this->assertStringContainsString('"content" argument is required', $violations[0]->getMessage());
     }
 
-    public function testWriteThrowsOnMissingContent(): void
+    private function validateDto(object $dto): array
     {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"content" argument is required');
-
-        ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $this->tmpDir.'/test.txt'));
+        return iterator_to_array(Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator()->validate($dto));
     }
 
     public function testWriteThrowsWhenParentExistsAsFile(): void

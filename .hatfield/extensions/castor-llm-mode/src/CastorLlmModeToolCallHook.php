@@ -23,7 +23,9 @@ final class CastorLlmModeToolCallHook implements ToolCallRewriteHookInterface
             return null;
         }
 
-        $command = $context->arguments['command'] ?? null;
+        // Typed DTO tools (bash) arrive in the native nested shape.
+        $effective = $context->arguments['arguments'] ?? $context->arguments;
+        $command = \is_array($effective) ? ($effective['command'] ?? null) : null;
         if (!\is_string($command)) {
             return null;
         }
@@ -32,6 +34,11 @@ final class CastorLlmModeToolCallHook implements ToolCallRewriteHookInterface
             return null;
         }
 
-        return ['command' => $this->rewriter->rewrite($command)];
+        $rewritten = ['command' => $this->rewriter->rewrite($command)];
+        if (isset($context->arguments['arguments'])) {
+            return ['arguments' => $rewritten];
+        }
+
+        return $rewritten;
     }
 }

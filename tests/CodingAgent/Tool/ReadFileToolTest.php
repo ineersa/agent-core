@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\ReadFileTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Validator\Validation;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\ReadFileTool
@@ -241,38 +242,29 @@ final class ReadFileToolTest extends TestCase
         $this->assertStringNotContainsString('more lines', $result);
     }
 
-    /* ── __invoke() argument validation tests ── */
+    /* ── Static argument validation lives in the DTO (enforced by the native
+       ValidateToolCallArgumentsListener before the handler runs) ── */
 
-    public function testReadThrowsOnMissingPath(): void
+    public function testDtoRejectsBlankPath(): void
     {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"path" argument is required');
+        $violations = $this->validateDto(new ReadFileArgumentsDTO());
 
-        ($this->readFileTool)(new ReadFileArgumentsDTO());
+        $this->assertCount(1, $violations);
+        $this->assertStringContainsString('"path" argument is required', $violations[0]->getMessage());
     }
 
-    public function testReadThrowsOnEmptyPath(): void
+    public function testDtoRejectsNonPositiveOffsetAndLimit(): void
     {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"path" argument is required');
+        $violations = $this->validateDto(new ReadFileArgumentsDTO(path: '/tmp/test.txt', offset: 0, limit: 0));
 
-        ($this->readFileTool)(new ReadFileArgumentsDTO(path: ''));
+        $this->assertCount(2, $violations);
+        $this->assertStringContainsString('positive integer', $violations[0]->getMessage());
+        $this->assertStringContainsString('positive integer', $violations[1]->getMessage());
     }
 
-    public function testReadThrowsOnNegativeOffset(): void
+    private function validateDto(object $dto): array
     {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('positive integer');
-
-        ($this->readFileTool)(new ReadFileArgumentsDTO(path: '/tmp/test.txt', offset: 0));
-    }
-
-    public function testReadThrowsOnZeroLimit(): void
-    {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('positive integer');
-
-        ($this->readFileTool)(new ReadFileArgumentsDTO(path: '/tmp/test.txt', limit: 0));
+        return iterator_to_array(Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator()->validate($dto));
     }
 
     /* ── __invoke() target validation tests ── */

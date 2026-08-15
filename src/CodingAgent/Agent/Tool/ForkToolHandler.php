@@ -9,11 +9,12 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionServiceInterface;
 use Ineersa\CodingAgent\Tool\Arguments\ForkArgumentsDTO;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
+use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
-final class ForkToolHandler implements ToolHandlerInterface
+#[AsTool('fork', 'Launch an isolated fork child with inherited parent conversation context. Blocks until completion and returns a dense handoff.')]
+final class ForkToolHandler
 {
     private const string EXECUTION_SERVICE_LOCATOR_KEY = 'execution';
 

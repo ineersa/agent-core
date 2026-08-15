@@ -18,7 +18,7 @@ final class HatfieldDocsArgumentsDTO
         #[Assert\When(
             expression: 'this.operation === "read"',
             constraints: [
-                new Assert\NotBlank(message: 'The "id" argument is required for read.'),
+                new Assert\NotBlank(normalizer: 'trim', message: 'The "id" argument is required for read.'),
             ],
         )]
         public readonly ?string $id = null,

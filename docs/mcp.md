@@ -120,5 +120,7 @@ Workers perform **best-effort graceful disconnect** on worker stop (`McpWorkerSh
 
 ## Argument validation
 
-Dynamic MCP tools keep raw-array handlers. Before invocation, Hatfield validates rewritten arguments against each tool's exact registered `inputSchema` (JSON Schema). Built-in tools use Symfony AI native DTO resolution and Validator constraints instead. Malformed runtime schemas are rejected at registration so invalid tools are never exposed.
+Built-in tools run through Symfony AI's native argument resolution and Symfony Validator object validation: their provider schema is generated natively from typed argument DTOs, so the model-visible contract and runtime constraints cannot drift.
+
+Dynamic MCP tools keep raw-array handlers because their schemas only exist at runtime and cannot be reflected into DTOs. Arguments are passed through to the MCP handler/server verbatim — missing, unknown, or constrained-value handling is delegated to the MCP tool/server. Symfony AI's validator listener only validates typed objects, so no object validation is simulated for raw-array tools.
 
