@@ -17,7 +17,7 @@ use Symfony\Component\Tui\Widget\TextWidget;
  * Transient completion menu overlay rendered below the editor.
  *
  * Owns the {@see SelectListWidget} and {@see ContainerWidget} lifecycle:
- * open (build + mount), update (sync items), close (remove).
+ * open (build + mount), close (remove).
  *
  * The SelectListWidget is intentionally NOT focused; the editor keeps
  * focus so printable typing flows into the editor while the completion
@@ -36,9 +36,6 @@ final class CompletionMenu
 {
     private ?ContainerWidget $container = null;
     private ?SelectListWidget $listWidget = null;
-
-    /** Guards setItems()/setSelectedIndex() inside selection-change restyle. */
-    private bool $restylingSelection = false;
 
     public function __construct(
         private readonly TuiTheme $theme,
@@ -74,40 +71,18 @@ final class CompletionMenu
         $this->listWidget->setSelectedIndex(0);
         $this->listWidget->onSelectionChange(
             function (SelectionChangeEvent $event) use ($state): void {
-                if (null === $this->listWidget || $this->restylingSelection) {
-                    return;
-                }
                 $selectedIndex = (int) $event->getValue();
                 $items = self::buildItems($state->getSuggestions(), $this->theme, $selectedIndex);
-                // setItems() resets selection to 0; restore without re-entering this callback.
-                $this->restylingSelection = true;
-                try {
-                    $this->listWidget->setItems($items);
-                    $this->listWidget->setSelectedIndex($selectedIndex);
-                } finally {
-                    $this->restylingSelection = false;
-                }
+                // setItems() resets selection to index 0; setSelectedIndex() restores it.
+                // Neither dispatches SelectionChangeEvent (only handleInput() does), so no
+                // re-entry guard is needed here.
+                $this->listWidget->setItems($items);
+                $this->listWidget->setSelectedIndex($selectedIndex);
             },
         );
         $this->container->add($this->listWidget);
 
         $screen->insertOverlayAfterEditor($this->container);
-    }
-
-    /**
-     * Sync the SelectListWidget with a new suggestion set (live typing).
-     *
-     * Resets selection to the first item. Does not destroy the overlay.
-     */
-    public function update(ChatScreen $screen, CompletionState $state): void
-    {
-        if (null === $this->listWidget) {
-            return;
-        }
-
-        $items = self::buildItems($state->getSuggestions(), $this->theme, 0);
-        $this->listWidget->setItems($items);
-        $this->listWidget->setSelectedIndex(0);
     }
 
     /**
@@ -142,12 +117,6 @@ final class CompletionMenu
         }
         $this->container = null;
         $this->listWidget = null;
-        $this->restylingSelection = false;
-    }
-
-    public function isOpen(): bool
-    {
-        return null !== $this->container;
     }
 
     /**
