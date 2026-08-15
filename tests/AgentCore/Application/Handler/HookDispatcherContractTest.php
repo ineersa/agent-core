@@ -6,22 +6,9 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
-use Ineersa\AgentCore\Domain\Event\BoundaryHookEvent;
-use Ineersa\AgentCore\Domain\Event\BoundaryHookName;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
-use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
-use Symfony\Component\PropertyInfo\PropertyInfoExtractor;
-use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
-use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
-use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
-use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
 
 final class HookDispatcherContractTest extends TestCase
 {
@@ -40,14 +27,7 @@ final class HookDispatcherContractTest extends TestCase
             }
         };
 
-        $serializer = $this->serializer();
-
-        $dispatcher = new HookDispatcher(
-            [$subscriber],
-            new EventDispatcher(),
-            $serializer,
-            $serializer,
-        );
+        $dispatcher = new HookDispatcher([$subscriber]);
 
         $result = $dispatcher->dispatchAfterTurnCommit(new AfterTurnCommitHookContext(
             runId: 'run-stage-01',
@@ -61,52 +41,5 @@ final class HookDispatcherContractTest extends TestCase
         $this->assertSame('mutated-by-subscriber', $result->status);
         $this->assertSame(4, $result->effectsCount);
         $this->assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $result->events);
-    }
-
-    public function testEventDispatcherListenerCanMutatePayloadBeforeSubscribers(): void
-    {
-        $eventDispatcher = new EventDispatcher();
-        $eventDispatcher->addListener(BoundaryHookName::AFTER_TURN_COMMIT, static function (BoundaryHookEvent $event): void {
-            $event->context['status'] = 'mutated-by-listener';
-            $event->context['effects_count'] = 10;
-        });
-
-        $serializer = $this->serializer();
-
-        $dispatcher = new HookDispatcher(
-            [],
-            $eventDispatcher,
-            $serializer,
-            $serializer,
-        );
-
-        $result = $dispatcher->dispatchAfterTurnCommit(new AfterTurnCommitHookContext(
-            runId: 'run-stage-02',
-            turnNo: 1,
-            status: 'running',
-            events: [new AfterTurnCommitEventSummary(seq: 1, type: 'run_started')],
-            effectsCount: 1,
-        ));
-
-        $this->assertSame('mutated-by-listener', $result->status);
-        $this->assertSame(10, $result->effectsCount);
-        $this->assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $result->events);
-    }
-
-    private function serializer(): Serializer
-    {
-        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
-        $propertyTypeExtractor = new PropertyInfoExtractor(
-            typeExtractors: [new PhpDocExtractor(), new ReflectionExtractor()],
-        );
-
-        return new Serializer([
-            new ArrayDenormalizer(),
-            new ObjectNormalizer(
-                classMetadataFactory: $classMetadataFactory,
-                nameConverter: new MetadataAwareNameConverter($classMetadataFactory, new CamelCaseToSnakeCaseNameConverter()),
-                propertyTypeExtractor: $propertyTypeExtractor,
-            ),
-        ]);
     }
 }

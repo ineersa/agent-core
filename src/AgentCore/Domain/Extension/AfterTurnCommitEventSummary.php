@@ -11,8 +11,8 @@ final readonly class AfterTurnCommitEventSummary
      *
      * Optional turnNo/createdAt carry the RunEvent's own provenance so public
      * ExtensionApi consumers do not invent values from the surrounding context.
-     * createdAt is an ISO-8601 string (not DateTimeImmutable) so serializer
-     * denormalization stays free of immutable DateTime method warnings.
+     * createdAt is an ISO-8601 string (not DateTimeImmutable) to keep the DTO
+     * plain for public consumers.
      *
      * @param array<string, mixed> $payload
      */
