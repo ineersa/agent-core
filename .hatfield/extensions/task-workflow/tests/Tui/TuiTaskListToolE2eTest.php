@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Tui\Tests\E2E;
+namespace Ineersa\HatfieldExt\TaskWorkflow\Tests\Tui;
 
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Tui\Tests\E2E\TmuxHarness;
+use Ineersa\Tui\Tests\E2E\TmuxPane;
+use Ineersa\Tui\Tests\E2E\TuiE2eDatabaseEnv;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -116,8 +119,8 @@ final class TuiTaskListToolE2eTest extends TestCase
             );
             $this->assertStringContainsString(
                 self::TASK_TITLE,
-                $fullCapture,
-                'Structured tasks[0].title must be visible in the tool result',
+                (string) preg_replace('/\s+/', ' ', $fullCapture),
+                'Structured tasks[0].title must be visible in the tool result (tolerating terminal line wrap)',
             );
             $this->assertStringContainsString(
                 'include_archive',
