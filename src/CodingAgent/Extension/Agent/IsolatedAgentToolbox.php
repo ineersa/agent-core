@@ -81,7 +81,7 @@ final class IsolatedAgentToolbox implements ToolboxInterface
 
         $toolbox = new Toolbox(
             tools: [$handler],
-            toolFactory: new DefinitionToolFactory($this->metadataByName[$toolCall->getName()]),
+            toolFactory: new DefinitionToolFactory([spl_object_id($handler) => [$this->metadataByName[$toolCall->getName()]]]),
             argumentResolver: $this->argumentResolver,
             logger: $this->logger ?? new NullLogger(),
         );

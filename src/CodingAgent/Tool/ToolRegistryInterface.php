@@ -31,6 +31,22 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 interface ToolRegistryInterface
 {
     /**
+     * Monotonic revision counter for the effective registry contents.
+     *
+     * Increments only when the effective active tool set or its visibility
+     * changes: permanent/dynamic add, remove, or replace, and allowlist/
+     * denylist changes. Repeated no-op mutations (idempotent re-registration,
+     * removing an unknown dynamic tool, replacing a dynamic tool with an
+     * identical definition, re-applying the same visibility filters) do NOT
+     * increment.
+     *
+     * Callers that cache derived artifacts (e.g. provider Tool metadata or a
+     * native Symfony Toolbox) key the cache on this value and rebuild only
+     * when it changes.
+     */
+    public function revision(): int;
+
+    /**
      * Register a permanent tool.
      *
      * Permanent tools are active by default, included in provider-schema

@@ -671,6 +671,134 @@ final class ToolRegistryTest extends TestCase
 
     /* ───────── Private helpers ───────── */
 
+    /* ───────── Revision contract (cache invalidation) ───────── */
+
+    public function testRevisionStartsAtZeroAndBumpsOnPermanentRegistration(): void
+    {
+        $this->assertSame(0, $this->registry->revision());
+
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read');
+
+        $this->assertSame(1, $this->registry->revision());
+    }
+
+    public function testIdenticalPermanentReRegistrationDoesNotBumpRevision(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read');
+        $revision = $this->registry->revision();
+
+        // Same name re-registration is a no-op (first wins) regardless of payload.
+        $this->registry->registerTool(name: 'read', description: 'Different', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'other');
+
+        $this->assertSame($revision, $this->registry->revision());
+    }
+
+    public function testIdenticalDynamicReRegistrationDoesNotBumpRevision(): void
+    {
+        $handler = $this->dummyHandler();
+        $schema = ['type' => 'object'];
+
+        $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: $schema, handler: $handler);
+        $revision = $this->registry->revision();
+
+        // Identical re-add: same handler object, description, and schema.
+        $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: $schema, handler: $handler);
+
+        $this->assertSame($revision, $this->registry->revision());
+        $this->assertSame($handler, $this->registry->toolDefinition('mcp_x')?->handler);
+    }
+
+    public function testDynamicReplaceWithDifferentContentBumpsRevision(): void
+    {
+        $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: [], handler: $this->dummyHandler());
+        $revision = $this->registry->revision();
+
+        $this->registry->addDynamicTool(name: 'mcp_x', description: 'X2', parametersJsonSchema: [], handler: $this->dummyHandler());
+
+        $this->assertGreaterThan($revision, $this->registry->revision());
+    }
+
+    public function testRemoveUnknownDynamicToolDoesNotBumpRevision(): void
+    {
+        $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: [], handler: $this->dummyHandler());
+        $revision = $this->registry->revision();
+
+        $this->registry->removeDynamicTool('unknown');
+
+        $this->assertSame($revision, $this->registry->revision());
+    }
+
+    public function testRemoveDynamicToolBumpsRevision(): void
+    {
+        $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: [], handler: $this->dummyHandler());
+        $this->registry->removeDynamicTool('mcp_x');
+
+        $this->assertSame(2, $this->registry->revision());
+        $this->assertSame([], $this->registry->activeToolNames());
+    }
+
+    public function testSetDynamicToolsWithIdenticalContentDoesNotBumpRevision(): void
+    {
+        $handler = $this->dummyHandler();
+        $tools = [
+            ['name' => 'mcp_a', 'description' => 'A', 'parametersJsonSchema' => [], 'handler' => $handler],
+            ['name' => 'mcp_b', 'description' => 'B', 'parametersJsonSchema' => ['type' => 'object'], 'handler' => $handler],
+        ];
+
+        $this->registry->setDynamicTools($tools);
+        $revision = $this->registry->revision();
+
+        $this->registry->setDynamicTools($tools);
+
+        $this->assertSame($revision, $this->registry->revision());
+    }
+
+    public function testSetDynamicToolsWithChangedContentBumpsRevision(): void
+    {
+        $this->registry->setDynamicTools([
+            ['name' => 'mcp_a', 'description' => 'A', 'parametersJsonSchema' => [], 'handler' => $this->dummyHandler()],
+        ]);
+        $revision = $this->registry->revision();
+
+        $this->registry->setDynamicTools([
+            ['name' => 'mcp_a', 'description' => 'A2', 'parametersJsonSchema' => [], 'handler' => $this->dummyHandler()],
+        ]);
+
+        $this->assertGreaterThan($revision, $this->registry->revision());
+    }
+
+    public function testReapplyingSameVisibilityDoesNotBumpRevision(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read');
+        $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: [], handler: $this->dummyHandler());
+
+        $this->registry->setAllowedToolNames(['mcp_x', 'read']);
+        $this->registry->setExcludedToolNames(['read']);
+        $revision = $this->registry->revision();
+
+        // Same effective visibility, different input order: no-op.
+        $this->registry->setAllowedToolNames(['read', 'mcp_x']);
+        $this->registry->setExcludedToolNames(['read']);
+
+        $this->assertSame($revision, $this->registry->revision());
+    }
+
+    public function testVisibilityChangeBumpsRevision(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read');
+        $revision = $this->registry->revision();
+
+        $this->registry->setExcludedToolNames(['read']);
+        $this->assertGreaterThan($revision, $this->registry->revision());
+        $this->assertSame([], $this->registry->activeToolNames());
+
+        // Clearing the denylist restores visibility and bumps again.
+        $revision = $this->registry->revision();
+        $this->registry->setExcludedToolNames([]);
+        $this->assertGreaterThan($revision, $this->registry->revision());
+        $this->assertSame(['read'], $this->registry->activeToolNames());
+    }
+
     private function createProvider(
         string $name,
         string $description,

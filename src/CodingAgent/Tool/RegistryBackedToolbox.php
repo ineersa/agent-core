@@ -43,8 +43,11 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  *     → handler invoke → ToolCallSucceeded/Failed
  *
  * Mutable registry semantics are preserved: getTools() and execute() always
- * read the live registry, and a fresh native Toolbox is built per execution
- * so dynamic tool changes are never served from a stale metadata cache.
+ * observe the live registry revision, and the native Toolbox (with all active
+ * handlers and their exact per-handler metadata) is rebuilt only when the
+ * registry revision actually changes — not on every LLM step. The registry
+ * revision increments only when effective contents/visibility change, so
+ * repeated no-op mutations keep the cached native Toolbox hot.
  */
 final readonly class RegistryBackedToolbox implements ToolboxInterface
 {
@@ -57,6 +60,7 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
         private ?StackToolExecutionContextAccessor $contextAccessor = null,
         private ?ChildRunExtensionAllowlistReaderInterface $extensionAllowlistReader = null,
         private ?LoggerInterface $logger = null,
+        private readonly RegistryBackedToolboxSnapshot $snapshot = new RegistryBackedToolboxSnapshot(),
     ) {
     }
 
@@ -65,10 +69,7 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
      */
     public function getTools(): array
     {
-        return array_map(
-            fn (ToolDefinitionDTO $definition): Tool => $this->metadataFor($definition),
-            $this->registry->activeToolDefinitions(),
-        );
+        return $this->snapshotFor()->tools;
     }
 
     /**
@@ -84,16 +85,8 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
 
         $rewrittenCall = $this->applyRewrites($toolCall);
 
-        $toolbox = new Toolbox(
-            tools: [$definition->handler],
-            toolFactory: new DefinitionToolFactory($this->metadataFor($definition)),
-            argumentResolver: $this->argumentResolver,
-            logger: $this->logger ?? new NullLogger(),
-            eventDispatcher: $this->eventDispatcher,
-        );
-
         try {
-            return $toolbox->execute($rewrittenCall);
+            return $this->snapshotFor()->toolbox->execute($rewrittenCall);
         } catch (ToolExecutionException $e) {
             // Thin outer translation: the native Toolbox wraps every handler
             // throwable in ToolExecutionException. A handler-thrown
@@ -107,6 +100,52 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
 
             throw $e;
         }
+    }
+
+    /**
+     * Return the cached native Toolbox snapshot for the current registry
+     * revision, rebuilding it when the revision changed.
+     */
+    private function snapshotFor(): RegistryBackedToolboxSnapshot
+    {
+        $revision = $this->registry->revision();
+
+        if (null !== $this->snapshot->toolbox && $this->snapshot->revision === $revision) {
+            return $this->snapshot;
+        }
+
+        $tools = [];
+        $handlers = [];
+        $metadataByHandler = [];
+        $seenHandlers = [];
+
+        foreach ($this->registry->activeToolDefinitions() as $definition) {
+            $tool = $this->metadataFor($definition);
+            $tools[] = $tool;
+
+            $objectId = spl_object_id($definition->handler);
+            $metadataByHandler[$objectId][] = $tool;
+
+            // The same handler object may be registered under several names;
+            // the native Toolbox iterates handlers and the factory returns all
+            // names per handler, so each object must appear exactly once.
+            if (!isset($seenHandlers[$objectId])) {
+                $seenHandlers[$objectId] = true;
+                $handlers[] = $definition->handler;
+            }
+        }
+
+        $this->snapshot->tools = $tools;
+        $this->snapshot->toolbox = new Toolbox(
+            tools: $handlers,
+            toolFactory: new DefinitionToolFactory($metadataByHandler),
+            argumentResolver: $this->argumentResolver,
+            logger: $this->logger ?? new NullLogger(),
+            eventDispatcher: $this->eventDispatcher,
+        );
+        $this->snapshot->revision = $revision;
+
+        return $this->snapshot;
     }
 
     private function applyRewrites(ToolCall $toolCall): ToolCall

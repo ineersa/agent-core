@@ -291,6 +291,62 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
     /**
      * @return array{parent: McpToolCatalogDTO, child: McpToolCatalogDTO}
      */
+    public function testRepeatedResolveWithUnchangedCatalogKeepsHandlerIdentity(): void
+    {
+        $registry = new ToolRegistry();
+        $inner = new class($registry) implements ToolSetResolverInterface {
+            public function __construct(private ToolRegistry $registry)
+            {
+            }
+
+            public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
+            {
+                return new ActiveToolSet(
+                    toolNames: $this->registry->activeToolNames(),
+                    allowListNames: $this->registry->activeToolNames(),
+                    executionModes: [],
+                );
+            }
+        };
+
+        $catalog = new McpToolCatalogDTO(
+            runId: 'run-xyz',
+            servers: [
+                'srv' => new McpServerCatalogEntryDTO(
+                    serverName: 'srv',
+                    transport: 'stdio',
+                    status: McpServerCatalogStatusEnum::CONNECTED,
+                    tools: [
+                        new McpToolDefinitionDTO(
+                            hatfieldName: 'srv_calc',
+                            serverName: 'srv',
+                            mcpName: 'calc',
+                            description: 'Calculator',
+                            inputSchema: [],
+                        ),
+                    ],
+                ),
+            ],
+        );
+
+        $store = $this->makeStore(['run-xyz' => $catalog]);
+        $registrar = new McpToolRegistrar($store, $registry, $this->makeHandlerFactory(), new TestLogger());
+        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, $this->metadataReader(), $store, new TestLogger());
+
+        // Two LLM steps with an unchanged catalog: the resolver must not
+        // churn the registered handler object or the registry revision.
+        $wrapper->resolve('toolset:run:run-xyz:turn:1', turnNo: 1, runId: 'run-xyz');
+        $firstHandler = $registry->toolDefinition('srv_calc')?->handler;
+        $firstRevision = $registry->revision();
+
+        $wrapper->resolve('toolset:run:run-xyz:turn:2', turnNo: 2, runId: 'run-xyz');
+        $secondHandler = $registry->toolDefinition('srv_calc')?->handler;
+
+        $this->assertNotNull($firstHandler);
+        $this->assertSame($firstHandler, $secondHandler);
+        $this->assertSame($firstRevision, $registry->revision());
+    }
+
     private function makeChildParentCatalogPair(string $parentToolName, string $childToolName): array
     {
         $makeCatalog = static function (string $runId, string $hatfieldName, string $mcpName): McpToolCatalogDTO {

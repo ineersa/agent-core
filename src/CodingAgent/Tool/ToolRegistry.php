@@ -59,6 +59,12 @@ final class ToolRegistry implements ToolRegistryInterface
     private ?array $allowedNames = null;
 
     /**
+     * Monotonic revision counter; bumped only when the effective active
+     * tool set or visibility changes (see {@see ToolRegistryInterface::revision()}).
+     */
+    private int $revision = 0;
+
+    /**
      * @param iterable<HatfieldToolProviderInterface> $providers Tagged built-in tool providers
      */
     public function __construct(
@@ -78,6 +84,11 @@ final class ToolRegistry implements ToolRegistryInterface
                 timeoutSeconds: $definition->timeoutSeconds,
             );
         }
+    }
+
+    public function revision(): int
+    {
+        return $this->revision;
     }
 
     public function registerTool(
@@ -112,6 +123,7 @@ final class ToolRegistry implements ToolRegistryInterface
             extensionOwnerClass: $extensionOwnerClass,
         );
         $this->permanentOrder[] = $name;
+        ++$this->revision;
     }
 
     public function addDynamicTool(
@@ -129,8 +141,20 @@ final class ToolRegistry implements ToolRegistryInterface
             throw new \InvalidArgumentException(\sprintf('Cannot register dynamic tool "%s": a permanent tool with the same name already exists.', $name));
         }
 
+        // Idempotent: replacing a dynamic tool with an identical definition
+        // is a no-op and must not invalidate revision-based caches.
+        $existing = $this->dynamicTools[$name] ?? null;
+        if (null !== $existing
+            && $existing->handler === $handler
+            && $existing->description === $description
+            && $existing->parametersJsonSchema === $parametersJsonSchema
+            && $existing->executionMode === $executionMode
+        ) {
+            return;
+        }
+
         // Replace if already a dynamic tool (update in place)
-        if (!isset($this->dynamicTools[$name])) {
+        if (null === $existing) {
             $this->dynamicOrder[] = $name;
         }
 
@@ -143,6 +167,7 @@ final class ToolRegistry implements ToolRegistryInterface
             promptGuidelines: [],
             executionMode: $executionMode,
         );
+        ++$this->revision;
     }
 
     public function removeDynamicTool(string $name): void
@@ -156,6 +181,7 @@ final class ToolRegistry implements ToolRegistryInterface
             $this->dynamicOrder,
             static fn (string $existing): bool => $existing !== $name,
         ));
+        ++$this->revision;
     }
 
     /**
@@ -163,17 +189,49 @@ final class ToolRegistry implements ToolRegistryInterface
      */
     public function setDynamicTools(array $tools): void
     {
+        // No-op detection: an identical set (same names, order, handlers,
+        // schemas) must not invalidate revision-based caches.
+        $current = $this->getDynamicTools();
+        if (\count($tools) === \count($current)) {
+            $identical = true;
+            foreach ($tools as $index => $tool) {
+                $existing = $current[$index];
+                if ($existing['name'] !== $tool['name']
+                    || $existing['description'] !== $tool['description']
+                    || $existing['handler'] !== $tool['handler']
+                    || $existing['parametersJsonSchema'] !== $tool['parametersJsonSchema']
+                ) {
+                    $identical = false;
+                    break;
+                }
+            }
+
+            if ($identical) {
+                return;
+            }
+        }
+
         $this->dynamicTools = [];
         $this->dynamicOrder = [];
 
         foreach ($tools as $tool) {
-            $this->addDynamicTool(
-                name: $tool['name'],
+            $name = $tool['name'];
+            if (!isset($this->dynamicTools[$name])) {
+                $this->dynamicOrder[] = $name;
+            }
+
+            $this->dynamicTools[$name] = new ToolDefinitionDTO(
+                name: $name,
                 description: $tool['description'],
                 handler: $tool['handler'],
                 parametersJsonSchema: $tool['parametersJsonSchema'],
+                promptLine: '',  // dynamic tools have no prompt metadata
+                promptGuidelines: [],
+                executionMode: ToolExecutionMode::Sequential,
             );
         }
+
+        ++$this->revision;
     }
 
     /**
@@ -347,7 +405,16 @@ final class ToolRegistry implements ToolRegistryInterface
         }
 
         // Empty or whitespace-only input clears the allowlist.
-        $this->allowedNames = [] === $allowed ? null : $allowed;
+        $effective = [] === $allowed ? null : $allowed;
+
+        // No-op detection: re-applying the same visibility must not
+        // invalidate revision-based caches (order-insensitive).
+        if ($this->sameNameSet($effective, $this->allowedNames)) {
+            return;
+        }
+
+        $this->allowedNames = $effective;
+        ++$this->revision;
     }
 
     public function setExcludedToolNames(array $names): void
@@ -364,7 +431,14 @@ final class ToolRegistry implements ToolRegistryInterface
             $excluded[$name] = true;
         }
 
+        // No-op detection: re-applying the same visibility must not
+        // invalidate revision-based caches (order-insensitive).
+        if ($this->sameNameSet($excluded, $this->excludedNames)) {
+            return;
+        }
+
         $this->excludedNames = $excluded;
+        ++$this->revision;
     }
 
     public function excludedToolNames(): array
@@ -459,6 +533,26 @@ final class ToolRegistry implements ToolRegistryInterface
     private function isKnownToolName(string $name): bool
     {
         return isset($this->permanentTools[$name]) || isset($this->dynamicTools[$name]);
+    }
+
+    /**
+     * Order-insensitive comparison of two name=>true maps (null = no filter).
+     *
+     * @param array<string, true>|null $a
+     * @param array<string, true>|null $b
+     */
+    private function sameNameSet(?array $a, ?array $b): bool
+    {
+        if (null === $a || null === $b) {
+            return $a === $b;
+        }
+
+        $aKeys = array_keys($a);
+        $bKeys = array_keys($b);
+        sort($aKeys);
+        sort($bKeys);
+
+        return $aKeys === $bKeys;
     }
 
     /**

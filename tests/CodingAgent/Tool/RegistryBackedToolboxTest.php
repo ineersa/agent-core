@@ -27,6 +27,7 @@ use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
@@ -821,6 +822,167 @@ final class RegistryBackedToolboxTest extends TestCase
 
     /* ───────── Private helpers ───────── */
 
+    /* ── Snapshot caching: registry revision → native Toolbox/Tool reuse ── */
+
+    public function testGetToolsReturnsSameToolInstancesAcrossCalls(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler('r'), promptLine: 'read');
+        $registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: ['type' => 'object'], handler: $this->dummyHandler('x'));
+        $toolbox = $this->createToolbox($registry);
+
+        $first = $toolbox->getTools();
+        $second = $toolbox->getTools();
+
+        $this->assertCount(2, $first);
+        $this->assertSame($first, $second);
+        $this->assertSame($first[0], $second[0]);
+        $this->assertSame($first[1], $second[1]);
+    }
+
+    public function testGetToolsStaysStableAcrossNoOpRegistryMutations(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = $this->dummyHandler('x');
+        $registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler('r'), promptLine: 'read');
+        $registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: ['type' => 'object'], handler: $handler);
+        $registry->setAllowedToolNames(['read', 'mcp_x']);
+        $toolbox = $this->createToolbox($registry);
+
+        $before = $toolbox->getTools();
+
+        // No-op mutations must not invalidate the snapshot: identical dynamic
+        // re-add, unknown removal, and re-applied visibility filters.
+        $registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: ['type' => 'object'], handler: $handler);
+        $registry->removeDynamicTool('unknown');
+        $registry->setAllowedToolNames(['mcp_x', 'read']);
+
+        $this->assertSame($before, $toolbox->getTools());
+    }
+
+    public function testGetToolsRefreshesAfterRegistryMutation(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler('r'), promptLine: 'read');
+        $toolbox = $this->createToolbox($registry);
+
+        $before = $toolbox->getTools();
+        $this->assertCount(1, $before);
+
+        $registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: ['type' => 'object'], handler: $this->dummyHandler('x'));
+        $after = $toolbox->getTools();
+
+        $this->assertCount(2, $after);
+        $this->assertNotSame($before[0], $after[0], 'Snapshot must be rebuilt after a real registry mutation');
+        $this->assertSame('mcp_x', $after[1]->getName());
+    }
+
+    public function testConsecutiveExecutesDispatchSameToolMetadataObjects(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler('r'), promptLine: 'read');
+
+        $dispatcher = new EventDispatcher();
+        $metadata = [];
+        $dispatcher->addListener(ToolCallRequested::class, static function (ToolCallRequested $event) use (&$metadata): void {
+            $metadata[] = $event->getDefinition();
+        });
+
+        $toolbox = $this->createToolbox($registry, $dispatcher);
+        $toolbox->execute(new ToolCall('call-1', 'read', []));
+        $toolbox->execute(new ToolCall('call-2', 'read', []));
+
+        $this->assertCount(2, $metadata);
+        $this->assertSame($metadata[0], $metadata[1], 'Both executes must share the cached native Toolbox metadata');
+    }
+
+    public function testExecuteReflectsDynamicToolAdditionWithoutStaleCache(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler('r'), promptLine: 'read');
+        $toolbox = $this->createToolbox($registry);
+
+        // Warm the snapshot, then mutate the registry.
+        $toolbox->getTools();
+        $registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: ['type' => 'object'], handler: $this->dummyHandler('x'));
+
+        $names = array_map(static fn (Tool $tool): string => $tool->getName(), $toolbox->getTools());
+        $this->assertSame(['read', 'mcp_x'], $names);
+
+        $result = $toolbox->execute(new ToolCall('call-x', 'mcp_x', []));
+        $this->assertSame('x', $result->getResult());
+    }
+
+    public function testExecuteReflectsDynamicToolRemovalWithoutStaleCache(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = $this->dummyHandler('x');
+        $registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler('r'), promptLine: 'read');
+        $registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: ['type' => 'object'], handler: $handler);
+        $toolbox = $this->createToolbox($registry);
+
+        $toolbox->execute(new ToolCall('call-x', 'mcp_x', []));
+        $registry->removeDynamicTool('mcp_x');
+
+        $this->assertCount(1, $toolbox->getTools());
+        $this->expectException(ToolNotFoundException::class);
+        $toolbox->execute(new ToolCall('call-x', 'mcp_x', []));
+    }
+
+    public function testGetToolsReflectsVisibilityChange(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler('r'), promptLine: 'read');
+        $toolbox = $this->createToolbox($registry);
+
+        $this->assertCount(1, $toolbox->getTools());
+
+        $registry->setExcludedToolNames(['read']);
+        $this->assertSame([], $toolbox->getTools());
+
+        $registry->setExcludedToolNames([]);
+        $this->assertCount(1, $toolbox->getTools());
+    }
+
+    public function testSameHandlerObjectRegisteredUnderTwoNames(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = new class {
+            public function __invoke(array $arguments): string
+            {
+                return 'shared-handler:'.($arguments['which'] ?? '?');
+            }
+        };
+        $registry->registerTool(name: 'shared_a', description: 'A', parametersJsonSchema: [], handler: $handler, promptLine: 'a');
+        $registry->registerTool(name: 'shared_b', description: 'B', parametersJsonSchema: [], handler: $handler, promptLine: 'b');
+        $toolbox = $this->createToolbox($registry);
+
+        $tools = $toolbox->getTools();
+        $this->assertCount(2, $tools);
+        $this->assertSame(['shared_a', 'shared_b'], array_map(static fn (Tool $tool): string => $tool->getName(), $tools));
+
+        $this->assertSame('shared-handler:a', $toolbox->execute(new ToolCall('c1', 'shared_a', ['which' => 'a']))->getResult());
+        $this->assertSame('shared-handler:b', $toolbox->execute(new ToolCall('c2', 'shared_b', ['which' => 'b']))->getResult());
+    }
+
+    public function testTwoInstancesOfSameHandlerClassGetDistinctMetadata(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->registerTool(name: 'inst_a', description: 'A', parametersJsonSchema: [], handler: new RegistryBackedToolboxSharedClassHandler('a'), promptLine: 'a');
+        $registry->registerTool(name: 'inst_b', description: 'B', parametersJsonSchema: [], handler: new RegistryBackedToolboxSharedClassHandler('b'), promptLine: 'b');
+        $toolbox = $this->createToolbox($registry);
+
+        $tools = $toolbox->getTools();
+        $this->assertCount(2, $tools);
+        $this->assertSame('inst_a', $tools[0]->getName());
+        $this->assertSame('inst_b', $tools[1]->getName());
+
+        // Each name must execute through its own instance, not the first
+        // class match.
+        $this->assertSame('tag:a', $toolbox->execute(new ToolCall('c1', 'inst_a', []))->getResult());
+        $this->assertSame('tag:b', $toolbox->execute(new ToolCall('c2', 'inst_b', []))->getResult());
+    }
+
     private function createToolbox(
         ToolRegistry $registry,
         ?EventDispatcher $dispatcher = null,
@@ -916,5 +1078,23 @@ final class RegistryBackedToolboxTest extends TestCase
         }
 
         return $registry;
+    }
+}
+
+/**
+ * Named handler double so two distinct instances share one handler class
+ * (anonymous classes are always distinct classes, which would not exercise
+ * the same-class metadata routing).
+ */
+final class RegistryBackedToolboxSharedClassHandler
+{
+    public function __construct(
+        private readonly string $tag,
+    ) {
+    }
+
+    public function __invoke(array $arguments = []): string
+    {
+        return 'tag:'.$this->tag;
     }
 }
