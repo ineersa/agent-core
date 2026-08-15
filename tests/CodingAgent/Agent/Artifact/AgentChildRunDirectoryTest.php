@@ -9,7 +9,6 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
@@ -81,33 +80,6 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
             $this->registry,
             $logger,
         );
-    }
-
-    protected function tearDown(): void
-    {
-        // DAMA rolls back hatfield_session rows per method, but session dirs
-        // under the shared class CWD survive. Without cleanup, the next method
-        // reuses AUTOINCREMENT id 1 against a leftover .hatfield/sessions/1 and
-        // createSession's atomic no-truncation guard correctly refuses it.
-        $sessionsDir = $this->hatfieldSessionStore->resolveSessionsBasePath();
-        if (is_dir($sessionsDir)) {
-            $entries = @scandir($sessionsDir);
-            if (false !== $entries) {
-                foreach ($entries as $entry) {
-                    if ('.' === $entry || '..' === $entry) {
-                        continue;
-                    }
-                    $path = $sessionsDir.'/'.$entry;
-                    if (is_dir($path)) {
-                        TestDirectoryIsolation::removeDirectory($path);
-                    } elseif (is_file($path) || is_link($path)) {
-                        @unlink($path);
-                    }
-                }
-            }
-        }
-
-        parent::tearDown();
     }
 
     /**
