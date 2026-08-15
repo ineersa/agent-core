@@ -27,6 +27,8 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
  */
 final class ToolRegistry implements ToolRegistryInterface
 {
+    private readonly ToolCallArgumentsValidator $argumentsValidator;
+
     /**
      * @var array<string, ToolDefinitionDTO>
      */
@@ -61,8 +63,12 @@ final class ToolRegistry implements ToolRegistryInterface
     /**
      * @param iterable<HatfieldToolProviderInterface> $providers Tagged built-in tool providers
      */
-    public function __construct(iterable $providers = [])
-    {
+    public function __construct(
+        iterable $providers = [],
+        ?ToolCallArgumentsValidator $argumentsValidator = null,
+    ) {
+        $this->argumentsValidator = $argumentsValidator ?? new ToolCallArgumentsValidator();
+
         foreach ($providers as $provider) {
             $definition = $provider->definition();
 
@@ -99,6 +105,8 @@ final class ToolRegistry implements ToolRegistryInterface
             return;
         }
 
+        $this->argumentsValidator->assertSchemaIsUsable($parametersJsonSchema, $name);
+
         $this->permanentTools[$name] = new ToolDefinitionDTO(
             name: $name,
             description: $description,
@@ -127,6 +135,8 @@ final class ToolRegistry implements ToolRegistryInterface
         if (isset($this->permanentTools[$name])) {
             throw new \InvalidArgumentException(\sprintf('Cannot register dynamic tool "%s": a permanent tool with the same name already exists.', $name));
         }
+
+        $this->argumentsValidator->assertSchemaIsUsable($parametersJsonSchema, $name);
 
         // Replace if already a dynamic tool (update in place)
         if (!isset($this->dynamicTools[$name])) {

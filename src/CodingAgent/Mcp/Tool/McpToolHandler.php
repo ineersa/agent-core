@@ -29,6 +29,9 @@ final readonly class McpToolHandler implements ToolHandlerInterface
     ) {
     }
 
+    /**
+     * @param array<string, mixed> $arguments
+     */
     public function __invoke(array $arguments): mixed
     {
         try {

@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Tests\Agent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\CodingAgent\Agent\Execution\SubagentArgumentsDTO;
+use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 use Ineersa\CodingAgent\Agent\Tool\SubagentToolDefinitionProvider;
 use Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -33,62 +35,29 @@ final class SubagentToolTest extends IsolatedKernelTestCase
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('requires an active parent run context');
-        $handler->__invoke(['agent' => 'scout', 'task' => 'do something']);
+        $handler->__invoke(new SubagentArgumentsDTO(agent: 'scout', task: 'do something'));
     }
 
-    public function testInvokeWithContextRejectsConcurrency(): void
+    public function testSchemaRejectsUnknownConcurrencyAndBackgroundProperties(): void
     {
-        $handler = self::getContainer()->get(SubagentToolHandler::class);
-        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
-        $context = $this->toolContext('tc-concurrency');
+        $tool = self::getContainer()->get(SubagentToolDefinitionProvider::class);
+        $schema = $tool->definition()->parametersJsonSchema;
 
-        $message = $accessor->with($context, static function () use ($handler): string {
-            try {
-                $handler->__invoke(['tasks' => [['agent' => 'scout', 'task' => 't']], 'concurrency' => 2]);
-
-                return '';
-            } catch (ToolCallException $e) {
-                return $e->getMessage();
-            }
-        });
-
-        $this->assertStringContainsString('concurrency', $message);
-        $this->assertStringContainsString('not supported', $message);
+        $this->assertFalse($schema['additionalProperties']);
+        $this->assertArrayNotHasKey('concurrency', $schema['properties']);
+        $this->assertArrayNotHasKey('background', $schema['properties']);
     }
 
-    public function testInvokeWithContextRejectsBackground(): void
+    public function testDtoRejectsMixedSingleAndParallelMode(): void
     {
-        $handler = self::getContainer()->get(SubagentToolHandler::class);
-        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
-        $context = $this->toolContext('tc-bg');
+        $dto = new SubagentArgumentsDTO(
+            agent: 'scout',
+            task: 'single',
+            tasks: [new SubagentTaskDTO(agent: 'scout', task: 'parallel')],
+        );
 
-        $message = $accessor->with($context, static function () use ($handler): string {
-            try {
-                $handler->__invoke(['agent' => 'scout', 'task' => 't', 'background' => true]);
-
-                return '';
-            } catch (ToolCallException $e) {
-                return $e->getMessage();
-            }
-        });
-
-        $this->assertStringContainsString('Background', $message);
-    }
-
-    public function testInvokeWithContextRejectsMixedSingleAndParallel(): void
-    {
-        $handler = self::getContainer()->get(SubagentToolHandler::class);
-        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
-        $context = $this->toolContext('tc-mixed');
-
-        $this->expectException(ToolCallException::class);
-        $accessor->with($context, static function () use ($handler): void {
-            $handler->__invoke([
-                'agent' => 'scout',
-                'task' => 'single',
-                'tasks' => [['agent' => 'scout', 'task' => 'parallel']],
-            ]);
-        });
+        $this->assertTrue($dto->isParallelMode());
+        $this->assertSame('scout', $dto->trimmedAgent());
     }
 
     public function testInvokeWithContextRejectsTooManyParallelTasks(): void
@@ -99,14 +68,14 @@ final class SubagentToolTest extends IsolatedKernelTestCase
 
         $tasks = [];
         for ($i = 0; $i < 9; ++$i) {
-            $tasks[] = ['agent' => 'scout', 'task' => 't'.$i];
+            $tasks[] = new SubagentTaskDTO(agent: 'scout', task: 't'.$i);
         }
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('at most 4 agents');
 
         $accessor->with($context, static function () use ($handler, $tasks): void {
-            $handler->__invoke(['tasks' => $tasks]);
+            $handler->__invoke(new SubagentArgumentsDTO(tasks: $tasks));
         });
     }
 

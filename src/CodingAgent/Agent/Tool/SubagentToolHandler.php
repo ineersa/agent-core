@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\Agent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
-use Ineersa\CodingAgent\Agent\Execution\SubagentArgumentsFactory;
+use Ineersa\CodingAgent\Agent\Execution\SubagentArgumentsDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
@@ -26,7 +26,6 @@ final class SubagentToolHandler implements ToolHandlerInterface
     private const string EXECUTION_SERVICE_LOCATOR_KEY = 'execution';
 
     public function __construct(
-        private readonly SubagentArgumentsFactory $argumentsFactory,
         private readonly AgentsConfig $agentsConfig,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ToolRuntime $toolRuntime,
@@ -35,10 +34,7 @@ final class SubagentToolHandler implements ToolHandlerInterface
     ) {
     }
 
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    public function __invoke(array $arguments): DeferredToolCompletionOutcome
+    public function __invoke(SubagentArgumentsDTO $arguments): DeferredToolCompletionOutcome
     {
         return $this->toolRuntime->run(function () use ($arguments): DeferredToolCompletionOutcome {
             $context = $this->contextAccessor->current();
@@ -51,7 +47,7 @@ final class SubagentToolHandler implements ToolHandlerInterface
                 throw new ToolCallException('Subagent tool requires a valid parent run ID. No run context is active.', retryable: false);
             }
 
-            $parsed = $this->argumentsFactory->fromToolArguments($arguments);
+            $parsed = $arguments;
 
             if ($parsed->isParallelMode()) {
                 $tasks = $parsed->parallelTasks();

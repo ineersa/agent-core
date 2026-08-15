@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tool\Arguments\WriteFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Ineersa\CodingAgent\Tool\WriteFileTool;
 use PHPUnit\Framework\TestCase;
@@ -72,7 +73,7 @@ final class WriteFileToolTest extends TestCase
         $targetPath = $this->tmpDir.'/new_file.txt';
         $content = 'Hello, World!';
 
-        $result = ($this->writeFileTool)(['path' => $targetPath, 'content' => $content]);
+        $result = ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $targetPath, content: $content));
 
         $this->assertStringContainsString('Successfully', $result);
         $this->assertStringContainsString('new_file.txt', $result);
@@ -86,7 +87,7 @@ final class WriteFileToolTest extends TestCase
         $targetPath = $this->tmpDir.'/nested/subdir/deep/file.txt';
         $content = 'Nested content';
 
-        $result = ($this->writeFileTool)(['path' => $targetPath, 'content' => $content]);
+        $result = ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $targetPath, content: $content));
 
         $this->assertStringContainsString('Successfully', $result);
         $this->assertFileExists($targetPath);
@@ -100,7 +101,7 @@ final class WriteFileToolTest extends TestCase
         file_put_contents($targetPath, 'Old content');
 
         $newContent = 'New content replacing the old one.';
-        $result = ($this->writeFileTool)(['path' => $targetPath, 'content' => $newContent]);
+        $result = ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $targetPath, content: $newContent));
 
         $this->assertStringContainsString('Successfully', $result);
         // Non-empty content without trailing newline is normalized
@@ -112,7 +113,7 @@ final class WriteFileToolTest extends TestCase
         $targetPath = $this->tmpDir.'/bytecount.txt';
         $content = str_repeat('A', 1000);
 
-        $result = ($this->writeFileTool)(['path' => $targetPath, 'content' => $content]);
+        $result = ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $targetPath, content: $content));
 
         // Non-empty content without trailing newline: one extra byte for \n
         $this->assertStringContainsString('1001 bytes', $result);
@@ -122,7 +123,7 @@ final class WriteFileToolTest extends TestCase
     {
         $targetPath = $this->tmpDir.'/empty.txt';
 
-        $result = ($this->writeFileTool)(['path' => $targetPath, 'content' => '']);
+        $result = ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $targetPath, content: ''));
 
         $this->assertStringContainsString('0 bytes', $result);
         $this->assertFileExists($targetPath);
@@ -135,7 +136,7 @@ final class WriteFileToolTest extends TestCase
         $content = 'Relative path test.';
 
         try {
-            $result = ($this->writeFileTool)(['path' => $relativePath, 'content' => $content]);
+            $result = ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $relativePath, content: $content));
 
             $cwd = getcwd();
             $this->assertFileExists($cwd.'/'.$relativePath);
@@ -158,7 +159,7 @@ final class WriteFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"path" argument is required');
 
-        ($this->writeFileTool)(['content' => 'some content']);
+        ($this->writeFileTool)(new WriteFileArgumentsDTO(content: 'some content'));
     }
 
     public function testWriteThrowsOnEmptyPath(): void
@@ -166,15 +167,7 @@ final class WriteFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"path" argument is required');
 
-        ($this->writeFileTool)(['path' => '', 'content' => 'content']);
-    }
-
-    public function testWriteThrowsOnNonStringPath(): void
-    {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"path" argument is required');
-
-        ($this->writeFileTool)(['path' => 42, 'content' => 'content']);
+        ($this->writeFileTool)(new WriteFileArgumentsDTO(path: '', content: 'content'));
     }
 
     public function testWriteThrowsOnMissingContent(): void
@@ -182,15 +175,7 @@ final class WriteFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"content" argument is required');
 
-        ($this->writeFileTool)(['path' => $this->tmpDir.'/test.txt']);
-    }
-
-    public function testWriteThrowsOnNonStringContent(): void
-    {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"content" argument is required');
-
-        ($this->writeFileTool)(['path' => $this->tmpDir.'/test.txt', 'content' => ['not', 'a', 'string']]);
+        ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $this->tmpDir.'/test.txt'));
     }
 
     public function testWriteThrowsWhenParentExistsAsFile(): void
@@ -201,7 +186,7 @@ final class WriteFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('Failed to write file');
 
-        ($this->writeFileTool)(['path' => $existingFile.'/child.txt', 'content' => 'cannot create']);
+        ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $existingFile.'/child.txt', content: 'cannot create'));
     }
 
     /* ── Trailing newline normalization tests ── */
@@ -211,7 +196,7 @@ final class WriteFileToolTest extends TestCase
         $targetPath = $this->tmpDir.'/newline_added.txt';
         $content = 'No trailing newline';
 
-        ($this->writeFileTool)(['path' => $targetPath, 'content' => $content]);
+        ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $targetPath, content: $content));
 
         $this->assertSame("No trailing newline\n", file_get_contents($targetPath));
     }
@@ -221,7 +206,7 @@ final class WriteFileToolTest extends TestCase
         $targetPath = $this->tmpDir.'/no_double_newline.txt';
         $content = "Has trailing newline\n";
 
-        ($this->writeFileTool)(['path' => $targetPath, 'content' => $content]);
+        ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $targetPath, content: $content));
 
         $this->assertSame("Has trailing newline\n", file_get_contents($targetPath));
     }
@@ -230,7 +215,7 @@ final class WriteFileToolTest extends TestCase
     {
         $targetPath = $this->tmpDir.'/empty_stays_empty.txt';
 
-        ($this->writeFileTool)(['path' => $targetPath, 'content' => '']);
+        ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $targetPath, content: ''));
 
         $this->assertSame('', file_get_contents($targetPath));
     }
@@ -240,7 +225,7 @@ final class WriteFileToolTest extends TestCase
         $targetPath = $this->tmpDir.'/crlf_content.txt';
         $content = "line1\r\n";
 
-        ($this->writeFileTool)(['path' => $targetPath, 'content' => $content]);
+        ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $targetPath, content: $content));
 
         // CRLF content already ends with \n, so no modification
         $this->assertSame("line1\r\n", file_get_contents($targetPath));
@@ -256,10 +241,7 @@ final class WriteFileToolTest extends TestCase
                 $this->expectException(\RuntimeException::class);
                 $this->expectExceptionMessage('cancelled before start');
 
-                ($this->writeFileTool)([
-                    'path' => $this->tmpDir.'/cancelled.txt',
-                    'content' => 'Should not be written.',
-                ]);
+                ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $this->tmpDir.'/cancelled.txt', content: 'Should not be written.'));
             },
         );
 
@@ -281,10 +263,7 @@ final class WriteFileToolTest extends TestCase
                 $this->expectException(\RuntimeException::class);
                 $this->expectExceptionMessage('stale due to run cancellation');
 
-                ($this->writeFileTool)([
-                    'path' => $targetPath,
-                    'content' => 'This will be written but reported as stale.',
-                ]);
+                ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $targetPath, content: 'This will be written but reported as stale.'));
             },
         );
 

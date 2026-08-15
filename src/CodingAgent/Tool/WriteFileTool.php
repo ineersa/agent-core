@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
+use Ineersa\CodingAgent\Tool\Arguments\WriteFileArgumentsDTO;
 
 /**
  * Write (create or replace) a file at the specified path.
@@ -30,26 +31,21 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
     /**
      * Execute the write tool.
      *
-     * @param array<string, mixed> $arguments Must contain 'path' (string) and 'content' (string)
-     *
      * @return string Success message with byte count
      *
      * @throws \RuntimeException on filesystem errors or cancellation
      */
-    public function __invoke(array $arguments): string
+    public function __invoke(WriteFileArgumentsDTO $arguments): string
     {
         return $this->toolRuntime->run(static function () use ($arguments): string {
-            // Validate required arguments
-            $path = $arguments['path'] ?? null;
-            $content = $arguments['content'] ?? null;
-
-            if (!\is_string($path) || '' === $path) {
-                throw new ToolCallException('The "path" argument is required and must be a non-empty string.', retryable: false, hint: 'Provide a valid file path.');
+            $path = trim($arguments->path);
+            if ('' === $path) {
+                throw new ToolCallException('The "path" argument is required and must be a non-empty string.', retryable: false);
             }
-
-            if (!\is_string($content)) {
-                throw new ToolCallException('The "content" argument is required and must be a string.', retryable: false, hint: 'Provide the text content to write.');
+            if (null === $arguments->content) {
+                throw new ToolCallException('The "content" argument is required and must be a string.', retryable: false);
             }
+            $content = $arguments->content;
 
             // Resolve the path to an absolute normalized form
             $resolvedPath = PathResolver::resolve($path);

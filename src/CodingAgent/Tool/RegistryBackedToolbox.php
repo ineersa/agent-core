@@ -12,8 +12,12 @@ use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallFailed;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
+use Symfony\AI\Agent\Toolbox\Exception\InvalidToolCallArgumentsException;
+use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionException;
+use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Tool\ExecutionReference;
@@ -27,22 +31,25 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * from ToolRegistryInterface and makes them available for execution through the
  * Symfony AI ToolboxInterface contract.
  *
- * - getTools(): converts each ToolDefinitionDTO to a Symfony Tool DTO.
- * - execute(): invokes the stored ToolHandlerInterface handler for the matching tool.
- * - dispatches Symfony AI toolbox lifecycle events around registry-backed execution.
+ * Execution lifecycle (rewrites preserved before policy):
+ *   rewrite hooks → ToolCallRequested (policy sees rewritten raw args)
+ *   → JSON Schema validation against the canonical provider schema
+ *   → native ToolCallArgumentResolver (typed DTO for built-ins; flat array for dynamic)
+ *   → ToolCallArgumentsResolved (ValidateToolCallArgumentsListener for objects)
+ *   → handler invoke → succeeded/failed
  *
- * Execution lifecycle:
- *   RegistryBackedToolbox::execute() is called inside a Messenger tool worker
- *   via FaultTolerantToolbox → ToolExecutor. The handler runs synchronously.
- *   Long-running process tools use Process::start() + polling internally.
+ * Mutable registry semantics are preserved: getTools()/toolDefinition() always
+ * read the live registry (no long-lived native Toolbox metadata cache).
  *
- * @see ToolDefinitionDTO  For the registry-side tool definition model.
- * @see ToolHandlerInterface  For the typed handler contract.
+ * @see ToolDefinitionDTO
+ * @see ToolHandlerInterface
  */
 final readonly class RegistryBackedToolbox implements ToolboxInterface
 {
     public function __construct(
         private ToolRegistryInterface $registry,
+        private ToolCallArgumentResolverInterface $argumentResolver,
+        private ToolCallArgumentsValidator $argumentsValidator,
         private ?EventDispatcherInterface $eventDispatcher = null,
         private ?ExtensionHookRegistry $rewriteHookProvider = null,
         private ?StackToolExecutionContextAccessor $contextAccessor = null,
@@ -51,12 +58,6 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
     }
 
     /**
-     * Convert all active registry definitions to Symfony Tool DTOs.
-     *
-     * Permanent tools first (registration order), then dynamic tools
-     * (insertion order). The ExecutionReference stores the handler's
-     * class so FaultTolerantToolbox/TraceableToolbox metadata works.
-     *
      * @return list<Tool>
      */
     public function getTools(): array
@@ -72,14 +73,6 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
     }
 
     /**
-     * Execute a tool call by name.
-     *
-     * Looks up the tool definition from the registry, runs the pre-event
-     * rewrite phase (argument transformation by extension hooks), dispatches
-     * ToolCallRequested with the (possibly rewritten) arguments so SafeGuard
-     * and other policy hooks evaluate the final command, then invokes the
-     * handler with the final arguments.
-     *
      * @throws ToolNotFoundException when the tool name is not in the registry
      */
     public function execute(ToolCall $toolCall): ToolResult
@@ -91,12 +84,9 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
         }
 
         $metadata = $this->toSymfonyTool($definition);
+        $handler = $definition->handler;
 
         // ── Pre-event rewrite phase ──
-        // Rewrite hooks run BEFORE ToolCallRequested is dispatched so that
-        // SafeGuard and other policy hooks (which subscribe to that event)
-        // evaluate the real (rewritten) command. Multiple rewriters compose
-        // left-to-right: each hook receives the output of the previous one.
         $arguments = $toolCall->getArguments();
 
         if (null !== $this->rewriteHookProvider) {
@@ -107,9 +97,6 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
 
             $hookIndex = 0;
             foreach ($rewriteHooks as $hook) {
-                // runId/turnNo/cwd/metadata are intentionally null here;
-                // rewriters in EXT-01 only need arguments. Thread from
-                // worker context if a future hook needs them.
                 $context = new ToolCallContextDTO(
                     toolCallId: $toolCall->getId(),
                     toolName: $toolCall->getName(),
@@ -124,8 +111,6 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             }
         }
 
-        // Construct the event ToolCall — a new instance with rewritten args
-        // if they changed, so SafeGuard/policy hooks see the final command.
         $eventToolCall = $arguments !== $toolCall->getArguments()
             ? new ToolCall($toolCall->getId(), $toolCall->getName(), $arguments)
             : $toolCall;
@@ -141,20 +126,34 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             return $requestedEvent->getResult() ?? new ToolResult($toolCall, null);
         }
 
-        $handler = $definition->handler;
+        $resolvedArguments = [];
 
         try {
-            $this->eventDispatcher?->dispatch(new ToolCallArgumentsResolved($handler, $metadata, $arguments));
+            // Schema validation on the final rewritten flat provider args.
+            $this->argumentsValidator->assertValid(
+                $arguments,
+                $definition->parametersJsonSchema,
+                $toolCall->getName(),
+            );
 
-            $result = new ToolResult($toolCall, ($handler)($arguments));
+            $resolutionCall = $this->toolCallForResolution($handler, $eventToolCall, $arguments);
+            $resolvedArguments = $this->argumentResolver->resolveArguments($metadata, $resolutionCall);
 
-            $this->eventDispatcher?->dispatch(new ToolCallSucceeded($handler, $metadata, $arguments, $result));
+            $this->eventDispatcher?->dispatch(new ToolCallArgumentsResolved($handler, $metadata, $resolvedArguments));
+
+            $result = new ToolResult($toolCall, $handler(...$resolvedArguments));
+
+            $this->eventDispatcher?->dispatch(new ToolCallSucceeded($handler, $metadata, $resolvedArguments, $result));
 
             return $result;
-        } catch (\Throwable $exception) {
-            $this->eventDispatcher?->dispatch(new ToolCallFailed($handler, $metadata, $arguments, $exception));
+        } catch (ToolExecutionExceptionInterface $exception) {
+            $this->eventDispatcher?->dispatch(new ToolCallFailed($handler, $metadata, $resolvedArguments, $exception));
 
             throw $exception;
+        } catch (\Throwable $exception) {
+            $this->eventDispatcher?->dispatch(new ToolCallFailed($handler, $metadata, $resolvedArguments, $exception));
+
+            throw ToolExecutionException::executionFailed($toolCall, $exception);
         }
     }
 
@@ -168,6 +167,39 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             name: $definition->name,
             description: $definition->description,
             parameters: $definition->parametersJsonSchema,
+        );
+    }
+
+    /**
+     * Bridge flat provider schemas into native resolver parameter names.
+     *
+     * Built-in handlers take one aggregate DTO parameter (e.g. $arguments).
+     * Provider schemas are flat, so wrap the flat object under that parameter
+     * name for denormalization without changing the provider-visible schema.
+     *
+     * Array-parameter handlers (MCP/extension adapters) already match the flat schema.
+     *
+     * @param array<string, mixed> $arguments
+     */
+    private function toolCallForResolution(ToolHandlerInterface $handler, ToolCall $toolCall, array $arguments): ToolCall
+    {
+        try {
+            $method = new \ReflectionMethod($handler, '__invoke');
+        } catch (\ReflectionException $e) {
+            throw new InvalidToolCallArgumentsException(\sprintf('Tool handler "%s" is not invokable.', $handler::class), 0, $e);
+        }
+
+        $parameters = $method->getParameters();
+        if (1 !== \count($parameters)) {
+            throw new InvalidToolCallArgumentsException(\sprintf('Tool handler "%s::__invoke" must declare exactly one parameter.', $handler::class));
+        }
+
+        // Provider schemas are flat; handlers take one aggregate parameter (DTO or array).
+        // Always nest under that parameter name so ToolCallArgumentResolver can resolve it.
+        return new ToolCall(
+            $toolCall->getId(),
+            $toolCall->getName(),
+            [$parameters[0]->getName() => $arguments],
         );
     }
 

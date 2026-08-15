@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\ReadFileTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
@@ -84,7 +85,7 @@ final class ReadFileToolTest extends TestCase
         $lines = ['line one', 'line two', 'line three', 'line four', 'line five'];
         file_put_contents($targetPath, implode("\n", $lines)."\n");
 
-        $result = ($this->readFileTool)(['path' => $targetPath]);
+        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
 
         $this->assertStringContainsString("line one\n", $result);
         $this->assertStringContainsString("line five\n", $result);
@@ -102,7 +103,7 @@ final class ReadFileToolTest extends TestCase
         file_put_contents($targetPath, implode("\n", $lines)."\n");
 
         // Read from line 10, get lines 10-14
-        $result = ($this->readFileTool)(['path' => $targetPath, 'offset' => 10, 'limit' => 5]);
+        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath, offset: 10, limit: 5));
 
         $this->assertStringContainsString("line 10\n", $result);
         $this->assertStringContainsString("line 14\n", $result);
@@ -121,7 +122,7 @@ final class ReadFileToolTest extends TestCase
         file_put_contents($targetPath, implode("\n", $lines)."\n");
 
         // Read from line 8 to end
-        $result = ($this->readFileTool)(['path' => $targetPath, 'offset' => 8]);
+        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath, offset: 8));
 
         $this->assertStringContainsString("line 8\n", $result);
         $this->assertStringContainsString("line 10\n", $result);
@@ -132,7 +133,7 @@ final class ReadFileToolTest extends TestCase
         $targetPath = $this->tmpDir.'/limit_only.txt';
         file_put_contents($targetPath, "a\nb\nc\nd\ne\n");
 
-        $result = ($this->readFileTool)(['path' => $targetPath, 'limit' => 3]);
+        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath, limit: 3));
 
         $this->assertStringContainsString("a\n", $result);
         $this->assertStringNotContainsString("d\n", $result);
@@ -144,7 +145,7 @@ final class ReadFileToolTest extends TestCase
         file_put_contents($targetPath, "line one\nline two\nline three\n");
 
         try {
-            ($this->readFileTool)(['path' => $targetPath, 'offset' => 10]);
+            ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath, offset: 10));
             $this->fail('Expected ToolCallException was not thrown.');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('offset 10 exceeds file length', $e->getMessage());
@@ -157,7 +158,7 @@ final class ReadFileToolTest extends TestCase
         $targetPath = $this->tmpDir.'/empty.txt';
         file_put_contents($targetPath, '');
 
-        $result = ($this->readFileTool)(['path' => $targetPath]);
+        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
 
         $this->assertSame('', $result);
     }
@@ -167,7 +168,7 @@ final class ReadFileToolTest extends TestCase
         $targetPath = $this->tmpDir.'/single.txt';
         file_put_contents($targetPath, "just one line\n");
 
-        $result = ($this->readFileTool)(['path' => $targetPath]);
+        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
 
         $this->assertSame("just one line\n", $result);
     }
@@ -181,7 +182,7 @@ final class ReadFileToolTest extends TestCase
         try {
             file_put_contents($cwd.'/'.$relativePath, $content);
 
-            $result = ($this->readFileTool)(['path' => $relativePath]);
+            $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $relativePath));
 
             $this->assertStringContainsString("relative\n", $result);
         } finally {
@@ -201,7 +202,7 @@ final class ReadFileToolTest extends TestCase
         }
         file_put_contents($targetPath, implode("\n", $lines)."\n");
 
-        $result = ($this->readFileTool)(['path' => $targetPath]);
+        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
 
         // default cap at 2000 lines
         $expectedLine2000 = 'line 2000';
@@ -223,7 +224,7 @@ final class ReadFileToolTest extends TestCase
         }
         file_put_contents($targetPath, implode("\n", $lines)."\n");
 
-        $result = ($this->readFileTool)(['path' => $targetPath, 'offset' => 1, 'limit' => 10]);
+        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath, offset: 1, limit: 10));
 
         $this->assertStringContainsString('more lines', $result);
         $this->assertStringContainsString('offset=11', $result);
@@ -234,7 +235,7 @@ final class ReadFileToolTest extends TestCase
         $targetPath = $this->tmpDir.'/small_no_hint.txt';
         file_put_contents($targetPath, "a\nb\nc\n");
 
-        $result = ($this->readFileTool)(['path' => $targetPath]);
+        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
 
         // Small file should not trigger continuation hint
         $this->assertStringNotContainsString('more lines', $result);
@@ -247,7 +248,7 @@ final class ReadFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"path" argument is required');
 
-        ($this->readFileTool)([]);
+        ($this->readFileTool)(new ReadFileArgumentsDTO());
     }
 
     public function testReadThrowsOnEmptyPath(): void
@@ -255,23 +256,7 @@ final class ReadFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"path" argument is required');
 
-        ($this->readFileTool)(['path' => '']);
-    }
-
-    public function testReadThrowsOnNonStringPath(): void
-    {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"path" argument is required');
-
-        ($this->readFileTool)(['path' => 42]);
-    }
-
-    public function testReadThrowsOnInvalidOffsetType(): void
-    {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"offset" argument must be an integer');
-
-        ($this->readFileTool)(['path' => '/tmp/test.txt', 'offset' => 'not_an_int']);
+        ($this->readFileTool)(new ReadFileArgumentsDTO(path: ''));
     }
 
     public function testReadThrowsOnNegativeOffset(): void
@@ -279,15 +264,7 @@ final class ReadFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('positive integer');
 
-        ($this->readFileTool)(['path' => '/tmp/test.txt', 'offset' => 0]);
-    }
-
-    public function testReadThrowsOnInvalidLimitType(): void
-    {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"limit" argument must be an integer');
-
-        ($this->readFileTool)(['path' => '/tmp/test.txt', 'limit' => '100']);
+        ($this->readFileTool)(new ReadFileArgumentsDTO(path: '/tmp/test.txt', offset: 0));
     }
 
     public function testReadThrowsOnZeroLimit(): void
@@ -295,7 +272,7 @@ final class ReadFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('positive integer');
 
-        ($this->readFileTool)(['path' => '/tmp/test.txt', 'limit' => 0]);
+        ($this->readFileTool)(new ReadFileArgumentsDTO(path: '/tmp/test.txt', limit: 0));
     }
 
     /* ── __invoke() target validation tests ── */
@@ -305,7 +282,7 @@ final class ReadFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('does not exist');
 
-        ($this->readFileTool)(['path' => $this->tmpDir.'/nonexistent.txt']);
+        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $this->tmpDir.'/nonexistent.txt'));
     }
 
     public function testReadDirectoryThrows(): void
@@ -313,7 +290,7 @@ final class ReadFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('not a regular file');
 
-        ($this->readFileTool)(['path' => $this->tmpDir]);
+        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $this->tmpDir));
     }
 
     public function testReadDevicePathThrows(): void
@@ -321,7 +298,7 @@ final class ReadFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('device paths are rejected');
 
-        ($this->readFileTool)(['path' => '/dev/null']);
+        ($this->readFileTool)(new ReadFileArgumentsDTO(path: '/dev/null'));
     }
 
     public function testReadUnreadableFileThrows(): void
@@ -334,7 +311,7 @@ final class ReadFileToolTest extends TestCase
             $this->expectException(ToolCallException::class);
             $this->expectExceptionMessage('not readable');
 
-            ($this->readFileTool)(['path' => $targetPath]);
+            ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
         } finally {
             chmod($targetPath, 0644);
         }
@@ -348,7 +325,7 @@ final class ReadFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('binary');
 
-        ($this->readFileTool)(['path' => $targetPath]);
+        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
     }
 
     public function testReadNonUtf8FileThrows(): void
@@ -361,7 +338,7 @@ final class ReadFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('non-UTF-8');
 
-        ($this->readFileTool)(['path' => $targetPath]);
+        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
     }
 
     public function testReadValidUtf8Near8192Boundary(): void
@@ -378,7 +355,7 @@ final class ReadFileToolTest extends TestCase
         file_put_contents($targetPath, $prefix.$emoji.$trailing);
 
         // Should NOT throw ToolCallException about non-UTF-8
-        $result = ($this->readFileTool)(['path' => $targetPath]);
+        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
 
         $this->assertStringContainsString('some content after the boundary', $result);
         $this->assertStringContainsString('a', $result);
@@ -393,7 +370,7 @@ final class ReadFileToolTest extends TestCase
         $content = "┌───┐\n│ x │\n└───┘\n";
         file_put_contents($targetPath, $content);
 
-        $result = ($this->readFileTool)(['path' => $targetPath]);
+        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
 
         $this->assertStringContainsString('┌───┐', $result);
         $this->assertStringContainsString('│ x │', $result);
@@ -416,7 +393,7 @@ final class ReadFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('non-UTF-8');
 
-        ($this->readFileTool)(['path' => $targetPath]);
+        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
     }
 
     public function testReadInvalidUtf8At8190BoundaryWithContinuationByteThrows(): void
@@ -434,7 +411,7 @@ final class ReadFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('non-UTF-8');
 
-        ($this->readFileTool)(['path' => $targetPath]);
+        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
     }
 
     public function testReadValidUtf8With8192AsciiFollowedByEmoji(): void
@@ -450,7 +427,7 @@ final class ReadFileToolTest extends TestCase
         file_put_contents($targetPath, $prefix.$emoji);
 
         // Should read successfully (valid UTF-8)
-        $result = ($this->readFileTool)(['path' => $targetPath]);
+        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
 
         $this->assertStringContainsString('a', $result);
         $this->assertStringContainsString($emoji, $result);
@@ -470,7 +447,7 @@ final class ReadFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('non-UTF-8');
 
-        ($this->readFileTool)(['path' => $targetPath]);
+        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
     }
 
     public function testReadImageByMimeThrows(): void
@@ -492,7 +469,7 @@ final class ReadFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('image');
 
-        ($this->readFileTool)(['path' => $targetPath]);
+        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
     }
 
     public function testReadImageByExtensionThrows(): void
@@ -504,7 +481,7 @@ final class ReadFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('image');
 
-        ($this->readFileTool)(['path' => $targetPath]);
+        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
     }
 
     public function testReadPdfByMimeThrows(): void
@@ -515,7 +492,7 @@ final class ReadFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('not a readable text format');
 
-        ($this->readFileTool)(['path' => $targetPath]);
+        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
     }
 
     public function testReadProcFdPathThrows(): void
@@ -526,7 +503,7 @@ final class ReadFileToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('rejected for safety');
 
-        ($this->readFileTool)(['path' => '/proc/1234/fd/0']);
+        ($this->readFileTool)(new ReadFileArgumentsDTO(path: '/proc/1234/fd/0'));
     }
 
     /* ── OutputCap integration test ── */
@@ -547,7 +524,7 @@ final class ReadFileToolTest extends TestCase
         $targetPath = $this->tmpDir.'/cap_me.txt';
         file_put_contents($targetPath, "hello world this is a longer line that should exceed the cap\n");
 
-        $result = ($readTool)(['path' => $targetPath]);
+        $result = ($readTool)(new ReadFileArgumentsDTO(path: $targetPath));
 
         // Tool returns raw output; capping is centralized.
         $this->assertStringContainsString('this is a longer line', $result);
@@ -559,7 +536,7 @@ final class ReadFileToolTest extends TestCase
         $targetPath = $this->tmpDir.'/under_cap.txt';
         file_put_contents($targetPath, "small content\n");
 
-        $result = ($this->readFileTool)(['path' => $targetPath]);
+        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
 
         $this->assertStringContainsString('small content', $result);
     }
@@ -579,7 +556,7 @@ final class ReadFileToolTest extends TestCase
                 $this->expectException(\RuntimeException::class);
                 $this->expectExceptionMessage('cancelled before start');
 
-                ($this->readFileTool)(['path' => $targetPath]);
+                ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
             },
         );
     }
@@ -592,7 +569,7 @@ final class ReadFileToolTest extends TestCase
         $content = "\xEF\xBB\xBFHello, UTF-8 BOM world!\n";
         file_put_contents($targetPath, $content);
 
-        $result = ($this->readFileTool)(['path' => $targetPath]);
+        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
 
         $this->assertStringContainsString('Hello, UTF-8 BOM world!', $result);
     }

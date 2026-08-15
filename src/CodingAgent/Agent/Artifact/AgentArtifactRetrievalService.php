@@ -89,23 +89,17 @@ MD;
     public function __construct(
         private readonly AgentArtifactRegistry $artifactRegistry,
         private readonly AgentChildRunDirectory $childRunDirectory,
-        private readonly AgentRetrieveArgumentsFactory $argumentsFactory,
         private readonly RunStoreInterface $runStore,
         private readonly EventStoreInterface $eventStore,
         private readonly LoggerInterface $logger,
     ) {
     }
 
-    /**
-     * @param array<string, mixed> $arguments tool arguments (artifact_id, agent_run_id, mode, limit)
-     */
-    public function retrieve(string $parentRunId, array $arguments): string
+    public function retrieve(string $parentRunId, AgentRetrieveArgumentsDTO $args): string
     {
         if ('' === trim($parentRunId)) {
             throw new ToolCallException('agent_retrieve requires an active parent run context.', retryable: false);
         }
-
-        $args = $this->argumentsFactory->fromToolArguments($arguments);
 
         try {
             $mode = $args->resolvedMode();

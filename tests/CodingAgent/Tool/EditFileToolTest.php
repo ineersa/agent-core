@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\EditFileTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
@@ -91,7 +92,7 @@ final class EditFileToolTest extends TestCase
  line3
 PATCH;
 
-        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        $result = ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
         $this->assertStringContainsString('Applied patch', $result);
         $this->assertSame("line1\nLINE2\nline3\n", file_get_contents($targetPath));
     }
@@ -112,7 +113,7 @@ PATCH;
 +E
 PATCH;
 
-        ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
         $this->assertSame("a\nB\nc\nd\nE\n", file_get_contents($targetPath));
     }
 
@@ -127,7 +128,7 @@ PATCH;
  same
 PATCH;
 
-        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        $result = ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
         $this->assertStringContainsString('No changes', $result);
         $this->assertSame($original, file_get_contents($targetPath));
     }
@@ -145,7 +146,7 @@ PATCH;
 PATCH;
 
         try {
-            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('E_PATCH_STALE', $e->getMessage());
@@ -167,7 +168,7 @@ PATCH;
 PATCH;
 
         try {
-            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('E_PATCH_AMBIGUOUS', $e->getMessage());
@@ -187,7 +188,7 @@ PATCH;
 +  method TWO
 PATCH;
 
-        ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
         $this->assertStringContainsString('method TWO', file_get_contents($targetPath));
     }
 
@@ -202,7 +203,7 @@ PATCH;
 *** End of File
 PATCH;
 
-        ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
         $this->assertSame("keep\nappended\n", file_get_contents($targetPath));
     }
 
@@ -217,7 +218,7 @@ PATCH;
 +VALUE
 PATCH;
 
-        ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
         $this->assertSame("VALUE\nnext\n", file_get_contents($targetPath));
     }
 
@@ -242,7 +243,7 @@ PATCH;
  after
 PATCH;
 
-        ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
         $this->assertStringContainsString("TARGET BLOCK\n", file_get_contents($targetPath));
     }
 
@@ -254,7 +255,7 @@ PATCH;
         $patch = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n x\n";
 
         try {
-            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('E_PATCH_FORMAT', $e->getMessage());
@@ -265,7 +266,7 @@ PATCH;
     public function testEditMissingFileThrowsDirectingToWrite(): void
     {
         $this->expectException(ToolCallException::class);
-        ($this->editFileTool)(['path' => $this->tmpDir.'/missing.txt', 'patch' => "@@\n x\n"]);
+        ($this->editFileTool)(new EditFileArgumentsDTO(path: $this->tmpDir.'/missing.txt', patch: "@@\n x\n"));
     }
 
     public function testEditCancelledBeforeExecutionThrows(): void
@@ -282,7 +283,7 @@ PATCH;
             function () use ($targetPath): void {
                 $this->expectException(\RuntimeException::class);
                 $this->expectExceptionMessage('cancelled before start');
-                ($this->editFileTool)(['path' => $targetPath, 'patch' => "@@\n a\n"]);
+                ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: "@@\n a\n"));
             },
         );
 
@@ -302,7 +303,7 @@ PATCH;
 +ONE
 PATCH;
 
-        ($this->editFileTool)(['path' => $linkPath, 'patch' => $patch]);
+        ($this->editFileTool)(new EditFileArgumentsDTO(path: $linkPath, patch: $patch));
         $this->assertTrue(is_link($linkPath));
         $this->assertSame("ONE\n", file_get_contents($targetPath));
     }
@@ -320,7 +321,7 @@ PATCH;
 +SHARED
 PATCH;
 
-        ($this->editFileTool)(['path' => $pathA, 'patch' => $patch]);
+        ($this->editFileTool)(new EditFileArgumentsDTO(path: $pathA, patch: $patch));
         $this->assertSame("SHARED\n", file_get_contents($pathB));
     }
 
@@ -341,7 +342,7 @@ PATCH;
 PATCH;
 
         try {
-            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('E_PATCH_WRITE', $e->getMessage());
@@ -370,7 +371,7 @@ PATCH;
 +F
 PATCH;
 
-        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        $result = ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
         $this->assertStringContainsString('Updated file context', $result);
         // Second hunk inserts an extra line; changed region is around patched line 5 (E), not original line 4.
         $this->assertMatchesRegularExpression('/→\s+5:/', $result);
@@ -394,7 +395,7 @@ gamma
 -beta
 PATCH;
 
-        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        $result = ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
         $this->assertStringContainsString('Updated file context', $result);
         $this->assertMatchesRegularExpression('/→\s+2:/', $result);
         $this->assertSame('alpha
@@ -419,7 +420,7 @@ gamma
 PATCH;
 
         try {
-            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('E_PATCH_STALE', $e->getMessage());
@@ -442,7 +443,7 @@ PATCH;
 *** End of File
 PATCH;
 
-        ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
         $this->assertSame('only', file_get_contents($targetPath));
     }
 
@@ -459,7 +460,7 @@ PATCH;
  tail
 PATCH;
 
-        ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
         $this->assertSame("keep\n-- kept\ntail\n", file_get_contents($targetPath));
     }
 
@@ -475,7 +476,7 @@ PATCH;
 +BETA
 PATCH;
 
-        ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
         $this->assertSame("alpha\n-1 something\nBETA\n", file_get_contents($targetPath));
     }
 
@@ -503,7 +504,7 @@ PATCH;
 PATCH;
 
         try {
-            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('E_PATCH_STALE', $e->getMessage());
@@ -535,7 +536,7 @@ PATCH;
 *** End of File
 PATCH;
 
-        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        $result = ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
         $this->assertStringContainsString('Applied patch', $result);
         $this->assertSame("keep\nMIDDLE\ntail\n", file_get_contents($targetPath));
     }
@@ -557,7 +558,7 @@ PATCH;
 *** End of File
 PATCH;
 
-        ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
         $this->assertSame("block\nend\nnoise\nblock\nEND\n", file_get_contents($targetPath));
     }
 
@@ -578,7 +579,7 @@ PATCH;
 PATCH;
 
         try {
-            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('E_PATCH_AMBIGUOUS', $e->getMessage());

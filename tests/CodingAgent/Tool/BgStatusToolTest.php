@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
@@ -106,7 +107,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
             $this->manager->start('echo "bg process"', self::TEST_SESSION);
         });
 
-        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'list']));
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list')));
 
         $data = Toon::decode($result);
         $this->assertIsArray($data);
@@ -120,7 +121,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     public function testListEmpty(): void
     {
-        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'list']));
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list')));
 
         $data = Toon::decode($result);
         $this->assertIsArray($data);
@@ -137,7 +138,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
         $this->waitUntilLogContains($started->logPath, 'hello from bg');
 
-        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'log', 'pid' => $started->pid]));
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'log', pid: $started->pid)));
 
         $this->assertStringContainsString('hello from bg', $result);
         $this->assertStringContainsString('BEGIN LOG', $result);
@@ -146,7 +147,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     public function testLogThrowsOnMissingPid(): void
     {
         $this->expectException(\Throwable::class);
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'log']));
+        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'log')));
     }
 
     public function testLogThrowsOnUnknownPid(): void
@@ -154,7 +155,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('echo "test"', self::TEST_SESSION));
 
         $this->expectException(\Throwable::class);
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'log', 'pid' => 999999]));
+        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'log', pid: 999999)));
     }
 
     /* ── stop action ── */
@@ -164,7 +165,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('sleep 30', self::TEST_SESSION));
         // start() persists the row and returns a live PID; stop needs no fixed delay.
 
-        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started->pid]));
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'stop', pid: $started->pid)));
 
         $this->assertStringContainsString('PID '.$started->pid, $result);
         $this->assertStringContainsString('stopped', $result);
@@ -175,7 +176,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('echo "quick"', self::TEST_SESSION));
         $this->waitUntilFinished($started->pid);
 
-        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started->pid]));
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'stop', pid: $started->pid)));
 
         $this->assertStringContainsString('already finished', $result);
     }
@@ -200,7 +201,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     public function testInvalidActionThrowsException(): void
     {
         $this->expectException(\Throwable::class);
-        ($this->tool)(['action' => 'invalid']);
+        ($this->tool)(new BgStatusArgumentsDTO(action: 'invalid'));
     }
 
     /* ── Session scoping ── */
@@ -210,8 +211,8 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $this->withContext('session-A', fn () => $this->manager->start('echo "A-for-test-B"', 'session-A'));
         $this->withContext('session-B', fn () => $this->manager->start('echo "B-for-test-A"', 'session-B'));
 
-        $resultA = $this->withContext('session-A', fn (): string => ($this->tool)(['action' => 'list']));
-        $resultB = $this->withContext('session-B', fn (): string => ($this->tool)(['action' => 'list']));
+        $resultA = $this->withContext('session-A', fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list')));
+        $resultB = $this->withContext('session-B', fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list')));
 
         $dataA = Toon::decode($resultA);
         $dataB = Toon::decode($resultB);
@@ -254,7 +255,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start($command, self::TEST_SESSION));
         $this->waitUntilLogContains($started->logPath, $sentinel);
 
-        $result = $this->withContext(self::TEST_SESSION, static fn (): string => $lowCapTool(['action' => 'log', 'pid' => $started->pid]));
+        $result = $this->withContext(self::TEST_SESSION, static fn (): string => $lowCapTool(new BgStatusArgumentsDTO(action: 'log', pid: $started->pid)));
 
         // Tool returns raw output; capping is centralized.
         $this->assertStringNotContainsString('Output capped', $result);
@@ -266,7 +267,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     public function testMissingActionThrowsException(): void
     {
         $this->expectException(\Throwable::class);
-        ($this->tool)([]);
+        ($this->tool)(new BgStatusArgumentsDTO());
     }
 
     /* ── Helpers ── */

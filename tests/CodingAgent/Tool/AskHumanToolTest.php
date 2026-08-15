@@ -27,20 +27,23 @@ final class AskHumanToolTest extends TestCase
 {
     private AskHumanTool $tool;
 
+    private Serializer $serializer;
+
+    private \Symfony\Component\Validator\Validator\ValidatorInterface $validator;
+
     protected function setUp(): void
     {
         $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
-        $serializer = new Serializer([
+        $this->serializer = new Serializer([
             new ObjectNormalizer(
                 classMetadataFactory: $classMetadataFactory,
                 nameConverter: new MetadataAwareNameConverter($classMetadataFactory, new CamelCaseToSnakeCaseNameConverter()),
                 propertyTypeExtractor: new ReflectionExtractor(),
             ),
         ]);
-        $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
+        $this->validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
 
-        $factory = new AskHumanPayloadFactory($serializer, $validator);
-        $this->tool = new AskHumanTool($factory);
+        $this->tool = new AskHumanTool(new AskHumanPayloadFactory());
     }
 
     /* ── definition() tests ── */
@@ -115,7 +118,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testInvokeReturnsImmediatelyWithInterruptKind(): void
     {
-        $result = ($this->tool)(['question' => 'What is your name?']);
+        $result = $this->invoke(['question' => 'What is your name?']);
 
         $this->assertIsArray($result);
         $this->assertSame('interrupt', $result['kind']);
@@ -123,7 +126,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testInvokeReturnsPromptFromQuestion(): void
     {
-        $result = ($this->tool)(['question' => 'Approve?']);
+        $result = $this->invoke(['question' => 'Approve?']);
 
         $this->assertSame('Approve?', $result['prompt']);
     }
@@ -133,13 +136,13 @@ final class AskHumanToolTest extends TestCase
         $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
         $this->expectExceptionMessage('question');
 
-        ($this->tool)([]);
+        $this->invoke([]);
     }
 
     public function testInvokeGeneratesStableQuestionId(): void
     {
-        $first = ($this->tool)(['question' => 'Same question?']);
-        $second = ($this->tool)(['question' => 'Same question?']);
+        $first = $this->invoke(['question' => 'Same question?']);
+        $second = $this->invoke(['question' => 'Same question?']);
 
         $this->assertArrayHasKey('question_id', $first);
         $this->assertSame($first['question_id'], $second['question_id']);
@@ -147,7 +150,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testInvokeReturnsDefaultSchemaWhenNoneProvided(): void
     {
-        $result = ($this->tool)(['question' => 'Enter text:']);
+        $result = $this->invoke(['question' => 'Enter text:']);
 
         $this->assertArrayHasKey('schema', $result);
         $this->assertSame(['type' => 'string'], $result['schema']);
@@ -157,7 +160,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testTextQuestionDefaultKind(): void
     {
-        $result = ($this->tool)(['question' => 'Enter name:']);
+        $result = $this->invoke(['question' => 'Enter name:']);
 
         // No choices, no boolean schema -> text
         $this->assertArrayHasKey('ui_kind', $result);
@@ -168,7 +171,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testConfirmKindDerivesBooleanSchema(): void
     {
-        $result = ($this->tool)([
+        $result = $this->invoke([
             'question' => 'Are you sure?',
             'kind' => 'confirm',
         ]);
@@ -181,7 +184,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testChoiceQuestionNormalizesBareStrings(): void
     {
-        $result = ($this->tool)([
+        $result = $this->invoke([
             'question' => 'Pick one:',
             'choices' => ['simple', 'robust', 'fast'],
         ]);
@@ -199,7 +202,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testChoiceQuestionDerivedSchemaHasEnum(): void
     {
-        $result = ($this->tool)([
+        $result = $this->invoke([
             'question' => 'Pick:',
             'choices' => ['option-a', 'option-b'],
         ]);
@@ -212,7 +215,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testPreservesHeader(): void
     {
-        $result = ($this->tool)([
+        $result = $this->invoke([
             'question' => 'Proceed?',
             'header' => 'Destructive Action',
         ]);
@@ -224,7 +227,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testEmptyHeaderIsNotIncluded(): void
     {
-        $result = ($this->tool)([
+        $result = $this->invoke([
             'question' => 'Proceed?',
             'header' => '',
         ]);
@@ -234,7 +237,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testQuestionIdPrefix(): void
     {
-        $result = ($this->tool)(['question' => 'Test?']);
+        $result = $this->invoke(['question' => 'Test?']);
 
         $this->assertStringStartsWith('ah_', $result['question_id']);
     }
@@ -246,7 +249,7 @@ final class AskHumanToolTest extends TestCase
         $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
         $this->expectExceptionMessage('question');
 
-        ($this->tool)(['question' => '']);
+        $this->invoke(['question' => '']);
     }
 
     #[DataProvider('invalidKindProvider')]
@@ -255,7 +258,7 @@ final class AskHumanToolTest extends TestCase
         $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
         $this->expectExceptionMessage('Unsupported kind');
 
-        ($this->tool)([
+        $this->invoke([
             'question' => 'Approve deployment?',
             'kind' => $kind,
         ]);
@@ -273,7 +276,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testFormerUiKindInputAliasIsIgnored(): void
     {
-        $result = ($this->tool)([
+        $result = $this->invoke([
             'question' => 'Test?',
             'ui_kind' => 'confirm',
         ]);
@@ -286,7 +289,7 @@ final class AskHumanToolTest extends TestCase
         $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
         $this->expectExceptionMessage('non-empty string');
 
-        ($this->tool)([
+        $this->invoke([
             'question' => 'Pick one:',
             'choices' => [
                 ['label' => 'First', 'description' => 'The first option'],
@@ -299,7 +302,7 @@ final class AskHumanToolTest extends TestCase
         $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
         $this->expectExceptionMessage('At least one');
 
-        ($this->tool)([
+        $this->invoke([
             'question' => 'Pick one:',
             'choices' => [],
         ]);
@@ -310,7 +313,7 @@ final class AskHumanToolTest extends TestCase
         $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
         $this->expectExceptionMessage('mutually exclusive');
 
-        ($this->tool)([
+        $this->invoke([
             'question' => 'Proceed?',
             'kind' => 'confirm',
             'choices' => ['yes', 'no'],
@@ -322,9 +325,37 @@ final class AskHumanToolTest extends TestCase
         $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
         $this->expectExceptionMessage('non-empty string');
 
-        ($this->tool)([
+        $this->invoke([
             'question' => 'Pick one:',
             'choices' => ['valid', ''],
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     *
+     * @return array<string, mixed>
+     */
+    private function invoke(array $arguments): array
+    {
+        try {
+            /** @var \Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO $dto */
+            $dto = $this->serializer->denormalize($arguments, \Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO::class);
+        } catch (\Throwable $e) {
+            throw new \Ineersa\AgentCore\Contract\Tool\ToolCallException('Invalid ask_human arguments: '.$e->getMessage(), retryable: false);
+        }
+
+        $violations = $this->validator->validate($dto);
+        if ($violations->count() > 0) {
+            $messages = [];
+            foreach ($violations as $violation) {
+                $path = $violation->getPropertyPath();
+                $messages[] = '' !== $path ? $path.': '.$violation->getMessage() : $violation->getMessage();
+            }
+
+            throw new \Ineersa\AgentCore\Contract\Tool\ToolCallException(implode('; ', $messages), retryable: false);
+        }
+
+        return ($this->tool)($dto);
     }
 }

@@ -60,6 +60,7 @@
         "league/oauth2-client": "^2.8",
         "symfony/scheduler": "^8.1",
         "mcp/sdk": "^0.6.0",
+        "opis/json-schema": "^2.6",
         "league/commonmark": "^2.8",
         "tempest/highlight": "^2.27",
         "amphp/websocket-client": "^2.0"

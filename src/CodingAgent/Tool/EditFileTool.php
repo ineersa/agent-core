@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
+use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\Edit\PatchApplier;
 use Ineersa\CodingAgent\Tool\Edit\PatchFailureFormatter;
 use Symfony\Component\Lock\LockFactory;
@@ -32,13 +33,19 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         );
     }
 
-    public function __invoke(array $arguments): string
+    public function __invoke(EditFileArgumentsDTO $arguments): string
     {
-        $this->validateArguments($arguments);
-
         return $this->toolRuntime->run(function () use ($arguments): string {
-            $targetPath = $this->resolveAndVerifyTarget($arguments['path']);
-            $result = $this->applier->apply($targetPath, $arguments['patch']);
+            $path = trim($arguments->path);
+            $patch = $arguments->patch;
+            if ('' === $path) {
+                throw new ToolCallException('The "path" argument is required and must be a non-empty string.', retryable: false);
+            }
+            if ('' === trim($patch)) {
+                throw new ToolCallException('The "patch" argument is required and must be a non-empty string.', retryable: false);
+            }
+            $targetPath = $this->resolveAndVerifyTarget($path);
+            $result = $this->applier->apply($targetPath, $patch);
 
             if ($result['patchedContent'] === $result['originalContent']) {
                 return 'No changes (patch produced identical content)';
@@ -91,23 +98,6 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'If an edit fails as stale or ambiguous, use the error context or a targeted `read` with `offset`/`limit`, then regenerate the patch.',
             ],
         );
-    }
-
-    /**
-     * @param array{path?: scalar|null, patch?: scalar|null} $arguments
-     */
-    private function validateArguments(array $arguments): void
-    {
-        $path = $arguments['path'] ?? null;
-        $patch = $arguments['patch'] ?? null;
-
-        if (!\is_string($path) || '' === $path) {
-            throw new ToolCallException('The "path" argument is required and must be a non-empty string.', retryable: false, hint: 'Provide a valid file path.');
-        }
-
-        if (!\is_string($patch) || '' === $patch) {
-            throw new ToolCallException('The "patch" argument is required and must be a non-empty string.', retryable: false, hint: 'Provide a patch with @@ hunks; each body line must begin with a diff prefix (space, `-`, or `+`).');
-        }
     }
 
     private function resolveAndVerifyTarget(string $path): string

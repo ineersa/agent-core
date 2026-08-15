@@ -117,3 +117,8 @@ Workers perform **best-effort graceful disconnect** on worker stop (`McpWorkerSh
 
 - Agents / child tools: [agents.md](agents.md)
 - Settings overview: [settings.md](settings.md)
+
+## Argument validation
+
+Dynamic MCP tools keep raw-array handlers. Before invocation, Hatfield validates rewritten arguments against each tool's exact registered `inputSchema` (JSON Schema). Built-in tools use Symfony AI native DTO resolution and Validator constraints instead. Malformed runtime schemas are rejected at registration so invalid tools are never exposed.
+

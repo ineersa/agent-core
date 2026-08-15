@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\ToolResultType;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Path\PathResolver;
+use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ImageProcessing\ImageAttachmentProcessor;
 use Ineersa\CodingAgent\Tool\ImageProcessing\RunVisionCheckService;
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
@@ -48,14 +49,12 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
     /**
      * Execute the view_image tool.
      *
-     * @param array<string, mixed> $arguments Must contain 'path' (non-empty string)
-     *
      * @return array<string, mixed> Compact image metadata result.
      *                              NEVER contains base64, data_url, or full image bytes.
      *
      * @throws \RuntimeException on validation failures, filesystem errors, or cancellation
      */
-    public function __invoke(array $arguments): array
+    public function __invoke(ViewImageArgumentsDTO $arguments): array
     {
         return $this->toolRuntime->run(function () use ($arguments): array {
             // Check if the active model supports image viewing.
@@ -68,10 +67,9 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
                 }
             }
 
-            // Validate required argument
-            $path = $arguments['path'] ?? null;
-            if (!\is_string($path) || '' === $path) {
-                throw new ToolCallException('The "path" argument is required and must be a non-empty string.', retryable: false, hint: 'Provide a valid file path.');
+            $path = trim($arguments->path);
+            if ('' === $path) {
+                throw new ToolCallException('The "path" argument is required and must be a non-empty string.', retryable: false);
             }
 
             // Resolve to absolute normalized path

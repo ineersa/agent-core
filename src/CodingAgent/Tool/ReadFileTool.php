@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
+use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
 
 /**
@@ -66,9 +67,9 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     /**
      * Execute the read tool.
      *
-     * @param array<string, mixed> $arguments Must contain 'path' (string).
+     * @param ReadFileArgumentsDTO $arguments
      *                                        Optional 'offset' (int|null) and
-     *                                        'limit' (int|null).
+     *                                        'limit' (int|null)
      *
      * @return string Plain file content,
      *                optionally capped or with continuation hints
@@ -76,13 +77,21 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      * @throws ToolCallException on validation failures or tool-level errors
      * @throws \RuntimeException on cancellation or timeout (runtime concerns)
      */
-    public function __invoke(array $arguments): string
+    public function __invoke(ReadFileArgumentsDTO $arguments): string
     {
         return $this->toolRuntime->run(function () use ($arguments): string {
-            // Validate and extract arguments
-            $path = $this->validatePath($arguments);
-            $offset = $this->validateOffset($arguments);
-            $limit = $this->validateLimit($arguments);
+            $path = trim($arguments->path);
+            if ('' === $path) {
+                throw new ToolCallException('The "path" argument is required and must be a non-empty string.', retryable: false);
+            }
+            $offset = $arguments->offset;
+            $limit = $arguments->limit;
+            if (null !== $offset && $offset < 1) {
+                throw new ToolCallException('The "offset" argument must be a positive integer.', retryable: false);
+            }
+            if (null !== $limit && $limit < 1) {
+                throw new ToolCallException('The "limit" argument must be a positive integer.', retryable: false);
+            }
 
             // Resolve the path to an absolute, normalized form
             $resolvedPath = PathResolver::resolve($path);
@@ -153,78 +162,26 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     /**
      * Validate the path argument.
      *
-     * @param array<string, mixed> $arguments
-     *
      * @return string The validated path
      *
      * @throws ToolCallException when the path argument is missing or invalid
      */
-    private function validatePath(array $arguments): string
-    {
-        $path = $arguments['path'] ?? null;
-
-        if (!\is_string($path) || '' === $path) {
-            throw new ToolCallException('The "path" argument is required and must be a non-empty string.', retryable: false, hint: 'Provide a valid file path to read.');
-        }
-
-        return $path;
-    }
 
     /**
      * Validate the optional offset argument.
-     *
-     * @param array<string, mixed> $arguments
      *
      * @return int|null The validated offset (1-indexed, positive), or null if not provided
      *
      * @throws ToolCallException when offset is invalid
      */
-    private function validateOffset(array $arguments): ?int
-    {
-        $offset = $arguments['offset'] ?? null;
-
-        if (null === $offset) {
-            return null;
-        }
-
-        if (!\is_int($offset)) {
-            throw new ToolCallException('The "offset" argument must be an integer.', retryable: false, hint: 'Provide offset as an integer (e.g., offset=10).');
-        }
-
-        if ($offset < 1) {
-            throw new ToolCallException('The "offset" argument must be a positive integer (1-indexed).', retryable: false, hint: 'Line numbers start at 1. Use offset=1 to read from the beginning.');
-        }
-
-        return $offset;
-    }
 
     /**
      * Validate the optional limit argument.
-     *
-     * @param array<string, mixed> $arguments
      *
      * @return int|null The validated limit (positive), or null if not provided
      *
      * @throws ToolCallException when limit is invalid
      */
-    private function validateLimit(array $arguments): ?int
-    {
-        $limit = $arguments['limit'] ?? null;
-
-        if (null === $limit) {
-            return null;
-        }
-
-        if (!\is_int($limit)) {
-            throw new ToolCallException('The "limit" argument must be an integer.', retryable: false, hint: 'Provide limit as an integer (e.g., limit=100).');
-        }
-
-        if ($limit < 1) {
-            throw new ToolCallException('The "limit" argument must be a positive integer.', retryable: false, hint: 'Provide a positive limit of at least 1 line.');
-        }
-
-        return $limit;
-    }
 
     /**
      * Validate the resolved target path.

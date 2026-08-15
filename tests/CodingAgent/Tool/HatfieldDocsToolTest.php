@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tool\Arguments\HatfieldDocsArgumentsDTO;
 use Ineersa\CodingAgent\Tool\HatfieldDocsTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -101,7 +102,7 @@ final class HatfieldDocsToolTest extends TestCase
 
     public function testReadReturnsFullMarkdownBodyAndCachesWithoutReread(): void
     {
-        $body = ($this->tool)(['operation' => 'read', 'id' => 'zeta']);
+        $body = ($this->tool)(new HatfieldDocsArgumentsDTO(operation: 'read', id: 'zeta'));
         $this->assertIsString($body);
         $this->assertSame("# Zeta Title\n\nBody of zeta.\nSecond zeta line.", $body);
         $this->assertStringNotContainsString('description:', $body);
@@ -114,12 +115,12 @@ final class HatfieldDocsToolTest extends TestCase
         );
         unlink($this->docsDir.'/alpha.md');
 
-        $again = ($this->tool)(['operation' => 'read', 'id' => 'zeta']);
+        $again = ($this->tool)(new HatfieldDocsArgumentsDTO(operation: 'read', id: 'zeta'));
         $this->assertSame($body, $again);
 
         $list = $this->invokeList();
         $this->assertCount(3, $list['documents']);
-        $alphaBody = ($this->tool)(['operation' => 'read', 'id' => 'alpha']);
+        $alphaBody = ($this->tool)(new HatfieldDocsArgumentsDTO(operation: 'read', id: 'alpha'));
         $this->assertSame("# Alpha Title\n\nBody of alpha.", $alphaBody);
     }
 
@@ -133,7 +134,7 @@ final class HatfieldDocsToolTest extends TestCase
         );
 
         try {
-            $tool(['operation' => 'list']);
+            $tool(new HatfieldDocsArgumentsDTO(operation: 'list'));
             $this->fail('Expected ToolCallException for duplicate IDs');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('Duplicate built-in documentation id "alpha"', $e->getMessage());
@@ -155,11 +156,24 @@ final class HatfieldDocsToolTest extends TestCase
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('exactly one useful H1');
-        $tool(['operation' => 'list']);
+        $tool(new HatfieldDocsArgumentsDTO(operation: 'list'));
+    }
+
+    public function testMissingIdForReadIsRejected(): void
+    {
+        $this->invokeList();
+
+        try {
+            ($this->tool)(new HatfieldDocsArgumentsDTO(operation: 'read'));
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('id', $e->getMessage());
+            $this->assertFalse($e->retryable());
+        }
     }
 
     #[DataProvider('unknownIdProvider')]
-    public function testUnknownIdsRejectedFromCatalog(array $arguments): void
+    public function testUnknownIdsRejectedFromCatalog(HatfieldDocsArgumentsDTO $arguments): void
     {
         $this->invokeList();
 
@@ -174,14 +188,13 @@ final class HatfieldDocsToolTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{0: array<string, mixed>}>
+     * @return iterable<string, array{0: HatfieldDocsArgumentsDTO}>
      */
     public static function unknownIdProvider(): iterable
     {
-        yield 'missing id' => [['operation' => 'read']];
-        yield 'unmarked id' => [['operation' => 'read', 'id' => 'datadog']];
-        yield 'traversal id' => [['operation' => 'read', 'id' => '../settings']];
-        yield 'filename-like id' => [['operation' => 'read', 'id' => 'zeta.md']];
+        yield 'unmarked id' => [new HatfieldDocsArgumentsDTO(operation: 'read', id: 'datadog')];
+        yield 'traversal id' => [new HatfieldDocsArgumentsDTO(operation: 'read', id: '../settings')];
+        yield 'filename-like id' => [new HatfieldDocsArgumentsDTO(operation: 'read', id: 'zeta.md')];
     }
 
     /**
@@ -189,7 +202,7 @@ final class HatfieldDocsToolTest extends TestCase
      */
     private function invokeList(): array
     {
-        $encoded = ($this->tool)(['operation' => 'list']);
+        $encoded = ($this->tool)(new HatfieldDocsArgumentsDTO(operation: 'list'));
         $this->assertIsString($encoded);
         $decoded = Toon::decode($encoded);
         $this->assertIsArray($decoded);

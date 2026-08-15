@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRetrievalService;
+use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
 use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
@@ -25,10 +26,7 @@ final class AgentRetrieveTool implements HatfieldToolProviderInterface, ToolHand
     ) {
     }
 
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    public function __invoke(array $arguments): string
+    public function __invoke(AgentRetrieveArgumentsDTO $arguments): string
     {
         return $this->toolRuntime->run(function () use ($arguments): string {
             $context = $this->contextAccessor->current();

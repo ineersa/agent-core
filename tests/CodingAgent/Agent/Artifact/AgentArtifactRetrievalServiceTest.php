@@ -17,7 +17,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRetrievalService;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
-use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsFactory;
+use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -29,7 +29,6 @@ use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
-use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
@@ -86,7 +85,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->registry->writeHandoff($parent, $artifactId, "## Result\n\nFound routing config.");
 
         $service = $this->makeService();
-        $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'handoff']);
+        $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'handoff']));
 
         $this->assertStringContainsString('artifact_id: agent_done', $out);
         $this->assertStringContainsString('Found routing config.', $out);
@@ -107,7 +106,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         );
 
         $service = $this->makeService();
-        $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'metadata']);
+        $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'metadata']));
 
         $this->assertStringContainsString('status: failed', $out);
         $this->assertStringContainsString('failure_reason: Child attempted unsupported human interaction.', $out);
@@ -127,7 +126,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         );
 
         $service = $this->makeService();
-        $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'metadata']);
+        $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'metadata']));
 
         $this->assertStringContainsString('status: needs_clarification', $out);
         $this->assertStringContainsString('needs_clarification: Reserved future interactive mode note.', $out);
@@ -142,7 +141,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->registry->writeHandoff($parent, $artifactId, 'handoff-by-run');
 
         $service = $this->makeService();
-        $out = $service->retrieve($parent, ['agent_run_id' => $childRun, 'mode' => 'handoff']);
+        $out = $service->retrieve($parent, $this->args(['agent_run_id' => $childRun, 'mode' => 'handoff']));
 
         $this->assertStringContainsString('artifact_id: agent_by_run', $out);
         $this->assertStringContainsString('handoff-by-run', $out);
@@ -153,10 +152,12 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $service = $this->makeService();
 
         try {
-            $service->retrieve('parent-x', []);
+            // Identifier presence is validated by AgentRetrieveArgumentsDTO constraints
+            // before the service in production; service still fails closed without ids.
+            $service->retrieve('parent-x', $this->args([]));
             $this->fail('expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('Provide at least one identifier', $e->getMessage());
+            $this->assertStringContainsString('Unable to resolve subagent artifact', $e->getMessage());
         }
     }
 
@@ -165,7 +166,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $service = $this->makeService();
 
         try {
-            $service->retrieve('parent-x', ['artifact_id' => 'missing']);
+            $service->retrieve('parent-x', $this->args(['artifact_id' => 'missing']));
             $this->fail('expected ToolCallException');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('Unknown artifact_id', $e->getMessage());
@@ -183,7 +184,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $service = $this->makeService();
 
         try {
-            $service->retrieve('parent-current', ['agent_run_id' => $childRun]);
+            $service->retrieve('parent-current', $this->args(['agent_run_id' => $childRun]));
             $this->fail('expected ToolCallException');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('different parent session', $e->getMessage());
@@ -195,7 +196,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $service = $this->makeService();
 
         try {
-            $service->retrieve('parent-1', ['artifact_id' => '../secret']);
+            $service->retrieve('parent-1', $this->args(['artifact_id' => '../secret']));
             $this->fail('expected ToolCallException');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('artifactId', $e->getMessage());
@@ -211,7 +212,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $service = $this->makeService();
 
         try {
-            $service->retrieve($parent, ['artifact_id' => 'artifact-one', 'agent_run_id' => 'run-two']);
+            $service->retrieve($parent, $this->args(['artifact_id' => 'artifact-one', 'agent_run_id' => 'run-two']));
             $this->fail('expected ToolCallException');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('different subagent artifacts', $e->getMessage());
@@ -242,7 +243,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $runStore = $this->createStub(RunStoreInterface::class);
 
         $service = $this->makeService($runStore, $eventStore);
-        $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'events', 'limit' => 5]);
+        $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'events', 'limit' => 5]));
 
         $this->assertStringContainsString('Showing last 5 of 25 events', $out);
         $this->assertStringNotContainsString($secret, $out);
@@ -274,7 +275,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $eventStore = $this->createStub(EventStoreInterface::class);
 
         $service = $this->makeService($runStore, $eventStore);
-        $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'history', 'limit' => 3]);
+        $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'history', 'limit' => 3]));
 
         $this->assertStringContainsString('Showing last 3 of', $out);
         $this->assertStringNotContainsString($secret, $out);
@@ -295,7 +296,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->assertNotSame('', $isolatedRoot);
 
         $service = $this->makeService();
-        $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'debug']);
+        $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'debug']));
 
         $this->assertStringContainsString('# Subagent artifact debug paths', $out);
         $this->assertStringContainsString('artifacts/agents/'.$artifactId.'/', $out);
@@ -318,7 +319,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->registry->writeHandoff($parent, $artifactId, "# Subagent handoff\n\nStatus: cancelled\nArtifact: {$artifactId}\n\n## Partial context\n\n- turn_no: 2\n\n## Retrieval\n\nUse agent_retrieve");
 
         $service = $this->makeService();
-        $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'handoff']);
+        $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'handoff']));
 
         $this->assertStringContainsString('status: cancelled', $out);
         $this->assertStringContainsString('artifact_id: '.$artifactId, $out);
@@ -344,7 +345,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
             model: 'test-model'));
 
         $service = $this->makeService(runStore: $runStore);
-        $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'metadata']);
+        $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'metadata']));
 
         $this->assertStringContainsString('status: cancelled', $out);
         $this->assertStringContainsString('turn_no: 4', $out);
@@ -355,22 +356,25 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         ?RunStoreInterface $runStore = null,
         ?EventStoreInterface $eventStore = null,
     ): AgentArtifactRetrievalService {
-        $serializer = new Serializer(
-            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(
-                classMetadataFactory: ($__cmf = new ClassMetadataFactory(new AttributeLoader())),
-                nameConverter: new MetadataAwareNameConverter($__cmf, new CamelCaseToSnakeCaseNameConverter()),
-            ), new ArrayDenormalizer()],
-            [new JsonEncoder()],
-        );
-        $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
-
         return new AgentArtifactRetrievalService(
             artifactRegistry: $this->registry,
             childRunDirectory: $this->directory,
-            argumentsFactory: new AgentRetrieveArgumentsFactory($serializer, $validator),
             runStore: $runStore ?? $this->createStub(RunStoreInterface::class),
             eventStore: $eventStore ?? $this->createStub(EventStoreInterface::class),
             logger: self::getContainer()->get('logger'),
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function args(array $arguments): AgentRetrieveArgumentsDTO
+    {
+        return new AgentRetrieveArgumentsDTO(
+            artifactId: isset($arguments['artifact_id']) && \is_string($arguments['artifact_id']) ? $arguments['artifact_id'] : null,
+            agentRunId: isset($arguments['agent_run_id']) && \is_string($arguments['agent_run_id']) ? $arguments['agent_run_id'] : null,
+            mode: isset($arguments['mode']) && \is_string($arguments['mode']) ? $arguments['mode'] : null,
+            limit: isset($arguments['limit']) && \is_int($arguments['limit']) ? $arguments['limit'] : null,
         );
     }
 }

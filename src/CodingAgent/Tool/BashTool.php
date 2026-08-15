@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -70,18 +71,20 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
     /**
      * Execute a bash command with foreground supervision.
      *
-     * @param array<string, mixed> $arguments Must contain 'command' (string).
-     *                                        Optional 'timeout' (int|null).
+     * @param BashArgumentsDTO $arguments
+     *                                    Optional 'timeout' (int|null)
      *
      * @return string Command output or backgrounding notice
      *
      * @throws ToolCallException on validation errors or execution failures
      */
-    public function __invoke(array $arguments): string
+    public function __invoke(BashArgumentsDTO $arguments): string
     {
         return $this->toolRuntime->run(function () use ($arguments): string {
-            // Validate and extract arguments
-            $command = $this->validateCommand($arguments);
+            $command = trim($arguments->command);
+            if ('' === $command) {
+                throw new ToolCallException('The "command" argument is required and must be a non-empty string.', retryable: false);
+            }
             $timeout = $this->resolveTimeout($arguments);
 
             // Resolve session context.
@@ -292,42 +295,15 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
 
     // ─── Private helpers ────────────────────────────────────────────
 
-    /**
-     * Validate the command argument.
-     *
-     * @param array<string, mixed> $arguments
-     *
-     * @return string The validated command string
-     *
-     * @throws ToolCallException when command is missing or invalid
-     */
-    private function validateCommand(array $arguments): string
+    private function resolveTimeout(BashArgumentsDTO $arguments): int
     {
-        $command = $arguments['command'] ?? null;
-
-        if (!\is_string($command) || '' === trim($command)) {
-            throw new ToolCallException('The "command" argument is required and must be a non-empty string.', retryable: false, hint: 'Provide a shell command to execute, e.g., {"command": "ls -la"}');
-        }
-
-        return $command;
-    }
-
-    /**
-     * Resolve the effective timeout from the arguments or config default.
-     *
-     * @param array<string, mixed> $arguments
-     *
-     * @return int Timeout seconds (config default when not explicitly provided)
-     */
-    private function resolveTimeout(array $arguments): int
-    {
-        $timeout = $arguments['timeout'] ?? null;
+        $timeout = $arguments->timeout;
 
         if (null === $timeout) {
             return $this->config->defaultTimeoutSeconds;
         }
 
-        if (!\is_int($timeout) || $timeout < 1) {
+        if ($timeout < 1) {
             throw new ToolCallException('The "timeout" argument must be a positive integer.', retryable: false, hint: 'Provide a positive integer for timeout seconds, or omit it to use the default.');
         }
 

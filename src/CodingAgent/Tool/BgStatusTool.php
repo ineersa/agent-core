@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
 
 /**
  * Inspect, tail-log, and stop background processes.
@@ -42,22 +43,16 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
     /**
      * Execute the bg_status tool.
      *
-     * @param array<string, mixed> $arguments Must contain 'action' (string)
+     * @param BgStatusArgumentsDTO $arguments
      *                                        and optionally 'pid' (int)
      *
      * @return string Human-readable result content
      *
      * @throws ToolCallException on validation or execution failures
      */
-    public function __invoke(array $arguments): string
+    public function __invoke(BgStatusArgumentsDTO $arguments): string
     {
-        // Validate required argument
-        $action = $arguments['action'] ?? null;
-        if (!\is_string($action) || '' === $action) {
-            throw new ToolCallException('The "action" argument is required and must be a non-empty string.', retryable: false, hint: 'Use one of: list, log, stop.');
-        }
-
-        $action = strtolower($action);
+        $action = strtolower($arguments->action);
 
         return match ($action) {
             'list' => $this->handleList(),
@@ -147,16 +142,14 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
     }
 
     /**
-     * @param array<string, mixed> $arguments
-     *
      * @return string Log tail content
      *
      * @throws ToolCallException
      */
-    private function handleLog(array $arguments): string
+    private function handleLog(BgStatusArgumentsDTO $arguments): string
     {
-        $pid = $arguments['pid'] ?? null;
-        if (!\is_int($pid) || $pid <= 0) {
+        $pid = $arguments->pid;
+        if (null === $pid || $pid <= 0) {
             throw new ToolCallException('The "pid" argument is required and must be a positive integer for the log action.', retryable: false, hint: 'Provide the PID from bg_status list output.');
         }
 
@@ -188,16 +181,14 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
     }
 
     /**
-     * @param array<string, mixed> $arguments
-     *
      * @return string Stop result summary
      *
      * @throws ToolCallException
      */
-    private function handleStop(array $arguments): string
+    private function handleStop(BgStatusArgumentsDTO $arguments): string
     {
-        $pid = $arguments['pid'] ?? null;
-        if (!\is_int($pid) || $pid <= 0) {
+        $pid = $arguments->pid;
+        if (null === $pid || $pid <= 0) {
             throw new ToolCallException('The "pid" argument is required and must be a positive integer for the stop action.', retryable: false, hint: 'Provide the PID from bg_status list output.');
         }
 

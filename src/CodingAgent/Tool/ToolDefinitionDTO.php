@@ -16,7 +16,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
  * The handler property is typed as ToolHandlerInterface for type safety
  * instead of PHP's `callable` pseudo-type, which cannot be used as a
  * property type. Implementations are invokable objects that receive
- * decoded tool call arguments as an associative array.
+ * resolved tool arguments (typed DTO for built-ins; array for dynamic MCP/extension adapters).
  *
  * The executionMode defaults to sequential. Tool authors/providers should
  * set it in their definition() return when non-default behavior is needed.

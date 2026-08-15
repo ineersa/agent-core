@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
@@ -102,7 +103,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->createManager();
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->makeBashTool())(['command' => 'echo "hello from bash"']);
+            return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "hello from bash"'));
         });
 
         $this->assertStringContainsString('hello from bash', $result);
@@ -117,7 +118,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->createManager();
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->makeBashTool())(['command' => "printf 'line1\\nline2\\nline3\\n'"]);
+            return ($this->makeBashTool())(new BashArgumentsDTO(command: "printf 'line1\\nline2\\nline3\\n'"));
         });
 
         $this->assertStringContainsString('line1', $result);
@@ -132,7 +133,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->createManager();
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->makeBashTool())(['command' => 'echo "before error" && exit 42']);
+            return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "before error" && exit 42'));
         });
 
         $this->assertStringContainsString('exit code 42', $result);
@@ -144,7 +145,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->createManager();
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->makeBashTool())(['command' => 'nonexistent_command_xyz_123']);
+            return ($this->makeBashTool())(new BashArgumentsDTO(command: 'nonexistent_command_xyz_123'));
         });
 
         $this->assertStringContainsString('failed', $result);
@@ -164,7 +165,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         );
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->makeBashTool())(['command' => 'echo "partial" && sleep 10 && echo "should not see"']);
+            return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "partial" && sleep 10 && echo "should not see"'));
         });
 
         $this->assertStringContainsString('timed out', $result);
@@ -229,7 +230,7 @@ final class BashToolTest extends IsolatedKernelTestCase
                     $storedPid = $entities[0]->pid;
                 }
 
-                return ($this->makeBashTool())(['command' => 'echo "before cancel" && sleep 10']);
+                return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "before cancel" && sleep 10'));
             });
         } finally {
             // Verify the process was stopped by the cancellation path
@@ -251,7 +252,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('command');
 
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())([]));
+        $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO()));
     }
 
     public function testEmptyCommandThrows(): void
@@ -261,7 +262,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('command');
 
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(['command' => '']));
+        $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO(command: '')));
     }
 
     public function testInvalidTimeoutThrows(): void
@@ -271,7 +272,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('timeout');
 
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(['command' => 'echo hi', 'timeout' => -5]));
+        $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo hi', timeout: -5)));
     }
 
     public function testTimeoutExceedsMaximumThrows(): void
@@ -288,7 +289,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('must not exceed 30 seconds');
 
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(['command' => 'echo hi', 'timeout' => 9999]));
+        $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo hi', timeout: 9999)));
     }
 
     public function testTimeoutAtMaximumAccepted(): void
@@ -303,7 +304,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         );
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->makeBashTool())(['command' => 'echo "ok"', 'timeout' => 30]);
+            return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "ok"', timeout: 30));
         });
 
         $this->assertStringContainsString('ok', $result);
@@ -334,7 +335,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->createManager();
 
         $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
-            return ($this->makeBashTool($promptAdapter))(['command' => 'echo "background me" && sleep 10']);
+            return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(command: 'echo "background me" && sleep 10'));
         });
 
         $this->assertStringContainsString('background', $result);
@@ -363,7 +364,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->createManager();
 
         $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
-            return ($this->makeBashTool($promptAdapter))(['command' => 'echo "quick command"']);
+            return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(command: 'echo "quick command"'));
         });
 
         $this->assertStringContainsString('quick command', $result);
@@ -383,7 +384,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->createManager();
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->makeBashTool())(['command' => 'echo "decline test"']);
+            return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "decline test"'));
         });
 
         $this->assertStringContainsString('decline test', $result);
@@ -409,7 +410,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         // Process writes unique marker, background acceptance leaves it running
         $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
-            return ($this->makeBashTool($promptAdapter))(['command' => 'echo "background-marker-12345" && sleep 5']);
+            return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(command: 'echo "background-marker-12345" && sleep 5'));
         });
 
         $this->assertStringContainsString('background', $result);
@@ -489,9 +490,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         // sleep 0.1 (≈100ms) is longer than the poll interval (50ms)
         // but short enough to finish during the 200ms adapter block.
         $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
-            return ($this->makeBashTool($promptAdapter))([
-                'command' => 'sleep 0.1 && echo "Hello world"',
-            ]);
+            return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(command: 'sleep 0.1 && echo "Hello world"'));
         });
 
         // Must show the completed output, not a backgrounding notice or timeout.
@@ -516,7 +515,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->createManager();
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->makeBashTool())(['command' => 'echo "this is a very long output that should be truncated"']);
+            return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "this is a very long output that should be truncated"'));
         });
 
         // Tool returns raw output; capping is centralized.
@@ -543,12 +542,10 @@ final class BashToolTest extends IsolatedKernelTestCase
         $totalBytes = 3_000_000;
         $result = $this->withContext(self::TEST_SESSION, function () use ($totalBytes): string {
             // Write a large deterministic blob via PHP (project-contract runtime).
-            return ($this->makeBashTool())([
-                'command' => \sprintf(
-                    "php -r 'echo str_repeat(\"X\", %d);'",
-                    $totalBytes,
-                ),
-            ]);
+            return ($this->makeBashTool())(new BashArgumentsDTO(command: \sprintf(
+                "php -r 'echo str_repeat(\"X\", %d);'",
+                $totalBytes,
+            )));
         });
 
         $this->assertStringContainsString('Bash output truncated:', $result);
@@ -594,7 +591,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $result = $this->withContext(
             self::TEST_SESSION,
             function () use ($promptAdapter): string {
-                return ($this->makeBashTool($promptAdapter))(['command' => 'echo "parallel batch" && sleep 0.2']);
+                return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(command: 'echo "parallel batch" && sleep 0.2'));
             },
             executionMode: ToolExecutionMode::Parallel,
             batchToolCallCount: 2,
@@ -622,7 +619,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->withContext(
             self::TEST_SESSION,
             function () use ($promptAdapter): string {
-                return ($this->makeBashTool($promptAdapter))(['command' => 'echo "single" && sleep 0.2']);
+                return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(command: 'echo "single" && sleep 0.2'));
             },
             executionMode: ToolExecutionMode::Parallel,
             batchToolCallCount: 1,
@@ -690,7 +687,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         // The tool should execute the command successfully with only the
         // timeout deadline (no cancellation capability).
         $tool = $this->makeBashTool();
-        $result = ($tool)(['command' => 'echo "no context test"']);
+        $result = ($tool)(new BashArgumentsDTO(command: 'echo "no context test"'));
 
         $this->assertStringContainsString('no context test', $result);
         $this->assertStringNotContainsString('timed out', $result);
@@ -704,7 +701,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->createManager();
 
         $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->makeBashTool())(['command' => 'echo "session test"']);
+            return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "session test"'));
         });
 
         $entities = $this->manager->list(self::TEST_SESSION);
@@ -776,9 +773,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         };
 
         $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter, $releaseArg): string {
-            return ($this->makeBashTool($promptAdapter))([
-                'command' => 'while [ ! -f '.$releaseArg.' ]; do :; done; echo '.escapeshellarg(self::DATETIME_MARKER),
-            ]);
+            return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(command: 'while [ ! -f '.$releaseArg.' ]; do :; done; echo '.escapeshellarg(self::DATETIME_MARKER)));
         });
 
         $this->assertStringContainsString(self::DATETIME_MARKER, $result);

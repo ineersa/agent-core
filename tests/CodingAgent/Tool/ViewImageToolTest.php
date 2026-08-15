@@ -19,12 +19,15 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Config\ToolSettings;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ImageProcessing\RunVisionCheckService;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
+use Ineersa\CodingAgent\Tool\ToolCallArgumentsValidator;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Ineersa\CodingAgent\Tool\ViewImageTool;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Platform\Message\Content\Image;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\UserMessage;
@@ -99,7 +102,7 @@ final class ViewImageToolTest extends TestCase
         $imagePath = $this->tmpDir.'/test.png';
         $this->createPng1x1($imagePath);
 
-        $result = ($this->viewImageTool)(['path' => $imagePath]);
+        $result = ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $imagePath));
 
         // Must be a compact metadata array — no base64, no data_url
         $this->assertIsArray($result);
@@ -121,7 +124,7 @@ final class ViewImageToolTest extends TestCase
         $imagePath = $this->tmpDir.'/test.gif';
         $this->createGif1x1($imagePath);
 
-        $result = ($this->viewImageTool)(['path' => $imagePath]);
+        $result = ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $imagePath));
 
         $this->assertSame('image/gif', $result['media_type']);
         $this->assertSame(1, $result['width']);
@@ -135,7 +138,7 @@ final class ViewImageToolTest extends TestCase
         $imagePath = $this->tmpDir.'/test.jpg';
         $this->createJpeg1x1($imagePath);
 
-        $result = ($this->viewImageTool)(['path' => $imagePath]);
+        $result = ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $imagePath));
 
         $this->assertSame('image/jpeg', $result['media_type']);
         $this->assertSame(1, $result['width']);
@@ -153,7 +156,7 @@ final class ViewImageToolTest extends TestCase
         $imagePath = $this->tmpDir.'/test.webp';
         $this->createWebp1x1($imagePath);
 
-        $result = ($this->viewImageTool)(['path' => $imagePath]);
+        $result = ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $imagePath));
 
         $this->assertSame('image/webp', $result['media_type']);
         $this->assertArrayNotHasKey('base64', $result);
@@ -169,7 +172,7 @@ final class ViewImageToolTest extends TestCase
         $cwd = getcwd();
         $relative = $this->relativePath($cwd, $relativePath);
 
-        $result = ($this->viewImageTool)(['path' => $relative]);
+        $result = ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $relative));
 
         $this->assertSame('image/png', $result['media_type']);
         $this->assertSame(1, $result['width']);
@@ -187,7 +190,7 @@ final class ViewImageToolTest extends TestCase
         $misnamed = $this->tmpDir.'/misnamed.gif';
         copy($actualPng, $misnamed);
 
-        $result = ($this->viewImageTool)(['path' => $misnamed]);
+        $result = ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $misnamed));
 
         $this->assertSame('image/png', $result['media_type']);
     }
@@ -200,7 +203,7 @@ final class ViewImageToolTest extends TestCase
         $misnamed = $this->tmpDir.'/misnamed.png';
         copy($actualGif, $misnamed);
 
-        $result = ($this->viewImageTool)(['path' => $misnamed]);
+        $result = ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $misnamed));
 
         $this->assertSame('image/gif', $result['media_type']);
     }
@@ -215,7 +218,7 @@ final class ViewImageToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('Unsupported image type');
 
-        ($this->viewImageTool)(['path' => $filePath]);
+        ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $filePath));
     }
 
     public function testRejectsHtmlFile(): void
@@ -226,7 +229,7 @@ final class ViewImageToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('Unsupported image type');
 
-        ($this->viewImageTool)(['path' => $filePath]);
+        ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $filePath));
     }
 
     public function testRejectsPdfFile(): void
@@ -237,7 +240,7 @@ final class ViewImageToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('Unsupported image type');
 
-        ($this->viewImageTool)(['path' => $filePath]);
+        ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $filePath));
     }
 
     public function testRejectsEmptyFile(): void
@@ -248,7 +251,7 @@ final class ViewImageToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('Failed to read header bytes');
 
-        ($this->viewImageTool)(['path' => $filePath]);
+        ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $filePath));
     }
 
     /* ── Max bytes enforcement ── */
@@ -266,7 +269,7 @@ final class ViewImageToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('exceeds maximum allowed size');
 
-        $tool(['path' => $imagePath]);
+        $tool(new ViewImageArgumentsDTO(path: $imagePath));
     }
 
     public function testAcceptsFileWithinMaxBytes(): void
@@ -277,7 +280,7 @@ final class ViewImageToolTest extends TestCase
         $imagePath = $this->tmpDir.'/ok.png';
         $this->createPng1x1($imagePath);
 
-        $result = $tool(['path' => $imagePath]);
+        $result = $tool(new ViewImageArgumentsDTO(path: $imagePath));
 
         $this->assertSame('image/png', $result['media_type']);
     }
@@ -297,7 +300,7 @@ final class ViewImageToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('exceed maximum allowed');
 
-        $tool(['path' => $imagePath]);
+        $tool(new ViewImageArgumentsDTO(path: $imagePath));
     }
 
     public function testRejectsImageExceedingMaxHeight(): void
@@ -313,7 +316,7 @@ final class ViewImageToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('exceed maximum allowed');
 
-        $tool(['path' => $imagePath]);
+        $tool(new ViewImageArgumentsDTO(path: $imagePath));
     }
 
     /* ── Argument validation tests ── */
@@ -323,15 +326,7 @@ final class ViewImageToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"path" argument is required');
 
-        ($this->viewImageTool)([]);
-    }
-
-    public function testThrowsOnNonStringPath(): void
-    {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"path" argument is required');
-
-        ($this->viewImageTool)(['path' => 123]);
+        ($this->viewImageTool)(new ViewImageArgumentsDTO());
     }
 
     public function testThrowsOnEmptyPath(): void
@@ -339,7 +334,7 @@ final class ViewImageToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"path" argument is required');
 
-        ($this->viewImageTool)(['path' => '']);
+        ($this->viewImageTool)(new ViewImageArgumentsDTO(path: ''));
     }
 
     public function testThrowsOnNonExistentFile(): void
@@ -347,7 +342,7 @@ final class ViewImageToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('does not exist or is not readable');
 
-        ($this->viewImageTool)(['path' => $this->tmpDir.'/nonexistent.png']);
+        ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $this->tmpDir.'/nonexistent.png'));
     }
 
     /* ── Cancellation tests ── */
@@ -362,9 +357,7 @@ final class ViewImageToolTest extends TestCase
                 $this->expectException(\RuntimeException::class);
                 $this->expectExceptionMessage('cancelled before start');
 
-                ($this->viewImageTool)([
-                    'path' => $this->tmpDir.'/cancelled.png',
-                ]);
+                ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $this->tmpDir.'/cancelled.png'));
             },
         );
     }
@@ -383,7 +376,7 @@ final class ViewImageToolTest extends TestCase
         $this->contextAccessor->with(
             $this->contextWithToken($token),
             function () use ($imagePath): void {
-                ($this->viewImageTool)(['path' => $imagePath]);
+                ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $imagePath));
             },
         );
     }
@@ -411,7 +404,7 @@ final class ViewImageToolTest extends TestCase
         $toolRuntime = new ToolRuntime($contextAccessor);
         $tool = new ViewImageTool($toolRuntime, $this->imageConfig, $contextAccessor);
         $registry = new ToolRegistry([$tool]);
-        $toolbox = new RegistryBackedToolbox($registry);
+        $toolbox = new RegistryBackedToolbox($registry, new ToolCallArgumentResolver(), new ToolCallArgumentsValidator());
 
         $tokenCancelledFirst = $this->createStub(CancellationTokenInterface::class);
         $tokenCancelledFirst->method('isCancellationRequested')->willReturn(false);
@@ -538,7 +531,7 @@ final class ViewImageToolTest extends TestCase
         $imagePath = $this->tmpDir.'/state_test.png';
         $this->createPng1x1($imagePath);
 
-        $regularResult = ($this->viewImageTool)(['path' => $imagePath]);
+        $regularResult = ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $imagePath));
 
         // Simulate the full pipeline: handler result → details → normalizer
         $result = new ToolCallResult(
@@ -902,7 +895,7 @@ final class ViewImageToolTest extends TestCase
         $this->expectExceptionMessage('does not support image input');
 
         $this->contextAccessor->with($context, static function () use ($tool, $imagePath): void {
-            $tool(['path' => $imagePath]);
+            $tool(new ViewImageArgumentsDTO(path: $imagePath));
         });
     }
 
@@ -919,7 +912,7 @@ final class ViewImageToolTest extends TestCase
 
         $context = $this->contextWithToken($this->createStub(CancellationTokenInterface::class));
         $this->contextAccessor->with($context, static function () use ($tool, $imagePath): void {
-            $result = $tool(['path' => $imagePath]);
+            $result = $tool(new ViewImageArgumentsDTO(path: $imagePath));
             self::assertSame('image/png', $result['media_type'], 'Tool should succeed when vision check is skipped');
         });
     }

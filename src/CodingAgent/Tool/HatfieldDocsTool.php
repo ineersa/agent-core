@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Docs\BuiltinDocsCatalog;
 use Ineersa\CodingAgent\Docs\BuiltinDocsCatalogException;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\Tool\Arguments\HatfieldDocsArgumentsDTO;
 
 /**
  * Read-only parent-agent catalog for curated Hatfield documentation.
@@ -37,16 +38,12 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
     }
 
     /**
-     * @param array<string, mixed> $arguments
-     *
      * @return string TOON-encoded list metadata, or raw Markdown body for read
      */
-    public function __invoke(array $arguments): string
+    public function __invoke(HatfieldDocsArgumentsDTO $arguments): string
     {
         return $this->toolRuntime->run(function () use ($arguments): string {
-            $operation = $arguments['operation'] ?? null;
-
-            return match ($operation) {
+            return match ($arguments->operation) {
                 'list' => Toon::encode($this->listDocuments()),
                 'read' => $this->readDocument($arguments),
                 default => throw new ToolCallException('The "operation" argument must be one of: list, read.', retryable: false),
@@ -102,14 +99,11 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
         return ['documents' => $documents];
     }
 
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    private function readDocument(array $arguments): string
+    private function readDocument(HatfieldDocsArgumentsDTO $arguments): string
     {
-        $id = $arguments['id'] ?? null;
-        if (!\is_string($id) || '' === $id) {
-            throw new ToolCallException('Unknown document id.', retryable: false, hint: 'Use operation=list to see approved IDs.');
+        $id = $arguments->id;
+        if (null === $id || '' === trim($id)) {
+            throw new ToolCallException('The "id" argument is required for read.', retryable: false, hint: 'Use operation=list to see approved IDs.');
         }
 
         $catalog = $this->catalog();

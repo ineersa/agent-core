@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO;
 use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
 
 /**
@@ -22,8 +23,8 @@ use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
  * ## Key design
  *
  * - Returns `kind=interrupt` payload immediately; no oneshot/blocking path.
- * - Uses Symfony Serializer/Validator (via AskHumanPayloadFactory) for
- *   type-safe argument denormalization, validation, and payload building.
+ * - Arguments are resolved/validated by RegistryBackedToolbox (schema + DTO
+ *   + Symfony Validator); AskHumanPayloadFactory only builds the interrupt payload.
  * - Always generates stable output `question_id` from question/kind/choices/header hash.
  * - Normalizes bare string choices to structured `{label, description}` objects.
  * - Preserves UI metadata: header, kind, choices.
@@ -45,13 +46,9 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
      * Returns an interrupt payload immediately. The run is paused by
      * AgentCore's existing WaitingHuman / HumanResponse flow.
      *
-     * @param array<string, mixed> $arguments Tool call arguments
-     *
      * @return array<string, mixed> Interrupt payload with kind=interrupt
-     *
-     * @throws \Ineersa\AgentCore\Contract\Tool\ToolCallException On validation failure
      */
-    public function __invoke(array $arguments): array
+    public function __invoke(AskHumanArgumentsDTO $arguments): array
     {
         return $this->payloadFactory->createPayload($arguments);
     }

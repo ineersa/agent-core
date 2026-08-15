@@ -15,9 +15,13 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
 final class AgentRetrieveArgumentsDTO
 {
     public function __construct(
+        #[Assert\Length(min: 1)]
         public readonly ?string $artifactId = null,
+        #[Assert\Length(min: 1)]
         public readonly ?string $agentRunId = null,
+        #[Assert\Choice(choices: ['handoff', 'metadata', 'events', 'history', 'debug'], message: 'Invalid mode "{{ value }}". Supported modes: handoff, metadata, events, history, debug.')]
         public readonly ?string $mode = null,
+        #[Assert\Range(min: 1, max: AgentArtifactRetrievalService::MAX_LIMIT)]
         public readonly ?int $limit = null,
     ) {
     }
