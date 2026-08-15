@@ -28,18 +28,7 @@ final readonly class ListTasksHandler implements ExtensionToolHandlerInterface
         $tasks = $this->store->listTasks($this->store->resolveTaskRoot(), $status, $includeArchive);
 
         return ToolResult::structured([
-            'tasks' => array_map(
-                static fn ($task): array => [
-                    'status' => $task->status->value,
-                    'file' => $task->file,
-                    'path' => $task->path,
-                    'title' => $task->title,
-                    'branch' => $task->branch,
-                    'worktree' => $task->worktree,
-                    'prUrl' => $task->prUrl,
-                ],
-                $tasks,
-            ),
+            'tasks' => $tasks,
             'include_archive' => $includeArchive,
         ]);
     }
