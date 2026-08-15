@@ -7,9 +7,9 @@ namespace Ineersa\Tui\Completion;
 /**
  * Pure state machine for completion menu lifecycle.
  *
- * Tracks whether the menu is open, which suggestions are displayed,
- * and the currently selected index.  Up/Down navigation wraps around
- * the suggestion list.
+ * Tracks whether the menu is open and which suggestions are displayed.
+ * Selection index ownership lives on the mounted {@see \Symfony\Component\Tui\Widget\SelectListWidget};
+ * this state only stores the suggestion list for accept/replacement mapping.
  *
  * Closing via {@see close()} does not mutate editor text — the caller
  * (typically a listener) is responsible for text replacement when a
@@ -21,8 +21,6 @@ final class CompletionState
 
     /** @var list<CompletionSuggestion> */
     private array $suggestions = [];
-
-    private int $selectedIndex = 0;
 
     /**
      * Open the completion menu with the given suggestions.
@@ -41,7 +39,6 @@ final class CompletionState
 
         $this->open = true;
         $this->suggestions = $suggestions;
-        $this->selectedIndex = 0;
     }
 
     /**
@@ -51,7 +48,6 @@ final class CompletionState
     {
         $this->open = false;
         $this->suggestions = [];
-        $this->selectedIndex = 0;
     }
 
     public function isOpen(): bool
@@ -60,56 +56,37 @@ final class CompletionState
     }
 
     /**
-     * The currently highlighted suggestion, or null when the menu
-     * is closed or the list is empty.
+     * Resolve a suggestion from SelectListWidget item value (string index).
      */
-    public function selected(): ?CompletionSuggestion
+    public function suggestionByValue(string $value): ?CompletionSuggestion
     {
         if (!$this->open || [] === $this->suggestions) {
             return null;
         }
 
-        return $this->suggestions[$this->selectedIndex] ?? null;
-    }
-
-    /**
-     * Move selection to the next suggestion, wrapping around.
-     */
-    public function moveNext(): void
-    {
-        if (!$this->open || [] === $this->suggestions) {
-            return;
+        if (!ctype_digit($value)) {
+            return null;
         }
 
-        $count = \count($this->suggestions);
-        $this->selectedIndex = ($this->selectedIndex + 1) % $count;
+        return $this->suggestions[(int) $value] ?? null;
     }
 
     /**
-     * Move selection to the previous suggestion, wrapping around.
-     */
-    public function movePrevious(): void
-    {
-        if (!$this->open || [] === $this->suggestions) {
-            return;
-        }
-
-        $count = \count($this->suggestions);
-        $this->selectedIndex = ($this->selectedIndex - 1 + $count) % $count;
-    }
-
-    /**
-     * Accept the currently selected suggestion.
+     * Accept the suggestion currently selected in the SelectListWidget.
      *
      * Does NOT close the menu — the caller should call {@see close()}
      * separately after applying the suggestion.
      *
      * @return CompletionSuggestion|null the accepted suggestion, or null
-     *                                   if the menu is not open
+     *                                   if the menu is not open / value unknown
      */
-    public function acceptSelected(): ?CompletionSuggestion
+    public function acceptSelected(?string $selectedValue): ?CompletionSuggestion
     {
-        return $this->selected();
+        if (null === $selectedValue) {
+            return null;
+        }
+
+        return $this->suggestionByValue($selectedValue);
     }
 
     /**
@@ -120,13 +97,5 @@ final class CompletionState
     public function getSuggestions(): array
     {
         return $this->suggestions;
-    }
-
-    /**
-     * Current selected index (for rendering).
-     */
-    public function getSelectedIndex(): int
-    {
-        return $this->selectedIndex;
     }
 }

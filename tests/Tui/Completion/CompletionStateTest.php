@@ -20,19 +20,16 @@ final class CompletionStateTest extends TestCase
         $this->state = new CompletionState();
     }
 
-    // ── Open / Close ─────────────────────────────────────────────
-
     #[Test]
     public function startsClosed(): void
     {
         $this->assertFalse($this->state->isOpen());
-        $this->assertNull($this->state->selected());
         $this->assertSame([], $this->state->getSuggestions());
-        $this->assertSame(0, $this->state->getSelectedIndex());
+        $this->assertNull($this->state->acceptSelected('0'));
     }
 
     #[Test]
-    public function opensWithSuggestionsAndSelectsFirst(): void
+    public function opensWithSuggestions(): void
     {
         $suggestions = $this->createSuggestions(['/help', '/exit', '/clear']);
 
@@ -40,9 +37,8 @@ final class CompletionStateTest extends TestCase
 
         $this->assertTrue($this->state->isOpen());
         $this->assertSame($suggestions, $this->state->getSuggestions());
-        $this->assertSame(0, $this->state->getSelectedIndex());
-        $this->assertNotNull($this->state->selected());
-        $this->assertSame('/help', $this->state->selected()->display);
+        $this->assertSame('/help', $this->state->acceptSelected('0')?->display);
+        $this->assertSame('/exit', $this->state->acceptSelected('1')?->display);
     }
 
     #[Test]
@@ -51,7 +47,7 @@ final class CompletionStateTest extends TestCase
         $this->state->open([]);
 
         $this->assertFalse($this->state->isOpen());
-        $this->assertNull($this->state->selected());
+        $this->assertNull($this->state->acceptSelected('0'));
     }
 
     #[Test]
@@ -61,128 +57,28 @@ final class CompletionStateTest extends TestCase
         $this->state->close();
 
         $this->assertFalse($this->state->isOpen());
-        $this->assertNull($this->state->selected());
         $this->assertSame([], $this->state->getSuggestions());
+        $this->assertNull($this->state->acceptSelected('0'));
     }
 
-    // ── Navigation ────────────────────────────────────────────────
-
     #[Test]
-    public function moveNextWrapsAround(): void
+    public function acceptSelectedReturnsNullForUnknownValue(): void
     {
-        $this->state->open($this->createSuggestions(['/help', '/exit', '/clear']));
+        $this->state->open($this->createSuggestions(['/help']));
 
-        // First item selected (index 0)
-        $this->assertSame('/help', $this->state->selected()->display);
-
-        $this->state->moveNext();
-        $this->assertSame('/exit', $this->state->selected()->display);
-
-        $this->state->moveNext();
-        $this->assertSame('/clear', $this->state->selected()->display);
-
-        // Wrap around to first
-        $this->state->moveNext();
-        $this->assertSame('/help', $this->state->selected()->display);
+        $this->assertNull($this->state->acceptSelected(null));
+        $this->assertNull($this->state->acceptSelected('9'));
+        $this->assertNull($this->state->acceptSelected('nope'));
     }
 
     #[Test]
-    public function movePreviousWrapsAround(): void
-    {
-        $this->state->open($this->createSuggestions(['/help', '/exit', '/clear']));
-
-        // First item selected, previous wraps to last
-        $this->state->movePrevious();
-        $this->assertSame('/clear', $this->state->selected()->display);
-
-        $this->state->movePrevious();
-        $this->assertSame('/exit', $this->state->selected()->display);
-
-        $this->state->movePrevious();
-        $this->assertSame('/help', $this->state->selected()->display);
-    }
-
-    #[Test]
-    public function moveNextDoesNothingWhenClosed(): void
-    {
-        $this->state->moveNext();
-
-        $this->assertFalse($this->state->isOpen());
-        $this->assertSame(0, $this->state->getSelectedIndex());
-    }
-
-    #[Test]
-    public function movePreviousDoesNothingWhenClosed(): void
-    {
-        $this->state->movePrevious();
-
-        $this->assertFalse($this->state->isOpen());
-        $this->assertSame(0, $this->state->getSelectedIndex());
-    }
-
-    #[Test]
-    public function navigationWithSingleItemStaysOnSameItem(): void
-    {
-        $this->state->open($this->createSuggestions(['/only']));
-
-        $this->state->moveNext();
-        $this->assertSame('/only', $this->state->selected()->display);
-
-        $this->state->movePrevious();
-        $this->assertSame('/only', $this->state->selected()->display);
-    }
-
-    // ── Accept ────────────────────────────────────────────────────
-
-    #[Test]
-    public function acceptSelectedReturnsHighlightedSuggestion(): void
-    {
-        $suggestions = $this->createSuggestions(['/help', '/exit']);
-        $this->state->open($suggestions);
-
-        $accepted = $this->state->acceptSelected();
-
-        $this->assertNotNull($accepted);
-        $this->assertSame('/help', $accepted->display);
-    }
-
-    #[Test]
-    public function acceptSelectedReturnsNullWhenClosed(): void
-    {
-        $this->assertNull($this->state->acceptSelected());
-    }
-
-    #[Test]
-    public function acceptSelectedAfterNavigation(): void
-    {
-        $this->state->open($this->createSuggestions(['/help', '/exit', '/clear']));
-
-        $this->state->moveNext();
-        $this->state->moveNext(); // index 2: /clear
-
-        $accepted = $this->state->acceptSelected();
-        $this->assertSame('/clear', $accepted->display);
-    }
-
-    // ── Re-open ───────────────────────────────────────────────────
-
-    #[Test]
-    public function reopenResetsSelection(): void
+    public function suggestionByValueMapsSelectListValue(): void
     {
         $this->state->open($this->createSuggestions(['/help', '/exit']));
-        $this->state->moveNext(); // Select /exit
-        $this->assertSame('/exit', $this->state->selected()->display);
 
-        $this->state->close();
-        $this->assertFalse($this->state->isOpen());
-
-        $this->state->open($this->createSuggestions(['/clear', '/model']));
-        $this->assertTrue($this->state->isOpen());
-        $this->assertSame(0, $this->state->getSelectedIndex());
-        $this->assertSame('/clear', $this->state->selected()->display);
+        $this->assertSame('/exit', $this->state->suggestionByValue('1')?->display);
+        $this->assertNull($this->state->suggestionByValue('x'));
     }
-
-    // ── Helpers ────────────────────────────────────────────────────
 
     /** @param list<string> $displays */
     private function createSuggestions(array $displays): array

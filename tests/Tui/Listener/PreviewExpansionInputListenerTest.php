@@ -14,13 +14,15 @@ use Ineersa\Tui\Listener\PreviewExpansionInputListener;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
-use Ineersa\Tui\Transcript\HotkeyTableRenderer;
+use Ineersa\Tui\Transcript\HotkeyTableWidget;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Render\Renderer;
+use Symfony\Component\Tui\Widget\ContainerWidget;
 
 /**
  * Test thesis: Ctrl+O (\x0f) through the real TUI input loop toggles
@@ -191,23 +193,27 @@ final class PreviewExpansionInputListenerTest extends TestCase
         }
         $this->assertTrue($found, 'Hotkey catalog must include ctrl+o binding');
 
-        $renderer = new HotkeyTableRenderer();
-        $styled = $renderer->render(
-            array_map(
-                static fn (array $bindings): array => array_map(
-                    static fn ($b): array => [
-                        'keys' => $b->keys,
-                        'action' => $b->action,
-                        'description' => $b->description,
-                    ],
-                    $bindings,
-                ),
-                $groups,
-            ),
-            $harness->screen()->theme(),
-            '',
-        );
+        $groupsForWidget = [];
+        foreach ($groups as $context => $bindings) {
+            $groupsForWidget[$context] = array_map(
+                static fn ($b): array => [
+                    'keys' => $b->keys,
+                    'action' => $b->action,
+                    'description' => $b->description,
+                ],
+                $bindings,
+            );
+        }
+
+        $widget = new HotkeyTableWidget($groupsForWidget);
+        $root = new ContainerWidget();
+        $root->add($widget);
+        $lines = (new Renderer(
+            HotkeyTableWidget::styleSheetFromPalette($harness->screen()->theme()->getPalette()),
+        ))->render($root, 100, 40);
+        $styled = implode("\n", $lines);
         $this->assertStringContainsString('Ctrl+O', $styled);
+        $this->assertStringContainsString('Keyboard shortcuts', $styled);
     }
 
     #[Test]

@@ -246,6 +246,48 @@ final class CompletionListenerTest extends TestCase
         $this->assertSame('/exit ', $this->editor->getText());
     }
 
+    #[Test]
+    public function downNavigationScrollsNativeWindowBeyondMaxVisible(): void
+    {
+        // Built-ins: /clear /exit /help /hotkeys (4). Add enough extras so total > 10
+        // (SelectListWidget maxVisible=10) and selection must scroll the window.
+        for ($i = 0; $i < 12; ++$i) {
+            $name = \sprintf('cmd%02d', $i);
+            $this->registry->register(
+                new CommandMetadata(name: $name, aliases: [], description: 'extra '.$name),
+                new readonly class implements SlashCommandHandler {
+                    public function handle(\Ineersa\Tui\Command\SlashCommand $command): \Ineersa\Tui\Command\CommandResult
+                    {
+                        return new \Ineersa\Tui\Command\NoOp();
+                    }
+                },
+            );
+        }
+
+        // Re-register listener against the expanded registry.
+        $this->tui = new Tui();
+        $this->editor = new PromptEditor();
+        $theme = new DefaultTheme(new ThemePalette('default'));
+        $this->screen = new ChatScreen($theme, 'test-session', $this->editor);
+        $this->screen->mount($this->tui);
+        $this->registerListener();
+
+        $this->editor->typeText('/');
+        $this->tui->handleInput("\t");
+
+        // Move past the first page of 10 visible items (index 10 = 11th item).
+        for ($i = 0; $i < 10; ++$i) {
+            $this->tui->handleInput("\x1b[B");
+        }
+
+        $this->tui->handleInput("\t");
+        $accepted = $this->editor->getText();
+        $this->assertNotSame('/clear ', $accepted, 'Selection must leave the first item after 10 downs');
+        $this->assertMatchesRegularExpression('#^/[a-z0-9]+ $#', $accepted);
+        // With alphabetical slash suggestions, index 10 should not be /clear.
+        $this->assertStringStartsWith('/', $accepted);
+    }
+
     // ── Up/Down passes through when menu closed ──────────────────
 
     #[Test]

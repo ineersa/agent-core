@@ -8,6 +8,7 @@ use Ineersa\Tui\Completion\CompletionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Symfony\Component\Tui\Event\SelectionChangeEvent;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -16,27 +17,28 @@ use Symfony\Component\Tui\Widget\TextWidget;
  * Transient completion menu overlay rendered below the editor.
  *
  * Owns the {@see SelectListWidget} and {@see ContainerWidget} lifecycle:
- * open (build + mount), update (sync items/selection), close (remove).
+ * open (build + mount), update (sync items), close (remove).
  *
  * The SelectListWidget is intentionally NOT focused; the editor keeps
  * focus so printable typing flows into the editor while the completion
- * menu stays visible.  Navigation / accept / cancel is driven by the
- * {@see CompletionListener} InputEvent handler, not by SelectListWidget's
- * built-in keybindings.
+ * menu stays visible. Navigation is driven by {@see CompletionListener}
+ * forwarding raw Up/Down into {@see SelectListWidget::handleInput()} so
+ * the native widget owns wrapping, visible-window scrolling, and
+ * {@see SelectionChangeEvent} dispatch. Accept / cancel remain listener-owned.
  *
- * Selected-row highlighting uses the app theme accent colour, matching the
- * visual pattern established by ModelPickerController and QuestionController
- * where labels are theme-coloured before being passed into SelectListWidget.
- * SelectListWidget's native selected style (bold) layers on top.
+ * Selected-row highlighting uses the app theme accent colour. On selection
+ * change the labels are rebuilt so the accent follows the native selection.
  *
  * Uses {@see ChatScreen::insertOverlayAfterEditor()} so the menu renders
- * below the prompt instead of overlaying it (unlike question/picker menus
- * which render above the editor and steal focus).
+ * below the prompt instead of overlaying it.
  */
 final class CompletionMenu
 {
     private ?ContainerWidget $container = null;
     private ?SelectListWidget $listWidget = null;
+
+    /** Guards setItems()/setSelectedIndex() inside selection-change restyle. */
+    private bool $restylingSelection = false;
 
     public function __construct(
         private readonly TuiTheme $theme,
@@ -51,7 +53,6 @@ final class CompletionMenu
      */
     public function open(ChatScreen $screen, CompletionState $state): void
     {
-        // Tear down any previous overlay to avoid widget accumulation.
         if (null !== $this->container) {
             $this->close($screen);
         }
@@ -66,28 +67,37 @@ final class CompletionMenu
         );
         $this->container->add($header);
 
-        $items = self::buildItems(
-            $state->getSuggestions(),
-            $this->theme,
-            $state->getSelectedIndex(),
-        );
-
         $this->listWidget = new SelectListWidget(
-            items: $items,
+            items: self::buildItems($state->getSuggestions(), $this->theme, 0),
             maxVisible: 10,
         );
-        $this->listWidget->setSelectedIndex($state->getSelectedIndex());
+        $this->listWidget->setSelectedIndex(0);
+        $this->listWidget->onSelectionChange(
+            function (SelectionChangeEvent $event) use ($state): void {
+                if (null === $this->listWidget || $this->restylingSelection) {
+                    return;
+                }
+                $selectedIndex = (int) $event->getValue();
+                $items = self::buildItems($state->getSuggestions(), $this->theme, $selectedIndex);
+                // setItems() resets selection to 0; restore without re-entering this callback.
+                $this->restylingSelection = true;
+                try {
+                    $this->listWidget->setItems($items);
+                    $this->listWidget->setSelectedIndex($selectedIndex);
+                } finally {
+                    $this->restylingSelection = false;
+                }
+            },
+        );
         $this->container->add($this->listWidget);
 
         $screen->insertOverlayAfterEditor($this->container);
     }
 
     /**
-     * Sync the SelectListWidget with the latest {@see CompletionState}.
+     * Sync the SelectListWidget with a new suggestion set (live typing).
      *
-     * Updates items (for suggestion-set changes, e.g. live typing) and
-     * selected index (for navigation).  Does NOT destroy/recreate the
-     * overlay — the same SelectListWidget stays in the widget tree.
+     * Resets selection to the first item. Does not destroy the overlay.
      */
     public function update(ChatScreen $screen, CompletionState $state): void
     {
@@ -95,13 +105,29 @@ final class CompletionMenu
             return;
         }
 
-        $items = self::buildItems(
-            $state->getSuggestions(),
-            $this->theme,
-            $state->getSelectedIndex(),
-        );
+        $items = self::buildItems($state->getSuggestions(), $this->theme, 0);
         $this->listWidget->setItems($items);
-        $this->listWidget->setSelectedIndex($state->getSelectedIndex());
+        $this->listWidget->setSelectedIndex(0);
+    }
+
+    /**
+     * Forward raw input to the unfocused SelectListWidget (Up/Down navigation).
+     */
+    public function handleNavigationInput(string $data): void
+    {
+        $this->listWidget?->handleInput($data);
+    }
+
+    /**
+     * Selected SelectListWidget item value (suggestion index as string), or null.
+     */
+    public function selectedValue(): ?string
+    {
+        $item = $this->listWidget?->getSelectedItem();
+
+        return \is_array($item) && isset($item['value']) && \is_string($item['value'])
+            ? $item['value']
+            : null;
     }
 
     /**
@@ -116,6 +142,7 @@ final class CompletionMenu
         }
         $this->container = null;
         $this->listWidget = null;
+        $this->restylingSelection = false;
     }
 
     public function isOpen(): bool
@@ -124,19 +151,6 @@ final class CompletionMenu
     }
 
     /**
-     * Build SelectListWidget item arrays from completion suggestions.
-     *
-     * Value is the suggestion index (string) so callers can map back
-     * when needed.  The label is theme-coloured (accent when selected,
-     * default when not) so the selected row is visibly distinct beyond
-     * SelectListWidget's built-in bold alone.  Descriptions are rendered
-     * in muted colour, matching ModelPickerController's description style.
-     *
-     * When a suggestion has no description, the item array omits the
-     * 'description' key — this allows SelectListWidget to use the full
-     * available width for the label column (SelectListWidget clamps the
-     * label to 30 columns when descriptions are present).
-     *
      * @param list<\Ineersa\Tui\Completion\CompletionSuggestion> $suggestions
      *
      * @return list<array{value: string, label: string, description?: string}>
@@ -161,9 +175,6 @@ final class CompletionMenu
                 'label' => $label,
             ];
 
-            // Omit the description key when empty so SelectListWidget
-            // renders the label at full width instead of clamping to
-            // 30 columns in two-column description mode.
             if ('' !== $description) {
                 $item['description'] = $description;
             }

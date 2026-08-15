@@ -20,8 +20,10 @@ use Ineersa\Tui\Startup\LoadedResourcesWidget;
 use Ineersa\Tui\Status\StatusPanelWidget;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Ineersa\Tui\Transcript\HotkeyTableWidget;
 use Ineersa\Tui\Transcript\MarkdownThemeStyleSheetFactory;
 use Ineersa\Tui\Transcript\PendingMessagesWidget;
+use Ineersa\Tui\Transcript\SubagentProgressCardWidget;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptMountedWidget;
@@ -286,6 +288,8 @@ final class ChatScreen
         // Install Markdown sub-element styles before mounting transcript children so
         // attached MarkdownWidget instances resolve Hatfield theme tokens.
         $tui->addStyleSheet((new MarkdownThemeStyleSheetFactory())->create($this->theme));
+        $tui->addStyleSheet(HotkeyTableWidget::styleSheetFromPalette($this->theme->getPalette()));
+        $tui->addStyleSheet(SubagentProgressCardWidget::styleSheetFromPalette($this->theme->getPalette()));
 
         // Theme the native working loader with the existing Working palette token.
         $workingColor = $this->theme->getPalette()->get(ThemeColorEnum::Working);
