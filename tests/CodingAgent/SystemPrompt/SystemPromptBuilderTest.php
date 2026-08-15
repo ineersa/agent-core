@@ -106,9 +106,16 @@ final class SystemPromptBuilderTest extends TestCase
         $this->assertStringContainsString('- read: Read file contents', $result);
         $this->assertStringContainsString('- write: Write file contents', $result);
 
-        // Guidelines should appear in <guidelines>
+        // Guidelines appear grouped by owning tool under <guidelines>
+        $this->assertStringContainsString('<tool name="read">', $result);
         $this->assertStringContainsString('Use read for files', $result);
+        $this->assertStringContainsString('<tool name="write">', $result);
         $this->assertStringContainsString('Use write for files', $result);
+        $readPos = strpos($result, '<tool name="read">');
+        $writePos = strpos($result, '<tool name="write">');
+        $this->assertNotFalse($readPos);
+        $this->assertNotFalse($writePos);
+        $this->assertLessThan($writePos, $readPos);
     }
 
     public function testToolsListAndGuidelinesDeduped(): void
@@ -120,7 +127,7 @@ final class SystemPromptBuilderTest extends TestCase
             parametersJsonSchema: [],
             handler: $this->dummyHandler(),
             promptLine: '- read: Read file contents',
-            promptGuidelines: ['Read files as plain text'],
+            promptGuidelines: ['Read files as plain text', 'Read files as plain text'],
         );
         $registry->registerTool(
             name: 'read2',
@@ -137,10 +144,69 @@ final class SystemPromptBuilderTest extends TestCase
         // Deduped lines: '- read: Read file contents' appears only once
         $this->assertSame(1, substr_count($result, '- read: Read file contents'));
 
-        // Deduped guidelines: 'Read files as plain text' appears only once
-        $this->assertSame(1, substr_count($result, 'Read files as plain text'));
-        // 'Use read for text files' appears once
+        // Within-tool guideline dedupe for read; read2 still owns its own copy.
+        $this->assertStringContainsString('<tool name="read">', $result);
+        $this->assertStringContainsString('<tool name="read2">', $result);
+        $this->assertSame(2, substr_count($result, 'Read files as plain text'));
         $this->assertSame(1, substr_count($result, 'Use read for text files'));
+    }
+
+    public function testGuidelinesRenderGroupedByToolWithEscapedNameAndNoEmptyGroups(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'bash',
+            description: 'Bash',
+            parametersJsonSchema: [],
+            handler: $this->dummyHandler(),
+            promptLine: '- bash: runs shell',
+            promptGuidelines: ['Bash guide A', 'Bash guide B'],
+        );
+        $registry->registerTool(
+            name: 'empty_tool',
+            description: 'No guidelines',
+            parametersJsonSchema: [],
+            handler: $this->dummyHandler(),
+            promptLine: '- empty_tool: silent',
+            promptGuidelines: [],
+        );
+        $registry->registerTool(
+            name: 'weird"name',
+            description: 'Needs attribute escaping',
+            parametersJsonSchema: [],
+            handler: $this->dummyHandler(),
+            promptLine: '- weird: escaped name',
+            promptGuidelines: ['Escaped owner guide'],
+        );
+
+        $builder = $this->createBuilder($registry);
+        $result = $builder->build();
+
+        $expected = <<<'XML'
+<tool name="bash">
+Bash guide A
+Bash guide B
+</tool>
+<tool name="weird&quot;name">
+Escaped owner guide
+</tool>
+XML;
+        $this->assertStringContainsString($expected, $result);
+        $this->assertStringNotContainsString('<tool name="empty_tool">', $result);
+        $this->assertStringNotContainsString('name="weird"name"', $result);
+    }
+
+    public function testChildHarnessGuidelinesAreSubsetGrouped(): void
+    {
+        $registry = $this->createRegistryWithTools();
+        $builder = $this->createBuilder($registry);
+
+        $fragment = $builder->buildChildHarnessFragment(['read']);
+
+        $this->assertStringContainsString('<tool name="read">', $fragment);
+        $this->assertStringContainsString('Use read for files', $fragment);
+        $this->assertStringNotContainsString('<tool name="write">', $fragment);
+        $this->assertStringNotContainsString('Use write for files', $fragment);
     }
 
     /* ───────── Template override precedence ───────── */
@@ -363,7 +429,10 @@ final class SystemPromptBuilderTest extends TestCase
         $result = $builder->build();
 
         $this->assertStringContainsString('Tools: [- read: Read file contents'."\n".'- write: Write file contents]', $result);
-        $this->assertStringContainsString('Guidelines: [Use read for files'."\n".'Use write for files]', $result);
+        $this->assertStringContainsString(
+            'Guidelines: [<tool name="read">'."\n".'Use read for files'."\n".'</tool>'."\n".'<tool name="write">'."\n".'Use write for files'."\n".'</tool>]',
+            $result,
+        );
         $this->assertStringContainsString('Appends: [Extra guidelines: ignore]', $result);
         $this->assertStringContainsString('Date: ['.date('Y-m-d').']', $result);
         $this->assertStringContainsString('CWD: ['.$this->tmpDir.']', $result);
@@ -527,6 +596,8 @@ final class SystemPromptBuilderTest extends TestCase
         $this->assertStringContainsString('<available_tools>', $fragment);
         $this->assertStringContainsString('Read file contents', $fragment);
         $this->assertStringNotContainsString('Write file contents', $fragment);
+        $this->assertStringContainsString('<tool name="read">', $fragment);
+        $this->assertStringNotContainsString('<tool name="write">', $fragment);
         $this->assertStringNotContainsString('<available_agents>', $fragment);
         $this->assertStringContainsString('Current working directory:', $fragment);
     }

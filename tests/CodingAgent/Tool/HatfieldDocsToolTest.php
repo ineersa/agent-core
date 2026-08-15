@@ -70,6 +70,11 @@ final class HatfieldDocsToolTest extends TestCase
         $this->assertFalse($def->parametersJsonSchema['additionalProperties']);
         $this->assertSame(['list', 'read'], $def->parametersJsonSchema['properties']['operation']['enum']);
         $this->assertArrayNotHasKey('enum', $def->parametersJsonSchema['properties']['id']);
+        $this->assertSame(1, $def->parametersJsonSchema['properties']['id']['minLength']);
+        $this->assertSame(
+            ['Use hatfield_docs for questions about Hatfield behavior, configuration, or usage; call list first when the relevant document ID is unknown.'],
+            $def->promptGuidelines,
+        );
 
         $list = $this->invokeList();
         $this->assertSame(

@@ -5,9 +5,16 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Export;
 
 use Ineersa\Tui\Command\TranscriptMessage;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Platform\Tool\Tool;
 
 final class SessionEventsExportService
 {
+    public function __construct(
+        private readonly ?ToolboxInterface $toolbox = null,
+    ) {
+    }
+
     public function exportEventsFile(
         string $eventsPath,
         string $outputPath,
@@ -228,6 +235,10 @@ HTML;
         $html = '';
         $currentTurn = -1;
 
+        // Live toolbox snapshot for HTML only — never persisted into events/JSONL.
+        $toolDefinitionsHtml = $this->renderActiveToolDefinitions();
+        $toolDefinitionsPending = '' !== $toolDefinitionsHtml;
+
         // Cross-reference maps built from the full event stream.
         // toolNames: tool_call_id → tool_name (from tool_execution_start).
         // toolArgs:   tool_call_id → arguments (from llm_step_completed.assistant_message.tool_calls).
@@ -290,7 +301,25 @@ HTML;
                 $html .= '  <div class="turn-label">Turn '.$turnNo.'</div>'."\n";
             }
 
-            $html .= $this->renderEvent($event, $toolNames, $toolArgs);
+            $injectTools = $toolDefinitionsPending && 'run_started' === $type;
+            $html .= $this->renderEvent(
+                $event,
+                $toolNames,
+                $toolArgs,
+                $injectTools ? $toolDefinitionsHtml : '',
+            );
+            if ($injectTools) {
+                $toolDefinitionsPending = false;
+            }
+        }
+
+        // No run_started event: still emit definitions once before closing.
+        if ($toolDefinitionsPending) {
+            if ($currentTurn < 0) {
+                $html = $toolDefinitionsHtml.$html;
+            } else {
+                $html .= $toolDefinitionsHtml;
+            }
         }
 
         if ($currentTurn >= 0) {
@@ -308,10 +337,11 @@ HTML;
      * event types additionally receive a human-friendly readable summary.
      *
      * @param array<string, mixed>  $event
-     * @param array<string, string> $toolNames tool_call_id → tool_name map
-     * @param array<string, mixed>  $toolArgs  tool_call_id → arguments map
+     * @param array<string, string> $toolNames           tool_call_id → tool_name map
+     * @param array<string, mixed>  $toolArgs            tool_call_id → arguments map
+     * @param string                $toolDefinitionsHtml optional one-shot live tool dump for run_started
      */
-    private function renderEvent(array $event, array $toolNames = [], array $toolArgs = []): string
+    private function renderEvent(array $event, array $toolNames = [], array $toolArgs = [], string $toolDefinitionsHtml = ''): string
     {
         $type = self::strFromArray($event, 'type');
         $seq = self::intFromArray($event, 'seq');
@@ -320,7 +350,7 @@ HTML;
 
         // Friendly readable summary (may be empty for unknown / turn-advanced events).
         $readable = match ($type) {
-            'run_started' => $this->renderRunStarted($payload),
+            'run_started' => $this->renderRunStarted($payload, $toolDefinitionsHtml),
             'llm_step_completed' => $this->renderAssistantMessage($payload),
             'llm_step_failed' => $this->renderAssistantFailed($payload),
             'llm_step_aborted' => $this->renderTurnCancelled($payload),
@@ -382,24 +412,24 @@ HTML;
      *
      * @param array<string, mixed> $payload
      */
-    private function renderRunStarted(array $payload): string
+    private function renderRunStarted(array $payload, string $toolDefinitionsHtml = ''): string
     {
         // Primary path: payload.payload.messages (real events.jsonl).
         $nestedPayload = $payload['payload'] ?? null;
         if (\is_array($nestedPayload)) {
             $messages = $nestedPayload['messages'] ?? null;
             if (\is_array($messages)) {
-                return $this->renderMessages($messages);
+                return $this->renderMessages($messages, $toolDefinitionsHtml);
             }
         }
 
         // Fallback: payload.user_messages (test fixtures and older format).
         $userMessages = $payload['user_messages'] ?? null;
         if (\is_array($userMessages)) {
-            return $this->renderMessages($userMessages);
+            return $this->renderMessages($userMessages, $toolDefinitionsHtml);
         }
 
-        return '';
+        return $toolDefinitionsHtml;
     }
 
     /**
@@ -744,11 +774,15 @@ HTML;
      * Content may be a plain string or a list of typed content blocks
      * (e.g. [{"type":"text","text":"..."}]).
      *
+     * When $toolDefinitionsHtml is non-empty it is emitted once immediately after
+     * the first system message, or at the start of the message list if none exists.
+     *
      * @param array<int, array<string, mixed>> $messages
      */
-    private function renderMessages(array $messages): string
+    private function renderMessages(array $messages, string $toolDefinitionsHtml = ''): string
     {
         $html = '';
+        $toolsPending = '' !== $toolDefinitionsHtml;
 
         foreach ($messages as $msg) {
             if (!\is_array($msg)) {
@@ -791,7 +825,61 @@ HTML;
             }
 
             $html .= "  </div>\n";
+
+            // One-shot live tool definitions, right after System instructions.
+            if ($toolsPending && 'system' === $role) {
+                $html .= $toolDefinitionsHtml;
+                $toolsPending = false;
+            }
         }
+
+        // No system message: still emit once before the rest of the transcript.
+        if ($toolsPending) {
+            $html = $toolDefinitionsHtml.$html;
+        }
+
+        return $html;
+    }
+
+    /**
+     * Live active-tool dump from Symfony AI toolbox (HTML export only).
+     *
+     * Reads current provider-visible tools at export time. Empty toolbox or
+     * missing injection produces no section — never an empty shell.
+     */
+    private function renderActiveToolDefinitions(): string
+    {
+        if (null === $this->toolbox) {
+            return '';
+        }
+
+        /** @var list<Tool> $tools */
+        $tools = $this->toolbox->getTools();
+        if ([] === $tools) {
+            return '';
+        }
+
+        $count = \count($tools);
+        $html = '  <details class="tool-definitions" open>'."\n";
+        $html .= '    <summary>'.self::escapeHtml(\sprintf('Tool definitions (%d)', $count))."</summary>\n";
+
+        foreach ($tools as $tool) {
+            $name = self::escapeHtml($tool->getName());
+            $description = self::escapeHtml($tool->getDescription());
+            $parameters = $tool->getParameters() ?? new \stdClass();
+            $json = json_encode($parameters, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+            if (!\is_string($json)) {
+                $json = '{}';
+            }
+
+            $html .= '    <div class="tool-definition">'."\n";
+            $html .= '      <div class="tool-definition-name">'.$name."</div>\n";
+            $html .= '      <div class="tool-definition-description">'.$description."</div>\n";
+            $html .= '      <pre class="pretty-json">'.self::escapeHtml($json)."</pre>\n";
+            $html .= "    </div>\n";
+        }
+
+        $html .= "  </details>\n";
 
         return $html;
     }
@@ -1123,6 +1211,39 @@ body {
 .available-tools-list {
     margin: 0.4rem 0 0 1.1rem;
     color: var(--text);
+}
+.tool-definitions {
+    margin: 0.5rem 1rem 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.85rem;
+}
+.tool-definitions summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+.tool-definition {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+}
+.tool-definition:first-of-type {
+    margin-top: 0.5rem;
+    padding-top: 0;
+    border-top: none;
+}
+.tool-definition-name {
+    font-family: var(--mono);
+    font-weight: 600;
+    color: var(--accent);
+}
+.tool-definition-description {
+    margin: 0.35rem 0 0.5rem;
+    color: var(--text);
+    white-space: pre-wrap;
 }
 .event-raw summary {
     font-size: 0.72rem;

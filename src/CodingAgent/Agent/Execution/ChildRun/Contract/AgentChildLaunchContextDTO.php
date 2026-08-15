@@ -12,7 +12,6 @@ final readonly class AgentChildLaunchContextDTO
     public function __construct(
         public string $agentsMd,
         public string $skillsContext,
-        public string $agentsDefinitionsContext,
     ) {
     }
 }

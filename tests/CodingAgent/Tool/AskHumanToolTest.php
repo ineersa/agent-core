@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
 use Ineersa\CodingAgent\Tool\AskHumanTool;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
@@ -65,6 +66,7 @@ final class AskHumanToolTest extends TestCase
 
         $this->assertSame('object', $schema['type']);
         $this->assertArrayHasKey('question', $schema['properties']);
+        $this->assertArrayNotHasKey('prompt', $schema['properties']);
         $this->assertContains('question', $schema['required']);
         $this->assertArrayHasKey('additionalProperties', $schema);
         $this->assertFalse($schema['additionalProperties']);
@@ -77,9 +79,11 @@ final class AskHumanToolTest extends TestCase
 
         $this->assertArrayNotHasKey('schema', $properties);
         $this->assertArrayHasKey('kind', $properties);
+        $this->assertSame(['confirm'], $properties['kind']['enum']);
+        $this->assertArrayNotHasKey('ui_kind', $properties);
         $this->assertArrayHasKey('choices', $properties);
-        $this->assertArrayHasKey('default', $properties);
-        $this->assertArrayHasKey('question_id', $properties);
+        $this->assertArrayNotHasKey('default', $properties);
+        $this->assertArrayNotHasKey('question_id', $properties);
         $this->assertArrayHasKey('header', $properties);
         $this->assertArrayNotHasKey('allow_other', $properties);
     }
@@ -124,29 +128,6 @@ final class AskHumanToolTest extends TestCase
         $this->assertSame('Approve?', $result['prompt']);
     }
 
-    public function testInvokePrefersPromptOverQuestion(): void
-    {
-        $result = ($this->tool)([
-            'question' => 'Approve?',
-            'prompt' => 'Please approve this action.',
-        ]);
-
-        $this->assertSame('Please approve this action.', $result['prompt']);
-    }
-
-    public function testInvokeAcceptsPromptAsAlias(): void
-    {
-        $result = ($this->tool)([
-            'prompt' => 'Only prompt, no question.',
-        ]);
-
-        $this->assertIsArray($result);
-        $this->assertSame('interrupt', $result['kind']);
-        $this->assertSame('Only prompt, no question.', $result['prompt']);
-        $this->assertArrayHasKey('question_id', $result);
-        $this->assertStringStartsWith('ah_', $result['question_id']);
-    }
-
     public function testRejectsMissingQuestion(): void
     {
         $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
@@ -162,16 +143,6 @@ final class AskHumanToolTest extends TestCase
 
         $this->assertArrayHasKey('question_id', $first);
         $this->assertSame($first['question_id'], $second['question_id']);
-    }
-
-    public function testInvokeUsesProvidedQuestionId(): void
-    {
-        $result = ($this->tool)([
-            'question' => 'Approve?',
-            'question_id' => 'my-custom-id',
-        ]);
-
-        $this->assertSame('my-custom-id', $result['question_id']);
     }
 
     public function testInvokeReturnsDefaultSchemaWhenNoneProvided(): void
@@ -213,7 +184,6 @@ final class AskHumanToolTest extends TestCase
         $result = ($this->tool)([
             'question' => 'Pick one:',
             'choices' => ['simple', 'robust', 'fast'],
-            'kind' => 'choice',
         ]);
 
         $this->assertSame('choice', $result['ui_kind']);
@@ -238,20 +208,6 @@ final class AskHumanToolTest extends TestCase
         $this->assertSame(['option-a', 'option-b'], $result['schema']['enum']);
     }
 
-    /* ── Approval question ── */
-
-    public function testApprovalKind(): void
-    {
-        $result = ($this->tool)([
-            'question' => 'Approve deployment?',
-            'kind' => 'approval',
-            'default' => false,
-        ]);
-
-        $this->assertSame('approval', $result['ui_kind']);
-        $this->assertSame(['type' => 'boolean'], $result['schema']);
-    }
-
     /* ── Optional metadata ── */
 
     public function testPreservesHeader(): void
@@ -262,17 +218,6 @@ final class AskHumanToolTest extends TestCase
         ]);
 
         $this->assertSame('Destructive Action', $result['header']);
-    }
-
-    public function testPreservesDefault(): void
-    {
-        $result = ($this->tool)([
-            'question' => 'Proceed?',
-            'kind' => 'confirm',
-            'default' => true,
-        ]);
-
-        $this->assertTrue($result['default']);
     }
 
     /* ── Edge cases ── */
@@ -304,26 +249,36 @@ final class AskHumanToolTest extends TestCase
         ($this->tool)(['question' => '']);
     }
 
-    public function testRejectsInvalidKind(): void
+    #[DataProvider('invalidKindProvider')]
+    public function testRejectsInvalidKind(string $kind): void
     {
         $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
         $this->expectExceptionMessage('Unsupported kind');
 
         ($this->tool)([
-            'question' => 'Test?',
-            'kind' => 'invalid_kind',
+            'question' => 'Approve deployment?',
+            'kind' => $kind,
         ]);
     }
 
-    public function testRejectsInvalidUiKind(): void
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function invalidKindProvider(): iterable
     {
-        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
-        $this->expectExceptionMessage('Unsupported');
+        yield 'approval' => ['approval'];
+        yield 'text' => ['text'];
+        yield 'choice' => ['choice'];
+    }
 
-        ($this->tool)([
+    public function testFormerUiKindInputAliasIsIgnored(): void
+    {
+        $result = ($this->tool)([
             'question' => 'Test?',
-            'ui_kind' => 'bogus',
+            'ui_kind' => 'confirm',
         ]);
+
+        $this->assertSame('text', $result['ui_kind']);
     }
 
     public function testRejectsNestedObjectChoices(): void
@@ -339,26 +294,26 @@ final class AskHumanToolTest extends TestCase
         ]);
     }
 
-    public function testRejectsKindChoiceWithoutChoices(): void
-    {
-        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
-        $this->expectExceptionMessage('required when kind');
-
-        ($this->tool)([
-            'question' => 'Pick one:',
-            'kind' => 'choice',
-        ]);
-    }
-
-    public function testRejectsKindChoiceWithEmptyChoices(): void
+    public function testRejectsEmptyChoicesList(): void
     {
         $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
         $this->expectExceptionMessage('At least one');
 
         ($this->tool)([
             'question' => 'Pick one:',
-            'kind' => 'choice',
             'choices' => [],
+        ]);
+    }
+
+    public function testRejectsConfirmWithChoices(): void
+    {
+        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectExceptionMessage('mutually exclusive');
+
+        ($this->tool)([
+            'question' => 'Proceed?',
+            'kind' => 'confirm',
+            'choices' => ['yes', 'no'],
         ]);
     }
 
