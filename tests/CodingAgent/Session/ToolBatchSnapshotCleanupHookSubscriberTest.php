@@ -33,19 +33,8 @@ use Ineersa\CodingAgent\Tests\Session\Support\ParentSessionToolBatchRunStoragePa
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
-use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
-use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
-use Symfony\Component\PropertyInfo\PropertyInfoExtractor;
-use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
-use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
-use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
-use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
 
 final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
 {
@@ -190,10 +179,9 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
 
     private function createRunCommit(SessionToolBatchStore $store, InMemoryRunStore $runStore): RunCommit
     {
-        $serializer = $this->createAfterTurnCommitSerializer();
         $hookDispatcher = new HookDispatcher([
             new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger()),
-        ], new EventDispatcher(), $serializer, $serializer);
+        ]);
 
         return new RunCommit(
             runStore: $runStore,
@@ -204,20 +192,6 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             logger: new TestLogger(),
             hookDispatcher: $hookDispatcher,
         );
-    }
-
-    private function createAfterTurnCommitSerializer(): Serializer
-    {
-        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
-
-        return new Serializer([
-            new ArrayDenormalizer(),
-            new ObjectNormalizer(
-                classMetadataFactory: $classMetadataFactory,
-                nameConverter: new MetadataAwareNameConverter($classMetadataFactory, new CamelCaseToSnakeCaseNameConverter()),
-                propertyTypeExtractor: new PropertyInfoExtractor([new PhpDocExtractor(), new ReflectionExtractor()]),
-            ),
-        ]);
     }
 }
 
