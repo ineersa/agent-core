@@ -25,6 +25,22 @@ final class AgentRetrieveToolTest extends IsolatedKernelTestCase
             ['handoff', 'metadata', 'events', 'history', 'debug'],
             $def->parametersJsonSchema['properties']['mode']['enum'] ?? [],
         );
+        $this->assertSame(1, $def->parametersJsonSchema['properties']['artifact_id']['minLength']);
+        $this->assertSame(1, $def->parametersJsonSchema['properties']['agent_run_id']['minLength']);
+        $this->assertSame(
+            'agent_retrieve artifact_id=<id>|agent_run_id=<uuid> [mode] [limit=N] — retrieve a subagent artifact',
+            $def->promptLine,
+        );
+        $this->assertSame(
+            [
+                'Use agent_retrieve when parallel subagent summaries were truncated, a child failed/cancelled/timed out, or you need metadata/events/history/debug — not for successful single-mode subagent handoffs already returned inline.',
+                'Provide artifact_id and/or agent_run_id from the current parent session only; cross-parent retrieval is rejected.',
+                'Use metadata for status, timestamps, and counts without raw message or tool output.',
+                'Use events or history for bounded debugging summaries; payloads and prompts are omitted by default.',
+                'Use debug for relative artifact paths only — not absolute filesystem paths.',
+            ],
+            $def->promptGuidelines,
+        );
         $this->assertSame(\Ineersa\AgentCore\Domain\Tool\ToolExecutionMode::Sequential, $def->executionMode);
     }
 

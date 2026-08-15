@@ -18,6 +18,9 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Platform\Tool\ExecutionReference;
+use Symfony\AI\Platform\Tool\Tool;
 
 #[CoversClass(ExportCommandHandler::class)]
 final class ExportCommandHandlerTest extends TestCase
@@ -272,6 +275,160 @@ final class ExportCommandHandlerTest extends TestCase
     }
 
     #[Test]
+    public function htmlExportRendersLiveToolDefinitionsOnceAfterSystemInstructions(): void
+    {
+        $instructionText = str_repeat('You are an assistant. Follow the rules. ', 15);
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'path' => ['type' => 'string', 'description' => 'File <path>'],
+            ],
+            'required' => ['path'],
+            'additionalProperties' => false,
+        ];
+        $tools = [
+            new Tool(
+                new ExecutionReference(self::class),
+                'read',
+                'Read a text file <carefully>',
+                $schema,
+            ),
+            new Tool(
+                new ExecutionReference(self::class),
+                'bash',
+                'Run shell commands',
+                null,
+            ),
+        ];
+
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => [
+                    'messages' => [
+                        ['role' => 'system', 'content' => [['type' => 'text', 'text' => $instructionText]]],
+                        ['role' => 'user-context', 'content' => [['type' => 'text', 'text' => 'Context info']]],
+                        ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]],
+                    ],
+                ],
+            ]),
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'text' => 'Response.',
+                'stop_reason' => 'end_turn',
+                'available_tools' => ['read', 'bash'],
+                'available_tools_schema_tokens_estimate' => 42,
+            ]),
+            $this->makeEvent(3, 2, 'llm_step_completed', [
+                'step_id' => 's3',
+                'text' => 'Second turn.',
+                'stop_reason' => 'end_turn',
+                'available_tools' => ['read', 'bash'],
+                'available_tools_schema_tokens_estimate' => 42,
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/live-tool-definitions.html';
+        $handler = $this->createHandler('test-session', $this->createToolbox($tools));
+        $result = $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $html = (string) file_get_contents($path);
+
+        $this->assertSame(1, substr_count($html, 'class="tool-definitions"'));
+        $this->assertStringContainsString('Tool definitions (2)', $html);
+        $this->assertStringContainsString('class="tool-definition-name">read</div>', $html);
+        $this->assertStringContainsString('class="tool-definition-name">bash</div>', $html);
+        $this->assertStringContainsString('Read a text file &lt;carefully&gt;', $html);
+        $this->assertStringContainsString('Run shell commands', $html);
+        $this->assertStringContainsString('File &lt;path&gt;', $html);
+        $this->assertStringContainsString('&quot;additionalProperties&quot;: false', $html);
+        // null parameters render as empty object, not null/empty section.
+        $this->assertMatchesRegularExpression(
+            '/tool-definition-name">bash<\/div>\s*<div class="tool-definition-description">Run shell commands<\/div>\s*<pre class="pretty-json">\{\}<\/pre>/s',
+            $html,
+        );
+
+        $systemPos = strpos($html, 'System instructions');
+        $toolsPos = strpos($html, 'class="tool-definitions"');
+        $contextPos = strpos($html, 'Context info');
+        $userPos = strpos($html, 'Hello');
+        $this->assertNotFalse($systemPos);
+        $this->assertNotFalse($toolsPos);
+        $this->assertNotFalse($contextPos);
+        $this->assertNotFalse($userPos);
+        $this->assertLessThan($toolsPos, $systemPos);
+        $this->assertLessThan($contextPos, $toolsPos);
+        $this->assertLessThan($userPos, $toolsPos);
+
+        // Per-LLM-event available_tools name snapshots remain unchanged.
+        $this->assertSame(2, substr_count($html, 'class="available-tools"'));
+    }
+
+    #[Test]
+    public function htmlExportOmitsToolDefinitionsWhenToolboxEmpty(): void
+    {
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => [
+                    'messages' => [
+                        ['role' => 'system', 'content' => [['type' => 'text', 'text' => str_repeat('System. ', 80)]]],
+                        ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]],
+                    ],
+                ],
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/no-tool-definitions.html';
+        $handler = $this->createHandler('test-session', $this->createToolbox([]));
+        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $html = (string) file_get_contents($path);
+        $this->assertStringNotContainsString('class="tool-definitions"', $html);
+        $this->assertStringNotContainsString('Tool definitions (', $html);
+        $this->assertStringContainsString('System instructions', $html);
+    }
+
+    #[Test]
+    public function jsonlExportDoesNotInjectLiveToolDefinitions(): void
+    {
+        $tools = [
+            new Tool(
+                new ExecutionReference(self::class),
+                'read',
+                'Read a text file',
+                ['type' => 'object'],
+            ),
+        ];
+
+        $eventsData = [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'user_messages' => [['role' => 'user', 'content' => 'Hello']],
+            ]),
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'text' => 'Response.',
+                'stop_reason' => 'end_turn',
+            ]),
+        ];
+        $this->setupEventsFile('test-session', $eventsData);
+
+        $sourcePath = $this->getEventsPath('test-session');
+        $source = (string) file_get_contents($sourcePath);
+
+        $path = $this->projectDir.'/export-live-tools.jsonl';
+        $handler = $this->createHandler('test-session', $this->createToolbox($tools));
+        $result = $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame($source, (string) file_get_contents($path));
+        $this->assertStringNotContainsString('Tool definitions', (string) file_get_contents($path));
+        $this->assertStringNotContainsString('Read a text file', (string) file_get_contents($path));
+    }
+
+    #[Test]
     public function exportsHtmlToGivenPath(): void
     {
         $this->setupEventsFile('test-session', [
@@ -358,7 +515,7 @@ final class ExportCommandHandlerTest extends TestCase
         $handler = new ExportCommandHandler(
             new TuiSessionState($sessionId),
             $sessionStore,
-            new SessionEventsExportService(),
+            new SessionEventsExportService(null),
         );
 
         $path = $this->projectDir.'/no-db-metadata.jsonl';
@@ -1007,7 +1164,7 @@ You are a helpful assistant.
         ];
     }
 
-    private function createHandler(string $sessionId): ExportCommandHandler
+    private function createHandler(string $sessionId, ?ToolboxInterface $toolbox = null): ExportCommandHandler
     {
         $state = new TuiSessionState($sessionId);
 
@@ -1024,7 +1181,18 @@ You are a helpful assistant.
             entityManager: $this->createStub(EntityManagerInterface::class),
         );
 
-        return new ExportCommandHandler($state, $sessionStore, new SessionEventsExportService());
+        return new ExportCommandHandler($state, $sessionStore, new SessionEventsExportService($toolbox));
+    }
+
+    /**
+     * @param list<Tool> $tools
+     */
+    private function createToolbox(array $tools): ToolboxInterface
+    {
+        $toolbox = $this->createStub(ToolboxInterface::class);
+        $toolbox->method('getTools')->willReturn($tools);
+
+        return $toolbox;
     }
 
     private function removeDir(string $dir): void

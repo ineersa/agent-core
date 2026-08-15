@@ -140,13 +140,11 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             ],
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
-            promptLine: 'read path [offset=N] [limit=N] — read a text file as plain content; supports offset and limit for partial reads; use view_image for images',
+            promptLine: 'read path [offset=N] [limit=N] — read all or part of a text file as plain content; use view_image for images',
             promptGuidelines: [
-                'Output is plain file text without line-number prefixes.',
                 'Use offset and limit together for follow-up reads after large or capped output — avoid reading huge files wholesale.',
-                'Reading without offset/limit returns up to 2000 lines from the beginning.',
                 'Binary files, image files, and PDFs are rejected — use view_image for images.',
-                'Output is capped by character limit. Use read with offset=1 limit=200 on saved files instead of reading them wholesale.',
+                'Output may be capped by character limit and saved to a temporary file. Use read with offset and limit to inspect saved output in smaller chunks.',
                 'Device paths (/dev/*) and /proc/*/fd/* paths are rejected for safety.',
             ],
         );

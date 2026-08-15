@@ -16,7 +16,6 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
-use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
@@ -333,7 +332,6 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             'policyResolver' => $policy,
             'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
             'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
-            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
             'artifactRegistry' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry::class),
             'agentRunner' => $agentRunner,
             'runStore' => $this->pollingChildRunStore($childRunStore),

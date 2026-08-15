@@ -469,7 +469,6 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $launchInputFactory = new \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory(
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Skills\SkillsContextBuilder::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder::class),
             $parentRunStore ?? self::getContainer()->get(RunStoreInterface::class),
             $appConfig,
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\ChildExtensionSelectionService::class),

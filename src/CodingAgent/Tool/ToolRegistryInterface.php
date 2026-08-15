@@ -151,6 +151,23 @@ interface ToolRegistryInterface
     public function permanentGuidelinesForNames(array $names): array;
 
     /**
+     * Return permanent tool guidelines grouped by owning tool name.
+     *
+     * Iterates permanent registration order. Only visible permanent tools with
+     * non-empty guideline lists contribute a group. When {@see $names} is null,
+     * all visible permanent tools are considered; when provided, only the
+     * requested permanent names (still filtered by visibility). Dynamic/MCP
+     * tools and unknown names are ignored.
+     *
+     * Guidelines are deduped within each tool group only (first occurrence wins).
+     *
+     * @param list<string>|null $names null = all visible permanent tools
+     *
+     * @return array<string, list<string>> Map of tool name => ordered unique guidelines
+     */
+    public function permanentGuidelinesByTool(?array $names = null): array;
+
+    /**
      * Set the allowed tool names (allowlist).
      *
      * When non-empty, only tools whose name is in this set are visible

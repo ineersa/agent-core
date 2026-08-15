@@ -480,6 +480,9 @@ parameters:
 
     TuiExport:
       - TuiCommand
+      # Live /export HTML tool definitions snapshot (ToolboxInterface + Tool).
+      - SymfonyAiAgent
+      - SymfonyAiPlatform
 
     TuiCommand:
       - TuiExtension

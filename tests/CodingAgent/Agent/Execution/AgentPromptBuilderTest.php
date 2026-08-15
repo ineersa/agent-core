@@ -53,7 +53,10 @@ final class AgentPromptBuilderTest extends TestCase
         $this->assertStringContainsString('CHILD_READ_LINE_UNIQUE', $result['systemPrompt']);
         $this->assertStringContainsString('CHILD_BASH_LINE_UNIQUE', $result['systemPrompt']);
         $this->assertStringContainsString('<guidelines>', $result['systemPrompt']);
+        $this->assertStringContainsString('<tool name="read">', $result['systemPrompt']);
         $this->assertStringContainsString('CHILD_READ_GUIDE_UNIQUE', $result['systemPrompt']);
+        $this->assertStringContainsString('<tool name="bash">', $result['systemPrompt']);
+        $this->assertStringContainsString('CHILD_BASH_GUIDE_UNIQUE', $result['systemPrompt']);
         $this->assertStringContainsString('Current date:', $result['systemPrompt']);
         $this->assertStringContainsString('Current working directory: '.$this->tmpDir, $result['systemPrompt']);
         $this->assertStringNotContainsString('<available_agents>', $result['systemPrompt']);
@@ -75,7 +78,11 @@ final class AgentPromptBuilderTest extends TestCase
         );
 
         $this->assertStringContainsString('CHILD_READ_LINE_UNIQUE', $result['systemPrompt']);
+        $this->assertStringContainsString('<tool name="read">', $result['systemPrompt']);
+        $this->assertStringContainsString('CHILD_READ_GUIDE_UNIQUE', $result['systemPrompt']);
         $this->assertStringNotContainsString('CHILD_BASH_LINE_UNIQUE', $result['systemPrompt']);
+        $this->assertStringNotContainsString('<tool name="bash">', $result['systemPrompt']);
+        $this->assertStringNotContainsString('CHILD_BASH_GUIDE_UNIQUE', $result['systemPrompt']);
         $this->assertStringNotContainsString('- subagent:', $result['systemPrompt']);
     }
 

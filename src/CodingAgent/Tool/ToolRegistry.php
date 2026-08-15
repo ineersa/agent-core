@@ -289,6 +289,48 @@ final class ToolRegistry implements ToolRegistryInterface
         return $guidelines;
     }
 
+    public function permanentGuidelinesByTool(?array $names = null): array
+    {
+        $requested = null;
+        if (null !== $names) {
+            $requested = $this->normalizeRequestedPermanentNames($names);
+            if ([] === $requested) {
+                return [];
+            }
+        }
+
+        $grouped = [];
+
+        foreach ($this->permanentOrder as $name) {
+            if (null !== $requested && !isset($requested[$name])) {
+                continue;
+            }
+            if (!$this->isToolVisible($name)) {
+                continue;
+            }
+
+            $toolGuidelines = [];
+            $seen = [];
+            foreach ($this->permanentTools[$name]->promptGuidelines as $guideline) {
+                $guideline = trim($guideline);
+                if ('' === $guideline || isset($seen[$guideline])) {
+                    continue;
+                }
+
+                $seen[$guideline] = true;
+                $toolGuidelines[] = $guideline;
+            }
+
+            if ([] === $toolGuidelines) {
+                continue;
+            }
+
+            $grouped[$name] = $toolGuidelines;
+        }
+
+        return $grouped;
+    }
+
     public function setAllowedToolNames(array $names): void
     {
         $allowed = [];

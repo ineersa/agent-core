@@ -186,6 +186,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     {
         $definition = $this->tool->definition();
         $this->assertSame('bg_status', $definition->name);
+        $this->assertSame(1, $definition->parametersJsonSchema['properties']['pid']['minimum']);
     }
 
     public function testDefinitionUsesParallelExecutionMode(): void

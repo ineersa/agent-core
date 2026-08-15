@@ -635,6 +635,41 @@ final class ToolRegistryTest extends TestCase
 ', $lines));
     }
 
+    public function testPermanentGuidelinesByToolGroupsInRegistrationOrderAndOmitsEmpty(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G-read-a', 'G-read-a', 'G-read-b']);
+        $this->registry->registerTool(name: 'write', description: 'Write', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'write: Write', promptGuidelines: []);
+        $this->registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'bash: Bash', promptGuidelines: ['G-bash']);
+
+        $this->assertSame(
+            [
+                'read' => ['G-read-a', 'G-read-b'],
+                'bash' => ['G-bash'],
+            ],
+            $this->registry->permanentGuidelinesByTool(),
+        );
+        // Flattened API remains cross-tool deduped and order-preserving.
+        $this->assertSame(['G-read-a', 'G-read-b', 'G-bash'], $this->registry->permanentGuidelines());
+    }
+
+    public function testPermanentGuidelinesByToolSubsetAndVisibility(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G-read']);
+        $this->registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'bash: Bash', promptGuidelines: ['G-bash']);
+        $this->registry->registerTool(name: 'fork', description: 'Fork', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'fork: Fork', promptGuidelines: ['G-fork']);
+        $this->registry->setExcludedToolNames(['fork']);
+        $this->registry->addDynamicTool(name: 'mcp_tool', description: 'Dynamic', parametersJsonSchema: [], handler: $this->dummyHandler());
+
+        $this->assertSame(
+            [
+                'read' => ['G-read'],
+                'bash' => ['G-bash'],
+            ],
+            $this->registry->permanentGuidelinesByTool(['bash', 'read', 'fork', 'mcp_tool', 'unknown']),
+        );
+        $this->assertSame([], $this->registry->permanentGuidelinesByTool([]));
+    }
+
     /* ───────── Private helpers ───────── */
 
     private function createProvider(

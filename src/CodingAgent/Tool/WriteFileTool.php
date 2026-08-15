@@ -102,12 +102,8 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
             ],
             handler: $this,
             executionMode: ToolExecutionMode::Sequential,
-            promptLine: 'write path content — create or overwrite a file; creates parent directories automatically; non-empty text is newline-terminated',
+            promptLine: 'write path content — create or overwrite a text file',
             promptGuidelines: [
-                'Non-empty content is automatically newline-terminated for POSIX text compatibility and edit tool reliability.',
-                'Parent directories are created automatically if they do not exist.',
-                'Overwrites the file entirely if it already exists.',
-                'Use when creating new files or replacing file content entirely.',
                 'The reported byte count reflects the written bytes after newline normalization.',
                 'For targeted edits to existing file content, use the edit tool instead.',
             ],

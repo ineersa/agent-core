@@ -31,7 +31,9 @@ use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
  *
  * Supported placeholders:
  *   {available_tools_list} — deduped permanent tool prompt lines
- *   {registered_guidelines} — deduped permanent tool guidelines
+ *   {registered_guidelines} — permanent tool guidelines grouped by owning tool
+ *     as <tool name="..."> blocks (registration order; tools with no guidelines
+ *     emit no group)
  *   {appends_part} — rendered append template content
  *   {date} — current date (Y-m-d)
  *   {cwd} — current working directory
@@ -288,13 +290,19 @@ final readonly class SystemPromptBuilder
     }
 
     /**
-     * Build the deduped guidelines string from permanent tools.
+     * Build permanent tool guidelines grouped by owning tool for {registered_guidelines}.
+     *
+     * Output shape (registration order; empty-guideline tools omitted):
+     *   <tool name="bash">
+     *   ...guidelines...
+     *   </tool>
+     *
+     * Tool-name attributes are XML-escaped. Guideline body text is trusted
+     * registry content and is not rewritten.
      */
     private function buildGuidelines(): string
     {
-        $guidelines = $this->toolRegistry->permanentGuidelines();
-
-        return implode("\n", $guidelines);
+        return $this->renderGroupedGuidelines($this->toolRegistry->permanentGuidelinesByTool());
     }
 
     /**
@@ -370,7 +378,31 @@ final readonly class SystemPromptBuilder
      */
     private function buildGuidelinesForNames(array $allowedToolNames): string
     {
-        return implode("\n", $this->toolRegistry->permanentGuidelinesForNames($allowedToolNames));
+        return $this->renderGroupedGuidelines(
+            $this->toolRegistry->permanentGuidelinesByTool($allowedToolNames),
+        );
+    }
+
+    /**
+     * @param array<string, list<string>> $grouped
+     */
+    private function renderGroupedGuidelines(array $grouped): string
+    {
+        if ([] === $grouped) {
+            return '';
+        }
+
+        $blocks = [];
+        foreach ($grouped as $toolName => $guidelines) {
+            if ([] === $guidelines) {
+                continue;
+            }
+
+            $escapedName = htmlspecialchars($toolName, \ENT_XML1 | \ENT_QUOTES, 'UTF-8');
+            $blocks[] = '<tool name="'.$escapedName."\">\n".implode("\n", $guidelines)."\n</tool>";
+        }
+
+        return implode("\n", $blocks);
     }
 
     /**

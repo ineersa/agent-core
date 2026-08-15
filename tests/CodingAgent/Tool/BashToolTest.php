@@ -671,14 +671,13 @@ final class BashToolTest extends IsolatedKernelTestCase
         // Prompt line must NOT advertise a run_in_background parameter
         $this->assertStringNotContainsStringIgnoringCase('run_in_background', $def->promptLine);
 
-        // Prompt guidelines must describe user-offered (not model-controlled) backgrounding
+        // Prompt guidelines must describe user-owned backgrounding and no-poll completion
         $guidelinesText = implode(' ', $def->promptGuidelines);
         $this->assertStringContainsStringIgnoringCase('user', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('bg_status', $guidelinesText);
-        // Guidelines must prove model-vs-user ownership: the model does not control backgrounding
-        $this->assertStringContainsStringIgnoringCase('does not control', $guidelinesText);
-        // Guidelines must explicitly state there is no run_in_background parameter
         $this->assertStringContainsStringIgnoringCase('no run_in_background', $guidelinesText);
+        $this->assertStringContainsStringIgnoringCase('report completion automatically', $guidelinesText);
+        $this->assertStringContainsStringIgnoringCase('do not poll', $guidelinesText);
     }
 
     /* ── No-context execution (session-less) ── */
