@@ -70,7 +70,7 @@ final class TuiSubagentProgressE2eTest extends TestCase
 
             $capture = $this->tmux->capturePlainWithHistory($pane, 2500);
 
-            // Polished card format after SubagentTranscriptCardBuilder:
+            // Polished card format after SubagentProgressCardWidget:
             //   ✓ scout [completed] — glyph + agent_name + status badge
             //   Task Inspect TUI subagent rendering — no colon
             //   Artifact artifacts/agents/agent_e2e_progress_fixture — full path, singular, no colon

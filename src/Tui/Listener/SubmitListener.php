@@ -30,7 +30,6 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
-use Ineersa\Tui\Transcript\HotkeyTableRenderer;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\SubmitEvent;
@@ -231,20 +230,19 @@ final class SubmitListener implements TuiListenerRegistrar
         }
 
         if ($result instanceof HotkeyTableData) {
-            // Render a theme-colored hotkeys table via TuiTranscript renderer.
-            $renderer = new HotkeyTableRenderer();
-            $styledText = $renderer->render(
-                self::hotkeyGroupsToArrays($result->groups),
-                $screen->theme(),
-                $result->emptyMessage,
-            );
+            // Structured hotkey metadata only — HotkeyTableWidget renders at display time.
+            // Plain empty text keeps events.jsonl free of pre-rendered ANSI.
             $seq = \count($state->transcript) + 1;
-            $state->appendTranscriptBlock($blockFactory->system(
+            $block = $blockFactory->system(
                 runId: $state->sessionId,
-                text: $styledText,
+                text: '',
                 seq: $seq,
                 style: 'hotkey-table',
-            ));
+            );
+            $state->appendTranscriptBlock($block->with(meta: array_merge($block->meta, [
+                'hotkey_groups' => self::hotkeyGroupsToArrays($result->groups),
+                'empty_message' => $result->emptyMessage,
+            ])));
             $screen->setTranscriptBlocks($state->transcript);
 
             return;
@@ -751,8 +749,9 @@ final class SubmitListener implements TuiListenerRegistrar
     // ─── Hotkey table data adapter ────────────────────────────────────
 
     /**
-     * Convert HotkeyTableData's grouped HotkeyBindingDTOs to plain arrays
-     * suitable for the theme-aware {@see HotkeyTableRenderer}.
+     * Convert HotkeyTableData's grouped HotkeyBindingDTOs to plain arrays for
+     * transcript meta (TuiListener → TuiTranscript). Shape is intentional plain
+     * arrays so TuiTranscript never imports HotkeyBindingDTO (Deptrac).
      *
      * @param array<string, list<HotkeyBindingDTO>> $groups
      *

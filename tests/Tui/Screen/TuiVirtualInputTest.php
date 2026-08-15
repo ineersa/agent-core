@@ -16,13 +16,14 @@ use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Listener\AppHotkeyRegistrar;
 use Ineersa\Tui\Listener\EditorHotkeyRegistrar;
 use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
-use Ineersa\Tui\Transcript\HotkeyTableRenderer;
+use Ineersa\Tui\Transcript\HotkeyTableWidget;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
+use Ineersa\Tui\Transcript\TranscriptBlockWidgetFactory;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Ansi\AnsiUtils;
 
 /**
  * Deterministic keyboard input and local command-route proofs without tmux.
@@ -90,7 +91,8 @@ final class TuiVirtualInputTest extends TestCase
     public function testHotkeysSlashCommandRoutesLocallyAndRendersKeyboardShortcutsTable(): void
     {
         $hotkeyRegistry = new HotkeyRegistry();
-        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        // Tall virtual screen so the full hotkeys catalog stays in the viewport.
+        $harness = new VirtualTuiHarness(columns: 120, rows: 80, sessionId: self::SESSION_ID);
         $state = new TuiSessionState(self::SESSION_ID);
 
         $context = $this->buildTuiContext()
@@ -109,14 +111,15 @@ final class TuiVirtualInputTest extends TestCase
         $this->assertNotInstanceOf(DispatchRuntime::class, $result);
         $this->assertFalse($result->isEmpty());
 
-        $styledText = $this->applyHotkeyTableToScreen($result, $state, $harness->screen());
+        $this->applyHotkeyTableToScreen($result, $state, $harness);
 
-        $this->assertStringContainsString('Keyboard shortcuts', $styledText);
+        $screen = $harness->plainScreenText();
+        $this->assertStringContainsString('Keyboard shortcuts', $screen);
 
         foreach (['┌', '├', '└', '│', '┐', '┤', '┘'] as $boxChar) {
             $this->assertStringContainsString(
                 $boxChar,
-                $styledText,
+                $screen,
                 \sprintf('/hotkeys output should contain box-drawing char "%s"', $boxChar),
             );
         }
@@ -124,30 +127,81 @@ final class TuiVirtualInputTest extends TestCase
         foreach (['Ctrl+C', 'Ctrl+D', 'Ctrl+O', 'Shift+Enter', 'Insert newline', 'Submit prompt', 'Enter', 'Tab'] as $entry) {
             $this->assertStringContainsString(
                 $entry,
-                $styledText,
+                $screen,
                 \sprintf('/hotkeys output should contain "%s"', $entry),
             );
         }
 
-        $screen = $harness->plainScreenText();
-        foreach (['Tab', 'Enter', 'Ctrl+P', 'Shift+Tab'] as $visibleEntry) {
-            $this->assertStringContainsString(
-                $visibleEntry,
-                $screen,
-                \sprintf('Virtual screen should surface hotkeys table entry "%s"', $visibleEntry),
+        $last = $state->transcript[array_key_last($state->transcript)] ?? null;
+        $this->assertNotNull($last);
+        $this->assertInstanceOf(
+            HotkeyTableWidget::class,
+            (new TranscriptBlockWidgetFactory())->buildWidget($last, $harness->screen()->theme()),
+            'Structured hotkey-table meta must produce HotkeyTableWidget via production factory',
+        );
+        // Mounted ChatScreen stylesheet applies theme tokens (ANSI) on the live path.
+        $this->assertMatchesRegularExpression('/\e\[[0-9;]*m/', $harness->ansiOutput());
+    }
+
+    #[Test]
+    public function testHotkeysTableReflowsAfterVirtualResize(): void
+    {
+        $hotkeyRegistry = new HotkeyRegistry();
+        $harness = new VirtualTuiHarness(columns: 120, rows: 80, sessionId: self::SESSION_ID);
+        $state = new TuiSessionState(self::SESSION_ID);
+
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState($state)
+            ->withScreen($harness->screen())
+            ->build();
+
+        (new AppHotkeyRegistrar($hotkeyRegistry))->register($context);
+        (new EditorHotkeyRegistrar($harness->screen()->promptEditor(), $hotkeyRegistry))->register($context);
+
+        $router = new SubmissionRouter(new CommandParser(), new SlashCommandRegistry($hotkeyRegistry));
+        $result = $router->route('/hotkeys');
+        $this->assertInstanceOf(HotkeyTableData::class, $result);
+
+        $this->applyHotkeyTableToScreen($result, $state, $harness);
+        $wide = $harness->plainScreenText();
+        $this->assertStringContainsString('Keyboard shortcuts', $wide);
+
+        $harness->startInputLoop();
+        try {
+            // Keep height tall so the table stays in-viewport; only width reflows.
+            $harness->terminal()->simulateResize(40, 80);
+            $harness->render();
+            $narrow = $harness->plainScreenText();
+        } finally {
+            $harness->stopInputLoop();
+        }
+
+        $this->assertStringContainsString('Keyboard shortcuts', $narrow);
+        $this->assertStringContainsString('Ctrl+C', $narrow);
+        $this->assertNotSame($wide, $narrow, 'Resize must reflow the mounted hotkey table');
+        $this->assertTrue(
+            str_contains($narrow, '…') || str_contains($narrow, 'Ct…') || \strlen($narrow) < \strlen($wide),
+            'Narrow reflow should truncate keys/descriptions or produce shorter output',
+        );
+
+        foreach (explode("\n", $narrow) as $i => $line) {
+            $this->assertLessThanOrEqual(
+                40,
+                AnsiUtils::visibleWidth($line),
+                "mounted row {$i} exceeds narrow width after resize",
             );
         }
     }
 
     /**
-     * Mirror {@see \Ineersa\Tui\Listener\SubmitListener} hotkey-table application for virtual screen proof.
+     * Mirror {@see \Ineersa\Tui\Listener\SubmitListener} structured hotkey-table application.
      */
     private function applyHotkeyTableToScreen(
         HotkeyTableData $result,
         TuiSessionState $state,
-        ChatScreen $screen,
-    ): string {
-        $renderer = new HotkeyTableRenderer();
+        VirtualTuiHarness $harness,
+    ): void {
         $groups = [];
         foreach ($result->groups as $context => $bindings) {
             $groups[$context] = array_map(
@@ -160,21 +214,17 @@ final class TuiVirtualInputTest extends TestCase
             );
         }
 
-        $styledText = $renderer->render(
-            $groups,
-            $screen->theme(),
-            $result->emptyMessage,
-        );
-
         $factory = new TranscriptBlockFactory();
-        $state->transcript[] = $factory->system(
+        $block = $factory->system(
             runId: $state->sessionId,
-            text: $styledText,
+            text: '',
             seq: \count($state->transcript) + 1,
             style: 'hotkey-table',
         );
-        $screen->setTranscriptBlocks($state->transcript);
-
-        return $styledText;
+        $state->transcript[] = $block->with(meta: array_merge($block->meta, [
+            'hotkey_groups' => $groups,
+            'empty_message' => $result->emptyMessage,
+        ]));
+        $harness->screen()->setTranscriptBlocks($state->transcript);
     }
 }
