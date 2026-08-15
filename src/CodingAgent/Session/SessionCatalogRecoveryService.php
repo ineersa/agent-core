@@ -18,18 +18,20 @@ use function Symfony\Component\String\u;
  * Reconciles orphan numeric session directories into hatfield_session after DB loss.
  *
  * Invoked once on agent startup immediately after application schema migrations.
- * Scans sessions.path for positive-digit directories with events.jsonl that lack a
- * matching hatfield_session row, derives available catalog metadata from the
+ * Scans sessions.path for canonical positive-digit directories with events.jsonl that
+ * lack a matching hatfield_session row, derives available catalog metadata from the
  * canonical event stream, and inserts the row with the directory's explicit ID.
  *
  * Never rewrites session files. Concurrent startups are race-safe via
- * INSERT OR IGNORE on the primary key. Malformed logs are skipped with
- * privacy-safe diagnostics (no raw prompt/event/tool content).
+ * ON CONFLICT(id) DO NOTHING on the primary key. Malformed event logs are skipped
+ * with privacy-safe diagnostics (no raw prompt/event/tool content). DB/storage
+ * infrastructure failures propagate to StartupDatabaseMigrator.
  */
 final class SessionCatalogRecoveryService
 {
     public function __construct(
         private readonly AppConfig $appConfig,
+        private readonly HatfieldSessionStore $sessionStore,
         private readonly Connection $connection,
         private readonly SessionRunEventStore $eventStore,
         private readonly LoggerInterface $logger,
@@ -38,7 +40,7 @@ final class SessionCatalogRecoveryService
 
     public function __invoke(): void
     {
-        $sessionsDir = $this->resolveSessionsDir();
+        $sessionsDir = $this->sessionStore->resolveSessionsBasePath();
         if (!is_dir($sessionsDir)) {
             return;
         }
@@ -59,7 +61,7 @@ final class SessionCatalogRecoveryService
                 continue;
             }
 
-            if ('' === $entry || !ctype_digit($entry) || (int) $entry <= 0) {
+            if (!$this->isCanonicalPositiveSessionId($entry)) {
                 continue;
             }
 
@@ -74,12 +76,16 @@ final class SessionCatalogRecoveryService
                 continue;
             }
 
-            if ($this->sessionRowExists((int) $sessionId)) {
+            $id = (int) $sessionId;
+            if ($this->sessionRowExists($id)) {
                 continue;
             }
 
+            // Event read/denormalization may fail for corrupt orphans — local degradation.
+            // DB insert stays outside this catch so infrastructure failures hard-fail startup.
             try {
-                $this->recoverOne($sessionId);
+                $events = $this->eventStore->allFor($sessionId);
+                $meta = $this->deriveMetadata($events);
             } catch (\Throwable $e) {
                 $this->logger->warning('session_catalog_recovery.orphan_skipped', [
                     'component' => 'session_catalog_recovery',
@@ -89,26 +95,61 @@ final class SessionCatalogRecoveryService
                     'exception_class' => $e::class,
                     'reason' => 'unrecoverable_orphan',
                 ]);
+
+                continue;
             }
+
+            $this->insertRecoveredRow($id, $sessionId, $meta);
         }
     }
 
-    private function recoverOne(string $sessionId): void
+    /**
+     * Positive decimal directory names that round-trip exactly through int.
+     * Rejects leading zeros (`007`), zero, non-digits, and overflow aliases.
+     */
+    private function isCanonicalPositiveSessionId(string $entry): bool
     {
-        $events = $this->eventStore->allFor($sessionId);
-        $meta = $this->deriveMetadata($events);
+        if ('' === $entry || !ctype_digit($entry)) {
+            return false;
+        }
 
-        // Explicit ID insert; OR IGNORE makes concurrent startups idempotent.
-        $this->connection->executeStatement(
-            'INSERT OR IGNORE INTO hatfield_session (
+        $asInt = (int) $entry;
+        if ($asInt <= 0) {
+            return false;
+        }
+
+        // Leading-zero aliases and saturating overflow names fail this equality.
+        return (string) $asInt === $entry;
+    }
+
+    /**
+     * @param array{
+     *     cwd: string,
+     *     prompt: ?string,
+     *     parent_id: ?string,
+     *     model: ?string,
+     *     model_provider: ?string,
+     *     model_name: ?string,
+     *     reasoning: ?string,
+     *     name: string,
+     *     provider_cache_key: string,
+     *     created_at: \DateTimeImmutable,
+     *     updated_at: \DateTimeImmutable
+     * } $meta
+     */
+    private function insertRecoveredRow(int $id, string $sessionId, array $meta): void
+    {
+        // Explicit ID insert; ON CONFLICT(id) ignores only concurrent PK races.
+        $affected = $this->connection->executeStatement(
+            'INSERT INTO hatfield_session (
                 id, cwd, prompt, parent_id, root_id, model, model_provider, model_name,
                 reasoning, name, provider_cache_key, created_at, updated_at
             ) VALUES (
                 :id, :cwd, :prompt, :parent_id, :root_id, :model, :model_provider, :model_name,
                 :reasoning, :name, :provider_cache_key, :created_at, :updated_at
-            )',
+            ) ON CONFLICT(id) DO NOTHING',
             [
-                'id' => (int) $sessionId,
+                'id' => $id,
                 'cwd' => $meta['cwd'],
                 'prompt' => $meta['prompt'],
                 'parent_id' => $meta['parent_id'],
@@ -124,7 +165,7 @@ final class SessionCatalogRecoveryService
             ],
         );
 
-        if ($this->sessionRowExists((int) $sessionId)) {
+        if ($affected > 0) {
             $this->logger->info('session_catalog_recovery.recovered', [
                 'component' => 'session_catalog_recovery',
                 'event_type' => 'session_catalog_recovery.recovered',
@@ -329,21 +370,5 @@ final class SessionCatalogRecoveryService
         );
 
         return false !== $found && null !== $found;
-    }
-
-    private function resolveSessionsDir(): string
-    {
-        $path = $this->appConfig->sessions->path;
-        $cwd = $this->appConfig->cwd;
-
-        if ('' === $path) {
-            $path = $cwd.'/.hatfield/sessions';
-        }
-
-        if (!str_starts_with($path, '/')) {
-            $path = $cwd.'/'.$path;
-        }
-
-        return $path;
     }
 }

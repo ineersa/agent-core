@@ -27,7 +27,7 @@ use Psr\Log\LoggerInterface;
  * Safe for concurrent controller+consumer processes because the migration
  * executor records applied versions in the doctrine_migration_versions table.
  * Only one process executes migrations; others skip when already applied.
- * Session catalog recovery is independently idempotent (INSERT OR IGNORE).
+ * Session catalog recovery is independently idempotent (ON CONFLICT(id) DO NOTHING).
  */
 final class StartupDatabaseMigrator
 {

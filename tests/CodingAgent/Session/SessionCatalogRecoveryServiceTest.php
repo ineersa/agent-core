@@ -53,6 +53,7 @@ final class SessionCatalogRecoveryServiceTest extends IsolatedKernelTestCase
         // Production wiring is StartupDatabaseMigrator → SessionCatalogRecoveryService.
         $this->recovery = new SessionCatalogRecoveryService(
             $appConfig,
+            $this->sessionStore,
             $connection,
             $eventStore,
             $this->logger,
@@ -138,7 +139,7 @@ final class SessionCatalogRecoveryServiceTest extends IsolatedKernelTestCase
         $validBytes = file_get_contents($validEventsPath);
         $this->assertNotFalse($validBytes);
 
-        // Non-canonical / malformed neighbors must not block recovery.
+        // Non-canonical / malformed neighbors must not block recovery or steal IDs.
         $malformedDir = $projectDir.'/.hatfield/sessions/88';
         mkdir($malformedDir, 0777, true);
         file_put_contents($malformedDir.'/events.jsonl', "{not-json\n");
@@ -151,18 +152,57 @@ final class SessionCatalogRecoveryServiceTest extends IsolatedKernelTestCase
         mkdir($zeroDir, 0777, true);
         file_put_contents($zeroDir.'/events.jsonl', "{}\n");
 
+        // Leading-zero alias must not recover as id 7 or poison allocation.
+        $leadingZeroDir = $projectDir.'/.hatfield/sessions/007';
+        mkdir($leadingZeroDir, 0777, true);
+        file_put_contents(
+            $leadingZeroDir.'/events.jsonl',
+            $this->minimalRunStartedJsonl('007', 'leading-zero must not become id 7'),
+        );
+
+        // Overflowing decimal saturates under (int) but must not recover as PHP_INT_MAX.
+        $overflowName = (string) \PHP_INT_MAX.'0';
+        $overflowDir = $projectDir.'/.hatfield/sessions/'.$overflowName;
+        mkdir($overflowDir, 0777, true);
+        file_put_contents(
+            $overflowDir.'/events.jsonl',
+            $this->minimalRunStartedJsonl($overflowName, 'overflow must not recover'),
+        );
+
+        $maxBefore = (int) ($this->em->getConnection()->fetchOne('SELECT COALESCE(MAX(id), 0) FROM hatfield_session') ?: 0);
+
         ($this->recovery)();
         $this->em->clear();
         $this->assertNotNull($this->sessionStore->findSession($validId));
         $this->assertNull($this->sessionStore->findSession('88'));
         $this->assertNull($this->sessionStore->findSession('0'));
+        $this->assertNull($this->sessionStore->findSession('007'));
+        $this->assertNull($this->sessionStore->findSession('7'), 'leading-zero alias must not insert id 7');
+        $this->assertNull($this->sessionStore->findSession($overflowName));
+        $this->assertNull(
+            $this->sessionStore->findSession((string) \PHP_INT_MAX),
+            'overflow alias must not insert PHP_INT_MAX',
+        );
 
-        // Second pass is a no-op for existing rows (INSERT OR IGNORE / exists short-circuit).
+        $maxAfter = (int) ($this->em->getConnection()->fetchOne('SELECT COALESCE(MAX(id), 0) FROM hatfield_session') ?: 0);
+        $this->assertSame(77, $maxAfter);
+        $this->assertLessThanOrEqual(77, $maxAfter);
+        $this->assertGreaterThanOrEqual($maxBefore, $maxAfter);
+
+        // Second pass is a no-op for existing rows (ON CONFLICT DO NOTHING / exists short-circuit).
         ($this->recovery)();
         $this->em->clear();
         $again = $this->sessionStore->findSession($validId);
         $this->assertNotNull($again);
         $this->assertSame($validBytes, file_get_contents($validEventsPath));
+
+        // New create must not collide with ignored overflow/leading-zero paths.
+        $newId = $this->sessionStore->createSession('after noncanonical neighbors');
+        $this->assertGreaterThan(77, (int) $newId);
+        $this->assertNotSame('007', $newId);
+        $this->assertNotSame($overflowName, $newId);
+        $this->assertFileExists($leadingZeroDir.'/events.jsonl');
+        $this->assertFileExists($overflowDir.'/events.jsonl');
 
         $this->assertLogsArePrivacySafe();
     }
@@ -259,6 +299,37 @@ final class SessionCatalogRecoveryServiceTest extends IsolatedKernelTestCase
         $this->assertSame('child task', $session->prompt);
         $this->assertSame('openai/gpt-test', $session->model);
         $this->assertSame('low', $session->reasoning);
+    }
+
+    private function minimalRunStartedJsonl(string $runId, string $prompt): string
+    {
+        $now = (new \DateTimeImmutable())->format(\DATE_ATOM);
+        $event = [
+            'schema_version' => '1.0',
+            'run_id' => $runId,
+            'seq' => 1,
+            'turn_no' => 0,
+            'type' => 'run_started',
+            'payload' => [
+                'step_id' => 'start-1',
+                'payload' => [
+                    'system_prompt' => '',
+                    'messages' => [
+                        [
+                            'role' => 'user',
+                            'content' => [['type' => 'text', 'text' => $prompt]],
+                        ],
+                    ],
+                    'metadata' => [
+                        'model' => 'openai/gpt-test',
+                        'reasoning' => 'low',
+                    ],
+                ],
+            ],
+            'ts' => $now,
+        ];
+
+        return json_encode($event, \JSON_THROW_ON_ERROR)."\n";
     }
 
     /**
