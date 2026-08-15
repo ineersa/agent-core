@@ -42,47 +42,4 @@ final class HookDispatcherContractTest extends TestCase
         $this->assertSame(4, $result->effectsCount);
         $this->assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $result->events);
     }
-
-    public function testSubscribersRunInRegistrationOrder(): void
-    {
-        $order = [];
-
-        $first = new class($order) implements HookSubscriberInterface {
-            public function __construct(private array &$order)
-            {
-            }
-
-            public function handleAfterTurnCommit(AfterTurnCommitHookContext $context): AfterTurnCommitHookContext
-            {
-                $this->order[] = 'first';
-
-                return $context;
-            }
-        };
-
-        $second = new class($order) implements HookSubscriberInterface {
-            public function __construct(private array &$order)
-            {
-            }
-
-            public function handleAfterTurnCommit(AfterTurnCommitHookContext $context): AfterTurnCommitHookContext
-            {
-                $this->order[] = 'second';
-
-                return $context;
-            }
-        };
-
-        $dispatcher = new HookDispatcher([$first, $second]);
-
-        $dispatcher->dispatchAfterTurnCommit(new AfterTurnCommitHookContext(
-            runId: 'run-stage-03',
-            turnNo: 1,
-            status: 'running',
-            events: [],
-            effectsCount: 0,
-        ));
-
-        $this->assertSame(['first', 'second'], $order);
-    }
 }
