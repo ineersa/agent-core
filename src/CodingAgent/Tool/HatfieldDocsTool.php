@@ -70,6 +70,7 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
                     'id' => [
                         'type' => 'string',
                         'description' => 'Logical document ID (required for read).',
+                        'minLength' => 1,
                     ],
                 ],
                 'required' => ['operation'],
@@ -78,6 +79,9 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
             promptLine: 'hatfield_docs list|read [id] — list or read bundled Hatfield docs',
+            promptGuidelines: [
+                'Use hatfield_docs for questions about Hatfield behavior, configuration, or usage; call list first when the relevant document ID is unknown.',
+            ],
         );
     }
 

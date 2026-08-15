@@ -1,6 +1,6 @@
 ## JetBrains IDE tools
 
-When working in a repository opened in JetBrains, use the `ide_*` tools for code navigation, impact analysis, diagnostics, and semantic refactors. Prefer them over raw `rg`/`find`/filesystem operations when the question depends on code structure, references, inheritance, or IDE diagnostics.
+When working in a repository opened in JetBrains and the `ide_*` tools are available, use them for code navigation, impact analysis, diagnostics, and semantic refactors. Prefer them over raw `rg`/`find`/filesystem operations when the question depends on code structure, references, inheritance, or IDE diagnostics.
 
 If multiple JetBrains projects are open, pass `project_path` for the repository you are working in.
 
@@ -12,7 +12,6 @@ If multiple JetBrains projects are open, pass `project_path` for the repository 
 - `ide_search_text` — indexed text/regex search, with filters for code/comments/strings and file masks.
 - `ide_file_structure` — inspect a file's classes, methods, fields, functions, or Markdown headings before reading the whole file.
 - `ide_find_definition` — jump from a reference/import/call to the defining declaration.
-- `ide_open_file` — open/navigate to a file and line in the IDE when useful for diagnostics or user-visible navigation.
 
 Use pagination cursors when result sets are truncated.
 
@@ -48,4 +47,4 @@ Do not use `mv`, `git mv`, or manual text replacement for source-file moves/rena
 1. Start with IDE search/navigation tools for code questions.
 2. Use structure/hierarchy/reference tools to gather semantic evidence before conclusions.
 3. Prefer IDE refactor tools for moves/renames.
-4. Fall back to bash/rg/find only for non-code files, generated artifacts, bulk filesystem operations, or when IDE tools are unavailable/insufficient.
+4. Fall back to bash/rg/find for non-code files, generated artifacts, bulk filesystem operations, or when IDE tools are unavailable/insufficient.

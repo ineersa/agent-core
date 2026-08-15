@@ -121,7 +121,6 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
             handler: new RecallToolHandler($query),
             promptSummary: 'Use recall(<id>) to recover exact source context behind compacted memory observations/reflections when precision matters.',
             promptGuidelines: [
-                'Use recall before making an important decision that depends on a compacted observation or reflection whose details are unclear.',
                 'Use recall when you need exact wording, rationale, file paths, commands, errors, commits, user constraints, or provenance behind a remembered claim.',
                 'Use recall when a broad reflection is relevant but you need its supporting observations or raw sources to continue safely.',
                 'Use recall when the user asks why you believe something, what supports a memory, or what was decided earlier.',

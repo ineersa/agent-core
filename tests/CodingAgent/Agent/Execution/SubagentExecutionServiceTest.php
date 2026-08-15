@@ -17,7 +17,6 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
-use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
@@ -120,7 +119,6 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'agentsConfig' => new AgentsConfig(),
             'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
-            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
             'appConfig' => self::getContainer()->get(AppConfig::class),
             'modelResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
         ]);
@@ -157,7 +155,6 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'agentsConfig' => new AgentsConfig(),
             'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
-            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
             'appConfig' => self::getContainer()->get(AppConfig::class),
         ]);
 
@@ -244,7 +241,6 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'policyResolver' => $this->defaultPolicyResolver(),
             'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
             'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
-            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
             'artifactRegistry' => self::getContainer()->get(AgentArtifactRegistry::class),
             'agentRunner' => $this->createStub(AgentRunnerInterface::class),
             'runStore' => $this->createStub(RunStoreInterface::class),

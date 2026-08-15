@@ -18,21 +18,29 @@ The model supplies structured arguments — **not** raw JSON Schema:
 
 | Argument | Meaning |
 |---|---|
-| `question` | **Required** user-facing text |
-| `prompt` | Deprecated runtime compatibility alias for `question` (not an alternative schema field; prefer `question`) |
-| `kind` / `ui_kind` | Optional: `text`, `confirm`, `choice`, `approval` |
-| `choices` | Required non-empty string list when kind is `choice` |
-| `default` | Optional default value |
-| `question_id` | Optional stable id; otherwise derived from question/kind/choices/header |
-| `header` | Optional short header |
+| `question` | **Required** non-empty user-facing text |
+| `kind` | Optional; sole accepted value is `confirm` (yes/no or approval) |
+| `choices` | Optional non-empty string list for selection mode |
+| `header` | Optional short UI header |
 
-Provider-facing schema requires `question`. Runtime still accepts non-empty `prompt` as a
-deprecated compatibility alias when deserializing older payloads — do not treat it as a
-second first-class schema field.
+There is **no** model input or compatibility alias for `prompt`, `ui_kind`, `default`,
+or `question_id`. Those names may appear only in internal interrupt payloads or TUI
+plumbing, never as tool arguments.
 
-Hatfield **derives** the answer schema internally from kind/choices (boolean for
-confirm/approval, string enum for choices, otherwise string). Do not send a schema
-object as a tool argument.
+### Modes (mutually exclusive)
+
+| Mode | Call shape | Derived answer schema | Output `ui_kind` |
+|---|---|---|---|
+| Free-form | `question` only (omit `kind` and `choices`) | `{"type":"string"}` | `text` |
+| Confirm | `kind=confirm` without `choices` | `{"type":"boolean"}` | `confirm` |
+| Selection | non-empty `choices`, omit `kind` | `{"type":"string","enum":[...]}` | `choice` |
+
+`kind=confirm` together with any provided `choices` is rejected. Empty `choices` is
+also rejected. Hatfield always derives the answer schema and output `ui_kind`
+internally — do not send a schema object as a tool argument.
+
+`question_id` is generated from `question` / `kind` / `choices` / `header` for
+internal correlation only; the model does not supply it.
 
 Typical outcomes:
 
@@ -40,11 +48,11 @@ Typical outcomes:
 |---|---|
 | Structured answer | Matches the derived schema and resumes the agent turn |
 | Free-text escape | UI may offer a plain-answer path when schema entry is impractical |
-| Cancel | Explicit cancel of the pending question (not a successful answer) |
+| Cancel | Answer is the string `'Cancelled by user'` — treat as an abort signal, not a successful answer; do not immediately retry the same question |
 
 ## End-to-end flow
 
-1. Model invokes `ask_human` with `question` / kind / choices (as above).
+1. Model invokes `ask_human` with one exclusive mode above (`question` required).
 2. Runtime records a pending human-input request and projects the runtime event
    `human_input.requested` from AgentCore `waiting_human`.
 3. TUI `QuestionCoordinator` / controller renders the overlay.
@@ -64,7 +72,9 @@ Parent and child questions must not be answered into the wrong run context.
 
 ## Cancellation
 
-Cancel is an explicit signal. After cancel, the model should reformulate or continue without treating the question as answered. Do not invent answers in tool results.
+Cancel returns the answer string `'Cancelled by user'`. Treat it as an abort signal:
+reformulate or continue without treating the question as answered, and do not
+immediately retry the same question. Do not invent answers in tool results.
 
 ## Related
 

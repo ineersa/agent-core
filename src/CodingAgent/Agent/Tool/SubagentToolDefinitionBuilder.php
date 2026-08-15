@@ -13,11 +13,8 @@ use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
  * Builds the permanent `subagent` tool definition metadata shared by the
  * definition provider and tests.
  *
- * Provider-facing description and parametersJsonSchema stay stable with
- * origin/main so live-provider tool schemas reuse proven llama-proxy
- * cassettes. Decision-rule guidance belongs in promptGuidelines (and
- * skills/docs/prompts); llama-proxy normalizes leading messages but not
- * tools, so schema text changes create cold cache keys.
+ * Decision-rule guidance belongs in promptGuidelines (and skills/docs/prompts).
+ * Schema/prompt text changes can invalidate llama-proxy tool-schema cache keys.
  */
 final class SubagentToolDefinitionBuilder
 {
@@ -37,10 +34,12 @@ final class SubagentToolDefinitionBuilder
                     'agent' => [
                         'type' => 'string',
                         'description' => 'Agent definition name for single mode.',
+                        'minLength' => 1,
                     ],
                     'task' => [
                         'type' => 'string',
                         'description' => 'Task text for single mode.',
+                        'minLength' => 1,
                     ],
                     'tasks' => [
                         'type' => 'array',
@@ -49,8 +48,16 @@ final class SubagentToolDefinitionBuilder
                         'items' => [
                             'type' => 'object',
                             'properties' => [
-                                'agent' => ['type' => 'string'],
-                                'task' => ['type' => 'string'],
+                                'agent' => [
+                                    'type' => 'string',
+                                    'description' => 'Agent definition name.',
+                                    'minLength' => 1,
+                                ],
+                                'task' => [
+                                    'type' => 'string',
+                                    'description' => 'Task text.',
+                                    'minLength' => 1,
+                                ],
                             ],
                             'required' => ['agent', 'task'],
                             'additionalProperties' => false,
@@ -67,7 +74,7 @@ final class SubagentToolDefinitionBuilder
             promptGuidelines: [
                 'Batch independent scouts/reviewers in one {"tasks":[{"agent":"...","task":"..."}]} call; use {"agent":"...","task":"..."} for one child or dependent/serialized work.',
                 \sprintf(
-                    'Tasks in one call run concurrently (max %d); separate outer subagent calls serialize. Split only for cap overflow or true dependencies.',
+                    'Tasks in one call run concurrently (max %d).',
                     $maxAgents,
                 ),
                 'Single-mode success includes full handoff inline (agent_retrieve optional). Parallel results are bounded summaries — use agent_retrieve with each Artifact: ID for complete handoffs, failures, metadata, or history.',
