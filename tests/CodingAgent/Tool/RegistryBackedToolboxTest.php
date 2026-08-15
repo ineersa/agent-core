@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
+use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
+use Ineersa\CodingAgent\Tool\Constraints\ViewImageTargetValidator;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
@@ -38,6 +41,8 @@ use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Validator\ConstraintValidatorFactory;
+use Symfony\Component\Validator\ValidatorBuilder;
 
 /**
  * Tests for RegistryBackedToolbox.
@@ -483,9 +488,21 @@ final class RegistryBackedToolboxTest extends TestCase
         $registry->registerTool(name: 'view_image', description: 'View', handler: $handler, promptLine: 'view_image');
 
         // Production wires ValidateToolCallArgumentsListener on the app dispatcher
-        // (config/services.yaml); mirror it here.
+        // (config/services.yaml) with the container validator (service-aware
+        // constraint validator factory); mirror both here so the class-level
+        // ViewImageTarget constraint resolves its autowired validator.
+        $validator = (new ValidatorBuilder())
+            ->enableAttributeMapping()
+            ->setConstraintValidatorFactory(new ConstraintValidatorFactory([
+                ViewImageTargetValidator::class => new ViewImageTargetValidator(
+                    new ImageToolConfig(),
+                    new StackToolExecutionContextAccessor(),
+                ),
+            ]))
+            ->getValidator();
+
         $dispatcher = new EventDispatcher();
-        $dispatcher->addListener(ToolCallArgumentsResolved::class, new ValidateToolCallArgumentsListener());
+        $dispatcher->addListener(ToolCallArgumentsResolved::class, new ValidateToolCallArgumentsListener($validator));
 
         $toolbox = new FaultTolerantToolbox($this->createToolbox($registry, $dispatcher));
         $result = $toolbox->execute(new ToolCall('call-blank', 'view_image', ['arguments' => ['path' => ' ']]));

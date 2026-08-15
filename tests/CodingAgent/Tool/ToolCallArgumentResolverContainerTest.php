@@ -124,6 +124,32 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
         );
     }
 
+    public function testContainerValidatorEnforcesReadFileTargetClassConstraint(): void
+    {
+        // Production wiring proof: the app container validator resolves the
+        // autowired ReadFileTargetValidator/EditFileTargetValidator/
+        // ViewImageTargetValidator through the service-aware constraint
+        // validator factory, and the real listener turns violations into
+        // deterministic fault results.
+        $toolbox = new FaultTolerantToolbox(self::getContainer()->get(ToolboxInterface::class));
+
+        $result = $toolbox->execute(new ToolCall('call-read-missing', 'read', ['arguments' => ['path' => '/definitely/not/here.txt']]));
+
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('does not exist', $message);
+        $this->assertStringContainsString('Check the file path and try again.', $message);
+    }
+
+    public function testContainerValidatorEnforcesViewImageTargetClassConstraint(): void
+    {
+        $toolbox = new FaultTolerantToolbox(self::getContainer()->get(ToolboxInterface::class));
+
+        $result = $toolbox->execute(new ToolCall('call-view-missing', 'view_image', ['arguments' => ['path' => '/definitely/not/here.png']]));
+
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('does not exist or is not readable', $message);
+    }
+
     /**
      * @return array<string, mixed>
      */

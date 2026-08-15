@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
-use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;
@@ -45,7 +44,13 @@ final class EditFileTool implements HatfieldToolProviderInterface
         return $this->toolRuntime->run(function () use ($arguments): string {
             $path = $arguments->path;
             $patch = $arguments->patch;
-            $targetPath = $this->resolveAndVerifyTarget($path);
+
+            // Target existence/readability is validated by the EditFileTarget
+            // DTO constraint before execution. Patch applicability (stale,
+            // ambiguous, or malformed hunks) and write failures are
+            // execution-time, state-dependent results under the applier's
+            // lock and stay in PatchApplier.
+            $targetPath = PathResolver::resolve($path);
             $result = $this->applier->apply($targetPath, $patch);
 
             if ($result['patchedContent'] === $result['originalContent']) {
@@ -84,17 +89,6 @@ final class EditFileTool implements HatfieldToolProviderInterface
                 'If an edit fails as stale or ambiguous, use the error context or a targeted `read` with `offset`/`limit`, then regenerate the patch.',
             ],
         );
-    }
-
-    private function resolveAndVerifyTarget(string $path): string
-    {
-        $targetPath = PathResolver::resolve($path);
-
-        if (!is_file($targetPath) || !is_readable($targetPath)) {
-            throw new ToolCallException(\sprintf('File "%s" does not exist or is not readable.', $targetPath), retryable: false, hint: 'Use the write tool to create new files.');
-        }
-
-        return $targetPath;
     }
 
     /**

@@ -9,12 +9,14 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\Tool\Support\ToolValidationHarness;
 use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\EditFileTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
+use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
@@ -269,8 +271,18 @@ PATCH;
 
     public function testEditMissingFileThrowsDirectingToWrite(): void
     {
-        $this->expectException(ToolCallException::class);
-        ($this->editFileTool)(new EditFileArgumentsDTO(path: $this->tmpDir.'/missing.txt', patch: "@@\n x\n"));
+        $targetPath = $this->tmpDir.'/missing.txt';
+
+        // Runs through the native toolbox + ValidateToolCallArgumentsListener:
+        // the EditFileTarget DTO constraint rejects the missing target before
+        // the handler (and its lock-protected PatchApplier) ever runs.
+        $toolbox = ToolValidationHarness::toolbox($this->editFileTool);
+        $result = $toolbox->execute(new ToolCall('call-edit', 'edit', ['arguments' => ['path' => $targetPath, 'patch' => "@@\n x\n"]]));
+
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('does not exist or is not readable', $message);
+        $this->assertStringContainsString('Use the write tool to create new files.', $message);
+        $this->assertFileDoesNotExist($targetPath);
     }
 
     public function testEditCancelledBeforeExecutionThrows(): void

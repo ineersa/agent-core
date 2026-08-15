@@ -7,15 +7,16 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
+use Ineersa\CodingAgent\Tests\Tool\Support\ToolValidationHarness;
 use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\ReadFileTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\Validator\Validation;
 
 /**
@@ -147,13 +148,15 @@ final class ReadFileToolTest extends TestCase
         $targetPath = $this->tmpDir.'/few_lines.txt';
         file_put_contents($targetPath, "line one\nline two\nline three\n");
 
-        try {
-            ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath, offset: 10));
-            $this->fail('Expected ToolCallException was not thrown.');
-        } catch (ToolCallException $e) {
-            $this->assertStringContainsString('offset 10 exceeds file length', $e->getMessage());
-            $this->assertStringContainsString('3 lines', $e->getMessage());
-        }
+        // Runs through the native toolbox + ValidateToolCallArgumentsListener,
+        // where the ReadFileTarget DTO constraint rejects the offset.
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => $targetPath, 'offset' => 10]]));
+
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('offset 10 exceeds file length', $message);
+        $this->assertStringContainsString('3 lines', $message);
+        $this->assertStringNotContainsString('line one', $message);
     }
 
     public function testReadEmptyFile(): void
@@ -257,37 +260,50 @@ final class ReadFileToolTest extends TestCase
 
     public function testDtoRejectsNonPositiveOffsetAndLimit(): void
     {
-        $violations = $this->validateDto(new ReadFileArgumentsDTO(path: '/tmp/test.txt', offset: 0, limit: 0));
+        $targetPath = $this->tmpDir.'/offset_limit.txt';
+        file_put_contents($targetPath, "a\n");
+
+        $violations = $this->validateDto(new ReadFileArgumentsDTO(path: $targetPath, offset: 0, limit: 0));
 
         $this->assertCount(2, $violations);
         $this->assertStringContainsString('positive integer', $violations[0]->getMessage());
         $this->assertStringContainsString('positive integer', $violations[1]->getMessage());
     }
 
-    /* ── __invoke() target validation tests ── */
+    /* ── Validation-level target rejection tests ──
+       Invalid targets are rejected before execution by the ReadFileTarget
+       DTO constraint via the native toolbox + ValidateToolCallArgumentsListener;
+       the handler never runs, so its messages/content never appear. */
 
     public function testReadMissingFileThrows(): void
     {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('does not exist');
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => $this->tmpDir.'/nonexistent.txt']]));
 
-        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $this->tmpDir.'/nonexistent.txt'));
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('does not exist', $message);
+        $this->assertStringContainsString('Check the file path and try again.', $message);
+        $this->assertStringNotContainsString('Failed to read file', $message);
     }
 
     public function testReadDirectoryThrows(): void
     {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('not a regular file');
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => $this->tmpDir]]));
 
-        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $this->tmpDir));
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('not a regular file', $message);
+        $this->assertStringContainsString('Use the read tool only for regular files.', $message);
     }
 
     public function testReadDevicePathThrows(): void
     {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('device paths are rejected');
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => '/dev/null']]));
 
-        ($this->readFileTool)(new ReadFileArgumentsDTO(path: '/dev/null'));
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('device paths are rejected', $message);
+        $this->assertStringContainsString('Specify a regular file path.', $message);
     }
 
     public function testReadUnreadableFileThrows(): void
@@ -297,10 +313,12 @@ final class ReadFileToolTest extends TestCase
         chmod($targetPath, 0000);
 
         try {
-            $this->expectException(ToolCallException::class);
-            $this->expectExceptionMessage('not readable');
+            $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+            $result = $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => $targetPath]]));
 
-            ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
+            $message = (string) $result->getResult();
+            $this->assertStringContainsString('not readable', $message);
+            $this->assertStringContainsString('Check file permissions and try again.', $message);
         } finally {
             chmod($targetPath, 0644);
         }
@@ -311,10 +329,17 @@ final class ReadFileToolTest extends TestCase
         $targetPath = $this->tmpDir.'/binary.bin';
         file_put_contents($targetPath, "text\x00more\x00binary");
 
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('binary');
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => $targetPath]]));
 
-        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
+        $message = (string) $result->getResult();
+        // finfo classifies null-byte content as application/octet-stream, so
+        // the MIME rejection fires before the null-byte branch — identical to
+        // the pre-refactor ordering (the old 'binary' assertion actually
+        // matched the .bin path substring, not the rejection reason).
+        $this->assertStringContainsString('application/octet-stream', $message);
+        $this->assertStringContainsString('not a readable text format', $message);
+        $this->assertStringNotContainsString('more', $message); // handler never ran
     }
 
     public function testReadNonUtf8FileThrows(): void
@@ -324,10 +349,12 @@ final class ReadFileToolTest extends TestCase
         // \xff\xfe is the UTF-16LE BOM, not valid standalone UTF-8 bytes
         file_put_contents($targetPath, "\xff\xfe\x01\x02");
 
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('non-UTF-8');
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => $targetPath]]));
 
-        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('non-UTF-8', $message);
+        $this->assertStringContainsString('Convert the file to UTF-8 encoding first', $message);
     }
 
     public function testReadValidUtf8Near8192Boundary(): void
@@ -343,8 +370,10 @@ final class ReadFileToolTest extends TestCase
         $trailing = "\nsome content after the boundary\n";
         file_put_contents($targetPath, $prefix.$emoji.$trailing);
 
-        // Should NOT throw ToolCallException about non-UTF-8
-        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
+        // Runs through the native toolbox so the ReadFileTarget validator
+        // exercises its sample/lookahead acceptance path.
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = (string) $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => $targetPath]]))->getResult();
 
         $this->assertStringContainsString('some content after the boundary', $result);
         $this->assertStringContainsString('a', $result);
@@ -379,10 +408,10 @@ final class ReadFileToolTest extends TestCase
         $suffix = "\nmore content\n";
         file_put_contents($targetPath, $prefix.$invalidByte.$suffix);
 
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('non-UTF-8');
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => $targetPath]]));
 
-        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
+        $this->assertStringContainsString('non-UTF-8', (string) $result->getResult());
     }
 
     public function testReadInvalidUtf8At8190BoundaryWithContinuationByteThrows(): void
@@ -397,10 +426,10 @@ final class ReadFileToolTest extends TestCase
         $suffix = "\nmore content\n";
         file_put_contents($targetPath, $prefix.$invalidByte.$suffix);
 
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('non-UTF-8');
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => $targetPath]]));
 
-        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
+        $this->assertStringContainsString('non-UTF-8', (string) $result->getResult());
     }
 
     public function testReadValidUtf8With8192AsciiFollowedByEmoji(): void
@@ -415,8 +444,10 @@ final class ReadFileToolTest extends TestCase
         $emoji = "\xF0\x9F\x98\x80";
         file_put_contents($targetPath, $prefix.$emoji);
 
-        // Should read successfully (valid UTF-8)
-        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
+        // Runs through the native toolbox so the ReadFileTarget validator
+        // exercises its sample/lookahead acceptance path.
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = (string) $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => $targetPath]]))->getResult();
 
         $this->assertStringContainsString('a', $result);
         $this->assertStringContainsString($emoji, $result);
@@ -433,10 +464,10 @@ final class ReadFileToolTest extends TestCase
         $strayContinuation = "\x80";
         file_put_contents($targetPath, $prefix.$strayContinuation);
 
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('non-UTF-8');
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => $targetPath]]));
 
-        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
+        $this->assertStringContainsString('non-UTF-8', (string) $result->getResult());
     }
 
     public function testReadImageByMimeThrows(): void
@@ -455,10 +486,12 @@ final class ReadFileToolTest extends TestCase
 
         file_put_contents($targetPath, $png);
 
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('image');
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => $targetPath]]));
 
-        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('image', $message);
+        $this->assertStringContainsString('Use the view_image tool instead.', $message);
     }
 
     public function testReadImageByExtensionThrows(): void
@@ -467,10 +500,12 @@ final class ReadFileToolTest extends TestCase
         // Plain text but .jpg extension
         file_put_contents($targetPath, "this is not really a jpg\n");
 
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('image');
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => $targetPath]]));
 
-        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('image', $message);
+        $this->assertStringContainsString('looks like an image file', $message);
     }
 
     public function testReadPdfByMimeThrows(): void
@@ -478,21 +513,24 @@ final class ReadFileToolTest extends TestCase
         $targetPath = $this->tmpDir.'/doc.pdf';
         file_put_contents($targetPath, "%PDF-1.4 fake content\n");
 
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('not a readable text format');
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => $targetPath]]));
 
-        ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('not a readable text format', $message);
+        $this->assertStringContainsString('not supported by the read tool', $message);
     }
 
     public function testReadProcFdPathThrows(): void
     {
-        // This test creates a file under a path that matches /proc/*/fd/ pattern.
-        // Since we can't actually create /proc/N/fd/*, we just verify the pattern match logic works.
-        // We use the resolved path checker internally.
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('rejected for safety');
+        // Path matching the /proc/*/fd/ safety pattern is rejected by the
+        // ReadFileTarget validator before any filesystem access.
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => '/proc/1234/fd/0']]));
 
-        ($this->readFileTool)(new ReadFileArgumentsDTO(path: '/proc/1234/fd/0'));
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('rejected for safety', $message);
+        $this->assertStringContainsString('Specify a regular file path.', $message);
     }
 
     /* ── OutputCap integration test ── */

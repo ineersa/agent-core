@@ -4,12 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\Arguments;
 
+use Ineersa\CodingAgent\Tool\Constraints\EditFileTarget;
 use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * Validated arguments for the edit tool.
+ *
+ * The target exists/regular/readable precondition is enforced by the
+ * class-level {@see EditFileTarget} constraint before execution; patch
+ * applicability stays execution-time under the applier's lock.
  */
+#[EditFileTarget]
 final class EditFileArgumentsDTO
 {
     public function __construct(

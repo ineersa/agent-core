@@ -4,12 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\Arguments;
 
+use Ineersa\CodingAgent\Tool\Constraints\ReadFileTarget;
 use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * Validated arguments for the read tool.
+ *
+ * Target preconditions (safety blocks, existence, readability, MIME/binary/
+ * UTF-8/extension inspection, offset-past-EOF) are enforced by the
+ * class-level {@see ReadFileTarget} constraint before execution.
  */
+#[ReadFileTarget]
 final class ReadFileArgumentsDTO
 {
     public function __construct(
