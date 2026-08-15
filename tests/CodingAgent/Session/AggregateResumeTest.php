@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Session\SessionRunStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
@@ -92,7 +93,7 @@ final class AggregateResumeTest extends TestCase
 
         $nullLogger = new \Psr\Log\NullLogger();
 
-        $runStore1 = new SessionRunStore($this->hatfieldSessionStore, $serializer1, $lockFactory1);
+        $runStore1 = new SessionRunStore($this->hatfieldSessionStore, $serializer1, $lockFactory1, new Filesystem());
         $eventStore1 = new SessionRunEventStore($this->hatfieldSessionStore, $normalizer1, $lockFactory1, $nullLogger, new FileRunSequenceAllocator());
 
         // Create run state
@@ -115,7 +116,7 @@ final class AggregateResumeTest extends TestCase
         $lockFactory2 = new LockFactory(new FlockStore());
         $normalizer2 = new EventPayloadNormalizer();
 
-        $runStore2 = new SessionRunStore($this->hatfieldSessionStore, $serializer2, $lockFactory2);
+        $runStore2 = new SessionRunStore($this->hatfieldSessionStore, $serializer2, $lockFactory2, new Filesystem());
         $eventStore2 = new SessionRunEventStore($this->hatfieldSessionStore, $normalizer2, $lockFactory2, $nullLogger, new FileRunSequenceAllocator());
 
         // Phase 4: Verify state survives

@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
@@ -67,6 +68,7 @@ final class SessionRunStoreTest extends TestCase
             hatfieldSessionStore: $hatfieldSessionStore,
             serializer: $this->createRunStateSerializer(),
             lockFactory: new LockFactory(new FlockStore()),
+            filesystem: new Filesystem(),
         );
     }
 
@@ -172,6 +174,7 @@ final class SessionRunStoreTest extends TestCase
             hatfieldSessionStore: $hatfieldSessionStore,
             serializer: $this->createRunStateSerializer(),
             lockFactory: new LockFactory(new FlockStore()),
+            filesystem: new Filesystem(),
         );
 
         $loaded = $newStore->get($runId);
@@ -226,6 +229,100 @@ final class SessionRunStoreTest extends TestCase
         // Whitespace-only file should also be treated as "no state yet"
         $loaded = $this->store->get($runId);
         $this->assertNull($loaded, 'Whitespace-only state.json must return null');
+    }
+
+    /**
+     * Regression: compareAndSwap() must never expose a partial state.json to
+     * unlocked readers. The writer runs bounded CAS writes of a large state
+     * while a plain subprocess reader (no lock, no store) hammers the file;
+     * any non-empty content that is not complete parseable JSON is corruption.
+     *
+     * Bounded: 25 writes and a reader deadline of 2.5s; no unbounded stress.
+     */
+    public function testUnlockedReadersNeverObservePartialStateDuringConcurrentWrites(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $statePath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/state.json';
+        mkdir(\dirname($statePath), 0777, true);
+
+        // 4 MiB payload keeps the truncate-then-write window wide enough that a
+        // tight reader loop reliably catches a partial read on the old in-place
+        // file_put_contents(); dumpFile() (temp file + rename) never shows one.
+        $largePayload = ['content' => str_repeat('x', 4 * 1024 * 1024)];
+
+        $readerScript = <<<'PHP'
+$path = $argv[1];
+$deadline = microtime(true) + (float) $argv[2];
+$reads = 0;
+while (microtime(true) < $deadline) {
+    $content = @file_get_contents($path);
+    if (false === $content || '' === trim($content)) {
+        continue; // missing / empty file is a complete "no state yet"
+    }
+    ++$reads;
+    try {
+        $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
+    } catch (\Throwable $e) {
+        fwrite(STDOUT, 'CORRUPT_JSON:' . $e->getMessage() . ':' . substr($content, 0, 200));
+        exit(1);
+    }
+    if (!\is_array($data) || !isset($data['run_id'], $data['version'])) {
+        fwrite(STDOUT, 'INVALID_SHAPE');
+        exit(1);
+    }
+}
+fwrite(STDOUT, 'OK reads=' . $reads);
+exit(0);
+PHP;
+
+        $proc = proc_open(
+            [\PHP_BINARY, '-r', $readerScript, $statePath, '2.5'],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+        $this->assertIsResource($proc);
+
+        try {
+            fclose($pipes[0]);
+
+            $state = new RunState(
+                runId: $runId,
+                status: RunStatus::Queued,
+                version: 0,
+                model: 'test-model',
+                streamingMessage: $largePayload,
+            );
+            for ($i = 1; $i <= 25; ++$i) {
+                $this->assertTrue(
+                    $this->store->compareAndSwap($state->with(['version' => $i]), $i - 1),
+                    \sprintf('CAS write %d must succeed', $i),
+                );
+            }
+
+            $stdout = stream_get_contents($pipes[1]);
+            $stderr = stream_get_contents($pipes[2]);
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            $exit = proc_close($proc);
+            $proc = null;
+        } finally {
+            if (\is_resource($proc)) {
+                proc_terminate($proc);
+                foreach ($pipes as $pipe) {
+                    if (\is_resource($pipe)) {
+                        fclose($pipe);
+                    }
+                }
+                proc_close($proc);
+            }
+        }
+
+        $this->assertSame(0, $exit, \sprintf('Unlocked reader observed partial/corrupt state.json: %s%s', $stdout, $stderr));
+        $this->assertStringContainsString('OK', $stdout);
+
+        $final = $this->store->get($runId);
+        $this->assertNotNull($final);
+        $this->assertSame(25, $final->version);
     }
 
     public function testEmbeddedRunIdMustMatchDirectory(): void
