@@ -25,9 +25,9 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  *     and boots the Symfony kernel once for the entire test class.
  *  2. setUp() ensures the CWD and env vars are still correct before
  *     each test method (in case a prior test changed them).
- *  3. tearDown() resets only <cwd>/.hatfield/sessions (filesystem session
- *     isolation is per-method, matching DAMA's per-method DB rollback),
- *     then clears the EntityManager identity map. Kernel, class CWD, and
+ *  3. tearDown() clears the EntityManager identity map, then resets only
+ *     <cwd>/.hatfield/sessions (filesystem session isolation is per-method,
+ *     matching DAMA's per-method DB rollback). Kernel, class CWD, and
  *     non-session fixtures (e.g. settings.yaml) stay alive across methods.
  *  4. tearDownAfterClass() restores the original CWD, shuts down the
  *     kernel, cleans up exception handlers, and removes the isolated
@@ -165,24 +165,6 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
 
     protected function tearDown(): void
     {
-        // DAMA rolls back hatfield_session rows per method, but session dirs
-        // under the shared class CWD would otherwise survive. Reset only
-        // .hatfield/sessions so the next method's createSession() cannot
-        // collide with a leftover .hatfield/sessions/<id> after SQLite
-        // reuses low AUTOINCREMENT ids. Class-level settings and other
-        // fixtures under .hatfield/ stay intact.
-        if (isset(self::$classCwd)) {
-            try {
-                $sessionsDir = self::$classCwd.'/.hatfield/sessions';
-                if (is_dir($sessionsDir)) {
-                    TestDirectoryIsolation::removeDirectory($sessionsDir);
-                }
-                TestDirectoryIsolation::ensureDirectory($sessionsDir);
-            } catch (\Throwable) {
-                // Best-effort FS cleanup; still clear EM below.
-            }
-        }
-
         // Clear EntityManager identity map so entities persisted in one
         // test method do not appear in another test method's query results
         // (DAMA rolls back the transaction, but the identity map may still
@@ -197,6 +179,20 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
                 $em->clear();
             } catch (\Throwable) {
                 // EM may already be closed; ignore cleanup errors.
+            }
+        }
+
+        // DAMA rolls back hatfield_session rows per method, but session dirs
+        // under the shared class CWD would otherwise survive. Reset only
+        // .hatfield/sessions so the next method's createSession() cannot
+        // collide with a leftover .hatfield/sessions/<id> after SQLite
+        // reuses low AUTOINCREMENT ids. Class-level settings and other
+        // fixtures under .hatfield/ stay intact. Failures here fail the
+        // current test (no catch): createSession/tests recreate the dir.
+        if (isset(self::$classCwd)) {
+            $sessionsDir = self::$classCwd.'/.hatfield/sessions';
+            if (is_dir($sessionsDir)) {
+                TestDirectoryIsolation::removeDirectory($sessionsDir);
             }
         }
 
