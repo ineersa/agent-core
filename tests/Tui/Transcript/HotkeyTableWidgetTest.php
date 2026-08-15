@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\HotkeyTableWidget;
+use Ineersa\Tui\Transcript\ThemeStyleSheetFactory;
 use Ineersa\Tui\Transcript\TranscriptBlockWidgetFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -70,7 +71,7 @@ final class HotkeyTableWidgetTest extends TestCase
 
         // Style elements are registered for ChatScreen/Tui attachment (WidgetContext).
         // Standalone Renderer has no WidgetContext, so applyElement falls back to defaults.
-        $sheet = HotkeyTableWidget::styleSheetFromPalette($this->theme->getPalette());
+        $sheet = (new ThemeStyleSheetFactory())->createHotkeyTable($this->theme->getPalette());
         $rules = (new \ReflectionProperty($sheet, 'rules'))->getValue($sheet);
         $this->assertArrayHasKey(HotkeyTableWidget::class.'::heading', $rules);
         $this->assertArrayHasKey(HotkeyTableWidget::class.'::key', $rules);
@@ -201,7 +202,7 @@ final class HotkeyTableWidgetTest extends TestCase
     {
         $root = new ContainerWidget();
         $root->add($widget);
-        $renderer = new Renderer(HotkeyTableWidget::styleSheetFromPalette($this->theme->getPalette()));
+        $renderer = new Renderer((new ThemeStyleSheetFactory())->createHotkeyTable($this->theme->getPalette()));
 
         return $renderer->render($root, $width, 40);
     }

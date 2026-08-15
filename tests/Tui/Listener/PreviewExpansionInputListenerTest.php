@@ -15,6 +15,7 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Transcript\HotkeyTableWidget;
+use Ineersa\Tui\Transcript\ThemeStyleSheetFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
@@ -209,7 +210,7 @@ final class PreviewExpansionInputListenerTest extends TestCase
         $root = new ContainerWidget();
         $root->add($widget);
         $lines = (new Renderer(
-            HotkeyTableWidget::styleSheetFromPalette($harness->screen()->theme()->getPalette()),
+            (new ThemeStyleSheetFactory())->createHotkeyTable($harness->screen()->theme()->getPalette()),
         ))->render($root, 100, 40);
         $styled = implode("\n", $lines);
         $this->assertStringContainsString('Ctrl+O', $styled);

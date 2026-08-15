@@ -9,18 +9,14 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParall
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\Tui\Footer\ContextUsageFormatter;
-use Ineersa\Tui\Theme\ThemeColorEnum;
-use Ineersa\Tui\Theme\ThemePalette;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Render\RenderContext;
-use Symfony\Component\Tui\Style\Style;
-use Symfony\Component\Tui\Style\StyleSheet;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 
 /**
  * Semantic subagent progress card: owns typed snapshot → plain lines → themed rails.
  *
- * Style elements are registered via {@see self::styleSheetFromPalette()} in ChatScreen.
+ * Style elements are registered via {@see ThemeStyleSheetFactory::createSubagentProgressCard()} in ChatScreen.
  */
 final class SubagentProgressCardWidget extends AbstractWidget
 {
@@ -29,30 +25,6 @@ final class SubagentProgressCardWidget extends AbstractWidget
         private readonly bool $streaming = false,
         private readonly ?string $expandHandoffHint = null,
     ) {
-    }
-
-    public static function styleSheetFromPalette(ThemePalette $palette): StyleSheet
-    {
-        $rules = [];
-        self::addRule($rules, 'border', $palette, ThemeColorEnum::BorderAccent);
-        self::addRule($rules, 'border-failed', $palette, ThemeColorEnum::Error);
-        self::addRule($rules, 'border-cancelled', $palette, ThemeColorEnum::BorderMuted);
-        self::addRule($rules, 'border-waiting', $palette, ThemeColorEnum::Warning);
-        self::addRule($rules, 'header-running', $palette, ThemeColorEnum::Accent);
-        self::addRule($rules, 'header-completed', $palette, ThemeColorEnum::Success);
-        self::addRule($rules, 'header-failed', $palette, ThemeColorEnum::Error);
-        self::addRule($rules, 'header-cancelled', $palette, ThemeColorEnum::Muted);
-        self::addRule($rules, 'header-waiting', $palette, ThemeColorEnum::Warning);
-        self::addRule($rules, 'meta', $palette, ThemeColorEnum::ToolTitle);
-        self::addRule($rules, 'tool', $palette, ThemeColorEnum::ToolOutput);
-        self::addRule($rules, 'body', $palette, ThemeColorEnum::ToolOutput);
-        self::addRule($rules, 'muted', $palette, ThemeColorEnum::Muted);
-        self::addRule($rules, 'ctx-label', $palette, ThemeColorEnum::Muted);
-        self::addRule($rules, 'ctx-ok', $palette, ThemeColorEnum::Success);
-        self::addRule($rules, 'ctx-warn', $palette, ThemeColorEnum::Warning);
-        self::addRule($rules, 'ctx-error', $palette, ThemeColorEnum::Error);
-
-        return new StyleSheet($rules);
     }
 
     /** @return list<string> */
@@ -118,19 +90,6 @@ final class SubagentProgressCardWidget extends AbstractWidget
         $lines[] = $this->fitLine($bottom, $width);
 
         return $lines;
-    }
-
-    /**
-     * @param array<string, Style> $rules
-     */
-    private static function addRule(array &$rules, string $element, ThemePalette $palette, ThemeColorEnum $token): void
-    {
-        $spec = $palette->get($token);
-        if ('' === $spec) {
-            return;
-        }
-
-        $rules[self::class.'::'.$element] = new Style(color: $spec);
     }
 
     /**

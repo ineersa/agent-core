@@ -11,8 +11,8 @@ use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Transcript\MarkdownThemeStyleSheetFactory;
 use Ineersa\Tui\Transcript\StreamingMarkdownTranscriptWidget;
+use Ineersa\Tui\Transcript\ThemeStyleSheetFactory;
 use Ineersa\Tui\Transcript\ToolExchangeTranscriptWidget;
 use Ineersa\Tui\Transcript\TranscriptMountedWidget;
 use Ineersa\Tui\Transcript\TranscriptVisualNode;
@@ -52,7 +52,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $theme = new DefaultTheme($palette);
         $terminal = new VirtualTerminal(columns: 100, rows: 30);
         $tui = new Tui(terminal: $terminal);
-        $tui->addStyleSheet((new MarkdownThemeStyleSheetFactory())->create($theme));
+        $tui->addStyleSheet((new ThemeStyleSheetFactory())->createMarkdown($palette));
 
         $transcript = new TranscriptMountedWidget(theme: $theme);
         $tui->add($transcript);

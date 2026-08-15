@@ -4,20 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
-use Ineersa\Tui\Theme\ThemeColorEnum;
-use Ineersa\Tui\Theme\ThemePalette;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Render\RenderContext;
-use Symfony\Component\Tui\Style\Style;
-use Symfony\Component\Tui\Style\StyleSheet;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 
 /**
  * Semantic hotkeys table for the local `/hotkeys` transcript block.
  *
  * Owns structured grouped bindings and recomputes ANSI-aware column widths
- * from {@see RenderContext} on every render. Style tokens are registered via
- * {@see self::styleSheetFromPalette()} (ChatScreen mount).
+ * from {@see RenderContext} on every render. Style elements are registered via
+ * {@see ThemeStyleSheetFactory::createHotkeyTable()} (ChatScreen mount).
  */
 final class HotkeyTableWidget extends AbstractWidget
 {
@@ -33,21 +29,6 @@ final class HotkeyTableWidget extends AbstractWidget
         private readonly array $groups,
         private readonly string $emptyMessage = '',
     ) {
-    }
-
-    public static function styleSheetFromPalette(ThemePalette $palette): StyleSheet
-    {
-        $rules = [];
-        self::addRule($rules, 'heading', $palette, ThemeColorEnum::Accent);
-        self::addRule($rules, 'context', $palette, ThemeColorEnum::Accent);
-        self::addRule($rules, 'border', $palette, ThemeColorEnum::Muted);
-        self::addRule($rules, 'header', $palette, ThemeColorEnum::Accent);
-        self::addRule($rules, 'key', $palette, ThemeColorEnum::Success);
-        self::addRule($rules, 'description', $palette, ThemeColorEnum::Muted);
-        self::addRule($rules, 'footer', $palette, ThemeColorEnum::Muted);
-        self::addRule($rules, 'empty', $palette, ThemeColorEnum::Muted);
-
-        return new StyleSheet($rules);
     }
 
     /** @return list<string> */
@@ -133,19 +114,6 @@ final class HotkeyTableWidget extends AbstractWidget
         }
 
         return implode('+', array_merge($modifiers, [$formattedKey]));
-    }
-
-    /**
-     * @param array<string, Style> $rules
-     */
-    private static function addRule(array &$rules, string $element, ThemePalette $palette, ThemeColorEnum $token): void
-    {
-        $spec = $palette->get($token);
-        if ('' === $spec) {
-            return;
-        }
-
-        $rules[self::class.'::'.$element] = new Style(color: $spec);
     }
 
     /**
