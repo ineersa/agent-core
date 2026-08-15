@@ -243,7 +243,8 @@ final class SessionRunStoreTest extends TestCase
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
         $statePath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/state.json';
-        mkdir(\dirname($statePath), 0777, true);
+        // No mkdir: the reader treats a missing file as "no state yet" and
+        // Filesystem::dumpFile() creates the session directory itself.
 
         // 4 MiB payload keeps the truncate-then-write window wide enough that a
         // tight reader loop reliably catches a partial read on the old in-place
@@ -318,7 +319,11 @@ PHP;
         }
 
         $this->assertSame(0, $exit, \sprintf('Unlocked reader observed partial/corrupt state.json: %s%s', $stdout, $stderr));
-        $this->assertStringContainsString('OK', $stdout);
+        $this->assertMatchesRegularExpression(
+            '/^OK reads=[1-9][0-9]*$/',
+            trim($stdout),
+            \sprintf('Reader must report at least one successful read, got: %s%s', $stdout, $stderr),
+        );
 
         $final = $this->store->get($runId);
         $this->assertNotNull($final);
