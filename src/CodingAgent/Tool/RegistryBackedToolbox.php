@@ -126,34 +126,48 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             return $requestedEvent->getResult() ?? new ToolResult($toolCall, null);
         }
 
-        $resolvedArguments = [];
+        // Lifecycle succeeded/failed events keep the rewritten flat provider args
+        // (pre-task contract). Only ToolCallArgumentsResolved gets the native map.
+        $flatArguments = $arguments;
+        $resolvedArguments = null;
 
         try {
             // Schema validation on the final rewritten flat provider args.
             $this->argumentsValidator->assertValid(
-                $arguments,
+                $flatArguments,
                 $definition->parametersJsonSchema,
                 $toolCall->getName(),
             );
 
-            $resolutionCall = $this->toolCallForResolution($handler, $eventToolCall, $arguments);
+            $resolutionCall = $this->toolCallForResolution($handler, $eventToolCall, $flatArguments);
             $resolvedArguments = $this->argumentResolver->resolveArguments($metadata, $resolutionCall);
 
             $this->eventDispatcher?->dispatch(new ToolCallArgumentsResolved($handler, $metadata, $resolvedArguments));
 
             $result = new ToolResult($toolCall, $handler(...$resolvedArguments));
 
-            $this->eventDispatcher?->dispatch(new ToolCallSucceeded($handler, $metadata, $resolvedArguments, $result));
+            $this->eventDispatcher?->dispatch(new ToolCallSucceeded($handler, $metadata, $flatArguments, $result));
 
             return $result;
         } catch (ToolExecutionExceptionInterface $exception) {
-            $this->eventDispatcher?->dispatch(new ToolCallFailed($handler, $metadata, $resolvedArguments, $exception));
+            // Schema / explicit tool-execution failures: model-visible via FaultTolerantToolbox.
+            $this->eventDispatcher?->dispatch(new ToolCallFailed($handler, $metadata, $flatArguments, $exception));
 
             throw $exception;
         } catch (\Throwable $exception) {
-            $this->eventDispatcher?->dispatch(new ToolCallFailed($handler, $metadata, $resolvedArguments, $exception));
+            if (null === $resolvedArguments) {
+                // Resolver/denormalizer failed before handler invoke — wrap for FaultTolerantToolbox.
+                $wrapped = ToolExecutionException::executionFailed($toolCall, $exception);
+                $this->eventDispatcher?->dispatch(new ToolCallFailed($handler, $metadata, $flatArguments, $wrapped));
 
-            throw ToolExecutionException::executionFailed($toolCall, $exception);
+                throw $wrapped;
+            }
+
+            // Handler threw (ToolCallException, cancellation, runtime, …) — rethrow unchanged
+            // so ToolExecutor preserves message/hint/retryable classification.
+            $this->eventDispatcher?->dispatch(new ToolCallFailed($handler, $metadata, $flatArguments, $exception));
+
+            throw $exception;
         }
     }
 

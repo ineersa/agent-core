@@ -12,11 +12,16 @@ use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
+use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
+use Ineersa\CodingAgent\Tool\ToolCallArgumentsValidator;
+use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
+use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
 use Symfony\AI\Agent\Toolbox\Toolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
 use Symfony\Component\Clock\MockClock;
@@ -382,6 +387,47 @@ final class ToolExecutorTest extends TestCase
         $this->assertArrayNotHasKey('retryable', $result->details);
         $this->assertArrayNotHasKey('hint', $result->details);
         $this->assertStringContainsString('Boom!', $result->content[0]['text']);
+    }
+
+    public function testToolCallExceptionFromRegistryHandlerSurvivesToStructuredErrorResult(): void
+    {
+        // Full production chain: ToolExecutor wraps the registry toolbox in
+        // FaultTolerantToolbox, which only converts ToolExecutionExceptionInterface.
+        // A handler ToolCallException must survive unchanged so ToolExecutor
+        // classifies error_type/retryable/hint instead of a generic fault message.
+        $handler = new class implements ToolHandlerInterface {
+            public function __invoke(array $arguments): mixed
+            {
+                throw new ToolCallException('Registry tool failed', retryable: true, hint: 'Adjust the arguments');
+            }
+        };
+        $registry = new ToolRegistry();
+        $registry->registerTool(name: 'registry_tool', description: 'Registry tool', parametersJsonSchema: [], handler: $handler, promptLine: 'registry_tool');
+
+        $toolbox = new RegistryBackedToolbox(
+            registry: $registry,
+            argumentResolver: new ToolCallArgumentResolver(),
+            argumentsValidator: new ToolCallArgumentsValidator(),
+        );
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            maxParallelism: 4,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+        );
+
+        $result = $executor->execute(ToolCallBuilder::create('call-survival')
+            ->withToolName('registry_tool')
+            ->withArguments(['x' => 1])
+            ->withOrderIndex(0)
+            ->build());
+
+        $this->assertTrue($result->isError);
+        $this->assertIsArray($result->details);
+        $this->assertSame(ToolCallException::class, $result->details['error_type']);
+        $this->assertTrue($result->details['retryable']);
+        $this->assertSame('Adjust the arguments', $result->details['hint']);
+        $this->assertStringContainsString('Registry tool failed', $result->content[0]['text']);
     }
 
     public function testContextAccessorSetsCorrectValues(): void

@@ -67,12 +67,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     /**
      * Execute the read tool.
      *
-     * @param ReadFileArgumentsDTO $arguments
-     *                                        Optional 'offset' (int|null) and
-     *                                        'limit' (int|null)
-     *
-     * @return string Plain file content,
-     *                optionally capped or with continuation hints
+     * @return string Plain file content, optionally capped or with continuation hints
      *
      * @throws ToolCallException on validation failures or tool-level errors
      * @throws \RuntimeException on cancellation or timeout (runtime concerns)
@@ -158,30 +153,6 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             ],
         );
     }
-
-    /**
-     * Validate the path argument.
-     *
-     * @return string The validated path
-     *
-     * @throws ToolCallException when the path argument is missing or invalid
-     */
-
-    /**
-     * Validate the optional offset argument.
-     *
-     * @return int|null The validated offset (1-indexed, positive), or null if not provided
-     *
-     * @throws ToolCallException when offset is invalid
-     */
-
-    /**
-     * Validate the optional limit argument.
-     *
-     * @return int|null The validated limit (positive), or null if not provided
-     *
-     * @throws ToolCallException when limit is invalid
-     */
 
     /**
      * Validate the resolved target path.

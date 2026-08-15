@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Opis\JsonSchema\Errors\ErrorFormatter;
+use Opis\JsonSchema\Exceptions\SchemaException;
 use Opis\JsonSchema\Validator;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\Exception\InvalidToolCallArgumentsException;
 
 /**
@@ -21,11 +24,13 @@ use Symfony\AI\Agent\Toolbox\Exception\InvalidToolCallArgumentsException;
 final class ToolCallArgumentsValidator
 {
     private readonly Validator $validator;
+    private readonly LoggerInterface $logger;
 
-    public function __construct(?Validator $validator = null)
+    public function __construct(?Validator $validator = null, ?LoggerInterface $logger = null)
     {
         // Collect a small batch so the concise error can include the first pointer.
         $this->validator = $validator ?? new Validator(null, 5, false);
+        $this->logger = $logger ?? new NullLogger();
     }
 
     /**
@@ -42,17 +47,18 @@ final class ToolCallArgumentsValidator
         }
 
         try {
-            $this->toSchemaObject($schema);
-        } catch (\Throwable $e) {
-            throw new \InvalidArgumentException(\sprintf('Tool "%s" has an unusable parameters JSON Schema.', $toolName), 0, $e);
-        }
+            $schemaObject = $this->toSchemaObject($schema);
+            // Opis loads/parses on validate; probe with an empty object.
+            // Valid or invalid instance is fine; schema parse failures throw SchemaException.
+            $this->validator->validate(new \stdClass(), $schemaObject);
+        } catch (\JsonException|SchemaException $e) {
+            $this->logger->warning('Tool parameters JSON Schema is unusable.', [
+                'component' => 'tool_call_arguments_validator',
+                'tool_name' => $toolName,
+                'error_class' => $e::class,
+                'error_message' => $e->getMessage(),
+            ]);
 
-        // Opis loads/parses on validate; probe with an empty object.
-        try {
-            $result = $this->validator->validate(new \stdClass(), $this->toSchemaObject($schema));
-            // Valid or invalid instance is fine; internal schema parse failures throw.
-            unset($result);
-        } catch (\Throwable $e) {
             throw new \InvalidArgumentException(\sprintf('Tool "%s" has an unusable parameters JSON Schema.', $toolName), 0, $e);
         }
     }
@@ -73,8 +79,17 @@ final class ToolCallArgumentsValidator
             $schemaObject = $this->toSchemaObject($schema);
             $data = $this->convertDataForValidator($arguments);
             $result = $this->validator->validate($data, $schemaObject);
-        } catch (\Throwable) {
-            throw new InvalidToolCallArgumentsException(\sprintf('Invalid arguments for tool "%s": arguments failed schema validation.', $toolName));
+        } catch (\JsonException|SchemaException $e) {
+            // Malformed runtime schema: intentional local degradation to a model-visible fault.
+            // Do not log raw arguments or schema contents.
+            $this->logger->warning('Tool argument schema validation failed due to unusable schema.', [
+                'component' => 'tool_call_arguments_validator',
+                'tool_name' => $toolName,
+                'error_class' => $e::class,
+                'error_message' => $e->getMessage(),
+            ]);
+
+            throw new InvalidToolCallArgumentsException(\sprintf('Invalid arguments for tool "%s": arguments failed schema validation.', $toolName), previous: $e);
         }
 
         if ($result->isValid()) {

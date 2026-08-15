@@ -825,6 +825,10 @@ services:
   # registered handlers (permanent, dynamic, and extension-registered tools).
   Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface:
     class: Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver
+    arguments:
+      # App serializer carries camel_case_to_snake_case so provider keys like
+      # artifact_id denormalize onto DTO properties like artifactId.
+      $denormalizer: '@serializer'
 
   Ineersa\CodingAgent\Tool\ToolCallArgumentsValidator: ~
 
