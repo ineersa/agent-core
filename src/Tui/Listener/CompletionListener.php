@@ -29,14 +29,15 @@ use Symfony\Component\Tui\Event\InputEvent;
  *  - Tab: open when closed; accept selected when open (single action)
  *  - Enter: accept selected + let event propagate for editor submit
  *  - Escape: close completion without clearing editor
- *  - Up/Down: navigate suggestions (only when menu is open)
+ *  - Up/Down: forward to unfocused SelectListWidget (only when menu is open)
  *  - Printing keys: live completion open/refine/close (never stolen)
  *
  * Completion is not implemented as a slot input handler because
  * slot handlers run at priority 50, always return void, and cannot
  * stop propagation.  Completion needs priority 90 and the ability to
  * consume Tab/Escape/Up/Down before the focused EditorWidget or
- * SubmitListener sees them.
+ * SubmitListener sees them. SelectListWidget owns selection arithmetic
+ * and wrapping; this listener only intercepts and forwards.
  *
  * Does NOT use {@see EditorWidget::onInput()} — that single-slot
  * callback belongs to {@see PromptHistoryListener}.
@@ -97,7 +98,7 @@ final class CompletionListener implements TuiListenerRegistrar
                 if ("\t" === $data) {
                     // Menu open: accept selected suggestion.
                     if ($state->isOpen()) {
-                        $suggestion = $state->acceptSelected();
+                        $suggestion = $state->acceptSelected($menu->selectedValue());
                         if (null !== $suggestion) {
                             self::applySuggestion($editor, $suggestion);
                         }
@@ -133,7 +134,7 @@ final class CompletionListener implements TuiListenerRegistrar
                 // text is submitted through the normal slash-command path.
                 if ("\n" === $data || "\r" === $data) {
                     if ($state->isOpen()) {
-                        $suggestion = $state->acceptSelected();
+                        $suggestion = $state->acceptSelected($menu->selectedValue());
                         if (null !== $suggestion) {
                             self::applySuggestion($editor, $suggestion);
                         }
@@ -161,22 +162,12 @@ final class CompletionListener implements TuiListenerRegistrar
                     return;
                 }
 
-                // ── Up / Down navigation ──────────────────────────────
+                // ── Up / Down navigation (SelectListWidget owns selection) ──
                 $isUp = "\x1b[A" === $data || "\x1bOA" === $data;
                 $isDown = "\x1b[B" === $data || "\x1bOB" === $data;
 
-                if ($isUp && $state->isOpen()) {
-                    $state->movePrevious();
-                    $menu->update($screen, $state);
-                    $screen->requestRender();
-                    $event->stopPropagation();
-
-                    return;
-                }
-
-                if ($isDown && $state->isOpen()) {
-                    $state->moveNext();
-                    $menu->update($screen, $state);
+                if (($isUp || $isDown) && $state->isOpen()) {
+                    $menu->handleNavigationInput($data);
                     $screen->requestRender();
                     $event->stopPropagation();
 

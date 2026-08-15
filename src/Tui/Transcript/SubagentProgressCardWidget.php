@@ -9,38 +9,102 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParall
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\Tui\Footer\ContextUsageFormatter;
+use Symfony\Component\Tui\Ansi\AnsiUtils;
+use Symfony\Component\Tui\Render\RenderContext;
+use Symfony\Component\Tui\Widget\AbstractWidget;
 
 /**
- * Builds plain (ANSI-free) line lists for themed subagent transcript cards.
+ * Semantic subagent progress card: owns typed snapshot → plain lines → themed rails.
  *
- * Runtime projection keeps using {@see \Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter};
- * this helper is TUI-only layout for {@see SubagentResultRenderer}.
- *
- * Callers must pass a typed snapshot already denormalized at the wire/meta boundary.
+ * Style elements are registered via {@see ThemeStyleSheetFactory::createSubagentProgressCard()} in ChatScreen.
  */
-final class SubagentTranscriptCardBuilder
+final class SubagentProgressCardWidget extends AbstractWidget
 {
+    public function __construct(
+        private readonly SubagentProgressSnapshotInterface $progress,
+        private readonly bool $streaming = false,
+        private readonly ?string $expandHandoffHint = null,
+    ) {
+    }
+
+    /** @return list<string> */
+    public function render(RenderContext $context): array
+    {
+        $width = max(1, $context->getColumns());
+        $status = $this->normalizeStatus($this->progress->status());
+        $plainLines = $this->buildLines($this->progress);
+        $footerHint = $this->resolveFooterHint($plainLines, $status);
+
+        if ([] === $plainLines && null === $footerHint && null === $this->expandHandoffHint) {
+            return [];
+        }
+
+        $workingLines = $plainLines;
+        if (null !== $footerHint && [] !== $workingLines && $footerHint === $workingLines[\count($workingLines) - 1]) {
+            array_pop($workingLines);
+        }
+
+        $isParallel = $this->progress->isParallel();
+        $borderEl = $this->borderElement($status);
+        $header = [] !== $workingLines ? array_shift($workingLines) : 'subagent';
+        $lines = [$this->fitLine($this->applyElement($borderEl, '╭─ '.$header), $width)];
+
+        $inChild = false;
+        foreach ($workingLines as $line) {
+            if ('' === $line) {
+                $inChild = false;
+                continue;
+            }
+            if ($isParallel && str_starts_with($line, '#')) {
+                $inChild = true;
+                $childStatus = $this->childStatusFromLine($line);
+                $lines[] = $this->fitLine(
+                    $this->applyElement($borderEl, '├─ ').$this->styleBodyLine($line, $childStatus, true),
+                    $width,
+                );
+                continue;
+            }
+            $lines[] = $this->fitLine(
+                $this->applyElement($borderEl, '│ ').$this->styleBodyLine($line, $status, $inChild && str_starts_with($line, '#')),
+                $width,
+            );
+        }
+
+        if (null !== $footerHint) {
+            $lines[] = $this->fitLine(
+                $this->applyElement($borderEl, '│ ').$this->applyElement('muted', $footerHint),
+                $width,
+            );
+        }
+        if (null !== $this->expandHandoffHint) {
+            $lines[] = $this->fitLine(
+                $this->applyElement($borderEl, '│ ').$this->applyElement('muted', $this->expandHandoffHint),
+                $width,
+            );
+        }
+
+        $bottom = $this->applyElement($borderEl, '╰─');
+        if ($this->streaming) {
+            $bottom .= TranscriptGlyphs::STREAMING_SUFFIX;
+        }
+        $lines[] = $this->fitLine($bottom, $width);
+
+        return $lines;
+    }
+
     /**
      * @return list<string>
      */
-    public function buildLines(SubagentProgressSnapshotInterface $progress, ?string $handoffAppend = null): array
+    private function buildLines(SubagentProgressSnapshotInterface $progress): array
     {
         if ($progress instanceof SubagentProgressParallelSnapshotDTO) {
-            $lines = $this->buildParallelLines($progress);
-        } elseif ($progress instanceof SubagentProgressSingleSnapshotDTO) {
-            $lines = $this->buildSingleLines($progress, null);
-        } else {
-            throw new \InvalidArgumentException('Expected single subagent_progress snapshot.');
+            return $this->buildParallelLines($progress);
+        }
+        if ($progress instanceof SubagentProgressSingleSnapshotDTO) {
+            return $this->buildSingleLines($progress, null);
         }
 
-        if (null !== $handoffAppend && '' !== trim($handoffAppend)) {
-            $collapsed = $this->sanitizeInlineValue($handoffAppend);
-            if ('' !== $collapsed) {
-                $lines[] = 'Handoff '.$this->truncate($collapsed, 200);
-            }
-        }
-
-        return $lines;
+        throw new \InvalidArgumentException('Expected single subagent_progress snapshot.');
     }
 
     /**
@@ -49,9 +113,7 @@ final class SubagentTranscriptCardBuilder
     private function buildSingleLines(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress, ?int $childIndex): array
     {
         $status = $this->normalizeStatus($progress->status);
-        $header = $this->formatHeaderLine($progress, $progress->agentName, $status, $childIndex);
-
-        $lines = [$header];
+        $lines = [$this->formatHeaderLine($progress, $progress->agentName, $status, $childIndex)];
 
         if ('' !== $progress->taskSummary) {
             $lines[] = 'Task '.$this->truncate($progress->taskSummary, 120);
@@ -112,14 +174,9 @@ final class SubagentTranscriptCardBuilder
         $total = max($progress->totalCount, 1);
         $lines = [\sprintf('parallel subagents (%d/%d completed)', $completed, $total)];
 
-        $childBlocks = [];
         foreach ($progress->children as $child) {
-            $childBlocks[] = $this->buildSingleLines($child, $child->index);
-        }
-
-        foreach ($childBlocks as $block) {
             $lines[] = '';
-            foreach ($block as $line) {
+            foreach ($this->buildSingleLines($child, $child->index) as $line) {
                 $lines[] = $line;
             }
         }
@@ -158,6 +215,79 @@ final class SubagentTranscriptCardBuilder
         }
 
         return implode(' · ', $parts);
+    }
+
+    private function styleBodyLine(string $line, string $status, bool $childHeader): string
+    {
+        if ($childHeader || $this->looksLikeHeaderLine($line)) {
+            return $this->applyElement($this->headerElement($status), $line);
+        }
+        if (str_starts_with($line, 'Task ') || str_starts_with($line, 'Artifact ') || str_starts_with($line, 'Run ')) {
+            return $this->applyElement('meta', $line);
+        }
+        if (str_starts_with($line, 'Active ') || str_starts_with($line, '› ')) {
+            return $this->applyElement('tool', $line);
+        }
+        if (str_starts_with($line, 'Use agent_retrieve')) {
+            return $this->applyElement('muted', $line);
+        }
+        if (str_contains($line, ' LLM step') || str_contains($line, 'in:')) {
+            return $this->applyElement('muted', $line);
+        }
+        if (str_starts_with($line, 'CTX ')) {
+            return $this->styleContextUsageLine($line);
+        }
+
+        return $this->applyElement('body', $line);
+    }
+
+    private function styleContextUsageLine(string $line): string
+    {
+        $detail = substr($line, 4);
+        $el = 'ctx-ok';
+        if (preg_match('/^(\d+)%\s+(.+)$/', $detail, $m)) {
+            $pct = (float) $m[1];
+            $el = $pct > 75 ? 'ctx-error' : ($pct > 50 ? 'ctx-warn' : 'ctx-ok');
+        }
+
+        return $this->applyElement('ctx-label', 'CTX ').$this->applyElement($el, $detail);
+    }
+
+    /**
+     * @param list<string> $plainLines
+     */
+    private function resolveFooterHint(array $plainLines, string $status): ?string
+    {
+        if ([] === $plainLines) {
+            return null;
+        }
+        $last = $plainLines[\count($plainLines) - 1];
+        if (!$this->isHintLine($last)) {
+            return null;
+        }
+
+        return $last;
+    }
+
+    private function borderElement(string $status): string
+    {
+        return match ($status) {
+            'failed' => 'border-failed',
+            'cancelled' => 'border-cancelled',
+            'waiting_human' => 'border-waiting',
+            default => 'border',
+        };
+    }
+
+    private function headerElement(string $status): string
+    {
+        return match ($status) {
+            'completed' => 'header-completed',
+            'failed' => 'header-failed',
+            'cancelled' => 'header-cancelled',
+            'waiting_human' => 'header-waiting',
+            default => 'header-running',
+        };
     }
 
     private function normalizeStatus(string $status): string
@@ -205,7 +335,6 @@ final class SubagentTranscriptCardBuilder
 
     private function formatFooter(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $data): string
     {
-        // Presentation: suppress all-zero usage footer even though identity is always present.
         if (
             0 === $data->inputTokens
             && 0 === $data->outputTokens
@@ -321,5 +450,45 @@ final class SubagentTranscriptCardBuilder
         }
 
         return substr($text, 0, $max - 1).'…';
+    }
+
+    private function childStatusFromLine(string $line): string
+    {
+        if (preg_match('/\[([^\]]+)\]/', $line, $m)) {
+            return match ($m[1]) {
+                'needs input' => 'waiting_human',
+                'running' => 'running',
+                'completed' => 'completed',
+                'failed' => 'failed',
+                'cancelled' => 'cancelled',
+                default => 'running',
+            };
+        }
+
+        return 'running';
+    }
+
+    private function looksLikeHeaderLine(string $line): bool
+    {
+        return 1 === preg_match('/^(#\d+\s+)?[●⚠✓✕◌○]\s+/u', $line);
+    }
+
+    private function isHintLine(string $line): bool
+    {
+        return str_starts_with($line, 'Ctrl+\\')
+            || str_starts_with($line, 'Ctrl+O')
+            || str_starts_with($line, 'Use agent_retrieve');
+    }
+
+    private function fitLine(string $line, int $width): string
+    {
+        if (str_contains($line, "\n") || str_contains($line, "\r")) {
+            $line = str_replace(["\r\n", "\r", "\n"], ' ', $line);
+        }
+        if (AnsiUtils::visibleWidth($line) <= $width) {
+            return $line;
+        }
+
+        return AnsiUtils::truncateToWidth($line, $width, ellipsis: '…');
     }
 }

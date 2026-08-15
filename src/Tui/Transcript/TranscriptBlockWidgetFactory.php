@@ -109,6 +109,11 @@ final readonly class TranscriptBlockWidgetFactory
             return $mdWidget;
         }
 
+        // Structured /hotkeys table — semantic widget, not pre-rendered ANSI text.
+        if (TranscriptBlockKindEnum::System === $block->kind && 'hotkey-table' === ($block->meta['style'] ?? null)) {
+            return $this->buildHotkeyTableWidget($block);
+        }
+
         // RENDER-04: ToolCall → compact card (glyph header, YAML-like args, arg preview).
         if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
             return $this->buildToolCallWidget($block, $theme);
@@ -822,6 +827,45 @@ final readonly class TranscriptBlockWidgetFactory
         $color = $this->systemColorFor($block);
 
         return new TextWidget($theme->color($color, $line));
+    }
+
+    private function buildHotkeyTableWidget(TranscriptBlock $block): HotkeyTableWidget
+    {
+        $groups = $block->meta['hotkey_groups'] ?? [];
+        if (!\is_array($groups)) {
+            $groups = [];
+        }
+
+        /** @var array<string, list<array{keys: list<string>, action: string, description: string}>> $normalized */
+        $normalized = [];
+        foreach ($groups as $context => $bindings) {
+            if (!\is_string($context) || !\is_array($bindings)) {
+                continue;
+            }
+            $rows = [];
+            foreach ($bindings as $binding) {
+                if (!\is_array($binding)) {
+                    continue;
+                }
+                $keys = $binding['keys'] ?? [];
+                if (!\is_array($keys)) {
+                    $keys = [];
+                }
+                $rows[] = [
+                    'keys' => array_values(array_filter($keys, static fn (mixed $k): bool => \is_string($k))),
+                    'action' => \is_string($binding['action'] ?? null) ? $binding['action'] : '',
+                    'description' => \is_string($binding['description'] ?? null) ? $binding['description'] : '',
+                ];
+            }
+            $normalized[$context] = $rows;
+        }
+
+        $emptyMessage = $block->meta['empty_message'] ?? '';
+        if (!\is_string($emptyMessage)) {
+            $emptyMessage = '';
+        }
+
+        return new HotkeyTableWidget($normalized, $emptyMessage);
     }
 
     private function systemStreamingSuffix(TranscriptBlock $block): string
