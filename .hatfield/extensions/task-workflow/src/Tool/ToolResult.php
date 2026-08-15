@@ -18,20 +18,36 @@ use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskInfo;
 final class ToolResult
 {
     /**
+     * Build a top-level TOON string containing only structured fields.
+     *
+     * @param array<string, mixed> $details Structured fields preserved under their original keys
+     */
+    public static function structured(array $details): string
+    {
+        return self::encode($details);
+    }
+
+    /**
      * Build a top-level TOON string with the human-readable message plus structured fields.
      *
      * @param array<string, mixed> $details Structured fields preserved under their original keys
      */
     public static function text(string $text, array $details = []): string
     {
-        $payload = array_merge(
+        return self::encode(array_merge(
             ['message' => $text],
-            self::normalizeDetails($details),
-        );
+            $details,
+        ));
+    }
 
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private static function encode(array $payload): string
+    {
         // Encode once at the shared builder so every task-workflow tool returns
         // a single TOON string that generic ToolExecutor passes through unchanged.
-        return Toon::encode($payload);
+        return Toon::encode(self::normalizeDetails($payload));
     }
 
     /**

@@ -69,4 +69,28 @@ final class ToolResultTest extends TestCase
             'prUrl' => null,
         ], $decoded['task'] ?? null);
     }
+
+    #[Test]
+    public function structuredReturnsTopLevelToonWithoutMessageField(): void
+    {
+        // Thesis: without this method, task_list could only use text(), which
+        // always prepends a formatted message and duplicates the canonical list.
+        $result = ToolResult::structured([
+            'tasks' => [
+                ['status' => 'TODO', 'file' => 'demo.md', 'title' => 'Demo task'],
+            ],
+            'include_archive' => false,
+        ]);
+
+        $this->assertIsString($result);
+        $this->assertNull(json_decode($result, true), 'Top-level result must not be a JSON envelope');
+
+        $decoded = Toon::decode($result);
+        $this->assertIsArray($decoded);
+        $this->assertArrayNotHasKey('message', $decoded);
+        $this->assertFalse($decoded['include_archive'] ?? true);
+        $this->assertSame('TODO', $decoded['tasks'][0]['status'] ?? null);
+        $this->assertSame('demo.md', $decoded['tasks'][0]['file'] ?? null);
+        $this->assertSame('Demo task', $decoded['tasks'][0]['title'] ?? null);
+    }
 }
