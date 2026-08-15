@@ -148,7 +148,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
                     'artifactId' => $partialChildOne['artifactId'],
                     'agentName' => 'batch-retry',
                     'task' => 'Partial one',
-                    'definitionModel' => null,
+                    'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium',
                 ],
                 [
                     'batchIndex' => 2,
@@ -156,7 +156,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
                     'artifactId' => $partialChildTwo['artifactId'],
                     'agentName' => 'batch-retry',
                     'task' => 'Partial two',
-                    'definitionModel' => null,
+                    'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium',
                 ],
             ],
         );
@@ -469,11 +469,12 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $launchInputFactory = new \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory(
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Skills\SkillsContextBuilder::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder::class),
             $parentRunStore ?? self::getContainer()->get(RunStoreInterface::class),
             $appConfig,
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\ChildExtensionSelectionService::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Tool\ToolRegistryInterface::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
         );
         $launchPreparation = new SubagentLaunchPreparationService(
             $definitionPolicy,
@@ -501,6 +502,8 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             $launchPreparation,
             $identityFactory,
             $artifactLifecycle,
+            $launchInputFactory,
+            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder::class),
         );
 
         return new DeferredSubagentBatchLaunchService(

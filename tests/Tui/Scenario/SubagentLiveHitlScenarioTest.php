@@ -86,7 +86,7 @@ final class SubagentLiveHitlScenarioTest extends TestCase
     }
 
     #[Test]
-    public function childRunCancelMarksCancelledEverywhereAndStaleProgressDoesNotDowngrade(): void
+    public function childRunCancelRequestIsNonterminalUntilRuntimeConfirms(): void
     {
         $h = $this->newHarness();
         $h->seedChildInCatalog(self::ARTIFACT, self::CHILD_RUN, 'waiting_human');
@@ -99,12 +99,19 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $this->assertCount(1, $cancelOps);
         $this->assertSame(self::CHILD_RUN, array_values($cancelOps)[0]['runId']);
 
+        // Request only: activity Cancelling, catalog not optimistically Cancelled.
+        $this->assertSame(RunActivityStateEnum::Cancelling, $h->state->subagentLiveView->childActivity);
         $child = $h->state->subagentLiveCatalog->findByArtifactId(self::ARTIFACT);
         $this->assertNotNull($child);
-        $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
-        $this->assertNull($h->state->subagentLiveCatalog->firstChildNeedingAttention());
-        $this->assertNull($h->statusText('subagent_live'));
-        $this->assertStringContainsString('cancelled', strtolower($h->pickerLabels()[0] ?? ''));
+        $this->assertNotSame(SubagentLiveStatusEnum::Cancelled, $child->status);
+        $working = $h->screen->registry()->getWorkingMessage();
+        $this->assertStringContainsString('Cancelling child', $working);
+        $this->assertStringContainsString(self::ARTIFACT, $working);
+
+        // Runtime/artifact confirmation marks terminal Cancelled.
+        $h->ingestChildProgress(self::ARTIFACT, self::CHILD_RUN, 'cancelled');
+        $child = $h->state->subagentLiveCatalog->findByArtifactId(self::ARTIFACT);
+        $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child?->status);
 
         $h->ingestChildProgress(self::ARTIFACT, self::CHILD_RUN, 'waiting_human');
         $child = $h->state->subagentLiveCatalog->findByArtifactId(self::ARTIFACT);
@@ -182,6 +189,71 @@ final class SubagentLiveHitlScenarioTest extends TestCase
 
         $this->assertFalse($h->state->subagentLiveView->active);
         $this->assertNull($h->statusText('agents-live'));
+    }
+
+    #[Test]
+    public function agentsMainRemovesChildOwnedQuestionsFromCoordinator(): void
+    {
+        $h = $this->newHarness();
+        $h->seedChildInCatalog(self::ARTIFACT, self::CHILD_RUN, 'waiting_human');
+        $h->enterLiveView(self::ARTIFACT, self::CHILD_RUN, RunActivityStateEnum::WaitingHuman, SubagentLiveStatusEnum::WaitingHuman);
+        $h->enqueueChildHumanInputViaTickPoll(self::CHILD_RUN);
+        $this->assertTrue($h->questionCoordinator->actionRequired());
+        $this->assertSame(self::CHILD_RUN, $h->questionCoordinator->activeRequest()?->runId);
+
+        $h->agentsMain();
+
+        $this->assertFalse($h->state->subagentLiveView->active);
+        $this->assertFalse($h->questionCoordinator->actionRequired());
+        $this->assertNull($h->questionCoordinator->activeRequest());
+    }
+
+    #[Test]
+    public function escOnTerminalSelectedChildDoesNotCancelParentOrSibling(): void
+    {
+        $h = $this->newHarness();
+        $h->seedChildInCatalog(self::ARTIFACT, self::CHILD_RUN, 'failed');
+        $h->seedChildInCatalog('agent_other', 'child-run-other', 'running');
+        $h->enterLiveView(self::ARTIFACT, self::CHILD_RUN, RunActivityStateEnum::Failed, SubagentLiveStatusEnum::Failed);
+
+        $h->pressEsc();
+
+        $cancelOps = array_filter($h->client->ops, static fn (array $o): bool => 'cancel' === $o['op']);
+        $this->assertCount(0, $cancelOps);
+        $this->assertSame(RunActivityStateEnum::Running, $h->state->activity);
+        $other = $h->state->subagentLiveCatalog->findByArtifactId('agent_other');
+        $this->assertSame(SubagentLiveStatusEnum::Running, $other?->status);
+    }
+
+    #[Test]
+    public function staleChildQuestionCannotBeAnsweredFromMainView(): void
+    {
+        $h = $this->newHarness();
+        $h->seedChildInCatalog(self::ARTIFACT, self::CHILD_RUN, 'waiting_human');
+        $h->enterLiveView(self::ARTIFACT, self::CHILD_RUN, RunActivityStateEnum::WaitingHuman, SubagentLiveStatusEnum::WaitingHuman);
+        $h->enqueueChildHumanInputViaTickPoll(self::CHILD_RUN);
+        $this->assertTrue($h->questionCoordinator->actionRequired());
+
+        // Leave without removeForRun to prove submit/cancel ownership alone rejects stale child HITL.
+        $h->state->subagentLiveView->exit();
+        $this->assertFalse($h->state->subagentLiveView->active);
+        $this->assertTrue($h->questionCoordinator->actionRequired());
+
+        $h->submit('should-not-answer-child');
+
+        $this->assertTrue($h->questionCoordinator->actionRequired());
+        $this->assertSame(self::CHILD_RUN, $h->questionCoordinator->activeRequest()?->runId);
+        $answerOps = array_filter(
+            $h->client->ops,
+            static fn (array $o): bool => 'send' === ($o['op'] ?? '') && 'answer_human' === ($o['command']->type ?? null),
+        );
+        $this->assertCount(0, $answerOps);
+
+        $h->pressEsc();
+        $cancelOps = array_filter($h->client->ops, static fn (array $o): bool => 'cancel' === $o['op']);
+        $this->assertCount(1, $cancelOps);
+        $this->assertSame(self::PARENT_RUN, array_values($cancelOps)[0]['runId']);
+        $this->assertTrue($h->questionCoordinator->actionRequired(), 'Stale child question must not be cancelled from main');
     }
 
     #[Test]

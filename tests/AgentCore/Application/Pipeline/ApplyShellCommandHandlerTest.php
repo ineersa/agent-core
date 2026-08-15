@@ -16,10 +16,10 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Thesis: direct bang shells become canonical branch-owned command+effect
+ * Thesis: direct bang shells become canonical turn-owned command+effect
  * events under RunMessageProcessor semantics. Pre-conversation shells stay
  * turn 0, active shells attach to the current turn, and terminal conversational
- * shells seed a child turn so generic rewind can abandon them.
+ * shells seed a new turn so retained-history discard can abandon them.
  */
 #[CoversClass(ApplyShellCommandHandler::class)]
 final class ApplyShellCommandHandlerTest extends TestCase
@@ -70,7 +70,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
             'expectedEventTypes' => [
                 RunEventTypeEnum::AgentCommandApplied->value,
                 RunEventTypeEnum::TurnAdvanced->value,
-                RunEventTypeEnum::LeafSet->value,
+                RunEventTypeEnum::HistoryPositionSet->value,
             ],
             'expectedStatus' => RunStatus::Running,
         ];
@@ -131,8 +131,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
 
         if (\count($expectedEventTypes) > 1) {
             $this->assertSame($expectedOwningTurn, $result->events[1]->payload['turn_no'] ?? null);
-            $this->assertSame($turnNo, $result->events[1]->payload['parent_turn_no'] ?? null);
-            $this->assertSame($expectedOwningTurn, $result->events[2]->payload['turn_no'] ?? null);
+            $this->assertSame($expectedOwningTurn, $result->events[2]->payload['position_turn_no'] ?? null);
             $this->assertSame('shell_command', $result->events[2]->payload['reason'] ?? null);
         }
 

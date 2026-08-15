@@ -34,7 +34,6 @@ final class SubagentExecutionServiceFactory
             'policyResolver' => null,
             'promptBuilder' => null,
             'skillsContextBuilder' => null,
-            'agentsContextBuilder' => null,
             'artifactRegistry' => null,
             'agentRunner' => null,
             'parentRunStore' => null,
@@ -44,6 +43,7 @@ final class SubagentExecutionServiceFactory
             'logger' => null,
             'agentsConfig' => new AgentsConfig(maxAgents: 8),
             'appConfig' => null,
+            'modelResolver' => null,
             'batchRepository' => null,
             'lifecycleListener' => null,
             'forkLaunchInputBuilder' => null,
@@ -56,7 +56,7 @@ final class SubagentExecutionServiceFactory
 
         $args = array_merge($defaults, $overrides);
 
-        foreach (['policyResolver', 'promptBuilder', 'skillsContextBuilder', 'agentsContextBuilder', 'artifactRegistry', 'agentRunner', 'parentRunStore', 'metadataReader', 'childRunDirectory', 'contextAccessor', 'logger', 'appConfig', 'batchRepository', 'lifecycleListener', 'forkLaunchInputBuilder', 'forkToolPolicyResolver', 'childExtensionSelection', 'toolRegistry'] as $required) {
+        foreach (['policyResolver', 'promptBuilder', 'skillsContextBuilder', 'artifactRegistry', 'agentRunner', 'parentRunStore', 'metadataReader', 'childRunDirectory', 'contextAccessor', 'logger', 'appConfig', 'modelResolver', 'batchRepository', 'lifecycleListener', 'forkLaunchInputBuilder', 'forkToolPolicyResolver', 'childExtensionSelection', 'toolRegistry'] as $required) {
             if (null === $args[$required]) {
                 throw new \InvalidArgumentException(\sprintf('SubagentExecutionServiceFactory requires override "%s".', $required));
             }
@@ -77,11 +77,12 @@ final class SubagentExecutionServiceFactory
             : new SubagentChildLaunchInputFactory(
                 $args['promptBuilder'],
                 $args['skillsContextBuilder'],
-                $args['agentsContextBuilder'],
                 $args['parentRunStore'],
                 $args['appConfig'],
                 $args['childExtensionSelection'],
                 $args['toolRegistry'],
+                $args['metadataReader'],
+                $args['modelResolver'],
             );
         $launchPreparation = new SubagentLaunchPreparationService(
             $definitionPolicy,
@@ -117,6 +118,8 @@ final class SubagentExecutionServiceFactory
             $launchPreparation,
             $identityFactory,
             $artifactLifecycle,
+            $launchInputFactory,
+            $args['forkLaunchInputBuilder'],
         );
 
         $deferredBatchLaunch = new DeferredSubagentBatchLaunchService(

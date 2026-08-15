@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
@@ -48,6 +49,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -74,7 +76,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'o-one', 'task' => 'O1', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'o-one', 'task' => 'O1', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
@@ -82,7 +84,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -134,8 +136,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 2,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'p-one', 'task' => 'P1', 'definitionModel' => null],
-                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'p-two', 'task' => 'P2', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'p-one', 'task' => 'P1', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
+                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'p-two', 'task' => 'P2', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1, 2]);
@@ -143,7 +145,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -207,8 +209,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 2,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => \sprintf('t%s-one', $scenario), 'task' => \sprintf('T%s-1', $scenario), 'definitionModel' => null],
-                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => \sprintf('t%s-two', $scenario), 'task' => \sprintf('T%s-2', $scenario), 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => \sprintf('t%s-one', $scenario), 'task' => \sprintf('T%s-1', $scenario), 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
+                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => \sprintf('t%s-two', $scenario), 'task' => \sprintf('T%s-2', $scenario), 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1, 2]);
@@ -219,7 +221,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -307,8 +309,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 2,
             deadlineAt: $deadline,
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'i-one', 'task' => 'I1', 'definitionModel' => null],
-                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'i-two', 'task' => 'I2', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'i-one', 'task' => 'I1', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
+                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'i-two', 'task' => 'I2', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, $startedAt, [1, 2]);
@@ -320,7 +322,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -560,7 +562,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $lateHandler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             $observeBus,
         );
@@ -598,7 +600,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'h-one', 'task' => 'H1', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'h-one', 'task' => 'H1', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
@@ -697,7 +699,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 's-nat', 'task' => 'Do work', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 's-nat', 'task' => 'Do work', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
@@ -706,7 +708,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -845,7 +847,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: $deadline,
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 's-int', 'task' => 'Interrupt me', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 's-int', 'task' => 'Interrupt me', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, $startedAt, [1]);
@@ -854,7 +856,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -1026,8 +1028,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 $this->assertCount(1, $appended);
                 $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
             } else {
-                $this->assertCount('no_projection' === $variant ? 0 : 1, $appended);
-                $this->assertNull($batchDone->interruptionProgressEnqueuedAt);
+                // no_projection still emits identity-only forced progress from launch model/reasoning.
+                $this->assertCount(1, $appended);
+                $this->assertSame('failed', $appended[0]['status']);
+                $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
             }
         } else {
             $this->assertTrue($complete->isError);
@@ -1048,8 +1052,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                     $this->assertCount(1, $appended);
                     $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
                 } else {
-                    $this->assertCount('no_projection' === $variant ? 0 : 1, $appended);
-                    $this->assertNull($batchDone->interruptionProgressEnqueuedAt);
+                    // no_projection still emits identity-only forced progress from launch model/reasoning.
+                    $this->assertCount(1, $appended);
+                    $this->assertSame('cancelled', $appended[0]['status']);
+                    $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
                 }
             }
         }
@@ -1133,7 +1139,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'fork', 'task' => 'Fork task', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'fork', 'task' => 'Fork task', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
@@ -1142,7 +1148,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -1189,12 +1195,19 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         return new class(self::getContainer()->get(CommittedRunEventAppender::class), $appended) extends SubagentProgressEventAppender {
             public function __construct(CommittedRunEventAppender $inner, private array &$appended)
             {
-                parent::__construct($inner);
+                parent::__construct($inner, SubagentProgressSerializerTestSupport::normalizer(), SubagentProgressSerializerTestSupport::validator());
             }
 
-            public function append(string $parentRunId, int $parentTurnNo, string $parentToolCallId, int $parentOrderIndex, string $toolName, array $progress): \Ineersa\AgentCore\Domain\Event\RunEvent
-            {
-                $this->appended[] = $progress;
+            public function append(
+                string $parentRunId,
+                int $parentTurnNo,
+                string $parentToolCallId,
+                int $parentOrderIndex,
+                string $toolName,
+                \Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface $progress,
+            ): \Ineersa\AgentCore\Domain\Event\RunEvent {
+                // Capture canonical payload shape asserted by lifecycle contract tests.
+                $this->appended[] = SubagentProgressSerializerTestSupport::normalizer()->normalize($progress);
 
                 return parent::append($parentRunId, $parentTurnNo, $parentToolCallId, $parentOrderIndex, $toolName, $progress);
             }
@@ -1270,7 +1283,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             artifactId: $artifactId,
             displayName: $agentName,
             taskSummary: $task,
-            definitionModel: null,
+            launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium',
             artifactKind: $artifactKind,
             batchIndex: 1,
         ));

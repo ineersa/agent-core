@@ -4,10 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Runtime;
 
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 
 /**
- * Indexes subagent child runs from parent runtime subagent_progress payloads.
+ * Indexes subagent child runs from typed parent subagent_progress snapshots.
+ *
+ * RuntimeEvent payload arrays are denormalized once at the TUI RuntimeEvent
+ * boundary ({@see TuiRuntimeEventApplier}) before reaching this catalog.
+ *
+ * Canonical snapshots always carry non-empty model/reasoning launch identity.
  */
 final class SubagentLiveCatalog
 {
@@ -80,6 +88,11 @@ final class SubagentLiveCatalog
             return;
         }
 
+        // Terminal catalog rows are monotonic: never re-open as running/waiting_human.
+        if ($existing->status->isTerminal() && !$status->isTerminal()) {
+            return;
+        }
+
         $this->byArtifactId[$artifactId] = new SubagentLiveChildDTO(
             agentRunId: $existing->agentRunId,
             artifactId: $existing->artifactId,
@@ -88,117 +101,63 @@ final class SubagentLiveCatalog
             taskSummary: $existing->taskSummary,
             lastActivityAtMs: (int) (microtime(true) * 1000),
             model: $existing->model,
+            reasoning: $existing->reasoning,
             latestInputTokens: $existing->latestInputTokens,
             contextWindow: $existing->contextWindow,
         );
     }
 
-    public function ingestRuntimeEvent(RuntimeEvent $event): void
+    public function ingestSnapshot(SubagentProgressSnapshotInterface $snapshot): void
     {
-        if (!str_contains($event->type, 'tool_execution')) {
-            return;
-        }
-
-        $progress = $event->payload['subagent_progress'] ?? null;
-        if (!\is_array($progress)) {
-            return;
-        }
-
+        // One wall-clock sample for the whole snapshot so multi-child parallel
+        // rows share lastActivityAtMs (stable within-event tie; no product order change).
         $now = (int) (microtime(true) * 1000);
-        $mode = (string) ($progress['mode'] ?? 'single');
 
-        if ('parallel' === $mode) {
-            $children = $progress['children'] ?? [];
-            if (!\is_array($children)) {
-                return;
-            }
-            foreach ($children as $child) {
-                if (!\is_array($child)) {
-                    continue;
-                }
+        if ($snapshot instanceof SubagentProgressParallelSnapshotDTO) {
+            foreach ($snapshot->children as $child) {
                 $this->upsertFromProgressRow($child, $now);
             }
 
             return;
         }
 
-        $this->upsertFromProgressRow($progress, $now);
+        if ($snapshot instanceof SubagentProgressSingleSnapshotDTO) {
+            $this->upsertFromProgressRow($snapshot, $now);
+        }
     }
 
-    /**
-     * @param array<string, mixed> $row
-     */
-    private function upsertFromProgressRow(array $row, int $now): void
+    private function upsertFromProgressRow(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $row, int $now): void
     {
-        $artifactId = trim((string) ($row['artifact_id'] ?? ''));
+        $artifactId = $row->artifactId;
         if ('' === $artifactId || $this->isDismissed($artifactId)) {
             return;
         }
 
-        $agentRunId = trim((string) ($row['agent_run_id'] ?? ''));
-        $agentName = trim((string) ($row['agent_name'] ?? 'subagent'));
-        $status = SubagentLiveStatusEnum::fromProgressString((string) ($row['status'] ?? 'running'));
-        $taskSummary = trim((string) ($row['task_summary'] ?? ''));
-
-        $model = $this->optionalString($row['model'] ?? null);
-        $latestInputTokens = $this->optionalPositiveInt($row['latest_input_tokens'] ?? null);
-        $contextWindow = $this->optionalPositiveInt($row['context_window'] ?? null);
-
-        if ('' === $agentRunId) {
-            $existing = $this->byArtifactId[$artifactId] ?? null;
-            $agentRunId = null !== $existing ? $existing->agentRunId : '';
-        }
-
-        if ('' === $agentRunId) {
-            return;
-        }
-
+        $status = SubagentLiveStatusEnum::fromProgressString($row->status);
         $existing = $this->byArtifactId[$artifactId] ?? null;
         if (null !== $existing && $existing->status->isTerminal() && !$status->isTerminal()) {
             // Stale in-flight progress rows must not downgrade terminal/cancelled catalog entries.
             return;
         }
 
-        if (null === $model && null !== $existing) {
-            $model = $existing->model;
-        }
-        if (0 === $latestInputTokens && null !== $existing) {
-            $latestInputTokens = $existing->latestInputTokens;
-        }
-        if (0 === $contextWindow && null !== $existing) {
-            $contextWindow = $existing->contextWindow;
-        }
+        $latestInputTokens = $row->latestInputTokens > 0
+            ? $row->latestInputTokens
+            : (null !== $existing ? $existing->latestInputTokens : 0);
+        $contextWindow = (null !== $row->contextWindow && $row->contextWindow > 0)
+            ? $row->contextWindow
+            : (null !== $existing ? $existing->contextWindow : 0);
 
         $this->byArtifactId[$artifactId] = new SubagentLiveChildDTO(
-            agentRunId: $agentRunId,
+            agentRunId: $row->agentRunId,
             artifactId: $artifactId,
-            agentName: $agentName,
+            agentName: $row->agentName,
             status: $status,
-            taskSummary: $taskSummary,
+            taskSummary: $row->taskSummary,
             lastActivityAtMs: $now,
-            model: $model,
+            model: $row->model,
+            reasoning: $row->reasoning,
             latestInputTokens: $latestInputTokens,
             contextWindow: $contextWindow,
         );
-    }
-
-    private function optionalString(mixed $value): ?string
-    {
-        if (!\is_string($value)) {
-            return null;
-        }
-        $trimmed = trim($value);
-
-        return '' !== $trimmed ? $trimmed : null;
-    }
-
-    private function optionalPositiveInt(mixed $value): int
-    {
-        if (!is_numeric($value)) {
-            return 0;
-        }
-        $int = (int) $value;
-
-        return $int > 0 ? $int : 0;
     }
 }

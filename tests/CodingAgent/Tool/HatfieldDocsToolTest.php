@@ -17,30 +17,37 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Thesis: hatfield_docs discovers .md files under internal-docs, caches
- * metadata+body on first use, returns TOON list metadata and raw Markdown
- * read bodies, and rejects IDs absent from the cached catalog.
+ * Thesis: hatfield_docs discovers only Markdown files with strict
+ * builtin: true under the two approved roots, caches metadata+body on
+ * first use, returns TOON list metadata and raw Markdown read bodies,
+ * excludes unmarked docs, rejects unknown IDs, and fails closed on
+ * duplicate IDs.
  */
 final class HatfieldDocsToolTest extends TestCase
 {
     private string $appRoot;
     private string $docsDir;
-    private string $internalDir;
+    private string $apiDocsDir;
     private HatfieldDocsTool $tool;
 
     protected function setUp(): void
     {
         $this->appRoot = TestDirectoryIsolation::createProjectTempDir('hatfield-docs-tool');
         $this->docsDir = $this->appRoot.'/docs';
-        $this->internalDir = $this->appRoot.'/internal-docs';
+        $this->apiDocsDir = $this->appRoot.'/.hatfield/extensions/extension-api/docs';
         TestDirectoryIsolation::ensureDirectory($this->docsDir);
-        TestDirectoryIsolation::ensureDirectory($this->internalDir);
+        TestDirectoryIsolation::ensureDirectory($this->apiDocsDir);
 
-        // Arbitrary fixture catalog — proves discovery, not a fixed production list.
-        $this->writeDoc('zeta', 'Zeta Title', 'Zeta description.', "Body of zeta.\nSecond zeta line.\n");
-        $this->writeDoc('alpha', 'Alpha Title', 'Alpha description.', "Body of alpha.\n");
-        file_put_contents($this->internalDir.'/notes.txt', 'ignored non-md');
-        file_put_contents($this->internalDir.'/README', 'ignored extensionless');
+        $this->writeCoreDoc('zeta', 'Zeta Title', 'Zeta description.', "Body of zeta.\nSecond zeta line.\n");
+        $this->writeCoreDoc('alpha', 'Alpha Title', 'Alpha description.', "Body of alpha.\n");
+        $this->writeApiDoc('extension-api', 'Extension API', 'API overview.', "API body.\n");
+        // Unmarked repository-only decoy must stay invisible.
+        file_put_contents($this->docsDir.'/datadog.md', "# Datadog\n\nrepo only\n");
+        file_put_contents(
+            $this->docsDir.'/notes.md',
+            "---\ndescription: unmarked\nbuiltin: false\n---\n\n# Notes\n\nignored\n",
+        );
+        file_put_contents($this->docsDir.'/README.txt', 'ignored non-md');
 
         $this->tool = new HatfieldDocsTool(
             new ToolRuntime(new StackToolExecutionContextAccessor()),
@@ -54,7 +61,7 @@ final class HatfieldDocsToolTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->appRoot);
     }
 
-    public function testDefinitionAndListDiscoverSortedCatalog(): void
+    public function testDefinitionAndListDiscoverSortedCatalogFromApprovedRoots(): void
     {
         $def = $this->tool->definition();
         $this->assertSame('hatfield_docs', $def->name);
@@ -63,8 +70,11 @@ final class HatfieldDocsToolTest extends TestCase
         $this->assertFalse($def->parametersJsonSchema['additionalProperties']);
         $this->assertSame(['list', 'read'], $def->parametersJsonSchema['properties']['operation']['enum']);
         $this->assertArrayNotHasKey('enum', $def->parametersJsonSchema['properties']['id']);
-        $this->assertArrayNotHasKey('offset', $def->parametersJsonSchema['properties']);
-        $this->assertArrayNotHasKey('limit', $def->parametersJsonSchema['properties']);
+        $this->assertSame(1, $def->parametersJsonSchema['properties']['id']['minLength']);
+        $this->assertSame(
+            ['Use hatfield_docs for questions about Hatfield behavior, configuration, or usage; call list first when the relevant document ID is unknown.'],
+            $def->promptGuidelines,
+        );
 
         $list = $this->invokeList();
         $this->assertSame(
@@ -73,6 +83,11 @@ final class HatfieldDocsToolTest extends TestCase
                     'id' => 'alpha',
                     'title' => 'Alpha Title',
                     'description' => 'Alpha description.',
+                ],
+                [
+                    'id' => 'extension-api',
+                    'title' => 'Extension API',
+                    'description' => 'API overview.',
                 ],
                 [
                     'id' => 'zeta',
@@ -90,45 +105,62 @@ final class HatfieldDocsToolTest extends TestCase
         $this->assertIsString($body);
         $this->assertSame("# Zeta Title\n\nBody of zeta.\nSecond zeta line.", $body);
         $this->assertStringNotContainsString('description:', $body);
+        $this->assertStringNotContainsString('builtin:', $body);
         $this->assertStringNotContainsString('---', $body);
-        $this->assertFalse(str_starts_with(ltrim($body), '{'));
-        $this->assertStringNotContainsString('documents:', $body);
 
-        // Mutate and delete backing files after first catalog load.
         file_put_contents(
             $this->docsDir.'/zeta.md',
-            "---\ndescription: mutated\n---\n\n# Mutated\n\nshould not appear\n",
+            "---\nbuiltin: true\ndescription: mutated\n---\n\n# Mutated\n\nshould not appear\n",
         );
-        unlink($this->internalDir.'/alpha.md');
         unlink($this->docsDir.'/alpha.md');
 
         $again = ($this->tool)(['operation' => 'read', 'id' => 'zeta']);
         $this->assertSame($body, $again);
 
         $list = $this->invokeList();
-        $this->assertSame(
-            [
-                [
-                    'id' => 'alpha',
-                    'title' => 'Alpha Title',
-                    'description' => 'Alpha description.',
-                ],
-                [
-                    'id' => 'zeta',
-                    'title' => 'Zeta Title',
-                    'description' => 'Zeta description.',
-                ],
-            ],
-            $list['documents'],
-        );
+        $this->assertCount(3, $list['documents']);
         $alphaBody = ($this->tool)(['operation' => 'read', 'id' => 'alpha']);
         $this->assertSame("# Alpha Title\n\nBody of alpha.", $alphaBody);
+    }
+
+    public function testDuplicateIdsAcrossRootsFailClosed(): void
+    {
+        $this->writeApiDoc('alpha', 'Dup', 'Dup description.', "dup\n");
+        $tool = new HatfieldDocsTool(
+            new ToolRuntime(new StackToolExecutionContextAccessor()),
+            new AppResourceLocator($this->appRoot),
+            new MarkdownFrontmatterExtractor(),
+        );
+
+        try {
+            $tool(['operation' => 'list']);
+            $this->fail('Expected ToolCallException for duplicate IDs');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('Duplicate built-in documentation id "alpha"', $e->getMessage());
+            $this->assertFalse($e->retryable());
+        }
+    }
+
+    public function testMalformedBuiltinDocumentFailsClosed(): void
+    {
+        file_put_contents(
+            $this->docsDir.'/broken.md',
+            "---\nbuiltin: true\ndescription: missing h1\n---\n\nNo heading here.\n",
+        );
+        $tool = new HatfieldDocsTool(
+            new ToolRuntime(new StackToolExecutionContextAccessor()),
+            new AppResourceLocator($this->appRoot),
+            new MarkdownFrontmatterExtractor(),
+        );
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('exactly one useful H1');
+        $tool(['operation' => 'list']);
     }
 
     #[DataProvider('unknownIdProvider')]
     public function testUnknownIdsRejectedFromCatalog(array $arguments): void
     {
-        // Warm the catalog so rejections are pure key lookups.
         $this->invokeList();
 
         try {
@@ -147,7 +179,7 @@ final class HatfieldDocsToolTest extends TestCase
     public static function unknownIdProvider(): iterable
     {
         yield 'missing id' => [['operation' => 'read']];
-        yield 'unknown id' => [['operation' => 'read', 'id' => 'datadog']];
+        yield 'unmarked id' => [['operation' => 'read', 'id' => 'datadog']];
         yield 'traversal id' => [['operation' => 'read', 'id' => '../settings']];
         yield 'filename-like id' => [['operation' => 'read', 'id' => 'zeta.md']];
     }
@@ -166,10 +198,15 @@ final class HatfieldDocsToolTest extends TestCase
         return $decoded;
     }
 
-    private function writeDoc(string $id, string $title, string $description, string $bodyAfterH1): void
+    private function writeCoreDoc(string $id, string $title, string $description, string $bodyAfterH1): void
     {
-        $raw = "---\ndescription: {$description}\n---\n\n# {$title}\n\n{$bodyAfterH1}";
+        $raw = "---\nbuiltin: true\ndescription: {$description}\n---\n\n# {$title}\n\n{$bodyAfterH1}";
         file_put_contents($this->docsDir.'/'.$id.'.md', $raw);
-        symlink('../docs/'.$id.'.md', $this->internalDir.'/'.$id.'.md');
+    }
+
+    private function writeApiDoc(string $id, string $title, string $description, string $bodyAfterH1): void
+    {
+        $raw = "---\nbuiltin: true\ndescription: {$description}\n---\n\n# {$title}\n\n{$bodyAfterH1}";
+        file_put_contents($this->apiDocsDir.'/'.$id.'.md', $raw);
     }
 }

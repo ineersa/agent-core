@@ -183,6 +183,11 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
+  Ineersa\CodingAgent\Config\ForksConfigDTO:
+    factory: ['Ineersa\CodingAgent\Config\ForksConfigDTO', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
   # ─── Prompt Templates ───
 
   Ineersa\CodingAgent\Config\PromptsConfig:
@@ -368,6 +373,7 @@ services:
     arguments:
       $executor: '@Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor'
       $transportSchemaEnsurer: '@Ineersa\CodingAgent\Migrations\MessengerTransportSchemaEnsurer'
+      $sessionCatalogRecovery: '@Ineersa\CodingAgent\Session\SessionCatalogRecoveryService'
 
   # HatfieldModelCatalog — build from AppConfig.ai so all consumers share the
   # same catalog populated from settings, not an auto-wired empty default.
@@ -583,8 +589,8 @@ services:
       $projector: '@tui.subagent_live.transcript_projector'
 
 
-  Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface:
-    alias: Ineersa\CodingAgent\Session\SessionTurnTreeProvider
+  Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface:
+    alias: Ineersa\CodingAgent\Session\SessionHistoryProvider
 
   session.transcript.projection_state:
     class: Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState
@@ -621,11 +627,8 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface:
     alias: Ineersa\CodingAgent\Session\ChildAgentEventsPathResolver
 
-  Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface:
-    alias: Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjectorContractAdapter
+  Ineersa\Tui\Export\SessionEventsExportService: ~
 
-  Ineersa\AgentCore\Contract\TurnTree\BranchReplayFilterInterface:
-    alias: Ineersa\CodingAgent\Session\Replay\BranchReplayFilterContractAdapter
 
   Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface:
     alias: Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService
@@ -636,8 +639,11 @@ services:
   Ineersa\AgentCore\Contract\Replay\HotPromptIntegrityVerifierInterface:
     alias: Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService
 
-  Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface:
-    alias: Ineersa\CodingAgent\Session\Rewind\SessionRewindService
+  Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface:
+    alias: Ineersa\CodingAgent\Session\History\HistorySelectionService
+
+  Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface:
+    alias: Ineersa\CodingAgent\Session\History\HistoryTailDiscardService
 
   # ─── Symfony AI Platform wiring ───
   # PlatformInterface reads Hatfield config from autowired AppConfig,
@@ -878,6 +884,7 @@ services:
     arguments:
       $handlers: !tagged_iterator agent_core.run_message_handler
       $runStateRebuilder: '@Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface'
+      $historyTailDiscard: '@Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface'
 
   Ineersa\AgentCore\Application\Handler\StepDispatcher:
     arguments:
@@ -968,8 +975,8 @@ services:
 
   # MCP lifecycle message handler is auto-discovered via #[AsMessageHandler]
   # and autowired.  McpConnectionManagerInterface is resolved via the
-  # alias above; McpToolNameMapper autowires; only McpToolCatalogStoreInterface
-  # needs explicit wiring (SessionFileMcpToolCatalogStore with projectCwd).
+  # alias above; only McpToolCatalogStoreInterface needs explicit wiring
+  # (SessionFileMcpToolCatalogStore with projectCwd).
   Ineersa\CodingAgent\Mcp\Handler\McpInitializeSessionHandler:
     arguments:
       $catalogStore: '@Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore'

@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\ProjectionPipeline;
 
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Projects generic model_notification events into System transcript blocks.
@@ -20,6 +22,11 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  */
 final readonly class ModelNotificationProjectionSubscriber implements EventSubscriberInterface
 {
+    public function __construct(
+        private DenormalizerInterface $denormalizer,
+    ) {
+    }
+
     public static function getSubscribedEvents(): array
     {
         return [
@@ -29,42 +36,29 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
 
     public function onModelNotification(TranscriptProjectionEvent $event): void
     {
-        $p = $event->payload();
+        /** @var ModelNotificationDTO $notification */
+        $notification = $this->denormalizer->denormalize($event->payload(), ModelNotificationDTO::class);
         $state = $event->state;
 
-        $notificationId = (string) ($p['id'] ?? '');
-        $text = (string) ($p['text'] ?? '');
-        $source = (string) ($p['source'] ?? '');
-        $kind = (string) ($p['kind'] ?? '');
-        $severity = (string) ($p['severity'] ?? 'info');
-        $delivery = (string) ($p['delivery'] ?? '');
-        $toolCallId = isset($p['tool_call_id']) && \is_string($p['tool_call_id'])
-            ? $p['tool_call_id']
-            : null;
-        $toolName = isset($p['tool_name']) && \is_string($p['tool_name'])
-            ? $p['tool_name']
-            : null;
-
-        $blockId = 'model_notification_'.('' !== $notificationId
-            ? $notificationId
-            : hash('sha256', $text));
+        // DTO construction guarantees nonblank id; use it directly for stable block identity.
+        $blockId = 'model_notification_'.$notification->id;
 
         // Build metadata for downstream renderers.
         $meta = [
-            'source' => $source,
-            'kind' => $kind,
-            'severity' => $severity,
-            'notification_id' => $notificationId,
+            'source' => $notification->source,
+            'kind' => $notification->kind,
+            'severity' => $notification->severity,
+            'notification_id' => $notification->id,
         ];
 
-        if (null !== $toolCallId) {
-            $meta['tool_call_id'] = $toolCallId;
+        // Generic notifications only attach tool_call_id when present; tool_result_replace always has it.
+        if (null !== $notification->toolCallId) {
+            $meta['tool_call_id'] = $notification->toolCallId;
         }
 
         // Carry through any extra producer metadata.
-        $producerMeta = $p['metadata'] ?? null;
-        if (\is_array($producerMeta) && [] !== $producerMeta) {
-            $meta['producer_metadata'] = $producerMeta;
+        if ([] !== $notification->metadata) {
+            $meta['producer_metadata'] = $notification->metadata;
         }
 
         $state->addBlock(new TranscriptBlock(
@@ -72,7 +66,7 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
             kind: TranscriptBlockKindEnum::System,
             runId: $event->runId(),
             seq: $state->nextSeq(),
-            text: $text,
+            text: $notification->text,
             meta: $meta,
             streaming: false,
         ));
@@ -82,8 +76,16 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
         // ToolResult block so the TUI does not show raw/full output that
         // the model never saw.  The exact model-facing notification is
         // already visible in the System block above.
-        if ('tool_result_replace' === $delivery && null !== $toolCallId && '' !== $toolCallId) {
-            $this->compactCappedToolResult($state, $event->runId(), $toolCallId, $toolName);
+        // DTO invariant requires nonblank toolCallId for this delivery.
+        if ('tool_result_replace' === $notification->delivery) {
+            /** @var non-empty-string $toolCallId */
+            $toolCallId = $notification->toolCallId;
+            $this->compactCappedToolResult(
+                $state,
+                $event->runId(),
+                $toolCallId,
+                $notification->toolName,
+            );
         }
     }
 

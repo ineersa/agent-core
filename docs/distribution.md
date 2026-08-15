@@ -1,196 +1,90 @@
 # Distribution and release
 
-Release-level packaging: five binaries + checksums, installer, and tag publish.
+Release-level packaging: canonical PHAR, fused static binaries, checksums, installer, package mirrors.
 
-Internals: [PHAR packaging](phar-packaging.md) · [Static / native packaging](static-packaging.md)
+Internals: [phar-packaging.md](phar-packaging.md) · [static-packaging.md](static-packaging.md)
 
 ## Artifacts
 
 | Artifact | Purpose |
 |---|---|
 | `hatfield.phar` | Portable PHAR (system PHP ≥ 8.5) |
-| `hatfield.linux-amd64` | Fused PHP-micro native |
-| `hatfield.linux-arm64` | Fused PHP-micro native |
-| `hatfield.darwin-amd64` | Fused PHP-micro native |
-| `hatfield.darwin-arm64` | Fused PHP-micro native |
+| `hatfield.linux-amd64` | Fused PHP-micro native (Linux x86_64) |
+| `hatfield.linux-arm64` | Fused PHP-micro native (Linux aarch64) |
+| `hatfield.darwin-amd64` | Fused PHP-micro native (macOS x86_64) |
+| `hatfield.darwin-arm64` | Fused PHP-micro native (macOS arm64) |
 | `SHA256SUMS` | SHA-256 for every release asset |
 
-No Windows native binary; Windows uses the same canonical PHAR.
-
-## Version / build identity
-
-- Source checkouts: `Hatfield dev (commit <sha>)` via `ApplicationBuildIdentity`.
-- Packaged builds embed `HATFIELD_BUILD_VERSION` + `HATFIELD_BUILD_COMMIT` into
-  `src/CodingAgent/Build/build-identity.generated.php` during PHAR staging.
-- `hatfield --version` exposes that identity on PHAR and native artifacts.
-- Release tags set version to `github.ref_name` and commit to the tag SHA.
-- When Castor receives `--release-version` / `--commit`, smokes fail closed unless
-  `--version` output contains those exact values.
+**Windows / non-POSIX:** the Bash installer and native matrix are **Linux/macOS only**. There is no
+Windows native binary and no Windows installer path. The PHAR is platform-neutral in packaging, but
+runtime requires **POSIX-capable PHP with `pcntl` and `posix`** (plus the other PHAR extensions in
+[phar-packaging.md](phar-packaging.md)). Stock Windows PHP builds lack those extensions, so Windows
+is unsupported for normal product runs even with a downloaded PHAR.
 
 ## Local orchestration
 
 ```bash
 castor distribution:build
-castor distribution:build-static                   # uses existing dist PHAR if present
+castor distribution:build-static
 castor distribution:checksums
 castor distribution:verify
 castor distribution:verify --skip-topology --allow-missing-native
-```
-
-Convenience wrapper (worktree lock; Castor only):
-
-```bash
 scripts/build-distribution.sh --version=1.2.3 --commit=$(git rev-parse HEAD)
-scripts/build-distribution.sh --release-version 1.2.3 --commit abcdef1
-scripts/build-distribution.sh --static --target=linux-amd64
 ```
-
-Default/`--phar-only` runs `distribution:verify --skip-topology --allow-missing-native`.
-`--static` keeps hard verify (native + topology). Wrapper acquires
-`var/tmp/distribution-build.lock` for the whole sequence; concurrent runs fail closed.
 
 | Variable | Meaning |
 |---|---|
 | `HATFIELD_DIST_DIR` | Dist directory (default `var/tmp/dist`) |
-| `HATFIELD_BUILD_VERSION` | Release version embedded into artifacts |
-| `HATFIELD_BUILD_COMMIT` | Exact commit embedded into artifacts |
-| `HATFIELD_BINARY_PATH` | Runtime/test override for subprocess executable |
-| `HATFIELD_NATIVE_BINARY_PATH` | Test input for native topology tests |
+| `HATFIELD_BUILD_VERSION` / `HATFIELD_BUILD_COMMIT` | Embedded identity |
+| `HATFIELD_BINARY_PATH` / `HATFIELD_NATIVE_BINARY_PATH` | Test overrides |
 
 ## Canonical PHAR handoff
 
-1. PHAR job builds `var/tmp/dist/hatfield.phar` and uploads it.
-2. Each static job downloads that file into `var/tmp/dist/hatfield.phar`.
-3. `distribution:build-static` **smokes the existing non-empty dist PHAR and combines it**;
-   it must not rebuild/overwrite a handoff PHAR. Local standalone static builds call
-   `phar_ensure` + copy only when the dist PHAR is absent.
-4. Release workflow re-hashes the dist PHAR before/after static build to prove identity.
+1. Build/smoke `var/tmp/dist/hatfield.phar`.
+2. Static jobs reuse that exact PHAR (no rebuild/overwrite of a handoff PHAR).
+3. Local standalone static builds may `phar_ensure` + copy only when dist PHAR is absent.
+4. Bundled resources include defaults, themes, migrations, Extension API package source,
+   and selected `builtin: true` docs at canonical paths (no `internal-docs/`, no unmarked docs).
 
 ## Installer
 
 ```bash
-bash installer/bash-installer --version=v1.2.3 --install-dir=~/.local/bin
+# Latest PHAR into ~/.local/bin
+bash installer/bash-installer --version=latest
+
+# Pinned release tag, custom install dir (quote $HOME — bare ~ in --install-dir is not expanded by the flag parser)
+bash installer/bash-installer --version=v1.2.3 --install-dir="$HOME/.local/bin"
+
+# Fused native binary for the current Linux/macOS platform
 bash installer/bash-installer --static --version=latest
 ```
 
-Behavior:
+Behavior (source-backed):
 
-- Downloads asset + `SHA256SUMS`; exact-filename checksum; fail-closed
-- Candidate `--version` smoke, then same-directory install-temp smoke, then atomic `mv`
-- **No post-`mv` commands** — install exit status is `mv` status only; failures never replace previous install
-- Empty `--version=` / `--install-dir=` rejected; traps clean download + install temps
-- Both pre-replace `--version` smokes run with disposable absolute `HATFIELD_CACHE_DIR`,
-  `HATFIELD_LOG_DIR`, `HOME`, and CWD under the installer's trap-cleaned temp tree so
-  temporary artifact filenames never seed project or persistent XDG Symfony caches
+- Resolves GitHub release assets for the requested version (`latest` or explicit tag).
+- Downloads the asset plus `SHA256SUMS`, verifies the checksum, then **smokes** the
+  candidate (`--version`) in an isolated temp HOME/cache/log tree.
+- Installs with atomic replace into `--install-dir` (default `~/.local/bin`).
+- Failures must not replace a previous good install.
+- Re-running for the same or newer version is the supported upgrade/reinstall path
+  (download → verify → smoke → atomic install).
 
-### Installed Symfony container cache
+### Installer troubleshooting
 
-Installed PHAR/native compiled containers use a global XDG/HOME cache scoped by
-environment + artifact content hash + canonical install path (see
-[phar-packaging.md](phar-packaging.md) and [static-packaging.md](static-packaging.md)).
-Project settings/sessions remain under the project `.hatfield/`. Safe clear:
+| Symptom | Likely cause / action |
+|---|---|
+| `OS '…' not supported` / Windows | Installer is Linux/macOS only; product runtime needs POSIX PHP (`pcntl`/`posix`) — Windows is unsupported |
+| Architecture not supported | Only `amd64` and `arm64` are in the matrix |
+| PHP required (PHAR path) | Install PHP ≥ 8.5 with required extensions, or pass `--static` on supported OS/arch |
+| Checksum mismatch | Corrupt download or wrong `SHA256SUMS`; retry; do not force-install |
+| Candidate smoke failed | Binary/PHAR will not be installed; inspect smoke error; fix PHP/extensions or pick another asset |
+| Missing release asset | Confirm the tag published that platform artifact |
 
-```bash
-rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/hatfield"
-```
+## Extension package mirrors
 
-## CI and release
+Release splitting mirrors the public Extension API and extension packages into read-only GitHub/Packagist-facing repositories. Package READMEs travel with those mirrors. Core `hatfield_docs` does **not** auto-discover installed extension docs.
 
-**PRs and ordinary pushes do not build PHAR/native binaries.** Project gate only
-(`castor check`). No `.github/workflows/distribution.yml`.
+## Related
 
-### Tag `v*` only — `.github/workflows/release.yml`
-
-Sole Actions path that builds distribution artifacts:
-
-1. Validate tag SHA == checkout commit.
-2. Build canonical PHAR (`distribution:build`) with embedded tag/commit.
-3. Four native runners download that exact PHAR, build static, hard topology verify.
-4. Aggregate five artifacts + one `SHA256SUMS`; publish all six files fail-closed.
-5. After publish succeeds, matrix-split five Composer package directories into one-way
-   mirror repositories (same `vX.Y.Z` tag + default `main` branch update).
-
-Core static pins (exact PHP 8.5.8 + source SHA + phpmicro commit) live in
-`tools/static/pin.json` — see [static-packaging.md](static-packaging.md).
-
-## Extension package mirrors (release split)
-
-`agent-core` remains the **single source of truth** for public extension contracts
-and project-level extensions. Split GitHub repositories are **read-only
-distribution mirrors** — normal development and PRs stay in this monorepo. Do not
-open feature PRs against the mirrors; they are overwritten on each Hatfield `v*`
-release.
-
-| Monorepo prefix | Composer package | Mirror repository |
-|---|---|---|
-| `.hatfield/extensions/extension-api` | `ineersa/hatfield-extension-api` | `ineersa/hatfield-extension-api` |
-| `.hatfield/extensions/task-workflow` | `ineersa/hatfield-ext-task-workflow` | `ineersa/hatfield-ext-task-workflow` |
-| `.hatfield/extensions/castor-llm-mode` | `ineersa/hatfield-ext-castor-llm-mode` | `ineersa/hatfield-ext-castor-llm-mode` |
-| `.hatfield/extensions/file-rewind` | `ineersa/hatfield-ext-file-rewind` | `ineersa/hatfield-ext-file-rewind` |
-| `.hatfield/extensions/observational-memory` | `ineersa/hatfield-ext-observational-memory` | `ineersa/hatfield-ext-observational-memory` |
-
-Shared versioning: the Hatfield release tag `vX.Y.Z` is published as the same
-`vX.Y.Z` tag on every mirror. Packages do not version independently.
-
-### Provisioning (outside repository code)
-
-Before the first release that runs package-split:
-
-1. Create the five empty GitHub repositories under the `ineersa` org (default
-   branch `main`).
-2. Create a least-privilege personal access token / fine-grained token with
-   **contents:write** (push branch + tags) on those five repositories only.
-3. Store it as repository secret **`MONOREPO_SPLIT_TOKEN`** on `agent-core`.
-
-Missing secret, missing destination repository, or push failure **fails** the
-`package-split` job (no silent skip). The splitter is
-`danharrin/monorepo-split-github-action` pinned to commit
-`14e42e2437f674b8987c1f50ca3689116aea1893` (v2.4.5).
-
-### Local monorepo development
-
-This repository keeps path repositories:
-
-- Root `composer.json` path-requires `ineersa/hatfield-extension-api` from
-  `.hatfield/extensions/extension-api`.
-- Project extensions install through `.hatfield/extensions/composer.json` path
-  repositories (including `extension-api` + the four extensions).
-
-### Installing packages in another Hatfield project
-
-After a release tag exists on the mirrors (and optionally Packagist):
-
-```json
-{
-  "require": {
-    "ineersa/hatfield-extension-api": "^X.Y",
-    "ineersa/hatfield-ext-task-workflow": "^X.Y"
-  },
-  "repositories": [
-    { "type": "vcs", "url": "https://github.com/ineersa/hatfield-extension-api" },
-    { "type": "vcs", "url": "https://github.com/ineersa/hatfield-ext-task-workflow" }
-  ]
-}
-```
-
-Install under the consuming project's `.hatfield/extensions/` Composer root (or
-equivalent) and enable the extension class in Hatfield settings. Prefer released
-tags; do not treat mirror `main` as a development branch for feature work.
-
-## Release checklist
-
-1. Green `castor check` on the exact commit to tag.
-2. Tag `vX.Y.Z` at that commit.
-3. Confirm release built PHAR + four static jobs and published six files.
-4. Confirm `package-split` updated all five mirrors with the same `vX.Y.Z` tag.
-5. Smoke installer PHAR and `--static` against the published tag.
-6. Confirm `--version` shows release version + commit on both artifact kinds.
-
-## Testing
-
-```bash
-castor test --filter=ApplicationBuildIdentityTest
-castor test --filter=BashInstallerTest
-castor test --filter=BuildDistributionScriptTest
-castor test --filter=CanonicalPharHandoffTest
-```
+- Process executable resolution: `src/CodingAgent/Runtime/Process/AGENTS.md`
+- Docs catalog validation: `castor docs:validate`

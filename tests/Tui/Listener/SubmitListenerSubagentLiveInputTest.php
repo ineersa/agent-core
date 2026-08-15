@@ -193,6 +193,8 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
             status: $status,
             taskSummary: 'Inspect routing',
             lastActivityAtMs: 1,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         );
         $this->state->subagentLiveView->enter($child);
         $this->state->subagentLiveView->childActivity = $childActivity;

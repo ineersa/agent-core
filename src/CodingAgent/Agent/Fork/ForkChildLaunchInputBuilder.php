@@ -30,6 +30,22 @@ final class ForkChildLaunchInputBuilder
     }
 
     /**
+     * Resolve concrete non-empty fork launch model/thinking without building prompts.
+     *
+     * @return array{model: string, reasoning: string}
+     */
+    public function resolveLaunchIdentity(
+        string $parentRunId,
+        ?string $modelOverride,
+        ?string $reasoningOverride,
+        ?string $parentModel = null,
+    ): array {
+        $resolved = $this->resolveConfig($parentRunId, $modelOverride, $reasoningOverride, $parentModel);
+
+        return ['model' => $resolved->model, 'reasoning' => $resolved->thinking];
+    }
+
+    /**
      * @param array{tools: list<string>, mcp: array<string, mixed>} $policy
      */
     public function buildPrepared(
@@ -41,15 +57,11 @@ final class ForkChildLaunchInputBuilder
         $parentRunId = $identity->parentRunId;
         $inherited = $task->inheritedMessages;
 
-        $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId) ?? [];
-        $effectiveParentModel = null !== $parentModel && '' !== trim($parentModel)
-            ? trim($parentModel)
-            : $this->readParentModelFromMetadata($parentMetadata);
-        $resolved = $this->configResolver->resolve(
-            explicitModel: $task->modelOverride,
-            explicitThinking: $task->reasoningOverride,
-            parentModel: $effectiveParentModel,
-            parentReasoning: $this->readParentReasoningFromMetadata($parentMetadata),
+        $resolved = $this->resolveConfig(
+            $parentRunId,
+            $task->modelOverride,
+            $task->reasoningOverride,
+            $parentModel,
         );
 
         $effectiveExtensions = $this->childExtensionSelection->resolveForFork();
@@ -69,6 +81,7 @@ final class ForkChildLaunchInputBuilder
             allowedExtensions: $effectiveExtensions,
         );
 
+        // Resolver fails closed: model/thinking are concrete non-empty strings.
         $childMetadata = new RunMetadata(
             session: [
                 'kind' => 'agent_child',
@@ -88,8 +101,20 @@ final class ForkChildLaunchInputBuilder
             extensions: $effectiveExtensions,
         );
 
+        $launchIdentity = new ChildRunIdentityDTO(
+            parentRunId: $identity->parentRunId,
+            childRunId: $identity->childRunId,
+            artifactId: $identity->artifactId,
+            displayName: $identity->displayName,
+            taskSummary: $identity->taskSummary,
+            launchModel: $resolved->model,
+            launchReasoning: $resolved->thinking,
+            artifactKind: $identity->artifactKind,
+            batchIndex: $identity->batchIndex,
+        );
+
         return new PreparedAgentChildRunDTO(
-            identity: $identity,
+            identity: $launchIdentity,
             startRunInput: new StartRunInput(
                 systemPrompt: $composed['systemPrompt'],
                 messages: $composed['messages'],
@@ -99,27 +124,26 @@ final class ForkChildLaunchInputBuilder
         );
     }
 
-    /**
-     * @param array<string, mixed> $parentMetadata
-     */
-    /**
-     * @param array<string, mixed> $parentMetadata
-     */
-    private function readParentModelFromMetadata(array $parentMetadata): ?string
-    {
-        $model = $parentMetadata['model'] ?? null;
+    private function resolveConfig(
+        string $parentRunId,
+        ?string $modelOverride,
+        ?string $reasoningOverride,
+        ?string $parentModel,
+    ): ForkRuntimeResolvedConfigDTO {
+        $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId);
+        // Explicit parent model still wins; otherwise inherit from parent RunStarted metadata.
+        // Model/reasoning are already canonicalized (trim/nonblank) by the metadata DTO.
+        $effectiveParentModel = null !== $parentModel && '' !== trim($parentModel)
+            ? trim($parentModel)
+            : $parentMetadata?->model;
 
-        return \is_string($model) && '' !== trim($model) ? trim($model) : null;
-    }
-
-    /**
-     * @param array<string, mixed> $parentMetadata
-     */
-    private function readParentReasoningFromMetadata(array $parentMetadata): ?string
-    {
-        $reasoning = $parentMetadata['reasoning'] ?? null;
-
-        return \is_string($reasoning) && '' !== trim($reasoning) ? trim($reasoning) : null;
+        return $this->configResolver->resolve(
+            explicitModel: $modelOverride,
+            explicitThinking: $reasoningOverride,
+            parentModel: $effectiveParentModel,
+            parentReasoning: $parentMetadata?->reasoning,
+            parentRunId: $parentRunId,
+        );
     }
 
     private function resolveContextWindowForModel(?string $model): ?int

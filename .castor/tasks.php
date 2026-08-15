@@ -13,7 +13,8 @@ declare(strict_types=1);
  *
  * Lanes (typical shell timeouts):
  *   deptrac (30s), test ParaTest (120s), test:controller-replay (150s),
- *   test:tui (180s), test:llm-real (180s), phpstan (90s), cs-check (30s).
+ *   test:tui (180s), test:llm-real (180s), phpstan (90s), cs-check (30s),
+ *   docs:validate (30s).
  *   Absolute castor check wall clock: castor_test_runner_max_seconds() (180s)
  *   from check() entry — lock wait, QA init, preflight, lanes, and finalizers
  *   all consume the same budget. Per-lane Castor hard timeouts and preflight
@@ -66,6 +67,7 @@ use function CastorTasks\assert_castor_check_llama_proxy_cache_unchanged;
 use function CastorTasks\assert_castor_check_run_no_process_leaks;
 use function CastorTasks\begin_castor_check_llama_proxy_cache_guard;
 use function CastorTasks\castor_check_lock_enabled;
+use function CastorTasks\castor_cli_executable;
 use function CastorTasks\check_llm_generation_ready;
 use function CastorTasks\cleanup_exact_qa_run_cache_roots;
 use function CastorTasks\finalize_qa_run_tui_tmux_sessions;
@@ -170,6 +172,10 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
     // replay lanes use source bin/console with APP_ENV=test, which
     // requires autoload-dev paths not bundled in the PHAR.
     $phpBin = \PHP_BINARY;
+    $castorBin = castor_cli_executable();
+    if (null === $castorBin) {
+        fail_quality('castor CLI executable not found; required for the docs:validate check lane');
+    }
     $strictFlags = phpunit_strict_issue_flags();
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
 
@@ -179,6 +185,7 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
     //
     // Unit/integration ParaTest excludes llm-real (build_check_paratest_command).
     // Live llm-real runs as its own parallel lane (same command as castor test:llm-real).
+    // docs:validate reuses the dedicated Castor task (same implementation as `castor docs:validate`).
     $allCheckCommands = [
         'deptrac' => [
             'cmd' => timeout_check_command(
@@ -226,6 +233,12 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
             'cmd' => timeout_check_command(
                 qa_check_run_env_command().' '.$phpBin.' vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --no-ansi'
                     .(is_llm_mode() ? ' --format=json --show-progress=none' : ' --diff'),
+                30,
+            ),
+        ],
+        'docs:validate' => [
+            'cmd' => timeout_check_command(
+                qa_check_run_env_command().' '.escapeshellarg($castorBin).' docs:validate',
                 30,
             ),
         ],

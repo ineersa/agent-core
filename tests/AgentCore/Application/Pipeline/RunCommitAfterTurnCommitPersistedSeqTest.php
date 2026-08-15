@@ -20,12 +20,16 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Session\History\HistoryProjector;
+use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
@@ -60,6 +64,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             promptStateStore: new InMemoryPromptStateStore(),
             promptStateReplayService: new PromptStateReplayService(),
             replayEventPreparer: new ReplayEventPreparer(),
+            historyReplayFilter: new HistoryReplayFilter(new HistoryProjector()),
         );
 
         $commit = new RunCommit(
@@ -105,7 +110,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
     {
         return new Serializer([
             new ArrayDenormalizer(),
-            new ObjectNormalizer(new ClassMetadataFactory(new AttributeLoader())),
+            new ObjectNormalizer(new ClassMetadataFactory(new AttributeLoader()), new MetadataAwareNameConverter(new ClassMetadataFactory(new AttributeLoader()), new CamelCaseToSnakeCaseNameConverter())),
         ], [new JsonEncoder()]);
     }
 }

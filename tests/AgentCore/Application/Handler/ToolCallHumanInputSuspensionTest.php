@@ -89,7 +89,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             ['question_id' => 'q-h', 'prompt' => 'Allow id?'],
             ['run_id' => 'run-h', 'turn_no' => 3, 'step_id' => 'step-h', 'tool_call_id' => 'call-h'],
         );
-        $result = (new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer()))->handle(
+        $result = (new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer()))->handle(
             ToolCallResultFactory::fromExecuteToolCallAndHumanInputSuspension(
                 $this->call('run-h', 'step-h', 'call-h', 0, 3),
                 new ToolExecutionHumanInputSuspension($request),
@@ -125,7 +125,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             $this->call('run-par', 'step-par', 'call-2', 1, mode: 'parallel', maxParallelism: 2),
         ]);
 
-        $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer());
+        $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
         $state = RunStateBuilder::running('run-par')
             ->withTurnNo(1)
             ->withLastSeq(3)
@@ -335,7 +335,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             ->build();
         $this->assertTrue($runStore->compareAndSwap($running, 0));
 
-        $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer());
+        $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
             runStore: $runStore,
             idempotency: new InMemoryIdempotencyStore(),

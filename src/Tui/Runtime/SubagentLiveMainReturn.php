@@ -9,11 +9,18 @@ use Ineersa\Tui\Screen\ChatScreen;
 
 /**
  * Shared return-to-main behavior for /agents-main and Ctrl+\ toggle.
+ *
+ * Callers that own QuestionCoordinator must drop the leaving child's questions
+ * before invoking this helper (Deptrac: TuiRuntime must not depend on TuiQuestion).
  */
 final class SubagentLiveMainReturn
 {
-    public static function returnToMain(TuiSessionState $state, ChatScreen $screen, ?AgentSessionClient $client = null, bool $requestRender = true): void
-    {
+    public static function returnToMain(
+        TuiSessionState $state,
+        ChatScreen $screen,
+        ?AgentSessionClient $client = null,
+        bool $requestRender = true,
+    ): void {
         if (!$state->subagentLiveView->active) {
             return;
         }
@@ -28,6 +35,8 @@ final class SubagentLiveMainReturn
         $screen->setTranscriptBlocks($state->transcript);
         $screen->syncQueuedUserMessages($state->queuedUserMessages);
         $screen->setWorkingMessage(null);
+        // Restore main-agent editor border from session footerReasoning (never overwritten by child).
+        $screen->applyEditorBorderColor($state->footerReasoning);
         if ($requestRender) {
             $screen->requestRender(true);
         }

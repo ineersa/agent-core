@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\ProjectionPipeline;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Projects tool-call and tool-execution events into ToolCall and
@@ -17,7 +19,8 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 final readonly class ToolProjectionSubscriber implements EventSubscriberInterface
 {
     public function __construct(
-        private readonly SubagentProgressDisplayFormatter $subagentProgressFormatter = new SubagentProgressDisplayFormatter(),
+        private readonly SubagentProgressDisplayFormatter $subagentProgressFormatter,
+        private readonly DenormalizerInterface $denormalizer,
     ) {
     }
 
@@ -152,6 +155,33 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $state = $event->state;
         $toolCallId = (string) ($p['tool_call_id'] ?? '');
         $toolName = (string) ($p['tool_name'] ?? '');
+
+        // Direct !shell (and similar non-streamed paths) emit tool_execution.started
+        // with arguments but never tool_call.* events. Synthesize a finalized ToolCall
+        // once so the exchange card can show command: args. Guard by block id so normal
+        // LLM-streamed ToolCall blocks are never duplicated.
+        $arguments = $p['arguments'] ?? null;
+        if (\is_array($arguments) && [] !== $arguments) {
+            $callBlockId = 'tool_call_'.$toolCallId;
+            if (null === $state->getBlock($callBlockId)) {
+                $argumentsText = $state->argumentsToText($arguments);
+                $text = '' !== $toolName ? $toolName.$argumentsText : $argumentsText;
+                $state->addBlock(new TranscriptBlock(
+                    id: $callBlockId,
+                    kind: TranscriptBlockKindEnum::ToolCall,
+                    runId: $event->runId(),
+                    seq: $state->nextSeq(),
+                    text: $text,
+                    meta: [
+                        'tool_call_id' => $toolCallId,
+                        'tool_name' => $toolName,
+                        'arguments' => $arguments,
+                    ],
+                    streaming: false,
+                ));
+            }
+        }
+
         $blockId = 'tool_result_'.$toolCallId;
 
         $state->addBlock(new TranscriptBlock(
@@ -193,16 +223,20 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             return;
         }
 
-        $progress = $p['subagent_progress'] ?? null;
-        if (\is_array($progress)) {
+        if (\array_key_exists('subagent_progress', $p)) {
+            $rawProgress = $p['subagent_progress'];
+            if (!\is_array($rawProgress)) {
+                throw new \InvalidArgumentException('subagent_progress payload must be an array when present.');
+            }
+            /** @var SubagentProgressSnapshotInterface $progress */
+            $progress = $this->denormalizer->denormalize($rawProgress, SubagentProgressSnapshotInterface::class);
             $meta = $block->meta;
             $meta['subagent_progress'] = $progress;
             if (isset($p['tool_name']) && \is_string($p['tool_name']) && '' !== $p['tool_name']) {
                 $meta['tool_name'] = $p['tool_name'];
             }
-            $displayText = $this->subagentProgressFormatter->format($progress);
             $state->updateBlock($blockId, $block->with(
-                text: $displayText,
+                text: $this->subagentProgressFormatter->format($progress),
                 streaming: true,
                 meta: $meta,
             ));
@@ -262,20 +296,18 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             if (isset($existing->meta['tool_name'])) {
                 $meta['tool_name'] = $existing->meta['tool_name'];
             }
-            if (isset($existing->meta['subagent_progress']) && \is_array($existing->meta['subagent_progress'])) {
-                $meta['subagent_progress'] = $existing->meta['subagent_progress'];
+            $priorProgress = $existing->meta['subagent_progress'] ?? null;
+            if ($priorProgress instanceof SubagentProgressSnapshotInterface) {
+                $meta['subagent_progress'] = $priorProgress;
                 $meta['subagent_final'] = true;
             }
         }
 
         $displayText = $result;
-        if (isset($meta['subagent_progress']) && \is_array($meta['subagent_progress'])) {
-            $widgetText = $this->subagentProgressFormatter->format($meta['subagent_progress']);
-            if ('' !== $result) {
-                $displayText = $widgetText."\n\n".$result;
-            } else {
-                $displayText = $widgetText;
-            }
+        $progress = $meta['subagent_progress'] ?? null;
+        if ($progress instanceof SubagentProgressSnapshotInterface) {
+            $widgetText = $this->subagentProgressFormatter->format($progress);
+            $displayText = '' !== $result ? $widgetText."\n\n".$result : $widgetText;
         }
 
         $state->upsertToolResultBlock($blockId, $event->runId(), $displayText, $meta, false);
@@ -301,20 +333,18 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             if (isset($existing->meta['tool_name'])) {
                 $meta['tool_name'] = $existing->meta['tool_name'];
             }
-            if (isset($existing->meta['subagent_progress']) && \is_array($existing->meta['subagent_progress'])) {
-                $meta['subagent_progress'] = $existing->meta['subagent_progress'];
+            $priorProgress = $existing->meta['subagent_progress'] ?? null;
+            if ($priorProgress instanceof SubagentProgressSnapshotInterface) {
+                $meta['subagent_progress'] = $priorProgress;
                 $meta['subagent_final'] = true;
             }
         }
 
         $displayText = $result;
-        if (isset($meta['subagent_progress']) && \is_array($meta['subagent_progress'])) {
-            $widgetText = $this->subagentProgressFormatter->format($meta['subagent_progress']);
-            if ('' !== $result) {
-                $displayText = $widgetText."\n\n".$result;
-            } else {
-                $displayText = $widgetText;
-            }
+        $progress = $meta['subagent_progress'] ?? null;
+        if ($progress instanceof SubagentProgressSnapshotInterface) {
+            $widgetText = $this->subagentProgressFormatter->format($progress);
+            $displayText = '' !== $result ? $widgetText."\n\n".$result : $widgetText;
         }
 
         $state->upsertToolResultBlock($blockId, $event->runId(), $displayText, $meta, false);

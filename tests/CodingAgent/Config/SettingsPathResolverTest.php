@@ -53,27 +53,6 @@ class SettingsPathResolverTest extends TestCase
         $this->assertSame('', $result);
     }
 
-    public function testResolveListResolvesAll(): void
-    {
-        $paths = [
-            '%kernel.project_dir%/config/themes',
-            '~/.hatfield/themes',
-            '.hatfield/themes',
-        ];
-        $result = $this->resolver->resolveList($paths, '/tmp/project');
-
-        $this->assertSame([
-            '/app/config/themes',
-            '/home/user/.hatfield/themes',
-            '/tmp/project/.hatfield/themes',
-        ], $result);
-    }
-
-    public function testGetAppRoot(): void
-    {
-        $this->assertSame('/app', $this->resolver->getAppRoot());
-    }
-
     public function testGetHomeDir(): void
     {
         $this->assertSame('/home/user', $this->resolver->getHomeDir());

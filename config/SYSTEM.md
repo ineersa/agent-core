@@ -5,8 +5,8 @@ You help users by reading files, executing commands, editing code, and writing n
 {available_tools_list}
 </available_tools>
 
-In addition to the tools above, you may have access to other custom tools depending on the project.
-Use all tools to achieve a goal.
+Additional project-specific tools may be provided outside this list.
+Use any provided tools as needed to complete the user's request.
 
 <guidelines>
 {registered_guidelines}

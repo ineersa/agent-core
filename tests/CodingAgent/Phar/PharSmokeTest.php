@@ -20,11 +20,10 @@ use Symfony\Component\Process\Process;
  * This test is NOT in the llm-real group because it does not need
  * llama.cpp. It is not in any group by default — run it explicitly:
  *
- *   HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --filter PharSmokeTest
+ *   castor phar:build
+ *   castor test --filter=PharSmokeTest
  *
- * Or through Castor:
- *
- *   castor phar:build && HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --filter PharSmokeTest
+ * Castor sets HATFIELD_BINARY_PATH to the worktree-local PHAR when running the group.
  */
 #[Group('phar')]
 final class PharSmokeTest extends TestCase
@@ -58,7 +57,7 @@ final class PharSmokeTest extends TestCase
         if (!$isPhar) {
             $this->markTestSkipped(\sprintf(
                 'HATFIELD_BINARY_PATH not set or not a PHAR. Resolved to %s. '
-                .'Run: castor phar:build && HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --filter PharSmokeTest',
+                .'Run: castor phar:build && castor test --filter=PharSmokeTest',
                 $pharPath,
             ));
         }
@@ -109,7 +108,7 @@ final class PharSmokeTest extends TestCase
         if (!$isPhar) {
             $this->markTestSkipped(\sprintf(
                 'HATFIELD_BINARY_PATH not set or not a PHAR. Resolved to %s. '
-                .'Run: castor phar:build && HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --filter PharSmokeTest',
+                .'Run: castor phar:build && castor test --filter=PharSmokeTest',
                 $pharPath,
             ));
         }
@@ -229,7 +228,7 @@ final class PharSmokeTest extends TestCase
         }
     }
 
-    public function testPharContainsMaterializedInternalDocs(): void
+    public function testPharContainsMaterializedBuiltinDocs(): void
     {
         [$cmd, $pharPath] = $this->resolveArtifactCommand();
         $isPhar = str_ends_with($pharPath, '.phar');
@@ -243,42 +242,106 @@ final class PharSmokeTest extends TestCase
 
         $this->assertFileExists($pharPath);
         $phar = new \Phar($pharPath);
-        $expected = [
-            'agents',
-            'background-processes',
-            'compaction',
-            'hitl-and-approvals',
-            'mcp',
-            'prompt-templates',
-            'session-storage',
-            'settings',
-        ];
 
-        foreach ($expected as $id) {
-            $entry = 'internal-docs/'.$id.'.md';
-            $this->assertTrue(isset($phar[$entry]), 'Missing PHAR entry '.$entry);
-            $this->assertFalse($phar[$entry]->isLink(), $entry.' must be a regular file, not a symlink');
-            $uri = 'phar://'.$pharPath.'/'.$entry;
+        $projectRoot = \dirname(__DIR__, 3);
+        $catalog = (new \Ineersa\CodingAgent\Docs\BuiltinDocsCatalog())->discover($projectRoot);
+        $this->assertNotSame([], $catalog, 'catalog must discover selected built-in docs');
+
+        $expected = [];
+        foreach ($catalog as $entry) {
+            $expected[$entry['relativePath']] = true;
+            $this->assertTrue(isset($phar[$entry['relativePath']]), 'Missing PHAR entry '.$entry['relativePath']);
+            $this->assertFalse($phar[$entry['relativePath']]->isLink(), $entry['relativePath'].' must be a regular file, not a symlink');
+            $uri = 'phar://'.$pharPath.'/'.$entry['relativePath'];
             $raw = file_get_contents($uri);
             $this->assertNotFalse($raw, 'Unable to read '.$uri);
+            $source = file_get_contents($entry['absolutePath']);
+            $this->assertNotFalse($source);
+            $this->assertSame($source, $raw, 'PHAR bytes must match source for '.$entry['relativePath']);
+            $this->assertStringContainsString('builtin: true', $raw);
             $this->assertStringContainsString('description:', $raw);
             $this->assertStringContainsString('# ', $raw);
         }
 
-        $this->assertFalse(isset($phar['docs/settings.md']), 'PHAR must not bundle docs/');
-        $this->assertFalse(isset($phar['docs/archive']), 'PHAR must not bundle docs/archive');
+        // Exact Markdown inventory under both canonical archive doc roots.
+        // Only the monorepo-canonical roots are asserted (not vendor/ path-package copies).
+        $found = [];
+        $canonicalPrefixes = [
+            \Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::CORE_DOCS_RELATIVE.'/',
+            \Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::EXTENSION_API_DOCS_RELATIVE.'/',
+        ];
+        /** @var \PharFileInfo $file */
+        foreach (new \RecursiveIteratorIterator($phar) as $file) {
+            if (!$file->isFile()) {
+                continue;
+            }
+            $rel = str_replace('\\', '/', $file->getPathname());
+            if (str_contains($rel, '.phar/')) {
+                $rel = substr($rel, strpos($rel, '.phar/') + \strlen('.phar/'));
+            }
+            if (str_starts_with($rel, 'phar://')) {
+                // phar:///abs/path/file.phar/entry
+                $marker = '.phar/';
+                if (str_contains($rel, $marker)) {
+                    $rel = substr($rel, strpos($rel, $marker) + \strlen($marker));
+                }
+            }
+            if (!str_ends_with($rel, '.md')) {
+                continue;
+            }
+            $isCanonical = false;
+            foreach ($canonicalPrefixes as $prefix) {
+                if (str_starts_with($rel, $prefix)) {
+                    $isCanonical = true;
+                    break;
+                }
+            }
+            if (!$isCanonical) {
+                continue;
+            }
+            $found[$rel] = true;
+            $this->assertArrayHasKey($rel, $expected, 'PHAR contains unmarked/extra documentation file: '.$rel);
+        }
+        ksort($expected);
+        ksort($found);
+        $this->assertSame(array_keys($expected), array_keys($found), 'PHAR Markdown inventory must match BuiltinDocsCatalog exactly');
+
+        $this->assertFalse(isset($phar['internal-docs/settings.md']), 'PHAR must not contain internal-docs');
+        $this->assertFalse(isset($phar['docs/datadog.md']), 'PHAR must not bundle unmarked repository docs');
+        $this->assertFalse(isset($phar['docs/async-runtime-architecture.md']), 'PHAR must not bundle repository-only docs');
+        // Unmarked decoys under Extension API docs must not ship even if present in source.
+        $this->assertFalse(
+            isset($phar['.hatfield/extensions/extension-api/docs/private-unmarked.md']),
+            'PHAR must not bundle unmarked Extension API docs',
+        );
+        $vendorApiDocsPrefix = 'vendor/ineersa/hatfield-extension-api/docs/';
+        /** @var \PharFileInfo $vendorFile */
+        foreach (new \RecursiveIteratorIterator($phar) as $vendorFile) {
+            if (!$vendorFile->isFile()) {
+                continue;
+            }
+            $vendorRel = str_replace('\\', '/', $vendorFile->getPathname());
+            if (str_contains($vendorRel, '.phar/')) {
+                $vendorRel = substr($vendorRel, strpos($vendorRel, '.phar/') + \strlen('.phar/'));
+            }
+            $this->assertFalse(
+                str_starts_with($vendorRel, $vendorApiDocsPrefix),
+                'PHAR must not ship any vendor path-package Extension API docs entry: '.$vendorRel,
+            );
+        }
 
         $locator = new \Ineersa\CodingAgent\Config\AppResourceLocator('phar://'.$pharPath);
-        $settingsPath = $locator->getInternalDocsPath().'/settings.md';
+        $settingsPath = $locator->getAppRoot().'/'.\Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::CORE_DOCS_RELATIVE.'/settings.md';
         $this->assertFileExists($settingsPath);
         $this->assertStringContainsString('Hatfield Settings', (string) file_get_contents($settingsPath));
+        $this->assertDirectoryExists($locator->getAppRoot().'/'.\Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::EXTENSION_API_DOCS_RELATIVE);
 
         $skillMd = 'src/CodingAgent/Resources/skills/subagents/SKILL.md';
         $frontmatterMd = 'src/CodingAgent/Resources/skills/subagents/FRONTMATTER.md';
         $this->assertTrue(isset($phar[$skillMd]), 'Missing PHAR entry '.$skillMd);
         $this->assertTrue(isset($phar[$frontmatterMd]), 'Missing PHAR entry '.$frontmatterMd);
         $this->assertSame(
-            $locator->getAppRoot().'/src/CodingAgent/Resources/skills',
+            'phar://'.$pharPath.'/src/CodingAgent/Resources/skills',
             $locator->getBuiltinSkillsPath(),
         );
         $this->assertFileExists($locator->getBuiltinSkillsPath().'/subagents/SKILL.md');
@@ -288,7 +351,7 @@ final class PharSmokeTest extends TestCase
         $this->assertStringContainsString('agent_retrieve', $skillBody);
 
         $this->assertSame(
-            $locator->getAppRoot().'/src/CodingAgent/Resources/agents',
+            'phar://'.$pharPath.'/src/CodingAgent/Resources/agents',
             $locator->getBuiltinAgentsPath(),
         );
         foreach (['scout', 'reviewer', 'researcher', 'architect', 'browser'] as $name) {
@@ -332,13 +395,14 @@ final class PharSmokeTest extends TestCase
         $this->assertFileExists($pharPath);
         $phar = new \Phar($pharPath);
 
-        // Bundled defaults / themes / migrations / internal docs (materialized).
+        // Bundled defaults / themes / migrations / selected built-in docs.
         $requiredEntries = [
             'config/hatfield.defaults.yaml',
             'config/themes/catppuccin-mocha.yaml',
             'migrations/Version20260601152619.php',
-            'internal-docs/settings.md',
-            'internal-docs/agents.md',
+            'docs/settings.md',
+            'docs/agents.md',
+            '.hatfield/extensions/extension-api/docs/extension-api.md',
         ];
         foreach ($requiredEntries as $entry) {
             $this->assertTrue(isset($phar[$entry]), 'Missing PHAR entry '.$entry);

@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\Compaction\CompactResult;
 use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
@@ -19,6 +20,9 @@ use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler;
 use Ineersa\CodingAgent\Compaction\BeforeCompactionHookInterface;
 use Ineersa\CodingAgent\Compaction\CompactionBoundarySelector;
@@ -35,7 +39,7 @@ use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
-use Ineersa\CodingAgent\Config\ModelSettingsPersister;
+use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionCompactionHookDispatcher;
@@ -60,6 +64,52 @@ use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
  */
 final class CompactRunHandlerTest extends TestCase
 {
+    /**
+     * Thesis: CompactRun reaching the handler for an agent child produces no
+     * compaction lifecycle event and invokes no preparation/worker.
+     */
+    public function testAgentChildCompactRunIsSilentNoOp(): void
+    {
+        $messages = [
+            $this->userMsg('question 1'),
+            $this->userMsg('question 2'),
+            $this->assistantMsg('answer 1'),
+            $this->assistantMsg('answer 2'),
+        ];
+        $state = $this->createRunState($messages);
+
+        $service = $this->createMock(CompactionServiceInterface::class);
+        $service->expects($this->never())->method('prepare');
+        $service->expects($this->never())->method('buildSummarizationMessages');
+        $service->expects($this->never())->method('buildCompactedMessages');
+        $service->expects($this->never())->method('compactMessages');
+
+        $handler = new CompactRunHandler(
+            $service,
+            $this->createAppConfig(),
+            new EventFactory(),
+            $this->hooks([]),
+            $this->extensionHooks([]),
+            $this->metadataReader(isChild: true),
+        );
+
+        $result = $handler->handle(
+            new CompactRun(
+                runId: 'child-run',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-child',
+                trigger: 'manual',
+            ),
+            $state,
+        );
+
+        $this->assertSame($state, $result->nextState);
+        $this->assertSame([], $result->events);
+        $this->assertSame([], $result->effects);
+    }
+
     public function testReadyPreparationEmitsStartedAndDispatchesWorker(): void
     {
         $messages = [
@@ -85,6 +135,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -170,6 +221,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -212,6 +264,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -270,6 +323,7 @@ final class CompactRunHandlerTest extends TestCase
                 new EventFactory(),
                 $this->hooks([]),
                 $this->extensionHooks([]),
+                $this->metadataReader(),
             );
 
             $result = $handler->handle(
@@ -330,6 +384,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$cancelHook]),
             $this->extensionHooks([$cancelHook]),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -411,6 +466,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$replaceHook]),
             $this->extensionHooks([$replaceHook]),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -725,6 +781,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$hook]),
             $this->extensionHooks([$hook]),
+            $this->metadataReader(),
         );
 
         $handler->handle(
@@ -778,6 +835,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$hook]),
             $this->extensionHooks([$hook]),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -847,6 +905,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$cancelHook]),
             $this->extensionHooks([$cancelHook]),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -908,6 +967,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -953,6 +1013,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -1029,6 +1090,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([$cancelHook]),
             $this->extensionHooks([$cancelHook]),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -1132,6 +1194,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([], [$publicHook]),
+            $this->metadataReader(),
         );
 
         $result = $handler->handle(
@@ -1380,11 +1443,10 @@ final class CompactRunHandlerTest extends TestCase
 
         $modelResolver = new ModelResolver($appConfig, $sessionMetaStore);
 
-        // ModelSettingsPersister is never accessed by getCurrentModel().
-        $persisterRc = new \ReflectionClass(ModelSettingsPersister::class);
-        $persister = $persisterRc->newInstanceWithoutConstructor();
+        // Persistence deps are never accessed by getCurrentModel().
+        $settingsWriter = (new \ReflectionClass(SettingsOverrideWriter::class))->newInstanceWithoutConstructor();
 
-        return new ModelSelectionService($appConfig, $modelResolver, $persister);
+        return new ModelSelectionService($appConfig, $modelResolver, $settingsWriter, $sessionMetaStore);
     }
 
     private function userMsg(string $text): AgentMessage
@@ -1400,6 +1462,39 @@ final class CompactRunHandlerTest extends TestCase
     private function hooks(array $hooks = []): CompactionHookDispatcher
     {
         return new CompactionHookDispatcher($hooks);
+    }
+
+    private function metadataReader(bool $isChild = false, string $runId = 'child-run'): SubagentRunMetadataReader
+    {
+        $eventStore = new InMemoryEventStore();
+        if ($isChild) {
+            $eventStore->seed(new RunEvent(
+                runId: $runId,
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: [
+                    'step_id' => 'start-1',
+                    'payload' => [
+                        'system_prompt' => 'child',
+                        'messages' => [],
+                        'metadata' => [
+                            'session' => [
+                                'kind' => 'agent_child',
+                                'parent_run_id' => 'parent-1',
+                                'agent_name' => 'scout',
+                                'artifact_id' => 'agent_child1',
+                            ],
+                            'model' => 'deepseek/deepseek-v4-flash',
+                            'reasoning' => 'medium',
+                            'tools_scope' => ['allowed_tools' => []],
+                        ],
+                    ],
+                ],
+            ));
+        }
+
+        return new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
     }
 
     /**

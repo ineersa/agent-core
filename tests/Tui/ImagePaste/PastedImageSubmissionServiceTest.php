@@ -122,7 +122,10 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
             new TranscriptDisplayState(),
         );
 
-        $attachmentsDir = $store->resolveSessionsBasePath().'/'.$sessionId.'/attachments';
+        // createSession only writes state/events; attachments are lazy. Ensure
+        // the dir exists so a pre-existing destination path can block promotion
+        // without relying on leftover FS from a prior method under shared CWD.
+        $attachmentsDir = $store->ensureSessionAttachmentsDirectory($sessionId);
         touch($attachmentsDir.'/pasted-image-1.png');
 
         $resolved = $service->resolveSubmittedText('see [Image #1]', $state, $screen);

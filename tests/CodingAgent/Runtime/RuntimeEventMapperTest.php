@@ -395,6 +395,28 @@ final class RuntimeEventMapperTest extends TestCase
         $this->assertSame('call-read', $result->payload['tool_call_id']);
         $this->assertSame('read_file', $result->payload['tool_name']);
         $this->assertSame(0, $result->payload['order_index']);
+        $this->assertArrayNotHasKey('arguments', $result->payload,
+            'arguments must stay optional when absent from the domain payload');
+    }
+
+    public function testNormalizesToolExecutionStartPassesThroughOptionalArguments(): void
+    {
+        // Direct !shell emits tool_execution_start with command args and no tool_call.* stream.
+        $event = $this->runEvent('tool_execution_start', [
+            'tool_call_id' => 'sh_direct_1',
+            'tool_name' => 'bash',
+            'order_index' => 0,
+            'arguments' => ['command' => 'ls -1'],
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        $this->assertNotNull($result);
+        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionStarted->value, $result->type);
+        $this->assertSame('sh_direct_1', $result->payload['tool_call_id']);
+        $this->assertSame('bash', $result->payload['tool_name']);
+        $this->assertSame(['command' => 'ls -1'], $result->payload['arguments'] ?? null);
+        $this->assertArrayNotHasKey('timeout', $result->payload['arguments'] ?? []);
     }
 
     public function testNormalizesToolExecutionEndSuccess(): void
@@ -708,31 +730,17 @@ final class RuntimeEventMapperTest extends TestCase
         $this->assertNull($result);
     }
 
-    public function testSkipsTurnBranched(): void
+    public function testSkipsHistoryPositionSet(): void
     {
-        $event = $this->runEvent('turn_branched', [
-            'turn_no' => 1,
-            'parent_turn_no' => null,
-            'reason' => 'rewind',
-        ]);
-
-        $result = $this->mapper->toRuntimeEvent($event);
-
-        $this->assertNull($result, 'turn_branched is tree metadata and must not produce a runtime event');
-    }
-
-    public function testSkipsLeafSet(): void
-    {
-        $event = $this->runEvent('leaf_set', [
-            'turn_no' => 2,
-            'parent_turn_no' => 1,
-            'previous_turn_no' => 1,
+        $event = $this->runEvent('history_position_set', [
+            'position_turn_no' => 2,
+            'previous_position_turn_no' => 1,
             'reason' => 'continue',
         ]);
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNull($result, 'leaf_set is tree metadata and must not produce a runtime event');
+        $this->assertNull($result, 'history_position_set is history metadata and must not produce a runtime event');
     }
 
     // ── Status fallback normalization ────────────────────────────────────────

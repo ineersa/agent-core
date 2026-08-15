@@ -501,6 +501,9 @@ function materialize_vendor_path_package_symlinks(string $stagingDir): void
 {
     $path = $stagingDir.'/vendor/ineersa/hatfield-extension-api';
     if (!is_link($path)) {
+        // Already a real directory (or missing); still strip vendor docs duplicates.
+        strip_vendor_extension_api_docs($stagingDir);
+
         return;
     }
 
@@ -518,6 +521,23 @@ function materialize_vendor_path_package_symlinks(string $stagingDir): void
     if (!rename($tmp, $path)) {
         remove_path_checked($tmp);
         throw new \RuntimeException('Unable to replace path-package symlink with copy: '.$path);
+    }
+
+    // Canonical model-visible API docs live under .hatfield/extensions/extension-api/docs.
+    // Drop the vendor path-package docs/ copy so the PHAR does not ship duplicates.
+    strip_vendor_extension_api_docs($stagingDir);
+}
+
+/**
+ * Remove vendor/ineersa/hatfield-extension-api/docs after Composer path materialization.
+ *
+ * Selected API docs are staged only at the monorepo-canonical path.
+ */
+function strip_vendor_extension_api_docs(string $stagingDir): void
+{
+    $docs = $stagingDir.'/vendor/ineersa/hatfield-extension-api/docs';
+    if (is_dir($docs) || is_link($docs)) {
+        remove_path_checked($docs);
     }
 }
 
@@ -815,34 +835,76 @@ function write_file_checked(string $path, string $contents): void
  */
 function phar_packaged_inputs(string $root): array
 {
+    // Selected built-in docs are fingerprinted as individual files (not the whole
+    // docs/ tree). Discovery uses the same BuiltinDocsCatalog roots/marker as runtime.
+    $selectedDocs = [];
+    if (class_exists(\Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::class)) {
+        $selectedDocs = (new \Ineersa\CodingAgent\Docs\BuiltinDocsCatalog())->selectedAbsolutePaths($root);
+    }
+
+    // Extension API package source is fingerprinted without its docs/ subtree so
+    // unmarked API Markdown does not invalidate freshness; selected API docs are
+    // listed explicitly via $selectedDocs.
+    $extensionApiFiles = [];
+    $extensionApiRoot = $root.'/.hatfield/extensions/extension-api';
+    if (is_dir($extensionApiRoot)) {
+        $extensionApiRootReal = false !== ($extensionApiRootResolved = realpath($extensionApiRoot))
+            ? $extensionApiRootResolved
+            : $extensionApiRoot;
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveCallbackFilterIterator(
+                new \RecursiveDirectoryIterator($extensionApiRoot, \FilesystemIterator::SKIP_DOTS),
+                static function (\SplFileInfo $current) use ($extensionApiRootReal): bool {
+                    if (!$current->isDir()) {
+                        return true;
+                    }
+                    // Skip only the package-level docs/ directory.
+                    if ('docs' !== $current->getFilename()) {
+                        return true;
+                    }
+                    $parent = \dirname($current->getPathname());
+                    $parentReal = false !== ($parentResolved = realpath($parent))
+                        ? $parentResolved
+                        : $parent;
+
+                    return $parentReal !== $extensionApiRootReal;
+                },
+            ),
+        );
+        foreach ($iterator as $entry) {
+            /** @var \SplFileInfo $entry */
+            if ($entry->isFile() || $entry->isLink()) {
+                $extensionApiFiles[] = $entry->getPathname();
+            }
+        }
+        sort($extensionApiFiles);
+    }
+
     return [
         'directories' => [
             $root.'/bin',
             $root.'/src',
             $root.'/config',
             $root.'/migrations',
-            // Public ExtensionApi package source (path-required by root composer).
-            $root.'/.hatfield/extensions/extension-api',
-            $root.'/internal-docs',
             $root.'/.castor',
             $root.'/tools/phar',
         ],
-        'files' => [
+        'files' => array_values(array_unique(array_merge([
             $root.'/composer.json',
             $root.'/composer.lock',
             $root.'/box.json',
             $root.'/castor.php',
             $root.'/tools/phar/composer.json',
             $root.'/tools/phar/composer.lock',
-        ],
+        ], $extensionApiFiles, $selectedDocs))),
     ];
 }
 
 /**
  * Sidecar path storing the deterministic packaged-input fingerprint for a PHAR.
  *
- * Compared by phar_is_stale() so freshness tracks content (including resolved
- * internal-docs symlink targets), not just directory mtimes.
+ * Compared by phar_is_stale() so freshness tracks packaged content
+ * (including selected built-in docs), not just directory mtimes.
  */
 function phar_freshness_marker_path(string $pharPath): string
 {
@@ -853,8 +915,8 @@ function phar_freshness_marker_path(string $pharPath): string
  * Deterministic fingerprint of the complete packaged/build input set.
  *
  * Directories are walked recursively. Symlinks contribute the resolved target
- * path and the target file contents (critical for internal-docs → docs/*).
- * Missing optional paths are recorded as absent so deletions invalidate.
+ * path and the target file contents. Selected built-in docs are also listed as
+ * explicit files. Missing optional paths are recorded as absent so deletions invalidate.
  */
 function phar_input_fingerprint(string $root): string
 {
@@ -903,11 +965,12 @@ function phar_input_fingerprint(string $root): string
         }
     }
 
-    // Build identity env inputs are part of the packaged artifact contents.
-    $version = getenv('HATFIELD_BUILD_VERSION');
-    $commit = getenv('HATFIELD_BUILD_COMMIT');
-    $lines[] = 'env\tHATFIELD_BUILD_VERSION\t'.(false === $version ? '' : trim((string) $version));
-    $lines[] = 'env\tHATFIELD_BUILD_COMMIT\t'.(false === $commit ? '' : trim((string) $commit));
+    // Fingerprint the resolved packaging build identity (env overrides + git HEAD),
+    // matching resolve_build_identity_for_packaging() so unset HATFIELD_BUILD_COMMIT
+    // still invalidates when HEAD moves.
+    $identity = resolve_build_identity_for_packaging($root);
+    $lines[] = 'build-identity\tversion\t'.$identity['version'];
+    $lines[] = 'build-identity\tcommit\t'.$identity['commit'];
 
     sort($lines);
 
@@ -1502,13 +1565,25 @@ function phar_build(): string
     if (!mkdir($extensionApiStaging, 0755, true) && !is_dir($extensionApiStaging)) {
         throw new \RuntimeException('Unable to create staging directory: '.$extensionApiStaging);
     }
-    run_checked('cp -a '.escapeshellarg($extensionApiSrc).'/. '.escapeshellarg($extensionApiStaging.'/'));
+    // Copy the public Extension API package for composer path resolution, but exclude
+    // its docs/ tree so unmarked Markdown cannot enter the archive. Catalog-selected
+    // API docs are materialized below as regular files at canonical paths.
+    run_checked(
+        'rsync -a --delete --exclude '.escapeshellarg('docs/')
+        .' '.escapeshellarg($extensionApiSrc.'/')
+        .' '.escapeshellarg($extensionApiStaging.'/'),
+    );
 
-    // Curated internal docs use source-tree symlinks; Box rejects links, so
-    // materialize regular files into the staging tree before compilation.
-    $internalDocsPath = $root.'/internal-docs';
-    if (is_dir($internalDocsPath)) {
-        run_checked('cp -aL '.escapeshellarg($internalDocsPath).' '.escapeshellarg($stagingDir.'/'));
+    // Stage only marked built-in docs at their canonical paths as regular files.
+    // Unmarked repository docs and any legacy internal-docs projection are omitted.
+    $selectedDocs = (new \Ineersa\CodingAgent\Docs\BuiltinDocsCatalog())->discover($root);
+    foreach ($selectedDocs as $entry) {
+        $dest = $stagingDir.'/'.$entry['relativePath'];
+        $destDir = \dirname($dest);
+        if (!is_dir($destDir) && !mkdir($destDir, 0755, true) && !is_dir($destDir)) {
+            throw new \RuntimeException('Unable to create staged docs directory: '.$destDir);
+        }
+        copy_file_checked($entry['absolutePath'], $dest);
     }
 
     foreach (['composer.json', 'composer.lock', 'box.json'] as $file) {

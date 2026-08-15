@@ -7,8 +7,11 @@ namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\ChildRun\Deferred;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\SubagentProgressParallelChildReportDTO;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -25,13 +28,13 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 {
     public function testCanonicalRunStartedModelOverridesStaleDefinitionAndSurvivesResume(): void
     {
-        $projector = new DeferredChildRunEventProjector();
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer());
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
             lastCommittedSeq: 0,
-            // Stale projected model from a previous definition snapshot (session-shaped).
             model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         );
 
         $failed = $projector->apply(
@@ -39,8 +42,15 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             [
                 new AfterTurnCommitEventSummary(1, RunEventTypeEnum::RunStarted->value, [
                     'payload' => ['metadata' => [
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'parent_run_id' => 'parent-1',
+                            'agent_name' => 'scout',
+                            'artifact_id' => 'agent_1',
+                        ],
                         'model' => 'openai-codex/gpt-5.6-sol',
-                        'provider' => 'openai-codex',
+                        'reasoning' => 'xhigh',
+                        'tools_scope' => ['allowed_tools' => []],
                     ]],
                 ]),
                 new AfterTurnCommitEventSummary(2, RunEventTypeEnum::LlmStepFailed->value, [
@@ -52,18 +62,16 @@ final class DeferredChildRunEventProjectorTest extends TestCase
                     'retryable' => false,
                 ]),
             ],
-            // Stale definition snapshot that differs from immutable launch metadata.
-            definitionModel: 'deepseek/deepseek-v4-flash',
             committedStatus: RunStatus::Failed,
             committedTurnNo: 3,
         );
 
         $this->assertSame(RunStatus::Failed, $failed->childStatus);
         $this->assertSame('openai-codex/gpt-5.6-sol', $failed->model);
-        $this->assertSame('openai-codex', $failed->provider);
+        $this->assertSame('xhigh', $failed->reasoning);
         $this->assertSame(1, $failed->llmStepCount);
 
-        // Recovery/resume apply without another run_started must keep launch model.
+        // Recovery/resume apply without another run_started must keep launch model/reasoning.
         $resumed = $projector->apply(
             $failed,
             [
@@ -75,23 +83,28 @@ final class DeferredChildRunEventProjectorTest extends TestCase
                     ],
                 ]),
             ],
-            definitionModel: 'deepseek/deepseek-v4-flash',
             committedStatus: RunStatus::Running,
             committedTurnNo: 4,
         );
 
         $this->assertSame('openai-codex/gpt-5.6-sol', $resumed->model);
+        $this->assertSame('xhigh', $resumed->reasoning);
         $this->assertSame(2, $resumed->llmStepCount);
         $this->assertSame(4, $resumed->childTurnNo);
+        [$serializer] = AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
+        $wire = $serializer->normalize($resumed, null, [\Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
+        $this->assertSame('xhigh', $serializer->denormalize($wire, DeferredChildRunLifecycleProjectionDTO::class)->reasoning);
     }
 
     public function testRetryableLlmStepFailedStaysRunningWhileExhaustedFailureIsTerminal(): void
     {
-        $projector = new DeferredChildRunEventProjector();
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer());
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
             lastCommittedSeq: 0,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         );
 
         // Session-shaped: LlmStepResultHandler commits retryable failure as
@@ -118,7 +131,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
                     'message' => 'provider diagnostic notification',
                 ]),
             ],
-            definitionModel: 'openai-codex/gpt-5.6-sol',
             committedStatus: RunStatus::Failed,
             committedTurnNo: 47,
         );
@@ -156,7 +168,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
                     'max_retries' => 2,
                 ]),
             ],
-            definitionModel: 'openai-codex/gpt-5.6-sol',
             committedStatus: RunStatus::Failed,
             committedTurnNo: 48,
         );
@@ -174,11 +185,13 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 
     public function testApplyEnforcesPrivacyStatusOverridesAndMalformedArgumentSafety(): void
     {
-        $projector = new DeferredChildRunEventProjector();
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer());
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
             lastCommittedSeq: 0,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         );
 
         $longText = str_repeat('Z', 300);
@@ -202,7 +215,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $projection = $projector->apply(
             $current,
             $summaries,
-            definitionModel: null,
             committedStatus: RunStatus::WaitingHuman,
             committedTurnNo: 4,
         );
@@ -222,7 +234,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $projection = $projector->apply(
             $projection,
             [new AfterTurnCommitEventSummary(4, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 5])],
-            definitionModel: null,
             committedStatus: RunStatus::Running,
             committedTurnNo: 5,
         );
@@ -239,7 +250,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $projection = $projector->apply(
             $projection,
             [$malformed],
-            definitionModel: null,
             committedStatus: RunStatus::Compacting,
             committedTurnNo: 5,
         );
@@ -251,7 +261,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $projection = $projector->apply(
             $projection,
             [new AfterTurnCommitEventSummary(6, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 6])],
-            definitionModel: null,
             committedStatus: RunStatus::Cancelling,
             committedTurnNo: 6,
         );
@@ -262,11 +271,13 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 
     public function testCompletedAndFailedLlmStepsIncrementDurableCounterAndRoundTrip(): void
     {
-        $projector = new DeferredChildRunEventProjector();
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer());
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
             lastCommittedSeq: 0,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
         );
 
         $projection = $projector->apply(
@@ -283,7 +294,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
                     'usage' => ['input_tokens' => 20, 'output_tokens' => 3, 'total_tokens' => 23],
                 ]),
             ],
-            definitionModel: 'deepseek/deepseek-v4-flash',
             committedStatus: RunStatus::Running,
             committedTurnNo: 7,
         );
@@ -292,34 +302,33 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertSame(7, $projection->childTurnNo);
         $this->assertSame(30, $projection->inputTokens);
 
-        $roundTrip = DeferredChildRunLifecycleProjectionDTO::fromArray($projection->toArray());
+        [$serializer] = AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
+        $wire = $serializer->normalize($projection, null, [\Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
+        $roundTrip = $serializer->denormalize($wire, DeferredChildRunLifecycleProjectionDTO::class);
         $this->assertSame(3, $roundTrip->llmStepCount);
-        $this->assertSame(3, $roundTrip->toArray()['llm_step_count'] ?? null);
+        $this->assertSame(3, $wire['llm_step_count'] ?? null);
         $this->assertSame(7, $roundTrip->childTurnNo);
 
         $summary = new \Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary(
+            model: $roundTrip->model,
+            reasoning: $roundTrip->reasoning,
             toolCount: $roundTrip->toolCount,
             llmStepCount: $roundTrip->llmStepCount,
             inputTokens: $roundTrip->inputTokens,
             latestInputTokens: $roundTrip->latestInputTokens,
-            contextWindow: $roundTrip->contextWindow,
+            contextWindow: $roundTrip->contextWindow ?? 0,
             outputTokens: $roundTrip->outputTokens,
             reasoningTokens: $roundTrip->reasoningTokens,
             totalTokens: $roundTrip->totalTokens,
             cost: $roundTrip->cost,
-            model: $roundTrip->model,
-            provider: $roundTrip->provider,
             artifactPath: 'artifacts/agents/agent_llm_steps',
             assistantExcerpt: $roundTrip->assistantExcerpt,
             recentTools: $roundTrip->recentTools,
             activeToolLine: $roundTrip->activeToolLine,
         );
-        $fields = $summary->toProgressFields();
-        $this->assertSame(3, $fields['llm_step_count'] ?? null);
-        $this->assertArrayNotHasKey('turn_no', $fields);
+        $this->assertSame(3, $summary->llmStepCount);
 
-        $snapshot = (new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder())->singleTerminalFromChildTurn(
-            status: 'completed',
+        $snapshot = (new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder())->singleFromChildTurn(
             agentName: 'scout',
             artifactId: 'agent_llm_steps',
             agentRunId: 'child-run-llm-steps',
@@ -327,29 +336,31 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             childTurnNo: $roundTrip->childTurnNo,
             elapsedMs: 1000,
             enrichment: $summary,
+            status: 'completed',
         );
-        $this->assertSame(3, $snapshot['llm_step_count'] ?? null);
-        $this->assertSame(7, $snapshot['turn_no'] ?? null);
+        $singlePayload = SubagentProgressSerializerTestSupport::normalizer()->normalize($snapshot);
+        $this->assertSame(3, $singlePayload['llm_step_count'] ?? null);
+        $this->assertSame(7, $singlePayload['turn_no'] ?? null);
 
         $parallel = (new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder())->parallelSnapshot(
             reports: [
-                'child-run-llm-steps' => [
-                    'index' => 1,
-                    'agentName' => 'scout',
-                    'task' => 'count steps',
-                    'artifactId' => 'agent_llm_steps',
-                    'agentRunId' => 'child-run-llm-steps',
-                    'terminal' => true,
-                    'status' => \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum::Completed,
-                    'message' => 'done',
-                ],
+                'child-run-llm-steps' => new SubagentProgressParallelChildReportDTO(
+                    index: 1,
+                    agentName: 'scout',
+                    task: 'count steps',
+                    artifactId: 'agent_llm_steps',
+                    agentRunId: 'child-run-llm-steps',
+                    terminal: true,
+                    status: \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum::Completed,
+                ),
             ],
             activeTurns: ['child-run-llm-steps' => $roundTrip->childTurnNo],
             elapsedMs: 1000,
             enrichmentByAgentRunId: ['child-run-llm-steps' => $summary],
             aggregateStatus: 'completed',
         );
-        $this->assertSame(3, $parallel['children'][0]['llm_step_count'] ?? null);
-        $this->assertSame(7, $parallel['children'][0]['turn_no'] ?? null);
+        $parallelPayload = SubagentProgressSerializerTestSupport::normalizer()->normalize($parallel);
+        $this->assertSame(3, $parallelPayload['children'][0]['llm_step_count'] ?? null);
+        $this->assertSame(7, $parallelPayload['children'][0]['turn_no'] ?? null);
     }
 }

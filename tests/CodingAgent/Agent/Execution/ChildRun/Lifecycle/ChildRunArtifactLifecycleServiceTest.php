@@ -15,7 +15,10 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
@@ -51,7 +54,8 @@ final class ChildRunArtifactLifecycleServiceTest extends IsolatedKernelTestCase
                 new DateTimeNormalizer(),
                 new BackedEnumNormalizer(),
                 new ObjectNormalizer(
-                    nameConverter: new CamelCaseToSnakeCaseNameConverter(),
+                    classMetadataFactory: ($__cmf = new ClassMetadataFactory(new AttributeLoader())),
+                    nameConverter: new MetadataAwareNameConverter($__cmf, new CamelCaseToSnakeCaseNameConverter()),
                 ),
             ],
             [new JsonEncoder()],
@@ -89,7 +93,7 @@ final class ChildRunArtifactLifecycleServiceTest extends IsolatedKernelTestCase
             artifactId: $artifactId,
             displayName: 'scout',
             taskSummary: 'pending reservation',
-            definitionModel: null,
+            launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium',
             artifactKind: AgentArtifactKindEnum::Subagent,
         );
 

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
+use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryPromptView;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\HatfieldExt\FileRewind\FileRewindCheckpointKindEnum;
 use Ineersa\HatfieldExt\FileRewind\FileRewindConfig;
@@ -51,14 +51,14 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
             $this->seedCheckpoint($projectDir, $sessionId, 3);
 
             $harness = new VirtualTuiHarness(sessionId: $sessionId);
-            $provider = $this->createStub(TurnTreeProviderInterface::class);
-            $provider->method('forSession')->willReturn($this->sampleTree($sessionId));
+            $provider = $this->createStub(HistoryProviderInterface::class);
+            $provider->method('forSession')->willReturn($this->sampleUserPromptHistory($sessionId));
 
             $runtime = $this->buildTuiContext()
                 ->withTui($harness->tui())
                 ->withScreen($harness->screen())
                 ->withState(new TuiSessionState($sessionId))
-                ->withTurnTreeProvider($provider)
+                ->withHistoryProvider($provider)
                 ->build();
 
             $picker = new FileRewindPickerController($this->makeService($projectDir));
@@ -74,6 +74,37 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
         } finally {
             TestDirectoryIsolation::removeDirectory($projectDir);
         }
+    }
+
+    /**
+     * Thesis: public ExtensionApi turnRowsInDisplayOrder and /history both consume the
+     * provider-filtered HistoryView (user prompts only). Bridge/picker do not re-filter roles.
+     */
+    #[Test]
+    public function testTurnRowsInDisplayOrderAndHistoryAreUserPromptOnly(): void
+    {
+        $sessionId = 'rewind-ext-rows';
+        $history = $this->sampleUserPromptHistory($sessionId);
+
+        $harness = new VirtualTuiHarness(sessionId: $sessionId);
+        $provider = $this->createStub(HistoryProviderInterface::class);
+        $provider->method('forSession')->willReturn($history);
+
+        $runtime = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withScreen($harness->screen())
+            ->withState(new TuiSessionState($sessionId))
+            ->withHistoryProvider($provider)
+            ->build();
+
+        $bridge = new BridgeTuiExtensionContext($runtime);
+        $rows = $bridge->turnRowsInDisplayOrder($sessionId);
+
+        $this->assertSame([1, 3], array_column($rows, 'turnNo'));
+        $this->assertSame(['user', 'user'], array_column($rows, 'displayRole'));
+
+        $historyTurnNos = array_map(static fn ($prompt): int => $prompt->turnNo, $history->prompts);
+        $this->assertSame([1, 3], $historyTurnNos);
     }
 
     private function seedCheckpoint(string $projectDir, string $runId, int $turnNo): void
@@ -113,18 +144,14 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
         );
     }
 
-    private function sampleTree(string $sessionId): TurnTreeView
+    private function sampleUserPromptHistory(string $sessionId): HistoryView
     {
-        return new TurnTreeView(
-            runId: $sessionId,
-            nodesByTurnNo: [
-                1 => new TurnTreeNodeView(1, null, [2], 2, 'Create file', 'Hey', null, false, 'user'),
-                2 => new TurnTreeNodeView(2, 1, [3], 4, 'Edit file', 'Follow', null, false, 'assistant'),
-                3 => new TurnTreeNodeView(3, 2, [], 6, 'Append line', 'Third', null, true, 'user'),
+        return new HistoryView(
+            prompts: [
+                new HistoryPromptView(1, 'Create file'),
+                new HistoryPromptView(3, 'Append line'),
             ],
-            rootTurnNos: [1],
-            currentLeafTurnNo: 3,
-            activePathTurnNos: [1, 2, 3],
+            positionTurnNo: 3,
         );
     }
 }

@@ -10,14 +10,15 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\EventListener\RuntimeExceptionPolicySubscriber;
+use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeErrorCaptureConfig;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\SlashCommand;
@@ -99,7 +100,7 @@ final class SubagentLiveScenarioHarness
         string $parentRunId = 'parent-run-1',
         ?EntityManagerInterface $entityManager = null,
         ?TuiSessionSwitchServiceInterface $switchService = null,
-        ?TurnTreeProviderInterface $turnTreeProvider = null,
+        ?HistoryProviderInterface $historyProvider = null,
     ): self {
         $state = new TuiSessionState($parentSessionId);
         $state->handle = new RunHandle($parentRunId);
@@ -117,8 +118,7 @@ final class SubagentLiveScenarioHarness
             $parentSessionId,
             $promptEditor,
             new TranscriptDisplayConfig(),
-            new TranscriptDisplayState(),
-        );
+            new TranscriptDisplayState());
 
         $registry = new SlashCommandRegistry();
         foreach (['agents-main', 'agents-live', 'tasks'] as $name) {
@@ -162,7 +162,7 @@ final class SubagentLiveScenarioHarness
             ticks: new TuiTickDispatcher(),
             switch: $switchService,
             lifecycle: new TuiSessionLifecycleDispatcher(),
-            turnTreeProvider: $turnTreeProvider ?? self::emptyTurnTreeProvider(),
+            historyProvider: $historyProvider ?? self::emptyHistoryProvider(),
         );
 
         $submitListener = new SubmitListener(
@@ -231,6 +231,8 @@ final class SubagentLiveScenarioHarness
                 status: $status,
                 taskSummary: 'Scenario task',
                 lastActivityAtMs: 1,
+                model: 'deepseek/deepseek-v4-flash',
+                reasoning: 'medium',
             );
         $this->state->subagentLiveView->enter($child);
         $this->state->subagentLiveView->childActivity = $childActivity;
@@ -285,13 +287,15 @@ final class SubagentLiveScenarioHarness
         string $agentName = 'scout',
         string $taskSummary = 'Scenario task',
     ): void {
-        $this->state->subagentLiveCatalog->ingestRuntimeEvent($this->parentProgressEvent([
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($this->state->subagentLiveCatalog, $this->parentProgressEvent([
             'mode' => 'single',
             'status' => $status,
             'agent_name' => $agentName,
             'artifact_id' => $artifactId,
             'agent_run_id' => $childRunId,
             'task_summary' => $taskSummary,
+            'model' => 'deepseek/deepseek-v4-flash',
+            'reasoning' => 'medium',
         ]));
     }
 
@@ -302,7 +306,12 @@ final class SubagentLiveScenarioHarness
 
     public function agentsMain(): void
     {
-        $handler = new AgentsMainCommandHandler($this->state, $this->screen);
+        $handler = new AgentsMainCommandHandler(
+            $this->state,
+            $this->screen,
+            $this->questionCoordinator,
+            $this->questionController,
+        );
         $handler->handle(new SlashCommand('agents-main', '', '/agents-main'));
     }
 
@@ -341,18 +350,12 @@ final class SubagentLiveScenarioHarness
         return array_map(static fn (array $row): string => $row['label'], $items);
     }
 
-    private static function emptyTurnTreeProvider(): TurnTreeProviderInterface
+    private static function emptyHistoryProvider(): HistoryProviderInterface
     {
-        return new class implements TurnTreeProviderInterface {
-            public function forSession(string $runId): TurnTreeView
+        return new class implements HistoryProviderInterface {
+            public function forSession(string $runId): HistoryView
             {
-                return new TurnTreeView(
-                    runId: $runId,
-                    nodesByTurnNo: [],
-                    rootTurnNos: [],
-                    currentLeafTurnNo: null,
-                    activePathTurnNos: [],
-                );
+                return new HistoryView(prompts: [], positionTurnNo: 0);
             }
         };
     }

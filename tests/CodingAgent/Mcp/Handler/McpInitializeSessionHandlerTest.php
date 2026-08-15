@@ -8,14 +8,11 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
-use Ineersa\CodingAgent\Mcp\Catalog\McpToolNameMapper;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
-use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
-use Ineersa\CodingAgent\Mcp\Config\McpConfigValidator;
-use Ineersa\CodingAgent\Mcp\Config\McpEnvInterpolator;
 use Ineersa\CodingAgent\Mcp\Handler\McpInitializeSessionHandler;
 use Ineersa\CodingAgent\Mcp\Message\McpInitializeSessionCommand;
 use Ineersa\CodingAgent\Mcp\Message\McpRefreshCatalogCommand;
+use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
@@ -62,12 +59,7 @@ class McpInitializeSessionHandlerTest extends TestCase
             homeDir: $this->projectDir,
         );
 
-        $configLoader = new McpConfigLoader(
-            $pathResolver,
-            new McpConfigValidator(),
-            new McpEnvInterpolator(),
-            $this->projectDir,
-        );
+        $configLoader = TestMcpConfigLoaderFactory::create($pathResolver, $this->projectDir);
 
         $this->catalogStore = new TestMcpCatalogStore();
 
@@ -79,7 +71,6 @@ class McpInitializeSessionHandlerTest extends TestCase
         $this->handler = new McpInitializeSessionHandler(
             $configLoader,
             $connectionManager,
-            new McpToolNameMapper(),
             $this->catalogStore,
             $this->logger,
         );
@@ -291,14 +282,11 @@ class McpInitializeSessionHandlerTest extends TestCase
         ]);
 
         $handler = new McpInitializeSessionHandler(
-            new McpConfigLoader(
+            TestMcpConfigLoaderFactory::create(
                 new SettingsPathResolver($this->projectDir, $this->projectDir),
-                new McpConfigValidator(),
-                new McpEnvInterpolator(),
                 $this->projectDir,
             ),
             $stubManager,
-            new McpToolNameMapper(),
             $this->catalogStore,
             $this->logger,
         );
@@ -358,14 +346,11 @@ class McpInitializeSessionHandlerTest extends TestCase
         );
 
         $handler = new McpInitializeSessionHandler(
-            new McpConfigLoader(
+            TestMcpConfigLoaderFactory::create(
                 new SettingsPathResolver($this->projectDir, $this->projectDir),
-                new McpConfigValidator(),
-                new McpEnvInterpolator(),
                 $this->projectDir,
             ),
             $stubManager,
-            new McpToolNameMapper(),
             $this->catalogStore,
             $this->logger,
         );
@@ -471,14 +456,11 @@ class McpInitializeSessionHandlerTest extends TestCase
             });
 
         $handler = new McpInitializeSessionHandler(
-            new McpConfigLoader(
+            TestMcpConfigLoaderFactory::create(
                 new SettingsPathResolver($this->projectDir, $this->projectDir),
-                new McpConfigValidator(),
-                new McpEnvInterpolator(),
                 $this->projectDir,
             ),
             $stubManager,
-            new McpToolNameMapper(),
             $this->catalogStore,
             $this->logger,
         );
@@ -567,14 +549,11 @@ class McpInitializeSessionHandlerTest extends TestCase
             });
 
         $handler = new McpInitializeSessionHandler(
-            new McpConfigLoader(
+            TestMcpConfigLoaderFactory::create(
                 new SettingsPathResolver($this->projectDir, $this->projectDir),
-                new McpConfigValidator(),
-                new McpEnvInterpolator(),
                 $this->projectDir,
             ),
             $stubManager,
-            new McpToolNameMapper(),
             $this->catalogStore,
             $this->logger,
         );

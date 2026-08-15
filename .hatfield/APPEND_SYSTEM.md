@@ -1,6 +1,6 @@
 ## JetBrains IDE tools
 
-When working in a repository opened in JetBrains, use the namespaced JetBrains MCP tools for code navigation, impact analysis, diagnostics, and semantic refactors. Prefer them over raw `rg`/`find`/filesystem operations when the question depends on code structure, references, inheritance, or IDE diagnostics.
+When working in a repository opened in JetBrains and the namespaced JetBrains MCP tools are available, use them for code navigation, impact analysis, diagnostics, and semantic refactors. Prefer them over raw `rg`/`find`/filesystem operations when the question depends on code structure, references, inheritance, or IDE diagnostics.
 
 If multiple JetBrains projects are open, pass `project_path` for the repository you are working in.
 
@@ -34,4 +34,4 @@ If multiple JetBrains projects are open, pass `project_path` for the repository 
 - `jetbrains-index_ide_refactor_rename` — rename symbols or files and update references.
 - `jetbrains-index_ide_move_file` — move files with language-aware reference and package updates.
 
-Use these tools for semantic navigation and refactoring. Use `bash` only for non-code files, generated artifacts, bulk filesystem operations, or when IDE tools are unavailable or insufficient.
+Use these tools for semantic navigation and refactoring. Use `bash` for non-code files, generated artifacts, bulk filesystem operations, or when IDE tools are unavailable or insufficient.

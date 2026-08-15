@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Question\QuestionCoordinator;
@@ -44,7 +45,8 @@ final class TickPollListenerChildHitlTest extends TestCase
             SubagentLiveStatusEnum::WaitingHuman,
             'task',
             1,
-        ));
+            'deepseek/deepseek-v4-flash',
+            'medium'));
 
         $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleHumanInputRequested');
         $event = new RuntimeEvent(
@@ -73,21 +75,22 @@ final class TickPollListenerChildHitlTest extends TestCase
         $this->assertTrue($sent[1]->payload['answer'] ?? false);
     }
 
-    public function testChildToolQuestionEnqueuesRunScopedRequestAndMarksNeedsInput(): void
+    public function testChildToolQuestionEnqueuesWithoutCanonicalWaitingHumanAttention(): void
     {
         $childRunId = 'child-run-tool-q-1';
-        $sent = null;
+        /** @var list<array{0: string, 1: UserCommand}> $sent */
+        $sent = [];
         $client = $this->createMock(AgentSessionClient::class);
-        $client->expects($this->once())->method('send')->willReturnCallback(
+        $client->expects($this->exactly(2))->method('send')->willReturnCallback(
             static function (string $runId, UserCommand $cmd) use (&$sent, $childRunId): void {
-                $sent = [$runId, $cmd];
+                $sent[] = [$runId, $cmd];
                 self::assertSame($childRunId, $runId);
             },
         );
 
         $coordinator = new QuestionCoordinator();
         $state = new \Ineersa\Tui\Runtime\TuiSessionState('parent-1');
-        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, new RuntimeEvent(
             type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             runId: 'parent-1',
             seq: 1,
@@ -102,7 +105,8 @@ final class TickPollListenerChildHitlTest extends TestCase
                     'artifact_id' => 'agent_a',
                     'agent_run_id' => $childRunId,
                     'task_summary' => 'Task',
-                ],
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'medium', ],
             ],
         ));
         $state->subagentLiveView->enter(new SubagentLiveChildDTO(
@@ -112,7 +116,8 @@ final class TickPollListenerChildHitlTest extends TestCase
             SubagentLiveStatusEnum::Running,
             'Task',
             1,
-        ));
+            'deepseek/deepseek-v4-flash',
+            'medium'));
         $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
 
         $screen = new ChatScreen(
@@ -135,7 +140,7 @@ final class TickPollListenerChildHitlTest extends TestCase
                 'tool_name' => 'bash',
             ],
         );
-        $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator, $state, $screen);
+        $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator, $state);
 
         $active = $coordinator->activeRequest();
         $this->assertNotNull($active);
@@ -143,15 +148,47 @@ final class TickPollListenerChildHitlTest extends TestCase
         $this->assertSame(QuestionSource::Tui, $active->source);
         $this->assertSame(QuestionKind::Confirm, $active->kind);
 
+        // Local tool questions stay answerable but must not own WaitingHuman attention.
         $child = $state->subagentLiveCatalog->findByArtifactId('agent_a');
         $this->assertNotNull($child);
-        $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $child->status);
-        $this->assertSame(RunActivityStateEnum::WaitingHuman, $state->subagentLiveView->childActivity);
+        $this->assertSame(SubagentLiveStatusEnum::Running, $child->status);
+        $this->assertSame(RunActivityStateEnum::Running, $state->subagentLiveView->childActivity);
+        $this->assertNull($state->subagentLiveCatalog->firstChildNeedingAttention());
+        $this->assertArrayNotHasKey('subagent_live', $screen->registry()->getStatusEntries());
 
         $coordinator->answer('yes');
-        $this->assertNotNull($sent);
-        $this->assertSame('answer_tool_question', $sent[1]->type);
-        $this->assertSame('rq_safe_1', $sent[1]->payload['request_id'] ?? null);
+        $this->assertCount(1, $sent);
+        $this->assertSame('answer_tool_question', $sent[0][1]->type);
+        $this->assertSame('rq_safe_1', $sent[0][1]->payload['request_id'] ?? null);
+        $this->assertTrue($sent[0][1]->payload['answer'] ?? false);
+
+        // Answer/reject cleanup must leave independent canonical WaitingHuman intact.
+        $state->subagentLiveCatalog->applyChildStatus('agent_a', SubagentLiveStatusEnum::WaitingHuman);
+        $state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
+        $cancelEvent = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolQuestionRequested->value,
+            runId: $childRunId,
+            seq: 1,
+            payload: [
+                'request_id' => 'rq_safe_2',
+                'prompt' => 'Background bash?',
+                'kind' => 'confirm',
+                'schema' => ['type' => 'boolean'],
+                'tool_call_id' => 'tc_bash_2',
+                'tool_name' => 'bash',
+            ],
+        );
+        $ref->invoke($this->runtimeQuestionHandler(), $cancelEvent, $client, $coordinator, $state);
+        $this->assertTrue($coordinator->actionRequired());
+        $coordinator->cancel();
+
+        $this->assertCount(2, $sent);
+        $this->assertSame('answer_tool_question', $sent[1][1]->type);
+        $this->assertFalse($sent[1][1]->payload['answer'] ?? true);
+
+        $childAfter = $state->subagentLiveCatalog->findByArtifactId('agent_a');
+        $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $childAfter?->status);
+        $this->assertSame(RunActivityStateEnum::WaitingHuman, $state->subagentLiveView->childActivity);
     }
 
     public function testToolTerminalDoesNotCancelParentQuestionWithSameToolCallId(): void

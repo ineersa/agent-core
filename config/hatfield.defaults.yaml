@@ -362,8 +362,8 @@ runtime:
 #
 # Discovery load order (lowest to highest):
 #   1. User agents under ~/.agents/*.md
-#   2. User agents under ~/.hatfield/agents/*.md
-#   3. Project agents under .agents/*.md
+#   2. Project agents under .agents/*.md
+#   3. User agents under ~/.hatfield/agents/*.md
 #   4. Project agents under .hatfield/agents/*.md
 #   5. Configured agents.paths (highest precedence)
 #
@@ -378,7 +378,7 @@ agents:
     # Durable deferred-batch deadline (seconds) for foreground subagent tool execution.
     # Schedules timeout interruption (DelayStamp + InterruptDeferredSubagentBatchMessage).
     # Not the generic ToolExecutor timeout (the subagent tool has no ToolExecutor cap).
-    # Default: 1800 (30 minutes). Minimum 60; values below 60 are rejected at load.
+    # Default: 86400 (24 hours). Minimum 60; values below 60 are rejected at load.
     # subagent_tool_timeout_seconds: 2400
 
     # Tool names always excluded from child/subagent runs (inherit-all and explicit lists).
@@ -521,6 +521,16 @@ agents:
 #                     reasoning: true
 #                     thinking_level_map: { minimal: null, low: high, medium: high, high: high, xhigh: max }
 #                     compatibility: { supports_reasoning_effort: true, zai_tool_stream: true }
+#                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
+#                 glm-5.3:
+#                     name: GLM 5.3
+#                     context_window: 1000000
+#                     max_tokens: 131072
+#                     input: [text]
+#                     tool_calling: true
+#                     reasoning: true
+#                     thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled }
+#                     compatibility: { zai_tool_stream: true }
 #                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
 #
 #         openai-codex:

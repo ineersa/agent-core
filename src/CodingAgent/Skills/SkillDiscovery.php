@@ -20,8 +20,8 @@ use Symfony\Component\Yaml\Yaml;
  *   1. CLI --skills-path entries (always checked, regardless of --no-skills)
  *   2. Auto-discovery paths (only when auto-discovery is enabled):
  *        {cwd}/.hatfield/skills
- *        {cwd}/.agents/skills
  *        ~/.hatfield/skills   (includes materialized built-in skills)
+ *        {cwd}/.agents/skills
  *        ~/.agents/skills
  *   3. Extension-registered skill directories (only when auto-discovery is enabled)
  *
@@ -114,12 +114,12 @@ final class SkillDiscovery
             $searchPaths[] = $path;
         }
 
-        // Step 2: Auto-discovery paths (only when auto-discovery is enabled)
+        // Step 2: Auto-discovery paths (only when auto-discovery is enabled).
+        // Patterns are highest→lowest Hatfield specificity; for each pattern
+        // scan project then user so Hatfield-specific beats generic scope.
         if (!$this->config->noSkills) {
-            $baseDirs = [$cwd, $homeDir];
-
-            foreach ($baseDirs as $baseDir) {
-                foreach (self::AUTO_DISCOVERY_PATTERNS as $pattern) {
+            foreach (self::AUTO_DISCOVERY_PATTERNS as $pattern) {
+                foreach ([$cwd, $homeDir] as $baseDir) {
                     $path = \sprintf($pattern, $baseDir);
                     if (is_dir($path)) {
                         $searchPaths[] = $path;
@@ -238,7 +238,9 @@ final class SkillDiscovery
      *
      * Only direct children of the bundled skills root that contain SKILL.md are
      * treated as built-ins. Nested reference files stay inside those skill trees.
-     * Symfony Filesystem::mirror() overwrites and deletes stale destination files.
+     * Owned destinations are removed before mirror so a previous PHAR/materialization
+     * that left files mode 0444 cannot block whole-directory replacement. Sibling
+     * user skill directories under ~/.hatfield/skills are left untouched.
      * Concurrent same-version copies are accepted as idempotent; an interrupted
      * write is repaired on the next discover().
      */
@@ -266,9 +268,17 @@ final class SkillDiscovery
                 continue;
             }
 
+            // Hatfield owns ~/.hatfield/skills/<name>/ for each built-in. Remove the
+            // whole destination first: mirror(override/delete) cannot rewrite read-only
+            // files left by PHAR extraction (mode 0444).
+            $destinationDir = $destinationRoot.'/'.$entry;
+            if ($this->filesystem->exists($destinationDir)) {
+                $this->filesystem->remove($destinationDir);
+            }
+
             $this->filesystem->mirror(
                 $sourceDir,
-                $destinationRoot.'/'.$entry,
+                $destinationDir,
                 null,
                 ['override' => true, 'delete' => true],
             );

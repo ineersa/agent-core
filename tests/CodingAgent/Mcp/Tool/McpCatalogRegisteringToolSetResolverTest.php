@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Mcp\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO;
@@ -333,7 +334,12 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
                         'session' => [
                             'kind' => 'agent_child',
                             'parent_run_id' => $parentRunId,
+                            'agent_name' => 'scout',
+                            'artifact_id' => 'agent_child1',
                         ],
+                        'model' => 'deepseek/deepseek-v4-flash',
+                        'reasoning' => 'medium',
+                        'tools_scope' => ['allowed_tools' => []],
                     ],
                 ],
             ],
@@ -344,7 +350,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
             static fn (string $runId): array => $childRunId === $runId ? [$event] : [],
         );
 
-        return new SubagentRunMetadataReader($eventStore);
+        return new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
     }
 
     private function makeHandlerFactory(): McpToolHandlerFactory
@@ -361,7 +367,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         $eventStore = $this->createStub(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
         $eventStore->method('allFor')->willReturn([]);
 
-        return new SubagentRunMetadataReader($eventStore);
+        return new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
     }
 
     private function makeStore(array $data): McpToolCatalogStoreInterface

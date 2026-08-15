@@ -89,13 +89,13 @@ final readonly class DeferredSubagentBatchRecoveryService
                 $tailEvents,
             );
 
-            $rawProjection = $childEntity->childLifecycleProjection;
-            $current = \is_array($rawProjection) && [] !== $rawProjection
-                ? DeferredChildRunLifecycleProjectionDTO::fromArray($rawProjection)
-                : new DeferredChildRunLifecycleProjectionDTO(
+            $current = $this->childRepository->decodeChildLifecycleProjection($childEntity->childLifecycleProjection)
+                ?? new DeferredChildRunLifecycleProjectionDTO(
                     childStatus: RunStatus::Running,
                     childTurnNo: 0,
                     lastCommittedSeq: $cursor,
+                    model: $childEntity->launchModel,
+                    reasoning: $childEntity->launchReasoning,
                 );
 
             $maxTurnNo = $current->childTurnNo;
@@ -106,7 +106,6 @@ final readonly class DeferredSubagentBatchRecoveryService
             $updated = $this->projector->apply(
                 current: $current,
                 summaries: $summaries,
-                definitionModel: $child->definitionModel,
                 committedStatus: null,
                 committedTurnNo: $maxTurnNo,
             );

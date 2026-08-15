@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
@@ -59,11 +60,11 @@ final class RuntimeEventPollerTest extends TestCase
         $this->projector->method('blocks')->willReturn([]);
         $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
         $this->sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
-        $this->sessionTranscriptProvider->method('transcriptForLeaf')->willReturn(new SessionTranscriptSnapshotDTO([], []));
+        $this->sessionTranscriptProvider->method('transcriptAtPosition')->willReturn(new SessionTranscriptSnapshotDTO([], []));
         $this->logger = $this->createMock(LoggerInterface::class);
 
         $this->poller = new RuntimeEventPoller(
-            new TuiRuntimeEventApplier($this->projector),
+            new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer()),
             $this->logger,
             new RuntimeExceptionBoundary(
                 $this->createStub(EventDispatcherInterface::class),
@@ -109,7 +110,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->projector->expects($this->once())
             ->method('accept')
-            ->with($event->toArray());
+            ->with($event);
 
         $this->projector->expects($this->once())
             ->method('drainChanges')
@@ -688,27 +689,27 @@ final class RuntimeEventPollerTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Cancelled, $this->state->activity);
     }
 
-    public function testPollWholesaleReplacesTranscriptOnRunLeafChanged(): void
+    public function testPollWholesaleReplacesTranscriptOnRunHistoryPositionChanged(): void
     {
-        // Thesis: after a RunLeafChanged event, the poller fetches active-path
+        // Thesis: after a RunHistoryPositionChanged event, the poller fetches retained-history
         // RuntimeEvents from the provider, replays them through the projector,
-        // and wholesale-replaces $state->transcript. Old abandoned-branch blocks
-        // must be gone, activity = Idle, queuedFollowUp = null, lastSeq = LeafSet seq.
+        // and wholesale-replaces $state->transcript. Old discarded-tail blocks
+        // must be gone, activity = Idle, queuedFollowUp = null, lastSeq = history_position_set seq.
 
         $this->state->queuedUserMessages = ['ik-abandoned' => 'Want to test bash in parallel'];
 
-        // Pre-populate transcript with old abandoned-branch blocks
+        // Pre-populate transcript with old discarded-tail blocks
         $this->state->transcript = [
             new TranscriptBlock(
-                id: 'old-branch-block-1',
+                id: 'old-discarded-block-1',
                 kind: TranscriptBlockKindEnum::AssistantMessage,
                 runId: 'test-run',
                 seq: 10,
-                text: 'Old abandoned branch content',
+                text: 'Old discarded-tail content',
             ),
         ];
 
-        // Mock turn tree provider to return active-path RuntimeEvents
+        // Mock history/transcript provider to return retained-history RuntimeEvents
         $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
         $rebuiltBlocks = [
             new TranscriptBlock(
@@ -716,15 +717,15 @@ final class RuntimeEventPollerTest extends TestCase
                 kind: TranscriptBlockKindEnum::AssistantMessage,
                 runId: 'test-run',
                 seq: 35,
-                text: 'New active path response',
+                text: 'New retained history response',
             ),
         ];
         $sessionTranscriptProvider->expects($this->once())
-            ->method('transcriptForLeaf')
+            ->method('transcriptAtPosition')
             ->with('test-run', 3)
             ->willReturn(new SessionTranscriptSnapshotDTO($rebuiltBlocks, []));
 
-        $eventApplier = new TuiRuntimeEventApplier($this->projector);
+        $eventApplier = new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer());
         $poller = new RuntimeEventPoller(
             $eventApplier,
             $this->logger,
@@ -739,10 +740,10 @@ final class RuntimeEventPollerTest extends TestCase
             ->with('test-run')
             ->willReturn([
                 new RuntimeEvent(
-                    type: RuntimeEventTypeEnum::RunLeafChanged->value,
+                    type: RuntimeEventTypeEnum::RunHistoryPositionChanged->value,
                     runId: 'test-run',
                     seq: 20,
-                    payload: ['turn_no' => 3],
+                    payload: ['position_turn_no' => 3],
                 ),
             ]);
 
@@ -754,25 +755,25 @@ final class RuntimeEventPollerTest extends TestCase
         $this->assertCount(1, $result->blocks());
         $this->assertSame($result->blocks(), $this->state->transcript);
         $this->assertSame('block-seq-35', $result->blocks()[0]->id);
-        $this->assertSame('New active path response', $result->blocks()[0]->text);
-        $this->assertCount(1, $this->state->transcript, 'Old abandoned-branch block must be gone');
+        $this->assertSame('New retained history response', $result->blocks()[0]->text);
+        $this->assertCount(1, $this->state->transcript, 'Old discarded-tail block must be gone');
 
-        // Activity becomes Idle after RunLeafChanged
+        // Activity becomes Idle after RunHistoryPositionChanged
         $this->assertSame(RunActivityStateEnum::Idle, $this->state->activity);
 
         // queuedFollowUp cleared
         $this->assertNull($this->state->queuedFollowUp);
-        $this->assertSame([], $this->state->queuedUserMessages, 'Abandoned-branch queued commands must not linger as ⏳');
+        $this->assertSame([], $this->state->queuedUserMessages, 'Discarded-tail queued commands must not linger as ⏳');
 
-        // lastSeq advanced to RunLeafChanged seq (not moved backward by rebuild)
+        // lastSeq advanced to RunHistoryPositionChanged seq (not moved backward by rebuild)
         $this->assertSame(20, $this->state->lastSeq);
     }
 
-    public function testPollGracefullyDegradesOnLeafChangeRebuildFailure(): void
+    public function testPollGracefullyDegradesOnHistoryPositionChangeRebuildFailure(): void
     {
-        // Thesis: when transcriptForLeaf throws, the poller catches the
+        // Thesis: when transcriptAtPosition throws, the poller catches the
         // exception, logs a structured warning, clears the transcript (so stale
-        // abandoned-branch blocks are not shown), and does not crash.
+        // discarded-tail blocks are not shown), and does not crash.
 
         // Pre-populate transcript with old blocks
         $this->state->transcript = [
@@ -781,13 +782,13 @@ final class RuntimeEventPollerTest extends TestCase
                 kind: TranscriptBlockKindEnum::AssistantMessage,
                 runId: 'test-run',
                 seq: 10,
-                text: 'Stale abandoned block',
+                text: 'Stale discarded block',
             ),
         ];
 
         // Provider throws on rebuild
         $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
-        $sessionTranscriptProvider->method('transcriptForLeaf')
+        $sessionTranscriptProvider->method('transcriptAtPosition')
             ->willThrowException(new \RuntimeException('Events file not found'));
 
         $this->client->expects($this->once())
@@ -795,19 +796,19 @@ final class RuntimeEventPollerTest extends TestCase
                     ->with('test-run')
                     ->willReturn([
                         new RuntimeEvent(
-                            type: RuntimeEventTypeEnum::RunLeafChanged->value,
+                            type: RuntimeEventTypeEnum::RunHistoryPositionChanged->value,
                             runId: 'test-run',
                             seq: 20,
-                            payload: ['turn_no' => 3],
+                            payload: ['position_turn_no' => 3],
                         ),
                     ]);
 
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())
             ->method('warning')
-            ->with('runtime_event_poller.leaf_changed_rebuild_failed', $this->anything());
+            ->with('runtime_event_poller.history_position_changed_rebuild_failed', $this->anything());
         $poller = new RuntimeEventPoller(
-            new TuiRuntimeEventApplier($this->projector),
+            new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer()),
             $logger,
             new RuntimeExceptionBoundary(
                 $this->createStub(EventDispatcherInterface::class),
@@ -825,19 +826,19 @@ final class RuntimeEventPollerTest extends TestCase
         $this->assertTrue($result->isFull());
         $this->assertSame([], $result->blocks());
 
-        // lastSeq still advanced to the RunLeafChanged seq
+        // lastSeq still advanced to the RunHistoryPositionChanged seq
         $this->assertSame(20, $this->state->lastSeq);
     }
 
     /**
-     * C1: Malformed RunLeafChanged (missing/zero turn_no) must clear the transcript
-     * and log a structured warning, not silently leave stale abandoned-branch blocks.
+     * C1: Malformed RunHistoryPositionChanged (missing position_turn_no) must clear the transcript
+     * and log a structured warning, not silently leave stale discarded-tail blocks.
      */
-    public function testPollHandlesMalformedRunLeafChanged(): void
+    public function testPollHandlesMalformedRunHistoryPositionChanged(): void
     {
-        // Thesis: a RunLeafChanged with missing/0 turn_no is malformed; the poller
+        // Thesis: a RunHistoryPositionChanged with missing position_turn_no is malformed; the poller
         // must clear the transcript, log a structured warning, and continue without
-        // crashing rather than leaving stale abandoned-branch blocks.
+        // crashing rather than leaving stale discarded-tail blocks.
 
         // Pre-populate transcript with stale blocks that MUST be cleared
         $this->state->transcript = [
@@ -846,7 +847,7 @@ final class RuntimeEventPollerTest extends TestCase
                 kind: TranscriptBlockKindEnum::AssistantMessage,
                 runId: 'test-run',
                 seq: 10,
-                text: 'Stale abandoned branch block',
+                text: 'Stale discarded-tail block',
             ),
         ];
 
@@ -855,20 +856,20 @@ final class RuntimeEventPollerTest extends TestCase
             ->with('test-run')
             ->willReturn([
                 new RuntimeEvent(
-                    type: RuntimeEventTypeEnum::RunLeafChanged->value,
+                    type: RuntimeEventTypeEnum::RunHistoryPositionChanged->value,
                     runId: 'test-run',
                     seq: 20,
-                    payload: [], // no turn_no — malformed
+                    payload: [], // no position_turn_no — malformed
                 ),
             ]);
 
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())
             ->method('warning')
-            ->with('runtime_event_poller.leaf_changed_malformed', $this->anything());
+            ->with('runtime_event_poller.history_position_changed_malformed', $this->anything());
 
         $poller = new RuntimeEventPoller(
-            new TuiRuntimeEventApplier($this->projector),
+            new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer()),
             $logger,
             new RuntimeExceptionBoundary(
                 $this->createStub(EventDispatcherInterface::class),
@@ -879,7 +880,7 @@ final class RuntimeEventPollerTest extends TestCase
         $result = $poller->poll($this->state, $this->client);
 
         // Stale blocks must be removed
-        $this->assertSame([], $this->state->transcript, 'Transcript must be empty after malformed RunLeafChanged');
+        $this->assertSame([], $this->state->transcript, 'Transcript must be empty after malformed RunHistoryPositionChanged');
         $this->assertInstanceOf(TranscriptChangeSet::class, $result);
         $this->assertTrue($result->isFull());
         $this->assertSame([], $result->blocks());
@@ -889,22 +890,22 @@ final class RuntimeEventPollerTest extends TestCase
     }
 
     /**
-     * C2: RunLeafChanged followed by a normal event in the same poll batch must
-     * include the post-leaf block in the returned result (not silently dropped).
+     * C2: RunHistoryPositionChanged followed by a normal event in the same poll batch must
+     * include the post-position block in the returned result (not silently dropped).
      */
-    public function testPollSyncsPostLeafEventsAfterRunLeafChanged(): void
+    public function testPollSyncsPostPositionEventsAfterRunHistoryPositionChanged(): void
     {
-        // Thesis: after a RunLeafChanged triggers a wholesale transcript rebuild,
+        // Thesis: after a RunHistoryPositionChanged triggers a wholesale transcript rebuild,
         // any normal event processed later in the same batch must be synchronised
         // into $state->transcript via drainChanges() → applyTranscriptChangeSet(), not lost.
 
         // Real projector that tracks accepted events and returns blocks
         $projector = new class implements TranscriptProjectorInterface {
-            /** @var list<array{type: string, seq: int, payload?: array}> */
+            /** @var list<RuntimeEvent> */
             public array $accepted = [];
             public bool $wasReset = false;
 
-            public function accept(array $event): void
+            public function accept(RuntimeEvent $event): void
             {
                 $this->accepted[] = $event;
             }
@@ -914,11 +915,11 @@ final class RuntimeEventPollerTest extends TestCase
                 $blocks = [];
                 foreach ($this->accepted as $e) {
                     $blocks[] = new TranscriptBlock(
-                        id: 'block-seq-'.$e['seq'],
+                        id: 'block-seq-'.$e->seq,
                         kind: TranscriptBlockKindEnum::AssistantMessage,
                         runId: 'test-run',
-                        seq: $e['seq'],
-                        text: (string) ($e['payload']['text'] ?? ''),
+                        seq: $e->seq,
+                        text: (string) ($e->payload['text'] ?? ''),
                     );
                 }
 
@@ -942,7 +943,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
         $sessionTranscriptProvider->expects($this->once())
-            ->method('transcriptForLeaf')
+            ->method('transcriptAtPosition')
             ->with('test-run', 2)
             ->willReturn(new SessionTranscriptSnapshotDTO([
                 new TranscriptBlock(
@@ -950,11 +951,11 @@ final class RuntimeEventPollerTest extends TestCase
                     kind: TranscriptBlockKindEnum::AssistantMessage,
                     runId: 'test-run',
                     seq: 30,
-                    text: 'Rebuilt active path block',
+                    text: 'Rebuilt retained history block',
                 ),
             ], []));
 
-        $eventApplier = new TuiRuntimeEventApplier($projector);
+        $eventApplier = new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer());
         $poller = new RuntimeEventPoller(
             $eventApplier,
             $this->logger,
@@ -969,30 +970,30 @@ final class RuntimeEventPollerTest extends TestCase
             ->with('test-run')
             ->willReturn([
                 new RuntimeEvent(
-                    type: RuntimeEventTypeEnum::RunLeafChanged->value,
+                    type: RuntimeEventTypeEnum::RunHistoryPositionChanged->value,
                     runId: 'test-run',
                     seq: 20,
-                    payload: ['turn_no' => 2],
+                    payload: ['position_turn_no' => 2],
                 ),
-                // Normal event arriving in the same batch after RunLeafChanged
+                // Normal event arriving in the same batch after RunHistoryPositionChanged
                 new RuntimeEvent(
                     type: RuntimeEventTypeEnum::AssistantMessageCompleted->value,
                     runId: 'test-run',
                     seq: 35,
-                    payload: ['text' => 'Post-leaf event'],
+                    payload: ['text' => 'Post-position event'],
                 ),
             ]);
 
         $result = $poller->poll($this->state, $this->client);
 
-        // Both the rebuilt active-path block AND the post-leaf block must appear
+        // Both the rebuilt retained-history block AND the post-position block must appear
         $this->assertInstanceOf(TranscriptChangeSet::class, $result, 'Result must not be null when events were processed');
         $this->assertTrue($result->isFull());
-        $this->assertCount(2, $result->blocks(), 'Both rebuilt and post-leaf blocks must be present');
+        $this->assertCount(2, $result->blocks(), 'Both rebuilt and post-position blocks must be present');
         $this->assertSame('block-seq-30', $result->blocks()[0]->id);
-        $this->assertSame('Rebuilt active path block', $result->blocks()[0]->text);
+        $this->assertSame('Rebuilt retained history block', $result->blocks()[0]->text);
         $this->assertSame('block-seq-35', $result->blocks()[1]->id);
-        $this->assertSame('Post-leaf event', $result->blocks()[1]->text);
+        $this->assertSame('Post-position event', $result->blocks()[1]->text);
 
         // lastSeq advanced to the highest seq in the batch (35, not 20)
         $this->assertSame(35, $this->state->lastSeq);

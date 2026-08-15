@@ -74,17 +74,18 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
     {
         return new ToolDefinitionDTO(
             name: 'bg_status',
-            description: 'Inspect, view log output, and stop background processes. Actions: list (show all background processes), log (view log tail for a specific PID), stop (terminate a background process).',
+            description: 'List background processes in the current session, inspect their logs, or stop them.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
                     'action' => [
                         'type' => 'string',
                         'enum' => ['list', 'log', 'stop'],
-                        'description' => 'Action to perform: list (show all), log (view log tail), stop (terminate)',
+                        'description' => "Action: list session processes, log a process's output tail, or stop a process.",
                     ],
                     'pid' => [
                         'type' => 'integer',
+                        'minimum' => 1,
                         'description' => 'Process PID (required for log and stop actions)',
                     ],
                 ],
@@ -93,12 +94,9 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
             ],
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
-            promptLine: 'bg_status action [pid] — inspect, log, or stop background processes; use after launching background jobs',
+            promptLine: 'bg_status action [pid] — list, view logs for, or stop background processes',
             promptGuidelines: [
-                'Use bg_status list to see all background processes with PID, status, and log path.',
-                'Use bg_status log pid=N to see the tail of a background process log output.',
-                'Use bg_status stop pid=N to terminate a background process gracefully.',
-                'The log action returns truncated output — use the log path to read the full file.',
+                'The log action returns a bounded tail; use the returned log path to inspect the full file.',
                 'Background processes run independently and survive across tool calls.',
             ],
         );

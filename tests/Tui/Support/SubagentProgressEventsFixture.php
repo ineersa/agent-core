@@ -36,6 +36,7 @@ final class SubagentProgressEventsFixture
             'reasoning_tokens' => 584000,
             'cost' => 0.0104,
             'model' => 'deepseek/deepseek-v4-flash',
+            'reasoning' => 'high',
             'artifact_path' => 'artifacts/agents/'.$artifactId,
             'recent_tools' => ['read: path="src/Tui/Transcript/SubagentResultRenderer.php"'],
             'assistant_excerpt' => 'Structured subagent block renders inline.',
@@ -48,10 +49,15 @@ final class SubagentProgressEventsFixture
                 'messages' => [
                     ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Run a scout subagent.']]],
                 ],
+                // Parent (non-child) RunStarted requires typed metadata for SubagentRunMetadataReader.
+                'metadata' => [
+                    'session' => [],
+                    'model' => 'deepseek/deepseek-v4-flash',
+                ],
             ],
         ], $now);
-        $events[] = self::event($sessionId, 2, 1, 'turn_advanced', ['step_id' => 'turn-1', 'turn_no' => 1, 'parent_turn_no' => null], $now);
-        $events[] = self::event($sessionId, 3, 1, 'leaf_set', ['turn_no' => 1, 'previous_turn_no' => null, 'parent_turn_no' => null, 'reason' => 'continue'], $now);
+        $events[] = self::event($sessionId, 2, 1, 'turn_advanced', ['step_id' => 'turn-1', 'turn_no' => 1], $now);
+        $events[] = self::event($sessionId, 3, 1, 'history_position_set', ['position_turn_no' => 1, 'previous_position_turn_no' => null, 'reason' => 'continue'], $now);
         $events[] = self::event($sessionId, 4, 1, 'llm_step_completed', [
             'step_id' => 'turn-1',
             'stop_reason' => 'tool_call',
@@ -108,7 +114,7 @@ final class SubagentProgressEventsFixture
             'is_error' => false,
             'result' => $finalResult,
         ], $now);
-        $events[] = self::event($sessionId, 11, 2, 'turn_advanced', ['step_id' => 'turn-2', 'turn_no' => 2, 'parent_turn_no' => null], $now);
+        $events[] = self::event($sessionId, 11, 2, 'turn_advanced', ['step_id' => 'turn-2', 'turn_no' => 2], $now);
         $events[] = self::event($sessionId, 12, 2, 'llm_step_completed', [
             'step_id' => 'turn-2',
             'stop_reason' => 'stop',
@@ -142,6 +148,172 @@ final class SubagentProgressEventsFixture
     }
 
     /**
+     * Fork + subagent children with multiline/whitespace task summaries for picker-row E2E.
+     *
+     * Shared production path: both kinds land in SubagentLiveCatalog → buildItems().
+     */
+    public static function writeMultilinePickerChildren(string $projectDir, string $sessionId): void
+    {
+        $sessionDir = $projectDir.'/.hatfield/sessions/'.$sessionId;
+        if (!is_dir($sessionDir) && !mkdir($sessionDir, 0777, true) && !is_dir($sessionDir)) {
+            throw new \RuntimeException('Failed to create session dir: '.$sessionDir);
+        }
+
+        $now = (new \DateTimeImmutable())->format(\DATE_ATOM);
+        $toolCallId = 'call_subagent_e2e_multiline_001';
+        $children = [
+            [
+                'index' => 1,
+                'agent_name' => 'fork',
+                'status' => 'completed',
+                'artifact_id' => 'agent_e2e_fork_nl',
+                'agent_run_id' => $sessionId.'_child_fork_001',
+                'task_summary' => "Fork tool interactive test.\r\n\n\tYour task, in order, is to validate multiline rows",
+                'model' => ChildContextStatisticsFixture::MODEL,
+                'reasoning' => 'high',
+            ],
+            [
+                'index' => 2,
+                'agent_name' => 'scout',
+                'status' => 'completed',
+                'artifact_id' => 'agent_e2e_scout_nl',
+                'agent_run_id' => $sessionId.'_child_scout_001',
+                'task_summary' => "Inspect docs\n\twith   tabs and   spaces for picker",
+                'model' => ChildContextStatisticsFixture::MODEL,
+                'reasoning' => 'high',
+            ],
+        ];
+
+        $progress = [
+            'mode' => 'parallel',
+            'status' => 'completed',
+            'completed_count' => 2,
+            'total_count' => 2,
+            'elapsed_ms' => 8000,
+            'children' => $children,
+            'tool_count' => 2,
+            'input_tokens' => 1000,
+            'output_tokens' => 200,
+            'reasoning_tokens' => 0,
+            'total_tokens' => 1200,
+        ];
+
+        $events = [];
+        $events[] = self::event($sessionId, 1, 0, 'run_started', [
+            'step_id' => 'start-1',
+            'payload' => [
+                'messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Run fork and scout with multiline tasks.']]],
+                ],
+                // Parent (non-child) RunStarted requires typed metadata for SubagentRunMetadataReader.
+                'metadata' => [
+                    'session' => [],
+                    'model' => 'deepseek/deepseek-v4-flash',
+                ],
+            ],
+        ], $now);
+        $events[] = self::event($sessionId, 2, 1, 'turn_advanced', ['step_id' => 'turn-1', 'turn_no' => 1], $now);
+        $events[] = self::event($sessionId, 3, 1, 'history_position_set', ['position_turn_no' => 1, 'previous_position_turn_no' => null, 'reason' => 'continue'], $now);
+        $events[] = self::event($sessionId, 4, 1, 'llm_step_completed', [
+            'step_id' => 'turn-1',
+            'stop_reason' => 'tool_call',
+            'tool_calls_count' => 1,
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => null,
+                'tool_calls' => [[
+                    'id' => $toolCallId,
+                    'name' => 'subagent',
+                    'arguments' => [
+                        'tasks' => [
+                            ['agent' => 'fork', 'task' => 'Fork tool interactive test.'],
+                            ['agent' => 'scout', 'task' => 'Inspect docs'],
+                        ],
+                    ],
+                    'order_index' => 0,
+                ]],
+            ],
+        ], $now);
+        $events[] = self::event($sessionId, 5, 1, 'tool_execution_start', [
+            'tool_call_id' => $toolCallId,
+            'tool_name' => 'subagent',
+            'order_index' => 0,
+            'mode' => 'sequential',
+        ], $now);
+        $events[] = self::event($sessionId, 6, 1, 'tool_execution_update', [
+            'tool_call_id' => $toolCallId,
+            'tool_name' => 'subagent',
+            'delta' => '',
+            'subagent_progress' => $progress,
+            'order_index' => 0,
+        ], $now);
+        $toolResultText = "Multiline picker children completed.\nArtifacts: agent_e2e_fork_nl, agent_e2e_scout_nl";
+        $events[] = self::event($sessionId, 7, 1, 'tool_call_result_received', [
+            'tool_call_id' => $toolCallId,
+            'order_index' => 0,
+            'is_error' => false,
+        ], $now);
+        $events[] = self::event($sessionId, 8, 1, 'tool_execution_end', [
+            'tool_call_id' => $toolCallId,
+            'order_index' => 0,
+            'is_error' => false,
+            'result' => $toolResultText,
+        ], $now);
+        // Prompt-visible tool message is required for post-resume AdvanceRun / follow-up LLM turns.
+        $events[] = self::event($sessionId, 9, 1, 'message_end', [
+            'message_role' => 'tool',
+            'message' => [
+                'role' => 'tool',
+                'content' => [['type' => 'text', 'text' => $toolResultText]],
+                'tool_call_id' => $toolCallId,
+                'tool_name' => 'subagent',
+                'is_error' => false,
+            ],
+        ], $now);
+        $events[] = self::event($sessionId, 10, 1, 'tool_batch_committed', [], $now);
+        $events[] = self::event($sessionId, 11, 2, 'turn_advanced', ['step_id' => 'turn-2', 'turn_no' => 2], $now);
+        $events[] = self::event($sessionId, 12, 2, 'llm_step_completed', [
+            'step_id' => 'turn-2',
+            'stop_reason' => 'stop',
+            'text' => 'Multiline picker children finished.',
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => 'Multiline picker children finished.']],
+            ],
+        ], $now);
+        // Terminal agent_end is required so resume rebuilds Completed and follow-up can apply (not only queue).
+        $events[] = self::event($sessionId, 13, 2, 'agent_end', ['reason' => 'completed'], $now);
+
+        $jsonl = '';
+        $maxSeq = 0;
+        foreach ($events as $event) {
+            $jsonl .= json_encode($event, \JSON_THROW_ON_ERROR)."\n";
+            $maxSeq = max($maxSeq, (int) ($event['seq'] ?? 0));
+        }
+        file_put_contents($sessionDir.'/events.jsonl', $jsonl);
+        file_put_contents($sessionDir.'/sequence.cursor', (string) $maxSeq."\n");
+        // Hot checkpoint matching completed terminal events so follow-up AdvanceRun
+        // does not bail on a missing/stale rebuild path during pure --resume boots.
+        file_put_contents($sessionDir.'/state.json', json_encode([
+            'run_id' => $sessionId,
+            'status' => 'completed',
+            'version' => 1,
+            'turn_no' => 2,
+            'last_seq' => $maxSeq,
+            'is_streaming' => false,
+            'streaming_message' => null,
+            'pending_tool_calls' => [],
+            'error_message' => null,
+            'messages' => [],
+            'active_step_id' => null,
+            'retryable_failure' => false,
+            'retry_attempts' => 0,
+            'pending_human_input_requests' => [],
+            'model' => 'llama_cpp_test/test',
+        ], \JSON_THROW_ON_ERROR | \JSON_PRETTY_PRINT)."\n");
+    }
+
+    /**
      * Parallel completed children for /agents-live picker selection-highlight E2E.
      *
      * Produces three unique catalog rows via production parallel children shape.
@@ -163,6 +335,8 @@ final class SubagentProgressEventsFixture
                 'artifact_id' => 'agent_e2e_alpha_pick',
                 'agent_run_id' => $sessionId.'_child_alpha_001',
                 'task_summary' => 'Alpha unique picker row',
+                'model' => ChildContextStatisticsFixture::MODEL,
+                'reasoning' => 'high',
             ],
             [
                 'index' => 2,
@@ -171,6 +345,8 @@ final class SubagentProgressEventsFixture
                 'artifact_id' => 'agent_e2e_bravo_pick',
                 'agent_run_id' => $sessionId.'_child_bravo_001',
                 'task_summary' => 'Bravo unique picker row',
+                'model' => ChildContextStatisticsFixture::MODEL,
+                'reasoning' => 'high',
             ],
             [
                 'index' => 3,
@@ -179,6 +355,8 @@ final class SubagentProgressEventsFixture
                 'artifact_id' => 'agent_e2e_charlie_pick',
                 'agent_run_id' => $sessionId.'_child_charlie_001',
                 'task_summary' => 'Charlie unique picker row',
+                'model' => ChildContextStatisticsFixture::MODEL,
+                'reasoning' => 'high',
             ],
         ];
 
@@ -203,10 +381,15 @@ final class SubagentProgressEventsFixture
                 'messages' => [
                     ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Run three parallel subagents.']]],
                 ],
+                // Parent (non-child) RunStarted requires typed metadata for SubagentRunMetadataReader.
+                'metadata' => [
+                    'session' => [],
+                    'model' => 'deepseek/deepseek-v4-flash',
+                ],
             ],
         ], $now);
-        $events[] = self::event($sessionId, 2, 1, 'turn_advanced', ['step_id' => 'turn-1', 'turn_no' => 1, 'parent_turn_no' => null], $now);
-        $events[] = self::event($sessionId, 3, 1, 'leaf_set', ['turn_no' => 1, 'previous_turn_no' => null, 'parent_turn_no' => null, 'reason' => 'continue'], $now);
+        $events[] = self::event($sessionId, 2, 1, 'turn_advanced', ['step_id' => 'turn-1', 'turn_no' => 1], $now);
+        $events[] = self::event($sessionId, 3, 1, 'history_position_set', ['position_turn_no' => 1, 'previous_position_turn_no' => null, 'reason' => 'continue'], $now);
         $events[] = self::event($sessionId, 4, 1, 'llm_step_completed', [
             'step_id' => 'turn-1',
             'stop_reason' => 'tool_call',
@@ -247,7 +430,7 @@ final class SubagentProgressEventsFixture
             'is_error' => false,
             'result' => "Parallel subagents completed.\nArtifacts: agent_e2e_alpha_pick, agent_e2e_bravo_pick, agent_e2e_charlie_pick",
         ], $now);
-        $events[] = self::event($sessionId, 8, 2, 'turn_advanced', ['step_id' => 'turn-2', 'turn_no' => 2, 'parent_turn_no' => null], $now);
+        $events[] = self::event($sessionId, 8, 2, 'turn_advanced', ['step_id' => 'turn-2', 'turn_no' => 2], $now);
         $events[] = self::event($sessionId, 9, 2, 'llm_step_completed', [
             'step_id' => 'turn-2',
             'stop_reason' => 'stop',

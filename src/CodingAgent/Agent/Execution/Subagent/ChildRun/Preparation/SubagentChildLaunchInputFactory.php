@@ -8,14 +8,15 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
-use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\AgentChildLaunchContextDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 
@@ -24,12 +25,29 @@ final class SubagentChildLaunchInputFactory
     public function __construct(
         private readonly AgentPromptBuilder $promptBuilder,
         private readonly SkillsContextBuilder $skillsContextBuilder,
-        private readonly AgentsContextBuilder $agentsContextBuilder,
         private readonly RunStoreInterface $parentRunStore,
         private readonly AppConfig $appConfig,
         private readonly ChildExtensionSelectionService $childExtensionSelection,
         private readonly ToolRegistryInterface $toolRegistry,
+        private readonly SubagentRunMetadataReader $metadataReader,
+        private readonly ModelResolver $modelResolver,
     ) {
+    }
+
+    /**
+     * Resolve concrete non-empty launch model/reasoning without building prompts.
+     *
+     * @return array{model: string, reasoning: string}
+     */
+    public function resolveLaunchIdentity(
+        AgentDefinitionDTO $definition,
+        string $parentRunId,
+        ?string $parentModel = null,
+    ): array {
+        return [
+            'model' => $this->resolveEffectiveChildModel($definition->model, $parentModel),
+            'reasoning' => $this->resolveEffectiveChildReasoning($definition->thinking, $parentRunId),
+        ];
     }
 
     /**
@@ -50,7 +68,7 @@ final class SubagentChildLaunchInputFactory
         );
         $allowedTools = $this->filterToolsByExtensions($allowedTools, $effectiveExtensions);
 
-        $launchContext = $this->resolveChildLaunchContext($identity->parentRunId, $definition, $allowedTools);
+        $launchContext = $this->resolveChildLaunchContext($identity->parentRunId, $definition);
         $prompt = $this->promptBuilder->build(
             definition: $definition,
             task: $identity->taskSummary,
@@ -58,27 +76,45 @@ final class SubagentChildLaunchInputFactory
             allowedTools: $allowedTools,
             agentsMd: $launchContext->agentsMd,
             skillsContext: $launchContext->skillsContext,
-            agentsDefinitionsContext: $launchContext->agentsDefinitionsContext,
             allowedExtensions: $effectiveExtensions,
         );
 
         // Pin the effective child model at launch from explicit override or
         // the exact parent execution model that produced the tool call.
         $effectiveModel = $this->resolveEffectiveChildModel($definition->model, $parentModel);
+        // Reasoning: definition thinking override, else canonical parent/session
+        // resolution (run_started metadata → session → ai.default_reasoning → medium).
+        $effectiveReasoning = $this->resolveEffectiveChildReasoning(
+            $definition->thinking,
+            $identity->parentRunId,
+        );
 
         $childMetadata = $this->buildChildRunMetadata(
             parentRunId: $identity->parentRunId,
             agentName: $identity->displayName,
             artifactId: $identity->artifactId,
             model: $effectiveModel,
-            reasoning: $definition->thinking,
+            reasoning: $effectiveReasoning,
             allowedTools: $allowedTools,
             mcp: $mcp,
             extensions: $effectiveExtensions,
         );
 
+        // Prepared identity always carries the concrete launch identity used for RunMetadata.
+        $launchIdentity = new ChildRunIdentityDTO(
+            parentRunId: $identity->parentRunId,
+            childRunId: $identity->childRunId,
+            artifactId: $identity->artifactId,
+            displayName: $identity->displayName,
+            taskSummary: $identity->taskSummary,
+            launchModel: $effectiveModel,
+            launchReasoning: $effectiveReasoning,
+            artifactKind: $identity->artifactKind,
+            batchIndex: $identity->batchIndex,
+        );
+
         return new PreparedAgentChildRunDTO(
-            identity: $identity,
+            identity: $launchIdentity,
             startRunInput: new StartRunInput(
                 systemPrompt: $prompt['systemPrompt'],
                 messages: $prompt['messages'],
@@ -97,8 +133,8 @@ final class SubagentChildLaunchInputFactory
         string $parentRunId,
         string $agentName,
         string $artifactId,
-        ?string $model,
-        ?string $reasoning,
+        string $model,
+        string $reasoning,
         array $allowedTools,
         array $mcp,
         array $extensions,
@@ -139,6 +175,31 @@ final class SubagentChildLaunchInputFactory
         throw new \RuntimeException('Cannot launch child run: missing explicit child model and parent execution model snapshot.');
     }
 
+    private function resolveEffectiveChildReasoning(?string $definitionThinking, string $parentRunId): string
+    {
+        $explicit = null !== $definitionThinking ? trim($definitionThinking) : null;
+        if (null !== $explicit && '' === $explicit) {
+            $explicit = null;
+        }
+
+        // Prefer durable parent run_started reasoning when definition has no override,
+        // then fall through the canonical ModelResolver session/default/product chain.
+        if (null === $explicit) {
+            $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId);
+            $parentReasoning = $parentMetadata?->reasoning;
+            if (null !== $parentReasoning && '' !== trim($parentReasoning)) {
+                return trim($parentReasoning);
+            }
+        }
+
+        $resolved = trim($this->modelResolver->resolveInitialReasoning($explicit, $parentRunId));
+        if ('' === $resolved) {
+            throw new \RuntimeException('Cannot launch child run: canonical reasoning resolution produced an empty value.');
+        }
+
+        return $resolved;
+    }
+
     private function resolveContextWindowForModel(?string $model): int
     {
         if (null === $model || '' === trim($model)) {
@@ -160,29 +221,15 @@ final class SubagentChildLaunchInputFactory
         return null !== $definition ? ($definition->contextWindow ?? 0) : 0;
     }
 
-    /**
-     * @param list<string> $allowedTools
-     */
-    private function resolveChildLaunchContext(string $parentRunId, AgentDefinitionDTO $definition, array $allowedTools): AgentChildLaunchContextDTO
+    private function resolveChildLaunchContext(string $parentRunId, AgentDefinitionDTO $definition): AgentChildLaunchContextDTO
     {
         $agentsMd = $definition->inheritProjectContext
             ? $this->extractUserContextBySource($parentRunId, 'agents_context')
             : '';
 
-        $skillsContext = $this->resolveSkillsContextForChild($definition);
-
-        $agentsDefinitionsContext = '';
-        if (\in_array('subagent', $allowedTools, true)) {
-            $agentsDefinitionsContext = $this->extractUserContextBySource($parentRunId, 'agents_definitions_context');
-            if ('' === trim($agentsDefinitionsContext)) {
-                $agentsDefinitionsContext = $this->agentsContextBuilder->build();
-            }
-        }
-
         return new AgentChildLaunchContextDTO(
             agentsMd: $agentsMd,
-            skillsContext: $skillsContext,
-            agentsDefinitionsContext: $agentsDefinitionsContext,
+            skillsContext: $this->resolveSkillsContextForChild($definition),
         );
     }
 

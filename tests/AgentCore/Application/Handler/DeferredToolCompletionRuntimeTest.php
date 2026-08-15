@@ -36,6 +36,8 @@ use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Session\History\HistoryProjector;
+use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
@@ -369,6 +371,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
             promptStateStore: new InMemoryPromptStateStore(),
             promptStateReplayService: new PromptStateReplayService(),
             replayEventPreparer: new ReplayEventPreparer(),
+            historyReplayFilter: new HistoryReplayFilter(new HistoryProjector()),
         );
 
         $collector = new ToolBatchCollector();
@@ -406,6 +409,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
                     eventFactory: new EventFactory(),
                     toolCallExtractor: new ToolCallExtractor(),
                     messageNormalizer: new AgentMessageNormalizer(),
+                    serializer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
                 ),
             ],
             logger: new NullLogger(),

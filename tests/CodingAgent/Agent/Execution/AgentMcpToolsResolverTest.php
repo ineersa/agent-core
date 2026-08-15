@@ -171,7 +171,7 @@ final class AgentMcpToolsResolverTest extends TestCase
         $catalogStore = $this->createStub(McpToolCatalogStoreInterface::class);
         $catalogStore->method('read')->willReturn($catalog);
 
-        $config = McpConfigDTO::fromServers([
+        $config = new McpConfigDTO(servers: [
             'context7' => new McpServerDefinitionDTO(
                 name: 'context7',
                 url: 'https://example.test/mcp',

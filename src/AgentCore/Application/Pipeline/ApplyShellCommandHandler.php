@@ -55,8 +55,8 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
         // Ownership:
         // - pre-conversation (turnNo=0): shell remains run-level turn 0
         // - active non-terminal run: shell owns the current turn
-        // - terminal conversational run: shell seeds a child turn so generic
-        //   TurnTreeReplayFilter can abandon the shell branch on rewind
+        // - terminal conversational run: shell seeds a new active turn so
+        //   history filtering can exclude it after a later tip reposition/discard
         $hasConversationalTurn = $state->turnNo > 0;
         $terminalBoundary = $state->status->isTerminal();
         $startsChildTurn = $terminalBoundary && $hasConversationalTurn;
@@ -73,29 +73,26 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
         ]];
 
         if ($startsChildTurn) {
-            // RunMessageProcessor serializes this calculation under the run lock.
-            // lastSeq is rebuilt from the global canonical event high-water, so
-            // abandoned branch turns cannot collide with the new child turn.
-            // AgentCommandApplied stays on the parent so the generic
-            // command-to-next-TurnAdvanced map treats this shell as a seeder.
+            // RunMessageProcessor serializes this under the run lock. lastSeq is
+            // the global canonical high-water so discarded turns cannot collide.
+            // AgentCommandApplied stays on the prior tip so the command-to-next-
+            // TurnAdvanced map treats this shell as a seeder.
             $owningTurnNo = max($state->lastSeq, $state->turnNo) + 1;
-            $parentTurnNo = $state->turnNo;
+            $previousTurnNo = $state->turnNo;
             $eventSpecs[] = [
                 'type' => RunEventTypeEnum::TurnAdvanced->value,
                 'turn_no' => $owningTurnNo,
                 'payload' => [
                     'step_id' => $message->stepId(),
                     'turn_no' => $owningTurnNo,
-                    'parent_turn_no' => $parentTurnNo,
                 ],
             ];
             $eventSpecs[] = [
-                'type' => RunEventTypeEnum::LeafSet->value,
+                'type' => RunEventTypeEnum::HistoryPositionSet->value,
                 'turn_no' => $owningTurnNo,
                 'payload' => [
-                    'turn_no' => $owningTurnNo,
-                    'previous_turn_no' => $parentTurnNo,
-                    'parent_turn_no' => $parentTurnNo,
+                    'position_turn_no' => $owningTurnNo,
+                    'previous_position_turn_no' => $previousTurnNo,
                     'reason' => 'shell_command',
                 ],
             ];

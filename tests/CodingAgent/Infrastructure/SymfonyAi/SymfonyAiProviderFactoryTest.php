@@ -112,7 +112,7 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         );
 
         $appConfig = new AppConfig(
-            tui: TuiConfig::fromArray(['theme' => 'cyberpunk']),
+            tui: new TuiConfig(theme: 'cyberpunk'),
             logging: new LoggingConfig(),
             catalog: new HatfieldModelCatalog($aiConfig),
         );
@@ -302,7 +302,7 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         );
 
         $appConfig = new AppConfig(
-            tui: TuiConfig::fromArray(['theme' => 'cyberpunk']),
+            tui: new TuiConfig(theme: 'cyberpunk'),
             logging: new LoggingConfig(),
             catalog: new HatfieldModelCatalog($aiConfig),
         );
@@ -349,7 +349,7 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         );
 
         return new AppConfig(
-            tui: TuiConfig::fromArray(['theme' => 'cyberpunk']),
+            tui: new TuiConfig(theme: 'cyberpunk'),
             logging: new LoggingConfig(),
             catalog: new HatfieldModelCatalog($aiConfig),
         );

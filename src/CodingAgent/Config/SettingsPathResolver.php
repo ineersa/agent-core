@@ -85,29 +85,6 @@ final class SettingsPathResolver
         return PathResolver::resolve($resolved, $baseDir);
     }
 
-    /**
-     * Resolve a list of paths using the given base directory.
-     *
-     * @param list<string> $paths
-     *
-     * @return list<string>
-     */
-    public function resolveList(array $paths, string $baseDir): array
-    {
-        return array_map(
-            fn (string $path): string => $this->resolve($path, $baseDir),
-            $paths,
-        );
-    }
-
-    /**
-     * The application installation root (value of %kernel.project_dir%).
-     */
-    public function getAppRoot(): string
-    {
-        return $this->appRoot;
-    }
-
     public function getHomeDir(): string
     {
         return $this->homeDir;

@@ -92,6 +92,6 @@ Explore read-only. Return dense bullets and file paths.
 
 ## Timeouts and failure
 
-- Timeout: durable deferred-batch `deadlineAt` from `agents.subagent_tool_timeout_seconds` (default 1800, min 60); schedules timeout interruption (`DelayStamp` + `InterruptDeferredSubagentBatchMessage`).
+- Timeout: durable deferred-batch `deadlineAt` from `agents.subagent_tool_timeout_seconds` (default 86400, min 60); schedules timeout interruption (`DelayStamp` + `InterruptDeferredSubagentBatchMessage`).
 - Timeout/failure/cancel tool results still include `Artifact: …` when available so you can retrieve partial context.
 - Cancelled handoffs include bounded partial context only (no raw tool output).

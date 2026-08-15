@@ -317,12 +317,12 @@ final class SessionSwitchServiceTest extends TestCase
         $this->assertSame('42', $target->sessionId);
     }
 
-    // ── rewindToTurn ────────────────────────────────────────────────────
+    // ── selectHistoryTurn ────────────────────────────────────────────────────
 
-    public function testRewindToTurnSendsCommand(): void
+    public function testSelectHistoryTurnSendsCommand(): void
     {
-        // Thesis: rewindToTurn cancels the current run and sends
-        // a rewind_to_turn UserCommand with the correct turn_no.
+        // Thesis: selectHistoryTurn cancels the current run and sends
+        // a select_history_turn UserCommand with the correct turn_no.
         $coordinator = $this->createCoordinator();
         $controller = $this->createController($coordinator);
         $projector = $this->createStub(TranscriptProjectorInterface::class);
@@ -336,7 +336,7 @@ final class SessionSwitchServiceTest extends TestCase
             ->method('send')
             ->with(
                 'test-run-id',
-                $this->callback(static fn (UserCommand $cmd): bool => 'rewind_to_turn' === $cmd->type
+                $this->callback(static fn (UserCommand $cmd): bool => 'select_history_turn' === $cmd->type
                     && ['turn_no' => 3] === $cmd->payload
                 ),
             );
@@ -347,17 +347,17 @@ final class SessionSwitchServiceTest extends TestCase
         $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $client, $state);
 
-        $service->rewindToTurn(3);
+        $service->selectHistoryTurn(3);
     }
 
-    public function testRewindToTurnWithoutHandleThrows(): void
+    public function testSelectHistoryTurnWithoutHandleThrows(): void
     {
-        // Thesis: calling rewindToTurn without a bound handle raises
+        // Thesis: calling selectHistoryTurn without a bound handle raises
         // RuntimeException — not a silent no-op.
         $service = $this->createService();
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Cannot rewind');
-        $service->rewindToTurn(1);
+        $this->expectExceptionMessage('Cannot select history');
+        $service->selectHistoryTurn(1);
     }
 
     private function createCoordinator(): QuestionCoordinator

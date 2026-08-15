@@ -534,6 +534,68 @@ final class QuestionCoordinatorTest extends TestCase
         $coordinator->enqueue($this->tuiRequest('r1'));
         $this->assertTrue($coordinator->hasRequest('r1'));
     }
+
+    // ─── removeForRun (child live-view leave/switch) ───────────────────
+
+    public function testRemoveForRunDropsActiveAndQueuedForOneRunWithoutCallbacks(): void
+    {
+        $coordinator = new QuestionCoordinator();
+        $cancelFired = [];
+        $answerFired = [];
+
+        $coordinator->enqueue(
+            $this->agentCoreRequestForRun('child-a-active', 'child-a'),
+            onAnswer: static function () use (&$answerFired): void {
+                $answerFired[] = 'child-a-active';
+            },
+            onCancel: static function () use (&$cancelFired): void {
+                $cancelFired[] = 'child-a-active';
+            },
+        );
+        $coordinator->enqueue(
+            $this->agentCoreRequestForRun('parent-q', 'parent-run'),
+            onAnswer: static function () use (&$answerFired): void {
+                $answerFired[] = 'parent-q';
+            },
+        );
+        $coordinator->enqueue(
+            $this->agentCoreRequestForRun('child-a-queued', 'child-a'),
+            onCancel: static function () use (&$cancelFired): void {
+                $cancelFired[] = 'child-a-queued';
+            },
+        );
+        $coordinator->enqueue(
+            $this->agentCoreRequestForRun('child-b-q', 'child-b'),
+        );
+
+        $this->assertSame('child-a-active', $coordinator->activeRequest()?->requestId);
+
+        $coordinator->removeForRun('child-a');
+
+        $this->assertSame([], $cancelFired, 'removeForRun must not invoke cancel callbacks');
+        $this->assertSame([], $answerFired, 'removeForRun must not invoke answer callbacks');
+        $this->assertFalse($coordinator->hasRequest('child-a-active'));
+        $this->assertFalse($coordinator->hasRequest('child-a-queued'));
+        $this->assertTrue($coordinator->hasRequest('parent-q'));
+        $this->assertTrue($coordinator->hasRequest('child-b-q'));
+        $this->assertSame('parent-q', $coordinator->activeRequest()?->requestId);
+
+        $coordinator->answer('ok');
+        $this->assertSame(['parent-q'], $answerFired);
+        $this->assertSame('child-b-q', $coordinator->activeRequest()?->requestId);
+    }
+
+    public function testRemoveForRunWithNoMatchingRunIsNoOp(): void
+    {
+        $coordinator = new QuestionCoordinator();
+        $coordinator->enqueue($this->agentCoreRequestForRun('parent-q', 'parent-run'));
+
+        $coordinator->removeForRun('missing-run');
+
+        $this->assertSame('parent-q', $coordinator->activeRequest()?->requestId);
+        $this->assertTrue($coordinator->hasRequest('parent-q'));
+    }
+
     // ─── Helpers ───────────────────────────────────────────────────────
 
     private function tuiRequest(string $id, string $prompt = 'Test?'): QuestionRequest
@@ -553,6 +615,17 @@ final class QuestionCoordinatorTest extends TestCase
             source: QuestionSource::AgentCore,
             kind: QuestionKind::Text,
             prompt: $prompt,
+        );
+    }
+
+    private function agentCoreRequestForRun(string $id, string $runId, string $prompt = 'Test?'): QuestionRequest
+    {
+        return new QuestionRequest(
+            requestId: $id,
+            source: QuestionSource::AgentCore,
+            kind: QuestionKind::Text,
+            prompt: $prompt,
+            runId: $runId,
         );
     }
 }

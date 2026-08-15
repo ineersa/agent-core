@@ -6,6 +6,9 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
 
 /**
  * Ordered durable child reservation intent for deferred batch launch (Piece 4A).
+ *
+ * Launch model/reasoning are concrete values from prepare-time resolvers
+ * (subagent/fork resolveLaunchIdentity); not an external trust boundary.
  */
 final readonly class DeferredSubagentBatchChildIntentDTO
 {
@@ -15,12 +18,13 @@ final readonly class DeferredSubagentBatchChildIntentDTO
         public string $artifactId,
         public string $agentName,
         public string $task,
-        public ?string $definitionModel,
+        public string $launchModel,
+        public string $launchReasoning,
     ) {
     }
 
     /**
-     * @return array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}
+     * @return array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, launchModel: string, launchReasoning: string}
      */
     public function toReserveArray(): array
     {
@@ -30,7 +34,8 @@ final readonly class DeferredSubagentBatchChildIntentDTO
             'artifactId' => $this->artifactId,
             'agentName' => $this->agentName,
             'task' => $this->task,
-            'definitionModel' => $this->definitionModel,
+            'launchModel' => $this->launchModel,
+            'launchReasoning' => $this->launchReasoning,
         ];
     }
 }

@@ -15,16 +15,18 @@ final class ForkToolDefinitionBuilder
     {
         return new ToolDefinitionDTO(
             name: 'fork',
-            description: 'Launch an isolated fork child with inherited parent conversation context. Blocks until the fork completes and returns a dense handoff through deferred tool completion.',
+            description: 'Launch an isolated fork child with inherited parent conversation context. Blocks until completion and returns a dense handoff.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
                     'task' => [
                         'type' => 'string',
+                        'minLength' => 1,
                         'description' => 'Delegated task for the fork child (required).',
                     ],
                     'model' => [
                         'type' => 'string',
+                        'minLength' => 1,
                         'description' => 'Optional model override.',
                     ],
                     'thinking' => [
@@ -41,7 +43,6 @@ final class ForkToolDefinitionBuilder
             timeoutSeconds: null,
             promptLine: 'fork task="..." — delegate work to an isolated child with inherited context',
             promptGuidelines: [
-                'Use fork for implementation delegation to an isolated child with inherited parent context.',
                 'Fork children cannot launch fork or subagent; do not instruct them to spawn child agents.',
                 'Parallel forks must NEVER target the same worktree/directory because concurrent edits can corrupt it.',
                 'Never launch more than 3 forks concurrently because forks impose high load.',

@@ -156,7 +156,7 @@ final class AgentToolPolicyResolverTest extends TestCase
         $catalog = new McpToolCatalogDTO(runId: 'run-1', generatedAt: 't', configHash: 'h', servers: $servers);
         $catalogStore = $this->createStub(McpToolCatalogStoreInterface::class);
         $catalogStore->method('read')->willReturn($catalog);
-        $config = McpConfigDTO::fromServers([
+        $config = new McpConfigDTO(servers: [
             'context7' => new McpServerDefinitionDTO('context7', url: 'u', transportType: McpTransportTypeEnum::HTTP, availability: McpServerAvailabilityEnum::All),
             'websearch' => new McpServerDefinitionDTO('websearch', url: 'u', transportType: McpTransportTypeEnum::HTTP, availability: McpServerAvailabilityEnum::Specific),
         ]);

@@ -1,19 +1,32 @@
 # Domain\Message architecture notes
 
-`Domain\Message` contains transport contracts only (immutable bus payloads).
+Transport contracts only — immutable bus payloads under `Ineersa\AgentCore\Domain\Message`.
 
-## Role in runtime topology
+## Taxonomy (current)
 
-- Command-bus payloads: `StartRun`, `ApplyCommand`, `ApplyShellCommand`, `AdvanceRun`, `LlmStepResult`, `ToolCallResult`, `CompactionStepResult` (`StartRun`/`ApplyCommand`/`ApplyShellCommand`/results route to `run_control`; `AdvanceRun` is sync)
-- Execution-bus payloads: `ExecuteLlmStep`, `ExecuteToolCall`, `ExecuteShellToolCall`, `CollectToolBatch`
+**Command / result payloads** (orchestration; most route to transport `run_control` on `agent.command.bus`):
 
-For concrete producers/consumers, see `src/Application/AGENTS.md`.
+- `StartRun`, `ApplyCommand`, `ApplyShellCommand`
+- `LlmStepResult`, `ToolCallResult`, `CompactionStepResult`
+- `CompleteDeferredToolCall` (deferred completion; identity from durable record)
+
+**Sync (intentionally not transport-routed):**
+
+- `AdvanceRun`, `CompactRun` — handled on the bus(es) without Messenger transport (see `config/packages/messenger.yaml` comments)
+
+**Execution payloads** (`agent.execution.bus` → `llm` / `tool` transports):
+
+- `ExecuteLlmStep`, `ExecuteCompactionStep` → `llm`
+- `ExecuteToolCall`, `ExecuteShellToolCall` → `tool`
+
+Producers/consumers and App-layer workers: `../../Application/AGENTS.md`.
 
 ## Contract boundaries
 
-- Messages should remain infrastructure-agnostic value objects.
-- Runtime ownership (who dispatches/handles) is documented in Application architecture notes, not in TOON indexes.
+- Messages stay infrastructure-agnostic value objects
+- Who dispatches/handles is Application / CodingAgent ownership, not TOON indexes
+- Do not document removed types (`CollectToolBatch` is not in the tree)
 
-## Maintenance rule
+## Maintenance
 
-When a new message type is added, removed, or re-routed, update this file and `src/Application/AGENTS.md` together.
+When a message type is added, removed, or re-routed, update this file and `../../Application/AGENTS.md` together.

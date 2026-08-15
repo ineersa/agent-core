@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Projection;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
@@ -15,6 +17,8 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscri
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -37,11 +41,11 @@ final class TranscriptProjectorTest extends TestCase
 
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber());
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
-        $dispatcher->addSubscriber(new ModelNotificationProjectionSubscriber());
+        $dispatcher->addSubscriber(new ModelNotificationProjectionSubscriber(\Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer()));
 
         $this->projector = new TranscriptProjector($dispatcher, $state);
         $this->seq = 0;
@@ -1013,6 +1017,65 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertTrue($block->streaming);
     }
 
+    public function testToolExecutionStartedWithArgumentsSynthesizesToolCallOnce(): void
+    {
+        // Thesis: direct !shell never streams tool_call.*; tool_execution.started
+        // carrying arguments must create exactly one finalized ToolCall + ToolResult
+        // so the exchange card can show command: without inventing timeout.
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'sh_direct',
+            'tool_name' => 'bash',
+            'arguments' => ['command' => 'ls -1'],
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'sh_direct',
+            'result' => "marker.txt\n",
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(2, $blocks);
+        $this->assertSame(TranscriptBlockKindEnum::ToolCall, $blocks[0]->kind);
+        $this->assertSame('tool_call_sh_direct', $blocks[0]->id);
+        $this->assertFalse($blocks[0]->streaming);
+        $this->assertSame('bash(command: "ls -1")', $blocks[0]->text);
+        $this->assertSame(['command' => 'ls -1'], $blocks[0]->meta['arguments'] ?? null);
+        $this->assertArrayNotHasKey('timeout', $blocks[0]->meta['arguments'] ?? []);
+
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[1]->kind);
+        $this->assertSame('tool_result_sh_direct', $blocks[1]->id);
+        $this->assertSame("marker.txt\n", $blocks[1]->text);
+        $this->assertFalse($blocks[1]->streaming);
+    }
+
+    public function testToolExecutionStartedWithArgumentsDoesNotDuplicateExistingToolCall(): void
+    {
+        // Thesis: normal LLM path already has a ToolCall block; execution start
+        // with the same id + args must not create a second ToolCall.
+        $this->accept('tool_call.started', [
+            'tool_call_id' => 'tc_llm', 'tool_name' => 'bash',
+        ]);
+        $this->accept('tool_call.arguments_completed', [
+            'tool_call_id' => 'tc_llm',
+            'tool_name' => 'bash',
+            'arguments' => ['command' => 'pwd'],
+        ]);
+        $existingText = $this->projector->blocks()[0]->text;
+
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_llm',
+            'tool_name' => 'bash',
+            'arguments' => ['command' => 'pwd'],
+        ]);
+
+        $toolCallBlocks = array_values(array_filter(
+            $this->projector->blocks(),
+            static fn (TranscriptBlock $b) => TranscriptBlockKindEnum::ToolCall === $b->kind,
+        ));
+        $this->assertCount(1, $toolCallBlocks, 'Must not create duplicate ToolCall for LLM path');
+        $this->assertSame($existingText, $toolCallBlocks[0]->text);
+        $this->assertSame('tool_result_tc_llm', $this->projector->blocks()[1]->id);
+    }
+
     public function testToolExecutionOutputDeltaAppendsText(): void
     {
         $this->accept('tool_execution.started', [
@@ -1111,8 +1174,8 @@ final class TranscriptProjectorTest extends TestCase
             'subagent_progress' => [
                 'mode' => 'single',
                 'status' => 'running',
-                'agent' => 'scout',
-                'task_preview' => 'Inspect resume path',
+                'agent_name' => 'scout', 'artifact_id' => 'agent_abc',
+                'task_summary' => 'Inspect resume path', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium',
             ],
         ]);
         $this->accept('tool_execution.completed', [
@@ -1124,7 +1187,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertStringContainsString('HANDOFF: resume uses shared applier', $block->text);
         $this->assertFalse($block->streaming);
         $this->assertTrue($block->meta['subagent_final'] ?? false);
-        $this->assertIsArray($block->meta['subagent_progress'] ?? null);
+        $this->assertInstanceOf(SubagentProgressSnapshotInterface::class, $block->meta['subagent_progress'] ?? null);
     }
 
     public function testToolExecutionEmptyResultPreservesProgressText(): void
@@ -1975,6 +2038,28 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame('Free-standing informational nudge', $blocks[1]->text);
     }
 
+    public function testAcceptsTypedRuntimeEventWithoutArrayRoundTrip(): void
+    {
+        $event = new RuntimeEvent(
+            type: 'user.message_submitted',
+            runId: self::RUN_ID,
+            seq: 7,
+            payload: [
+                'message_id' => 'typed-1',
+                'text' => 'typed projector path',
+            ],
+        );
+
+        $this->projector->accept($event);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks);
+        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
+        $this->assertSame('typed projector path', $blocks[0]->text);
+        // Projector-local ordering seq is independent of RuntimeEvent.seq.
+        $this->assertSame(0, $blocks[0]->seq);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /**
@@ -1996,20 +2081,17 @@ final class TranscriptProjectorTest extends TestCase
     }
 
     /**
-     * Build a RuntimeEvent-shaped array.
+     * Build a typed RuntimeEvent for projector acceptance.
      *
      * @param array<string, mixed> $payload
-     *
-     * @return array{type: string, runId: string, seq: int, payload: array<string, mixed>, v: int}
      */
-    private function event(string $type, array $payload = [], string $runId = self::RUN_ID): array
+    private function event(string $type, array $payload = [], string $runId = self::RUN_ID): RuntimeEvent
     {
-        return [
-            'type' => $type,
-            'runId' => $runId,
-            'seq' => $this->seq++,
-            'payload' => $payload,
-            'v' => 1,
-        ];
+        return new RuntimeEvent(
+            type: $type,
+            runId: $runId,
+            seq: $this->seq++,
+            payload: $payload,
+        );
     }
 }

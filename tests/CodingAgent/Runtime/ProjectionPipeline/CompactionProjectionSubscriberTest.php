@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\CompactionProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjectionEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use PHPUnit\Framework\TestCase;
 
 final class CompactionProjectionSubscriberTest extends TestCase
@@ -35,12 +36,12 @@ final class CompactionProjectionSubscriberTest extends TestCase
     public function testCompactionStartedTextIsGlyphFree(): void
     {
         $event = new TranscriptProjectionEvent(
-            rawEvent: [
-                'type' => 'compaction.started',
-                'runId' => 'run-1',
-                'seq' => $this->state->nextSeq(),
-                'payload' => [],
-            ],
+            runtimeEvent: new RuntimeEvent(
+                type: 'compaction.started',
+                runId: 'run-1',
+                seq: $this->state->nextSeq(),
+                payload: [],
+            ),
             state: $this->state,
         );
 
@@ -151,17 +152,17 @@ final class CompactionProjectionSubscriberTest extends TestCase
         ?int $estimatedTokensAfter,
     ): TranscriptProjectionEvent {
         return new TranscriptProjectionEvent(
-            rawEvent: [
-                'type' => 'compaction.completed',
-                'runId' => 'run-1',
-                'seq' => $this->state->nextSeq(),
-                'payload' => [
+            runtimeEvent: new RuntimeEvent(
+                type: 'compaction.completed',
+                runId: 'run-1',
+                seq: $this->state->nextSeq(),
+                payload: [
                     'estimated_tokens_before' => $estimatedTokensBefore,
                     'estimated_tokens_after' => $estimatedTokensAfter,
                     'messages_before' => 10,
                     'messages_after' => 5,
                 ],
-            ],
+            ),
             state: $this->state,
         );
     }

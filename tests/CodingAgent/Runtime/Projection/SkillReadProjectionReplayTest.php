@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\SkillReadProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -76,11 +77,11 @@ final class SkillReadProjectionReplayTest extends TestCase
         $dispatcher->addSubscriber(new SkillReadProjectionSubscriber($discovery));
         $projector = new TranscriptProjector($dispatcher, $state);
 
-        $projector->accept([
-            'type' => 'assistant.message_completed',
-            'runId' => 'replay-run',
-            'seq' => 1,
-            'payload' => [
+        $projector->accept(new RuntimeEvent(
+            type: 'assistant.message_completed',
+            runId: 'replay-run',
+            seq: 1,
+            payload: [
                 'message_id' => 'msg-1',
                 'text' => 'Loading skill',
                 'tool_calls' => [
@@ -102,7 +103,7 @@ final class SkillReadProjectionReplayTest extends TestCase
                     ],
                 ],
             ],
-        ]);
+        ));
 
         $blocks = $projector->blocks();
         $byCallId = [];

@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Polls a selected child run id and projects readonly live transcript blocks.
@@ -30,8 +31,9 @@ final class SubagentLiveChildViewPoller
     public function __construct(
         private readonly TranscriptProjectorInterface $projector,
         private readonly LoggerInterface $logger,
+        DenormalizerInterface $denormalizer,
     ) {
-        $this->eventApplier = new TuiRuntimeEventApplier($this->projector);
+        $this->eventApplier = new TuiRuntimeEventApplier($this->projector, $denormalizer);
     }
 
     public function resetProjection(): void

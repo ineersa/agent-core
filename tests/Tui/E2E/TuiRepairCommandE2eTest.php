@@ -11,6 +11,10 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
@@ -178,7 +182,7 @@ final class TuiRepairCommandE2eTest extends TestCase
         file_put_contents($sessionDir.'/events.jsonl', implode("\n", $lines)."\n");
 
         $serializer = new Serializer(
-            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer()],
+            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(classMetadataFactory: ($cmf = new ClassMetadataFactory(new AttributeLoader())), nameConverter: new MetadataAwareNameConverter($cmf, new CamelCaseToSnakeCaseNameConverter()))],
             [new JsonEncoder()],
         );
         $state = new RunState(

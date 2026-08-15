@@ -12,7 +12,6 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
-use Ineersa\CodingAgent\Config\ModelSettingsPersister;
 use Ineersa\CodingAgent\Config\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
@@ -355,7 +354,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $appConfig = $this->makeAppConfig($aiData);
-        $selectionService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore), new ModelSettingsPersister($homeWriter, $sessionMetaStore));
+        $selectionService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore), $homeWriter, $sessionMetaStore);
 
         $catalog = $appConfig->catalog ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
@@ -372,7 +371,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $ai = AiConfig::optionalFromArray($raw);
 
         return new AppConfig(
-            tui: TuiConfig::fromArray((array) ($raw['tui'] ?? [])),
+            tui: new TuiConfig(theme: (string) (($raw['tui'] ?? [])['theme'] ?? 'cyberpunk')),
             logging: new LoggingConfig(),
             sessions: new SessionsConfig(),
             ai: $ai,

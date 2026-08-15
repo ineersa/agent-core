@@ -8,6 +8,10 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ToolResultType;
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /**
  * Defense-in-depth LLM-bound output capping for tool-result text.
@@ -34,6 +38,7 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
 {
     public function __construct(
         private OutputCap $outputCap,
+        private NormalizerInterface&DenormalizerInterface $serializer,
     ) {
     }
 
@@ -56,13 +61,11 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
 
         // Skip messages already capped by the primary tool-result processor.
         // Detection uses structured model_notifications in details instead of text markers.
-        $alreadyCapped = $this->hasDeliveryToolResultReplace(
+        if ($this->hasDeliveryToolResultReplace(
             \is_array($message->details['model_notifications'] ?? null)
                 ? $message->details['model_notifications']
                 : null,
-        );
-
-        if ($alreadyCapped) {
+        )) {
             return $message;
         }
 
@@ -111,7 +114,7 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
         $arguments = \is_array($message->details['arguments'] ?? null)
             ? $message->details['arguments']
             : [];
-        $path = OutputCapPathResolver::resolveCapPath(
+        $path = $this->outputCap->resolveCapPath(
             $message->toolName,
             $arguments,
             $message->isError,
@@ -127,16 +130,24 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
 
         // Build context-aware notice: read tools get original-path guidance,
         // generic tools use the default saved-artifact inspection notice.
-        $readArgs = \is_array($message->details['arguments'] ?? null)
-            ? $message->details['arguments']
-            : [];
-        $noticeText = $this->buildContextualNotice($message->toolName, $readArgs, $capResult);
+        $noticeText = $this->outputCap->buildContextualNotice(
+            $message->toolName,
+            $arguments,
+            $capResult,
+        );
 
         // Build new content: a text part with the capped notice,
         // plus all preserved non-text parts (image_refs).
         $newContent = [['type' => 'text', 'text' => $noticeText]];
         foreach ($nonTextParts as $part) {
             $newContent[] = $part;
+        }
+
+        // Canonical tool_result_replace requires a nonblank toolCallId. Fail clearly
+        // rather than synthesizing 'none' or soft-compat IDs.
+        $toolCallId = $message->toolCallId;
+        if (null === $toolCallId || '' === trim($toolCallId)) {
+            throw new \InvalidArgumentException('OutputCapLlmTransformHook cannot emit tool_result_replace without a nonblank toolCallId on the tool-role message.');
         }
 
         // Build a generic model notification for downstream consumers
@@ -146,43 +157,43 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
         // ID and do not produce duplicate TUI blocks/events.  The ID does NOT
         // include savedPath or noticeText, both of which vary per invocation.
         $notificationId = hash('sha256', implode('|', [
-            $message->toolCallId ?? 'none',
+            $toolCallId,
             'output_cap',
             (string) $capResult->cap,
             hash('sha256', $combinedText),
         ]));
 
-        $notification = [
-            'id' => $notificationId,
-            'source' => 'output_cap',
-            'kind' => 'output_capped',
-            'severity' => 'warning',
-            'delivery' => 'tool_result_replace',
-            'text' => $noticeText,
-            'metadata' => [
+        $notification = new ModelNotificationDTO(
+            id: $notificationId,
+            source: 'output_cap',
+            kind: 'output_capped',
+            severity: 'warning',
+            delivery: 'tool_result_replace',
+            text: $noticeText,
+            toolCallId: $toolCallId,
+            toolName: $message->toolName,
+            metadata: [
                 'cap' => $capResult->cap,
                 'char_count' => $capResult->charCount,
                 'token_estimate' => $capResult->tokenEstimate,
                 'saved_path' => $capResult->savedPath,
             ],
-        ];
-        if (null !== $message->toolCallId) {
-            $notification['tool_call_id'] = $message->toolCallId;
-        }
-        if (null !== $message->toolName) {
-            $notification['tool_name'] = $message->toolName;
-        }
+        );
+        /** @var array<string, mixed> $notificationArray */
+        $notificationArray = $this->serializer->normalize($notification, null, [
+            AbstractObjectNormalizer::SKIP_NULL_VALUES => true,
+        ]);
 
         // Attach the generic notification to both metadata (for the model history)
         // and details (so downstream skip detection works on re-capping).
         $metadata = $message->metadata;
-        $metadata['model_notifications'] = [$notification];
+        $metadata['model_notifications'] = [$notificationArray];
 
         $details = \is_array($message->details) ? $message->details : [];
         $existing = \is_array($details['model_notifications'] ?? null)
             ? $details['model_notifications']
             : [];
-        $existing[] = $notification;
+        $existing[] = $notificationArray;
         $details['model_notifications'] = $existing;
 
         return new AgentMessage(
@@ -212,85 +223,22 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
     /**
      * Check whether any notification in the list uses delivery=tool_result_replace.
      *
-     * @param list<array<string, mixed>>|null $notifications
+     * @param list<mixed>|array<int|string, mixed>|null $notifications
      */
     private function hasDeliveryToolResultReplace(?array $notifications): bool
     {
-        if (null === $notifications) {
+        if (null === $notifications || [] === $notifications) {
             return false;
         }
 
-        foreach ($notifications as $notif) {
-            if (!\is_array($notif)) {
-                continue;
-            }
-            if (($notif['delivery'] ?? null) === 'tool_result_replace') {
+        /** @var list<ModelNotificationDTO> $typed */
+        $typed = $this->serializer->denormalize($notifications, ModelNotificationDTO::class.'[]');
+        foreach ($typed as $notif) {
+            if ('tool_result_replace' === $notif->delivery) {
                 return true;
             }
         }
 
         return false;
-    }
-
-    /**
-     * Build a context-aware capping notice for the late defense-in-depth hook.
-     *
-     * For read tools: guides follow-up reads to the original file path with
-     * offset+limit, avoiding double line numbers from reading the saved
-     * rendered outcapac artifact.  For all other tools: uses the generic
-     * saved-output inspection notice from OutputCap.
-     *
-     * @param array<string, mixed> $arguments
-     */
-    private function buildContextualNotice(?string $toolName, array $arguments, OutputCapResult $capResult): string
-    {
-        if ('read' !== $toolName) {
-            return $capResult->noticeText;
-        }
-
-        $originalPath = OutputCapPathResolver::extractPathFromArguments($arguments);
-
-        // Only produce read-specific notice when we have the original path.
-        // Without it, fall back to the generic saved-artifact notice (head/grep).
-        if (null === $originalPath) {
-            return $capResult->noticeText;
-        }
-
-        $originalOffset = $this->extractOffsetFromArguments($arguments);
-        $offset = (\is_int($originalOffset) && $originalOffset > 0) ? $originalOffset : 1;
-        $escapedGrepPath = escapeshellarg($originalPath);
-
-        return <<<STRING
-[Output capped: {$capResult->charCount} chars (~{$capResult->tokenEstimate} tokens) > {$capResult->cap}-char cap]
-Saved full output: {$capResult->savedPath}
-
-Next: use a focused follow-up, e.g.
-- read(path: "{$originalPath}", offset: {$offset}, limit: 200)
-- bash(command: "grep -n -- 'PATTERN' {$escapedGrepPath} | head -50")
-Do not repeat the original full read or read the saved output with read.
-STRING;
-    }
-
-    /**
-     * Extract a numeric offset from tool call arguments.
-     *
-     * The read tool accepts an 'offset' argument (positive integer)
-     * indicating the starting line for file read operations.  When
-     * available, it is used in the read-tool cap notice to suggest
-     * a reasonable follow-up starting point.
-     *
-     * @param array<string, mixed> $arguments
-     *
-     * @return int|null the offset value, or null when absent or non-integer
-     */
-    private function extractOffsetFromArguments(array $arguments): ?int
-    {
-        $offset = $arguments['offset'] ?? null;
-
-        if (\is_int($offset) && $offset > 0) {
-            return $offset;
-        }
-
-        return null;
     }
 }

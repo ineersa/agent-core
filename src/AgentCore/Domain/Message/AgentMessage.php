@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Message;
 
 use Symfony\Component\Serializer\Attribute\Ignore;
-use Symfony\Component\Serializer\Attribute\SerializedName;
 
 final readonly class AgentMessage
 {
@@ -20,12 +19,9 @@ final readonly class AgentMessage
         public array $content,
         public ?\DateTimeImmutable $timestamp = null,
         public ?string $name = null,
-        #[SerializedName('tool_call_id')]
         public ?string $toolCallId = null,
-        #[SerializedName('tool_name')]
         public ?string $toolName = null,
         public mixed $details = null,
-        #[SerializedName('is_error')]
         public bool $isError = false,
         public array $metadata = [],
     ) {

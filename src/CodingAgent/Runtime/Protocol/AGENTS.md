@@ -1,243 +1,42 @@
-# Runtime protocol event names and payloads
+# Runtime protocol (JSONL / TUI wire)
 
-This file documents the stable runtime event contract used by the TUI
-rendering layer and JSONL transport. Every `RuntimeEvent.type` field
-MUST use a value from `RuntimeEventTypeEnum`.
+Stable **runtime** event contract for TUI projection and process JSONL transport. Distinct from AgentCore persisted `RunEvent` / `RunEventTypeEnum` (Domain).
 
-For the canonical enum definition, see `RuntimeEventTypeEnum.php`.
+## Source of truth
 
-## Event families
+- Every `RuntimeEvent.type` MUST be a `RuntimeEventTypeEnum` case — **read the enum** for the full catalog (`RuntimeEventTypeEnum.php`). This file records ownership and non-obvious payload invariants only; do not restate every case here.
+- Mapping/normalization: `RuntimeEventMapper`, `RuntimeEventTranslator`
+- Envelope DTO: `RuntimeEvent`; commands: `RuntimeCommand`; codec: `JsonlCodec`
 
-### Run/turn lifecycle
+## Ownership invariants
 
-| Constant | Event type string | Meaning |
-|----------|-------------------|---------|
-| `RunStarted` | `run.started` | Run created and transitioning to Running |
-| `TurnStarted` | `turn.started` | New turn begun (agent message processing cycle) |
-| `TurnCompleted` | `turn.completed` | Turn finished successfully |
-| `TurnFailed` | `turn.failed` | Turn finished with an error |
-| `TurnCancelled` | `turn.cancelled` | Turn aborted by cancellation |
-| `RunCompleted` | `run.completed` | Run reached terminal Completed state |
-| `RunFailed` | `run.failed` | Run reached terminal Failed state |
-| `RunCancelled` | `run.cancelled` | Run aborted by cancellation |
+- **Transient vs canonical:** stream deltas and many runtime events are TUI/JSONL-facing. Canonical session replay remains `.hatfield/sessions/<id>/events.jsonl` via `EventStoreInterface` (AgentCore `RunEvent` stream). Keep them separate.
+- **HITL vs local TUI prompts:** AgentCore `waiting_human` maps to `human_input.requested` (then `human_input.answered` / related). Enum cases `approval.*` exist for the HITL family but are **currently reserved / not emitted** by the translator — live tool-approval suspensions use the human_input path with tool-call continuation metadata. Local TUI prompts (settings, confirmations) may share widget schema but must **not** become transcript blocks or persisted HITL `RuntimeEvent`s. HITL `source` is `agent_core`; `transcript` is true for HITL instances.
+- **Extension agent jobs:** `extension_agent.job_failed` is JSONL/TUI-only (`seq=0`); does **not** append canonical RunEvents and does **not** alone mark the main run failed. Emit only when job `payload.run_id` is a validated non-empty scalar; missing `run_id` → structured log only. Privacy-safe fixed message/reason fields (no raw prompts/tool dumps).
+- **Subagent progress:** tool payloads may carry structured `subagent_progress` (replaces delta-append semantics in projection). Built/appended by CodingAgent subagent progress services; projected by `ToolProjectionSubscriber` / formatters — treat as structured meta, not free-form tool text.
+- **Tool questions / bg process:** `tool_question.requested` and `bg_process.completed` are first-class runtime types (see enum); local tool-question flow is separate from AgentCore HITL approvals — see [approvals.md](../../../../docs/approvals.md) and [human-input.md](../../../../docs/human-input.md).
 
-Payload: none standardized yet (see `RuntimeEventMapper` normalization).
+## Payload families (shapes only)
 
----
+Exact optional fields evolve with mappers; assert against code + tests. Stable identity keys:
 
-### User input
+| Family | Typical keys |
+|---|---|
+| User message | `message_id`, `text` |
+| Assistant stream | `message_id`, `content_index`, `block_id`, optional `delta`/`text`/`model`/`stop_reason` |
+| Tool call/execution | `tool_call_id`, `tool_name`, optional `arguments`/`delta`/`subagent_progress`/`result`/`is_error`/`duration_ms`/`cancelled`/`timed_out` |
+| Progress/status | `scope` (`model`\|`tool`\|`session`\|`compaction`), `message`, `percent`, `indeterminate` |
+| HITL request | `request_id`, `source`, `question_id`, `kind`, `prompt`, `schema`, optional `choices`/`default`/`tool_call_id`/`tool_name`, `transcript` |
+| Cancellation | `reason`, optional `operation_id`/`operation_type`, `partial_output_available` |
+| Model/usage/cost | `provider`/`model`/`display`/`reasoning`, token/cost/context fields |
+| Extension job failed | fixed `message`/`reason`, `handler_id`, optional `job_id`, `retry_count`, `attempts` |
 
-| Constant | Event type string | Meaning |
-|----------|-------------------|---------|
-| `UserMessageSubmitted` | `user.message_submitted` | User submitted a chat message |
+Run/turn lifecycle events often have no standardized payload yet (mapper normalization).
 
-Payload:
+## Compatibility
 
-```php
-[
-    'message_id' => string,
-    'text'       => string,
-]
-```
+This is a published-ish wire surface for TUI and headless controller clients. Do not rename enum string values or drop required identity keys without an explicit task. Active development still follows root “no silent dual-format shims” rule — change call sites and tests together rather than adding permanent readers for old shapes unless the user requests a deprecation window.
 
----
+## Maintenance
 
-### Assistant message stream
-
-Projected from Symfony AI provider deltas (`TextDelta`, `ThinkingDelta`,
-`ToolCallStart`, etc.). These events carry deltas plus stable IDs; the
-`TranscriptProjector` accumulates partial state and emits full snapshots
-at completion.
-
-| Constant | Event type string | Meaning |
-|----------|-------------------|---------|
-| `AssistantMessageStarted` | `assistant.message_started` | Model invocation / stream started |
-| `AssistantTextStarted` | `assistant.text_started` | First TextDelta created a text block |
-| `AssistantTextDelta` | `assistant.text_delta` | Incremental text token |
-| `AssistantTextCompleted` | `assistant.text_completed` | Text block finalized |
-| `AssistantThinkingStarted` | `assistant.thinking_started` | Thinking/reasoning block started |
-| `AssistantThinkingDelta` | `assistant.thinking_delta` | Thinking token |
-| `AssistantThinkingCompleted` | `assistant.thinking_completed` | Thinking block finalized |
-| `AssistantMessageCompleted` | `assistant.message_completed` | Assistant message finalized (all blocks) |
-| `AssistantMessageFailed` | `assistant.message_failed` | Provider/adapter error result |
-
-Payload:
-
-```php
-[
-    'message_id'    => string,
-    'content_index' => int,     // 0-based index within message
-    'block_id'      => string,  // stable block id for deltas
-    'delta'         => ?string, // incremental token (for *_delta events)
-    'text'          => ?string, // full text (for completed events)
-    'model'         => ?string, // e.g. 'zai/glm-5.1'
-    'stop_reason'   => ?string, // 'stop'|'length'|'tool_use'|'error'|'aborted'
-]
-```
-
----
-
-### Tool call lifecycle
-
-| Constant | Event type string | Meaning |
-|----------|-------------------|---------|
-| `ToolCallStarted` | `tool_call.started` | Provider emitted ToolCallStart |
-| `ToolCallArgumentsDelta` | `tool_call.arguments_delta` | Streaming args fragment |
-| `ToolCallArgumentsCompleted` | `tool_call.arguments_completed` | Full args assembled |
-| `ToolExecutionStarted` | `tool_execution.started` | AgentCore began tool execution |
-| `ToolExecutionOutputDelta` | `tool_execution.output_delta` | Streaming tool output |
-| `ToolExecutionCompleted` | `tool_execution.completed` | Tool finished successfully |
-| `ToolExecutionFailed` | `tool_execution.failed` | Tool returned an error |
-| `ToolExecutionCancelled` | `tool_execution.cancelled` | Tool cancelled or timed out |
-
-Payload:
-
-```php
-[
-    'tool_call_id' => string,
-    'tool_name'    => string,
-    'arguments'    => ?array,  // complete args when available
-    'delta'        => ?string, // streaming args/output fragment
-    'subagent_progress' => ?array, // structured inline subagent snapshot (replaces delta append semantics in projection)
-    'result'       => ?string, // final rendered/capped result
-    'is_error'     => bool,
-    'duration_ms'  => ?int,
-    'cancelled'    => bool,
-    'timed_out'    => bool,
-]
-```
-
----
-
-### Progress / status
-
-| Constant | Event type string | Meaning |
-|----------|-------------------|---------|
-| `ProgressUpdated` | `progress.updated` | Progress percent or indeterminate |
-| `StatusUpdated` | `status.updated` | Status message changed |
-
-Payload:
-
-```php
-[
-    'scope'         => string,  // 'model'|'tool'|'session'|'compaction'
-    'message'       => string,
-    'percent'       => ?int,
-    'indeterminate' => bool,
-]
-```
-
----
-
-### Human-in-the-loop (AgentCore HITL only)
-
-These events cover AgentCore `waiting_human` requests that pause a run.
-Local TUI prompts (settings, confirmations) use the same widget schema
-but do NOT become transcript blocks or persist as `RuntimeEvent`s.
-
-| Constant | Event type string | Meaning |
-|----------|-------------------|---------|
-| `HumanInputRequested` | `human_input.requested` | AgentCore is waiting for human answer |
-| `HumanInputAnswered` | `human_input.answered` | Accepted human_response applied |
-| `HumanInputRejected` | `human_input.rejected` | Human response rejected |
-| `ApprovalRequested` | `approval.requested` | `human_input.requested` when schema=approval |
-| `ApprovalApproved` | `approval.approved` | Approval granted |
-| `ApprovalRejected` | `approval.rejected` | Approval denied |
-
-Shared in-memory request shape (only HITL instances are persisted):
-
-```php
-[
-    'request_id'    => string,
-    'source'        => 'agent_core', // always agent_core for HITL
-    'question_id'   => string,
-    'kind'          => string,  // 'question'|'approval'|'choice'|'confirm'
-    'prompt'        => string,
-    'schema'        => array,   // e.g. ['type' => 'string']
-    'choices'       => ?array,
-    'default'       => mixed,
-    'tool_call_id'  => ?string,
-    'tool_name'     => ?string,
-    'transcript'    => true,
-]
-```
-
----
-
-### Cancellation / interruption
-
-| Constant | Event type string | Meaning |
-|----------|-------------------|---------|
-| `CancellationRequested` | `cancellation.requested` | Client requested cancellation |
-| `OperationCancelled` | `operation.cancelled` | A specific operation was cancelled |
-| `TurnCancelled` | `turn.cancelled` | Turn aborted by cancellation (also lifecycle) |
-| `RunCancelled` | `run.cancelled` | Run aborted by cancellation (also lifecycle) |
-
-Payload:
-
-```php
-[
-    'reason'                   => string,  // 'user_cancelled'|'timeout'|'provider_aborted'|'tool_cancelled'
-    'operation_id'             => ?string,
-    'operation_type'           => ?string, // 'model'|'tool'|'turn'|'run'
-    'partial_output_available' => bool,
-]
-```
-
----
-
-### Model / usage / cost metadata
-
-| Constant | Event type string | Meaning |
-|----------|-------------------|---------|
-| `ModelChanged` | `model.changed` | Active model changed |
-| `ReasoningChanged` | `reasoning.changed` | Reasoning effort level changed |
-| `UsageUpdated` | `usage.updated` | Token usage state updated |
-| `ContextUpdated` | `context.updated` | Context window fill updated |
-| `CostUpdated` | `cost.updated` | Cost estimate updated |
-
-Payload:
-
-```php
-[
-    'provider'          => ?string,  // e.g. 'zai'
-    'model'             => ?string,  // e.g. 'glm-5.1'
-    'display'           => ?string,  // e.g. 'zai/glm-5.1'
-    'reasoning'         => ?string,  // 'low'|'medium'|'high'
-    'input_tokens'      => ?int,
-    'output_tokens'     => ?int,
-    'total_tokens'      => ?int,
-    'cost_usd'          => ?float,
-    'context_used'      => ?int,
-    'context_window'    => ?int,
-    'tokens_per_second' => ?float,
-]
-```
-
----
-
-### Extension agent jobs
-
-Transient runtime events from the dedicated `extension_agent` Messenger worker.
-These are JSONL/TUI-only (`seq=0`); they do **not** append canonical RunEvents
-and do **not** mark the main agent run failed by themselves.
-
-| Constant | Event type string | Meaning |
-|----------|-------------------|---------|
-| `ExtensionAgentJobFailed` | `extension_agent.job_failed` | Final failure after `max_retries: 1` exhausted |
-
-Payload (fixed, privacy-safe):
-
-```php
-[
-    'message'     => string,  // fixed: 'Extension background job failed after retrying.'
-    'reason'      => string,  // 'retry_exhausted'
-    'handler_id'  => string,
-    'job_id'      => ?string,
-    'retry_count' => int,     // RedeliveryStamp count
-    'attempts'    => int,     // retry_count + 1
-]
-```
-
-Emitted only when `payload.run_id` on the job is a validated non-empty scalar.
-Missing `run_id` produces a structured diagnostic log only (no TUI event).
+When adding/removing `RuntimeEventTypeEnum` cases or changing required payload keys, update mappers/translators/tests and this file’s invariants (not a full case dump) in the same change.

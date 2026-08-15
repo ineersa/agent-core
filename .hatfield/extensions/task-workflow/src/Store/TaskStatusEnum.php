@@ -54,7 +54,7 @@ enum TaskStatusEnum: string
     }
 
     /**
-     * Default task_list statuses: active + cancelled, omitting ARCHIVE unless requested.
+     * Default task_list statuses: active + DONE, omitting CANCELLED and ARCHIVE unless requested.
      *
      * @return list<self>
      */
@@ -65,7 +65,6 @@ enum TaskStatusEnum: string
             self::IN_PROGRESS,
             self::CODE_REVIEW,
             self::DONE,
-            self::CANCELLED,
         ];
     }
 }

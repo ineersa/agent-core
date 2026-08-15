@@ -80,6 +80,8 @@ final readonly class ExecuteShellToolCallWorker
             return;
         }
 
+        // Include arguments so transcript projection can build a ToolCall block
+        // (command: …) for direct !shell executions that never stream tool_call.* events.
         $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
@@ -89,6 +91,7 @@ final readonly class ExecuteShellToolCallWorker
                 'tool_call_id' => $toolCallId,
                 'tool_name' => 'bash',
                 'order_index' => 0,
+                'arguments' => ['command' => $commandText],
             ],
         ));
 

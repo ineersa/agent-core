@@ -7,14 +7,18 @@ namespace Ineersa\CodingAgent\Tests\Session;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\ChildRunTranscriptSnapshotProvider;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -73,6 +77,44 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
         $this->assertStringNotContainsString('Run A only', $secondText);
     }
 
+    public function testSnapshotProjectsDirectShellToolCallAndResultPair(): void
+    {
+        // Thesis: child live-view/replay uses the same mapper+projector path;
+        // direct-shell tool_execution_start/end with arguments must yield the
+        // finalized ToolCall (command:) + ToolResult pair, not an orphan result.
+        $events = [
+            $this->runEvent(RunEventTypeEnum::ToolExecutionStart->value, 1, 1, [
+                'tool_call_id' => 'sh_child_1',
+                'tool_name' => 'bash',
+                'order_index' => 0,
+                'arguments' => ['command' => 'echo child-shell'],
+            ]),
+            $this->runEvent(RunEventTypeEnum::ToolExecutionEnd->value, 2, 1, [
+                'tool_call_id' => 'sh_child_1',
+                'is_error' => false,
+                'result' => "child-shell\n",
+            ]),
+        ];
+
+        $snapshot = $this->createProvider($events)->snapshot($this->childRunId);
+
+        $this->assertSame(2, $snapshot->maxSeq);
+        $this->assertCount(2, $snapshot->transcriptBlocks);
+
+        $call = $snapshot->transcriptBlocks[0];
+        $result = $snapshot->transcriptBlocks[1];
+
+        $this->assertSame(TranscriptBlockKindEnum::ToolCall, $call->kind);
+        $this->assertSame('tool_call_sh_child_1', $call->id);
+        $this->assertSame('bash(command: "echo child-shell")', $call->text);
+        $this->assertSame(['command' => 'echo child-shell'], $call->meta['arguments'] ?? null);
+        $this->assertArrayNotHasKey('timeout', $call->meta['arguments'] ?? []);
+
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $result->kind);
+        $this->assertSame('tool_result_sh_child_1', $result->id);
+        $this->assertSame("child-shell\n", $result->text);
+    }
+
     /** @param list<RunEvent> $events */
     private function createProvider(array $events): ChildRunTranscriptSnapshotProvider
     {
@@ -92,6 +134,7 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
         $projectionState = new TranscriptProjectionState();
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $transcriptProjector = new TranscriptProjector($dispatcher, $projectionState);
 
         return new ChildRunTranscriptSnapshotProvider($store, $eventMapper, $transcriptProjector);

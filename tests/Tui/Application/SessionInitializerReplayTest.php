@@ -9,8 +9,7 @@ use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
@@ -22,10 +21,14 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
-use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\History\HistoryProjector;
+use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
+use Ineersa\CodingAgent\Session\SessionHistoryProvider;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use Ineersa\CodingAgent\Session\SessionTranscriptProvider;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
@@ -73,15 +76,15 @@ final class SessionInitializerReplayTest extends TestCase
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),
             logging: new LoggingConfig(),
-            cwd: $this->projectDir,
+            cwd: $this->projectDir
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class)
         );
 
         $mapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher()),
+            new RuntimeEventTranslator(new EventDispatcher())
         );
 
         // Real projector with all projection subscribers — no mocking.
@@ -89,7 +92,7 @@ final class SessionInitializerReplayTest extends TestCase
         $state = new TranscriptProjectionState();
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $dispatcher->addSubscriber(new ToolProjectionSubscriber());
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
@@ -100,33 +103,24 @@ final class SessionInitializerReplayTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),
-            sequenceAllocator: new FileRunSequenceAllocator(),
+            sequenceAllocator: new FileRunSequenceAllocator()
         );
 
-        $turnTreeProvider = $this->createStub(TurnTreeProviderInterface::class);
-        $turnTreeProvider->method('forSession')->willReturn(new TurnTreeView(
-            runId: 'test',
-            nodesByTurnNo: [],
-            rootTurnNos: [],
-            currentLeafTurnNo: null,
-            activePathTurnNos: [],
-        ));
+        $historyProvider = new SessionHistoryProvider($this->eventStore, new HistoryProjector());
 
         $this->sessionInit = new SessionInitializer(
             sessionStore: $hatfieldSessionStore,
             eventStore: $this->eventStore,
-            eventMapper: $mapper,
-            projector: $this->projector,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($this->projector),
-            turnTreeProvider: $turnTreeProvider,
-            sessionTranscriptProvider: new class implements \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface {
-                public function transcriptForLeaf(string $runId, int $leafTurnNo): SessionTranscriptSnapshotDTO
-                {
-                    return new SessionTranscriptSnapshotDTO([], []);
-                }
-            },
+            eventApplier: new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer()),
+            historyProvider: $historyProvider,
+            sessionTranscriptProvider: new SessionTranscriptProvider(
+                eventStore: $this->eventStore,
+                replayFilter: new HistoryReplayFilter(new HistoryProjector()),
+                eventMapper: $mapper,
+                transcriptProjector: $this->projector
+            )
         );
     }
 
@@ -188,7 +182,7 @@ final class SessionInitializerReplayTest extends TestCase
         foreach ($blocks as $block) {
             $this->assertFalse($block->streaming, \sprintf(
                 'Block %s should not be streaming after replay',
-                $block->kind->value,
+                $block->kind->value
             ));
         }
     }
@@ -467,7 +461,7 @@ final class SessionInitializerReplayTest extends TestCase
         // This mirrors how the poller creates its own mapping chain per tick
         // rather than sharing state with the initial replay path.
         $pollerMapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher()),
+            new RuntimeEventTranslator(new EventDispatcher())
         );
 
         // Re-read events and feed only the new one (simulating poller dedup)
@@ -479,7 +473,7 @@ final class SessionInitializerReplayTest extends TestCase
             }
             $runtimeEvent = $pollerMapper->toRuntimeEvent($runEvent);
             if (null !== $runtimeEvent) {
-                $this->projector->accept($runtimeEvent->toArray());
+                $this->projector->accept($runtimeEvent);
                 ++$newBlocks;
             }
         }
@@ -490,7 +484,7 @@ final class SessionInitializerReplayTest extends TestCase
         $this->assertGreaterThan(
             $blockCountAfterReplay,
             \count($blocksAfterNewEvent),
-            'New event at seq > lastSeq should add blocks',
+            'New event at seq > lastSeq should add blocks'
         );
 
         // lastSeq reflects the max persistent seq replayed (2). The poller
@@ -739,7 +733,7 @@ final class SessionInitializerReplayTest extends TestCase
             seq: $seq,
             turnNo: 0,
             type: $type,
-            payload: $payload,
+            payload: $payload
         );
         $path = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
         $normalizer = new EventPayloadNormalizer();
@@ -763,7 +757,7 @@ final class SessionInitializerReplayTest extends TestCase
 
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
+            \RecursiveIteratorIterator::CHILD_FIRST
         );
 
         foreach ($iterator as $entry) {

@@ -153,8 +153,7 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         );
 
         $guidelines = implode("\n", $recall->promptGuidelines);
-        $this->assertCount(6, $recall->promptGuidelines);
-        $this->assertStringContainsString('important decision', $guidelines);
+        $this->assertCount(5, $recall->promptGuidelines);
         $this->assertStringContainsString('exact wording, rationale, file paths, commands, errors, commits, user constraints, or provenance', $guidelines);
         $this->assertStringContainsString('supporting observations or raw sources', $guidelines);
         $this->assertStringContainsString('user asks why you believe something', $guidelines);

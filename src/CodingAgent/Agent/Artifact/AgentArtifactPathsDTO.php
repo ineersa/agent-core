@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
-use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -26,19 +25,14 @@ final readonly class AgentArtifactPathsDTO
      * @param string $statePath    Relative: artifacts/agents/<artifact_id>/state.json
      */
     public function __construct(
-        #[SerializedName('artifact_dir')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'artifact_dir must not be blank')]
         public string $artifactDir,
-        #[SerializedName('metadata_path')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'metadata_path must not be blank')]
         public string $metadataPath,
-        #[SerializedName('handoff_path')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'handoff_path must not be blank')]
         public string $handoffPath,
-        #[SerializedName('events_path')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'events_path must not be blank')]
         public string $eventsPath,
-        #[SerializedName('state_path')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'state_path must not be blank')]
         public string $statePath,
     ) {

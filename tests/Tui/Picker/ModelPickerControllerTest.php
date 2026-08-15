@@ -10,7 +10,6 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
-use Ineersa\CodingAgent\Config\ModelSettingsPersister;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
@@ -190,7 +189,7 @@ class ModelPickerControllerTest extends TestCase
 
         $ai = AiConfig::optionalFromArray(['ai' => $aiData]);
         $appConfig = new AppConfig(
-            tui: TuiConfig::fromArray(['theme' => 'cyberpunk']),
+            tui: new TuiConfig(theme: 'cyberpunk'),
             logging: new LoggingConfig(),
             sessions: new SessionsConfig(),
             ai: $ai,
@@ -211,7 +210,7 @@ class ModelPickerControllerTest extends TestCase
         );
         $sessionMetaStore = $hatfieldSessionStore;
 
-        return new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore), new ModelSettingsPersister($homeWriter, $sessionMetaStore));
+        return new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore), $homeWriter, $sessionMetaStore);
     }
 
     private function standardAiData(): array

@@ -16,6 +16,8 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Symfony\Component\Clock\Clock;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\SerializerInterface;
 
 /**
  * @extends ServiceEntityRepository<DeferredSubagentBatch>
@@ -25,6 +27,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
     public function __construct(
         ManagerRegistry $registry,
         private readonly DeferredSubagentChildRepository $childRepository,
+        private readonly SerializerInterface $serializer,
     ) {
         parent::__construct($registry, DeferredSubagentBatch::class);
     }
@@ -73,7 +76,11 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                     updated_at = :now, projection_version = projection_version + 1
                  WHERE batch_lifecycle_id = :batch AND batch_index = :idx AND projection_version = :child_version',
                 [
-                    'projection' => json_encode($projection->toArray(), \JSON_THROW_ON_ERROR),
+                    'projection' => $this->serializer->serialize(
+                        $projection,
+                        'json',
+                        [AbstractObjectNormalizer::SKIP_NULL_VALUES => true],
+                    ),
                     'cursor' => $childEventCursor,
                     'terminal_at' => $terminalAt,
                     'terminal_status' => $terminalStatus,
@@ -170,7 +177,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}> $childIntents
+     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, launchModel: string, launchReasoning: string}> $childIntents
      */
     public function reserveBatch(
         string $lifecycleId,
@@ -558,7 +565,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}> $childIntents
+     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, launchModel: string, launchReasoning: string}> $childIntents
      */
     private function assertBatchMatchesIntent(
         DeferredSubagentBatch $row,
@@ -600,8 +607,8 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                 throw new ToolCallException('Deferred subagent batch child intent does not match the durable reservation.', retryable: false);
             }
 
-            if (null !== $intent['definitionModel'] && $match->definitionModel !== $intent['definitionModel']) {
-                throw new ToolCallException('Deferred subagent batch child was reserved with a different model.', retryable: false);
+            if ($match->launchModel !== $intent['launchModel'] || $match->launchReasoning !== $intent['launchReasoning']) {
+                throw new ToolCallException('Deferred subagent batch child was reserved with a different launch model or reasoning.', retryable: false);
             }
         }
     }

@@ -143,6 +143,7 @@ final class TraceReplayTest extends KernelTestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $result = $adapter->invoke(new ModelInvocationRequest(
@@ -357,6 +358,7 @@ final class TraceReplayTest extends KernelTestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $result = $adapter->invoke(new ModelInvocationRequest(
@@ -406,7 +408,7 @@ final class TraceReplayTest extends KernelTestCase
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $appConfig = $this->makeAppConfig($aiData);
-        $selectionService = new ModelSelectionService($appConfig, new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $this->sessionMetaStore), new \Ineersa\CodingAgent\Config\ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
+        $selectionService = new ModelSelectionService($appConfig, new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $this->sessionMetaStore), $homeWriter, $this->sessionMetaStore);
         $catalog = $appConfig->catalog
             ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
@@ -419,7 +421,7 @@ final class TraceReplayTest extends KernelTestCase
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $appConfig = $this->makeAppConfig($aiData);
 
-        return new ModelSelectionService($appConfig, new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $this->sessionMetaStore), new \Ineersa\CodingAgent\Config\ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
+        return new ModelSelectionService($appConfig, new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $this->sessionMetaStore), $homeWriter, $this->sessionMetaStore);
     }
 
     /**
@@ -435,7 +437,7 @@ final class TraceReplayTest extends KernelTestCase
         $ai = AiConfig::optionalFromArray($raw);
 
         return new AppConfig(
-            tui: TuiConfig::fromArray((array) ($raw['tui'] ?? [])),
+            tui: new TuiConfig(theme: (string) (($raw['tui'] ?? [])['theme'] ?? 'cyberpunk')),
             logging: new LoggingConfig(),
             sessions: new SessionsConfig(),
             ai: $ai,

@@ -81,8 +81,8 @@ final class TickPollListener implements TuiListenerRegistrar
                     onHumanInputRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
                         $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator, $state, $screen);
                     },
-                    onToolQuestionRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
-                        $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator, $state, $screen);
+                    onToolQuestionRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $runtimeQuestionEventHandler): void {
+                        $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator, $state);
                     },
                     onToolTerminal: static function (RuntimeEvent $event) use ($questionCoordinator, $questionController, $runtimeQuestionEventHandler): void {
                         $runtimeQuestionEventHandler->handleToolTerminal($event, $questionCoordinator, $questionController);
@@ -91,6 +91,21 @@ final class TickPollListener implements TuiListenerRegistrar
                 // Only repaint transcript when new child blocks arrive; cached blocks stay on screen.
                 if (null !== $childBlocks) {
                     $screen->setTranscriptBlocks($childBlocks);
+                }
+
+                // Reconcile selected child's terminal runtime activity into the catalog
+                // before parent subagent_progress can overwrite with a stale nonterminal row.
+                $selectedForReconcile = $state->subagentLiveView->selected;
+                if (null !== $selectedForReconcile && $state->subagentLiveView->childActivity->isTerminal()) {
+                    $terminalStatus = match ($state->subagentLiveView->childActivity) {
+                        RunActivityStateEnum::Completed => SubagentLiveStatusEnum::Completed,
+                        RunActivityStateEnum::Failed => SubagentLiveStatusEnum::Failed,
+                        RunActivityStateEnum::Cancelled => SubagentLiveStatusEnum::Cancelled,
+                        default => null,
+                    };
+                    if (null !== $terminalStatus) {
+                        $state->subagentLiveCatalog->applyChildStatus($selectedForReconcile->artifactId, $terminalStatus);
+                    }
                 }
             }
 
@@ -108,24 +123,42 @@ final class TickPollListener implements TuiListenerRegistrar
                     $refreshed = $state->subagentLiveCatalog->findByArtifactId($selected->artifactId);
                     if (null !== $refreshed) {
                         $state->subagentLiveView->selected = $refreshed;
-                        if (SubagentLiveStatusEnum::WaitingHuman === $refreshed->status) {
-                            $state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
-                        } elseif ($refreshed->isRunning()) {
-                            $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
-                        } elseif ($refreshed->isTerminal()) {
+                        // Do not let stale nonterminal catalog overwrite terminal/cancelling runtime.
+                        $preserveLocalActivity = $state->subagentLiveView->childActivity->isTerminal()
+                            || RunActivityStateEnum::Cancelling === $state->subagentLiveView->childActivity;
+                        if (!$preserveLocalActivity) {
+                            if (SubagentLiveStatusEnum::WaitingHuman === $refreshed->status) {
+                                $state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
+                            } elseif ($refreshed->isRunning()) {
+                                $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
+                            } elseif ($refreshed->isTerminal()) {
+                                $state->subagentLiveView->childActivity = match ($refreshed->status) {
+                                    SubagentLiveStatusEnum::Completed, SubagentLiveStatusEnum::Done => RunActivityStateEnum::Completed,
+                                    SubagentLiveStatusEnum::Failed => RunActivityStateEnum::Failed,
+                                    SubagentLiveStatusEnum::Cancelled => RunActivityStateEnum::Cancelled,
+                                    default => RunActivityStateEnum::Completed,
+                                };
+                            }
+                        } elseif ($refreshed->isTerminal() && RunActivityStateEnum::Cancelling !== $state->subagentLiveView->childActivity) {
                             $state->subagentLiveView->childActivity = match ($refreshed->status) {
                                 SubagentLiveStatusEnum::Completed, SubagentLiveStatusEnum::Done => RunActivityStateEnum::Completed,
                                 SubagentLiveStatusEnum::Failed => RunActivityStateEnum::Failed,
                                 SubagentLiveStatusEnum::Cancelled => RunActivityStateEnum::Cancelled,
-                                default => RunActivityStateEnum::Completed,
+                                default => $state->subagentLiveView->childActivity,
                             };
                         }
                     }
                 }
             } elseif (null !== $transcriptChanges) {
-                // Incremental projector delta (or explicit full after leaf replace).
+                // Incremental projector delta (or explicit full after history-position replace).
                 // State already applied inside RuntimeEventPoller; screen merges the same set.
                 $screen->applyTranscriptChangeSet($transcriptChanges);
+            }
+
+            // /history selection: populate editor with the selected user prompt once.
+            if (null !== $state->pendingEditorPromptText) {
+                $screen->promptEditor()->replaceText($state->pendingEditorPromptText);
+                $state->pendingEditorPromptText = null;
             }
 
             // The pending-queue widget (slot 4, above the editor) reflects transient
@@ -147,7 +180,10 @@ final class TickPollListener implements TuiListenerRegistrar
             // overlay while the user types a custom answer in the editor.
             if ($questionCoordinator->actionRequired() && !$questionController->isOpen() && !$questionController->isAwaitingFreeForm()) {
                 $activeRequest = $questionCoordinator->activeRequest();
-                if (null !== $activeRequest) {
+                $visibleOwnerRunId = $state->visibleQuestionOwnerRunId();
+                // Only surface questions owned by the currently visible run (parent main / selected child).
+                if (null !== $activeRequest
+                    && (null === $activeRequest->runId || $activeRequest->runId === $visibleOwnerRunId)) {
                     $questionController->open($activeRequest);
                 }
             }

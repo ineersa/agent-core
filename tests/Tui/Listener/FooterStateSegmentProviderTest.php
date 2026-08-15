@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -100,7 +101,7 @@ class FooterStateSegmentProviderTest extends TestCase
     }
 
     #[Test]
-    public function testNoReasoningTextSegmentInFooter(): void
+    public function testNoReasoningTextSegmentInMainFooter(): void
     {
         $state = $this->state;
         $state->footerModel = 'flash';
@@ -109,13 +110,10 @@ class FooterStateSegmentProviderTest extends TestCase
         $provider = new FooterStateSegmentProvider($state);
         $segments = $provider->getSegments();
 
-        // Verify that the word "medium" does not appear as a text segment
+        $this->assertSame('flash', $segments[1]->text);
+        $this->assertSame(ThemeColorEnum::ThinkingMedium, $segments[1]->color);
         foreach ($segments as $segment) {
-            $this->assertStringNotContainsString(
-                'medium',
-                $segment->text,
-                'Reasoning level text should not appear in footer segments',
-            );
+            $this->assertStringNotContainsString('reasoning:', $segment->text);
         }
     }
 
@@ -244,7 +242,8 @@ class FooterStateSegmentProviderTest extends TestCase
             status: \Ineersa\Tui\Runtime\SubagentLiveStatusEnum::Running,
             taskSummary: 'Task',
             lastActivityAtMs: 1,
-        ));
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium'));
 
         $segments = (new FooterStateSegmentProvider($state))->getSegments();
         $texts = array_map(static fn ($s) => $s->text, $segments);
@@ -288,7 +287,7 @@ class FooterStateSegmentProviderTest extends TestCase
     public function testLiveViewFooterShowsChildContextUsageAndModel(): void
     {
         $state = $this->state;
-        $state->subagentLiveCatalog->ingestRuntimeEvent(new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
             type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             runId: 'parent-run',
             seq: 1,
@@ -296,19 +295,24 @@ class FooterStateSegmentProviderTest extends TestCase
                 'tool_call_id' => 'tc_subagent',
                 'tool_name' => 'subagent',
                 'delta' => '',
-                'subagent_progress' => array_merge([
-                    'mode' => 'single',
-                    'status' => 'completed',
-                    'agent_name' => 'scout',
-                    'artifact_id' => 'agent_ctx',
-                    'agent_run_id' => 'child-run-ctx',
-                    'task_summary' => 'Context stats',
-                ], \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverrides()),
+                'subagent_progress' => array_merge(
+                    \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverrides(),
+                    [
+                        'mode' => 'single',
+                        'status' => 'completed',
+                        'agent_name' => 'scout',
+                        'artifact_id' => 'agent_ctx',
+                        'agent_run_id' => 'child-run-ctx',
+                        'task_summary' => 'Context stats',
+                        'reasoning' => 'high',
+                    ],
+                ),
             ],
         ));
 
         $child = $state->subagentLiveCatalog->findByArtifactId('agent_ctx');
         $this->assertNotNull($child);
+        $this->assertSame('high', $child->reasoning);
         $state->subagentLiveView->enter($child);
 
         $segments = (new FooterStateSegmentProvider($state))->getSegments();
@@ -316,7 +320,14 @@ class FooterStateSegmentProviderTest extends TestCase
         $joined = implode(' ', $texts);
 
         $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_DETAIL, $joined);
-        $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL_SHORT, $joined);
+        $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL_SHORT.' (reasoning: high)', $joined);
+
+        $modelSegments = array_values(array_filter(
+            $segments,
+            static fn (FooterSegment $s): bool => 7 === $s->priority,
+        ));
+        $this->assertCount(1, $modelSegments);
+        $this->assertSame(ThemeColorEnum::ThinkingHigh, $modelSegments[0]->color);
     }
 
     #[Test]
@@ -332,7 +343,7 @@ class FooterStateSegmentProviderTest extends TestCase
 
         foreach ($cases as [$latestInput, $expectedColor]) {
             $state = new TuiSessionState('child-ctx-threshold-'.$latestInput);
-            $state->subagentLiveCatalog->ingestRuntimeEvent(new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+            SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
                 type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
                 runId: 'parent-run',
                 seq: 1,
@@ -346,7 +357,7 @@ class FooterStateSegmentProviderTest extends TestCase
                         'agent_name' => 'scout',
                         'artifact_id' => 'agent_ctx_thr',
                         'agent_run_id' => 'child-run-ctx-thr',
-                        'task_summary' => 'Threshold',
+                        'task_summary' => 'Threshold', 'model' => 'test/model', 'reasoning' => 'medium',
                     ], \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverridesWithLatestInput($latestInput)),
                 ],
             ));

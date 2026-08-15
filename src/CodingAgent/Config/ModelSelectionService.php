@@ -7,18 +7,13 @@ namespace Ineersa\CodingAgent\Config;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 
 /**
  * Central model/reasoning selection with four-tier priority and persistence.
  *
  * Coordinates pure resolution ({@see ModelResolver}) with write/persist
- * ({@see ModelSettingsPersister}) and owns favorites management with
- * in-process caching.
- *
- * Public API is identical to the original monolithic version — all callers
- * unchanged.  Internally delegates read methods to {@see ModelResolver},
- * write methods to {@see ModelSettingsPersister}, and keeps favorites
- * locally (toggle + favRaw cache).
+ * ownership and favorites management with in-process caching.
  */
 final class ModelSelectionService
 {
@@ -37,7 +32,8 @@ final class ModelSelectionService
     public function __construct(
         private readonly AppConfig $appConfig,
         private readonly ModelResolver $resolver,
-        private readonly ModelSettingsPersister $persister,
+        private readonly SettingsOverrideWriter $settingsWriter,
+        private readonly HatfieldSessionStore $sessionMetaStore,
     ) {
     }
 
@@ -80,7 +76,7 @@ final class ModelSelectionService
     }
 
     // ──────────────────────────────────────────────
-    //  Persistence (model) — validates then delegates
+    //  Persistence (model)
     // ──────────────────────────────────────────────
 
     /**
@@ -102,7 +98,7 @@ final class ModelSelectionService
             throw new \RuntimeException(\sprintf('Model "%s" is not available.', $model->toString()));
         }
 
-        $this->persister->persistModel($model->toString(), $model->providerId, $model->modelName, $sessionId);
+        $this->persistModel($model->toString(), $model->providerId, $model->modelName, $sessionId);
 
         // Clamp reasoning to the new model's supported levels.
         // Without this, a previously-persisted xhigh survives for a model
@@ -124,17 +120,19 @@ final class ModelSelectionService
     }
 
     // ──────────────────────────────────────────────
-    //  Persistence (reasoning) — delegates (validation inside persister)
+    //  Persistence (reasoning)
     // ──────────────────────────────────────────────
 
     /**
      * Change the reasoning level for the current session.
      *
+     * Validates against {@see ModelResolver::LEVELS} before any write.
+     *
      * @throws \InvalidArgumentException If the level is not a valid reasoning level
      */
     public function changeReasoning(string $level, string $sessionId): void
     {
-        $this->persister->persistReasoning($level, $sessionId);
+        $this->persistReasoning($level, $sessionId);
 
         // Sync in-memory AppConfig (and its catalog) so current-process
         // consumers see the updated reasoning default immediately.
@@ -250,7 +248,7 @@ final class ModelSelectionService
 
         $this->favRaw = $current;
 
-        $this->persister->persistFavoriteModels($current);
+        $this->persistFavoriteModels($current);
 
         // Sync in-memory AppConfig (and its catalog) so current-process
         // consumers see the updated favorites list immediately.
@@ -299,14 +297,6 @@ final class ModelSelectionService
         $this->changeModel($nextRef, $sessionId);
 
         return $nextRef;
-    }
-
-    /**
-     * Cycle to the next reasoning level.
-     */
-    public function cycleReasoning(string $currentLevel): string
-    {
-        return $this->resolver->cycleReasoning($currentLevel);
     }
 
     /**
@@ -380,6 +370,59 @@ final class ModelSelectionService
     public function getSupportedReasoningLevels(string $sessionId): array
     {
         return $this->resolver->getSupportedReasoningLevels($sessionId);
+    }
+
+    // ──────────────────────────────────────────────
+    //  Persistence helpers
+    // ──────────────────────────────────────────────
+
+    /**
+     * Persist the model to home settings and session metadata.
+     *
+     * YAML is written before session metadata so disk state is durable
+     * first. User-layer path ignores $cwd; pass empty string.
+     */
+    private function persistModel(string $modelString, string $providerId, string $modelName, string $sessionId): void
+    {
+        // User-layer path ignores $cwd; pass empty string.
+        $this->settingsWriter->set(SettingsLayerEnum::User, '', 'ai.default_model', $modelString);
+        $this->sessionMetaStore->updateMetadata($sessionId, [
+            'model' => $modelString,
+            'model_provider' => $providerId,
+            'model_name' => $modelName,
+        ]);
+    }
+
+    /**
+     * Persist the reasoning level to home settings and session metadata.
+     *
+     * Validates against ModelResolver::LEVELS before any write.
+     * YAML is written before session metadata.
+     *
+     * @throws \InvalidArgumentException If the level is not a valid reasoning level
+     */
+    private function persistReasoning(string $level, string $sessionId): void
+    {
+        if (!\in_array($level, ModelResolver::LEVELS, true)) {
+            throw new \InvalidArgumentException(\sprintf('Invalid reasoning level "%s". Valid levels: %s.', $level, implode(', ', ModelResolver::LEVELS)));
+        }
+
+        // User-layer path ignores $cwd; pass empty string.
+        $this->settingsWriter->set(SettingsLayerEnum::User, '', 'ai.default_reasoning', $level);
+        $this->sessionMetaStore->updateMetadata($sessionId, [
+            'reasoning' => $level,
+        ]);
+    }
+
+    /**
+     * Persist the full favorite models list to home settings.
+     *
+     * @param list<string> $models List of "provider/modelname" strings
+     */
+    private function persistFavoriteModels(array $models): void
+    {
+        // User-layer path ignores $cwd; pass empty string.
+        $this->settingsWriter->set(SettingsLayerEnum::User, '', 'ai.favorite_models', $models);
     }
 
     // ──────────────────────────────────────────────

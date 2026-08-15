@@ -37,6 +37,13 @@ final class ForkToolContractTest extends TestCase
 
         $this->assertSame(['task'], $schema['required']);
         $this->assertFalse($schema['additionalProperties']);
+        $this->assertSame(1, $schema['properties']['task']['minLength']);
+        $this->assertSame(1, $schema['properties']['model']['minLength']);
+        $this->assertNotContains('model', $schema['required']);
+        $this->assertSame(
+            'Launch an isolated fork child with inherited parent conversation context. Blocks until completion and returns a dense handoff.',
+            $definition->description,
+        );
         $this->assertSame(ModelResolver::LEVELS, $schema['properties']['thinking']['enum']);
     }
 
@@ -95,7 +102,21 @@ final class ForkToolContractTest extends TestCase
 
     public function testConfigResolverPrecedence(): void
     {
-        $resolver = new ForkRuntimeConfigResolver(new ForksConfigDTO(model: 'forks/model', thinkingLevel: 'low'));
+        // ModelResolver + HatfieldSessionStore are final; build a real resolver with empty session id path.
+        $sessionStore = (new \ReflectionClass(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class))
+            ->newInstanceWithoutConstructor();
+        $modelResolver = new ModelResolver(
+            new \Ineersa\CodingAgent\Config\AppConfig(
+                tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+                logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+            ),
+            $sessionStore,
+        );
+
+        $resolver = new ForkRuntimeConfigResolver(
+            new ForksConfigDTO(model: 'forks/model', thinkingLevel: 'low'),
+            $modelResolver,
+        );
         $resolved = $resolver->resolve(
             explicitModel: null,
             explicitThinking: 'high',
@@ -108,26 +129,42 @@ final class ForkToolContractTest extends TestCase
         $resolved2 = $resolver->resolve('explicit/model', null, 'parent/model', 'medium');
         $this->assertSame('explicit/model', $resolved2->model);
         $this->assertSame('low', $resolved2->thinking);
+
+        $emptyModelResolver = new ForkRuntimeConfigResolver(
+            new ForksConfigDTO(model: null, thinkingLevel: null),
+            $modelResolver,
+        );
+        try {
+            $emptyModelResolver->resolve(null, null, null, null);
+            $this->fail('Expected RuntimeException when model candidates are all missing');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('missing explicit model', $e->getMessage());
+        }
+
+        // Parent run_started reasoning may be omitted; canonical ModelResolver still yields concrete thinking.
+        $resolvedThinking = $emptyModelResolver->resolve('parent/model', null, 'parent/model', null);
+        $this->assertSame('parent/model', $resolvedThinking->model);
+        $this->assertSame('medium', $resolvedThinking->thinking);
     }
 
     public function testPromptGuidelinesAndParallelModeExposeSafetyGuidance(): void
     {
-        // Thesis C: fork definition is Parallel and exposes implementation-delegation,
-        // no-same-worktree, and max-3 concurrent safety/load guidelines.
+        // Thesis C: fork definition is Parallel and exposes no-same-worktree,
+        // max-3 concurrent, no-child-spawn, and override-only-when-requested safety/load guidelines.
         $handler = new ForkToolHandler(
             new StackToolExecutionContextAccessor(),
             new ToolRuntime(new StackToolExecutionContextAccessor()),
             new NarrowExecutionServiceLocator(new FakeForkExecutionService(new DeferredToolCompletionOutcome('x'))),
         );
         $definition = ForkToolDefinitionBuilder::build($handler);
-        $joined = implode("\n", $definition->promptGuidelines);
 
         $this->assertSame(ToolExecutionMode::Parallel, $definition->executionMode);
-        $this->assertStringContainsString('implementation delegation', strtolower($joined));
-        $this->assertStringContainsString('cannot launch fork or subagent', strtolower($joined));
-        $this->assertStringContainsString('never target the same worktree/directory', strtolower($joined));
-        $this->assertStringContainsString('never launch more than 3 forks concurrently', strtolower($joined));
-        $this->assertStringContainsString('do not set model or thinking', strtolower($joined));
+        $this->assertSame([
+            'Fork children cannot launch fork or subagent; do not instruct them to spawn child agents.',
+            'Parallel forks must NEVER target the same worktree/directory because concurrent edits can corrupt it.',
+            'Never launch more than 3 forks concurrently because forks impose high load.',
+            'Do not set model or thinking unless the user explicitly requested overrides.',
+        ], $definition->promptGuidelines);
     }
 }
 

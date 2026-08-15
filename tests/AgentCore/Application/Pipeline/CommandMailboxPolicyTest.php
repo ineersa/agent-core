@@ -36,6 +36,8 @@ use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
+use Ineersa\CodingAgent\Session\History\HistoryProjector;
+use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -487,7 +489,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $eventStore = new InMemoryEventStore();
         $commandStore = new InMemoryCommandStore();
 
-        $replayService = new SessionHotPromptReplayService($eventStore, new InMemoryPromptStateStore(), new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, new InMemoryPromptStateStore(), new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
 
         $commandBus = new TestMessageBus();
         $executionBus = new TestMessageBus();
@@ -542,6 +544,7 @@ final class CommandMailboxPolicyTest extends TestCase
                     toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
                     messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
                     stepDispatcher: $stepDispatcher,
+                    normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
                     commandBus: $commandBus,
                 ),
                 new ToolCallResultHandler(
@@ -549,6 +552,7 @@ final class CommandMailboxPolicyTest extends TestCase
                     eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
                     toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
                     messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
+                    serializer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
                 ),
             ],
         );

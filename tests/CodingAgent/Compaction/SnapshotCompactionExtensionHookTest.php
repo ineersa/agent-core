@@ -21,7 +21,7 @@ use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
-use Ineersa\CodingAgent\Config\ModelSettingsPersister;
+use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionCompactionHookDispatcher;
@@ -265,9 +265,8 @@ final class SnapshotCompactionExtensionHookTest extends TestCase
         $sessionMetaRc = new \ReflectionClass(HatfieldSessionStore::class);
         $sessionMetaStore = $sessionMetaRc->newInstanceWithoutConstructor();
         $modelResolver = new ModelResolver($appConfig, $sessionMetaStore);
-        $persisterRc = new \ReflectionClass(ModelSettingsPersister::class);
-        $persister = $persisterRc->newInstanceWithoutConstructor();
+        $settingsWriter = (new \ReflectionClass(SettingsOverrideWriter::class))->newInstanceWithoutConstructor();
 
-        return new ModelSelectionService($appConfig, $modelResolver, $persister);
+        return new ModelSelectionService($appConfig, $modelResolver, $settingsWriter, $sessionMetaStore);
     }
 }

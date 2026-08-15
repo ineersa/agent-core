@@ -6,22 +6,22 @@ namespace Ineersa\CodingAgent\Runtime\Contract;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 
 /**
- * Projects stable runtime event arrays into transcript blocks.
+ * Projects typed runtime events into transcript blocks.
  *
  * The interface lives at the runtime boundary so TUI code can consume the
  * projector without importing the concrete Symfony EventDispatcher pipeline.
+ * Wire/JSONL arrays are decoded to {@see RuntimeEvent} once at the protocol
+ * boundary; callers that already hold a RuntimeEvent pass it directly.
  */
 interface TranscriptProjectorInterface
 {
-    /**
-     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
-     */
-    public function accept(array $event): void;
+    public function accept(RuntimeEvent $event): void;
 
     /**
-     * Ordered snapshot for bootstrap/resume/leaf replacement.
+     * Ordered snapshot for bootstrap/resume/history-position replacement.
      *
      * @return list<TranscriptBlock>
      */
@@ -30,7 +30,7 @@ interface TranscriptProjectorInterface
     /**
      * Drain ordinary dirty changes since the previous drain without re-materializing
      * finalized history. Always incremental: live TUI state merges these deltas
-     * into an existing snapshot (resume/leaf). Callers that need a full ordered
+     * into an existing snapshot (resume/history-position). Callers that need a full ordered
      * list use {@see blocks()} and build {@see TranscriptChangeSet::full()} themselves.
      */
     public function drainChanges(): TranscriptChangeSet;

@@ -141,10 +141,11 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
         mkdir($cwd, 0777, true);
         mkdir($homeDir.'/.hatfield/agents', 0777, true);
         mkdir($cwd.'/.agents', 0777, true);
-        $lower = $homeDir.'/.hatfield/agents/collide.md';
-        $higher = $cwd.'/.agents/collide.md';
-        file_put_contents($lower, "---\nname: collide\ndescription: Lower precedence\ntools: [read]\n---\n");
-        file_put_contents($higher, "---\nname: collide\ndescription: Higher precedence\ntools: [read]\n---\n");
+        // Scope-before-specificity: user Hatfield wins over project generic .agents.
+        $winner = $homeDir.'/.hatfield/agents/collide.md';
+        $loser = $cwd.'/.agents/collide.md';
+        file_put_contents($winner, "---\nname: collide\ndescription: User-hatfield version\ntools: [read]\n---\n");
+        file_put_contents($loser, "---\nname: collide\ndescription: Project-agents version\ntools: [read]\n---\n");
 
         $pathResolver = new SettingsPathResolver($this->tmpDir, $homeDir);
         $agentDiscovery = new AgentDefinitionDiscovery(
@@ -171,8 +172,8 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
 
         $this->assertCount(1, $agents->conflicts);
         $this->assertSame('collide', $agents->conflicts[0]->name);
-        $this->assertSame($higher, $agents->conflicts[0]->winnerPath);
-        $this->assertSame($lower, $agents->conflicts[0]->loserPath);
+        $this->assertSame($winner, $agents->conflicts[0]->winnerPath);
+        $this->assertSame($loser, $agents->conflicts[0]->loserPath);
     }
 
     private function sectionByKey(\Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO $summary, string $key): \Ineersa\CodingAgent\Runtime\Contract\LoadedResourceSectionDTO

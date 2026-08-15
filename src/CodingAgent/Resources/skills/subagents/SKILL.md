@@ -36,9 +36,13 @@ After a run, copy **`Artifact: agent_<hex>`** from the tool result. Single-mode 
 
 Discovery load order (lowest → highest; later overrides earlier on name collision):
 
-1. `~/.agents/*.md` → `~/.hatfield/agents/*.md`
-2. `.agents/*.md` → `.hatfield/agents/*.md`
-3. `agents.paths` in settings (highest)
+1. `~/.agents/*.md`
+2. `.agents/*.md`
+3. `~/.hatfield/agents/*.md`
+4. `.hatfield/agents/*.md`
+5. `agents.paths` in settings (highest)
+
+Hatfield-specific roots beat generic `.agents` roots (user `~/.hatfield/agents` overrides project `.agents`).
 
 Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<available_agents>`** (name + description) when `agents.enabled` is true for every valid discovered definition.
 
@@ -60,7 +64,7 @@ Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<a
 | `inheritProjectContext` | Default **true**. When true, copies parent `agents_context` (AGENTS.md hierarchy) into child `user-context`. Does not inherit parent skills or agent catalog. |
 | MCP | `availability: all` servers inherit on every child (including explicit `tools`) unless `mcp:-`. `availability: specific` requires exact/prefix `mcp:` selectors. Raw MCP runtime names without `mcp:` are stripped from non-MCP lists. Top-level `mcp` frontmatter is rejected. |
 | Parallel cap | `agents.max_agents` default **4**. |
-| Wait timeout | `agents.subagent_tool_timeout_seconds` default **1800** (min **60**; below min fails config load) — durable deferred-batch `deadlineAt` with a scheduled timeout interruption (`DelayStamp` + `InterruptDeferredSubagentBatchMessage`), not ToolExecutor generic timeout. Parent cancel ends waiting children. |
+| Wait timeout | `agents.subagent_tool_timeout_seconds` default **86400** (min **60**; below min fails config load) — durable deferred-batch `deadlineAt` with a scheduled timeout interruption (`DelayStamp` + `InterruptDeferredSubagentBatchMessage`), not ToolExecutor generic timeout. Parent cancel ends waiting children. |
 
 ## Child MCP policy
 

@@ -81,12 +81,38 @@ final class SkillDiscoveryTest extends TestCase
 
         $skills = $discovery->discover();
 
-        // Both should be discovered... no wait, same name, different paths.
-        // First discovered wins. Since auto-discovery scans cwd/.hatfield first,
-        // then cwd/.agents, .hatfield wins.
+        // First-discovered wins. Auto order scans project .hatfield before
+        // project .agents, so .hatfield wins.
         $this->assertCount(1, $skills);
         $this->assertSame('myskill', $skills[0]->name);
         $this->assertStringContainsString('.hatfield', $skills[0]->skillDirectory);
+    }
+
+    public function testUserHatfieldOverridesProjectAgentsSkillsWithCollision(): void
+    {
+        // Cross-middle: project generic .agents/skills vs user Hatfield-specific.
+        $homeDir = $this->tmpDir.'/home';
+        $projectSkillDir = $this->tmpDir.'/.agents/skills/collide';
+        $userHatfieldSkillDir = $homeDir.'/.hatfield/skills/collide';
+
+        mkdir($projectSkillDir, 0777, true);
+        file_put_contents($projectSkillDir.'/SKILL.md', "---\nname: collide\ndescription: Project-agents skill\n---\n\nProject body");
+
+        mkdir($userHatfieldSkillDir, 0777, true);
+        file_put_contents($userHatfieldSkillDir.'/SKILL.md', "---\nname: collide\ndescription: User-hatfield skill\n---\n\nUser body");
+
+        $discovery = $this->createDiscovery(cwd: $this->tmpDir, homeDir: $homeDir);
+        $skills = $discovery->discover();
+
+        $this->assertCount(1, $skills);
+        $this->assertSame('collide', $skills[0]->name);
+        $this->assertSame($userHatfieldSkillDir, $skills[0]->skillDirectory);
+
+        $collisions = $discovery->getCollisions();
+        $this->assertCount(1, $collisions);
+        $this->assertSame($userHatfieldSkillDir, $collisions[0]['winner']);
+        $this->assertSame($projectSkillDir, $collisions[0]['ignored']);
+        $this->assertSame('collide', $collisions[0]['name']);
     }
 
     public function testAdditionalPathsOverrideAutoDiscovery(): void
@@ -415,10 +441,15 @@ final class SkillDiscoveryTest extends TestCase
         mkdir($staleDir, 0777, true);
         file_put_contents($staleDir.'/SKILL.md', "---\nname: alpha\ndescription: stale\n---\n\nStale body");
         file_put_contents($staleDir.'/obsolete.txt', 'remove me');
+        // PHAR/materialization can leave owned destination files mode 0444; replacement
+        // must still succeed without touching sibling user skills.
+        chmod($staleDir.'/SKILL.md', 0444);
+        chmod($staleDir.'/obsolete.txt', 0444);
 
         $userSkillDir = $homeDir.'/.hatfield/skills/user-skill';
         mkdir($userSkillDir, 0777, true);
         file_put_contents($userSkillDir.'/SKILL.md', "---\nname: user-skill\ndescription: User owned\n---\n\nUser body");
+        $userBodyBefore = (string) file_get_contents($userSkillDir.'/SKILL.md');
 
         $discovery = $this->createDiscovery(cwd: $cwd, homeDir: $homeDir, appRoot: $appRoot);
         $skills = $discovery->discover();
@@ -436,8 +467,10 @@ final class SkillDiscoveryTest extends TestCase
         $this->assertSame('Alpha built-in', $byName['alpha']->description);
         $this->assertFileExists($homeDir.'/.hatfield/skills/alpha/notes.md');
         $this->assertFileDoesNotExist($homeDir.'/.hatfield/skills/alpha/obsolete.txt');
+        $this->assertStringContainsString('Alpha body', (string) file_get_contents($homeDir.'/.hatfield/skills/alpha/SKILL.md'));
         $this->assertSame('User owned', $byName['user-skill']->description);
         $this->assertSame($userSkillDir, $byName['user-skill']->skillDirectory);
+        $this->assertSame($userBodyBefore, (string) file_get_contents($userSkillDir.'/SKILL.md'));
     }
 
     public function testMaterializedBuiltinIsSuppressedByNoSkillsButStillRewritten(): void

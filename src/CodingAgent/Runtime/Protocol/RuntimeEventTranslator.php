@@ -73,9 +73,9 @@ final class RuntimeEventTranslator
             RunEventTypeEnum::ToolBatchCommitted->value => $this->drop(...),
             RunEventTypeEnum::AgentCommandQueued->value => $this->onAgentCommandQueued(...),
             RunEventTypeEnum::AgentCommandSuperseded->value => $this->drop(...),
-            // Drop (turn tree metadata — not user-visible)
-            RunEventTypeEnum::TurnBranched->value => $this->drop(...),
-            RunEventTypeEnum::LeafSet->value => $this->drop(...),
+            // Drop (history metadata — not user-visible; run.history_position_changed is emitted by selection handlers)
+            RunEventTypeEnum::HistoryPositionSet->value => $this->drop(...),
+            RunEventTypeEnum::HistoryTailDiscarded->value => $this->drop(...),
         ];
     }
 
@@ -281,16 +281,23 @@ final class RuntimeEventTranslator
     private function onToolExecutionStarted(RunEvent $runEvent): RuntimeEvent
     {
         $p = $runEvent->payload;
+        $payload = [
+            'tool_call_id' => (string) ($p['tool_call_id'] ?? ''),
+            'tool_name' => (string) ($p['tool_name'] ?? ''),
+            'order_index' => (int) ($p['order_index'] ?? 0),
+        ];
+        // Optional: direct-shell and other non-streamed starts may carry args so
+        // projection can synthesize a ToolCall card without tool_call.* events.
+        $arguments = $p['arguments'] ?? null;
+        if (\is_array($arguments)) {
+            $payload['arguments'] = $arguments;
+        }
 
         return new RuntimeEvent(
             type: RuntimeEventTypeEnum::ToolExecutionStarted->value,
             runId: $runEvent->runId,
             seq: $runEvent->seq,
-            payload: [
-                'tool_call_id' => (string) ($p['tool_call_id'] ?? ''),
-                'tool_name' => (string) ($p['tool_name'] ?? ''),
-                'order_index' => (int) ($p['order_index'] ?? 0),
-            ],
+            payload: $payload,
         );
     }
 

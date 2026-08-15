@@ -124,7 +124,7 @@ final class TranscriptProjectionState
     /**
      * Return the current ordered list of transcript blocks.
      *
-     * Used for bootstrap/resume/leaf replacement. Ordinary live polls should
+     * Used for bootstrap/resume/history-position replacement. Ordinary live polls should
      * prefer {@see drainChanges()} so finalized history is not re-materialized.
      *
      * @return list<TranscriptBlock>
@@ -142,7 +142,7 @@ final class TranscriptProjectionState
     /**
      * Drain dirty/removed block IDs into an incremental change set and clear tracking.
      *
-     * Live TUI state always *merges* projector deltas (resume/leaf snapshots live
+     * Live TUI state always *merges* projector deltas (resume/history-position snapshots live
      * outside the projector). Full replacement is assembled by callers via
      * {@see blocks()} / {@see TranscriptChangeSet::full()}, never by this drain.
      *

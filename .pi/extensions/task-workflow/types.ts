@@ -10,13 +10,12 @@ export const STATUSES = [
 ] as const;
 export type TaskStatus = (typeof STATUSES)[number];
 
-/** Default task_list statuses: active + cancelled, omitting ARCHIVE unless requested. */
+/** Default task_list statuses, omitting CANCELLED and ARCHIVE unless requested. */
 export const DEFAULT_LISTED_STATUSES = [
 	"TODO",
 	"IN-PROGRESS",
 	"CODE-REVIEW",
 	"DONE",
-	"CANCELLED",
 ] as const satisfies readonly TaskStatus[];
 
 export type ExecResult = {
@@ -47,4 +46,8 @@ export type WorktreeCreateResult = {
 	extensionsVendorNote?: string;
 	ideaExclusionsUpdated: boolean;
 	ideaNote?: string;
+	/** Note from minimal per-worktree .idea creation (success or skip/degrade). */
+	ideaSetupNote?: string;
+	/** Note from ide_open_project after worktree setup (success or degrade). */
+	ideOpenNote?: string;
 };

@@ -24,9 +24,9 @@ use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
  * - Returns `kind=interrupt` payload immediately; no oneshot/blocking path.
  * - Uses Symfony Serializer/Validator (via AskHumanPayloadFactory) for
  *   type-safe argument denormalization, validation, and payload building.
- * - Generates stable fallback `question_id` from prompt/kind/choices/metadata hash.
+ * - Always generates stable output `question_id` from question/kind/choices/header hash.
  * - Normalizes bare string choices to structured `{label, description}` objects.
- * - Preserves UI metadata: header, ui_kind/kind, choices, default.
+ * - Preserves UI metadata: header, kind, choices.
  * - AgentCore does NOT have a defensive fallback for ask_human — it executes
  *   through the normal toolbox path where the handler runs and returns its
  *   interrupt result. AgentCore only generically preserves `kind=interrupt`
@@ -69,35 +69,19 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'properties' => [
                     'question' => [
                         'type' => 'string',
-                        'description' => 'The question or prompt to display to the user. Use a clear, concise question. This field is preferred over \'prompt\'.',
-                    ],
-                    'prompt' => [
-                        'type' => 'string',
-                        'description' => 'Deprecated alias for \'question\'. Prefer the \'question\' field instead.',
-                    ],
-                    'ui_kind' => [
-                        'type' => 'string',
-                        'enum' => ['text', 'confirm', 'choice', 'approval'],
-                        'description' => 'Alias for kind. Overrides derivation from kind/choices if present.',
+                        'description' => 'The clear, concise question to display to the user.',
                     ],
                     'kind' => [
                         'type' => 'string',
-                        'enum' => ['text', 'confirm', 'choice', 'approval'],
-                        'description' => 'The kind of question. "text" for free-form input, "confirm"/"approval" for yes/no (boolean), "choice" for selecting from options.',
+                        'enum' => ['confirm'],
+                        'description' => 'Optional. Set to "confirm" for yes/no or approval questions (boolean). Omit for free-form text or when providing "choices". Mutually exclusive with "choices".',
                     ],
                     'choices' => [
                         'type' => 'array',
                         'items' => [
                             'type' => 'string',
                         ],
-                        'description' => 'List of answer choices as simple strings. Required when kind is "choice". The system derives the answer schema from kind and choices.',
-                    ],
-                    'default' => [
-                        'description' => 'Default answer value. The v1 UI does not auto-select it; included for reference.',
-                    ],
-                    'question_id' => [
-                        'type' => 'string',
-                        'description' => 'Optional stable identifier for this question. Generated from content if absent.',
+                        'description' => 'Non-empty list of answer choices as simple strings. Providing choices selects choice mode; omit kind. Mutually exclusive with kind="confirm". Do not pass an empty list.',
                     ],
                     'header' => [
                         'type' => 'string',
@@ -111,11 +95,7 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
             promptLine: 'ask_human question [kind] [choices] — ask the user for input, confirmation, a choice, or approval',
             promptGuidelines: [
                 'Use ask_human when you need the user to provide information, confirm an action, or make a choice before proceeding.',
-                'Provide a clear question in the "question" field. Set "kind" to "confirm"/"approval" for yes-no, "choice" with "choices" for a selection, or "text" for free-form input.',
-                'For choices, provide "choices" as an array of simple strings. The system derives the answer schema from kind and choices.',
-                'Optionally provide a "default" value and "header" for UI display.',
                 'If the user cancels the question, the answer will be the string \'Cancelled by user\'. Treat this as an abort signal — do not retry the same question immediately.',
-                'Use ask_human only when you need the user\'s answer before you can continue.',
             ],
             executionMode: ToolExecutionMode::Interrupt,
         );

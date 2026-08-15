@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
@@ -45,6 +46,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $state = new RunState(
@@ -114,6 +116,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $existingMessages = [
@@ -197,6 +200,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $existingMessages = [
@@ -281,6 +285,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $state = new RunState(
@@ -351,6 +356,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $existingMessages = [
@@ -441,6 +447,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             commandBus: $commandBus,
             errorClassifier: $classifier,
             agentRetryMaxAttempts: 2,
@@ -536,6 +543,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             commandBus: $commandBus,
             errorClassifier: $classifier,
             agentRetryMaxAttempts: 2,
@@ -606,7 +614,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertCount(0, $commandBus->messages);
     }
 
-    public function testContextOverflow500DoesNotDispatchAutoRetryContinue(): void
+    public function testContextOverflowFailsVisiblyWithoutCompactRunOrAutoRetry(): void
     {
         $executionBus = new TestMessageBus();
         $commandBus = new TestMessageBus();
@@ -623,6 +631,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             commandBus: $commandBus,
             errorClassifier: $classifier,
             agentRetryMaxAttempts: 2,
@@ -662,19 +671,30 @@ final class LlmStepResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
+        $this->assertSame(RunStatus::Failed, $result->nextState->status);
         $this->assertFalse($result->nextState->retryableFailure);
+        $this->assertNotNull($result->nextState->errorMessage);
 
-        $hasCompact = false;
+        $failed = null;
+        foreach ($result->events as $event) {
+            if (RunEventTypeEnum::LlmStepFailed->value === $event->type) {
+                $failed = $event;
+                break;
+            }
+        }
+        $this->assertNotNull($failed, 'Context overflow must emit the normal LlmStepFailed event.');
+        $this->assertFalse($failed->payload['retryable'] ?? true);
+
         foreach ($result->postCommit as $callback) {
             $callback();
         }
         foreach ($commandBus->messages as $dispatched) {
-            if ($dispatched instanceof CompactRun) {
-                $hasCompact = true;
-            }
-            $this->assertNotInstanceOf(\Ineersa\AgentCore\Domain\Message\ApplyCommand::class, $dispatched);
+            $this->assertNotInstanceOf(CompactRun::class, $dispatched,
+                'Provider context overflow must not schedule CompactRun recovery.');
+            $this->assertNotInstanceOf(\Ineersa\AgentCore\Domain\Message\ApplyCommand::class, $dispatched,
+                'Provider context overflow must not auto-retry via Continue.');
         }
-        $this->assertTrue($hasCompact, 'Overflow recovery should dispatch CompactRun, not Continue.');
+        $this->assertCount(0, $commandBus->messages);
     }
 
     public function testParallelToolCallsCarryConfiguredMaxParallelism(): void
@@ -703,6 +723,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             toolSetResolver: $toolSetResolver,
             maxParallelism: 4,
         );
@@ -757,6 +778,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $state = new RunState(

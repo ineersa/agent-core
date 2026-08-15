@@ -119,6 +119,12 @@ final class TuiSessionState
     public bool $isCompacting = false;
 
     /**
+     * Original user prompt text from /history selection, applied once by TickPollListener
+     * into the editor after RunHistoryPositionChanged rebuild. Null when nothing pending.
+     */
+    public ?string $pendingEditorPromptText = null;
+
+    /**
      * Usage/token projection for the TUI footer.
      *
      * Holds both session-level accumulated metrics (inputTokens, outputTokens,
@@ -188,8 +194,22 @@ final class TuiSessionState
         $this->usage = new UsageProjection();
         $this->transcriptDisplayConfig = new TranscriptDisplayConfig();
         $this->transcriptDisplayState = new TranscriptDisplayState();
+        // Catalog is typed-only; wire denorm happens in TuiRuntimeEventApplier.
         $this->subagentLiveCatalog = new SubagentLiveCatalog();
         $this->subagentLiveView = new SubagentLiveViewState();
+    }
+
+    /**
+     * Run id that currently owns visible HITL / Esc / submit question routing.
+     * Parent session in main view; selected child while live view is active.
+     */
+    public function visibleQuestionOwnerRunId(): string
+    {
+        if ($this->subagentLiveView->active && null !== $this->subagentLiveView->selected) {
+            return $this->subagentLiveView->selected->agentRunId;
+        }
+
+        return null !== $this->handle ? $this->handle->runId : $this->sessionId;
     }
 
     /**
@@ -221,7 +241,7 @@ final class TuiSessionState
     }
 
     /**
-     * Replace the entire ordered transcript (bootstrap, resume, leaf/branch).
+     * Replace the entire ordered transcript (bootstrap, resume, history position).
      *
      * @param list<TranscriptBlock> $blocks
      */

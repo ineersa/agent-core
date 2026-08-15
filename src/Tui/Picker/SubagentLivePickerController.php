@@ -38,6 +38,14 @@ final class SubagentLivePickerController
 
     private ?AgentSessionClient $client = null;
 
+    /**
+     * Invoked with the previous child run id when leaving/switching away from it.
+     * Listener layer wires question cleanup here (Deptrac: picker must not import TuiQuestion).
+     *
+     * @var ?callable(string): void
+     */
+    private $onLeavingChildRun;
+
     /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
     private $onHumanInputRequested;
 
@@ -63,6 +71,7 @@ final class SubagentLivePickerController
         ?callable $onHumanInputRequested = null,
         ?callable $onToolQuestionRequested = null,
         ?callable $onToolTerminal = null,
+        ?callable $onLeavingChildRun = null,
     ): void {
         $this->tui = $tui;
         $this->screen = $screen;
@@ -71,6 +80,7 @@ final class SubagentLivePickerController
         $this->onHumanInputRequested = $onHumanInputRequested;
         $this->onToolQuestionRequested = $onToolQuestionRequested;
         $this->onToolTerminal = $onToolTerminal;
+        $this->onLeavingChildRun = $onLeavingChildRun;
     }
 
     public function open(): void
@@ -141,7 +151,7 @@ final class SubagentLivePickerController
     {
         $items = [];
         foreach ($children as $child) {
-            $task = $child->taskSummary;
+            $task = PickerListLabelFormatter::sanitizeTitle($child->taskSummary);
             if (\strlen($task) > 48) {
                 $task = substr($task, 0, 45).'...';
             }
@@ -389,6 +399,10 @@ final class SubagentLivePickerController
         if ($state->subagentLiveView->active
             && null !== $state->subagentLiveView->selected
             && $state->subagentLiveView->selected->artifactId === $artifactId) {
+            $leavingRunId = $state->subagentLiveView->selected->agentRunId;
+            if (null !== $this->onLeavingChildRun) {
+                ($this->onLeavingChildRun)($leavingRunId);
+            }
             SubagentLiveMainReturn::returnToMain($state, $screen, $this->client, requestRender: false);
         }
 
@@ -416,12 +430,18 @@ final class SubagentLivePickerController
     private function enterLiveView(SubagentLiveChildDTO $child, TuiSessionState $state, ChatScreen $screen): void
     {
         $client = $this->client;
-        if (null !== $client) {
-            $previous = $state->subagentLiveView->selected;
-            if (null !== $previous && $previous->agentRunId !== $child->agentRunId) {
+        $previous = $state->subagentLiveView->selected;
+        if (null !== $previous && $previous->agentRunId !== $child->agentRunId) {
+            // Drop previous child's active/queued HITL before switching visible owner.
+            if (null !== $this->onLeavingChildRun) {
+                ($this->onLeavingChildRun)($previous->agentRunId);
+            }
+            if (null !== $client) {
                 $client->endObservingChildRun($previous->agentRunId);
             }
+        }
 
+        if (null !== $client) {
             $client->beginObservingChildRun($child->agentRunId);
         }
 
@@ -431,6 +451,10 @@ final class SubagentLivePickerController
         $state->subagentLiveView->enter($child);
 
         if ($hasCachedTranscript) {
+            // Re-entry must re-dispatch HITL/tool callbacks: leave/switch silently
+            // removed coordinator questions, and cached childLastSeq would skip the
+            // original waiting event on subsequent poll(). Request-ID dedupe in
+            // RuntimeQuestionEventHandler is the safety net if a question remains.
             $cachedReplay = $state->subagentLiveView->childReplayEvents;
             $this->childPoller->replaySnapshot(
                 $state->subagentLiveView,
@@ -439,6 +463,9 @@ final class SubagentLivePickerController
                     $cachedReplay,
                     $state->subagentLiveView->childLastSeq,
                 ),
+                onHumanInputRequested: $this->onHumanInputRequested,
+                onToolQuestionRequested: $this->onToolQuestionRequested,
+                onToolTerminal: $this->onToolTerminal,
             );
         } else {
             $this->childPoller->resetProjection();
@@ -461,6 +488,8 @@ final class SubagentLivePickerController
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
         $screen->syncQueuedUserMessages($state->subagentLiveView->childQueuedUserMessages);
         $screen->setWorkingMessage($child->isRunning() ? 'Child agent working...' : 'Child agent idle');
+        // Child reasoning colours the editor frame while live; main footerReasoning is left alone.
+        $screen->applyEditorBorderColor($child->reasoning ?? '');
         $screen->requestRender(true);
     }
 }

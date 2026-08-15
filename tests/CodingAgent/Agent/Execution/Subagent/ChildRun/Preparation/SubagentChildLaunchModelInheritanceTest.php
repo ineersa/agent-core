@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\ChildRun\Preparation;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
@@ -14,27 +17,32 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
 {
     public function testExplicitChildModelWinsOverParentSnapshot(): void
     {
+        $parentRunId = 'parent-explicit-model-reasoning';
+        $this->seedParentRunStarted($parentRunId, reasoning: 'medium');
         $factory = self::getContainer()->get(SubagentChildLaunchInputFactory::class);
         \assert($factory instanceof SubagentChildLaunchInputFactory);
 
         $prepared = $factory->buildPrepared(
-            identity: $this->identity('deepseek/deepseek-v4-flash'),
-            definition: $this->definition('deepseek/deepseek-v4-flash'),
+            identity: $this->identity($parentRunId, 'deepseek/deepseek-v4-flash'),
+            definition: $this->definition('deepseek/deepseek-v4-flash', thinking: 'high'),
             allowedTools: [],
             mcp: [],
             parentModel: 'openai-codex/gpt-5.6-sol',
         );
 
         $this->assertSame('deepseek/deepseek-v4-flash', $prepared->startRunInput->metadata?->model);
+        $this->assertSame('high', $prepared->startRunInput->metadata?->reasoning);
     }
 
     public function testMissingExplicitUsesParentSnapshot(): void
     {
+        $parentRunId = 'parent-inherit-model-reasoning';
+        $this->seedParentRunStarted($parentRunId, reasoning: 'medium');
         $factory = self::getContainer()->get(SubagentChildLaunchInputFactory::class);
         \assert($factory instanceof SubagentChildLaunchInputFactory);
 
         $prepared = $factory->buildPrepared(
-            identity: $this->identity(null),
+            identity: $this->identity($parentRunId, null),
             definition: $this->definition(null),
             allowedTools: [],
             mcp: [],
@@ -42,6 +50,7 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
         );
 
         $this->assertSame('deepseek/deepseek-v4-flash', $prepared->startRunInput->metadata?->model);
+        $this->assertSame('medium', $prepared->startRunInput->metadata?->reasoning);
     }
 
     public function testMissingParentAndExplicitFailsClosed(): void
@@ -51,7 +60,7 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
 
         $this->expectException(\RuntimeException::class);
         $factory->buildPrepared(
-            identity: $this->identity(null),
+            identity: $this->identity('parent-missing-model', null),
             definition: $this->definition(null),
             allowedTools: [],
             mcp: [],
@@ -59,26 +68,69 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
         );
     }
 
-    private function identity(?string $model): ChildRunIdentityDTO
+    public function testMissingParentRunStartedReasoningUsesCanonicalDefault(): void
+    {
+        $parentRunId = 'parent-missing-reasoning';
+        $this->seedParentRunStarted($parentRunId, reasoning: null);
+        $factory = self::getContainer()->get(SubagentChildLaunchInputFactory::class);
+        \assert($factory instanceof SubagentChildLaunchInputFactory);
+
+        $prepared = $factory->buildPrepared(
+            identity: $this->identity($parentRunId, null),
+            definition: $this->definition(null),
+            allowedTools: [],
+            mcp: [],
+            parentModel: 'deepseek/deepseek-v4-flash',
+        );
+
+        $this->assertSame('deepseek/deepseek-v4-flash', $prepared->startRunInput->metadata?->model);
+        // Canonical ModelResolver product default when run_started omits reasoning.
+        $this->assertSame('medium', $prepared->startRunInput->metadata?->reasoning);
+        $this->assertSame('medium', $prepared->identity->launchReasoning);
+    }
+
+    private function seedParentRunStarted(string $parentRunId, ?string $reasoning): void
+    {
+        $eventStore = self::getContainer()->get(EventStoreInterface::class);
+        \assert($eventStore instanceof EventStoreInterface);
+        $metadata = [
+            'session' => ['kind' => 'parent'],
+            'model' => 'deepseek/deepseek-v4-flash',
+        ];
+        if (null !== $reasoning) {
+            $metadata['reasoning'] = $reasoning;
+        }
+        $eventStore->append(new RunEvent(
+            runId: $parentRunId,
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: ['payload' => ['metadata' => $metadata]],
+            createdAt: new \DateTimeImmutable(),
+        ));
+    }
+
+    private function identity(string $parentRunId, ?string $model): ChildRunIdentityDTO
     {
         return new ChildRunIdentityDTO(
-            parentRunId: 'parent-1',
+            parentRunId: $parentRunId,
             childRunId: 'child-1',
             artifactId: 'agent_child1',
             displayName: 'scout',
             taskSummary: 'task',
-            definitionModel: $model,
+            launchModel: $model ?? 'deepseek/deepseek-v4-flash', launchReasoning: 'medium',
             artifactKind: AgentArtifactKindEnum::Subagent,
         );
     }
 
-    private function definition(?string $model): AgentDefinitionDTO
+    private function definition(?string $model, ?string $thinking = null): AgentDefinitionDTO
     {
         return new AgentDefinitionDTO(
             name: 'scout',
             description: 'd',
             tools: [],
             model: $model,
+            thinking: $thinking,
             instructions: 'do work',
         );
     }

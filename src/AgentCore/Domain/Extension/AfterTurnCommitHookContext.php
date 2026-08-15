@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Domain\Extension;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
-use Symfony\Component\Serializer\Attribute\SerializedName;
 
 final readonly class AfterTurnCommitHookContext
 {
@@ -17,13 +16,10 @@ final readonly class AfterTurnCommitHookContext
      * @param list<AfterTurnCommitEventSummary> $events
      */
     public function __construct(
-        #[SerializedName('run_id')]
         public string $runId,
-        #[SerializedName('turn_no')]
         public int $turnNo,
         public string $status,
         array $events,
-        #[SerializedName('effects_count')]
         public int $effectsCount,
     ) {
         foreach ($events as $event) {

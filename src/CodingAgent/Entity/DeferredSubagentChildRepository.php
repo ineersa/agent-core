@@ -13,14 +13,21 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Symfony\Component\Clock\Clock;
+use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * @extends ServiceEntityRepository<DeferredSubagentChild>
  */
 final class DeferredSubagentChildRepository extends ServiceEntityRepository
 {
-    public function __construct(ManagerRegistry $registry)
-    {
+    public function __construct(
+        ManagerRegistry $registry,
+        private readonly DenormalizerInterface $serializer,
+        private readonly ValidatorInterface $validator,
+    ) {
         parent::__construct($registry, DeferredSubagentChild::class);
     }
 
@@ -54,7 +61,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}> $childIntents
+     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, launchModel: string, launchReasoning: string}> $childIntents
      */
     public function insertReservedChildren(string $batchLifecycleId, array $childIntents, ?Connection $conn = null): void
     {
@@ -70,7 +77,8 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
                     'artifact_id' => $intent['artifactId'],
                     'agent_name' => $intent['agentName'],
                     'task' => $intent['task'],
-                    'definition_model' => $intent['definitionModel'],
+                    'launch_model' => $intent['launchModel'],
+                    'launch_reasoning' => $intent['launchReasoning'],
                     'launch_status' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
                     'child_event_cursor' => 0,
                     'projection_version' => 1,
@@ -94,7 +102,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string} $intent
+     * @param array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, launchModel: string, launchReasoning: string} $intent
      */
     public function assertChildMatchesIntent(DeferredSubagentChild $row, array $intent): void
     {
@@ -108,8 +116,8 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
             throw new ToolCallException('Deferred subagent batch child was reserved for a different agent or task.', retryable: false);
         }
 
-        if (null !== $intent['definitionModel'] && $row->definitionModel !== $intent['definitionModel']) {
-            throw new ToolCallException('Deferred subagent batch child was reserved with a different model.', retryable: false);
+        if ($row->launchModel !== $intent['launchModel'] || $row->launchReasoning !== $intent['launchReasoning']) {
+            throw new ToolCallException('Deferred subagent batch child was reserved with a different launch model or reasoning.', retryable: false);
         }
     }
 
@@ -156,6 +164,30 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         return $row instanceof DeferredSubagentChild ? $row : null;
     }
 
+    /**
+     * @param array<string, mixed>|null $raw
+     */
+    public function decodeChildLifecycleProjection(?array $raw): ?DeferredChildRunLifecycleProjectionDTO
+    {
+        if (null === $raw || [] === $raw) {
+            return null;
+        }
+
+        try {
+            /** @var DeferredChildRunLifecycleProjectionDTO $projection */
+            $projection = $this->serializer->denormalize($raw, DeferredChildRunLifecycleProjectionDTO::class);
+        } catch (SerializerExceptionInterface|\TypeError|\ValueError $exception) {
+            throw new \InvalidArgumentException(\sprintf('Invalid deferred child lifecycle projection: %s', $exception->getMessage()), 0, $exception);
+        }
+
+        $violations = $this->validator->validate($projection);
+        if ($violations->count() > 0) {
+            throw new \InvalidArgumentException(\sprintf('Invalid deferred child lifecycle projection: validation failed with %d violation(s).', $violations->count()), 0, new ValidationFailedException($projection, $violations));
+        }
+
+        return $projection;
+    }
+
     private function requireChild(string $batchLifecycleId, int $batchIndex): DeferredSubagentChild
     {
         $row = $this->findOneBy([
@@ -179,7 +211,8 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
             artifactId: $row->artifactId,
             agentName: $row->agentName,
             task: $row->task,
-            definitionModel: $row->definitionModel,
+            launchModel: $row->launchModel,
+            launchReasoning: $row->launchReasoning,
             launchStatus: $row->launchStatus,
             childEventCursor: $row->childEventCursor,
             childLifecycleProjection: $this->decodeChildLifecycleProjection($row->childLifecycleProjection),
@@ -188,17 +221,5 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
             terminalStatus: $row->terminalStatus,
             projectionVersion: $row->projectionVersion,
         );
-    }
-
-    /**
-     * @param array<string, mixed>|null $raw
-     */
-    private function decodeChildLifecycleProjection(?array $raw): ?DeferredChildRunLifecycleProjectionDTO
-    {
-        if (!\is_array($raw) || [] === $raw) {
-            return null;
-        }
-
-        return DeferredChildRunLifecycleProjectionDTO::fromArray($raw);
     }
 }

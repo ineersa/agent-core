@@ -1,6 +1,6 @@
 # Agent Core Monorepo
 
-Modular monolith, single Composer app, boundaries enforced by Deptrac.
+Modular monolith, single Composer app. Layer rules live in `depfile.yaml` and are enforced by `castor deptrac`. Nested instructions (skills, `tests/AGENTS.md`, module `AGENTS.md`, prompts) may specialize procedure; they must not weaken root safety, Castor/QA, architecture, or task-workflow constraints—contexts concatenate.
 
 ## Layout
 
@@ -8,275 +8,146 @@ Modular monolith, single Composer app, boundaries enforced by Deptrac.
 src/AgentCore/    Core loop, domain, contracts, storage/infrastructure
 src/CodingAgent/  HTTP-less Symfony CLI app, runtime boundary, tools, wiring
 src/Tui/          Terminal UI: screens, widgets, theme, renderer
+src/Platform/     Provider bridge/result adapters (e.g. Codex)
 tests/            Mirrors src modules
 config/           YAML config; only bundles.php stays PHP
 bin/console       CLI entry point
 castor.php        Task runner
-depfile.yaml      Deptrac rules
+depfile.yaml      Deptrac rules (authoritative boundaries)
 ```
 
-## ⚠️ MANDATORY: Use Castor for ALL QA and tooling commands
+## Castor-only QA
 
-**ALL QA, test, lint, static-analysis, and formatting commands MUST go through Castor.** Never run raw `vendor/bin/*` commands — always use the Castor equivalent. The only exception is diagnosing a Castor failure by isolating the raw tool's output.
+**All QA, test, lint, static analysis, and formatting go through Castor.** Do not run raw `vendor/bin/*` except to isolate a Castor failure. Reports land under `var/reports/` (per-run dirs via `HATFIELD_QA_REPORTS_DIR`).
 
-Castor wraps each tool with correct flag combinations, output summarization for LLM consumption, report persistence to `var/qa/`, and proper environment variables. Bypassing it silently drops all of this.
+Key commands: `castor check` (includes `docs:validate`), `castor test`, `castor test:tui`, `castor test:controller-replay`, `castor test:llm-real`, `castor deptrac`, `castor phpstan`, `castor cs-check`, `castor cs-fix`, `castor docs:validate`.
 
-Key commands: `castor check` (full validation), `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`, `castor cs-fix`.
+Timeouts, check lock, llama-proxy cache guard, ParaTest budgets, preflight, and worker diagnostics: load the `testing` skill (`.agents/skills/testing/SKILL.md`).
 
-**Castor test timeouts:** every Castor-started test runner (`castor test`, `castor test:tui`, `castor test:llm-real`, `castor test:controller`, `castor test:controller-replay`, …) has an internal **≤180s** hard timeout with process-tree/session reaping on timeout or exit. **`castor check`** has an absolute **180s wall from task entry** that includes lock wait, setup/preflight, lanes, and finalizers; lane budgets clamp to remaining wall. Non-test Castor tasks (build/package/composer/docker/agent) are **not** subject to this cap.
+## Testing (mandatory before QA or test work)
 
-Concurrent full `castor check` invocations for the **same git repository** (including sibling worktrees) serialize on a shared Symfony Lock (FlockStore) under `$XDG_RUNTIME_DIR/hatfield/castor-check/` (fallback: `/tmp/hatfield-castor-check-<uid>/`); additional checks wait with a clear message (default **60s** acquire timeout via `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT`, clamped by remaining check wall, then fail with lock resource/directory and holder metadata diagnostics) instead of competing for CPU/tmux/controller startup. Focused Castor commands (`castor test`, `castor phpstan`, …) are unaffected by the check lock. Stress-only override: `HATFIELD_CASTOR_CHECK_LOCK=0`.
+Before writing, editing, debugging, reviewing, or running tests—and before validating TUI/runtime/Messenger/DB work—every agent, fork, and scout MUST:
 
-**Deterministic gate mode (`castor check`):** per-run isolated reports/tmp/cache/DB (`HATFIELD_QA_RUN_ID`), Symfony Lock serialization across sibling worktrees, llama-proxy cache-growth guard, post-run leak assertion (processes tagged with `HATFIELD_QA_RUN_ID` must be gone — no auto-kill), and per-lane log artifact integrity under `HATFIELD_QA_REPORTS_DIR`. Under check, the live **`test:llm-real`** lane defaults to **1** ParaTest worker (max 4; override `HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES`); standalone full `castor test:llm-real` remains **4** workers, filtered runs stay sequential. **Stress/diagnostic mode** (lock/cache-guard/concurrency overrides) is for investigation only — not acceptable CODE-REVIEW gate evidence.
+1. Load the `testing` skill (`.agents/skills/testing/SKILL.md`).
+2. Read `tests/AGENTS.md` (helpers, isolation, E2E patterns, what not to test).
 
-**Load the `testing` skill** when: running any test, writing tests, debugging test failures, touching runtime/TUI/Messenger code, or needing the full command reference.
+Do this before proposing a test strategy, adding tests, running Castor tests, or handing off validation. Forks must state in handoff that both were read and followed; omit that and the parent must not treat the handoff as CODE-REVIEW/DONE-ready for test-related work.
 
-## ⚠️ MANDATORY: Read testing docs before touching tests or running QA
+**Constraints (detail in testing skill + `tests/AGENTS.md`):**
 
-Before writing, editing, debugging, reviewing, or running tests — and before touching TUI/runtime/Messenger/DB code that requires validation — every agent, fork, and scout MUST:
+- Changes touching TUI runtime, `AgentSessionClient`, Messenger, `TranscriptProjector`, `RuntimeEventPoller`, or LLM-visible flow require `castor check`. Unit/container/mocked tests alone are not enough. If required tmux is unavailable, stay IN-PROGRESS with the blocker.
+- TUI proof at the **lowest correct layer**: virtual/`castor test` → controller-replay → minimal `castor test:tui`. Do not default every feature to tmux. Custom smoke scripts, service-only DTO tests, picker/footer-only checks, or manual fork reports are not sole proof.
+- Replay is a regression guard, not proof of live correctness. When a user-reported hang/freeze/stuck state survives replay, trust live reproduction (`#[Group('llm-real')]`, real controller subprocess) over more fixture-only proofs.
+- Focused `castor test:llm-real` is for provider/LLM-visible changes only (schemas, prompts, streaming, model routing)—not every task. `castor test:controller` stays opt-in live controller E2E.
+- Tests protect user-visible behavior, stable runtime/protocol contracts, safety boundaries, or known regressions. Prefer smallest failing repro for bugs; avoid implementation-mirroring/coverage-only tests; do not mix broad test refactors into implementation tasks.
+- Leaked `messenger:consume`, `agent --controller`, PHPUnit, or Castor children are lifecycle bugs—fix teardown at source. `castor check` does not auto-kill workers. Diagnostics: `castor clean:cleanup:workers:list`; last resort after recording the leak: `castor clean:cleanup:workers` (current-user orphans in this checkout only).
+- **Never signal, kill, restart, or otherwise touch root-owned workers**, or processes tagged with `HATFIELD_SESSION_ID`. If a root-owned process looks stale, report it and leave it alone.
+- DB-touching tests boot the Symfony kernel and use the test container (`IsolatedKernelTestCase` / skill docs).
 
-1. **Load the `testing` skill** (`.agents/skills/testing/SKILL.md`).
-2. **Read `tests/AGENTS.md`** for shared test infrastructure, helpers, isolation conventions, TUI E2E patterns, controller E2E patterns, and what NOT to test.
+## JetBrains IDE tools
 
-This must happen before proposing a test strategy, adding tests, running Castor tests, or handing off validation results. Forks must mention in their handoff that they read both files and followed the shared conventions. A fork handoff that omits this for test-related work is incomplete — the parent agent must not accept the handoff as valid for CODE-REVIEW or DONE without confirming the conventions were followed.
-
-Leaked `messenger:consume`, `agent --controller`, PHPUnit, or Castor children are **bugs** — fix lifecycle/teardown at the source instead of treating kills as routine workflow. `castor check` does **not** run automatic worker cleanup.
-
-For diagnostics only: `castor clean:cleanup:workers:list` (dry-run) and `castor clean:cleanup:workers` (explicit last-resort kill for current-user orphans in this checkout **after** you have recorded the leak and started investigating root cause). Never signal root-owned workers or processes tagged with `HATFIELD_SESSION_ID` (active Hatfield session workers).
-
-**Never kill, signal, restart, or otherwise touch root-owned worker processes.** In particular, do not touch the root-owned `php bin/console messenger:consume --all --exclude-receivers=failed` process (currently observed as PID 3361). If a root-owned process appears stale, report it to the user and leave it alone.
-
-## E2E Testing Strategy
-
-Replay-backed controller/TUI E2E tests use deterministic fixtures (no live LLM).  Live LLM smoke tests use `llama_cpp_test/test` (port 9052).  Test groups: `#[Group('llm-real')]`, `#[Group('tui-e2e-replay')]`, `#[Group('controller-replay')]`.  All E2E tests use `var/tmp/test-{uuid}` isolation, never real `.hatfield/sessions/`.
-
-
-### Llama-proxy on port 9052 (live smoke + `castor check`)
-
-Local live LLM smoke and the `castor check` **`test:llm-real`** lane expect an OpenAI-compatible endpoint on **port 9052**. In the recommended setup, **[llama-proxy](file:///home/ineersa/projects/llama-proxy)** binds `:9052`, records cache misses to disk, replays identical requests (including streaming), and forwards misses to the real test model (often llama.cpp on `:8052`). Tests and Castor preflight use the normal chat URL on 9052 — they do not bypass the proxy.
-
-**Cache normalization (proxy-side):** With `LLAMA_PROXY_CACHE_NORMALIZE_MESSAGES=true` (default), the proxy cache key ignores volatile chat prologue (leading `system`/`developer`, leading `[user-context]` user messages). The upstream request on a miss still sends the full body. That keeps AGENTS/skills/date/cwd churn from busting cache; live `llm-real` tests still use **unique first user prompts** per scenario so distinct tool paths do not collide after normalization.
-
-**Committed replay fixtures** (`HATFIELD_LLM_REPLAY_FIXTURE_PATH`, `castor test:controller-replay`, `castor test:tui`) are separate: they mock HTTP in the test DI layer and do not use llama-proxy cassettes. Proxy cache speeds live HTTP smoke; fixtures keep controller/TUI E2E deterministic without a model.
-
-**Ops (verify / warm / reset):**
-
-```bash
-curl http://127.0.0.1:9052/__llama_proxy/health
-curl http://127.0.0.1:9052/__llama_proxy/cache/stats
-curl -X POST http://127.0.0.1:9052/__llama_proxy/cache/clear   # or: curl -X DELETE http://127.0.0.1:9052/__llama_proxy/cache
-```
-
-If `LLAMA_PROXY_ADMIN_TOKEN` is set on the proxy, add `-H 'X-Llama-Proxy-Token: …'` to admin calls. Responses on cache hits may include `x-llama-proxy-cache: hit`.
-
-- **Warm cache (intentional):** run `castor test:llm-real` to record cassettes on miss; repeats replay from disk (~20–30s warm lane vs cold upstream). Do **not** rely on `castor check` to grow the proxy cache — the gate fails if cache `entries` increase.
-- **`castor check` cache guard:** before lanes, Castor records llama-proxy `entries` from `GET /__llama_proxy/cache/stats`; after all lanes it fails if `entries` increased (uncached live LLM during the gate). Baseline is taken **before** generation preflight so preflight misses count too. Stress-only disable: `HATFIELD_LLM_CACHE_GUARD=0`. Admin URL override: `HATFIELD_LLM_PROXY_ADMIN_URL` (default `http://127.0.0.1:9052`).
-- **First run / warmup (required for `castor check`):** intentionally run `castor test:llm-real` to populate proxy cassettes, confirm `curl http://127.0.0.1:9052/__llama_proxy/cache/stats` stabilizes, then run `castor check`. After `cache/clear`, warmup again before the gate.
-
-- **Cold / stale cache:** `cache/clear`, then rerun the same tests to re-record. Delete Castor preflight cache `var/tmp/llm-generation-ready.cache` or set `HATFIELD_LLM_READY_TTL=0` to force generation preflight.
-- **Leaked workers:** treat survivors as lifecycle/teardown bugs — fix why the run did not exit cleanly (cancel path, subprocess shutdown, test harness cleanup). Use `castor clean:cleanup:workers:list` for diagnostics only. `castor clean:cleanup:workers` is last-resort only after investigation — not routine before retrying `castor check`.
-
-Load the **`testing`** skill for full command matrix, ParaTest `llm-real` behavior, and failure diagnostics.
-
-See `tests/AGENTS.md` for full test standards: shared helpers, isolation, test doubles, what not to test, and cleanup conventions.
-
-**Load the `testing` skill** when: writing E2E tests, debugging controller/TUI test failures, or needing controller E2E internals, failure diagnostics, or the full testing matrix.
-
-### TUI E2E snapshot artifacts
-
-After `castor test:tui`, passing test snapshots are kept at `var/tmp/tui-e2e-*/` for inspection. Each isolated test directory contains:
-- `.hatfield/tmp/tui/smoke/*.ansi` — ANSI terminal snapshots captured by `saveAnsiSnapshot()`
-- `.hatfield/sessions/<id>/events.jsonl` — canonical event log for resumed sessions
-
-After failures, diagnostics go to `var/tmp/tui-failures/` (ANSI snapshots + plain text dumps).
-
-Run `castor cleanup` to remove all temp/test artifacts.
-
-## Required runtime/TUI validation
-
-For changes touching TUI runtime, `AgentSessionClient`, Messenger, `TranscriptProjector`, `RuntimeEventPoller`, or LLM-visible flow: you MUST run `castor check`. Unit/container/mocked tests are not enough. If tmux is unavailable, TUI tasks MUST stay IN-PROGRESS with the blocker — never mark CODE-REVIEW or DONE without validation.
-
-Default `castor check` includes replay-backed controller/TUI E2E plus the live `llm-real` smoke lane (llama.cpp/llama-proxy on port 9052). Additional live smoke remains opt-in via `castor test:controller`.
-
-### Replay tests vs. live reproduction
-
-Replay-backed E2E tests exercise a fixture-driven controller and can report "green" while the real bug persists — the replay does not enforce the same run-state transitions, process topology, or wire protocol as the live controller subprocess. Replay is a regression guard, not a proof of correctness.
-
-**Trust the live reproduction over the fixture.** When a user-reported bug survives replay tests, the replay is exercising the wrong path. Reach for a live LLM controller E2E (`#[Group('llm-real')]`, real controller subprocess via `JsonlProcessAgentSessionClient::start()`) that reproduces the exact user scenario. Do not iterate on more replay-based proofs once replay and reality disagree — the disagreement IS the signal. Treat replay `OK` as one data point, not a verdict, whenever the symptom is a real-run hang, freeze, or stuck state.
-
-Observed in issue #183: the follow-up-after-shell hang was diagnosed and "fixed" across 5 iterations of replay-based proofs that all passed, while the live hang persisted. The real root cause (`RunStateReplayService` mapping `ToolExecutionEnd` to a no-op, leaving shell tool calls unresolved in state replay) only surfaced once a live `start_run → shell_command → follow_up` E2E reproduced the hang deterministically.
-
-### Focused live LLM provider validation
-
-`castor check` already runs the full `llm-real` group via the `test:llm-real` lane. Run `castor test:llm-real` alone for focused/filtered live validation when changes touch:
-- Symfony AI provider/factory/platform integration
-- LLM provider config, model catalog/resolution/routing/selection
-- Tool schemas, tool-call conversion, or tool argument prompts
-- LLM-visible system/developer prompts or prompt templates
-- Live provider compatibility, streaming conversion, stop_reason/usage/tool-call deltas
-- Controller live-provider path behavior where replay cannot prove provider compatibility
-
-`castor test:controller` remains opt-in for live controller E2E when appropriate. Do NOT require live LLM validation for every normal task — only for provider/LLM-visible changes.
-
-## Mandatory TUI behavior proof (test pyramid)
-
-**TUI implementation is NOT complete until there is automated proof at the lowest correct layer** for each user-visible behavior touched. Do not default every feature to `TmuxHarness`; broad multi-phase tmux journey tests are discouraged when virtual or replay layers can prove the contract.
-
-| Layer | When to use | How to run |
-| --- | --- | --- |
-| **Virtual / in-process** | Widget layout, render, editor input, local slash commands, command routing, transcript blocks on `ChatScreen` — no live controller subprocess required for the assertion | `castor test` (e.g. `VirtualTuiHarness`, `VirtualTerminal`, `ScreenBuffer` under `tests/Tui/Screen/`) |
-| **Controller replay** | Runtime/protocol, JSONL commands/events, session state, shell/tool ordering, `AgentSessionClient` contracts | `castor test:controller-replay` |
-| **Minimal tmux smoke** | Real terminal integration only: raw TTY, process boot, tmux/pty, Revolt event loop with detached session, terminal-specific escape behavior | `castor test:tui` (`#[Group('tui-e2e-replay')]`, replay fixtures where model output is needed, `var/tmp/test-{uuid}` isolation) |
-
-- Virtual tests must exercise real TUI screen/editor/command paths where possible (production parsers, routers, renderers), not mocked `AgentSessionClient` stand-ins for the feature under test.
-- The following are NOT acceptable as the **only** proof: custom PHP smoke scripts, service-only DTO tests, picker/footer visibility alone, or manual fork reports.
-- **Task workflow:** CODE-REVIEW/DONE for a TUI task requires proof at the appropriate layer(s) and passing focused Castor validation (`castor test` for virtual, `castor test:controller-replay` for runtime protocol, `castor test:tui` only when the change needs tmux integration). Purely virtual/local-command features do **not** require a new tmux test. If tmux is required but unavailable, stay IN-PROGRESS with the blocker recorded.
-- `castor check` still runs the minimal tmux replay lane; deterministic virtual TUI tests run in the main `castor test` suite.
-
-**Load the `testing` skill** when: writing, running, or debugging TUI proof tests.
-
-## Test value and scope
-
-Tests must protect a **user-visible behavior**, a **stable runtime/protocol contract**, a **safety or security boundary**, or a **previously observed bug/regression**. Before adding or changing tests, state the test thesis: what contract or bug would fail without the production fix.
-
-- **Bug fixes**: prefer the smallest failing repro first, then fix. Do not add extra tests unless they protect a distinct contract.
-- **Avoid excessive implementation-mirroring tests**: enum case lists, trivial DTO constructor/getter/roundtrip tests, private-helper exact-behavior mirrors, mapper tests that just repeat the implementation, coverage-only tests, and broad snapshot churn unless justified.
-- **Default test budget** for implementation tasks: one proof at the lowest correct TUI layer when the change is TUI-visible (virtual, controller-replay, or minimal tmux — not always tmux), plus 1–3 focused contract or regression tests. More tests require explicit justification.
-- Ask whether the tests would have caught the actual smoke or user-reported bug; if not, reconsider.
-- **Do not broaden implementation tasks into test refactors.** Broad test cleanup or restructuring belongs in separate tasks, not mixed with production changes.
-
-Existing mandatory Castor QA and TUI behavior proof requirements (above) remain in full force. The goal is to improve test signal density, not to eliminate testing.
+When JetBrains IDE integration is available in the active coding agent/runtime, prefer those tools for semantic navigation, references/call hierarchy, diagnostics, and semantic rename/move. Target the exact checkout using that runtime's project-scoping and open-project capability. Fall back to filesystem/`rg`/`find` for docs, generated artifacts, bulk ops, or when IDE tools are unavailable/insufficient. Exact tool names and capabilities come from the active coding agent's system instructions (Pi and Hatfield expose different names).
 
 ## Specification fidelity and minimality
 
 - Implement only finalized task requirements. No new setting, API, storage field, command, or user-visible behavior unless explicitly requested.
-- Prefer the smallest solution using existing code and platform capabilities.
-- Do not add speculative configuration, compatibility paths, abstractions, helpers, extensibility, or future-proofing.
-- Indirection required by existing architecture boundaries is allowed, but must remain minimal.
-- Ambiguity affecting behavior or public surface is a question, not implementation authority.
-- Reviewers must treat unmapped functionality or unnecessary complexity as **REQUEST CHANGES**.
+- Smallest solution using existing code/platform. No speculative config, compatibility shims, abstractions, or future-proofing. Architecture-required indirection stays minimal.
+- Ambiguity on behavior or public surface is a question, not implementation authority. Reviewers **REQUEST CHANGES** for unmapped surface or unnecessary complexity.
 
 ## Development rules
 
-- **Do not delete comments that explain non-obvious logic, invariants, concurrency, lifecycle, or rationale unless the described logic is removed.** When code changes, update those comments instead of deleting them. Remove only stale/noise comments that restate the obvious (e.g., "increment i" or "return the result"). Inline comments explaining why code is shaped a certain way — signal handling, crash resilience, transaction ordering, migration decisions, DB-to-filesystem interaction — are valuable and must be preserved or updated, never silently dropped.
-- **⚠️ Never run `git reset --hard` or any destructive git operation (history rewrite, working-tree reset, forced push) without explicit user approval.** When you think cleanup or undo is needed, default to inspect-first: `git status`, `git log --oneline --decorate -5`, `git diff` to understand exactly what you would discard. Then ask the user. Prefer non-destructive alternatives: `git revert` for published changes, `git restore <file>` for specific file undo, `git merge --abort` only during an active failed merge. If you cannot name exactly which commits would be lost and why, you do not have enough information to proceed.
-- **DB-touching tests must boot the Symfony kernel and use the test container.** Load the `testing` skill for full DB testing setup.
-- **No backward-compatibility code during active development.** Do not add fallback readers, migration shims, dual-format support, legacy ID handling, or compatibility paths unless the user explicitly asks for them, or the code is a published compatibility surface (e.g. `ExtensionApi`) with a documented deprecation window. Replace old behavior and update tests/docs instead of adding compatibility layers. New features should replace, not accumulate, prior implementations.
-- Use explicit semantic suffixes in type names: `EventTypeEnum`, `EventsRecordingsTrait`, `UserEventService`, `RuntimeEventMapper`, `SettingsProvider`, `TranscriptProjector`, `Repository`, `Factory`, `DTO`, etc. Avoid ambiguous bare names.
-- Prefer Symfony-native extension points and typed objects over hand-rolled routers/mappers. Before adding `instanceof` dispatch chains, stringly `match` routers, `normalize*()` arrays, or manual payload walkers, check Symfony events/subscribers/listeners, Serializer/Normalizer, Messenger handlers, or Symfony AI DTOs.
-- Never add production APIs or code paths solely for tests. Use production constructors/factories or test-local fixtures/builders.
-- Never use `ReflectionClass::newInstanceWithoutConstructor()`, `Closure::bind()`, or constructor/property bypass tricks in production code.
-- Test helpers belong in tests, not production.
-- **Every caught exception/error must be propagated forward or explicitly documented as intentional local degradation with diagnostic logging. Empty catch blocks are forbidden.**
-- Runtime logs must use structured event-style messages with correlation fields (`run_id`, `session_id`, `component`, `event_type`) and must not include raw prompts, tool output, environment values, API keys, or full session content by default; see `docs/datadog.md`.
+- Do not delete comments that explain non-obvious logic, invariants, concurrency, lifecycle, or rationale unless that logic is removed; update them when code changes. Drop only noise that restates the obvious.
+- **Never run `git reset --hard` or other destructive git (history rewrite, working-tree reset, forced push) without explicit user approval.** Inspect first (`git status`, `git log --oneline --decorate -5`, `git diff`). Prefer `git revert`, `git restore <file>`, `git merge --abort`. If you cannot name exactly what would be lost, do not proceed.
+- No backward-compatibility code during active development unless the user asks or the surface is a published API (e.g. `ExtensionApi`) with a documented deprecation window. Replace old behavior; update tests/docs.
+- Semantic type suffixes: `EventTypeEnum`, `UserEventService`, `RuntimeEventMapper`, `SettingsProvider`, `TranscriptProjector`, `Repository`, `Factory`, `DTO`, etc.
+- Prefer Symfony-native extension points and typed objects over hand-rolled `instanceof`/string `match` routers, `normalize*()` arrays, or manual payload walkers.
+- No production APIs or paths solely for tests. No `ReflectionClass::newInstanceWithoutConstructor()`, `Closure::bind()`, or constructor bypass in production. Test helpers stay in tests.
+- Every caught exception must be rethrown/propagated or explicitly logged as intentional local degradation. Empty catch blocks are forbidden.
+- Runtime logs: structured event-style messages with correlation fields (`run_id`, `session_id`, `component`, `event_type`); do not log raw prompts, tool output, env values, API keys, or full session content by default. See `docs/datadog.md`.
 
 ## Symfony setup
 
-- Symfony 8.1 HTTP-less app using `Symfony\Component\DependencyInjection\Kernel\AbstractKernel` + `KernelTrait`.
+- Symfony 8.1 HTTP-less CLI app. Kernel: `Ineersa\CodingAgent\Kernel` extends `Symfony\Component\HttpKernel\Kernel` (`src/CodingAgent/Kernel.php`).
 - `bin/console` uses `Symfony\Component\Console\Application` with the kernel container.
-- `config/bundles.php` registers `FrameworkBundle`, `MonologBundle`, `ConsoleBundle`, and `DoctrineBundle`.
-- FrameworkBundle is allowed **only for CLI/container infrastructure** (Messenger buses, Serializer, PropertyInfo, Lock, Monolog, Console commands, DI container services).
-- Do **not** add HTTP controllers, routes, `public/index.php`, HTTP stack, Router, Session, or FrameworkBundle features that imply web serving.
-- HTTP/routing/session/profiler features are explicitly disabled in `config/packages/framework.yaml`.
-- Prefer Symfony 8.1 invokable commands (`__invoke()`) and YAML config.
+- `config/bundles.php`: FrameworkBundle, MonologBundle, ConsoleBundle, DoctrineBundle (+ migrations; DAMA in `test` only).
+- FrameworkBundle is for CLI/container infrastructure only (Messenger, Serializer, PropertyInfo, Lock, Monolog, Console, DI). **No** HTTP controllers, routes, `public/index.php`, Router/Session web stack, or web-serving Framework features. HTTP/routing/session/profiler are disabled in `config/packages/framework.yaml`.
+- Prefer invokable commands (`__invoke()`) and YAML config.
 
 ## Hatfield settings and sessions
 
 Settings precedence: built-in defaults < `~/.hatfield/settings.yaml` < project `.hatfield/settings.yaml`.
 
 - `.hatfield/` is tracked; runtime dirs (`sessions/`, `tmp/`, `cache/`, `logs/`) are ignored.
-- Project `.hatfield/settings.yaml` is both local config and example. Keep it and `docs/settings.md` in sync for new keys.
-- Do not recreate `.hatfield.example/`.
+- Project `.hatfield/settings.yaml` is local config and example—keep in sync with `docs/settings.md` for new keys. Do not recreate `.hatfield.example/`.
 - Theme selection/search paths use Hatfield settings, not container parameters.
-- `session_id === run_id`. Session metadata lives in the `hatfield_session` DB table. Session directory: `.hatfield/sessions/<id>/` with canonical `events.jsonl` and `state.json`. Transcript projection is rebuilt from events.jsonl on resume. Metadata is queried from the DB; no `metadata.yaml` is written.
-- Directory name is canonical; embedded IDs are validated on read. See `docs/session-storage.md`.
+- `session_id === run_id`. Metadata in `hatfield_session` DB table. Session dir: `.hatfield/sessions/<id>/` with canonical `events.jsonl` and `state.json`. Transcript projection rebuilds from events on resume. No `metadata.yaml`. Directory name is canonical; embedded IDs validated on read. Details: `docs/session-storage.md`.
 
 ## Architecture boundaries
 
-| Layer | Location | Owns | Must not depend on |
+**Authoritative rules: `depfile.yaml` + `castor deptrac`.** The table below is a high-level map only; selected Deptrac-approved seams exist (e.g. TUI application/runtime may use Runtime Contract/Protocol, session, and limited App surfaces; App uses Symfony CLI/HttpKernel infrastructure). Do not invent stricter blanket bans than Deptrac enforces.
+
+| Area | Location | Owns | Core forbid |
 |---|---|---|---|
-| Core | `src/AgentCore/` | Domain, pipeline, contracts, in-memory/session stores | `CodingAgent`, `Tui`, HTTP/FrameworkBundle |
-| App | `src/CodingAgent/` | CLI app, runtime boundary, tools, extensions, wiring | HTTP/FrameworkBundle |
-| TUI | `src/Tui/` | Terminal UI, widgets, layout, theme, input | `AgentCore`, Messenger, HTTP/FrameworkBundle |
+| Core | `src/AgentCore/` | Domain, pipeline, contracts, stores | CodingAgent, Tui, Symfony TUI, HttpKernel/FrameworkBundle |
+| App | `src/CodingAgent/` | CLI, runtime boundary, tools, extensions, wiring | Web-serving HTTP stack |
+| Platform | `src/Platform/` | Provider bridges/results | Not separately layered; inspect depfile.yaml collectors |
+| TUI | `src/Tui/` | Terminal UI, widgets, layout, theme, input | Cross-layer leaks outside approved Deptrac edges |
+| Extension API | `.hatfield/extensions/extension-api/` | Public extension contracts | Hatfield internals (see below) |
 
-TUI talks to runtime only through `src/CodingAgent/Runtime/Contract`, `Protocol`, and `AgentSessionClient`. Enforce with `castor deptrac`.
+- TUI↔runtime boundary for product code: `src/CodingAgent/Runtime/Contract`, `Runtime/Protocol`, and `AgentSessionClient` (plus Deptrac-approved projection/session edges where listed).
+- HTTP-less product: no web serving surface.
 
-### Extension API boundary
+### Extension API
 
-- Public extension contracts live in Composer package `ineersa/hatfield-extension-api` at `.hatfield/extensions/extension-api/` with namespace `Ineersa\Hatfield\ExtensionApi`. Canonical development stays in this monorepo; release tags publish a read-only repository mirror (see `docs/distribution.md`).
-- `ExtensionApi` code is a public compatibility surface. It must not depend on Hatfield **internals**: CodingAgent implementation packages (loader/registry/runtime wiring beyond the public API), AgentCore, the in-repo TUI layer (`Ineersa\Tui\*`), Symfony DI, Symfony AI, settings, tool registry, runtime adapters, or PHAR packaging code.
-- **Generic TUI extension contracts** (`Ineersa\Hatfield\ExtensionApi\Tui\*`) intentionally depend on **Symfony TUI public widget types** (`Symfony\Component\Tui\Widget\AbstractWidget`, events, input) so project extensions can mount extension-owned overlays without Hatfield leaking feature-specific runtime ports. This is an approved public UI extension API — not an accidental boundary violation.
-- Extension-specific UX (for example file rewind) lives in `.hatfield/extensions/<name>/` and must not add feature-shaped types to `ExtensionApi` or `CodingAgent/Runtime/Contract`.
-- Extension loader/registry/runtime code may depend on `ExtensionApi`; `ExtensionApi` must never depend back on loader, registry, runtime, tools, settings, or packaging code.
-- Preserve the `Ineersa\Hatfield\ExtensionApi` namespace across package extraction so downstream extensions keep a stable public API.
-- Enforce with `castor deptrac`: `AppExtensionApi` may depend on `SymfonyTui` only; it must not depend on other project layers.
+- Package `ineersa/hatfield-extension-api` at `.hatfield/extensions/extension-api/`, namespace `Ineersa\Hatfield\ExtensionApi`. Canonical development in this monorepo; tag publish is a read-only mirror (`docs/distribution.md`).
+- Public compatibility surface: must not depend on CodingAgent internals, AgentCore, in-repo TUI (`Ineersa\Tui\*`), Symfony DI/AI, settings, tool registry, runtime adapters, or PHAR packaging.
+- Generic TUI contracts under `Ineersa\Hatfield\ExtensionApi\Tui\*` may depend on **Symfony TUI** public widgets/events/input only (`AppExtensionApi` → `SymfonyTui` in Deptrac)—approved public UI extension API.
+- Feature UX lives in `.hatfield/extensions/<name>/`; do not add feature-shaped types to ExtensionApi or Runtime Contract. Loader/registry may depend on ExtensionApi; never the reverse. Keep the `Ineersa\Hatfield\ExtensionApi` namespace stable.
 
 ## Runtime model
 
 - `AgentSessionClient` is the TUI/runtime boundary.
-- `Runtime/Contract` and `Runtime/Protocol` define commands/events DTOs.
-- `Runtime/InProcess` calls AgentCore services directly; `Runtime/Process` uses headless JSONL subprocess.
-- `src/CodingAgent/CLI/AgentCommand.php` wires TUI mode through `Ineersa\Tui\Application\InteractiveMode`.
-- Keep transient stream deltas separate from canonical replay events. Canonical replay source is `.hatfield/sessions/<id>/events.jsonl` through `EventStoreInterface`.
+- `Runtime/Contract` and `Runtime/Protocol` define command/event DTOs.
+- `Runtime/InProcess` calls AgentCore directly; `Runtime/Process` uses headless JSONL subprocess.
+- `src/CodingAgent/CLI/AgentCommand.php` wires TUI via `Ineersa\Tui\Application\InteractiveMode`.
+- Keep transient stream deltas separate from canonical replay. Canonical source: `.hatfield/sessions/<id>/events.jsonl` via `EventStoreInterface`.
 
 ## TUI architecture
 
-Single-column layout: header → transcript/history → pending messages → working/status → extension widgets → editor → footer.
+Single-column layout: header → transcript/history → pending → working/status → extension widgets → editor → footer.
 
-Key APIs: `TuiWidget`, `TuiSlotRegistry`, `TuiExtensionContext`, `SlotBasedTuiExtensionContext`, `FooterDataProvider`, `FooterSegmentProvider`, `FooterBarWidget`.
+Key types: `TuiWidget`, `TuiSlotRegistry`, `TuiExtensionContext`, `SlotBasedTuiExtensionContext`, `FooterDataProvider`, `FooterSegmentProvider`, `FooterBarWidget`.
 
-Hotkeys: `/hotkeys` renders a live catalog of keyboard shortcuts grouped by context (Global, Editor, Completion, History, Model). Registry is in `src/Tui/Command/Hotkey/` (display-only metadata — not input routing). Editor hotkeys reflect the active EditorWidget keybindings. There is no user-configurable YAML keybinding loader.
-
-Extensions use `TuiExtensionContext` slot methods (`setHeader`, `setFooter`, `setEditorComponent`, `setWidget`, `setStatus`, `setWorkingMessage`, `setWorkingVisible`, `onTerminalInput`) and must not mutate widgets directly.
-
-Themes use `ThemeColorEnum`, `ThemePalette`, `DefaultTheme`, `ThemeRegistry`, `ThemeLoader`, and YAML files in `config/themes/`. See `docs/tui-architecture.md`.
+Themes: `ThemeColorEnum`, `ThemePalette`, `DefaultTheme`, `ThemeRegistry`, YAML under `config/themes/` (no separate `ThemeLoader` class). Extensions use slot methods on `TuiExtensionContext` and must not mutate widgets directly. Hotkeys: `/hotkeys` catalog in `src/Tui/Command/Hotkey/` (display metadata, not input routing). Full design: `docs/tui-architecture.md`.
 
 ## Task workflow
 
-This project uses an **external task board** (outside the code repo) under `TODO/`, `IN-PROGRESS/`, `CODE-REVIEW/`, and `DONE/`.
-The task board lives at `/home/ineersa/projects/agent-core-tasks`, configured in `.pi/settings.json`→`taskWorkflow.taskRoot`.
+External task board (not the code repo): `/home/ineersa/projects/agent-core-tasks` under `TODO/`, `IN-PROGRESS/`, `CODE-REVIEW/`, `DONE/`, `ARCHIVE/`, `CANCELLED/` (`.pi/settings.json` → `taskWorkflow.taskRoot`).
 
-Slash commands `/tasks`, `/tasks-todo`, `/tasks-in-progress`, `/tasks-code-review`, `/tasks-done` list tasks in the TUI.
+Default `task_list` output lists TODO, IN-PROGRESS, CODE-REVIEW, and DONE only; CANCELLED and ARCHIVE are omitted by default — list them with `status=CANCELLED` or `include_archive=true`/`status=ARCHIVE`.
 
-**Task status/metadata moves do NOT commit to the agent-core code repository.**
-Task board changes affect the external task board files only. This prevents code-branch pollution from task bookkeeping.
+Task status/metadata moves do **not** commit to agent-core. Code branches, worktrees, PRs, merges do. Worktree creation updates parent IDEA module exclusions when present, creates minimal worktree-local `.idea` metadata from the integration primary module, and opens the exact worktree in JetBrains via MCP when available. DONE/CANCELLED cleanup closes that exact project before worktree removal.
 
-Code operations (branches, worktrees, PRs, merges) still run against this code repository.
-Worktree creation updates the parent worktree IDEA module exclusions (when present) instead of copying `.idea/` into individual worktrees.
+**Orchestrator model:** main agent plans and dispatches only—scouts explore, researchers look up, **forks implement all file changes**. Never edit files directly in the main agent; forks implement all file modifications (docs, config, tests, and code).
 
-### Orchestrator model
-
-The main agent is an **orchestrator**, not an implementor. **Never edit files directly** — use scouts for exploration, researchers for web lookup, and forks for ALL implementation. If you catch yourself about to open an editor — stop and launch a fork instead.
-
-### Workflow phases
-
-```
-task-explain → task-start → task-to-pr → task-done
- (discuss)     (implement)  (review+PR)  (merge)
-                  ↕
-            task-review-iterate
-              (address feedback)
-```
-
-**Load the `task-workflow` skill** when: starting any task phase (task-start, task-to-pr, task-review-iterate, task-done), or when preparing fork instructions and reviewer workflows.
-
-### Compaction resilience
-
-After compaction, the `task-workflow` skill documents next steps. Use `task_list` to inspect active tasks, and load this skill for exact phase procedures.
+Phases: `task-explain` → `task-start` → `task-to-pr` → `task-done` (with `task-review-iterate` as needed). Load the `task-workflow` skill (`.pi/skills/task-workflow/SKILL.md`) for every phase procedure, fork instructions, and compaction recovery. After compaction, use `task_list` plus that skill.
 
 ## Docs map
 
 - `docs/agents.md` — agent definitions, discovery, catalog, settings
-- `docs/settings.md` — Hatfield settings
-- `docs/compaction.md` — context compaction guide, `/compact` command, settings, events, hooks, validation
-- `docs/session-storage.md` — sessions, replay, locking, resume/fork design
+- `docs/settings.md` — Hatfield settings (see also settings-models, settings-agents)
+- `docs/compaction.md` — compaction, `/compact`, events, hooks
+- `docs/session-storage.md` — sessions, replay, locking, resume/fork
 - `docs/tui-architecture.md` — layout, widgets, slots, themes
 - `docs/tui-testing.md` — tmux testing, snapshots, keybindings
-- `docs/distribution.md` — release artifacts, installer, tag-only publish checklist
-- `docs/phar-packaging.md` — PHAR build, runtime, test, and troubleshooting
-- `docs/static-packaging.md` — native PHP-micro binaries, relaunch, topology, SPC pin
-- `docs/hitl-and-approvals.md` — HITL end-to-end flow, TUI question system, extension approvals, SafeGuard modes
-- `docs/datadog.md` — local Datadog setup, structured log fields, event names, spans, and observability privacy rules
+- `docs/distribution.md` — release artifacts, installer, publish
+- `docs/phar-packaging.md` — PHAR build/runtime/test
+- `docs/static-packaging.md` — native PHP-micro binaries
+- `docs/approvals.md / docs/human-input.md` — HITL, questions, extension approvals
+- `docs/datadog.md` — structured logs, privacy, local Datadog
+- `docs/llm-replay.md` — LLM fixture replay
 - `src/AgentCore/Domain/AGENTS.md` — domain/event docs
 - `src/AgentCore/Application/AGENTS.md` — command/handler topology
-- `.pi/plans/` — implementation plans
+- `.agents/skills/testing/SKILL.md` — QA/test command matrix and runbooks
+- `.pi/skills/task-workflow/SKILL.md` — task phase procedures
+- `tests/AGENTS.md` — shared test infrastructure and standards

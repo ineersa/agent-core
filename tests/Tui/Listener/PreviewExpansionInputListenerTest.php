@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Command\Hotkey\HotkeyRegistry;
 use Ineersa\Tui\Listener\AppHotkeyRegistrar;
 use Ineersa\Tui\Listener\PreviewExpansionInputListener;
@@ -251,13 +253,16 @@ line9';
                 text: '',
                 meta: [
                     'tool_name' => 'subagent',
-                    'subagent_progress' => [
+                    'subagent_progress' => SubagentProgressSerializerTestSupport::denormalizer()->denormalize([
                         'mode' => 'single',
                         'status' => 'completed',
                         'agent_name' => 'scout',
                         'artifact_id' => 'agent_done',
+                        'agent_run_id' => 'child-run-1',
                         'task_summary' => 'task',
-                    ],
+                        'model' => 'deepseek/deepseek-v4-flash',
+                        'reasoning' => 'medium',
+                    ], SubagentProgressSnapshotInterface::class),
                     'result' => $handoff,
                 ],
             ),
