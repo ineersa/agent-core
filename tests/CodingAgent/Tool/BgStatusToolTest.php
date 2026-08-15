@@ -18,7 +18,16 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BgStatusTool;
 use Ineersa\CodingAgent\Tool\OutputCap;
+use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
+use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
+use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
+use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
+use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
+use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
+use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\BgStatusTool
@@ -147,14 +156,20 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     public function testLogThrowsOnMissingPid(): void
     {
-        $this->expectException(\Throwable::class);
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'log')));
+        // pid is conditionally required by BgStatusArgumentsDTO When constraints;
+        // validation rejects before the handler runs.
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bg', 'bg_status', ['arguments' => ['action' => 'log']]));
+
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('The "pid" argument is required and must be a positive integer for the log action.', $message);
     }
 
     public function testLogThrowsOnUnknownPid(): void
     {
         $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('echo "test"', self::TEST_SESSION));
 
+        // Unknown pid is an execution failure (process lookup), not an input
+        // validation error — the handler must still run and fail deterministically.
         $this->expectException(\Throwable::class);
         $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'log', pid: 999999)));
     }
@@ -209,8 +224,12 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     public function testInvalidActionThrowsException(): void
     {
-        $this->expectException(\Throwable::class);
-        ($this->tool)(new BgStatusArgumentsDTO(action: 'invalid'));
+        // action is Choice-constrained on the DTO; validation rejects before
+        // the handler runs.
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bg', 'bg_status', ['arguments' => ['action' => 'invalid']]));
+
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('Invalid action ""invalid"". Use one of: list, log, stop.', $message);
     }
 
     /* ── Session scoping ── */
@@ -275,8 +294,37 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     public function testMissingActionThrowsException(): void
     {
-        $this->expectException(\Throwable::class);
-        ($this->tool)(new BgStatusArgumentsDTO());
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bg', 'bg_status', ['arguments' => []]));
+
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('The "action" argument is required and must be a non-empty string.', $message);
+    }
+
+    /**
+     * Production-shaped execution path for invalid-argument tests (registry →
+     * native resolver → ValidateToolCallArgumentsListener → FaultTolerantToolbox).
+     * BgStatusArgumentsDTO uses only built-in constraints, so the default
+     * listener validator applies.
+     */
+    private function validationToolbox(): FaultTolerantToolbox
+    {
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(ToolCallArgumentsResolved::class, new ValidateToolCallArgumentsListener());
+
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'bg_status',
+            description: 'bg_status',
+            handler: $this->tool,
+            promptLine: 'bg_status',
+        );
+
+        return new FaultTolerantToolbox(new RegistryBackedToolbox(
+            registry: $registry,
+            argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+            nativeToolFactory: NativeToolSchemaProbe::nativeToolFactory(),
+            eventDispatcher: $dispatcher,
+        ));
     }
 
     /* ── Helpers ── */

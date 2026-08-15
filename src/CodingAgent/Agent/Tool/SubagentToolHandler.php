@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Execution\SubagentArgumentsDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
-use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
 use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
@@ -36,7 +35,6 @@ final class SubagentToolHandler
     private const string EXECUTION_SERVICE_LOCATOR_KEY = 'execution';
 
     public function __construct(
-        private readonly AgentsConfig $agentsConfig,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ToolRuntime $toolRuntime,
         /** @var ContainerInterface SubagentExecutionService is resolved only on invoke. */
@@ -60,13 +58,10 @@ final class SubagentToolHandler
             $parsed = $arguments;
 
             if ($parsed->isParallelMode()) {
-                $tasks = $parsed->parallelTasks();
-                $maxAgents = $this->agentsConfig->maxAgents;
-                if (\count($tasks) > $maxAgents) {
-                    throw new ToolCallException(\sprintf('Parallel subagent execution supports at most %d agents per tool call, but %d tasks were requested.', $maxAgents, \count($tasks)), retryable: false, hint: \sprintf('Split the work into multiple subagent calls with at most %d tasks each.', $maxAgents));
-                }
-
-                return $this->executionService()->executeParallel($parentRunId, $tasks);
+                // The per-call task-count limit (agents.max_agents) is enforced
+                // by SubagentTasksLimit on SubagentArgumentsDTO; execution only
+                // sees validated arguments.
+                return $this->executionService()->executeParallel($parentRunId, $parsed->parallelTasks());
             }
 
             return $this->executionService()->execute(

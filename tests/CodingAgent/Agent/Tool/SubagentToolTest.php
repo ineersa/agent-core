@@ -4,16 +4,28 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Tool;
 
-use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\SubagentArgumentsDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 use Ineersa\CodingAgent\Agent\Tool\SubagentToolDefinitionProvider;
 use Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler;
+use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
+use Ineersa\CodingAgent\Tool\Constraints\SubagentTasksLimitValidator;
+use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
+use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
+use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\Attributes\CoversClass;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
+use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
+use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
+use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
+use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Validator\ConstraintValidatorFactory;
+use Symfony\Component\Validator\ValidatorBuilder;
 
 #[CoversClass(SubagentToolDefinitionProvider::class)]
 #[CoversClass(SubagentToolHandler::class)]
@@ -26,8 +38,8 @@ final class SubagentToolTest extends IsolatedKernelTestCase
 
         $this->assertSame('subagent', $def->name);
         // Typed DTO tool: schema is generated natively from SubagentArgumentsDTO.
-        // The settings-derived tasks maxItems bound is a runtime check in
-        // SubagentToolHandler (see TODO in SubagentArgumentsDTO).
+        // The settings-derived tasks maxItems bound comes from
+        // SubagentTasksSchemaProvider (agents.max_agents).
         $this->assertNull($def->parametersJsonSchema);
         $this->assertStringContainsString('4', $def->description);
     }
@@ -68,21 +80,47 @@ final class SubagentToolTest extends IsolatedKernelTestCase
 
     public function testInvokeWithContextRejectsTooManyParallelTasks(): void
     {
-        $handler = self::getContainer()->get(SubagentToolHandler::class);
-        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
-        $context = $this->toolContext('tc-cap');
+        // The parallel task-count limit (agents.max_agents) is enforced by
+        // SubagentTasksLimit on SubagentArgumentsDTO. Execute through the
+        // production RegistryBackedToolbox path and assert the deterministic
+        // fault result — the handler (and its execution service) never runs.
+        $container = self::getContainer();
+        $handler = $container->get(SubagentToolHandler::class);
+
+        $validator = (new ValidatorBuilder())
+            ->enableAttributeMapping()
+            ->setConstraintValidatorFactory(new ConstraintValidatorFactory([
+                SubagentTasksLimitValidator::class => new SubagentTasksLimitValidator(new AgentsConfig(maxAgents: 4)),
+            ]))
+            ->getValidator();
+
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(ToolCallArgumentsResolved::class, new ValidateToolCallArgumentsListener($validator));
+
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'subagent',
+            description: 'subagent',
+            handler: $handler,
+            promptLine: 'subagent',
+        );
+
+        $toolbox = new FaultTolerantToolbox(new RegistryBackedToolbox(
+            registry: $registry,
+            argumentResolver: new RawAwareToolCallArgumentResolver($container->get(ToolCallArgumentResolverInterface::class)),
+            nativeToolFactory: NativeToolSchemaProbe::nativeToolFactory(),
+            eventDispatcher: $dispatcher,
+        ));
 
         $tasks = [];
         for ($i = 0; $i < 9; ++$i) {
-            $tasks[] = new SubagentTaskDTO(agent: 'scout', task: 't'.$i);
+            $tasks[] = ['agent' => 'scout', 'task' => 't'.$i];
         }
 
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('at most 4 agents');
+        $result = $toolbox->execute(new ToolCall('tc-cap', 'subagent', ['arguments' => ['tasks' => $tasks]]));
 
-        $accessor->with($context, static function () use ($handler, $tasks): void {
-            $handler->__invoke(new SubagentArgumentsDTO(tasks: $tasks));
-        });
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('Parallel subagent execution supports at most 4 agents per tool call, but 9 tasks were requested.', $message);
     }
 
     public function testProviderIsAutoRegistered(): void

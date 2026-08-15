@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\Component\Validator\Constraints as Assert;
-use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
  * Validated tool arguments for {@see AgentArtifactRetrievalService}.
@@ -18,9 +17,21 @@ final class AgentRetrieveArgumentsDTO
     public function __construct(
         #[Schema(description: 'Child artifact id (e.g. agent_abc123) within the current parent session.')]
         #[Assert\Length(min: 1)]
+        #[Assert\When(
+            expression: 'this.agentRunId === null',
+            constraints: [
+                new Assert\NotBlank(normalizer: 'trim', message: 'Provide at least one identifier: artifact_id or agent_run_id.'),
+            ],
+        )]
         public readonly ?string $artifactId = null,
         #[Schema(description: 'Child AgentCore run id (UUID) for the subagent run.')]
         #[Assert\Length(min: 1)]
+        #[Assert\When(
+            expression: 'this.artifactId === null',
+            constraints: [
+                new Assert\NotBlank(normalizer: 'trim', message: 'Provide at least one identifier: artifact_id or agent_run_id.'),
+            ],
+        )]
         public readonly ?string $agentRunId = null,
         #[Schema(description: 'Output mode. Default handoff.')]
         #[Assert\Choice(choices: ['handoff', 'metadata', 'events', 'history', 'debug'], message: 'Invalid mode "{{ value }}". Supported modes: handoff, metadata, events, history, debug.')]
@@ -79,14 +90,5 @@ final class AgentRetrieveArgumentsDTO
         }
 
         return $this->limit;
-    }
-
-    #[Assert\Callback]
-    public function validateIdentifiers(ExecutionContextInterface $context): void
-    {
-        if (null === $this->trimmedArtifactId() && null === $this->trimmedAgentRunId()) {
-            $context->buildViolation('Provide at least one identifier: artifact_id or agent_run_id.')
-                ->addViolation();
-        }
     }
 }

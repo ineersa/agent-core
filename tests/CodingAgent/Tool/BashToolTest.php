@@ -7,23 +7,34 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BashBackgroundPromptAdapterInterface;
 use Ineersa\CodingAgent\Tool\BashTool;
+use Ineersa\CodingAgent\Tool\Constraints\BashTimeoutMaxValidator;
 use Ineersa\CodingAgent\Tool\OutputCap;
+use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
+use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
+use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
+use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
+use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
+use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Validator\ConstraintValidatorFactory;
+use Symfony\Component\Validator\ValidatorBuilder;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\BashTool
@@ -243,39 +254,49 @@ final class BashToolTest extends IsolatedKernelTestCase
         }
     }
 
-    /* ── Argument validation ── */
+    /* ── Argument validation (through native toolbox + validator listener) ──
+     *
+     * Invalid arguments are rejected by Symfony AI resolution/validation
+     * before the handler runs: these tests execute through the production
+     * RegistryBackedToolbox path (rewrites → resolver →
+     * ValidateToolCallArgumentsListener → FaultTolerantToolbox) and assert
+     * zero handler side effects (no background process started).
+     */
 
-    public function testMissingCommandThrows(): void
+    public function testMissingCommandBecomesFaultTolerantResult(): void
     {
         $this->createManager();
 
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('command');
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bash', 'bash', ['arguments' => []]));
 
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO()));
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('The "command" argument is required and must be a non-empty string.', $message);
+        $this->assertSame([], $this->manager->list(self::TEST_SESSION), 'Handler must not run for invalid arguments.');
     }
 
-    public function testEmptyCommandThrows(): void
+    public function testEmptyCommandBecomesFaultTolerantResult(): void
     {
         $this->createManager();
 
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('command');
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bash', 'bash', ['arguments' => ['command' => '']]));
 
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO(command: '')));
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('The "command" argument is required and must be a non-empty string.', $message);
+        $this->assertSame([], $this->manager->list(self::TEST_SESSION), 'Handler must not run for invalid arguments.');
     }
 
-    public function testInvalidTimeoutThrows(): void
+    public function testInvalidTimeoutBecomesFaultTolerantResult(): void
     {
         $this->createManager();
 
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('timeout');
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bash', 'bash', ['arguments' => ['command' => 'echo hi', 'timeout' => -5]]));
 
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo hi', timeout: -5)));
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('The "timeout" argument must be a positive integer.', $message);
+        $this->assertSame([], $this->manager->list(self::TEST_SESSION), 'Handler must not run for invalid arguments.');
     }
 
-    public function testTimeoutExceedsMaximumThrows(): void
+    public function testTimeoutExceedsConfiguredMaximumBecomesFaultTolerantResult(): void
     {
         $this->createManager();
         $this->bashConfig = new BashToolConfig(
@@ -286,10 +307,11 @@ final class BashToolTest extends IsolatedKernelTestCase
             logTailChars: 20000,
         );
 
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('must not exceed 30 seconds');
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bash', 'bash', ['arguments' => ['command' => 'echo hi', 'timeout' => 9999]]));
 
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo hi', timeout: 9999)));
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('Timeout must not exceed 30 seconds (9999 provided).', $message);
+        $this->assertSame([], $this->manager->list(self::TEST_SESSION), 'Handler must not run for invalid arguments.');
     }
 
     public function testTimeoutAtMaximumAccepted(): void
@@ -659,11 +681,16 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertSame('bash', $def->name);
         $this->assertSame($tool, $def->handler);
         $this->assertSame(ToolExecutionMode::Parallel, $def->executionMode);
+        // Typed DTO tool: schema is generated natively from BashArgumentsDTO.
+        $this->assertNull($def->parametersJsonSchema);
+
+        $schema = NativeToolSchemaProbe::for($tool);
+        $args = $schema['properties']['arguments'];
 
         // Schema must have 'command' required
-        $this->assertContains('command', $def->parametersJsonSchema['required'] ?? []);
+        $this->assertContains('command', $args['required']);
         // Schema must NOT have 'run_in_background'
-        $this->assertArrayNotHasKey('run_in_background', $def->parametersJsonSchema['properties'] ?? []);
+        $this->assertArrayNotHasKey('run_in_background', $args['properties']);
 
         // Prompt line must NOT advertise a run_in_background parameter
         $this->assertStringNotContainsStringIgnoringCase('run_in_background', $def->promptLine);
@@ -858,6 +885,40 @@ final class BashToolTest extends IsolatedKernelTestCase
             config: $this->bashConfig,
             promptAdapter: $promptAdapter ?? new BashToolDeclineAdapter(),
         );
+    }
+
+    /**
+     * Production-shaped execution path for invalid-argument tests: registry →
+     * native resolver → ValidateToolCallArgumentsListener (with the same
+     * BashToolConfig the handler uses, so BashTimeoutMax matches) →
+     * FaultTolerantToolbox.
+     */
+    private function validationToolbox(): FaultTolerantToolbox
+    {
+        $validator = (new ValidatorBuilder())
+            ->enableAttributeMapping()
+            ->setConstraintValidatorFactory(new ConstraintValidatorFactory([
+                BashTimeoutMaxValidator::class => new BashTimeoutMaxValidator($this->bashConfig),
+            ]))
+            ->getValidator();
+
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(ToolCallArgumentsResolved::class, new ValidateToolCallArgumentsListener($validator));
+
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'bash',
+            description: 'bash',
+            handler: $this->makeBashTool(),
+            promptLine: 'bash',
+        );
+
+        return new FaultTolerantToolbox(new RegistryBackedToolbox(
+            registry: $registry,
+            argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+            nativeToolFactory: NativeToolSchemaProbe::nativeToolFactory(),
+            eventDispatcher: $dispatcher,
+        ));
     }
 
     private function withContext(

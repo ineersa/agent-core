@@ -50,10 +50,12 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface
     public function __invoke(HatfieldDocsArgumentsDTO $arguments): string
     {
         return $this->toolRuntime->run(function () use ($arguments): string {
+            // operation is Choice-constrained on the DTO; id is required for
+            // read via a When constraint, so no default branch is needed.
             return match ($arguments->operation) {
                 'list' => Toon::encode($this->listDocuments()),
                 'read' => $this->readDocument($arguments),
-                default => throw new ToolCallException('The "operation" argument must be one of: list, read.', retryable: false),
+                default => throw new \LogicException('Unreachable: operation is Choice-constrained on HatfieldDocsArgumentsDTO and rejected before invocation.'),
             };
         });
     }
@@ -91,6 +93,7 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface
 
     private function readDocument(HatfieldDocsArgumentsDTO $arguments): string
     {
+        /** @var string $id DTO When constraint requires a non-blank id for read. */
         $id = (string) $arguments->id;
 
         $catalog = $this->catalog();

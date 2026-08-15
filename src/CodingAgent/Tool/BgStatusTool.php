@@ -59,13 +59,14 @@ final class BgStatusTool implements HatfieldToolProviderInterface
      */
     public function __invoke(BgStatusArgumentsDTO $arguments): string
     {
-        $action = strtolower($arguments->action);
-
-        return match ($action) {
+        // action is Choice-constrained and pid is conditionally required on
+        // the DTO; the native ValidateToolCallArgumentsListener guarantees
+        // both before the handler runs.
+        return match ($arguments->action) {
             'list' => $this->handleList(),
             'log' => $this->handleLog($arguments),
             'stop' => $this->handleStop($arguments),
-            default => throw new ToolCallException(\sprintf('Invalid action "%s".', $action), retryable: false, hint: 'Use one of: list, log, stop.'),
+            default => throw new \LogicException('Unreachable: action is Choice-constrained on BgStatusArgumentsDTO and rejected before invocation.'),
         };
     }
 
@@ -138,10 +139,8 @@ final class BgStatusTool implements HatfieldToolProviderInterface
      */
     private function handleLog(BgStatusArgumentsDTO $arguments): string
     {
+        /** @var int $pid DTO When constraints require a positive pid for the log action. */
         $pid = $arguments->pid;
-        if (null === $pid || $pid <= 0) {
-            throw new ToolCallException('The "pid" argument is required and must be a positive integer for the log action.', retryable: false, hint: 'Provide the PID from bg_status list output.');
-        }
 
         try {
             $sessionId = $this->contextAccessor->current()?->runId();
@@ -177,10 +176,8 @@ final class BgStatusTool implements HatfieldToolProviderInterface
      */
     private function handleStop(BgStatusArgumentsDTO $arguments): string
     {
+        /** @var int $pid DTO When constraints require a positive pid for the stop action. */
         $pid = $arguments->pid;
-        if (null === $pid || $pid <= 0) {
-            throw new ToolCallException('The "pid" argument is required and must be a positive integer for the stop action.', retryable: false, hint: 'Provide the PID from bg_status list output.');
-        }
 
         try {
             $sessionId = $this->contextAccessor->current()?->runId();

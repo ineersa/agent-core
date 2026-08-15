@@ -44,14 +44,8 @@ final class ForkToolHandler
             }
 
             $model = null === $arguments->model ? null : trim($arguments->model);
-            if (null !== $model && '' === $model) {
-                $model = null;
-            }
 
             $thinking = null === $arguments->thinking ? null : trim($arguments->thinking);
-            if (null !== $thinking && '' === $thinking) {
-                $thinking = null;
-            }
 
             return $this->executionService()->execute(
                 parentRunId: $parentRunId,

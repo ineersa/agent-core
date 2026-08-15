@@ -10,7 +10,8 @@ use Symfony\Component\Validator\Constraints as Assert;
 /**
  * Validated arguments for the bg_status tool.
  *
- * pid required-for log/stop remains a runtime check (conditional on action).
+ * pid is required (and positive) for the log and stop actions only — the
+ * When constraints below encode that conditional; `list` ignores pid.
  */
 final class BgStatusArgumentsDTO
 {
@@ -21,6 +22,18 @@ final class BgStatusArgumentsDTO
         public readonly string $action = '',
         #[Schema(description: 'Process PID (required for log and stop actions)')]
         #[Assert\Positive(message: 'The "pid" argument must be a positive integer.')]
+        #[Assert\When(
+            expression: 'this.action === "log"',
+            constraints: [
+                new Assert\NotNull(message: 'The "pid" argument is required and must be a positive integer for the log action.'),
+            ],
+        )]
+        #[Assert\When(
+            expression: 'this.action === "stop"',
+            constraints: [
+                new Assert\NotNull(message: 'The "pid" argument is required and must be a positive integer for the stop action.'),
+            ],
+        )]
         public readonly ?int $pid = null,
     ) {
     }

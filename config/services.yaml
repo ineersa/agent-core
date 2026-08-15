@@ -846,10 +846,64 @@ services:
     tags:
       - { name: kernel.event_listener, event: Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved }
 
+  # ─── Tool schema providers & native JsonSchema chain ───
+  #
+  # DTO properties whose provider-visible schema depends on runtime settings
+  # (bash timeout max, subagent parallel limit) contribute a fragment through
+  # Symfony AI SchemaProviderInterface (#[Schema(provider: ...)]). The native
+  # Describer default chain would instantiate SchemaAttributeDescriber without
+  # providers, so the chain is rebuilt explicitly with the provider-aware
+  # describer and fed into the ReflectionToolFactory used by
+  # RegistryBackedToolbox. Providers are autowired with the same config
+  # instances their matching runtime constraints consume, so the schema bounds
+  # and validation limits cannot drift.
+  Symfony\AI\Platform\Contract\JsonSchema\Describer\SchemaAttributeDescriber:
+    arguments:
+      $providers:
+        Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider: '@Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider'
+        Ineersa\CodingAgent\Tool\Schema\SubagentTasksSchemaProvider: '@Ineersa\CodingAgent\Tool\Schema\SubagentTasksSchemaProvider'
+
+  # Same default chain as Describer(null) plus the provider-aware describer.
+  # The chain members are vendor classes outside the autowire resource, so
+  # they get explicit no-arg services (identical to their PHP defaults).
+  Symfony\AI\Platform\Contract\JsonSchema\Describer\SerializerDescriber:
+    autowire: false
+
+  Symfony\AI\Platform\Contract\JsonSchema\Describer\TypeInfoDescriber:
+    autowire: false
+
+  Symfony\AI\Platform\Contract\JsonSchema\Describer\MethodDescriber:
+    autowire: false
+
+  Symfony\AI\Platform\Contract\JsonSchema\Describer\PropertyInfoDescriber:
+    autowire: false
+
+  Symfony\AI\Platform\Contract\JsonSchema\Describer\ValidatorConstraintsDescriber:
+    autowire: false
+
+  Symfony\AI\Platform\Contract\JsonSchema\Describer\Describer:
+    arguments:
+      $describers:
+        - '@Symfony\AI\Platform\Contract\JsonSchema\Describer\SerializerDescriber'
+        - '@Symfony\AI\Platform\Contract\JsonSchema\Describer\TypeInfoDescriber'
+        - '@Symfony\AI\Platform\Contract\JsonSchema\Describer\MethodDescriber'
+        - '@Symfony\AI\Platform\Contract\JsonSchema\Describer\PropertyInfoDescriber'
+        - '@Symfony\AI\Platform\Contract\JsonSchema\Describer\ValidatorConstraintsDescriber'
+        - '@Symfony\AI\Platform\Contract\JsonSchema\Describer\SchemaAttributeDescriber'
+
+  Symfony\AI\Platform\Contract\JsonSchema\Factory:
+    arguments:
+      $objectDescriber: '@Symfony\AI\Platform\Contract\JsonSchema\Describer\Describer'
+
+  Symfony\AI\Agent\Toolbox\ToolFactory\ReflectionToolFactory:
+    arguments:
+      $factory: '@Symfony\AI\Platform\Contract\JsonSchema\Factory'
+
   Ineersa\CodingAgent\Tool\RegistryBackedToolbox:
     arguments:
       $registry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
       $argumentResolver: '@Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface'
+      $nativeToolFactory: '@Symfony\AI\Agent\Toolbox\ToolFactory\ReflectionToolFactory'
       $eventDispatcher: '@event_dispatcher'
       $rewriteHookProvider: '@Ineersa\CodingAgent\Extension\ExtensionHookRegistry'
       $contextAccessor: '@Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor'
