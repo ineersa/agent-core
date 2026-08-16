@@ -18,10 +18,6 @@ use Psr\Log\LoggerInterface;
  */
 final class RuntimeEventCallbacksTest extends TestCase
 {
-    protected function setUp(): void
-    {
-    }
-
     public function testDispatchRunsMatchingCallbacksInOrderAndSkipsOthers(): void
     {
         $order = [];

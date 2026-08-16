@@ -69,15 +69,7 @@ final class SubagentLiveChildViewPoller
         $scratch->activity = $live->childActivity;
         $scratch->queuedUserMessages = $live->childQueuedUserMessages;
 
-        $callbacks = new RuntimeEventCallbacks(
-            $this->logger,
-            'SubagentLiveChildViewPoller event callback failed',
-            'tui.subagent_live_child_poller',
-            'subagent_live_child_poller.callback_failed',
-            $onHumanInputRequested,
-            $onToolQuestionRequested,
-            $onToolTerminal,
-        );
+        $callbacks = $this->makeCallbacks($onHumanInputRequested, $onToolQuestionRequested, $onToolTerminal);
 
         foreach ($snapshot->replayEvents as $event) {
             $this->eventApplier->apply($scratch, $event, replayMode: true);
@@ -131,15 +123,7 @@ final class SubagentLiveChildViewPoller
         $scratch->activity = $live->childActivity;
         $scratch->queuedUserMessages = $live->childQueuedUserMessages;
 
-        $callbacks = new RuntimeEventCallbacks(
-            $this->logger,
-            'SubagentLiveChildViewPoller event callback failed',
-            'tui.subagent_live_child_poller',
-            'subagent_live_child_poller.callback_failed',
-            $onHumanInputRequested,
-            $onToolQuestionRequested,
-            $onToolTerminal,
-        );
+        $callbacks = $this->makeCallbacks($onHumanInputRequested, $onToolQuestionRequested, $onToolTerminal);
 
         foreach ($events as $event) {
             $seq = $event->seq;
@@ -170,5 +154,26 @@ final class SubagentLiveChildViewPoller
         $live->persistCurrentChildCache();
 
         return $live->childTranscript;
+    }
+
+    /**
+     * @param ?callable(RuntimeEvent): void $onHumanInputRequested
+     * @param ?callable(RuntimeEvent): void $onToolQuestionRequested
+     * @param ?callable(RuntimeEvent): void $onToolTerminal
+     */
+    private function makeCallbacks(
+        ?callable $onHumanInputRequested,
+        ?callable $onToolQuestionRequested,
+        ?callable $onToolTerminal,
+    ): RuntimeEventCallbacks {
+        return new RuntimeEventCallbacks(
+            $this->logger,
+            'SubagentLiveChildViewPoller event callback failed',
+            'tui.subagent_live_child_poller',
+            'subagent_live_child_poller.callback_failed',
+            $onHumanInputRequested,
+            $onToolQuestionRequested,
+            $onToolTerminal,
+        );
     }
 }

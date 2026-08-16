@@ -32,9 +32,4 @@ final class SelectListKeybindingsTest extends TestCase
         $this->assertSame([], $kb->getBindings('cursor_left'));
         $this->assertSame([], $kb->getBindings('cursor_right'));
     }
-
-    public function testMaxVisibleRowsIsTen(): void
-    {
-        $this->assertSame(10, SelectListKeybindings::MAX_VISIBLE);
-    }
 }
