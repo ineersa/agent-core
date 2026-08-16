@@ -80,11 +80,14 @@ final readonly class RunMessageProcessor
 
                 $handler = $this->resolveHandler($message);
 
-                // Set handler context for inner logs. The component is declared
-                // on the handler itself so Core never names App handler classes.
+                // Set handler context for inner logs. The component comes from
+                // the handler's optional log-component capability so Core never
+                // names App handler classes.
                 RunLogContext::enter([
                     'handler' => $handler::class,
-                    'component' => $handler::LOG_COMPONENT,
+                    'component' => $handler instanceof RunMessageHandlerLogComponentInterface
+                        ? $handler->getLogComponent()
+                        : 'runtime',
                 ]);
 
                 try {

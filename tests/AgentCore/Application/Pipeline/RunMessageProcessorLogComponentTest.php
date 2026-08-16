@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageHandlerLogComponentInterface;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface;
@@ -39,8 +40,8 @@ use Symfony\Component\Lock\Store\InMemoryStore;
 
 /**
  * Regression: structured-log component attribution must come from the handler
- * itself ({@see RunMessageHandler::LOG_COMPONENT}), never from Core matching
- * CodingAgent class names.
+ * itself ({@see RunMessageHandlerLogComponentInterface}), never from Core
+ * matching CodingAgent class names.
  *
  * Exercises the compiled production registration path: the handler instances
  * come from the container's tagged RunMessageHandler iterator, and attribution
@@ -140,10 +141,26 @@ final class RunMessageProcessorLogComponentTest extends IsolatedKernelTestCase
         $this->assertSame(AdvanceRun::class, $context['message_type']);
     }
 
-    public function testLaneHandlersDeclareTheirDedicatedComponents(): void
+    public function testLaneHandlersExposeDedicatedComponentsThroughProductionRegistration(): void
     {
-        $this->assertSame('llm', LlmStepResultHandler::LOG_COMPONENT);
-        $this->assertSame('tool', ToolCallResultHandler::LOG_COMPONENT);
+        $llm = $this->findHandler(LlmStepResultHandler::class);
+        $tool = $this->findHandler(ToolCallResultHandler::class);
+
+        $this->assertInstanceOf(RunMessageHandlerLogComponentInterface::class, $llm);
+        $this->assertSame('llm', $llm->getLogComponent());
+        $this->assertInstanceOf(RunMessageHandlerLogComponentInterface::class, $tool);
+        $this->assertSame('tool', $tool->getLogComponent());
+    }
+
+    private function findHandler(string $class): RunMessageHandler
+    {
+        foreach ($this->productionHandlers() as $handler) {
+            if ($handler::class === $class) {
+                return $handler;
+            }
+        }
+
+        throw new \LogicException(\sprintf('Production RunMessageHandler registration does not contain %s.', $class));
     }
 
     /**

@@ -33,10 +33,8 @@ use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
-final class LlmStepResultHandler implements RunMessageHandler
+final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandlerLogComponentInterface
 {
-    public const string LOG_COMPONENT = 'llm';
-
     public function __construct(
         private ToolBatchCollector $toolBatchCollector,
         private CommandMailboxPolicy $commandMailboxPolicy,
@@ -57,6 +55,11 @@ final class LlmStepResultHandler implements RunMessageHandler
         private int $agentRetryMaxDelayMs = 60000,
         private int $maxParallelism = 1,
     ) {
+    }
+
+    public function getLogComponent(): string
+    {
+        return 'llm';
     }
 
     public function supports(object $message): bool
