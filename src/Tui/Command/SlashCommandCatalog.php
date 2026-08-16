@@ -140,24 +140,6 @@ final class SlashCommandCatalog
     }
 
     /**
-     * Get all metadata as a map of canonical name → metadata.
-     *
-     * @return array<string, CommandMetadata>
-     */
-    public function allMetadataMap(): array
-    {
-        return $this->metadata;
-    }
-
-    /**
-     * Get the number of registered commands.
-     */
-    public function count(): int
-    {
-        return \count($this->metadata);
-    }
-
-    /**
      * Resolve a name or alias to its canonical command name.
      *
      * @return string|null the canonical name, or null if not found

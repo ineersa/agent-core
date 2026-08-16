@@ -154,36 +154,6 @@ final class SlashCommandCatalogTest extends TestCase
         $this->assertSame(['alpha', 'clear', 'exit', 'help', 'hotkeys', 'zebra'], $names);
     }
 
-    #[Test]
-    public function allMetadataMapReturnsNameToMetadataMap(): void
-    {
-        $this->catalog->register(
-            new CommandMetadata(name: 'custom'),
-            $this->createMockHandler(),
-        );
-
-        $map = $this->catalog->allMetadataMap();
-
-        $this->assertArrayHasKey('help', $map);
-        $this->assertArrayHasKey('clear', $map);
-        $this->assertArrayHasKey('exit', $map);
-        $this->assertArrayHasKey('hotkeys', $map);
-        $this->assertArrayHasKey('custom', $map);
-    }
-
-    #[Test]
-    public function countReflectsRegisteredCommands(): void
-    {
-        $this->assertSame(4, $this->catalog->count()); // help, clear, exit, hotkeys
-
-        $this->catalog->register(
-            new CommandMetadata(name: 'extra'),
-            $this->createMockHandler(),
-        );
-
-        $this->assertSame(5, $this->catalog->count());
-    }
-
     // ─── Built-in command metadata ───────────────────────────────────
 
     #[Test]

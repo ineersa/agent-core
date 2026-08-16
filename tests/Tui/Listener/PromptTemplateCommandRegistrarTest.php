@@ -171,13 +171,13 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
     {
         $this->catalog->method('allPromptTemplateCommands')->willReturn([]);
 
-        $initialCount = $this->commandCatalog->count();
+        $initialCount = \count($this->commandCatalog->allMetadata());
 
         $registrar = new PromptTemplateCommandRegistrar($this->catalog);
         $registrar->registerCatalog($this->commandCatalog);
 
         // Only built-in commands should exist
-        $this->assertSame($initialCount, $this->commandCatalog->count());
+        $this->assertSame($initialCount, \count($this->commandCatalog->allMetadata()));
     }
 
     #[Test]
