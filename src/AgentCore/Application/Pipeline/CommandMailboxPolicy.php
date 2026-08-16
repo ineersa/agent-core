@@ -101,30 +101,14 @@ final readonly class CommandMailboxPolicy
             if (\in_array($pendingCommand->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {
                 $messagePayload = $pendingCommand->payload['message'] ?? null;
                 if (!\is_array($messagePayload)) {
-                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid command payload: missing message envelope.');
-                    $eventSpecs[] = [
-                        'type' => RunEventTypeEnum::AgentCommandRejected->value,
-                        'payload' => [
-                            'kind' => $pendingCommand->kind,
-                            'idempotency_key' => $pendingCommand->idempotencyKey,
-                            'reason' => 'Invalid command payload: missing message envelope.',
-                        ],
-                    ];
+                    $eventSpecs[] = $this->rejectCommand($state, $pendingCommand, 'Invalid command payload: missing message envelope.');
 
                     continue;
                 }
 
                 $hydratedMessage = AgentMessage::fromPayload($messagePayload);
                 if (null === $hydratedMessage) {
-                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid command payload: malformed message envelope.');
-                    $eventSpecs[] = [
-                        'type' => RunEventTypeEnum::AgentCommandRejected->value,
-                        'payload' => [
-                            'kind' => $pendingCommand->kind,
-                            'idempotency_key' => $pendingCommand->idempotencyKey,
-                            'reason' => 'Invalid command payload: malformed message envelope.',
-                        ],
-                    ];
+                    $eventSpecs[] = $this->rejectCommand($state, $pendingCommand, 'Invalid command payload: malformed message envelope.');
 
                     continue;
                 }
@@ -209,22 +193,35 @@ final readonly class CommandMailboxPolicy
     }
 
     /**
+     * Reject a pending command in the store and produce its rejection event spec.
+     *
+     * markRejected runs before the event is built so a failed store write
+     * aborts before any rejection event is emitted.
+     *
+     * @return array{type: string, payload: array<string, mixed>}
+     */
+    private function rejectCommand(RunState $state, PendingCommand $command, string $reason): array
+    {
+        $this->commandStore->markRejected($state->runId, $command->idempotencyKey, $reason);
+
+        return [
+            'type' => RunEventTypeEnum::AgentCommandRejected->value,
+            'payload' => [
+                'kind' => $command->kind,
+                'idempotency_key' => $command->idempotencyKey,
+                'reason' => $reason,
+            ],
+        ];
+    }
+
+    /**
      * @return list<array{type: string, payload: array<string, mixed>}>
      */
     private function applyExtensionCommand(RunState $state, PendingCommand $command): array
     {
         $handler = $this->commandRouter->handlerFor($command->kind);
         if (null === $handler) {
-            $this->commandStore->markRejected($state->runId, $command->idempotencyKey, 'No extension command handler registered.');
-
-            return [[
-                'type' => RunEventTypeEnum::AgentCommandRejected->value,
-                'payload' => [
-                    'kind' => $command->kind,
-                    'idempotency_key' => $command->idempotencyKey,
-                    'reason' => 'No extension command handler registered.',
-                ],
-            ]];
+            return [$this->rejectCommand($state, $command, 'No extension command handler registered.')];
         }
 
         $cancellation = $command->options;
@@ -237,16 +234,7 @@ final readonly class CommandMailboxPolicy
                 $cancellation,
             );
         } catch (\Throwable $throwable) {
-            $this->commandStore->markRejected($state->runId, $command->idempotencyKey, $throwable->getMessage());
-
-            return [[
-                'type' => RunEventTypeEnum::AgentCommandRejected->value,
-                'payload' => [
-                    'kind' => $command->kind,
-                    'idempotency_key' => $command->idempotencyKey,
-                    'reason' => $throwable->getMessage(),
-                ],
-            ]];
+            return [$this->rejectCommand($state, $command, $throwable->getMessage())];
         }
 
         $this->commandStore->markApplied($state->runId, $command->idempotencyKey);

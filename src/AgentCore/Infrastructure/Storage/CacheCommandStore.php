@@ -148,26 +148,28 @@ final class CacheCommandStore implements CommandStoreInterface
 
     public function markApplied(string $runId, string $idempotencyKey): void
     {
-        $lock = $this->lockFactory->createLock(self::LOCK_KEY_PREFIX.$runId);
-        $lock->acquire(true);
-
-        try {
-            $data = $this->load($runId);
-            $data['statuses'][$idempotencyKey] = 'applied';
-            $this->save($runId, $data);
-        } finally {
-            $lock->release();
-        }
+        $this->markStatus($runId, $idempotencyKey, 'applied');
     }
 
     public function markRejected(string $runId, string $idempotencyKey, string $reason): void
+    {
+        $this->markStatus($runId, $idempotencyKey, 'rejected: '.$reason);
+    }
+
+    /**
+     * Cross-process-safe status mutation under the per-run lock.
+     *
+     * Loads the current run data, sets one status, and persists. The lock is
+     * released via finally so a failed save cannot leak the run lock.
+     */
+    private function markStatus(string $runId, string $idempotencyKey, string $status): void
     {
         $lock = $this->lockFactory->createLock(self::LOCK_KEY_PREFIX.$runId);
         $lock->acquire(true);
 
         try {
             $data = $this->load($runId);
-            $data['statuses'][$idempotencyKey] = 'rejected: '.$reason;
+            $data['statuses'][$idempotencyKey] = $status;
             $this->save($runId, $data);
         } finally {
             $lock->release();

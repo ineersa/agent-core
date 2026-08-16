@@ -20,6 +20,7 @@ use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
@@ -34,6 +35,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
+use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
@@ -536,6 +538,30 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->assertCount(1, $result->state->messages);
         $this->assertSame('first part', $result->state->messages[0]->content[0]['text']);
         $this->assertSame('second part', $result->state->messages[0]->content[1]['text']);
+    }
+
+    public function testMissingAndMalformedMessageEnvelopesAreRejectedWithExactReasons(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $policy = new CommandMailboxPolicy($commandStore, new CommandRouter([]));
+        $runId = 'run-mailbox-envelope';
+
+        $commandStore->enqueue(new PendingCommand(runId: $runId, kind: 'steer', idempotencyKey: 'env-missing'));
+        $commandStore->enqueue(new PendingCommand(runId: $runId, kind: 'steer', idempotencyKey: 'env-malformed', payload: ['message' => ['role' => 'user']]));
+
+        $result = $policy->applyPendingTurnStartCommands(RunStateBuilder::queued($runId)->withTurnNo(1)->build());
+
+        $rejected = array_values(array_filter(
+            $result->eventSpecs,
+            static fn (array $spec): bool => RunEventTypeEnum::AgentCommandRejected->value === $spec['type'],
+        ));
+
+        $this->assertCount(2, $rejected, 'Rejection events keep store FIFO order.');
+        $this->assertSame('env-missing', $rejected[0]['payload']['idempotency_key']);
+        $this->assertSame('Invalid command payload: missing message envelope.', $rejected[0]['payload']['reason']);
+        $this->assertSame('env-malformed', $rejected[1]['payload']['idempotency_key']);
+        $this->assertSame('Invalid command payload: malformed message envelope.', $rejected[1]['payload']['reason']);
+        $this->assertSame([], $commandStore->pending($runId), 'Both commands are marked rejected, not left pending.');
     }
 
     private function currentTurnNo(CommandMailboxFixture $fixture, string $runId): int
