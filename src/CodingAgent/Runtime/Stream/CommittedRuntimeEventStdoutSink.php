@@ -20,7 +20,7 @@ final class CommittedRuntimeEventStdoutSink implements RuntimeEventSinkInterface
 {
     public function __construct(
         private readonly LoggerInterface $logger,
-        private readonly StdoutRuntimeEventSink $stdoutSink = new StdoutRuntimeEventSink(),
+        private readonly StdoutRuntimeEventSink $stdoutSink,
     ) {
     }
 

@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink;
+use Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
 
@@ -20,7 +21,7 @@ final class CommittedRuntimeEventStdoutSinkTest extends TestCase
     public function testEmitNoopsWhenStdoutIsNotPipe(): void
     {
         $logger = new TestLogger();
-        $sink = new CommittedRuntimeEventStdoutSink($logger);
+        $sink = new CommittedRuntimeEventStdoutSink($logger, new StdoutRuntimeEventSink());
 
         $sink->emit(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'run-a', 3, []));
 
@@ -43,7 +44,7 @@ final class CommittedRuntimeEventStdoutSinkTest extends TestCase
         $process = new Process([\PHP_BINARY, '-r', <<<'PHP'
             require getcwd().'/vendor/autoload.php';
 
-            $sink = new \Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink(new \Psr\Log\NullLogger());
+            $sink = new \Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink(new \Psr\Log\NullLogger(), new \Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink());
             $sink->emit(new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
                 type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::TurnStarted->value,
                 runId: 'run-a',

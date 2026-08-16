@@ -56,7 +56,7 @@ final class SessionRunEventStore implements EventStoreInterface
     {
         $path = $this->eventsPath($event->runId);
 
-        return $this->eventLog->append($path, $event, onWritten: $this->invalidateAllForCache(...));
+        return $this->eventLog->appendMany($path, events: [$event], onWritten: $this->invalidateAllForCache(...))[0];
     }
 
     public function appendMany(array $events): array

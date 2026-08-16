@@ -21,7 +21,7 @@ use Symfony\Component\Lock\LockFactory;
  *
  *   .hatfield/sessions/<parentRunId>/artifacts/agents/<artifactId>/events.jsonl
  *
- * Sequence allocation uses {@see FileRunSequenceAllocator::COUNTER_BASENAME} next to that log.
+ * Sequence allocation uses {@see \Ineersa\CodingAgent\Session\FileRunSequenceAllocator::COUNTER_BASENAME} next to that log.
  * Uses Symfony Lock via the injected {@see LockFactory} (typically flock-backed) keyed by the child agentRunId to
  * protect concurrent appends.  Reuses EventPayloadNormalizer for
  * canonical event serialization.
@@ -67,12 +67,12 @@ final class AgentChildRunEventStore implements EventStoreInterface
             throw new \RuntimeException(\sprintf('RunEvent integrity error: embedded runId "%s" does not match bound agentRunId "%s".', $event->runId, $this->agentRunId));
         }
 
-        return $this->eventLog->append(
+        return $this->eventLog->appendMany(
             path: $this->eventsPath(),
-            event: $event,
+            events: [$event],
             runLabel: 'child run',
             dirMode: SessionAgentArtifactPathResolver::DIR_PERMISSIONS,
-        );
+        )[0];
     }
 
     public function appendMany(array $events): array

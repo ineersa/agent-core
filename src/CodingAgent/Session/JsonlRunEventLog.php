@@ -32,23 +32,8 @@ final class JsonlRunEventLog
         private readonly EventPayloadNormalizer $eventPayloadNormalizer,
         private readonly LockFactory $lockFactory,
         private readonly RunSequenceAllocatorInterface $sequenceAllocator,
-        private readonly EventLogMaxSeqBootstrapReader $bootstrapReader = new EventLogMaxSeqBootstrapReader(),
+        private readonly EventLogMaxSeqBootstrapReader $bootstrapReader,
     ) {
-    }
-
-    /**
-     * Allocates the next seq and appends one already-validated event under the run lock.
-     *
-     * @param callable(string $path): void|null $onWritten invoked after every successful physical write
-     */
-    public function append(
-        string $path,
-        RunEvent $event,
-        string $runLabel = 'run',
-        ?int $dirMode = null,
-        ?callable $onWritten = null,
-    ): RunEvent {
-        return $this->appendMany($path, [$event], $runLabel, $dirMode, $onWritten)[0];
     }
 
     /**
