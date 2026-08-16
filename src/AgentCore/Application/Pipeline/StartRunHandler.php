@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\AdvanceRunCallbackFactory;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -85,21 +84,7 @@ final readonly class StartRunHandler implements RunMessageHandler
             return null;
         }
 
-        return function () use ($runId, $prefix): void {
-            $stepId = \sprintf('%s-%d', $prefix, hrtime(true));
-
-            try {
-                $this->commandBus->dispatch(new AdvanceRun(
-                    runId: $runId,
-                    turnNo: 0,
-                    stepId: $stepId,
-                    attempt: 1,
-                    idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
-                ));
-            } catch (ExceptionInterface $exception) {
-                throw new \RuntimeException('Failed to dispatch initial AdvanceRun command.', previous: $exception);
-            }
-        };
+        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $prefix, 'Failed to dispatch initial AdvanceRun command.');
     }
 
     private function requireCanonicalModel(StartRun $message): string

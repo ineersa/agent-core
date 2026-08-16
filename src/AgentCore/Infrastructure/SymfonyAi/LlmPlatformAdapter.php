@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\Platform\Result\CancellableRawResultInterface;
 use Psr\Log\LoggerInterface;
@@ -305,7 +306,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $ids = [];
 
         foreach ($messages as $message) {
-            foreach ($this->denormalizeModelNotifications($message->details) as $notif) {
+            foreach (ModelNotificationCodec::denormalizeFromDetails($this->denormalizer, $message->details) as $notif) {
                 // DTO construction guarantees nonblank id.
                 $ids[$notif->id] = true;
             }
@@ -332,7 +333,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $notifications = [];
 
         foreach ($messages as $message) {
-            foreach ($this->denormalizeModelNotifications($message->details) as $notif) {
+            foreach (ModelNotificationCodec::denormalizeFromDetails($this->denormalizer, $message->details) as $notif) {
                 // DTO construction guarantees nonblank id.
                 if (!isset($seenIds[$notif->id])) {
                     $notifications[] = $notif;
@@ -340,24 +341,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 }
             }
         }
-
-        return $notifications;
-    }
-
-    /**
-     * @param array<string, mixed>|null $details AgentMessage.details array boundary
-     *
-     * @return list<ModelNotificationDTO>
-     */
-    private function denormalizeModelNotifications(?array $details): array
-    {
-        $raw = \is_array($details) ? ($details['model_notifications'] ?? null) : null;
-        if (!\is_array($raw) || [] === $raw) {
-            return [];
-        }
-
-        /** @var list<ModelNotificationDTO> $notifications */
-        $notifications = $this->denormalizer->denormalize($raw, ModelNotificationDTO::class.'[]');
 
         return $notifications;
     }

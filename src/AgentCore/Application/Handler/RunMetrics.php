@@ -97,6 +97,21 @@ final class RunMetrics
         $this->turnDurationHistogram->observe($durationMs);
     }
 
+    /**
+     * Returns the post-commit callback recording the turn as completed.
+     *
+     * Shared by pipeline handlers so turn-completed metrics mechanics have
+     * a single owner; recordTurnCompleted itself no-ops for unknown turns.
+     *
+     * @return list<callable(): void>
+     */
+    public function turnCompletedCallback(string $runId, int $turnNo): array
+    {
+        return [function () use ($runId, $turnNo): void {
+            $this->recordTurnCompleted($runId, $turnNo);
+        }];
+    }
+
     public function recordLlmLatency(float $durationMs, bool $isError): void
     {
         ++$this->llmCalls;

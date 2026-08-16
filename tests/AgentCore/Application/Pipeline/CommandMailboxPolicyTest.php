@@ -492,6 +492,52 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->assertSame(RunStatus::Running, $result->state->status);
     }
 
+    public function testMailboxApplicationJoinsMultipartTextWithNewline(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $policy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: new CommandRouter([]),
+        );
+
+        $state = new RunState(
+            runId: 'run-multipart-text',
+            status: RunStatus::Running,
+            model: 'test-model');
+
+        $commandStore->enqueue(new PendingCommand(
+            runId: 'run-multipart-text',
+            kind: 'steer',
+            idempotencyKey: 'steer-multipart',
+            payload: [
+                'message' => [
+                    'role' => 'user',
+                    'content' => [
+                        ['type' => 'text', 'text' => 'first part'],
+                        ['type' => 'text', 'text' => 'second part'],
+                    ],
+                ],
+            ],
+        ));
+
+        $result = $policy->applyPendingTurnStartCommands($state);
+
+        // Approved semantics: multi-part mailbox text renders as
+        // newline-joined text in the canonical agent_command_applied
+        // payload, matching the other content-part extraction paths.
+        $applied = array_values(array_filter(
+            $result->eventSpecs,
+            static fn (array $spec): bool => 'agent_command_applied' === $spec['type'],
+        ));
+        $this->assertCount(1, $applied);
+        $this->assertSame("first part\nsecond part", $applied[0]['payload']['text']);
+
+        // The persisted message itself keeps its structured parts.
+        $this->assertCount(1, $result->state->messages);
+        $this->assertSame('first part', $result->state->messages[0]->content[0]['text']);
+        $this->assertSame('second part', $result->state->messages[0]->content[1]['text']);
+    }
+
     private function currentTurnNo(CommandMailboxFixture $fixture, string $runId): int
     {
         $state = $fixture->runStore->get($runId);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\AdvanceRunCallbackFactory;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
@@ -15,12 +16,11 @@ use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
-use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
@@ -31,7 +31,6 @@ use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
-use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final class LlmStepResultHandler implements RunMessageHandler
@@ -142,7 +141,7 @@ final class LlmStepResultHandler implements RunMessageHandler
             // Emit generic model_notification events for any
             // notifications produced by transform context hooks
             // during this LLM step (e.g. defense-in-depth output caps).
-            foreach ($this->collectLlmModelNotificationEventSpecs($message->modelNotifications) as $notifSpec) {
+            foreach (ModelNotificationCodec::toEventSpecs($this->normalizer, $message->modelNotifications) as $notifSpec) {
                 $eventSpecs[] = $notifSpec;
             }
 
@@ -231,7 +230,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 'payload' => $eventPayload,
             ]];
 
-            foreach ($this->collectLlmModelNotificationEventSpecs($message->modelNotifications) as $notifSpec) {
+            foreach (ModelNotificationCodec::toEventSpecs($this->normalizer, $message->modelNotifications) as $notifSpec) {
                 $eventSpecs[] = $notifSpec;
             }
 
@@ -329,7 +328,7 @@ final class LlmStepResultHandler implements RunMessageHandler
         // These carry the same generic shape as ToolCallResultHandler
         // emissions and project to the same model.notification runtime
         // event / System transcript block.
-        foreach ($this->collectLlmModelNotificationEventSpecs($message->modelNotifications) as $notifSpec) {
+        foreach (ModelNotificationCodec::toEventSpecs($this->normalizer, $message->modelNotifications) as $notifSpec) {
             $eventSpecs[] = $notifSpec;
         }
 
@@ -525,13 +524,7 @@ final class LlmStepResultHandler implements RunMessageHandler
      */
     private function turnCompletedCallbacks(string $runId, int $turnNo): array
     {
-        if (null === $this->metrics) {
-            return [];
-        }
-
-        return [function () use ($runId, $turnNo): void {
-            $this->metrics->recordTurnCompleted($runId, $turnNo);
-        }];
+        return null === $this->metrics ? [] : $this->metrics->turnCompletedCallback($runId, $turnNo);
     }
 
     private function followUpAdvanceCallback(string $runId, string $prefix): ?callable
@@ -540,21 +533,7 @@ final class LlmStepResultHandler implements RunMessageHandler
             return null;
         }
 
-        return function () use ($runId, $prefix): void {
-            $stepId = \sprintf('%s-%d', $prefix, hrtime(true));
-
-            try {
-                $this->commandBus->dispatch(new AdvanceRun(
-                    runId: $runId,
-                    turnNo: 0,
-                    stepId: $stepId,
-                    attempt: 1,
-                    idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
-                ));
-            } catch (ExceptionInterface $exception) {
-                throw new \RuntimeException('Failed to dispatch follow-up AdvanceRun command.', previous: $exception);
-            }
-        };
+        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $prefix, 'Failed to dispatch follow-up AdvanceRun command.');
     }
 
     /**
@@ -575,37 +554,6 @@ final class LlmStepResultHandler implements RunMessageHandler
             'available_tools' => $message->availableTools,
             'available_tools_schema_tokens_estimate' => $message->availableToolsSchemaTokensEstimate,
         ];
-    }
-
-    /**
-     * Collect model_notification RunEvent specs from an LlmStepResult's
-     * generic model notifications (produced by transform context hooks).
-     *
-     * Encode once at the canonical RunEvent boundary via Serializer normalize.
-     *
-     * @param list<ModelNotificationDTO> $notifications
-     *
-     * @return list<array{type: string, payload: array<string, mixed>}>
-     */
-    private function collectLlmModelNotificationEventSpecs(array $notifications): array
-    {
-        if ([] === $notifications) {
-            return [];
-        }
-
-        $specs = [];
-        foreach ($notifications as $notif) {
-            /** @var array<string, mixed> $payload */
-            $payload = $this->normalizer->normalize($notif, null, [
-                AbstractObjectNormalizer::SKIP_NULL_VALUES => true,
-            ]);
-            $specs[] = [
-                'type' => RunEventTypeEnum::ModelNotification->value,
-                'payload' => $payload,
-            ];
-        }
-
-        return $specs;
     }
 
     private function autoRetryContinueCallback(string $runId, int $turnNo, string $stepId, int $retryAttempt): callable
