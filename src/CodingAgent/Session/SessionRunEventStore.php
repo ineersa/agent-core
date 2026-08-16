@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Session;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
-use Ineersa\AgentCore\Schema\SchemaVersion;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
@@ -20,10 +19,15 @@ use Symfony\Component\Lock\LockFactory;
  *
  * Sequence allocation uses a per-run {@see FileRunSequenceAllocator::COUNTER_BASENAME} file.
  * events.jsonl is never scanned during normal append (only bootstrap when cursor is missing).
+ *
+ * Append/sequence/bootstrap mechanics and the decode/denormalize/schema/sort
+ * primitives are delegated to {@see JsonlRunEventLog}; this class owns the
+ * session path resolution, size+mtime read cache, and read diagnostics.
  */
 final class SessionRunEventStore implements EventStoreInterface
 {
     private readonly string $sessionsBasePath;
+    private readonly JsonlRunEventLog $eventLog;
 
     /**
      * Process-local decoded snapshot cache keyed by resolved events.jsonl path.
@@ -38,42 +42,21 @@ final class SessionRunEventStore implements EventStoreInterface
 
     public function __construct(
         HatfieldSessionStore $hatfieldSessionStore,
-        private readonly EventPayloadNormalizer $eventPayloadNormalizer,
-        private readonly LockFactory $lockFactory,
+        EventPayloadNormalizer $eventPayloadNormalizer,
+        LockFactory $lockFactory,
         private readonly LoggerInterface $logger,
-        private readonly RunSequenceAllocatorInterface $sequenceAllocator,
-        private readonly EventLogMaxSeqBootstrapReader $bootstrapReader = new EventLogMaxSeqBootstrapReader(),
+        RunSequenceAllocatorInterface $sequenceAllocator,
+        EventLogMaxSeqBootstrapReader $bootstrapReader = new EventLogMaxSeqBootstrapReader(),
     ) {
         $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
+        $this->eventLog = new JsonlRunEventLog($eventPayloadNormalizer, $lockFactory, $sequenceAllocator, $bootstrapReader);
     }
 
     public function append(RunEvent $event): RunEvent
     {
         $path = $this->eventsPath($event->runId);
-        $lock = $this->lockFactory->createLock('hatfield-run-'.$event->runId);
-        $lock->acquire(true);
 
-        try {
-            $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($path);
-            $nextSeq = $this->sequenceAllocator->allocateNext(
-                $counterPath,
-                fn (): int => $this->bootstrapReader->readMaxSeq($path),
-            );
-            $persisted = new RunEvent(
-                runId: $event->runId,
-                seq: $nextSeq,
-                turnNo: $event->turnNo,
-                type: $event->type,
-                payload: $event->payload,
-                createdAt: $event->createdAt,
-            );
-
-            $this->writeEventLocked($path, $persisted);
-
-            return $persisted;
-        } finally {
-            $lock->release();
-        }
+        return $this->eventLog->append($path, $event, onWritten: $this->invalidateAllForCache(...));
     }
 
     public function appendMany(array $events): array
@@ -90,35 +73,8 @@ final class SessionRunEventStore implements EventStoreInterface
         }
 
         $path = $this->eventsPath($runId);
-        $lock = $this->lockFactory->createLock('hatfield-run-'.$runId);
-        $lock->acquire(true);
 
-        try {
-            $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($path);
-            $seqBlock = $this->sequenceAllocator->allocateBlock(
-                $counterPath,
-                \count($events),
-                fn (): int => $this->bootstrapReader->readMaxSeq($path),
-            );
-            $persisted = [];
-
-            foreach ($events as $index => $event) {
-                $persistedEvent = new RunEvent(
-                    runId: $event->runId,
-                    seq: $seqBlock[$index],
-                    turnNo: $event->turnNo,
-                    type: $event->type,
-                    payload: $event->payload,
-                    createdAt: $event->createdAt,
-                );
-                $this->writeEventLocked($path, $persistedEvent);
-                $persisted[] = $persistedEvent;
-            }
-
-            return $persisted;
-        } finally {
-            $lock->release();
-        }
+        return $this->eventLog->appendMany($path, $events, onWritten: $this->invalidateAllForCache(...));
     }
 
     /**
@@ -159,7 +115,7 @@ final class SessionRunEventStore implements EventStoreInterface
             }
 
             try {
-                $payload = json_decode($trimmedLine, true, 512, \JSON_THROW_ON_ERROR);
+                $payload = $this->eventLog->decodeLine($trimmedLine);
             } catch (\JsonException $e) {
                 throw new \RuntimeException(\sprintf('Corrupt event JSONL line for run "%s" — not parseable as JSON: %s', $runId, $e->getMessage()), previous: $e);
             }
@@ -173,9 +129,9 @@ final class SessionRunEventStore implements EventStoreInterface
                 continue;
             }
 
-            $event = $this->eventPayloadNormalizer->denormalizeRunEvent($payload);
+            $event = $this->eventLog->denormalizeRunEvent($payload);
             if (null === $event) {
-                if (!$this->isIncompatibleSchemaVersion($payload)) {
+                if (!$this->eventLog->isIncompatibleSchemaVersion($payload)) {
                     throw new \RuntimeException(\sprintf('Corrupt event JSONL for run "%s": denormalization returned null for compatible or missing schema — line: %s', $runId, mb_substr($trimmedLine, 0, 200)));
                 }
 
@@ -196,7 +152,7 @@ final class SessionRunEventStore implements EventStoreInterface
             $events[] = $event;
         }
 
-        usort($events, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
+        $events = $this->eventLog->sortBySeq($events);
 
         // Cache only when the file signature is stable across the read window.
         // A concurrent append during file_get_contents can race; do not lock/retry — just skip caching.
@@ -217,22 +173,11 @@ final class SessionRunEventStore implements EventStoreInterface
         return $events;
     }
 
-    private function writeEventLocked(string $path, RunEvent $event): void
+    /**
+     * Successful physical write only: drop any process-local snapshot for this path.
+     */
+    private function invalidateAllForCache(string $path): void
     {
-        $dir = \dirname($path);
-        if (!is_dir($dir)) {
-            mkdir(directory: $dir, recursive: true);
-        }
-
-        $entry = $this->eventPayloadNormalizer->normalizeRunEvent($event);
-        $json = json_encode($entry, \JSON_THROW_ON_ERROR);
-
-        $written = file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
-        if (false === $written) {
-            throw new \RuntimeException(\sprintf('Failed to append to events.jsonl for run "%s" at seq %d.', $event->runId, $event->seq));
-        }
-
-        // Successful physical write only: drop any process-local snapshot for this path.
         unset($this->allForCache[$path]);
     }
 
@@ -257,24 +202,6 @@ final class SessionRunEventStore implements EventStoreInterface
             'size' => $size,
             'mtime' => $mtime,
         ];
-    }
-
-    /**
-     * Major schema version mismatch: skip line with error log (forward-compat read policy).
-     *
-     * @param array<string, mixed> $payload
-     */
-    private function isIncompatibleSchemaVersion(array $payload): bool
-    {
-        $schemaVersion = $payload['schema_version'] ?? null;
-        if (!\is_string($schemaVersion)) {
-            return false;
-        }
-
-        $expectedMajor = explode('.', SchemaVersion::CURRENT, 2)[0];
-        $candidateMajor = explode('.', $schemaVersion, 2)[0];
-
-        return '' !== $candidateMajor && $candidateMajor !== $expectedMajor;
     }
 
     private function eventsPath(string $runId): string

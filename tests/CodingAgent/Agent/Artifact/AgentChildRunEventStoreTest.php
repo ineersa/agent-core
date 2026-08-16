@@ -295,6 +295,25 @@ final class AgentChildRunEventStoreTest extends TestCase
         $store->readAfterSeq(0);
     }
 
+    public function testAppendBootstrapsSeqFromExistingEventsJsonl(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+        $artifactId = 'scout-bootstrap';
+
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+        $normalizer = new EventPayloadNormalizer();
+        $path = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl";
+        mkdir(\dirname($path), 0775, true);
+        file_put_contents($path, json_encode($normalizer->normalize($agentRunId, 99, 0, 'run_started', []), \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+
+        $persisted = $store->append(new RunEvent(runId: $agentRunId, seq: 0, turnNo: 1, type: 'agent_start'));
+        $this->assertSame(100, $persisted->seq);
+
+        $events = $store->allFor($agentRunId);
+        $this->assertSame([99, 100], array_map(static fn (RunEvent $e): int => $e->seq, $events));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private function createStore(string $parentRunId, string $agentRunId, string $artifactId): AgentChildRunEventStore

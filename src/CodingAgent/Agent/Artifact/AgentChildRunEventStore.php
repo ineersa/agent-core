@@ -7,10 +7,9 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
-use Ineersa\AgentCore\Schema\SchemaVersion;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
-use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
+use Ineersa\CodingAgent\Session\JsonlRunEventLog;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
@@ -36,22 +35,30 @@ use Symfony\Component\Lock\LockFactory;
  *
  * Path resolution and validation are delegated to
  * {@see SessionAgentArtifactPathResolver}.
+ *
+ * Append/sequence/bootstrap mechanics and the decode/denormalize/schema/sort
+ * primitives are delegated to {@see JsonlRunEventLog}; this class owns the
+ * bound-run validation, child artifact path, streaming reads, and child-specific
+ * diagnostics.
  */
 final class AgentChildRunEventStore implements EventStoreInterface
 {
+    private readonly JsonlRunEventLog $eventLog;
+
     public function __construct(
         private readonly SessionAgentArtifactPathResolver $pathResolver,
-        private readonly EventPayloadNormalizer $eventPayloadNormalizer,
+        EventPayloadNormalizer $eventPayloadNormalizer,
         private readonly LockFactory $lockFactory,
         private readonly LoggerInterface $logger,
-        private readonly RunSequenceAllocatorInterface $sequenceAllocator,
+        RunSequenceAllocatorInterface $sequenceAllocator,
         private readonly string $parentRunId,
         private readonly string $agentRunId,
         private readonly string $artifactId,
-        private readonly EventLogMaxSeqBootstrapReader $bootstrapReader = new EventLogMaxSeqBootstrapReader(),
+        EventLogMaxSeqBootstrapReader $bootstrapReader = new EventLogMaxSeqBootstrapReader(),
     ) {
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
+        $this->eventLog = new JsonlRunEventLog($eventPayloadNormalizer, $lockFactory, $sequenceAllocator, $bootstrapReader);
     }
 
     public function append(RunEvent $event): RunEvent
@@ -60,30 +67,12 @@ final class AgentChildRunEventStore implements EventStoreInterface
             throw new \RuntimeException(\sprintf('RunEvent integrity error: embedded runId "%s" does not match bound agentRunId "%s".', $event->runId, $this->agentRunId));
         }
 
-        $path = $this->eventsPath();
-        $lock = $this->lockFactory->createLock("hatfield-run-{$this->agentRunId}");
-        $lock->acquire(true);
-
-        try {
-            $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($path);
-            $nextSeq = $this->sequenceAllocator->allocateNext(
-                $counterPath,
-                fn (): int => $this->bootstrapReader->readMaxSeq($path),
-            );
-            $persisted = new RunEvent(
-                runId: $event->runId,
-                seq: $nextSeq,
-                turnNo: $event->turnNo,
-                type: $event->type,
-                payload: $event->payload,
-                createdAt: $event->createdAt,
-            );
-            $this->writeEventLocked($path, $persisted);
-
-            return $persisted;
-        } finally {
-            $lock->release();
-        }
+        return $this->eventLog->append(
+            path: $this->eventsPath(),
+            event: $event,
+            runLabel: 'child run',
+            dirMode: SessionAgentArtifactPathResolver::DIR_PERMISSIONS,
+        );
     }
 
     public function appendMany(array $events): array
@@ -98,36 +87,12 @@ final class AgentChildRunEventStore implements EventStoreInterface
             }
         }
 
-        $path = $this->eventsPath();
-        $lock = $this->lockFactory->createLock("hatfield-run-{$this->agentRunId}");
-        $lock->acquire(true);
-
-        try {
-            $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($path);
-            $seqBlock = $this->sequenceAllocator->allocateBlock(
-                $counterPath,
-                \count($events),
-                fn (): int => $this->bootstrapReader->readMaxSeq($path),
-            );
-            $persisted = [];
-
-            foreach ($events as $index => $event) {
-                $persistedEvent = new RunEvent(
-                    runId: $event->runId,
-                    seq: $seqBlock[$index],
-                    turnNo: $event->turnNo,
-                    type: $event->type,
-                    payload: $event->payload,
-                    createdAt: $event->createdAt,
-                );
-                $this->writeEventLocked($path, $persistedEvent);
-                $persisted[] = $persistedEvent;
-            }
-
-            return $persisted;
-        } finally {
-            $lock->release();
-        }
+        return $this->eventLog->appendMany(
+            path: $this->eventsPath(),
+            events: $events,
+            runLabel: 'child run',
+            dirMode: SessionAgentArtifactPathResolver::DIR_PERMISSIONS,
+        );
     }
 
     /**
@@ -150,9 +115,7 @@ final class AgentChildRunEventStore implements EventStoreInterface
                 $events[] = $event;
             }
 
-            usort($events, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
-
-            return $events;
+            return $this->eventLog->sortBySeq($events);
         } finally {
             $lock->release();
         }
@@ -173,9 +136,8 @@ final class AgentChildRunEventStore implements EventStoreInterface
         }
 
         $events = iterator_to_array($this->streamRunEventsFromPath($path));
-        usort($events, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
 
-        return $events;
+        return $this->eventLog->sortBySeq($events);
     }
 
     /**
@@ -200,7 +162,7 @@ final class AgentChildRunEventStore implements EventStoreInterface
                 }
 
                 try {
-                    $payload = json_decode($trimmedLine, true, 512, \JSON_THROW_ON_ERROR);
+                    $payload = $this->eventLog->decodeLine($trimmedLine);
                 } catch (\JsonException $e) {
                     throw new \RuntimeException(\sprintf('Corrupt event JSONL line for child run "%s": %s', $this->agentRunId, $e->getMessage()), previous: $e);
                 }
@@ -215,9 +177,9 @@ final class AgentChildRunEventStore implements EventStoreInterface
                     continue;
                 }
 
-                $event = $this->eventPayloadNormalizer->denormalizeRunEvent($payload);
+                $event = $this->eventLog->denormalizeRunEvent($payload);
                 if (null === $event) {
-                    if (!$this->isIncompatibleSchemaVersion($payload)) {
+                    if (!$this->eventLog->isIncompatibleSchemaVersion($payload)) {
                         throw new \RuntimeException(\sprintf('Corrupt event JSONL for child run "%s": denormalization returned null for compatible or missing schema', $this->agentRunId));
                     }
 
@@ -242,40 +204,8 @@ final class AgentChildRunEventStore implements EventStoreInterface
         }
     }
 
-    private function writeEventLocked(string $path, RunEvent $event): void
-    {
-        $dir = \dirname($path);
-        if (!is_dir($dir)) {
-            mkdir($dir, SessionAgentArtifactPathResolver::DIR_PERMISSIONS, true);
-        }
-
-        $entry = $this->eventPayloadNormalizer->normalizeRunEvent($event);
-        $json = json_encode($entry, \JSON_THROW_ON_ERROR);
-
-        $written = file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
-        if (false === $written) {
-            throw new \RuntimeException(\sprintf('Failed to append to events.jsonl for child run "%s" at seq %d.', $this->agentRunId, $event->seq));
-        }
-    }
-
     private function eventsPath(): string
     {
         return $this->pathResolver->eventsPath($this->parentRunId, $this->artifactId);
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function isIncompatibleSchemaVersion(array $payload): bool
-    {
-        $schemaVersion = $payload['schema_version'] ?? null;
-        if (!\is_string($schemaVersion)) {
-            return false;
-        }
-
-        $expectedMajor = explode('.', SchemaVersion::CURRENT, 2)[0];
-        $candidateMajor = explode('.', $schemaVersion, 2)[0];
-
-        return '' !== $candidateMajor && $candidateMajor !== $expectedMajor;
     }
 }

@@ -4,59 +4,60 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Stream;
 
-use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
 
 /**
- * @covers \Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink
+ * @covers \Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink
  */
-final class CommittedRuntimeEventStdoutSinkTest extends TestCase
+final class StdoutRuntimeEventSinkTest extends TestCase
 {
-    public function testEmitNoopsWhenStdoutIsNotPipe(): void
-    {
-        $logger = new TestLogger();
-        $sink = new CommittedRuntimeEventStdoutSink($logger);
-
-        $sink->emit(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'run-a', 3, []));
-
-        $this->assertSame([], $logger->records);
-    }
-
     /**
      * Proves the wire bytes: emitting into a real stdout pipe (subprocess) produces exactly
      * JsonlCodec::encodeEvent() — slash-sensitive payload unescaped, exactly one newline.
      */
     public function testEmitWritesCodecEncodedLineToStdoutPipe(): void
     {
-        $event = new RuntimeEvent(
-            type: RuntimeEventTypeEnum::TurnStarted->value,
-            runId: 'run-a',
-            seq: 3,
-            payload: ['url' => 'https://example.com/path/to', 'text' => 'héllo'],
-        );
+        $event = $this->slashSensitiveEvent();
 
-        $process = new Process([\PHP_BINARY, '-r', <<<'PHP'
+        $output = $this->runInSubprocess(
+            <<<'PHP'
             require getcwd().'/vendor/autoload.php';
 
-            $sink = new \Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink(new \Psr\Log\NullLogger());
+            $sink = new \Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink();
             $sink->emit(new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
                 type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::TurnStarted->value,
                 runId: 'run-a',
                 seq: 3,
                 payload: ['url' => 'https://example.com/path/to', 'text' => 'héllo'],
             ));
-            PHP]);
-        $process->setWorkingDirectory(\dirname(__DIR__, 4));
-        $process->mustRun();
+            PHP
+        );
 
-        $output = $process->getOutput();
         $this->assertSame(JsonlCodec::encodeEvent($event), $output);
         $this->assertStringContainsString('https://example.com/path/to', $output);
         $this->assertSame(1, substr_count($output, "\n"));
+    }
+
+    private function slashSensitiveEvent(): RuntimeEvent
+    {
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::TurnStarted->value,
+            runId: 'run-a',
+            seq: 3,
+            payload: ['url' => 'https://example.com/path/to', 'text' => 'héllo'],
+        );
+    }
+
+    private function runInSubprocess(string $code): string
+    {
+        $process = new Process([\PHP_BINARY, '-r', $code]);
+        $process->setWorkingDirectory(\dirname(__DIR__, 4));
+        $process->mustRun();
+
+        return $process->getOutput();
     }
 }
