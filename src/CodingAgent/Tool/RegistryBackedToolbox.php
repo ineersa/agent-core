@@ -35,13 +35,19 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * ValidateToolCallArgumentsListener, and native lifecycle events.
  *
  * Execution lifecycle:
- *   rewrite hooks (rewrite the ToolCall arguments first)
+ *   rewrite hooks (rewrite the flat ToolCall arguments first)
  *   → native Toolbox::execute()
- *     → ToolCallRequested (policy hooks see rewritten args)
- *     → native ToolCallArgumentResolver (DTO for typed tools; raw map for
- *       raw-array tools via RawAwareToolCallArgumentResolver)
+ *     → ToolCallRequested (policy hooks see rewritten flat args)
+ *     → RawAwareToolCallArgumentResolver (typed DTO tools: wraps the flat
+ *       provider map under the reflected parameter name, then the native
+ *       resolver denormalizes the DTO; raw-array tools pass the flat map
+ *       through under their `$arguments` parameter)
  *     → ToolCallArgumentsResolved (ValidateToolCallArgumentsListener)
  *     → handler invoke → ToolCallSucceeded/Failed
+ *
+ * Typed DTO tools are model-visible with flat arguments: the DTO's object
+ * schema is exposed at the Tool root (no `{arguments: ...}` envelope), and
+ * the flat provider map is wrapped internally before native resolution.
  *
  * Mutable registry semantics are preserved: getTools() and execute() always
  * observe the live registry revision, and the native Toolbox (with all active
@@ -210,6 +216,10 @@ final class RegistryBackedToolbox implements ToolboxInterface
      * from Symfony AI's native ReflectionToolFactory (AsTool + JsonSchema
      * Factory) so DTO types/constraints and the provider-visible schema cannot
      * drift. The registry definition remains canonical for name/description.
+     * The provider-visible schema is the single DTO parameter's object schema
+     * hoisted to the Tool root (flat arguments, no parameter envelope); the
+     * argument resolver wraps flat payloads back under the parameter name
+     * before native resolution.
      *
      * Raw-array handlers (runtime-provided schema) keep their schema and are
      * flagged so the argument resolver passes the flat provider map through.
@@ -232,8 +242,44 @@ final class RegistryBackedToolbox implements ToolboxInterface
             reference: $native->getReference(),
             name: $definition->name,
             description: $definition->description,
-            parameters: $this->normalizeNullableRequired($native->getParameters() ?? []),
+            parameters: $this->flattenDtoParameters($native, $definition->name),
         );
+    }
+
+    /**
+     * Hoist the single DTO parameter's object schema to the Tool root.
+     *
+     * Symfony AI generates `{type: object, properties: {<param>: <DTO schema>},
+     * required: [<param>], additionalProperties: false}` for a handler declared
+     * `__invoke(SomeDto $arguments)`. The model must see the DTO fields flat,
+     * so the parameter property's own object schema becomes the Tool's root
+     * parameters (raw tools already expose flat schemas).
+     *
+     * Only the exact single-object-parameter shape is supported; anything else
+     * (scalar parameters, multiple parameters) is an internal contract
+     * violation and fails fast instead of silently producing a wrong schema.
+     *
+     * @return array<string, mixed>
+     */
+    private function flattenDtoParameters(Tool $native, string $toolName): array
+    {
+        $parameters = $native->getParameters();
+        $properties = \is_array($parameters) ? ($parameters['properties'] ?? null) : null;
+
+        if (!\is_array($parameters)
+            || ($parameters['type'] ?? null) !== 'object'
+            || !\is_array($properties)
+            || 1 !== \count($properties)
+        ) {
+            throw new \LogicException(\sprintf('Typed tool "%s" must produce exactly one object parameter schema for flat DTO arguments, got: %s.', $toolName, null === $parameters ? 'null' : json_encode($parameters, \JSON_THROW_ON_ERROR)));
+        }
+
+        $dtoSchema = reset($properties);
+        if (!\is_array($dtoSchema) || ($dtoSchema['type'] ?? null) !== 'object') {
+            throw new \LogicException(\sprintf('Typed tool "%s" must take exactly one DTO (object) parameter for flat DTO arguments, got: %s.', $toolName, json_encode($dtoSchema, \JSON_THROW_ON_ERROR)));
+        }
+
+        return $this->normalizeNullableRequired($dtoSchema);
     }
 
     private function nativeMetadataFor(ToolDefinitionDTO $definition): Tool
@@ -252,8 +298,7 @@ final class RegistryBackedToolbox implements ToolboxInterface
      * including nullable-with-default optional ones. Nullable properties are
      * optional by definition, so drop them from `required` to keep the
      * provider schema faithful to the DTO contract. Applied recursively so
-     * nested object schemas (e.g. the {arguments} envelope or subagent task
-     * items) get the same treatment.
+     * nested object schemas (e.g. subagent task items) get the same treatment.
      *
      * @param array<string, mixed> $schema
      *

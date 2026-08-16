@@ -23,7 +23,6 @@ use Symfony\AI\Agent\Toolbox\Event\ToolCallFailed;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
 use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
-use Symfony\AI\Agent\Toolbox\Exception\ToolException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
@@ -49,9 +48,11 @@ use Symfony\Component\Validator\ValidatorBuilder;
  * Tests for RegistryBackedToolbox.
  *
  * RegistryBackedToolbox is a thin registry/rewrite decorator that delegates
- * execution to the native Symfony AI Toolbox. DTO-typed tools use the native
- * nested argument shape ({arguments: {...}}); raw-array tools (MCP, extension
- * adapters) receive the flat provider map through the raw-arguments resolver.
+ * execution to the native Symfony AI Toolbox. DTO-typed tools expose flat
+ * provider arguments (the DTO's object schema at the Tool root, wrapped
+ * internally under the reflected parameter name before native resolution);
+ * raw-array tools (MCP, extension adapters) receive the flat provider map
+ * through the raw-arguments resolver.
  */
 final class RegistryBackedToolboxTest extends TestCase
 {
@@ -127,14 +128,20 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertSame('View an image', $tool->getDescription());
         $this->assertFalse($tool->getMetadataValue('raw_arguments', false));
 
-        // Native nested schema generated from the DTO parameter.
+        // Flat provider schema: the DTO's object schema at the Tool root — no
+        // parameter envelope, so the model passes DTO fields directly.
         $parameters = $tool->getParameters();
         $this->assertSame('object', $parameters['type']);
-        $this->assertArrayHasKey('arguments', $parameters['properties']);
-        $this->assertSame('object', $parameters['properties']['arguments']['type']);
-        $this->assertArrayHasKey('path', $parameters['properties']['arguments']['properties']);
+        $this->assertArrayNotHasKey('arguments', $parameters['properties']);
+        $this->assertArrayHasKey('path', $parameters['properties']);
+        $this->assertSame('string', $parameters['properties']['path']['type']);
+        $this->assertSame(
+            'Path to the image file (absolute, or relative to the working directory)',
+            $parameters['properties']['path']['description'],
+        );
         // path is required; nullable-with-default props are not.
-        $this->assertSame(['path'], $parameters['properties']['arguments']['required']);
+        $this->assertSame(['path'], $parameters['required']);
+        $this->assertFalse($parameters['additionalProperties']);
     }
 
     public function testGetToolsIncludesDynamicAfterPermanent(): void
@@ -250,7 +257,7 @@ final class RegistryBackedToolboxTest extends TestCase
         );
 
         $toolbox = $this->createToolbox($registry);
-        $result = $toolbox->execute(new ToolCall('call-dto', 'view_image', ['arguments' => ['path' => 'img.png']]));
+        $result = $toolbox->execute(new ToolCall('call-dto', 'view_image', ['path' => 'img.png']));
 
         $this->assertSame('ok:img.png', $result->getResult());
         $this->assertInstanceOf(ViewImageArgumentsDTO::class, $handler->seen);
@@ -278,9 +285,10 @@ final class RegistryBackedToolboxTest extends TestCase
         );
 
         // Real resolver path with the app serializer stack (camel_case_to_snake_case
-        // name converter) — no hand-written key mapping anywhere.
+        // name converter) — no hand-written key mapping anywhere. Provider args
+        // are flat; the resolver wraps them under the reflected parameter name.
         $toolbox = $this->createToolbox($registry, resolver: $this->createNameConverterResolver());
-        $result = $toolbox->execute(new ToolCall('call-snake', 'agent_retrieve', ['arguments' => ['artifact_id' => 'agent_abc', 'limit' => 5]]));
+        $result = $toolbox->execute(new ToolCall('call-snake', 'agent_retrieve', ['artifact_id' => 'agent_abc', 'limit' => 5]));
 
         $this->assertSame('ok:agent_abc', $result->getResult());
         $this->assertInstanceOf(AgentRetrieveArgumentsDTO::class, $handler->seen);
@@ -302,7 +310,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $registry->registerTool(name: 'view_image', description: 'View', handler: $handler, promptLine: 'view_image');
 
         $toolbox = $this->createToolbox($registry);
-        $result = $toolbox->execute(new ToolCall('call-unknown', 'view_image', ['arguments' => ['path' => 'a.png', 'extra' => true]]));
+        $result = $toolbox->execute(new ToolCall('call-unknown', 'view_image', ['path' => 'a.png', 'extra' => true]));
 
         $this->assertSame('ok:a.png', $result->getResult());
     }
@@ -338,6 +346,38 @@ final class RegistryBackedToolboxTest extends TestCase
             // Succeeded carries the native resolved argument shape.
             ['succeeded', true, ['arguments' => ['query' => 'hello']], 'evented result'],
         ], $events);
+    }
+
+    public function testTypedToolRequestedSeesFlatArgsAndResolvedCarriesDto(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = new #[AsTool('view_image', 'View')] class {
+            public function __invoke(ViewImageArgumentsDTO $arguments): string
+            {
+                return 'ok';
+            }
+        };
+        $registry->registerTool(name: 'view_image', description: 'View', handler: $handler, promptLine: 'view_image');
+
+        $dispatcher = new EventDispatcher();
+        $events = [];
+        $dispatcher->addListener(ToolCallRequested::class, static function (ToolCallRequested $event) use (&$events): void {
+            $events[] = ['requested', $event->getToolCall()->getArguments()];
+        });
+        $dispatcher->addListener(ToolCallArgumentsResolved::class, static function (ToolCallArgumentsResolved $event) use (&$events): void {
+            $events[] = ['resolved', $event->getArguments()];
+        });
+
+        $toolbox = $this->createToolbox($registry, $dispatcher);
+        $toolbox->execute(new ToolCall('call-typed', 'view_image', ['path' => 'img.png']));
+
+        // ToolCallRequested sees the flat provider args before resolution.
+        $this->assertSame(['requested', ['path' => 'img.png']], $events[0]);
+        // ToolCallArgumentsResolved carries the resolved DTO parameter map.
+        $this->assertSame('resolved', $events[1][0]);
+        $this->assertArrayHasKey('arguments', $events[1][1]);
+        $this->assertInstanceOf(ViewImageArgumentsDTO::class, $events[1][1]['arguments']);
+        $this->assertSame('img.png', $events[1][1]['arguments']->path);
     }
 
     public function testToolCallRequestedCanDenyAndSkipHandler(): void
@@ -458,7 +498,7 @@ final class RegistryBackedToolboxTest extends TestCase
 
     /* ───────── Fault tolerance for invalid arguments ───────── */
 
-    public function testMissingMandatoryArgumentsBecomeActionableToolCallException(): void
+    public function testMissingMandatoryArgumentsBecomeFaultTolerantResultWithViolations(): void
     {
         $registry = new ToolRegistry();
         $handler = new #[AsTool('view_image', 'View')] class {
@@ -469,23 +509,30 @@ final class RegistryBackedToolboxTest extends TestCase
         };
         $registry->registerTool(name: 'view_image', description: 'View', handler: $handler, promptLine: 'view_image');
 
-        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
+        // Production wires ValidateToolCallArgumentsListener on the app dispatcher
+        // (config/services.yaml) with the container validator; mirror both here.
+        $validator = (new ValidatorBuilder())
+            ->enableAttributeMapping()
+            ->setConstraintValidatorFactory(new ConstraintValidatorFactory([
+                ViewImageTargetValidator::class => new ViewImageTargetValidator(
+                    new ImageToolConfig(),
+                    new StackToolExecutionContextAccessor(),
+                ),
+            ]))
+            ->getValidator();
 
-        // The native resolver rejects the missing mandatory `arguments` envelope
-        // parameter; RegistryBackedToolbox translates the wrapped ToolException
-        // into a non-retryable ToolCallException carrying the actionable native
-        // message, so ToolExecutor gives the model correction detail instead of
-        // a generic fault (FaultTolerantToolbox only converts
-        // ToolExecutionExceptionInterface, so the ToolCallException propagates).
-        try {
-            $toolbox->execute(new ToolCall('call-missing', 'view_image', []));
-            $this->fail('Expected ToolCallException with the resolver message.');
-        } catch (ToolCallException $e) {
-            $this->assertSame('Parameter "arguments" is mandatory for tool "view_image".', $e->getMessage());
-            $this->assertFalse($e->retryable());
-            $this->assertNull($e->hint());
-            $this->assertInstanceOf(ToolException::class, $e->getPrevious());
-        }
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(ToolCallArgumentsResolved::class, new ValidateToolCallArgumentsListener($validator));
+
+        // Flat provider call with the mandatory DTO property missing: the flat
+        // map is wrapped under the reflected parameter name, the native resolver
+        // denormalizes the empty DTO, and the validator listener turns the
+        // NotBlank violation into a deterministic fault-tolerant result.
+        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry, $dispatcher));
+        $result = $toolbox->execute(new ToolCall('call-missing', 'view_image', []));
+
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('The "path" argument is required and must be a non-empty string.', $message);
     }
 
     public function testDtoConstraintViolationBecomesFaultTolerantResultWithViolations(): void
@@ -517,7 +564,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $dispatcher->addListener(ToolCallArgumentsResolved::class, new ValidateToolCallArgumentsListener($validator));
 
         $toolbox = new FaultTolerantToolbox($this->createToolbox($registry, $dispatcher));
-        $result = $toolbox->execute(new ToolCall('call-blank', 'view_image', ['arguments' => ['path' => ' ']]));
+        $result = $toolbox->execute(new ToolCall('call-blank', 'view_image', ['path' => ' ']));
 
         // ValidateToolCallArgumentsListener rejects the DTO; the violations
         // are stringified into the model-visible result.
@@ -532,9 +579,9 @@ final class RegistryBackedToolboxTest extends TestCase
             name: 'fragile',
             description: 'Fragile',
             handler: new #[AsTool('fragile', 'Fragile')] class {
-                public function __invoke(int $count): string
+                public function __invoke(FragileCountArgumentsDTO $arguments): string
                 {
-                    return 'count:'.$count;
+                    return 'count:'.$arguments->count;
                 }
             },
             promptLine: 'fragile',
@@ -549,7 +596,7 @@ final class RegistryBackedToolboxTest extends TestCase
             $toolbox->execute(new ToolCall('call-fragile', 'fragile', ['count' => 'abc']));
             $this->fail('Expected ToolCallException with the denormalization message.');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('Data expected to be of type "int"', $e->getMessage());
+            $this->assertStringContainsString('The type of the "count" attribute for class "Ineersa\CodingAgent\Tests\Tool\FragileCountArgumentsDTO" must be one of "int" ("string" given).', $e->getMessage());
             $this->assertFalse($e->retryable());
             $this->assertInstanceOf(NotNormalizableValueException::class, $e->getPrevious());
         }
@@ -800,7 +847,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertSame(['arg' => 'val'], $handler->lastArgs);
     }
 
-    public function testRewriteOfDtoToolRewritesNestedArgumentsBeforeResolution(): void
+    public function testRewriteOfDtoToolRewritesFlatArgumentsBeforeResolution(): void
     {
         $registry = new ToolRegistry();
         $handler = new #[AsTool('view_image', 'View')] class {
@@ -819,17 +866,51 @@ final class RegistryBackedToolboxTest extends TestCase
             new readonly class implements ToolCallRewriteHookInterface {
                 public function rewriteArguments(ToolCallContextDTO $context): ?array
                 {
-                    return ['arguments' => ['path' => 'rewritten.png']];
+                    return ['path' => 'rewritten.png'];
                 }
             },
         ]);
 
         $toolbox = $this->createToolbox($registry, rewriteHookProvider: $rewriteProvider);
-        $result = $toolbox->execute(new ToolCall('call-rw-dto', 'view_image', ['arguments' => ['path' => 'original.png']]));
+        $result = $toolbox->execute(new ToolCall('call-rw-dto', 'view_image', ['path' => 'original.png']));
 
         $this->assertSame('ok', $result->getResult());
-        // The rewritten nested args were resolved into the DTO before invoke.
+        // The rewritten flat args were wrapped and resolved into the DTO before invoke.
         $this->assertSame('rewritten.png', $handler->seen);
+    }
+
+    public function testNestedLegacyEnvelopeInputIsRejectedWithoutCompatibilityShim(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = new #[AsTool('view_image', 'View')] class {
+            public function __invoke(ViewImageArgumentsDTO $arguments): string
+            {
+                return 'nope';
+            }
+        };
+        $registry->registerTool(name: 'view_image', description: 'View', handler: $handler, promptLine: 'view_image');
+
+        $validator = (new ValidatorBuilder())
+            ->enableAttributeMapping()
+            ->setConstraintValidatorFactory(new ConstraintValidatorFactory([
+                ViewImageTargetValidator::class => new ViewImageTargetValidator(
+                    new ImageToolConfig(),
+                    new StackToolExecutionContextAccessor(),
+                ),
+            ]))
+            ->getValidator();
+
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(ToolCallArgumentsResolved::class, new ValidateToolCallArgumentsListener($validator));
+
+        // Legacy {arguments: {...}} payloads are treated as ordinary flat input:
+        // the unknown `arguments` key is ignored by native denormalization, the
+        // DTO stays empty, and validation rejects it — no compatibility shim.
+        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry, $dispatcher));
+        $result = $toolbox->execute(new ToolCall('call-legacy', 'view_image', ['arguments' => ['path' => 'img.png']]));
+
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('The "path" argument is required and must be a non-empty string.', $message);
     }
 
     /* ───────── Extension-registered tools are the same path ───────── */
@@ -1034,14 +1115,15 @@ final class RegistryBackedToolboxTest extends TestCase
     }
 
     /**
-     * Real resolver with the app serializer stack: camel_case_to_snake_case
-     * name converter + property type extractors (same as the @serializer service).
+     * Native resolver with the app serializer stack: camel_case_to_snake_case
+     * name converter + property type extractors (same as the @serializer
+     * service). createToolbox() wraps it in RawAwareToolCallArgumentResolver.
      */
-    private function createNameConverterResolver(): RawAwareToolCallArgumentResolver
+    private function createNameConverterResolver(): ToolCallArgumentResolver
     {
         $propertyTypeExtractor = new PropertyInfoExtractor([], [new PhpDocExtractor(), new ReflectionExtractor()]);
 
-        return new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver(new Serializer([
+        return new ToolCallArgumentResolver(new Serializer([
             new DateTimeNormalizer(),
             new BackedEnumNormalizer(),
             new ObjectNormalizer(
@@ -1049,7 +1131,7 @@ final class RegistryBackedToolboxTest extends TestCase
                 propertyTypeExtractor: $propertyTypeExtractor,
             ),
             new ArrayDenormalizer(),
-        ])));
+        ]));
     }
 
     private function dummyHandler(mixed $result): object
@@ -1133,4 +1215,13 @@ final class RegistryBackedToolboxSharedClassHandler
     {
         return 'tag:'.$this->tag;
     }
+}
+
+/**
+ * DTO double with a scalar property so denormalization type failures
+ * (NotNormalizableValueException) stay testable through the typed path.
+ */
+final class FragileCountArgumentsDTO
+{
+    public int $count = 0;
 }

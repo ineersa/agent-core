@@ -34,7 +34,7 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
                 name: 'probe',
                 description: 'Probe',
             ),
-            new ToolCall('call-snake-container', 'probe', ['arguments' => ['artifact_id' => 'agent_abc', 'limit' => 5]]),
+            new ToolCall('call-snake-container', 'probe', ['artifact_id' => 'agent_abc', 'limit' => 5]),
         );
 
         $this->assertArrayHasKey('arguments', $arguments);
@@ -55,7 +55,7 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
                 name: 'probe',
                 description: 'Probe',
             ),
-            new ToolCall('call-subagent-container', 'probe', ['arguments' => ['tasks' => [['agent' => 'scout', 'task' => 'one'], ['agent' => 'reviewer', 'task' => 'two']]]]),
+            new ToolCall('call-subagent-container', 'probe', ['tasks' => [['agent' => 'scout', 'task' => 'one'], ['agent' => 'reviewer', 'task' => 'two']]]),
         );
 
         $this->assertArrayHasKey('arguments', $arguments);
@@ -99,7 +99,7 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
         $config = self::getContainer()->get(BashToolConfig::class);
         $toolbox = new FaultTolerantToolbox(self::getContainer()->get(ToolboxInterface::class));
 
-        $result = $toolbox->execute(new ToolCall('call-bash-max', 'bash', ['arguments' => ['command' => 'echo hi', 'timeout' => $config->maxTimeoutSeconds + 1]]));
+        $result = $toolbox->execute(new ToolCall('call-bash-max', 'bash', ['command' => 'echo hi', 'timeout' => $config->maxTimeoutSeconds + 1]));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString(\sprintf('Timeout must not exceed %d seconds (%d provided).', $config->maxTimeoutSeconds, $config->maxTimeoutSeconds + 1), $message);
@@ -115,7 +115,7 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
             $tasks[] = ['agent' => 'scout', 'task' => 't'.$i];
         }
 
-        $result = $toolbox->execute(new ToolCall('call-subagent-max', 'subagent', ['arguments' => ['tasks' => $tasks]]));
+        $result = $toolbox->execute(new ToolCall('call-subagent-max', 'subagent', ['tasks' => $tasks]));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString(
@@ -133,7 +133,7 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
         // deterministic fault results.
         $toolbox = new FaultTolerantToolbox(self::getContainer()->get(ToolboxInterface::class));
 
-        $result = $toolbox->execute(new ToolCall('call-read-missing', 'read', ['arguments' => ['path' => '/definitely/not/here.txt']]));
+        $result = $toolbox->execute(new ToolCall('call-read-missing', 'read', ['path' => '/definitely/not/here.txt']));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('does not exist', $message);
@@ -144,13 +144,16 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
     {
         $toolbox = new FaultTolerantToolbox(self::getContainer()->get(ToolboxInterface::class));
 
-        $result = $toolbox->execute(new ToolCall('call-view-missing', 'view_image', ['arguments' => ['path' => '/definitely/not/here.png']]));
+        $result = $toolbox->execute(new ToolCall('call-view-missing', 'view_image', ['path' => '/definitely/not/here.png']));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('does not exist or is not readable', $message);
     }
 
     /**
+     * Flat provider schema: typed DTO tools expose their DTO properties at the
+     * Tool root (no {arguments: ...} envelope).
+     *
      * @return array<string, mixed>
      */
     private function toolboxParameterSchema(string $toolName, string $property): array
@@ -159,7 +162,7 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
         foreach ($toolbox->getTools() as $tool) {
             if ($tool->getName() === $toolName) {
                 $parameters = $tool->getParameters() ?? [];
-                $propertySchema = $parameters['properties']['arguments']['properties'][$property] ?? null;
+                $propertySchema = $parameters['properties'][$property] ?? null;
                 $this->assertIsArray($propertySchema, \sprintf('Tool %s must expose a %s property schema.', $toolName, $property));
 
                 return $propertySchema;
