@@ -275,6 +275,12 @@ final class CacheCommandStoreTest extends KernelTestCase
         $lockFactory = static::getContainer()->get(LockFactory::class);
         $runId = 'test-lock-release';
 
+        // Clean residual cache data from prior test runs.
+        // DAMA transaction rollback covers ORM but not raw cache_items, so
+        // a leftover item from a previous run would make the healthy
+        // enqueue below hit the authoritative idempotency duplicate check.
+        $realPool->deleteItem('hatfield.command.test-lock-release');
+
         $healthyStore = new CacheCommandStore($realPool, $lockFactory);
         $this->assertTrue($healthyStore->enqueue(new PendingCommand(
             runId: $runId,
