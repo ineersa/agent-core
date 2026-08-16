@@ -88,17 +88,22 @@ final class SkillReadProjectionReplayTest extends TestCase
                     [
                         'id' => 'call-skill-replay',
                         'name' => 'read',
+                        // Typed built-ins use the native method-parameter envelope.
                         'arguments' => [
-                            'path' => $skillFile,
-                            'offset' => 1,
-                            'limit' => 400,
+                            'arguments' => [
+                                'path' => $skillFile,
+                                'offset' => 1,
+                                'limit' => 400,
+                            ],
                         ],
                     ],
                     [
                         'id' => 'call-ordinary-replay',
                         'name' => 'read',
                         'arguments' => [
-                            'path' => $unrelated,
+                            'arguments' => [
+                                'path' => $unrelated,
+                            ],
                         ],
                     ],
                 ],

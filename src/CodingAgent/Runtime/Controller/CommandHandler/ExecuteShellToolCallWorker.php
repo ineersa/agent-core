@@ -81,7 +81,10 @@ final readonly class ExecuteShellToolCallWorker
         }
 
         // Include arguments so transcript projection can build a ToolCall block
-        // (command: …) for direct !shell executions that never stream tool_call.* events.
+        // for direct !shell executions that never stream tool_call.* events.
+        // bash is a typed DTO tool, so the canonical provider envelope shape
+        // ({arguments: {command: ...}}) is used, matching LLM-streamed calls.
+        $arguments = ['arguments' => ['command' => $commandText]];
         $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
@@ -91,7 +94,7 @@ final readonly class ExecuteShellToolCallWorker
                 'tool_call_id' => $toolCallId,
                 'tool_name' => 'bash',
                 'order_index' => 0,
-                'arguments' => ['command' => $commandText],
+                'arguments' => $arguments,
             ],
         ));
 
@@ -109,7 +112,7 @@ final readonly class ExecuteShellToolCallWorker
         $result = $this->toolExecutor->execute(new ToolCall(
             toolCallId: $toolCallId,
             toolName: 'bash',
-            arguments: ['command' => $commandText],
+            arguments: $arguments,
             orderIndex: 0,
             runId: $runId,
         ));

@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
+use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
@@ -426,6 +427,86 @@ final class ToolExecutorTest extends TestCase
         $this->assertTrue($result->details['retryable']);
         $this->assertSame('Adjust the arguments', $result->details['hint']);
         $this->assertStringContainsString('Registry tool failed', $result->content[0]['text']);
+    }
+
+    public function testResolverMissingEnvelopeBecomesActionableNonRetryableErrorResult(): void
+    {
+        // Full production chain: a DTO-typed built-in called without the native
+        // `arguments` envelope fails in ToolCallArgumentResolver; the wrapped
+        // ToolException must reach ToolExecutor as a non-retryable
+        // ToolCallException carrying the actionable resolver message, so the
+        // model can correct the call instead of seeing a generic fault.
+        $handler = new #[AsTool('read', 'Read')] class {
+            public function __invoke(ReadFileArgumentsDTO $arguments): mixed
+            {
+                return 'unreachable';
+            }
+        };
+        $registry = new ToolRegistry();
+        $registry->registerTool(name: 'read', description: 'Read', handler: $handler, promptLine: 'read');
+
+        $toolbox = new RegistryBackedToolbox(
+            registry: $registry,
+            argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+        );
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            maxParallelism: 4,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+        );
+
+        // Flat args (missing the {arguments: {...}} envelope).
+        $result = $executor->execute(ToolCallBuilder::create('call-missing-envelope')
+            ->withToolName('read')
+            ->withArguments(['path' => './x.txt'])
+            ->withOrderIndex(0)
+            ->build());
+
+        $this->assertTrue($result->isError);
+        $this->assertIsArray($result->details);
+        $this->assertSame(ToolCallException::class, $result->details['error_type']);
+        $this->assertFalse($result->details['retryable']);
+        $this->assertStringContainsString('Parameter "arguments" is mandatory for tool "read".', $result->content[0]['text']);
+    }
+
+    public function testDenormalizationFailureBecomesActionableNonRetryableErrorResult(): void
+    {
+        // A wrong-typed DTO field fails during denormalization; the wrapped
+        // NotNormalizableValueException must reach the model as an actionable
+        // non-retryable ToolCallException message, not a generic fault.
+        $handler = new #[AsTool('read', 'Read')] class {
+            public function __invoke(ReadFileArgumentsDTO $arguments): mixed
+            {
+                return 'unreachable';
+            }
+        };
+        $registry = new ToolRegistry();
+        $registry->registerTool(name: 'read', description: 'Read', handler: $handler, promptLine: 'read');
+
+        $toolbox = new RegistryBackedToolbox(
+            registry: $registry,
+            argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+        );
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            maxParallelism: 4,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+        );
+
+        // Envelope present but the DTO field has the wrong type.
+        $result = $executor->execute(ToolCallBuilder::create('call-denorm')
+            ->withToolName('read')
+            ->withArguments(['arguments' => ['path' => 123]])
+            ->withOrderIndex(0)
+            ->build());
+
+        $this->assertTrue($result->isError);
+        $this->assertIsArray($result->details);
+        $this->assertSame(ToolCallException::class, $result->details['error_type']);
+        $this->assertFalse($result->details['retryable']);
+        $this->assertStringContainsString('The type of the "path" attribute', $result->content[0]['text']);
     }
 
     public function testContextAccessorSetsCorrectValues(): void

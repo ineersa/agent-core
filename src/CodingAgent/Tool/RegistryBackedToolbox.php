@@ -23,6 +23,7 @@ use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Tool\ExecutionReference;
 use Symfony\AI\Platform\Tool\Tool;
+use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
@@ -49,8 +50,17 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * revision increments only when effective contents/visibility change, so
  * repeated no-op mutations keep the cached native Toolbox hot.
  */
-final readonly class RegistryBackedToolbox implements ToolboxInterface
+final class RegistryBackedToolbox implements ToolboxInterface
 {
+    /** Registry revision the cached fields below were built for; null = not built. */
+    private ?int $revision = null;
+
+    /** @var list<Tool>|null Provider-visible tool metadata in registry order */
+    private ?array $tools = null;
+
+    /** @var Toolbox|null Native toolbox covering every active handler */
+    private ?Toolbox $toolbox = null;
+
     public function __construct(
         private ToolRegistryInterface $registry,
         private ToolCallArgumentResolverInterface $argumentResolver,
@@ -60,7 +70,6 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
         private ?StackToolExecutionContextAccessor $contextAccessor = null,
         private ?ChildRunExtensionAllowlistReaderInterface $extensionAllowlistReader = null,
         private ?LoggerInterface $logger = null,
-        private readonly RegistryBackedToolboxSnapshot $snapshot = new RegistryBackedToolboxSnapshot(),
     ) {
     }
 
@@ -69,7 +78,9 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
      */
     public function getTools(): array
     {
-        return $this->snapshotFor()->tools;
+        $this->ensureSnapshot();
+
+        return $this->tools ?? [];
     }
 
     /**
@@ -86,16 +97,29 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
         $rewrittenCall = $this->applyRewrites($toolCall);
 
         try {
-            return $this->snapshotFor()->toolbox->execute($rewrittenCall);
+            $this->ensureSnapshot();
+            \assert($this->toolbox instanceof Toolbox); // set unconditionally by ensureSnapshot()
+
+            return $this->toolbox->execute($rewrittenCall);
         } catch (ToolExecutionException $e) {
+            $previous = $e->getPrevious();
+
             // Thin outer translation: the native Toolbox wraps every handler
             // throwable in ToolExecutionException. A handler-thrown
             // ToolCallException must survive unchanged so ToolExecutor keeps
-            // message/hint/retryable classification. All other failures keep
-            // their native wrapping (FaultTolerantToolbox makes them
-            // deterministic model-visible results).
-            if ($e->getPrevious() instanceof ToolCallException) {
-                throw $e->getPrevious();
+            // message/hint/retryable classification.
+            if ($previous instanceof ToolCallException) {
+                throw $previous;
+            }
+
+            // Resolver/denormalization failures (missing mandatory envelope
+            // parameters, type mismatches during DTO denormalization) carry
+            // actionable correction detail the model can act on; the native
+            // wrap would reduce them to a generic fault. Surface them as
+            // non-retryable ToolCallException with the native message and
+            // exception chain. Handler exceptions are NOT translated here.
+            if ($previous instanceof ToolException || $previous instanceof NotNormalizableValueException) {
+                throw new ToolCallException($previous->getMessage(), retryable: false, previous: $previous);
             }
 
             throw $e;
@@ -103,15 +127,15 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
     }
 
     /**
-     * Return the cached native Toolbox snapshot for the current registry
-     * revision, rebuilding it when the revision changed.
+     * Rebuild the cached native Toolbox and provider Tool list when the
+     * registry revision changed; no-op otherwise.
      */
-    private function snapshotFor(): RegistryBackedToolboxSnapshot
+    private function ensureSnapshot(): void
     {
         $revision = $this->registry->revision();
 
-        if (null !== $this->snapshot->toolbox && $this->snapshot->revision === $revision) {
-            return $this->snapshot;
+        if (null !== $this->toolbox && $this->revision === $revision) {
+            return;
         }
 
         $tools = [];
@@ -135,17 +159,15 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             }
         }
 
-        $this->snapshot->tools = $tools;
-        $this->snapshot->toolbox = new Toolbox(
+        $this->tools = $tools;
+        $this->toolbox = new Toolbox(
             tools: $handlers,
             toolFactory: new DefinitionToolFactory($metadataByHandler),
             argumentResolver: $this->argumentResolver,
             logger: $this->logger ?? new NullLogger(),
             eventDispatcher: $this->eventDispatcher,
         );
-        $this->snapshot->revision = $revision;
-
-        return $this->snapshot;
+        $this->revision = $revision;
     }
 
     private function applyRewrites(ToolCall $toolCall): ToolCall

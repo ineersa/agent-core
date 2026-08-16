@@ -10,16 +10,14 @@
     },
     "deltas": [
         {"type": "tool_call_start", "id": "call_abc123", "name": "read"},
-        {"type": "tool_input_delta", "id": "call_abc123", "name": "read", "partial_json": "{\"pa"},
-        {"type": "tool_input_delta", "id": "call_abc123", "name": "read", "partial_json": "t"},
-        {"type": "tool_input_delta", "id": "call_abc123", "name": "read", "partial_json": "h\": "},
-        {"type": "tool_input_delta", "id": "call_abc123", "name": "read", "partial_json": "\"./"},
-        {"type": "tool_input_delta", "id": "call_abc123", "name": "read", "partial_json": "note"},
-        {"type": "tool_input_delta", "id": "call_abc123", "name": "read", "partial_json": "s."},
-        {"type": "tool_input_delta", "id": "call_abc123", "name": "read", "partial_json": "tx"},
-        {"type": "tool_input_delta", "id": "call_abc123", "name": "read", "partial_json": "t\"}"},
+        {"type": "tool_input_delta", "id": "call_abc123", "name": "read", "partial_json": "{\"argum"},
+        {"type": "tool_input_delta", "id": "call_abc123", "name": "read", "partial_json": "ents\": "},
+        {"type": "tool_input_delta", "id": "call_abc123", "name": "read", "partial_json": "{\"path\""},
+        {"type": "tool_input_delta", "id": "call_abc123", "name": "read", "partial_json": ": \"./n"},
+        {"type": "tool_input_delta", "id": "call_abc123", "name": "read", "partial_json": "otes.t"},
+        {"type": "tool_input_delta", "id": "call_abc123", "name": "read", "partial_json": "xt\"}}"},
         {"type": "tool_call_complete", "tool_calls": [
-            {"id": "call_abc123", "name": "read", "arguments": {"path": "./notes.txt"}}
+            {"id": "call_abc123", "name": "read", "arguments": {"arguments": {"path": "./notes.txt"}}}
         ]},
         {"type": "text", "content": "I've called the read tool to fetch the contents"},
         {"type": "text", "content": " of ./notes.txt for you."}

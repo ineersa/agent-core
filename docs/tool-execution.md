@@ -22,8 +22,10 @@ Bash, subagent, MCP, and explicit registration budgets enforce their own deadlin
 
 ## Pipeline
 
-1. Model emits tool calls.
-2. Registry/toolbox validates names + arguments.
+1. Model emits tool calls (typed built-ins use the native Symfony method-parameter
+   envelope — DTO fields nested under `arguments`; raw dynamic tools stay flat).
+2. Registry/toolbox validates names + arguments (typed built-ins via native Symfony AI
+   resolution + Validator; raw dynamic tools pass through to their handler/server).
 3. Tool-call hooks run (allow / block / replace / require approval).
 4. Workers execute handlers with cancellation tokens where supported.
 5. Tool-result hooks may adjust presentation.

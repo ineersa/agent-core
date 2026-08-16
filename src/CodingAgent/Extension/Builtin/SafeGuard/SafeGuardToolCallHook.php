@@ -223,7 +223,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
      */
     private function extractCommand(ToolCallContextDTO $context): ?string
     {
-        $command = $context->arguments['command'] ?? null;
+        $command = $this->innerArguments($context)['command'] ?? null;
 
         return \is_string($command) && '' !== $command ? $command : null;
     }
@@ -235,7 +235,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
      */
     private function extractPath(ToolCallContextDTO $context): ?string
     {
-        $path = $context->arguments['path'] ?? null;
+        $path = $this->innerArguments($context)['path'] ?? null;
 
         return \is_string($path) && '' !== $path ? $path : null;
     }
@@ -267,9 +267,25 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
             return false;
         }
 
-        $operation = $context->arguments['operation'] ?? null;
+        $operation = $this->innerArguments($context)['operation'] ?? null;
 
         return \is_string($operation) && \in_array($operation, ['set', 'remove'], true);
+    }
+
+    /**
+     * Typed built-in tool calls carry the native Symfony method-parameter
+     * envelope (DTO fields under the `arguments` key); raw dynamic tools
+     * (settings, MCP, extension) stay flat. Return the field map either way.
+     *
+     * @return array<string, mixed>
+     */
+    private function innerArguments(ToolCallContextDTO $context): array
+    {
+        $arguments = $context->arguments;
+
+        return isset($arguments['arguments']) && \is_array($arguments['arguments'])
+            ? $arguments['arguments']
+            : $arguments;
     }
 
     /**

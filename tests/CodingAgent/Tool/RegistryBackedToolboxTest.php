@@ -23,7 +23,7 @@ use Symfony\AI\Agent\Toolbox\Event\ToolCallFailed;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
 use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
-use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionException;
+use Symfony\AI\Agent\Toolbox\Exception\ToolException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
@@ -35,6 +35,7 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\PropertyInfo\PropertyInfoExtractor;
+use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
 use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
@@ -457,7 +458,7 @@ final class RegistryBackedToolboxTest extends TestCase
 
     /* ───────── Fault tolerance for invalid arguments ───────── */
 
-    public function testMissingMandatoryArgumentsBecomeFaultTolerantResult(): void
+    public function testMissingMandatoryArgumentsBecomeActionableToolCallException(): void
     {
         $registry = new ToolRegistry();
         $handler = new #[AsTool('view_image', 'View')] class {
@@ -469,11 +470,22 @@ final class RegistryBackedToolboxTest extends TestCase
         $registry->registerTool(name: 'view_image', description: 'View', handler: $handler, promptLine: 'view_image');
 
         $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
-        $result = $toolbox->execute(new ToolCall('call-missing', 'view_image', []));
 
-        // Native resolver rejects the missing mandatory `arguments` parameter;
-        // the native Toolbox wraps it into a deterministic model-visible fault.
-        $this->assertSame('An error occurred while executing tool "view_image".', (string) $result->getResult());
+        // The native resolver rejects the missing mandatory `arguments` envelope
+        // parameter; RegistryBackedToolbox translates the wrapped ToolException
+        // into a non-retryable ToolCallException carrying the actionable native
+        // message, so ToolExecutor gives the model correction detail instead of
+        // a generic fault (FaultTolerantToolbox only converts
+        // ToolExecutionExceptionInterface, so the ToolCallException propagates).
+        try {
+            $toolbox->execute(new ToolCall('call-missing', 'view_image', []));
+            $this->fail('Expected ToolCallException with the resolver message.');
+        } catch (ToolCallException $e) {
+            $this->assertSame('Parameter "arguments" is mandatory for tool "view_image".', $e->getMessage());
+            $this->assertFalse($e->retryable());
+            $this->assertNull($e->hint());
+            $this->assertInstanceOf(ToolException::class, $e->getPrevious());
+        }
     }
 
     public function testDtoConstraintViolationBecomesFaultTolerantResultWithViolations(): void
@@ -513,7 +525,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertStringContainsString('The "path" argument is required and must be a non-empty string.', $message);
     }
 
-    public function testDenormalizerFailureWrappedAsToolExecutionException(): void
+    public function testDenormalizerFailureBecomesActionableToolCallException(): void
     {
         $registry = new ToolRegistry();
         $registry->registerTool(
@@ -528,12 +540,19 @@ final class RegistryBackedToolboxTest extends TestCase
             promptLine: 'fragile',
         );
 
-        // Resolver/denormalizer failure before handler invoke → wrapped as
-        // ToolExecutionException → deterministic model-visible fault.
+        // Resolver/denormalizer failure before handler invoke: the wrapped
+        // NotNormalizableValueException is translated into a non-retryable
+        // ToolCallException with the actionable serializer message.
         $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
-        $result = $toolbox->execute(new ToolCall('call-fragile', 'fragile', ['count' => 'abc']));
 
-        $this->assertSame('An error occurred while executing tool "fragile".', (string) $result->getResult());
+        try {
+            $toolbox->execute(new ToolCall('call-fragile', 'fragile', ['count' => 'abc']));
+            $this->fail('Expected ToolCallException with the denormalization message.');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('Data expected to be of type "int"', $e->getMessage());
+            $this->assertFalse($e->retryable());
+            $this->assertInstanceOf(NotNormalizableValueException::class, $e->getPrevious());
+        }
     }
 
     /* ───────── Visibility filtering (excluded/allowlist) ───────── */

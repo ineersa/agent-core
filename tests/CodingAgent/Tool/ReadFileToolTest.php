@@ -159,6 +159,40 @@ final class ReadFileToolTest extends TestCase
         $this->assertStringNotContainsString('line one', $message);
     }
 
+    public function testReadOffsetWithinRangeOnLargeFilePassesWithBoundedCounting(): void
+    {
+        // The ReadFileTarget validator must not load the whole file to prove
+        // the offset is in range: counting stops as soon as `offset` lines are
+        // seen, so a large file with a small in-range offset stays bounded.
+        $targetPath = $this->tmpDir.'/large_in_range.txt';
+        $lines = 200_000;
+        $content = str_repeat("line\n", $lines);
+        file_put_contents($targetPath, $content);
+
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = (string) $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => $targetPath, 'offset' => 5]]))->getResult();
+
+        // No violation: the file reads normally from offset 5.
+        $this->assertStringContainsString('line', $result);
+    }
+
+    public function testReadOffsetPastEofOnLargeFileCountsToEof(): void
+    {
+        // Past-EOF offsets must still report the exact line count, streaming
+        // to EOF with a single handle instead of buffering the whole file.
+        $targetPath = $this->tmpDir.'/large_past_eof.txt';
+        $lines = 200_000;
+        $content = str_repeat("line\n", $lines);
+        file_put_contents($targetPath, $content);
+
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        $result = $toolbox->execute(new ToolCall('call-read', 'read', ['arguments' => ['path' => $targetPath, 'offset' => 500_000]]));
+
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('offset 500000 exceeds file length', $message);
+        $this->assertStringContainsString('200000 lines', $message);
+    }
+
     public function testReadEmptyFile(): void
     {
         $targetPath = $this->tmpDir.'/empty.txt';

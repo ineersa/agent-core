@@ -404,7 +404,8 @@ final class OutputCapLlmTransformHookTest extends TestCase
             toolCallId: 'call-read-late',
             toolName: 'read',
             details: [
-                'arguments' => ['path' => './src/file.php', 'offset' => 42],
+                // Typed built-ins use the native method-parameter envelope.
+                'arguments' => ['arguments' => ['path' => './src/file.php', 'offset' => 42]],
                 'raw_result' => $largeText,
             ],
         );

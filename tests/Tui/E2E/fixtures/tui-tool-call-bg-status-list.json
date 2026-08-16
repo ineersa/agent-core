@@ -22,9 +22,9 @@
     "expected_text": "",
     "deltas": [
         {"type": "tool_call_start", "id": "call_bg_status_list_1", "name": "bg_status"},
-        {"type": "tool_input_delta", "id": "call_bg_status_list_1", "name": "bg_status", "partial_json": "{\"action\":\"list\"}"},
+        {"type": "tool_input_delta", "id": "call_bg_status_list_1", "name": "bg_status", "partial_json": "{\"arguments\": {\"action\": \"list\"}}"},
         {"type": "tool_call_complete", "tool_calls": [
-            {"id": "call_bg_status_list_1", "name": "bg_status", "arguments": {"action": "list"}}
+            {"id": "call_bg_status_list_1", "name": "bg_status", "arguments": {"arguments": {"action": "list"}}}
         ]}
     ]
 }

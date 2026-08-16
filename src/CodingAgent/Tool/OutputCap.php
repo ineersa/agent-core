@@ -128,9 +128,12 @@ final class OutputCap
             return null;
         }
 
+        // Typed built-ins carry DTO fields under the `arguments` envelope key.
+        $fields = $this->unwrapEnvelope($arguments);
+
         if ('hatfield_docs' === $toolName) {
             // Only successful document reads are doc-like; list stays defaultCap.
-            return ('read' === ($arguments['operation'] ?? null))
+            return ('read' === ($fields['operation'] ?? null))
                 ? 'hatfield-docs-read.md'
                 : null;
         }
@@ -153,8 +156,11 @@ final class OutputCap
      */
     public function extractPathFromArguments(array $arguments): ?string
     {
+        // Typed built-ins carry DTO fields under the `arguments` envelope key.
+        $fields = $this->unwrapEnvelope($arguments);
+
         foreach (self::PATH_ARGUMENT_KEYS as $key) {
-            $value = $arguments[$key] ?? null;
+            $value = $fields[$key] ?? null;
             if (\is_string($value) && '' !== $value) {
                 return $value;
             }
@@ -187,7 +193,8 @@ final class OutputCap
             return $capResult->noticeText;
         }
 
-        $originalOffset = $arguments['offset'] ?? null;
+        $fields = $this->unwrapEnvelope($arguments);
+        $originalOffset = $fields['offset'] ?? null;
         $offset = (\is_int($originalOffset) && $originalOffset > 0) ? $originalOffset : 1;
         $escapedGrepPath = escapeshellarg($originalPath);
 
@@ -269,6 +276,22 @@ STRING;
         }
 
         closedir($handle);
+    }
+
+    /**
+     * Typed built-in tool calls carry the native Symfony method-parameter
+     * envelope (DTO fields under the `arguments` key); raw dynamic tools stay
+     * flat. Return the field map either way.
+     *
+     * @param array<string, mixed> $arguments
+     *
+     * @return array<string, mixed>
+     */
+    private function unwrapEnvelope(array $arguments): array
+    {
+        return isset($arguments['arguments']) && \is_array($arguments['arguments'])
+            ? $arguments['arguments']
+            : $arguments;
     }
 
     /**

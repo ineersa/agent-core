@@ -219,13 +219,15 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         ?int $limit = null,
     ): void {
         static $seq = 0;
-        $arguments = ['path' => $path];
+        // Typed built-ins use the native Symfony method-parameter envelope.
+        $fields = ['path' => $path];
         if (null !== $offset) {
-            $arguments['offset'] = $offset;
+            $fields['offset'] = $offset;
         }
         if (null !== $limit) {
-            $arguments['limit'] = $limit;
+            $fields['limit'] = $limit;
         }
+        $arguments = ['arguments' => $fields];
 
         ++$seq;
         $projector->accept(new RuntimeEvent(

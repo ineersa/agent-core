@@ -251,22 +251,40 @@ final class ReadFileTargetValidator extends ConstraintValidator
             return;
         }
 
-        $lines = @file($resolvedPath, \FILE_IGNORE_NEW_LINES);
-        if (false === $lines) {
+        // Stream the file line by line instead of loading it whole (file()):
+        // counting stops as soon as the offset is proven to be in range, so
+        // memory stays bounded even for very large files. The handle is
+        // always closed, and read failures (as opposed to EOF) defer to the
+        // handler exactly like the previous file() false result did.
+        $fh = @fopen($resolvedPath, 'rb');
+        if (false === $fh) {
             return; // Race/operational read failure — the handler reports it
         }
 
-        $totalLines = \count($lines);
-        if ($offset > $totalLines) {
-            $this->violation(\sprintf(
-                'Cannot read "%s": offset %d exceeds file length (%d lines). The file has %d lines. Use an offset between 1 and %d, or omit offset to read from the beginning.',
-                $resolvedPath,
-                $offset,
-                $totalLines,
-                $totalLines,
-                $totalLines,
-            ));
+        $totalLines = 0;
+        try {
+            while (false !== ($line = fgets($fh))) {
+                ++$totalLines;
+                if ($totalLines >= $offset) {
+                    return; // offset is within the file; no violation
+                }
+            }
+
+            if (!feof($fh)) {
+                return; // Read error before EOF — the handler reports it
+            }
+        } finally {
+            @fclose($fh);
         }
+
+        $this->violation(\sprintf(
+            'Cannot read "%s": offset %d exceeds file length (%d lines). The file has %d lines. Use an offset between 1 and %d, or omit offset to read from the beginning.',
+            $resolvedPath,
+            $offset,
+            $totalLines,
+            $totalLines,
+            $totalLines,
+        ));
     }
 
     private function violation(string $message): void

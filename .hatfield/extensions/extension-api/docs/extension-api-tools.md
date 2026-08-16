@@ -49,6 +49,23 @@ to allow / block / replace-result. Allow re-runs the **exact** original tool cal
 `registerToolCallRewriteHook($toolName, $hook)` can adjust arguments for a specific tool
 before handler execution (policy normalization, path rewriting, etc.).
 
+### Argument shapes
+
+Rewrite hooks (and result hooks, via `ToolCallContextDTO` / the succeeded/failed events)
+receive the **provider-visible** argument map, whose shape depends on the tool kind:
+
+- **Typed built-in tools** (`read`, `write`, `edit`, `bash`, `bg_status`, `view_image`,
+  `ask_human`, `subagent`, `fork`, `agent_retrieve`, `hatfield_docs`) use the native
+  Symfony AI method-parameter envelope: the DTO fields are nested under the `arguments`
+  key of the call, matching the provider-visible JSON Schema, e.g.
+  `['arguments' => ['path' => './file.txt', 'offset' => 10]]`.
+- **Raw dynamic tools** (MCP tools, extension-registered tools, `settings`) keep the
+  flat provider map, e.g. `['path' => './file.txt']`.
+
+If a rewrite hook needs to adjust a typed built-in's arguments, rewrite inside the
+`arguments` envelope; for raw tools rewrite the flat map. Do not rely on the flat shape
+for typed built-ins — their schemas and runtime resolution both use the envelope.
+
 ## Tool-result hooks
 
 `registerToolResultHook()` runs after tool execution in registration order.

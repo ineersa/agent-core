@@ -120,7 +120,7 @@ Workers perform **best-effort graceful disconnect** on worker stop (`McpWorkerSh
 
 ## Argument validation
 
-Built-in tools run through Symfony AI's native argument resolution and Symfony Validator object validation: their provider schema is generated natively from typed argument DTOs, so the model-visible contract and runtime constraints cannot drift.
+Built-in tools run through Symfony AI's native argument resolution and Symfony Validator object validation: their provider schema is generated natively from typed argument DTOs, so the model-visible contract and runtime constraints cannot drift. Because the DTO is a single `arguments` method parameter, typed built-in tool calls use the native Symfony method-parameter envelope — the provider schema and the tool-call payload both nest the DTO fields under `arguments` (e.g. `{"arguments": {"path": "./file.txt"}}`). Raw dynamic tools (MCP, extension, settings) keep flat provider maps.
 
 Dynamic MCP tools keep raw-array handlers because their schemas only exist at runtime and cannot be reflected into DTOs. Arguments are passed through to the MCP handler/server verbatim — missing, unknown, or constrained-value handling is delegated to the MCP tool/server. Symfony AI's validator listener only validates typed objects, so no object validation is simulated for raw-array tools.
 

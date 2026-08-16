@@ -35,20 +35,13 @@ final readonly class DefinitionToolFactory implements ToolFactoryInterface
 
     public function getTool(object|string $reference): iterable
     {
-        if (\is_object($reference)) {
-            return $this->metadataByObjectId[spl_object_id($reference)] ?? [];
+        if (!\is_object($reference)) {
+            // The native Toolbox always invokes the factory with the handler
+            // instances from its `tools` iterable; class-name references are
+            // never produced by it. Refuse instead of guessing.
+            throw new \LogicException(\sprintf('DefinitionToolFactory only supports handler object references, got class string "%s". The native Toolbox always passes handler instances.', $reference));
         }
 
-        // Defensive fallback for class-name references: return the first
-        // metadata whose execution class matches.
-        foreach ($this->metadataByObjectId as $tools) {
-            foreach ($tools as $tool) {
-                if ($tool->getReference()->getClass() === $reference) {
-                    return $tools;
-                }
-            }
-        }
-
-        return [];
+        return $this->metadataByObjectId[spl_object_id($reference)] ?? [];
     }
 }

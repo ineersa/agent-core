@@ -108,8 +108,9 @@ final class ReplayTest extends \PHPUnit\Framework\TestCase
         $this->assertCount(1, $toolCalls);
         $this->assertSame('call_abc123', $toolCalls[0]->getId());
         $this->assertSame('read', $toolCalls[0]->getName());
+        // Typed built-ins use the native Symfony method-parameter envelope.
         $this->assertSame(
-            ['path' => './notes.txt'],
+            ['arguments' => ['path' => './notes.txt']],
             $toolCalls[0]->getArguments(),
         );
 

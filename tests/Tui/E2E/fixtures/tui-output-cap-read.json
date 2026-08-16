@@ -22,16 +22,16 @@
     "expected_text": "",
     "deltas": [
         {"type": "tool_call_start", "id": "call_output_cap_read_1", "name": "read"},
-        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "{\"pa"},
-        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "th\":"},
-        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": " \"./"},
-        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "large_"},
-        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "file."},
-        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "txt"},
-        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "\""},
-        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "}"},
+        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "{\"argu"},
+        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "ments\""},
+        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": ": {\"pa"},
+        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "th\": "},
+        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "\"./la"},
+        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "rge_f"},
+        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "ile.t"},
+        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "xt\"}}"},
         {"type": "tool_call_complete", "tool_calls": [
-            {"id": "call_output_cap_read_1", "name": "read", "arguments": {"path": "./large_file.txt"}}
+            {"id": "call_output_cap_read_1", "name": "read", "arguments": {"arguments": {"path": "./large_file.txt"}}}
         ]}
     ]
 }

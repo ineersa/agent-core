@@ -19,7 +19,9 @@ final class ViewImageTranscriptFormatter
      */
     public function formatToolCallLines(array $arguments): array
     {
-        $path = $arguments['path'] ?? null;
+        // Typed built-ins use the native Symfony method-parameter envelope:
+        // DTO fields live under the `arguments` key of the provider call.
+        $path = $arguments['arguments']['path'] ?? null;
         if (!\is_string($path) || '' === $path) {
             return [];
         }
