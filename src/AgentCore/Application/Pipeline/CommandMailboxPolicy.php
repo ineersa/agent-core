@@ -290,6 +290,11 @@ final readonly class CommandMailboxPolicy
     /**
      * Extract concatenated text content from an AgentMessage-like array.
      *
+     * Text parts are joined with a newline, matching the other
+     * content-part extraction paths (normalizer, tool-result transcript,
+     * provider conversion) so multi-part messages render consistently in
+     * canonical agent_command_applied payloads and transcript text.
+     *
      * @param array<string, mixed> $messageArray
      */
     private static function extractMessageText(array $messageArray): string
@@ -306,6 +311,6 @@ final readonly class CommandMailboxPolicy
             }
         }
 
-        return implode('', $parts);
+        return implode("\n", $parts);
     }
 }
