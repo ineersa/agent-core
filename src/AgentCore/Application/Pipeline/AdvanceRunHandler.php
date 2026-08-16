@@ -152,7 +152,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     'status' => RunStatus::Running,
                     'errorMessage' => null,
                     'retryableFailure' => false,
-                    'retryAttempts' => $preparedState->retryAttempts,
                 ]);
             // Fall through to the turn-advance code below.
             } else {
@@ -386,7 +385,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             'streamingMessage' => null,
             'activeStepId' => $nextStepId,
             'retryableFailure' => false,
-            'retryAttempts' => $preparedState->retryAttempts,
         ]);
 
         $postCommit = [];
