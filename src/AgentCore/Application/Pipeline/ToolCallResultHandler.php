@@ -21,7 +21,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
-final readonly class ToolCallResultHandler implements RunMessageHandler
+final readonly class ToolCallResultHandler implements RunMessageHandler, RunMessageHandlerLogComponentInterface
 {
     private const string SYNTHETIC_USER_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
 
@@ -34,6 +34,11 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
         private ?RunMetrics $metrics = null,
         private ?MessageBusInterface $commandBus = null,
     ) {
+    }
+
+    public function getLogComponent(): string
+    {
+        return 'tool';
     }
 
     public function supports(object $message): bool

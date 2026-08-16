@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageHandlerLogComponentInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -37,7 +38,7 @@ use Psr\Log\NullLogger;
  * is registered as a tagged RunMessageHandler service and discovered
  * by RunMessageProcessor at runtime.
  */
-final readonly class CompactRunHandler implements RunMessageHandler
+final readonly class CompactRunHandler implements RunMessageHandler, RunMessageHandlerLogComponentInterface
 {
     public function __construct(
         private CompactionServiceInterface $compactionService,
@@ -48,6 +49,11 @@ final readonly class CompactRunHandler implements RunMessageHandler
         private SubagentRunMetadataReader $metadataReader,
         private LoggerInterface $logger = new NullLogger(),
     ) {
+    }
+
+    public function getLogComponent(): string
+    {
+        return 'compaction';
     }
 
     public function supports(object $message): bool

@@ -80,10 +80,14 @@ final readonly class RunMessageProcessor
 
                 $handler = $this->resolveHandler($message);
 
-                // Set handler context for inner logs.
+                // Set handler context for inner logs. The component comes from
+                // the handler's optional log-component capability so Core never
+                // names App handler classes.
                 RunLogContext::enter([
                     'handler' => $handler::class,
-                    'component' => self::componentForHandler($handler::class),
+                    'component' => $handler instanceof RunMessageHandlerLogComponentInterface
+                        ? $handler->getLogComponent()
+                        : 'runtime',
                 ]);
 
                 try {
@@ -218,20 +222,6 @@ final readonly class RunMessageProcessor
         ]);
 
         throw new CasRetryExhaustedException(\sprintf('CAS conflict exhausted after %d attempts for run %s, message %s', self::MAX_CAS_RETRIES, $runId, $message::class));
-    }
-
-    private static function componentForHandler(string $handlerClass): string
-    {
-        return match ($handlerClass) {
-            'Ineersa\AgentCore\Application\Pipeline\StartRunHandler' => 'runtime',
-            'Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler' => 'runtime',
-            'Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler' => 'runtime',
-            'Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler' => 'llm',
-            'Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler' => 'tool',
-            'Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler' => 'compaction',
-            'Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler' => 'compaction',
-            default => 'runtime',
-        };
     }
 
     private function resolveHandler(object $message): RunMessageHandler
