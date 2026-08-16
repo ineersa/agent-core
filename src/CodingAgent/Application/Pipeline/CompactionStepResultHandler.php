@@ -30,6 +30,8 @@ use Psr\Log\NullLogger;
  */
 final class CompactionStepResultHandler implements RunMessageHandler
 {
+    public const string LOG_COMPONENT = 'compaction';
+
     public function __construct(
         private CompactionServiceInterface $compactionService,
         private EventFactory $eventFactory,

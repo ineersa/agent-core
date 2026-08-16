@@ -35,6 +35,8 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final class LlmStepResultHandler implements RunMessageHandler
 {
+    public const string LOG_COMPONENT = 'llm';
+
     public function __construct(
         private ToolBatchCollector $toolBatchCollector,
         private CommandMailboxPolicy $commandMailboxPolicy,

@@ -39,6 +39,8 @@ use Psr\Log\NullLogger;
  */
 final readonly class CompactRunHandler implements RunMessageHandler
 {
+    public const string LOG_COMPONENT = 'compaction';
+
     public function __construct(
         private CompactionServiceInterface $compactionService,
         private AppConfig $appConfig,

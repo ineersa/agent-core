@@ -23,6 +23,8 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final readonly class ToolCallResultHandler implements RunMessageHandler
 {
+    public const string LOG_COMPONENT = 'tool';
+
     private const string SYNTHETIC_USER_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
 
     public function __construct(
