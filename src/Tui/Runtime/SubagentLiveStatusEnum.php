@@ -39,4 +39,24 @@ enum SubagentLiveStatusEnum: string
     {
         return self::WaitingHuman === $this;
     }
+
+    /**
+     * Map this subagent status to the TUI run-activity state.
+     *
+     * Single owner of the forward status→activity mapping shared by
+     * TickPollListener and SubagentLiveViewState. Unknown maps to null
+     * so callers can keep their current activity unchanged. The reverse
+     * activity→status reconciliation stays separate (TickPollListener).
+     */
+    public function toActivity(): ?RunActivityStateEnum
+    {
+        return match ($this) {
+            self::Pending, self::Running => RunActivityStateEnum::Running,
+            self::WaitingHuman => RunActivityStateEnum::WaitingHuman,
+            self::Completed, self::Done => RunActivityStateEnum::Completed,
+            self::Failed => RunActivityStateEnum::Failed,
+            self::Cancelled => RunActivityStateEnum::Cancelled,
+            self::Unknown => null,
+        };
+    }
 }

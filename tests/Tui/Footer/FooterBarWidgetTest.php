@@ -8,6 +8,8 @@ use Ineersa\Tui\Footer\FooterBarWidget;
 use Ineersa\Tui\Footer\FooterDataProvider;
 use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Footer\FooterSegmentProvider;
+use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -21,7 +23,7 @@ final class FooterBarWidgetTest extends TestCase
     {
         $provider = new FooterDataProvider();
         $widget = new FooterBarWidget($provider);
-        $context = new TuiRenderContext(terminalWidth: 80);
+        $context = $this->context(80);
 
         $lines = $widget->render($context);
 
@@ -41,7 +43,7 @@ final class FooterBarWidgetTest extends TestCase
         });
 
         $widget = new FooterBarWidget($provider);
-        $context = new TuiRenderContext(terminalWidth: 80);
+        $context = $this->context(80);
 
         $lines = $widget->render($context);
 
@@ -64,7 +66,7 @@ final class FooterBarWidgetTest extends TestCase
         });
 
         $widget = new FooterBarWidget($provider);
-        $context = new TuiRenderContext(terminalWidth: 80);
+        $context = $this->context(80);
 
         $lines = $widget->render($context);
 
@@ -92,7 +94,7 @@ final class FooterBarWidgetTest extends TestCase
         });
 
         $widget = new FooterBarWidget($provider);
-        $context = new TuiRenderContext(terminalWidth: 80);
+        $context = $this->context(80);
 
         $lines = $widget->render($context);
 
@@ -114,12 +116,21 @@ final class FooterBarWidgetTest extends TestCase
         });
 
         // Narrow terminal (40 is enough to trigger truncation test without being too small)
-        $context = new TuiRenderContext(terminalWidth: 40);
+        $context = $this->context(40);
         $widget = new FooterBarWidget($provider);
         $lines = $widget->render($context);
 
         $this->assertCount(1, $lines);
         $this->assertStringStartsWith('  ', $lines[0]);
         $this->assertLessThanOrEqual(40, mb_strlen($lines[0]));
+    }
+
+    private function context(int $width): TuiRenderContext
+    {
+        // Empty palette matches the previous constructor default theme.
+        return new TuiRenderContext(
+            terminalWidth: $width,
+            theme: new DefaultTheme(new ThemePalette('test', [])),
+        );
     }
 }

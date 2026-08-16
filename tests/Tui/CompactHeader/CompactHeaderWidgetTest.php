@@ -100,7 +100,6 @@ final class CompactHeaderWidgetTest extends TestCase
     {
         return new TuiRenderContext(
             terminalWidth: $width,
-            terminalHeight: 24,
             theme: new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette()),
         );
     }

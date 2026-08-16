@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Runtime\TuiSessionState;
 
@@ -65,6 +66,27 @@ final readonly class FooterStateInitializer
         $cwd = getcwd();
         $state->cwd = false !== $cwd ? self::shortCwd($cwd) : '';
         $state->branch = self::detectGitBranch();
+    }
+
+    /**
+     * Apply the three model-derived footer/state values for a selected model.
+     *
+     * Sets footerModel (short name), footerReasoning (display reasoning,
+     * 'off' for non-thinking models), and contextWindow (catalog lookup).
+     * Shared by ModelControlListener, ModelPickerController, and
+     * ModelCommandHandler so every model change lands on the same values.
+     * Border colour, persistence/send order, and screen refresh stay at
+     * the call sites.
+     */
+    public static function applyModelSelection(
+        TuiSessionState $state,
+        AiModelReference $ref,
+        ModelSelectionService $modelService,
+        AppConfig $appConfig,
+    ): void {
+        $state->footerModel = self::shortModelName($ref->toString());
+        $state->footerReasoning = $modelService->getDisplayReasoning($state->sessionId);
+        $state->contextWindow = self::resolveContextWindowForRef($appConfig, $ref);
     }
 
     // ── Helpers ──

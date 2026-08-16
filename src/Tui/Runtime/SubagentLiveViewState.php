@@ -136,6 +136,11 @@ final class SubagentLiveViewState
             $this->childTranscript = [];
             $this->childLastSeq = 0;
             $this->childLastPoll = 0.0;
+            // KEEP: fresh-enter fallback collapses every non-active status
+            // (Completed/Done/Failed/Cancelled/Unknown) to Completed. This
+            // differs from SubagentLiveStatusEnum::toActivity() (Failed and
+            // Cancelled map to themselves) — preserved verbatim to avoid a
+            // behavior change; the next poll tick reconciles from the catalog.
             $this->childActivity = match (true) {
                 SubagentLiveStatusEnum::WaitingHuman === $child->status => RunActivityStateEnum::WaitingHuman,
                 $child->isRunning() => RunActivityStateEnum::Running,
@@ -146,17 +151,9 @@ final class SubagentLiveViewState
         }
 
         $this->selected = $child;
-        if (SubagentLiveStatusEnum::WaitingHuman === $child->status) {
-            $this->childActivity = RunActivityStateEnum::WaitingHuman;
-        } elseif ($child->isRunning()) {
-            $this->childActivity = RunActivityStateEnum::Running;
-        } elseif ($child->isTerminal()) {
-            $this->childActivity = match ($child->status) {
-                SubagentLiveStatusEnum::Completed, SubagentLiveStatusEnum::Done => RunActivityStateEnum::Completed,
-                SubagentLiveStatusEnum::Failed => RunActivityStateEnum::Failed,
-                SubagentLiveStatusEnum::Cancelled => RunActivityStateEnum::Cancelled,
-                default => RunActivityStateEnum::Completed,
-            };
+        $mappedActivity = $child->status->toActivity();
+        if (null !== $mappedActivity) {
+            $this->childActivity = $mappedActivity;
         }
     }
 

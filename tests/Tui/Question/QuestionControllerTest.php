@@ -197,10 +197,7 @@ class QuestionControllerTest extends TestCase
         $screen->mount($tui);
         $screen->setStatus('action', 'Type your answer and press Enter');
 
-        $this->controller->setRuntimeRefs(
-            (new \ReflectionClass(\Ineersa\Tui\Runtime\TuiRuntimeContext::class))->newInstanceWithoutConstructor(),
-            $screen,
-        );
+        $this->controller->setRuntimeRefs($screen);
         $this->controller->open($request);
 
         $entries = $screen->registry()->getStatusEntries();

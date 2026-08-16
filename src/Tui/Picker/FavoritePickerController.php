@@ -10,11 +10,10 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Ineersa\Tui\Widget\SelectListKeybindings;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
-use Symfony\Component\Tui\Input\Key;
-use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -74,20 +73,13 @@ final class FavoritePickerController
         );
 
         // Keybindings: arrows, space, enter, escape — no ctrl+f
-        $kb = new Keybindings([
-            'select_up' => [Key::UP],
-            'select_down' => [Key::DOWN],
-            'select_page_up' => [Key::PAGE_UP],
-            'select_page_down' => [Key::PAGE_DOWN],
-            'select_confirm' => [Key::ENTER],
-            'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
-        ]);
+        $kb = SelectListKeybindings::standard();
 
         $items = $this->buildItems();
 
         $listWidget = new SelectListWidget(
             items: $items,
-            maxVisible: 10,
+            maxVisible: SelectListKeybindings::MAX_VISIBLE,
             keybindings: $kb,
         );
 

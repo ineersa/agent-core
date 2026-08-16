@@ -81,7 +81,7 @@ final class SubmitListener implements TuiListenerRegistrar
         $pastedImageSubmissionService = $this->pastedImageSubmissionService;
 
         // Wire the question controller with TUI runtime references
-        $questionController->setRuntimeRefs($context, $screen);
+        $questionController->setRuntimeRefs($screen);
 
         $context->tui->addListener(static function (SubmitEvent $event) use (
             $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,

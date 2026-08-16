@@ -150,11 +150,7 @@ final class ModelCommandHandler implements SlashCommandHandler
             }
         }
 
-        $this->state->footerModel = FooterStateInitializer::shortModelName(
-            $ref->providerId.'/'.$ref->modelName,
-        );
-        $this->state->footerReasoning = $this->modelService->getDisplayReasoning($this->state->sessionId);
-        $this->state->contextWindow = FooterStateInitializer::resolveContextWindowForRef($this->appConfig, $ref);
+        FooterStateInitializer::applyModelSelection($this->state, $ref, $this->modelService, $this->appConfig);
 
         // Apply editor border colour matching the new reasoning level.
         $this->screen?->applyEditorBorderColor($this->state->footerReasoning);

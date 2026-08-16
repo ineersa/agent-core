@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Question;
 
-use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Widget\SelectListKeybindings;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
-use Symfony\Component\Tui\Input\Key;
-use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -48,10 +46,7 @@ final class QuestionController
      * Set the per-run TUI references that are only available at
      * listener registration time.
      */
-    /**
-     * @param TuiRuntimeContext $_context Unused; kept for caller compatibility
-     */
-    public function setRuntimeRefs(TuiRuntimeContext $_context, ChatScreen $screen): void
+    public function setRuntimeRefs(ChatScreen $screen): void
     {
         $this->screen = $screen;
     }
@@ -228,18 +223,11 @@ final class QuestionController
 
         $items = $this->buildItems($request);
         $items = $this->styleConfirmItems($items, $request->kind);
-        $kb = new Keybindings([
-            'select_up' => [Key::UP],
-            'select_down' => [Key::DOWN],
-            'select_page_up' => [Key::PAGE_UP],
-            'select_page_down' => [Key::PAGE_DOWN],
-            'select_confirm' => [Key::ENTER],
-            'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
-        ]);
+        $kb = SelectListKeybindings::standard();
 
         $this->listWidget = new SelectListWidget(
             items: $items,
-            maxVisible: 10,
+            maxVisible: SelectListKeybindings::MAX_VISIBLE,
             keybindings: $kb,
         );
 

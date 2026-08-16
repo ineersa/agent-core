@@ -88,6 +88,10 @@ final class TuiSlotRegistry
         int $order = self::ORDER_DEFAULT,
     ): void {
         $this->extensionWidgets[$key] = ['widget' => $widget, 'placement' => $placement, 'order' => $order];
+
+        // Maintain ascending order on mutation so render reads stay sorted.
+        // usort is stable (PHP 8.0+), so equal orders preserve insertion order.
+        uasort($this->extensionWidgets, static fn (array $a, array $b): int => $a['order'] <=> $b['order']);
     }
 
     public function removeWidget(string $key): void
@@ -96,11 +100,12 @@ final class TuiSlotRegistry
     }
 
     /**
-     * Widgets for a placement, ordered by `order` ascending.
+     * Widgets for a placement, in ascending `order` (maintained by
+     * {@see setWidget()} on mutation).
      *
      * Lower order renders first (top of the merged block); higher order
      * renders last (adjacent to the editor for AboveEditor). Equal orders
-     * preserve insertion order — PHP 8.0+ usort is stable.
+     * preserve insertion order (stable sort on mutation).
      *
      * @return list<TuiWidget>
      */
@@ -109,13 +114,11 @@ final class TuiSlotRegistry
         $result = [];
         foreach ($this->extensionWidgets as $entry) {
             if ($entry['placement'] === $placement) {
-                $result[] = $entry;
+                $result[] = $entry['widget'];
             }
         }
 
-        usort($result, static fn (array $a, array $b): int => $a['order'] <=> $b['order']);
-
-        return array_map(static fn (array $entry): TuiWidget => $entry['widget'], $result);
+        return $result;
     }
 
     /* ───────── Status entries ───────── */
