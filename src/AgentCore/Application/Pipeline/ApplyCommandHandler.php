@@ -149,22 +149,10 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             return new HandlerResult();
         }
 
-        $nextState = new RunState(
-            runId: $state->runId,
-            status: $state->status,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq + 1,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $state->messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: $state->retryableFailure,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        $nextState = $state->with([
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + 1,
+        ]);
 
         $queuedEvent = $this->eventFactory->event(
             runId: $runId,
@@ -215,22 +203,11 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         $runId = $message->runId();
         $this->commandStore->markRejected($runId, $message->idempotencyKey(), $reason);
 
-        $nextState = new RunState(
-            runId: $state->runId,
-            status: $state->status,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq + 1,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $reason,
-            messages: $state->messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: $state->retryableFailure,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        $nextState = $state->with([
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + 1,
+            'errorMessage' => $reason,
+        ]);
 
         $event = $this->eventFactory->event(
             runId: $runId,
@@ -329,22 +306,18 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 }
 
                 return new HandlerResult(
-                    nextState: new RunState(
-                        runId: $state->runId,
-                        status: RunStatus::Cancelled,
-                        version: $state->version + 1,
-                        turnNo: $state->turnNo,
-                        lastSeq: $state->lastSeq + \count($events),
-                        isStreaming: false,
-                        streamingMessage: null,
-                        pendingToolCalls: [],
-                        errorMessage: $reason,
-                        messages: $state->messages,
-                        activeStepId: null,
-                        retryableFailure: false,
-                        pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                        model: $state->model,
-                    ),
+                    nextState: $state->with([
+                        'status' => RunStatus::Cancelled,
+                        'version' => $state->version + 1,
+                        'lastSeq' => $state->lastSeq + \count($events),
+                        'isStreaming' => false,
+                        'streamingMessage' => null,
+                        'pendingToolCalls' => [],
+                        'errorMessage' => $reason,
+                        'activeStepId' => null,
+                        'retryableFailure' => false,
+                        'retryAttempts' => 0,
+                    ]),
                     events: $events,
                     postCommit: $postCommit,
                 );
@@ -359,22 +332,13 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 ],
             ]]);
 
-            $noopState = new RunState(
-                runId: $state->runId,
-                status: $state->status,
-                version: $state->version + 1,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq + \count($events),
-                isStreaming: $state->isStreaming,
-                streamingMessage: $state->streamingMessage,
-                pendingToolCalls: $state->pendingToolCalls,
-                errorMessage: $state->errorMessage,
-                messages: $state->messages,
-                activeStepId: $state->activeStepId,
-                retryableFailure: $state->retryableFailure,
-                pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                model: $state->model,
-            );
+            $noopState = $state->with([
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($events),
+                // Cancelling ends the retry episode once the run terminalizes;
+                // keep the counter reset explicit instead of a silent field drop.
+                'retryAttempts' => 0,
+            ]);
 
             return new HandlerResult(
                 nextState: $noopState,
@@ -401,22 +365,15 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
-            $nextState = new RunState(
-                runId: $state->runId,
-                status: RunStatus::Cancelled,
-                version: $state->version + 1,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq + \count($events),
-                isStreaming: $state->isStreaming,
-                streamingMessage: $state->streamingMessage,
-                pendingToolCalls: $state->pendingToolCalls,
-                errorMessage: $reason,
-                messages: $state->messages,
-                activeStepId: null,
-                retryableFailure: false,
-                pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                model: $state->model,
-            );
+            $nextState = $state->with([
+                'status' => RunStatus::Cancelled,
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($events),
+                'errorMessage' => $reason,
+                'activeStepId' => null,
+                'retryableFailure' => false,
+                'retryAttempts' => 0,
+            ]);
 
             $postCommit = [];
             if ($hasPendingAppendMessage) {
@@ -433,22 +390,14 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             );
         }
 
-        $nextState = new RunState(
-            runId: $state->runId,
-            status: RunStatus::Cancelling,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq + \count($events),
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $reason,
-            messages: $state->messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: false,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        $nextState = $state->with([
+            'status' => RunStatus::Cancelling,
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + \count($events),
+            'errorMessage' => $reason,
+            'retryableFailure' => false,
+            'retryAttempts' => 0,
+        ]);
 
         return new HandlerResult(
             nextState: $nextState,
@@ -496,22 +445,10 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             return new HandlerResult();
         }
 
-        $nextState = new RunState(
-            runId: $state->runId,
-            status: $state->status,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq + 1,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $state->messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: $state->retryableFailure,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        $nextState = $state->with([
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + 1,
+        ]);
 
         $queuedEvent = $this->eventFactory->event(
             runId: $runId,
@@ -548,23 +485,14 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         $isAutoRetry = true === ($message->payload['auto_retry'] ?? false);
         $retryAttempts = $isAutoRetry ? $state->retryAttempts : 0;
 
-        $nextState = new RunState(
-            runId: $state->runId,
-            status: RunStatus::Running,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq + 1,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: null,
-            messages: $state->messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: false,
-            retryAttempts: $retryAttempts,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        $nextState = $state->with([
+            'status' => RunStatus::Running,
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + 1,
+            'errorMessage' => null,
+            'retryableFailure' => false,
+            'retryAttempts' => $retryAttempts,
+        ]);
 
         $event = $this->eventFactory->event(
             runId: $runId,
@@ -680,22 +608,16 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
         $remainingRequests = array_values(\array_slice($state->pendingHumanInputRequests, 1));
 
-        $nextState = new RunState(
-            runId: $state->runId,
-            status: [] !== $remainingRequests ? RunStatus::WaitingHuman : RunStatus::Running,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq + 1,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: null,
-            messages: $messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: false,
-            pendingHumanInputRequests: $remainingRequests,
-            model: $state->model,
-        );
+        $nextState = $state->with([
+            'status' => [] !== $remainingRequests ? RunStatus::WaitingHuman : RunStatus::Running,
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + 1,
+            'errorMessage' => null,
+            'messages' => $messages,
+            'retryableFailure' => false,
+            'retryAttempts' => 0,
+            'pendingHumanInputRequests' => $remainingRequests,
+        ]);
 
         $humanResponseMessageArray = $humanResponseMessage->toArray();
 
@@ -796,22 +718,15 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         $runId = $message->runId();
         $remainingRequests = array_values(\array_slice($state->pendingHumanInputRequests, 1));
 
-        $nextState = new RunState(
-            runId: $state->runId,
-            status: [] !== $remainingRequests ? RunStatus::WaitingHuman : RunStatus::Running,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq + 1,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: null,
-            messages: $state->messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: false,
-            pendingHumanInputRequests: $remainingRequests,
-            model: $state->model,
-        );
+        $nextState = $state->with([
+            'status' => [] !== $remainingRequests ? RunStatus::WaitingHuman : RunStatus::Running,
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + 1,
+            'errorMessage' => null,
+            'retryableFailure' => false,
+            'retryAttempts' => 0,
+            'pendingHumanInputRequests' => $remainingRequests,
+        ]);
 
         // Replay-complete AgentCommandApplied without model-visible message payload.
         $event = $this->eventFactory->event(
@@ -956,22 +871,10 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             // Terminal/safe boundary: apply immediately.
             $this->commandStore->markApplied($runId, $message->idempotencyKey());
 
-            $nextState = new RunState(
-                runId: $state->runId,
-                status: $state->status,
-                version: $state->version + 1,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq + 1,
-                isStreaming: $state->isStreaming,
-                streamingMessage: $state->streamingMessage,
-                pendingToolCalls: $state->pendingToolCalls,
-                errorMessage: $state->errorMessage,
-                messages: $state->messages,
-                activeStepId: $state->activeStepId,
-                retryableFailure: $state->retryableFailure,
-                pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                model: $state->model,
-            );
+            $nextState = $state->with([
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + 1,
+            ]);
 
             $appliedEvent = $this->eventFactory->event(
                 runId: $runId,
@@ -1010,22 +913,10 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             return new HandlerResult();
         }
 
-        $nextState = new RunState(
-            runId: $state->runId,
-            status: $state->status,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq + 1,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $state->messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: $state->retryableFailure,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        $nextState = $state->with([
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + 1,
+        ]);
 
         $queuedEvent = $this->eventFactory->event(
             runId: $runId,

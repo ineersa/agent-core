@@ -405,22 +405,16 @@ final readonly class CompactRunHandler implements RunMessageHandler
         $finalStatus = $message->continueAfterCompaction ? RunStatus::Running : RunStatus::Completed;
 
         // Replace RunState.messages with compacted messages.
-        $nextState = new RunState(
-            runId: $afterStartState->runId,
-            status: $finalStatus,
-            version: $afterStartState->version + 1,
-            turnNo: $afterStartState->turnNo,
-            lastSeq: $afterStartState->lastSeq + \count($compactedEvents),
-            isStreaming: $afterStartState->isStreaming,
-            streamingMessage: $afterStartState->streamingMessage,
-            pendingToolCalls: $afterStartState->pendingToolCalls,
-            errorMessage: $afterStartState->errorMessage,
-            messages: $compactResult->compactedMessages,
-            activeStepId: null,
-            retryableFailure: $afterStartState->retryableFailure,
-            pendingHumanInputRequests: $afterStartState->pendingHumanInputRequests,
-            model: $afterStartState->model,
-        );
+        $nextState = $afterStartState->with([
+            'status' => $finalStatus,
+            'version' => $afterStartState->version + 1,
+            'lastSeq' => $afterStartState->lastSeq + \count($compactedEvents),
+            'messages' => $compactResult->compactedMessages,
+            'activeStepId' => null,
+            // Compaction replaces the conversation: the retry episode dies
+            // with the summarized context (reset is explicit, not a drop).
+            'retryAttempts' => 0,
+        ]);
 
         // Pre-LLM guard replacement must continue the LLM turn.
         $effects = [];
@@ -484,22 +478,14 @@ final readonly class CompactRunHandler implements RunMessageHandler
     {
         $count = \count($events);
 
-        return new RunState(
-            runId: $state->runId,
-            status: $status ?? $state->status,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq + $count,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $state->messages,
-            activeStepId: $activeStepId ?? $state->activeStepId,
-            retryableFailure: $state->retryableFailure,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        return $state->with([
+            'status' => $status ?? $state->status,
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + $count,
+            'activeStepId' => $activeStepId ?? $state->activeStepId,
+            // Compaction events restart the retry episode (context replaced).
+            'retryAttempts' => 0,
+        ]);
     }
 
     /**

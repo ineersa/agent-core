@@ -147,25 +147,19 @@ final class LlmStepResultHandler implements RunMessageHandler
             }
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
-            $nextState = new RunState(
-                runId: $state->runId,
-                status: RunStatus::Cancelled,
-                version: $state->version + 1,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq + \count($events),
-                isStreaming: false,
-                streamingMessage: null,
-                pendingToolCalls: [],
-                errorMessage: $state->errorMessage ?? 'Run cancelled during LLM streaming.',
+            $nextState = $state->with([
+                'status' => RunStatus::Cancelled,
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($events),
+                'isStreaming' => false,
+                'streamingMessage' => null,
+                'pendingToolCalls' => [],
                 // Keep existing messages unchanged (no aborted assistant
                 // message appended).
-                messages: $state->messages,
-                activeStepId: $state->activeStepId,
-                retryableFailure: false,
-                retryAttempts: 0,
-                pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                model: $state->model,
-            );
+                'errorMessage' => $state->errorMessage ?? 'Run cancelled during LLM streaming.',
+                'retryableFailure' => false,
+                'retryAttempts' => 0,
+            ]);
 
             return new HandlerResult(
                 nextState: $nextState,
@@ -241,23 +235,17 @@ final class LlmStepResultHandler implements RunMessageHandler
                 $eventSpecs[] = $notifSpec;
             }
 
-            $nextState = new RunState(
-                runId: $state->runId,
-                status: RunStatus::Failed,
-                version: $state->version + 1,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq + \count($eventSpecs),
-                isStreaming: false,
-                streamingMessage: null,
-                pendingToolCalls: [],
-                errorMessage: $userMessage,
-                messages: $state->messages,
-                activeStepId: $state->activeStepId,
-                retryableFailure: $canAutoRetry,
-                retryAttempts: $canAutoRetry ? $nextRetryAttempt : ($retriesExhausted ? $nextRetryAttempt : $currentAttempts),
-                pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                model: $state->model,
-            );
+            $nextState = $state->with([
+                'status' => RunStatus::Failed,
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($eventSpecs),
+                'isStreaming' => false,
+                'streamingMessage' => null,
+                'pendingToolCalls' => [],
+                'errorMessage' => $userMessage,
+                'retryableFailure' => $canAutoRetry,
+                'retryAttempts' => $canAutoRetry ? $nextRetryAttempt : ($retriesExhausted ? $nextRetryAttempt : $currentAttempts),
+            ]);
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
@@ -346,23 +334,13 @@ final class LlmStepResultHandler implements RunMessageHandler
         }
 
         if ([] === $toolCalls) {
-            $stateAfterAssistant = new RunState(
-                runId: $state->runId,
-                status: $state->status,
-                version: $state->version,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq,
-                isStreaming: $state->isStreaming,
-                streamingMessage: $state->streamingMessage,
-                pendingToolCalls: [],
-                errorMessage: null,
-                messages: $messages,
-                activeStepId: $state->activeStepId,
-                retryableFailure: false,
-                retryAttempts: 0,
-                pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                model: $state->model,
-            );
+            $stateAfterAssistant = $state->with([
+                'pendingToolCalls' => [],
+                'errorMessage' => null,
+                'messages' => $messages,
+                'retryableFailure' => false,
+                'retryAttempts' => 0,
+            ]);
 
             $mailboxResult = null === $this->tracer
                 ? $this->commandMailboxPolicy->applyPendingStopBoundaryCommands($stateAfterAssistant)
@@ -394,23 +372,20 @@ final class LlmStepResultHandler implements RunMessageHandler
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
-            $nextState = new RunState(
-                runId: $stateAfterBoundary->runId,
-                status: $shouldContinue ? RunStatus::Running : RunStatus::Completed,
-                version: $state->version + 1,
-                turnNo: $stateAfterBoundary->turnNo,
-                lastSeq: $state->lastSeq + \count($events),
-                isStreaming: false,
-                streamingMessage: null,
-                pendingToolCalls: [],
-                errorMessage: null,
-                messages: $stateAfterBoundary->messages,
-                activeStepId: $stateAfterBoundary->activeStepId,
-                retryableFailure: false,
-                retryAttempts: 0,
-                pendingHumanInputRequests: $stateAfterBoundary->pendingHumanInputRequests,
-                model: $state->model,
-            );
+            // The mailbox result is the same lineage as $state (same version/
+            // lastSeq), so with() on it is equivalent to the previous mixed
+            // construction.
+            $nextState = $stateAfterBoundary->with([
+                'status' => $shouldContinue ? RunStatus::Running : RunStatus::Completed,
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($events),
+                'isStreaming' => false,
+                'streamingMessage' => null,
+                'pendingToolCalls' => [],
+                'errorMessage' => null,
+                'retryableFailure' => false,
+                'retryAttempts' => 0,
+            ]);
 
             $postCommit = [
                 ...$this->turnCompletedCallbacks($runId, $state->turnNo),
@@ -443,23 +418,18 @@ final class LlmStepResultHandler implements RunMessageHandler
 
         $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
-        $nextState = new RunState(
-            runId: $state->runId,
-            status: RunStatus::Running,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq + \count($events),
-            isStreaming: false,
-            streamingMessage: null,
-            pendingToolCalls: $pendingToolCalls,
-            errorMessage: null,
-            messages: $messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: false,
-            retryAttempts: 0,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        $nextState = $state->with([
+            'status' => RunStatus::Running,
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + \count($events),
+            'isStreaming' => false,
+            'streamingMessage' => null,
+            'pendingToolCalls' => $pendingToolCalls,
+            'errorMessage' => null,
+            'messages' => $messages,
+            'retryableFailure' => false,
+            'retryAttempts' => 0,
+        ]);
 
         $postCommit = [function () use ($runId, $state, $message, $effects): void {
             $initialEffects = $this->toolBatchCollector->registerExpectedBatch(

@@ -144,22 +144,18 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
 
             $persisted = $this->eventStore->append($agentEndEvent);
 
-            $failedState = new RunState(
-                runId: $runId,
-                status: RunStatus::Failed,
-                version: $current->version + 1,
-                turnNo: $current->turnNo,
-                lastSeq: $persisted->seq,
-                isStreaming: false,
-                streamingMessage: null,
-                pendingToolCalls: [],
-                errorMessage: $errorMessage,
-                messages: $current->messages,
-                activeStepId: $current->activeStepId,
-                retryableFailure: false,
-                pendingHumanInputRequests: $current->pendingHumanInputRequests,
-                model: $current->model,
-            );
+            $failedState = $current->with([
+                'status' => RunStatus::Failed,
+                'version' => $current->version + 1,
+                'lastSeq' => $persisted->seq,
+                'isStreaming' => false,
+                'streamingMessage' => null,
+                'pendingToolCalls' => [],
+                'errorMessage' => $errorMessage,
+                'retryableFailure' => false,
+                // Terminal worker failure: retry episode ends with the run.
+                'retryAttempts' => 0,
+            ]);
 
             $committed = $this->runStore->compareAndSwap($failedState, $current->version);
 
