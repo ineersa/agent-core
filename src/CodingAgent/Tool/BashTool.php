@@ -57,6 +57,9 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  * string directly — the model is treated as a trusted caller within the
  * same agent session.
  */
+// The %d below is template-only: the attribute never reaches the provider.
+// ToolDefinitionDTO::definition() formats DESCRIPTION_TEMPLATE with the
+// configured background-prompt threshold for the canonical schema.
 #[AsTool(self::NAME, self::DESCRIPTION_TEMPLATE)]
 final class BashTool implements HatfieldToolProviderInterface
 {

@@ -129,6 +129,22 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertSame('custom_dangerous', $dto->details['category'] ?? null);
     }
 
+    public function testRawSettingsWithTopLevelArgumentsKeyIsNotMisunwrapped(): void
+    {
+        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        // settings stays flat: a top-level `arguments` key in its raw
+        // value/schema must never be treated as the typed built-in envelope.
+        // Without the tool-name gate this would be misread as a set mutation
+        // and require approval; it must classify as Allow instead.
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO(
+            'c9',
+            'settings',
+            ['arguments' => ['operation' => 'set', 'path' => 'tui.theme', 'scope' => 'project']],
+            0,
+        ));
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
+    }
+
     public function testResolveApprovalAnswerAllowReturnsAllow(): void
     {
         $decision = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO('q', '✅ Allow', 'bash', ['category' => 'destructive']));

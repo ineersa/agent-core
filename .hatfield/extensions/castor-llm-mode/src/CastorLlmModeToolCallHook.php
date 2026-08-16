@@ -23,9 +23,15 @@ final class CastorLlmModeToolCallHook implements ToolCallRewriteHookInterface
             return null;
         }
 
-        // Typed DTO tools (bash) arrive in the native nested shape.
-        $effective = $context->arguments['arguments'] ?? $context->arguments;
-        $command = \is_array($effective) ? ($effective['command'] ?? null) : null;
+        // bash is a typed DTO built-in: calls arrive in the native Symfony
+        // method-parameter envelope, DTO fields under the `arguments` key.
+        // No flat fallback — a non-enveloped call is malformed, not legacy.
+        $fields = $context->arguments['arguments'] ?? null;
+        if (!\is_array($fields)) {
+            return null;
+        }
+
+        $command = $fields['command'] ?? null;
         if (!\is_string($command)) {
             return null;
         }
@@ -34,11 +40,7 @@ final class CastorLlmModeToolCallHook implements ToolCallRewriteHookInterface
             return null;
         }
 
-        $rewritten = ['command' => $this->rewriter->rewrite($command)];
-        if (isset($context->arguments['arguments'])) {
-            return ['arguments' => $rewritten];
-        }
-
-        return $rewritten;
+        // Rewritten arguments keep the native envelope shape.
+        return ['arguments' => ['command' => $this->rewriter->rewrite($command)]];
     }
 }

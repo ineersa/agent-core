@@ -57,8 +57,14 @@ final class SubagentChildToolProgressPresentationFormatter
      */
     public function safeArgPairs(string $toolName, array $args): array
     {
-        // Typed built-ins carry DTO fields under the `arguments` envelope key.
-        if (isset($args['arguments']) && \is_array($args['arguments'])) {
+        // Typed built-ins whose displayed fields are DTO members (read/write/
+        // edit/bash/view_image) arrive in the native `arguments` envelope;
+        // raw tools (settings, MCP, extension) stay flat even when their
+        // schema contains a top-level `arguments` field.
+        if (\in_array($toolName, ['read', 'write', 'edit', 'bash', 'view_image'], true)
+            && isset($args['arguments'])
+            && \is_array($args['arguments'])
+        ) {
             $args = $args['arguments'];
         }
 

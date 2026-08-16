@@ -61,7 +61,7 @@ final class SettingsTool implements HatfieldToolProviderInterface
         // Deliberately stays a raw-array tool: set() distinguishes an OMITTED
         // `value` (array_key_exists check) from an EXPLICIT null ("use null to
         // set null"), which a typed DTO property cannot express, and the value
-        // schema is an open JSON union. See the `value` property below.
+        // schema is an open JSON union. See the `value` schema property below.
         return new ToolDefinitionDTO(
             name: 'settings',
             description: 'Read, set, or remove one Hatfield setting by dotted path.',

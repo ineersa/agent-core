@@ -80,9 +80,9 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
     {
         $decision = $this->classifier->classify(
             toolName: $context->toolName,
-            // Typed built-ins carry the native method-parameter envelope; the
-            // classifier expects the effective flat field map, so normalize
-            // here (the classifier keeps its own defensive normalization).
+            // This hook is the authoritative envelope boundary: typed
+            // built-ins (bash/write/edit/read) arrive nested and are
+            // unwrapped here; settings and raw dynamic tools stay flat.
             arguments: $this->innerArguments($context),
             cwd: $this->cwd,
             policy: $this->policy,
@@ -276,15 +276,21 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
     }
 
     /**
-     * Typed built-in tool calls carry the native Symfony method-parameter
-     * envelope (DTO fields under the `arguments` key); raw dynamic tools
-     * (settings, MCP, extension) stay flat. Return the field map either way.
+     * Typed built-ins this hook classifies (bash/write/edit/read) carry the
+     * native Symfony method-parameter envelope (DTO fields under the
+     * `arguments` key). Raw tools (settings, MCP, extension) stay flat even
+     * when their schema/value has a top-level `arguments` key — unwrap only
+     * the configured typed built-in names.
      *
      * @return array<string, mixed>
      */
     private function innerArguments(ToolCallContextDTO $context): array
     {
         $arguments = $context->arguments;
+
+        if (!$this->classifier->isTypedBuiltInTool($context->toolName)) {
+            return $arguments;
+        }
 
         return isset($arguments['arguments']) && \is_array($arguments['arguments'])
             ? $arguments['arguments']

@@ -189,33 +189,12 @@ final class ToolRegistry implements ToolRegistryInterface
      */
     public function setDynamicTools(array $tools): void
     {
-        // No-op detection: an identical set (same names, order, handlers,
-        // schemas) must not invalidate revision-based caches.
-        $current = $this->getDynamicTools();
-        if (\count($tools) === \count($current)) {
-            $identical = true;
-            foreach ($tools as $index => $tool) {
-                $existing = $current[$index];
-                if ($existing['name'] !== $tool['name']
-                    || $existing['description'] !== $tool['description']
-                    || $existing['handler'] !== $tool['handler']
-                    || $existing['parametersJsonSchema'] !== $tool['parametersJsonSchema']
-                ) {
-                    $identical = false;
-                    break;
-                }
-            }
-
-            if ($identical) {
-                return;
-            }
-        }
-
         $this->dynamicTools = [];
         $this->dynamicOrder = [];
 
         foreach ($tools as $tool) {
             $name = $tool['name'];
+            // Duplicate names within the input list keep their first position.
             if (!isset($this->dynamicTools[$name])) {
                 $this->dynamicOrder[] = $name;
             }
@@ -231,6 +210,8 @@ final class ToolRegistry implements ToolRegistryInterface
             );
         }
 
+        // Always bumps: unchanged-catalog idempotency is owned by
+        // McpToolRegistrar's fingerprint, not by registry set comparison.
         ++$this->revision;
     }
 

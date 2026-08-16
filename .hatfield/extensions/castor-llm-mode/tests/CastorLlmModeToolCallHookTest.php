@@ -38,7 +38,7 @@ final class CastorLlmModeToolCallHookTest extends TestCase
         $context = new ToolCallContextDTO(
             toolCallId: 'tc1',
             toolName: 'bash',
-            arguments: ['command' => 'ls -la'],
+            arguments: ['arguments' => ['command' => 'ls -la']],
             orderIndex: 0,
         );
 
@@ -51,15 +51,17 @@ final class CastorLlmModeToolCallHookTest extends TestCase
         $context = new ToolCallContextDTO(
             toolCallId: 'tc1',
             toolName: 'bash',
-            arguments: ['command' => 'castor list'],
+            arguments: ['arguments' => ['command' => 'castor list']],
             orderIndex: 0,
         );
 
         $result = $this->hook->rewriteArguments($context);
 
         $this->assertIsArray($result);
-        $this->assertArrayHasKey('command', $result);
-        $command = $result['command'];
+        // Rewritten arguments keep the native nested envelope.
+        $this->assertArrayHasKey('arguments', $result);
+        $this->assertArrayHasKey('command', $result['arguments']);
+        $command = $result['arguments']['command'];
         $this->assertIsString($command);
         $this->assertStringStartsWith('export LLM_MODE=true', $command);
         $this->assertStringContainsString('--format=md --short --no-ansi', $command);
@@ -71,7 +73,7 @@ final class CastorLlmModeToolCallHookTest extends TestCase
         $context = new ToolCallContextDTO(
             toolCallId: 'tc1',
             toolName: 'bash',
-            arguments: [],
+            arguments: ['arguments' => []],
             orderIndex: 0,
         );
 
@@ -84,7 +86,22 @@ final class CastorLlmModeToolCallHookTest extends TestCase
         $context = new ToolCallContextDTO(
             toolCallId: 'tc1',
             toolName: 'bash',
-            arguments: ['command' => 42],
+            arguments: ['arguments' => ['command' => 42]],
+            orderIndex: 0,
+        );
+
+        $this->assertNull($this->hook->rewriteArguments($context));
+    }
+
+    #[Test]
+    public function flatBashCallIsMalformedAndNotRewritten(): void
+    {
+        // No backward-compat shim: a non-enveloped bash call is malformed
+        // under the typed built-in contract and must not be rewritten.
+        $context = new ToolCallContextDTO(
+            toolCallId: 'tc1',
+            toolName: 'bash',
+            arguments: ['command' => 'castor list'],
             orderIndex: 0,
         );
 

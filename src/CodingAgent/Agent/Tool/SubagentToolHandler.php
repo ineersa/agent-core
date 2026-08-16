@@ -20,6 +20,9 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  * service locator so ToolRegistry can register the tool definition without
  * constructing the heavy subagent execution graph at container compile time.
  */
+// The %d below is template-only: the attribute never reaches the provider.
+// SubagentToolDefinitionBuilder formats DESCRIPTION_TEMPLATE with
+// agents.max_agents for the canonical schema.
 #[AsTool(self::NAME, self::DESCRIPTION_TEMPLATE)]
 final class SubagentToolHandler
 {

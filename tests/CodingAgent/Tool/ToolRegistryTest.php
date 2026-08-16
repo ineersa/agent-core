@@ -737,36 +737,6 @@ final class ToolRegistryTest extends TestCase
         $this->assertSame([], $this->registry->activeToolNames());
     }
 
-    public function testSetDynamicToolsWithIdenticalContentDoesNotBumpRevision(): void
-    {
-        $handler = $this->dummyHandler();
-        $tools = [
-            ['name' => 'mcp_a', 'description' => 'A', 'parametersJsonSchema' => [], 'handler' => $handler],
-            ['name' => 'mcp_b', 'description' => 'B', 'parametersJsonSchema' => ['type' => 'object'], 'handler' => $handler],
-        ];
-
-        $this->registry->setDynamicTools($tools);
-        $revision = $this->registry->revision();
-
-        $this->registry->setDynamicTools($tools);
-
-        $this->assertSame($revision, $this->registry->revision());
-    }
-
-    public function testSetDynamicToolsWithChangedContentBumpsRevision(): void
-    {
-        $this->registry->setDynamicTools([
-            ['name' => 'mcp_a', 'description' => 'A', 'parametersJsonSchema' => [], 'handler' => $this->dummyHandler()],
-        ]);
-        $revision = $this->registry->revision();
-
-        $this->registry->setDynamicTools([
-            ['name' => 'mcp_a', 'description' => 'A2', 'parametersJsonSchema' => [], 'handler' => $this->dummyHandler()],
-        ]);
-
-        $this->assertGreaterThan($revision, $this->registry->revision());
-    }
-
     public function testReapplyingSameVisibilityDoesNotBumpRevision(): void
     {
         $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read');

@@ -44,6 +44,19 @@ final class OutputCap
      */
     private const array DOCUMENT_REPORT_TOOL_NAMES = ['fork', 'subagent', 'agent_retrieve'];
 
+    /**
+     * Typed built-ins whose calls arrive in the native Symfony
+     * method-parameter envelope (DTO fields under the `arguments` key).
+     * Raw tools (settings, MCP, extension) stay flat even when their schema
+     * has a top-level `arguments` key and must never be unwrapped.
+     *
+     * @var list<string>
+     */
+    private const array TYPED_BUILT_IN_TOOL_NAMES = [
+        'read', 'write', 'edit', 'bash', 'bg_status', 'ask_human',
+        'view_image', 'hatfield_docs', 'fork', 'subagent', 'agent_retrieve',
+    ];
+
     private bool $cleanedUp = false;
 
     /**
@@ -119,7 +132,7 @@ final class OutputCap
             return null;
         }
 
-        $path = $this->extractPathFromArguments($arguments);
+        $path = $this->extractPathFromArguments($toolName, $arguments);
         if (null !== $path) {
             return $path;
         }
@@ -128,8 +141,7 @@ final class OutputCap
             return null;
         }
 
-        // Typed built-ins carry DTO fields under the `arguments` envelope key.
-        $fields = $this->unwrapEnvelope($arguments);
+        $fields = $this->unwrapEnvelope($toolName, $arguments);
 
         if ('hatfield_docs' === $toolName) {
             // Only successful document reads are doc-like; list stays defaultCap.
@@ -141,29 +153,6 @@ final class OutputCap
         if (null !== $toolName && \in_array($toolName, self::DOCUMENT_REPORT_TOOL_NAMES, true)) {
             // Virtual doc path: only used for extension-based docCap selection.
             return 'handoff-report.md';
-        }
-
-        return null;
-    }
-
-    /**
-     * Find a file-path value from tool call arguments.
-     *
-     * Checks known path-carrying argument keys and returns the first
-     * string value found.  Returns null when no path argument exists.
-     *
-     * @param array<string, mixed> $arguments
-     */
-    public function extractPathFromArguments(array $arguments): ?string
-    {
-        // Typed built-ins carry DTO fields under the `arguments` envelope key.
-        $fields = $this->unwrapEnvelope($arguments);
-
-        foreach (self::PATH_ARGUMENT_KEYS as $key) {
-            $value = $fields[$key] ?? null;
-            if (\is_string($value) && '' !== $value) {
-                return $value;
-            }
         }
 
         return null;
@@ -185,7 +174,7 @@ final class OutputCap
             return $capResult->noticeText;
         }
 
-        $originalPath = $this->extractPathFromArguments($arguments);
+        $originalPath = $this->extractPathFromArguments($toolName, $arguments);
 
         // Only produce read-specific notice when we have the original path.
         // Without it, fall back to the generic saved-artifact notice (head/grep).
@@ -193,7 +182,7 @@ final class OutputCap
             return $capResult->noticeText;
         }
 
-        $fields = $this->unwrapEnvelope($arguments);
+        $fields = $this->unwrapEnvelope($toolName, $arguments);
         $originalOffset = $fields['offset'] ?? null;
         $offset = (\is_int($originalOffset) && $originalOffset > 0) ? $originalOffset : 1;
         $escapedGrepPath = escapeshellarg($originalPath);
@@ -279,16 +268,45 @@ STRING;
     }
 
     /**
-     * Typed built-in tool calls carry the native Symfony method-parameter
-     * envelope (DTO fields under the `arguments` key); raw dynamic tools stay
-     * flat. Return the field map either way.
+     * Find a file-path value from tool call arguments.
+     *
+     * Checks known path-carrying argument keys and returns the first
+     * string value found.  Returns null when no path argument exists.
+     * Raw tools (settings, MCP, extension) are read flat; typed built-ins
+     * are unwrapped from their native envelope first.
+     *
+     * @param array<string, mixed> $arguments
+     */
+    private function extractPathFromArguments(?string $toolName, array $arguments): ?string
+    {
+        $fields = $this->unwrapEnvelope($toolName, $arguments);
+
+        foreach (self::PATH_ARGUMENT_KEYS as $key) {
+            $value = $fields[$key] ?? null;
+            if (\is_string($value) && '' !== $value) {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Unwrap the native Symfony method-parameter envelope for typed built-in
+     * tool calls only (DTO fields under the `arguments` key). Raw tools
+     * (settings, MCP, extension) stay flat even when their flat schema/value
+     * contains a top-level `arguments` key.
      *
      * @param array<string, mixed> $arguments
      *
      * @return array<string, mixed>
      */
-    private function unwrapEnvelope(array $arguments): array
+    private function unwrapEnvelope(?string $toolName, array $arguments): array
     {
+        if (null === $toolName || !\in_array($toolName, self::TYPED_BUILT_IN_TOOL_NAMES, true)) {
+            return $arguments;
+        }
+
         return isset($arguments['arguments']) && \is_array($arguments['arguments'])
             ? $arguments['arguments']
             : $arguments;

@@ -58,6 +58,10 @@ final class SafeGuardClassifier
     /**
      * Classify a tool call against the active policy.
      *
+     * Arguments must already be normalized to the effective field map by
+     * the caller (SafeGuardToolCallHook unwraps the native nested envelope
+     * for typed built-ins); the classifier does not sniff argument shapes.
+     *
      * @param string               $toolName  e.g., "bash", "write", "edit", "read"
      * @param array<string, mixed> $arguments Tool-specific decoded arguments
      * @param string               $cwd       Current working directory
@@ -69,13 +73,6 @@ final class SafeGuardClassifier
         string $cwd,
         SafeGuardPolicy $policy,
     ): SafeGuardDecision {
-        // Typed DTO tools are invoked with the native nested shape
-        // {arguments: {...}}; raw-array tools stay flat. Normalize to the
-        // effective argument map so classification sees the real values.
-        if (isset($arguments['arguments']) && \is_array($arguments['arguments'])) {
-            $arguments = $arguments['arguments'];
-        }
-
         if ($toolName === $this->bashToolName) {
             return $this->classifyBash($arguments, $policy);
         }
@@ -93,6 +90,22 @@ final class SafeGuardClassifier
         }
 
         return SafeGuardDecision::allow($toolName);
+    }
+
+    /**
+     * True when the tool name is one of the typed built-ins this classifier
+     * handles (bash/write/edit/read). Their calls arrive in the native nested
+     * envelope ({arguments: {...}}) and must be unwrapped before classify();
+     * settings and raw dynamic tools (MCP/extension) stay flat.
+     */
+    public function isTypedBuiltInTool(string $toolName): bool
+    {
+        return \in_array($toolName, [
+            $this->bashToolName,
+            $this->writeToolName,
+            $this->editToolName,
+            $this->readToolName,
+        ], true);
     }
 
     /**
