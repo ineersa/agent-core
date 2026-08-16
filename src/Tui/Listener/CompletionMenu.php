@@ -8,6 +8,7 @@ use Ineersa\Tui\Completion\CompletionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Ineersa\Tui\Widget\SelectListKeybindings;
 use Symfony\Component\Tui\Event\SelectionChangeEvent;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
@@ -25,6 +26,10 @@ use Symfony\Component\Tui\Widget\TextWidget;
  * forwarding raw Up/Down into {@see SelectListWidget::handleInput()} so
  * the native widget owns wrapping, visible-window scrolling, and
  * {@see SelectionChangeEvent} dispatch. Accept / cancel remain listener-owned.
+ * Only the shared max-visible policy ({@see SelectListKeybindings::MAX_VISIBLE})
+ * is reused here; the standard keybindings are deliberately NOT applied
+ * because the widget's bindings are never consulted (unfocused, raw
+ * Up/Down forwarding only) and passing them would be dead surface.
  *
  * Selected-row highlighting uses the app theme accent colour. On selection
  * change the labels are rebuilt so the accent follows the native selection.
@@ -66,7 +71,7 @@ final class CompletionMenu
 
         $this->listWidget = new SelectListWidget(
             items: self::buildItems($state->getSuggestions(), $this->theme, 0),
-            maxVisible: 10,
+            maxVisible: SelectListKeybindings::MAX_VISIBLE,
         );
         $this->listWidget->setSelectedIndex(0);
         $this->listWidget->onSelectionChange(

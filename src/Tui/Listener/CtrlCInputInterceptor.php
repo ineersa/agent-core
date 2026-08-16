@@ -27,7 +27,10 @@ final class CtrlCInputInterceptor implements TuiListenerRegistrar
         $tui = $context->tui;
         $screen = $context->screen;
 
-        // Mutable state captured by the closure (scoped to this TUI session)
+        // Mutable state captured by the closure (scoped to this TUI session).
+        // The by-reference capture is REQUIRED: PHP re-initialises by-value
+        // use() captures on every closure invocation, so the double-press
+        // timer would never see the previous press without it.
         $ctrlCLast = 0.0;
 
         $context->tui->addListener(

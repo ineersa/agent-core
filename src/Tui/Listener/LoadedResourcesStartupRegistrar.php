@@ -35,7 +35,7 @@ final readonly class LoadedResourcesStartupRegistrar implements TuiListenerRegis
             $loaded = true;
         }
 
-        $context->ticks->add(static function (TickEvent $event) use ($screen, $tui, $state, $provider, &$loaded): ?bool {
+        $context->ticks->add(static function (TickEvent $event) use ($screen, $tui, $state, $provider, $loaded): ?bool {
             if ($loaded || $state->resuming) {
                 return null;
             }

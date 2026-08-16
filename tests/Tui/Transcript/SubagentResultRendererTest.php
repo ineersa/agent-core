@@ -395,7 +395,7 @@ final class SubagentResultRendererTest extends TestCase
         $root = new ContainerWidget();
         $root->add($factory->buildWidget($block, $context->theme));
 
-        return (new Renderer())->render($root, max($context->terminalWidth, 1), max($context->terminalHeight, 1));
+        return (new Renderer())->render($root, max($context->terminalWidth, 1), 24);
     }
 
     private function context(int $width = 120): TuiRenderContext

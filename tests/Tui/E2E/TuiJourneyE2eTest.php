@@ -65,9 +65,10 @@ final class TuiJourneyE2eTest extends TestCase
      * Exercises in order (tmux integration smoke):
      *  1. Startup layout (logo, status, footer)
      *  2. /hotkeys — real registrars → SubmitListener → mounted HotkeyTableWidget
-     *  3. Shell !ls prefix — real command output proof + ordering
-     *  4. Inline shell on completed run + follow-up (issue #183 repro)
-     *  5. Clean exit via Ctrl+D
+     *  3. Slash completion — /he opens Completions with /help, Tab accepts, overlay closes
+     *  4. Shell !ls prefix — real command output proof + ordering
+     *  5. Inline shell on completed run + follow-up (issue #183 repro)
+     *  6. Clean exit via Ctrl+D
      *
      * Virtual-only (not in this journey): startup detail {@see TuiStartupVirtualRenderTest},
      * Shift+Tab reasoning status/border {@see TuiReasoningCycleTest},
@@ -96,6 +97,7 @@ final class TuiJourneyE2eTest extends TestCase
         try {
             $this->journeyPhase1StartupLayout($pane);
             $this->journeyPhaseHotkeysCatalog($pane);
+            $this->journeyPhaseSlashCompletion($pane);
             $this->journeyPhase4ShellPrefixOutput($pane);
             $this->journeyPhase9InlineShellOnCompletedRun($pane);
 
@@ -176,6 +178,66 @@ final class TuiJourneyE2eTest extends TestCase
         $this->saveAnsiSnapshot($pane, 'journey-hotkeys');
 
         // Clear any residual editor text so later shell phases start clean.
+        $this->tmux->sendKey($pane, 'C-u');
+    }
+
+    /**
+     * Phase completion: slash-command completion through the real
+     * CompletionListener → CompletionMenu path (replay-backed, no model
+     * interaction needed).
+     *
+     * Types "/he" — live completion opens the Completions overlay showing
+     * the /help suggestion. First Tab accepts it (editor becomes "/help",
+     * overlay disappears). Second Tab with the overlay gone must not reopen
+     * it. Ends with C-u so later shell phases start clean.
+     */
+    private function journeyPhaseSlashCompletion(TmuxPane $pane): void
+    {
+        $this->tmux->sendKey($pane, 'C-u'); // Clear editor
+        $this->tmux->sendLiteral($pane, '/he');
+
+        // Live completion overlay must appear with the /help suggestion.
+        $this->tmux->waitForCallback(
+            $pane,
+            static function (string $cap): bool {
+                return str_contains($cap, 'Completions')
+                    && str_contains($cap, '/help');
+            },
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+            message: 'Typing "/he" must open the Completions overlay showing /help',
+            history: 2000,
+        );
+
+        $this->saveAnsiSnapshot($pane, 'journey-slash-completion-open');
+
+        // First Tab accepts the selected /help suggestion and closes the overlay.
+        $this->tmux->sendKey($pane, 'Tab');
+        $this->tmux->waitForCallback(
+            $pane,
+            static function (string $cap): bool {
+                return !str_contains($cap, 'Completions')
+                    && str_contains($cap, '/help');
+            },
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+            message: 'Tab must accept /help and remove the Completions overlay',
+            history: 2000,
+        );
+
+        // Second Tab: overlay already gone — must not reopen or submit.
+        $this->tmux->sendKey($pane, 'Tab');
+        $this->tmux->waitForCallback(
+            $pane,
+            static function (string $cap): bool {
+                return !str_contains($cap, 'Completions');
+            },
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+            message: 'Second Tab must not reopen the Completions overlay',
+            history: 2000,
+        );
+
+        $this->saveAnsiSnapshot($pane, 'journey-slash-completion-accepted');
+
+        // Clear editor so later shell phases start clean.
         $this->tmux->sendKey($pane, 'C-u');
     }
 

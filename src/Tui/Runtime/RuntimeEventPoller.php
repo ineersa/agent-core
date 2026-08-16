@@ -64,7 +64,7 @@ final class RuntimeEventPoller
         $state->lastPoll = $now;
 
         try {
-            $events = $this->runtimeEvents($client, $state->handle->runId);
+            $events = RuntimeEventCallbacks::eventList($client, $state->handle->runId);
             if ([] === $events) {
                 $state->runtimePollErrorCount = 0;
                 $state->lastRuntimePollError = '';
@@ -79,6 +79,16 @@ final class RuntimeEventPoller
             $processingRemoved = false;
             $hasRunHistoryPositionChanged = false;
             $removedProcessing = false;
+
+            $callbacks = new RuntimeEventCallbacks(
+                $this->logger,
+                'RuntimeEventPoller event callback failed',
+                'tui.runtime_event_poller',
+                'runtime_event_poller.callback_failed',
+                $onHumanInputRequested,
+                $onToolQuestionRequested,
+                $onToolTerminal,
+            );
 
             foreach ($events as $runtimeEvent) {
                 $seq = $runtimeEvent->seq;
@@ -199,36 +209,7 @@ final class RuntimeEventPoller
                 // Notify handlers for specific event types (isolated: one bad overlay callback
                 // must not drop later events in the same batch, e.g. run.cancelled).
                 // Projection is handled by TuiRuntimeEventApplier::apply() above.
-                if (null !== $onHumanInputRequested && RuntimeEventTypeEnum::HumanInputRequested->value === $runtimeEvent->type) {
-                    $this->invokeEventCallback(
-                        $onHumanInputRequested,
-                        $runtimeEvent,
-                        $state,
-                        'onHumanInputRequested',
-                    );
-                }
-
-                if (null !== $onToolQuestionRequested && RuntimeEventTypeEnum::ToolQuestionRequested->value === $runtimeEvent->type) {
-                    $this->invokeEventCallback(
-                        $onToolQuestionRequested,
-                        $runtimeEvent,
-                        $state,
-                        'onToolQuestionRequested',
-                    );
-                }
-
-                if (null !== $onToolTerminal && (
-                    RuntimeEventTypeEnum::ToolExecutionCompleted->value === $runtimeEvent->type
-                    || RuntimeEventTypeEnum::ToolExecutionFailed->value === $runtimeEvent->type
-                    || RuntimeEventTypeEnum::ToolExecutionCancelled->value === $runtimeEvent->type
-                )) {
-                    $this->invokeEventCallback(
-                        $onToolTerminal,
-                        $runtimeEvent,
-                        $state,
-                        'onToolTerminal',
-                    );
-                }
+                $callbacks->dispatch($runtimeEvent, $state->handle->runId);
 
                 if (!$processingRemoved) {
                     $beforeCount = \count($state->transcript);
@@ -316,27 +297,6 @@ final class RuntimeEventPoller
         }
     }
 
-    /**
-     * @param callable(RuntimeEvent): void $callback
-     */
-    private function invokeEventCallback(callable $callback, RuntimeEvent $runtimeEvent, TuiSessionState $state, string $callbackName): void
-    {
-        try {
-            $callback($runtimeEvent);
-        } catch (\Throwable $e) {
-            $this->logger->warning('RuntimeEventPoller event callback failed', [
-                'component' => 'tui.runtime_event_poller',
-                'event_type' => 'runtime_event_poller.callback_failed',
-                'run_id' => $state->handle->runId,
-                'callback' => $callbackName,
-                'runtime_event_type' => $runtimeEvent->type,
-                'seq' => $runtimeEvent->seq,
-                'exception_class' => $e::class,
-                'exception_message' => $e->getMessage(),
-            ]);
-        }
-    }
-
     private function isFatalPollingError(\Throwable $e): bool
     {
         $message = strtolower($e->getMessage());
@@ -348,20 +308,5 @@ final class RuntimeEventPoller
         }
 
         return false;
-    }
-
-    /** @return list<RuntimeEvent> */
-    private function runtimeEvents(AgentSessionClient $client, string $runId): array
-    {
-        $events = $client->events($runId);
-
-        if ($events instanceof \Traversable) {
-            /** @var list<RuntimeEvent> $list */
-            $list = iterator_to_array($events, false);
-
-            return $list;
-        }
-
-        return $events;
     }
 }
