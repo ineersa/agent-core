@@ -248,10 +248,72 @@ final class CacheCommandStoreTest extends KernelTestCase
         $realPool = static::getContainer()->get('cache.app');
         $lockFactory = static::getContainer()->get(LockFactory::class);
 
-        // Decorator that delegates everything to the real pool except
-        // save(), which returns false to simulate disk-full / DB-locked
-        // / adapter-error conditions.
-        $failingPool = new class($realPool) implements CacheItemPoolInterface {
+        $failingStore = new CacheCommandStore($this->failingSavePool($realPool), $lockFactory);
+
+        $command = new PendingCommand(
+            runId: 'test-persist-fail',
+            kind: 'steer',
+            idempotencyKey: 'key-persist-fail',
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage(
+            'Failed to persist command store data for run test-persist-fail.',
+        );
+
+        $failingStore->enqueue($command);
+    }
+
+    /**
+     * The shared markStatus helper must release the per-run lock when save()
+     * fails; a leaked lock would block every later operation on the run.
+     */
+    public function testSaveFailureReleasesRunLock(): void
+    {
+        $realPool = static::getContainer()->get('cache.app');
+        $lockFactory = static::getContainer()->get(LockFactory::class);
+        $runId = 'test-lock-release';
+
+        $healthyStore = new CacheCommandStore($realPool, $lockFactory);
+        $this->assertTrue($healthyStore->enqueue(new PendingCommand(
+            runId: $runId,
+            kind: 'steer',
+            idempotencyKey: 'key-lock-release',
+        )));
+
+        $failingStore = new CacheCommandStore($this->failingSavePool($realPool), $lockFactory);
+
+        try {
+            $failingStore->markApplied($runId, 'key-lock-release');
+            $this->fail('Expected RuntimeException on save failure.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Failed to persist command store data for run '.$runId.'.', $e->getMessage());
+        }
+
+        // Failed save must not have persisted the status…
+        $this->assertSame(1, $healthyStore->countPending($runId));
+
+        // …and the run lock must be free for the next operation on the same run.
+        $healthyStore->markApplied($runId, 'key-lock-release');
+        $this->assertSame(0, $healthyStore->countPending($runId));
+    }
+
+    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
+    {
+        $env = $options['environment'] ?? 'test';
+        $debug = (bool) ($options['debug'] ?? false);
+
+        return new \Ineersa\CodingAgent\Kernel($env, $debug);
+    }
+
+    /**
+     * Decorator that delegates everything to the real pool except save(),
+     * which returns false to simulate disk-full / DB-locked / adapter-error
+     * conditions.
+     */
+    private function failingSavePool(CacheItemPoolInterface $realPool): CacheItemPoolInterface
+    {
+        return new class($realPool) implements CacheItemPoolInterface {
             public function __construct(
                 private readonly CacheItemPoolInterface $inner,
             ) {
@@ -302,28 +364,5 @@ final class CacheCommandStoreTest extends KernelTestCase
                 return $this->inner->commit();
             }
         };
-
-        $failingStore = new CacheCommandStore($failingPool, $lockFactory);
-
-        $command = new PendingCommand(
-            runId: 'test-persist-fail',
-            kind: 'steer',
-            idempotencyKey: 'key-persist-fail',
-        );
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage(
-            'Failed to persist command store data for run test-persist-fail.',
-        );
-
-        $failingStore->enqueue($command);
-    }
-
-    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
-    {
-        $env = $options['environment'] ?? 'test';
-        $debug = (bool) ($options['debug'] ?? false);
-
-        return new \Ineersa\CodingAgent\Kernel($env, $debug);
     }
 }

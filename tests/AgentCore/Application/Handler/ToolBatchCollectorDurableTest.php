@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -222,6 +223,76 @@ final class ToolBatchCollectorDurableTest extends TestCase
         $this->assertTrue($retryOutcome->accepted);
         $this->assertFalse($retryOutcome->duplicate);
         $this->assertTrue($retryOutcome->complete);
+    }
+
+    public function testDurableHumanInputAdmitResumeRedrivePersistsThroughMutate(): void
+    {
+        $store = $this->createStore();
+        $collector = new ToolBatchCollector(defaultMaxParallelism: 1, store: $store);
+        $collector->registerExpectedBatch('run-hi', 1, 'step-hi', [
+            $this->executeToolCall('run-hi', 'step-hi', 'call-1', 0, 'sequential'),
+        ]);
+
+        // Admit through the shared durable mutate path.
+        $this->assertSame([], $collector->admitHumanInputSuspension('run-hi', 1, 'step-hi', 'call-1', 'q-1'));
+        $stored = $store->load('run-hi', 1, 'step-hi');
+        $this->assertNotNull($stored);
+        $this->assertSame('q-1', $stored->awaitingHumanInput['call-1'] ?? null);
+
+        // Resume through the shared durable mutate path.
+        $answer = new ToolCallHumanInputAnswerDTO(
+            questionId: 'q-1',
+            answer: '✅ Allow',
+            continuationRef: ['run_id' => 'run-hi', 'turn_no' => 1, 'step_id' => 'step-hi', 'tool_call_id' => 'call-1'],
+            requestPayload: ['question_id' => 'q-1', 'prompt' => 'Allow?'],
+        );
+        $resumed = $collector->resumeHumanInputAnswer('run-hi', 1, 'step-hi', 'call-1', 'q-1', $answer);
+        $this->assertCount(1, $resumed);
+        $this->assertSame('call-1', $resumed[0]->toolCallId);
+
+        $stored = $store->load('run-hi', 1, 'step-hi');
+        $this->assertNotNull($stored);
+        $this->assertArrayNotHasKey('call-1', $stored->awaitingHumanInput);
+        $this->assertSame('✅ Allow', $stored->calls['call-1']?->humanInputAnswer?->answer);
+
+        // Redrive through the shared durable mutate path.
+        $redriven = $collector->redriveHumanInputAnswer('run-hi', 1, 'step-hi', 'q-1', '✅ Allow');
+        $this->assertCount(1, $redriven);
+        $this->assertSame('call-1', $redriven[0]->toolCallId);
+    }
+
+    public function testDurableHumanInputMissingBatchPreservesExactErrors(): void
+    {
+        $collector = new ToolBatchCollector(defaultMaxParallelism: 1, store: $this->createStore());
+
+        $cases = [
+            [
+                static fn (): array => $collector->admitHumanInputSuspension('run-missing', 1, 'step-missing', 'call-1', 'q-1'),
+                'Cannot admit tool-execution suspension for unknown batch run=run-missing turn=1 step=step-missing.',
+            ],
+            [
+                static fn (): array => $collector->resumeHumanInputAnswer('run-missing', 1, 'step-missing', 'call-1', 'q-1', new ToolCallHumanInputAnswerDTO(
+                    questionId: 'q-1',
+                    answer: '✅ Allow',
+                    continuationRef: [],
+                    requestPayload: [],
+                )),
+                'Cannot resume tool-execution human input for unknown batch run=run-missing turn=1 step=step-missing.',
+            ],
+            [
+                static fn (): array => $collector->redriveHumanInputAnswer('run-missing', 1, 'step-missing', 'q-1', '✅ Allow'),
+                'Cannot redrive tool-execution human input for unknown batch run=run-missing turn=1 step=step-missing.',
+            ],
+        ];
+
+        foreach ($cases as [$operation, $expectedMessage]) {
+            try {
+                $operation();
+                $this->fail('Expected LogicException for unknown batch.');
+            } catch (\LogicException $e) {
+                $this->assertSame($expectedMessage, $e->getMessage());
+            }
+        }
     }
 
     private function createStore(): SessionToolBatchStore

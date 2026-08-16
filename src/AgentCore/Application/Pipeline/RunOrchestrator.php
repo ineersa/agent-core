@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\RunTracer;
+use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
@@ -39,21 +40,14 @@ final readonly class RunOrchestrator
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onStartRun(StartRun $message): void
     {
-        $this->withLogContext($message->runId(), 'command.start_run', function () use ($message): void {
-            $handle = fn () => $this->runMessageProcessor->process(self::ScopeStartRun, $message);
-
-            if (null === $this->tracer) {
-                $handle();
-
-                return;
-            }
-
-            $this->tracer->inSpan('command.start_run', [
-                'run_id' => $message->runId(),
-                'turn_no' => $message->turnNo(),
-                'step_id' => $message->stepId(),
-            ], $handle, root: true);
-        });
+        $this->dispatch(
+            $message->runId(),
+            'command.start_run',
+            self::ScopeStartRun,
+            $message,
+            'command.start_run',
+            ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId()],
+        );
     }
 
     /**
@@ -62,33 +56,26 @@ final readonly class RunOrchestrator
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onApplyCommand(ApplyCommand $message): void
     {
-        $this->withLogContext($message->runId(), 'command.apply', function () use ($message): void {
-            $handle = fn () => $this->runMessageProcessor->process(self::ScopeApplyCommand, $message);
-
-            if (null === $this->tracer) {
-                $handle();
-
-                return;
-            }
-
-            $this->tracer->inSpan('command.apply', [
-                'run_id' => $message->runId(),
-                'turn_no' => $message->turnNo(),
-                'step_id' => $message->stepId(),
-                'command_kind' => $message->kind,
-            ], $handle, root: true);
-        });
+        $this->dispatch(
+            $message->runId(),
+            'command.apply',
+            self::ScopeApplyCommand,
+            $message,
+            'command.apply',
+            ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId(), 'command_kind' => $message->kind],
+        );
     }
 
     /**
      * Processes a direct bang shell command through the locked run pipeline.
+     *
+     * Deliberately untraced: shell commands run outside the traced LLM/tool
+     * step lifecycle and produce no span.
      */
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onApplyShellCommand(ApplyShellCommand $message): void
     {
-        $this->withLogContext($message->runId(), self::ScopeApplyShellCommand, function () use ($message): void {
-            $this->runMessageProcessor->process(self::ScopeApplyShellCommand, $message);
-        });
+        $this->dispatch($message->runId(), self::ScopeApplyShellCommand, self::ScopeApplyShellCommand, $message, null, []);
     }
 
     /**
@@ -98,21 +85,14 @@ final readonly class RunOrchestrator
     #[AsMessageHandler(bus: 'agent.execution.bus')]
     public function onAdvanceRun(AdvanceRun $message): void
     {
-        $this->withLogContext($message->runId(), 'turn.orchestrator.advance', function () use ($message): void {
-            $handle = fn () => $this->runMessageProcessor->process(self::ScopeAdvanceRun, $message);
-
-            if (null === $this->tracer) {
-                $handle();
-
-                return;
-            }
-
-            $this->tracer->inSpan('turn.orchestrator.advance', [
-                'run_id' => $message->runId(),
-                'turn_no' => $message->turnNo(),
-                'step_id' => $message->stepId(),
-            ], $handle, root: true);
-        });
+        $this->dispatch(
+            $message->runId(),
+            'turn.orchestrator.advance',
+            self::ScopeAdvanceRun,
+            $message,
+            'turn.orchestrator.advance',
+            ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId()],
+        );
     }
 
     /**
@@ -121,21 +101,14 @@ final readonly class RunOrchestrator
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onLlmStepResult(LlmStepResult $message): void
     {
-        $this->withLogContext($message->runId(), 'turn.orchestrator.llm_result', function () use ($message): void {
-            $handle = fn () => $this->runMessageProcessor->process(self::ScopeLlmResult, $message);
-
-            if (null === $this->tracer) {
-                $handle();
-
-                return;
-            }
-
-            $this->tracer->inSpan('turn.orchestrator.llm_result', [
-                'run_id' => $message->runId(),
-                'turn_no' => $message->turnNo(),
-                'step_id' => $message->stepId(),
-            ], $handle, root: true);
-        });
+        $this->dispatch(
+            $message->runId(),
+            'turn.orchestrator.llm_result',
+            self::ScopeLlmResult,
+            $message,
+            'turn.orchestrator.llm_result',
+            ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId()],
+        );
     }
 
     /**
@@ -144,22 +117,14 @@ final readonly class RunOrchestrator
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onToolCallResult(ToolCallResult $message): void
     {
-        $this->withLogContext($message->runId(), 'turn.orchestrator.tool_result', function () use ($message): void {
-            $handle = fn () => $this->runMessageProcessor->process(self::ScopeToolResult, $message);
-
-            if (null === $this->tracer) {
-                $handle();
-
-                return;
-            }
-
-            $this->tracer->inSpan('turn.orchestrator.tool_result', [
-                'run_id' => $message->runId(),
-                'turn_no' => $message->turnNo(),
-                'step_id' => $message->stepId(),
-                'tool_call_id' => $message->toolCallId,
-            ], $handle, root: true);
-        });
+        $this->dispatch(
+            $message->runId(),
+            'turn.orchestrator.tool_result',
+            self::ScopeToolResult,
+            $message,
+            'turn.orchestrator.tool_result',
+            ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId(), 'tool_call_id' => $message->toolCallId],
+        );
     }
 
     /**
@@ -175,22 +140,14 @@ final readonly class RunOrchestrator
     #[AsMessageHandler(bus: 'agent.execution.bus')]
     public function onCompactRun(CompactRun $message): void
     {
-        $this->withLogContext($message->runId(), 'command.compact', function () use ($message): void {
-            $handle = fn () => $this->runMessageProcessor->process(self::ScopeCompactRun, $message);
-
-            if (null === $this->tracer) {
-                $handle();
-
-                return;
-            }
-
-            $this->tracer->inSpan('command.compact', [
-                'run_id' => $message->runId(),
-                'turn_no' => $message->turnNo(),
-                'step_id' => $message->stepId(),
-                'trigger' => $message->trigger,
-            ], $handle, root: true);
-        });
+        $this->dispatch(
+            $message->runId(),
+            'command.compact',
+            self::ScopeCompactRun,
+            $message,
+            'command.compact',
+            ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId(), 'trigger' => $message->trigger],
+        );
     }
 
     /**
@@ -199,20 +156,43 @@ final readonly class RunOrchestrator
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onCompactionStepResult(CompactionStepResult $message): void
     {
-        $this->withLogContext($message->runId(), 'result.compaction', function () use ($message): void {
-            $handle = fn () => $this->runMessageProcessor->process(self::ScopeCompactionResult, $message);
+        $this->dispatch(
+            $message->runId(),
+            'result.compaction',
+            self::ScopeCompactionResult,
+            $message,
+            'result.compaction',
+            ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId()],
+        );
+    }
 
-            if (null === $this->tracer) {
+    /**
+     * Common Messenger-handler envelope: correlation log context, optional
+     * root trace span, and locked pipeline processing.
+     *
+     * Handlers that must stay untraced (ApplyShellCommand) pass a null span
+     * name; everything else keeps its exact span name and attributes.
+     *
+     * @param array<string, mixed> $spanAttributes
+     */
+    private function dispatch(
+        string $runId,
+        string $eventType,
+        string $scope,
+        AbstractAgentBusMessage $message,
+        ?string $spanName,
+        array $spanAttributes,
+    ): void {
+        $this->withLogContext($runId, $eventType, function () use ($scope, $message, $spanName, $spanAttributes): void {
+            $handle = fn () => $this->runMessageProcessor->process($scope, $message);
+
+            if (null === $this->tracer || null === $spanName) {
                 $handle();
 
                 return;
             }
 
-            $this->tracer->inSpan('result.compaction', [
-                'run_id' => $message->runId(),
-                'turn_no' => $message->turnNo(),
-                'step_id' => $message->stepId(),
-            ], $handle, root: true);
+            $this->tracer->inSpan($spanName, $spanAttributes, $handle, root: true);
         });
     }
 
