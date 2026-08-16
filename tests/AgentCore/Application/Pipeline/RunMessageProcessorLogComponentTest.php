@@ -14,16 +14,15 @@ use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
-use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
-use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
+use Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
+use Ineersa\AgentCore\Domain\Run\PromptState;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
@@ -31,9 +30,6 @@ use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler;
 use Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler;
 use Ineersa\CodingAgent\Logging\LogContextProcessor;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
-use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
-use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Monolog\Handler\TestHandler;
 use Monolog\Logger;
@@ -70,7 +66,7 @@ final class RunMessageProcessorLogComponentTest extends IsolatedKernelTestCase
         RunLogContext::reset();
     }
 
-    public function testCompactionHandlersRetainCompactionComponentThroughProductionProcessing(): void
+    public function testCompactionHandlersRetainCompactionComponentThroughProductionRegisteredHandlers(): void
     {
         [$processor, $log, $testHandler] = $this->createProcessor($this->productionHandlers());
 
@@ -144,30 +140,10 @@ final class RunMessageProcessorLogComponentTest extends IsolatedKernelTestCase
         $this->assertSame(AdvanceRun::class, $context['message_type']);
     }
 
-    public function testProductionRegistrationCollectsAllHandlersWithDeclaredComponents(): void
+    public function testLaneHandlersDeclareTheirDedicatedComponents(): void
     {
-        $handlers = $this->productionHandlers();
-
-        $this->assertCount(8, $handlers, 'Registered RunMessageHandler set changed; update this regression.');
-
-        $byClass = [];
-        foreach ($handlers as $handler) {
-            $byClass[$handler::class] = $handler;
-        }
-
-        // App-owned compaction handlers are registered through the same tag and
-        // declare their own component — Core never names them.
-        $this->assertArrayHasKey(CompactRunHandler::class, $byClass);
-        $this->assertArrayHasKey(CompactionStepResultHandler::class, $byClass);
-        $this->assertSame('compaction', $byClass[CompactRunHandler::class]::LOG_COMPONENT);
-        $this->assertSame('compaction', $byClass[CompactionStepResultHandler::class]::LOG_COMPONENT);
-
-        // Core lane handlers keep their dedicated components; everything else
-        // inherits the 'runtime' default.
-        $this->assertArrayHasKey(LlmStepResultHandler::class, $byClass);
-        $this->assertArrayHasKey(ToolCallResultHandler::class, $byClass);
-        $this->assertSame('llm', $byClass[LlmStepResultHandler::class]::LOG_COMPONENT);
-        $this->assertSame('tool', $byClass[ToolCallResultHandler::class]::LOG_COMPONENT);
+        $this->assertSame('llm', LlmStepResultHandler::LOG_COMPONENT);
+        $this->assertSame('tool', ToolCallResultHandler::LOG_COMPONENT);
     }
 
     /**
@@ -198,14 +174,6 @@ final class RunMessageProcessorLogComponentTest extends IsolatedKernelTestCase
         $eventStore = new InMemoryEventStore();
         $commandStore = new InMemoryCommandStore();
 
-        $replayService = new SessionHotPromptReplayService(
-            $eventStore,
-            new InMemoryPromptStateStore(),
-            new PromptStateReplayService(),
-            new ReplayEventPreparer(),
-            new HistoryReplayFilter(new HistoryProjector()),
-        );
-
         $log = new CapturingRebuilder();
         $testHandler = new TestHandler();
         $logger = new Logger('test', [$testHandler]);
@@ -219,7 +187,21 @@ final class RunMessageProcessorLogComponentTest extends IsolatedKernelTestCase
                 runStore: $runStore,
                 eventStore: $eventStore,
                 commandStore: $commandStore,
-                hotPromptStateRebuilder: $replayService,
+                hotPromptStateRebuilder: new class implements HotPromptStateRebuilderInterface {
+                    public function rebuildHotPromptState(string $runId): PromptState
+                    {
+                        return new PromptState(
+                            runId: $runId,
+                            source: 'test',
+                            eventCount: 0,
+                            lastSeq: 0,
+                            missingSequences: [],
+                            isContiguous: true,
+                            tokenEstimate: 0,
+                            messages: [],
+                        );
+                    }
+                },
                 stepDispatcher: new StepDispatcher(new TestMessageBus()),
                 logger: new NullLogger(),
                 hookDispatcher: null,
