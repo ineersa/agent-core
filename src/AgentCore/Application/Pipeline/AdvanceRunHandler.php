@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\AdvanceRunCallbackFactory;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
@@ -14,7 +15,6 @@ use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 final readonly class AdvanceRunHandler implements RunMessageHandler
@@ -88,21 +88,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
 
             $postCommit = [];
             if (null !== $this->commandBus) {
-                $postCommit[] = function () use ($runId): void {
-                    $stepId = \sprintf('post-cancel-advance-%d', hrtime(true));
-
-                    try {
-                        $this->commandBus->dispatch(new AdvanceRun(
-                            runId: $runId,
-                            turnNo: 0,
-                            stepId: $stepId,
-                            attempt: 1,
-                            idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
-                        ));
-                    } catch (ExceptionInterface $exception) {
-                        throw new \RuntimeException('Failed to dispatch AdvanceRun after cancellation terminalized.', previous: $exception);
-                    }
-                };
+                $postCommit[] = AdvanceRunCallbackFactory::create($this->commandBus, $runId, 'post-cancel-advance', 'Failed to dispatch AdvanceRun after cancellation terminalized.');
             }
 
             return new HandlerResult(
