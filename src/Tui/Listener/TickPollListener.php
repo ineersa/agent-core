@@ -55,7 +55,7 @@ final class TickPollListener implements TuiListenerRegistrar
         $subagentLivePickerController = $this->subagentLivePickerController;
 
         // Wire the question controller with TUI runtime references
-        $questionController->setRuntimeRefs($context, $screen);
+        $questionController->setRuntimeRefs($screen);
 
         $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller, $runtimeQuestionEventHandler, $subagentLivePickerController): ?bool {
             $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler): void {
@@ -127,25 +127,12 @@ final class TickPollListener implements TuiListenerRegistrar
                         $preserveLocalActivity = $state->subagentLiveView->childActivity->isTerminal()
                             || RunActivityStateEnum::Cancelling === $state->subagentLiveView->childActivity;
                         if (!$preserveLocalActivity) {
-                            if (SubagentLiveStatusEnum::WaitingHuman === $refreshed->status) {
-                                $state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
-                            } elseif ($refreshed->isRunning()) {
-                                $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
-                            } elseif ($refreshed->isTerminal()) {
-                                $state->subagentLiveView->childActivity = match ($refreshed->status) {
-                                    SubagentLiveStatusEnum::Completed, SubagentLiveStatusEnum::Done => RunActivityStateEnum::Completed,
-                                    SubagentLiveStatusEnum::Failed => RunActivityStateEnum::Failed,
-                                    SubagentLiveStatusEnum::Cancelled => RunActivityStateEnum::Cancelled,
-                                    default => RunActivityStateEnum::Completed,
-                                };
+                            $mappedActivity = $refreshed->status->toActivity();
+                            if (null !== $mappedActivity) {
+                                $state->subagentLiveView->childActivity = $mappedActivity;
                             }
                         } elseif ($refreshed->isTerminal() && RunActivityStateEnum::Cancelling !== $state->subagentLiveView->childActivity) {
-                            $state->subagentLiveView->childActivity = match ($refreshed->status) {
-                                SubagentLiveStatusEnum::Completed, SubagentLiveStatusEnum::Done => RunActivityStateEnum::Completed,
-                                SubagentLiveStatusEnum::Failed => RunActivityStateEnum::Failed,
-                                SubagentLiveStatusEnum::Cancelled => RunActivityStateEnum::Cancelled,
-                                default => $state->subagentLiveView->childActivity,
-                            };
+                            $state->subagentLiveView->childActivity = $refreshed->status->toActivity() ?? $state->subagentLiveView->childActivity;
                         }
                     }
                 }

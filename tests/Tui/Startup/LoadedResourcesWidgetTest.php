@@ -134,6 +134,6 @@ final class LoadedResourcesWidgetTest extends TestCase
             ThemeColorEnum::Warning->value => '33;1',
         ]);
 
-        return new TuiRenderContext(120, 40, new DefaultTheme($palette));
+        return new TuiRenderContext(120, new DefaultTheme($palette));
     }
 }

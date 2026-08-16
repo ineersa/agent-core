@@ -105,9 +105,7 @@ final class ModelControlListener implements TuiListenerRegistrar
             // Update footer state for immediate refresh.
             // getDisplayReasoning returns 'off' for non-thinking models so
             // the diamond/model colour resets correctly.
-            $state->footerModel = FooterStateInitializer::shortModelName($nextRef->toString());
-            $state->footerReasoning = $modelService->getDisplayReasoning($state->sessionId);
-            $state->contextWindow = FooterStateInitializer::resolveContextWindowForRef($appConfig, $nextRef);
+            FooterStateInitializer::applyModelSelection($state, $nextRef, $modelService, $appConfig);
 
             // Apply editor border colour matching the new reasoning level.
             $screen->applyEditorBorderColor($state->footerReasoning);
