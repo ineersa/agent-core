@@ -59,7 +59,7 @@ final class SafeGuardAllowLiveE2eTest extends ControllerE2eTestCase
                 // Unique first-user prompt tag for llama-proxy cache key isolation.
                 // Path and content are fixed so warm gate runs add zero cache entries.
                 'prompt' => '[llm-real:safeguard-allow-write] Use exactly one tool call: tool name `write` with arguments '
-                    .'`{ "path": "'.$relativePath.'", "content": "live-allow" }`. '
+                    .'`{ "arguments": { "path": "'.$relativePath.'", "content": "live-allow" } }`. '
                     .'Do not use any other tool. After the tool succeeds, answer exactly `done`.',
             ],
         ]);

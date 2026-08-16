@@ -80,7 +80,10 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
     {
         $decision = $this->classifier->classify(
             toolName: $context->toolName,
-            arguments: $context->arguments,
+            // Typed built-ins carry the native method-parameter envelope; the
+            // classifier expects the effective flat field map, so normalize
+            // here (the classifier keeps its own defensive normalization).
+            arguments: $this->innerArguments($context),
             cwd: $this->cwd,
             policy: $this->policy,
         );

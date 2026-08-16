@@ -35,7 +35,7 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
             'payload' => [
                 // Unique first-user tag for llama-proxy cache isolation.
                 // Child task asks for one read + normal fork handoff; production prompt must enforce finality.
-                'prompt' => '[llm-real:fork-deferred-v4] Call tool fork exactly once with JSON arguments {"task":'.json_encode(self::CHILD_TASK, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES).'}. Do not call any tool except fork.',
+                'prompt' => '[llm-real:fork-deferred-v4] Call tool fork exactly once with JSON arguments {"arguments":{"task":'.json_encode(self::CHILD_TASK, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES).'}}. Do not call any tool except fork.',
             ],
         ]);
 
@@ -300,6 +300,10 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
     /**
      * Deferred fork can complete after parent run.completed; wait by tool_call_id only.
      *
+     * Only the PARENT's fork completion ends collection: the child run streams on the
+     * same stdout, and a child-originated fork completion must not satisfy the parent
+     * proof. The parent fork id is the first fork tool_execution.started in the stream.
+     *
      * Local to this live smoke — does not change shared ControllerE2eTestCase collectors.
      *
      * @return list<array<string, mixed>>
@@ -307,7 +311,7 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
     private function collectEventsUntilDeferredForkCompleted(float $timeout): array
     {
         $events = [];
-        $targetToolCallIds = [];
+        $parentForkCallId = null;
         $deadline = microtime(true) + $timeout;
         $this->parentRunIdForCollection = '' !== $this->runId ? $this->runId : null;
 
@@ -325,13 +329,14 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
                 if ('tool_execution.started' === $type
                     && 'fork' === ($payload['tool_name'] ?? null)
                     && isset($payload['tool_call_id'])
+                    && null === $parentForkCallId
                 ) {
-                    $targetToolCallIds[(string) $payload['tool_call_id']] = true;
+                    $parentForkCallId = (string) $payload['tool_call_id'];
                 }
 
-                if ('tool_execution.completed' === $type
-                    && isset($payload['tool_call_id'])
-                    && isset($targetToolCallIds[(string) $payload['tool_call_id']])
+                if (null !== $parentForkCallId
+                    && 'tool_execution.completed' === $type
+                    && ($payload['tool_call_id'] ?? null) === $parentForkCallId
                 ) {
                     return $events;
                 }

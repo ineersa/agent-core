@@ -68,6 +68,67 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
     }
 
+    public function testNestedTypedWriteOutsideCwdRequiresApproval(): void
+    {
+        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        // Typed built-in calls carry the native method-parameter envelope.
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO('c4n', 'write', [
+            'arguments' => ['path' => '/tmp/out.txt', 'content' => 'x'],
+        ], 0));
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame('/tmp/out.txt', $dto->details['path'] ?? null);
+    }
+
+    public function testNestedTypedBashDestructiveRequiresApproval(): void
+    {
+        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO('c2n', 'bash', [
+            'arguments' => ['command' => 'rm -rf /tmp/x'],
+        ], 0));
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame('rm -rf /tmp/x', $dto->details['command'] ?? null);
+    }
+
+    public function testNestedTypedEditOutsideCwdRequiresApproval(): void
+    {
+        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO('c5n', 'edit', [
+            'arguments' => ['path' => '/tmp/out.txt', 'patch' => '@@ -1 +1 @@'],
+        ], 0));
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+    }
+
+    public function testNestedTypedReadProtectedFileRequiresApproval(): void
+    {
+        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        // Default protected patterns only exist when the policy is built from config.
+        $config = new SafeGuardConfig(autoDenyInNoninteractive: false);
+        $hook = new SafeGuardToolCallHook(
+            classifier: SafeGuardClassifier::fromConfig($config),
+            policy: SafeGuardPolicy::fromConfig($config),
+            cwd: $this->cwd,
+            autoDenyInNoninteractive: false,
+        );
+        $dto = $hook->onToolCall(new ToolCallContextDTO('c6n', 'read', [
+            'arguments' => ['path' => '/tmp/.env.local', 'offset' => 0],
+        ], 0));
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+    }
+
+    public function testRawSettingsMutationWithChannelStillRequiresApproval(): void
+    {
+        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        // settings is a raw-array tool: arguments stay flat, never enveloped.
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO(
+            'c8',
+            'settings',
+            ['operation' => 'set', 'path' => 'tui.theme', 'scope' => 'project', 'value' => 'nord'],
+            0,
+        ));
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame('custom_dangerous', $dto->details['category'] ?? null);
+    }
+
     public function testResolveApprovalAnswerAllowReturnsAllow(): void
     {
         $decision = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO('q', '✅ Allow', 'bash', ['category' => 'destructive']));

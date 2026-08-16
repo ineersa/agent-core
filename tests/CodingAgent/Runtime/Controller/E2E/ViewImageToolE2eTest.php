@@ -38,7 +38,7 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => '[llm-real:view-image] Use exactly one tool call: tool name `view_image` with arguments `{ "path": "./test-photo.jpeg" }`. '
+                'prompt' => '[llm-real:view-image] Use exactly one tool call: tool name `view_image` with arguments `{ "arguments": { "path": "./test-photo.jpeg" } }`. '
                     .'Do not call `read`; `read` is forbidden for this task and cannot view images. '
                     .'Do not use an absolute path. After the tool succeeds, answer exactly `done`.',
             ],
