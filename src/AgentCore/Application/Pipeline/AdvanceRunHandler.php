@@ -75,22 +75,16 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             ];
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
-            $nextState = new RunState(
-                runId: $state->runId,
-                status: RunStatus::Cancelled,
-                version: $state->version + 1,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq + \count($events),
-                isStreaming: false,
-                streamingMessage: null,
-                pendingToolCalls: [],
-                errorMessage: $state->errorMessage,
-                messages: $state->messages,
-                activeStepId: $state->activeStepId,
-                retryableFailure: false,
-                pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                model: $state->model,
-            );
+            $nextState = $state->with([
+                'status' => RunStatus::Cancelled,
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($events),
+                'isStreaming' => false,
+                'streamingMessage' => null,
+                'pendingToolCalls' => [],
+                'retryableFailure' => false,
+                'retryAttempts' => 0,
+            ]);
 
             $postCommit = [];
             if (null !== $this->commandBus) {
@@ -151,23 +145,14 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             }
 
             if ($hasNonCompactBoundaryEvent && [] !== $boundaryEventSpecs && \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled, RunStatus::WaitingHuman], true)) {
-                $preparedState = new RunState(
-                    runId: $preparedState->runId,
-                    status: RunStatus::Running,
-                    version: $preparedState->version,
-                    turnNo: $preparedState->turnNo,
-                    lastSeq: $preparedState->lastSeq,
-                    isStreaming: $preparedState->isStreaming,
-                    streamingMessage: $preparedState->streamingMessage,
-                    pendingToolCalls: $preparedState->pendingToolCalls,
-                    errorMessage: null,
-                    messages: $preparedState->messages,
-                    activeStepId: $preparedState->activeStepId,
-                    retryableFailure: false,
-                    retryAttempts: $preparedState->retryAttempts,
-                    pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
-                    model: $preparedState->model,
-                );
+                // The retry counter is deliberately preserved across the
+                // boundary drain: an in-flight auto-retry episode must keep
+                // counting so retriesExhausted is not delayed.
+                $preparedState = $preparedState->with([
+                    'status' => RunStatus::Running,
+                    'errorMessage' => null,
+                    'retryableFailure' => false,
+                ]);
             // Fall through to the turn-advance code below.
             } else {
                 if ([] === $boundaryEventSpecs) {
@@ -175,22 +160,10 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 }
 
                 $events = $this->eventFactory->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $boundaryEventSpecs);
-                $nextState = new RunState(
-                    runId: $preparedState->runId,
-                    status: $preparedState->status,
-                    version: $state->version + 1,
-                    turnNo: $preparedState->turnNo,
-                    lastSeq: $state->lastSeq + \count($events),
-                    isStreaming: $preparedState->isStreaming,
-                    streamingMessage: $preparedState->streamingMessage,
-                    pendingToolCalls: $preparedState->pendingToolCalls,
-                    errorMessage: $preparedState->errorMessage,
-                    messages: $preparedState->messages,
-                    activeStepId: $preparedState->activeStepId,
-                    retryableFailure: $preparedState->retryableFailure,
-                    pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
-                    model: $preparedState->model,
-                );
+                $nextState = $preparedState->with([
+                    'version' => $state->version + 1,
+                    'lastSeq' => $state->lastSeq + \count($events),
+                ]);
 
                 return new HandlerResult(
                     nextState: $nextState,
@@ -207,22 +180,10 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         // through for postCommit dispatch.
         if ([] !== $mailboxEffects) {
             $events = $this->eventFactory->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $boundaryEventSpecs);
-            $nextState = new RunState(
-                runId: $preparedState->runId,
-                status: $preparedState->status,
-                version: $state->version + 1,
-                turnNo: $preparedState->turnNo,
-                lastSeq: $state->lastSeq + \count($events),
-                isStreaming: $preparedState->isStreaming,
-                streamingMessage: $preparedState->streamingMessage,
-                pendingToolCalls: $preparedState->pendingToolCalls,
-                errorMessage: $preparedState->errorMessage,
-                messages: $preparedState->messages,
-                activeStepId: $preparedState->activeStepId,
-                retryableFailure: $preparedState->retryableFailure,
-                pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
-                model: $preparedState->model,
-            );
+            $nextState = $preparedState->with([
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($events),
+            ]);
 
             return new HandlerResult(
                 nextState: $nextState,
@@ -245,22 +206,10 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             $events = $this->eventFactory->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $boundaryEventSpecs);
 
             return new HandlerResult(
-                nextState: new RunState(
-                    runId: $preparedState->runId,
-                    status: $preparedState->status,
-                    version: $state->version + 1,
-                    turnNo: $preparedState->turnNo,
-                    lastSeq: $state->lastSeq + \count($events),
-                    isStreaming: $preparedState->isStreaming,
-                    streamingMessage: $preparedState->streamingMessage,
-                    pendingToolCalls: $preparedState->pendingToolCalls,
-                    errorMessage: $preparedState->errorMessage,
-                    messages: $preparedState->messages,
-                    activeStepId: $preparedState->activeStepId,
-                    retryableFailure: $preparedState->retryableFailure,
-                    pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
-                    model: $preparedState->model,
-                ),
+                nextState: $preparedState->with([
+                    'version' => $state->version + 1,
+                    'lastSeq' => $state->lastSeq + \count($events),
+                ]),
                 events: $events,
             );
         }
@@ -367,22 +316,10 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     $boundaryEventSpecs,
                 );
 
-                $compactedState = new RunState(
-                    runId: $preparedState->runId,
-                    status: $preparedState->status,
-                    version: $state->version + 1,
-                    turnNo: $preparedState->turnNo,
-                    lastSeq: $state->lastSeq + \count($events),
-                    isStreaming: $preparedState->isStreaming,
-                    streamingMessage: $preparedState->streamingMessage,
-                    pendingToolCalls: $preparedState->pendingToolCalls,
-                    errorMessage: $preparedState->errorMessage,
-                    messages: $preparedState->messages,
-                    activeStepId: $preparedState->activeStepId,
-                    retryableFailure: $preparedState->retryableFailure,
-                    pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
-                    model: $preparedState->model,
-                );
+                $compactedState = $preparedState->with([
+                    'version' => $state->version + 1,
+                    'lastSeq' => $state->lastSeq + \count($events),
+                ]);
 
                 return new HandlerResult(
                     nextState: $compactedState,
@@ -436,23 +373,19 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
 
         $events = $this->eventFactory->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $eventSpecs);
 
-        $nextState = new RunState(
-            runId: $preparedState->runId,
-            status: RunStatus::Running,
-            version: $state->version + 1,
-            turnNo: $nextTurnNo,
-            lastSeq: $state->lastSeq + \count($events),
-            isStreaming: false,
-            streamingMessage: null,
-            pendingToolCalls: $preparedState->pendingToolCalls,
-            errorMessage: $preparedState->errorMessage,
-            messages: $preparedState->messages,
-            activeStepId: $nextStepId,
-            retryableFailure: false,
-            retryAttempts: $preparedState->retryAttempts,
-            pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
-            model: $preparedState->model,
-        );
+        // The retry counter is deliberately preserved across the turn advance:
+        // the auto-retry cycle (continue -> advance -> llm step) must keep
+        // counting so retriesExhausted is reached at the configured maximum.
+        $nextState = $preparedState->with([
+            'status' => RunStatus::Running,
+            'version' => $state->version + 1,
+            'turnNo' => $nextTurnNo,
+            'lastSeq' => $state->lastSeq + \count($events),
+            'isStreaming' => false,
+            'streamingMessage' => null,
+            'activeStepId' => $nextStepId,
+            'retryableFailure' => false,
+        ]);
 
         $postCommit = [];
         if (null !== $this->metrics) {

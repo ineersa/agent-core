@@ -126,24 +126,20 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
         $nextStatus = $startsChildTurn || RunStatus::Queued === $state->status
             ? RunStatus::Running
             : $state->status;
-        $nextState = new RunState(
-            runId: $state->runId,
-            status: $nextStatus,
-            version: $state->version + 1,
-            turnNo: $owningTurnNo,
-            lastSeq: $state->lastSeq + \count($events),
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $startsChildTurn ? null : $state->errorMessage,
-            messages: $state->messages,
-            activeStepId: $startsChildTurn || RunStatus::Queued === $state->status
+        $nextState = $state->with([
+            'status' => $nextStatus,
+            'version' => $state->version + 1,
+            'turnNo' => $owningTurnNo,
+            'lastSeq' => $state->lastSeq + \count($events),
+            'errorMessage' => $startsChildTurn ? null : $state->errorMessage,
+            'activeStepId' => $startsChildTurn || RunStatus::Queued === $state->status
                 ? $message->stepId()
                 : $state->activeStepId,
-            retryableFailure: $startsChildTurn ? false : $state->retryableFailure,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+            'retryableFailure' => $startsChildTurn ? false : $state->retryableFailure,
+            // A child turn starts a fresh retry episode; an in-place shell on
+            // an active run keeps the episode counter intact.
+            'retryAttempts' => $startsChildTurn ? 0 : $state->retryAttempts,
+        ]);
 
         return new HandlerResult(
             nextState: $nextState,

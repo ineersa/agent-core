@@ -19,6 +19,7 @@ use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
+use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
@@ -454,25 +455,41 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->assertCount(0, $advanceCommands);
     }
 
-    public function testCopyStatePreservesRetryAttempts(): void
+    public function testMailboxApplicationPreservesRetryAttempts(): void
     {
+        $commandStore = new InMemoryCommandStore();
         $policy = new CommandMailboxPolicy(
-            commandStore: new InMemoryCommandStore(),
+            commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
 
         $state = new RunState(
             runId: 'run-copy-retry',
             status: RunStatus::Running,
+            retryableFailure: true,
             retryAttempts: 2,
             model: 'test-model');
 
-        $reflection = new \ReflectionClass($policy);
-        $copyState = $reflection->getMethod('copyState');
-        /** @var RunState $copied */
-        $copied = $copyState->invoke($policy, $state, ['messages' => []]);
+        $commandStore->enqueue(new PendingCommand(
+            runId: 'run-copy-retry',
+            kind: 'steer',
+            idempotencyKey: 'steer-retry',
+            payload: [
+                'message' => [
+                    'role' => 'user',
+                    'content' => [['type' => 'text', 'text' => 'steer text']],
+                ],
+            ],
+        ));
 
-        $this->assertSame(2, $copied->retryAttempts);
+        $result = $policy->applyPendingTurnStartCommands($state);
+
+        // The mailbox messages copy (previously a private copyState
+        // reimplementation of RunState::with()) must not drop the in-flight
+        // retry episode.
+        $this->assertSame(2, $result->state->retryAttempts);
+        $this->assertTrue($result->state->retryableFailure);
+        $this->assertSame(RunStatus::Running, $result->state->status);
     }
 
     private function currentTurnNo(CommandMailboxFixture $fixture, string $runId): int

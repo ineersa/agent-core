@@ -188,22 +188,17 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             ];
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
-            $nextState = new RunState(
-                runId: $state->runId,
-                status: RunStatus::Cancelled,
-                version: $state->version + 1,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq + \count($events),
-                isStreaming: false,
-                streamingMessage: null,
-                pendingToolCalls: [],
-                errorMessage: $state->errorMessage,
-                messages: $messages,
-                activeStepId: $state->activeStepId,
-                retryableFailure: false,
-                pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                model: $state->model,
-            );
+            $nextState = $state->with([
+                'status' => RunStatus::Cancelled,
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($events),
+                'isStreaming' => false,
+                'streamingMessage' => null,
+                'pendingToolCalls' => [],
+                'messages' => $messages,
+                'retryableFailure' => false,
+                'retryAttempts' => 0,
+            ]);
 
             $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
             $postCancelAdvance = $this->postCancelAdvanceCallback($runId);
@@ -355,22 +350,17 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
 
         $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
-        $nextState = new RunState(
-            runId: $state->runId,
-            status: $status,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq + \count($events),
-            isStreaming: false,
-            streamingMessage: null,
-            pendingToolCalls: $pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: false,
-            pendingHumanInputRequests: $pendingHumanInputRequests,
-            model: $state->model,
-        );
+        $nextState = $state->with([
+            'status' => $status,
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + \count($events),
+            'isStreaming' => false,
+            'streamingMessage' => null,
+            'pendingToolCalls' => $pendingToolCalls,
+            'messages' => $messages,
+            'retryableFailure' => false,
+            'pendingHumanInputRequests' => $pendingHumanInputRequests,
+        ]);
 
         return new HandlerResult(
             nextState: $nextState,
@@ -435,22 +425,15 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
         \assert($pendingRequestCountBefore + 1 === \count($pendingHumanInputRequests));
 
         return new HandlerResult(
-            nextState: new RunState(
-                runId: $state->runId,
-                status: RunStatus::WaitingHuman,
-                version: $state->version + 1,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq + \count($events),
-                isStreaming: false,
-                streamingMessage: null,
-                pendingToolCalls: $state->pendingToolCalls,
-                errorMessage: $state->errorMessage,
-                messages: $state->messages,
-                activeStepId: $state->activeStepId,
-                retryableFailure: false,
-                pendingHumanInputRequests: $pendingHumanInputRequests,
-                model: $state->model,
-            ),
+            nextState: $state->with([
+                'status' => RunStatus::WaitingHuman,
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($events),
+                'isStreaming' => false,
+                'streamingMessage' => null,
+                'retryableFailure' => false,
+                'pendingHumanInputRequests' => $pendingHumanInputRequests,
+            ]),
             events: $events,
             postCommitEffects: $effects,
         );

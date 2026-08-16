@@ -55,22 +55,12 @@ final readonly class CommittedRunEventAppender
             return;
         }
 
-        $nextState = new RunState(
-            runId: $state->runId,
-            status: $state->status,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $seq,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $state->messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: $state->retryableFailure,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        // LastSeq sync is a pure version/seq bump: like RunCommit and
+        // incrementStateVersion, it must not drop retry accounting.
+        $nextState = $state->with([
+            'version' => $state->version + 1,
+            'lastSeq' => $seq,
+        ]);
 
         if (!$this->runStore->compareAndSwap($nextState, $state->version)) {
             $this->logger->debug('sequenced_event_append.last_seq_cas_skipped', [

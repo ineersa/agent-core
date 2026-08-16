@@ -44,6 +44,7 @@ final class RunStateBuilder
 
     private ?string $activeStepId = null;
     private bool $retryableFailure = false;
+    private int $retryAttempts = 0;
 
     /** @var PendingHumanInputRequests */
     private array $pendingHumanInputRequests = [];
@@ -180,6 +181,13 @@ final class RunStateBuilder
         return $this;
     }
 
+    public function withRetryAttempts(int $retryAttempts): self
+    {
+        $this->retryAttempts = $retryAttempts;
+
+        return $this;
+    }
+
     /**
      * @param PendingHumanInputRequests $pendingHumanInputRequests
      */
@@ -212,6 +220,7 @@ final class RunStateBuilder
             messages: $this->messages,
             activeStepId: $this->activeStepId,
             retryableFailure: $this->retryableFailure,
+            retryAttempts: $this->retryAttempts,
             pendingHumanInputRequests: $this->pendingHumanInputRequests,
             model: $this->model,
         );
