@@ -4,18 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
-use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\SessionCommandRegistrar;
-use Ineersa\Tui\Picker\SessionPickerController;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -46,15 +41,16 @@ final class SessionCommandRegistrarTest extends TestCase
     #[Test]
     public function testRegistersNewCommandWithCorrectMetadata(): void
     {
-        [$registry, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
-        $context = $this->buildContext(new TuiSessionState('test-session'), $picker);
+        [$catalog, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
+        $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
-        $registrar = new SessionCommandRegistrar($registry, $picker);
+        $registrar = new SessionCommandRegistrar();
+        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
-        $this->assertTrue($registry->has('new'));
+        $this->assertTrue($catalog->has('new'));
 
-        $meta = $registry->getMetadata('new');
+        $meta = $catalog->getMetadata('new');
         $this->assertInstanceOf(CommandMetadata::class, $meta);
         $this->assertSame('new', $meta->name);
         $this->assertFalse($meta->acceptsArguments);
@@ -65,15 +61,16 @@ final class SessionCommandRegistrarTest extends TestCase
     #[Test]
     public function testRegistersRenameCommandWithCorrectMetadata(): void
     {
-        [$registry, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
-        $context = $this->buildContext(new TuiSessionState('test-session'), $picker);
+        [$catalog, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
+        $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
-        $registrar = new SessionCommandRegistrar($registry, $picker);
+        $registrar = new SessionCommandRegistrar();
+        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
-        $this->assertTrue($registry->has('rename'));
+        $this->assertTrue($catalog->has('rename'));
 
-        $meta = $registry->getMetadata('rename');
+        $meta = $catalog->getMetadata('rename');
         $this->assertInstanceOf(CommandMetadata::class, $meta);
         $this->assertSame('rename', $meta->name);
         $this->assertTrue($meta->acceptsArguments);
@@ -84,16 +81,17 @@ final class SessionCommandRegistrarTest extends TestCase
     #[Test]
     public function testRegistersResumeCommandWithCorrectMetadata(): void
     {
-        [$registry, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
-        $context = $this->buildContext(new TuiSessionState('test-session'), $picker);
+        [$catalog, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
+        $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
-        $registrar = new SessionCommandRegistrar($registry, $picker);
+        $registrar = new SessionCommandRegistrar();
+        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
-        $this->assertTrue($registry->has('resume'));
-        $this->assertTrue($registry->has('r'), 'Alias r should resolve to resume');
+        $this->assertTrue($catalog->has('resume'));
+        $this->assertTrue($catalog->has('r'), 'Alias r should resolve to resume');
 
-        $meta = $registry->getMetadata('resume');
+        $meta = $catalog->getMetadata('resume');
         $this->assertInstanceOf(CommandMetadata::class, $meta);
         $this->assertSame('resume', $meta->name);
         $this->assertContains('r', $meta->aliases);
@@ -105,13 +103,14 @@ final class SessionCommandRegistrarTest extends TestCase
     #[Test]
     public function testCommandsAppearInHelpOutput(): void
     {
-        [$registry, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
-        $context = $this->buildContext(new TuiSessionState('test-session'), $picker);
+        [$catalog, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
+        $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
-        $registrar = new SessionCommandRegistrar($registry, $picker);
+        $registrar = new SessionCommandRegistrar();
+        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
-        $result = $registry->execute(new SlashCommand('help', '', '/help'));
+        $result = $context->sessionServices->commandRegistry->execute(new SlashCommand('help', '', '/help'));
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertStringContainsString('/new', $result->text);
@@ -122,63 +121,49 @@ final class SessionCommandRegistrarTest extends TestCase
     #[Test]
     public function testNewCommandHandlerReturnsNoOp(): void
     {
-        [$registry, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
-        $context = $this->buildContext(new TuiSessionState('test-session'), $picker);
+        [$catalog, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
+        $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
-        $registrar = new SessionCommandRegistrar($registry, $picker);
+        $registrar = new SessionCommandRegistrar();
+        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
-        $result = $registry->execute(new SlashCommand('new', '', '/new'));
+        $result = $context->sessionServices->commandRegistry->execute(new SlashCommand('new', '', '/new'));
 
         $this->assertInstanceOf(NoOp::class, $result);
     }
 
     #[Test]
-    public function testIdempotentRegistrationDoesNotThrow(): void
+    public function testRepeatRegistrationBindsHandlersWithoutThrowing(): void
     {
-        [$registry, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
-        $context = $this->buildContext(new TuiSessionState('test-session'), $picker);
+        [$catalog, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
+        $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
-        $registrar = new SessionCommandRegistrar($registry, $picker);
+        $registrar = new SessionCommandRegistrar();
+        $registrar->registerCatalog($catalog);
 
-        // First registration
+        // First session iteration
         $registrar->register($context);
-        $this->assertTrue($registry->has('new'));
-        $this->assertTrue($registry->has('resume'));
-        $this->assertTrue($registry->has('rename'));
+        $this->assertTrue($catalog->has('new'));
+        $this->assertTrue($catalog->has('resume'));
+        $this->assertTrue($catalog->has('rename'));
 
-        // Second registration — should replace handlers without throwing
-        $registrar->register($context);
-        $this->assertTrue($registry->has('new'));
-        $this->assertTrue($registry->has('resume'));
-        $this->assertTrue($registry->has('rename'));
+        // Second session iteration — binds fresh handlers without throwing
+        $secondContext = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
+        $registrar->register($secondContext);
+        $this->assertTrue($catalog->has('new'));
 
-        // Verify commands still work after re-registration
-        $result = $registry->execute(new SlashCommand('new', '', '/new'));
+        // Verify commands still work after re-binding
+        $result = $secondContext->sessionServices->commandRegistry->execute(new SlashCommand('new', '', '/new'));
         $this->assertInstanceOf(NoOp::class, $result);
     }
 
     private function buildContextAndPicker(TuiSessionState $state): array
     {
-        $registry = new SlashCommandRegistry();
-
-        $sessionStore = new HatfieldSessionStore(
-            appConfig: new AppConfig(
-                tui: new TuiConfig(theme: 'default'),
-                logging: new LoggingConfig(),
-                cwd: $this->tmpDir,
-            ),
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-        );
-        $picker = new SessionPickerController(
-            $sessionStore,
-            $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
-        );
-
-        return [$registry, $picker];
+        return [new SlashCommandCatalog(), $this->createSessionServices(state: $state)->sessionPicker];
     }
 
-    private function buildContext(TuiSessionState $state, SessionPickerController $picker): TuiRuntimeContext
+    private function buildContext(TuiSessionState $state, $picker, SlashCommandCatalog $catalog): TuiRuntimeContext
     {
         $tui = new Tui();
         $theme = new DefaultTheme(new ThemePalette('test'));
@@ -189,6 +174,7 @@ final class SessionCommandRegistrarTest extends TestCase
             ->withTui($tui)
             ->withState($state)
             ->withScreen($screen)
+            ->withSessionServices($this->createSessionServices(catalog: $catalog))
             ->build();
     }
 

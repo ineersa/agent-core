@@ -9,6 +9,7 @@ use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Tests\Support\SubagentLiveScenarioHarness;
+use Ineersa\Tui\Tests\Support\TuiSessionServicesFactoryTrait;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -17,6 +18,8 @@ use PHPUnit\Framework\TestCase;
  */
 final class SubagentLiveHitlScenarioTest extends TestCase
 {
+    use TuiSessionServicesFactoryTrait;
+
     private const PARENT_RUN = 'parent-run-1';
     private const CHILD_RUN = 'child-run-scenario';
     private const ARTIFACT = 'agent_scenario';

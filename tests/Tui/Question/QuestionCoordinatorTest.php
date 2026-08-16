@@ -445,94 +445,35 @@ final class QuestionCoordinatorTest extends TestCase
         $this->assertFalse($coordinator->hasRequest('nonexistent'));
     }
 
-    // ─── Reset (session switch lifecycle) ──────────────────────────────
+    // ─── Fresh ownership (per-session composition) ─────────────────────
 
-    public function testResetWithNoActiveQuestionIsNoOp(): void
+    public function testFreshCoordinatorStartsWithNoState(): void
     {
         $coordinator = new QuestionCoordinator();
-
-        $coordinator->reset();
-
-        $this->assertNull($coordinator->activeRequest());
-        $this->assertFalse($coordinator->actionRequired());
-    }
-
-    public function testResetClearsActiveQuestion(): void
-    {
-        $coordinator = new QuestionCoordinator();
-        $coordinator->enqueue($this->tuiRequest('r1'));
-
-        $this->assertTrue($coordinator->actionRequired());
-
-        $coordinator->reset();
 
         $this->assertNull($coordinator->activeRequest());
         $this->assertNull($coordinator->activeStatus());
         $this->assertFalse($coordinator->actionRequired());
     }
 
-    public function testResetClearsQueuedQuestions(): void
+    public function testFreshCoordinatorDoesNotRetainPriorSessionQuestions(): void
     {
-        $coordinator = new QuestionCoordinator();
-        $coordinator->enqueue($this->tuiRequest('r1'));
-        $coordinator->enqueue($this->tuiRequest('r2'));
-        $coordinator->enqueue($this->tuiRequest('r3'));
+        // Per-session composition creates a fresh coordinator per iteration;
+        // a new instance must never see state from an earlier session.
+        $first = new QuestionCoordinator();
+        $first->enqueue($this->tuiRequest('r1'));
+        $first->enqueue($this->tuiRequest('r2'));
+        $this->assertTrue($first->actionRequired());
 
-        // r1 is active, r2+r3 are queued
-        $this->assertSame('r1', $coordinator->activeRequest()?->requestId);
+        $second = new QuestionCoordinator();
+        $this->assertNull($second->activeRequest());
+        $this->assertFalse($second->actionRequired());
+        $this->assertFalse($second->hasRequest('r1'));
 
-        $coordinator->reset();
-
-        // After reset, everything is cleared — including the queue
-        $this->assertNull($coordinator->activeRequest());
-        $this->assertFalse($coordinator->actionRequired());
-
-        // Enqueueing after reset works normally
-        $coordinator->enqueue($this->tuiRequest('r4'));
-        $this->assertSame('r4', $coordinator->activeRequest()?->requestId);
-    }
-
-    public function testResetDoesNotInvokeCallbacks(): void
-    {
-        $coordinator = new QuestionCoordinator();
-        $answerFired = false;
-        $cancelFired = false;
-
-        $coordinator->enqueue(
-            $this->tuiRequest('r1'),
-            onAnswer: static function () use (&$answerFired): void {
-                $answerFired = true;
-            },
-            onCancel: static function () use (&$cancelFired): void {
-                $cancelFired = true;
-            },
-        );
-        $coordinator->enqueue($this->tuiRequest('r2'));
-
-        $coordinator->reset();
-
-        $this->assertFalse($answerFired, 'Answer callback must not be invoked during reset');
-        $this->assertFalse($cancelFired, 'Cancel callback must not be invoked during reset');
-        $this->assertNull($coordinator->activeRequest());
-    }
-
-    public function testResetClearsRequestIdsTracking(): void
-    {
-        $coordinator = new QuestionCoordinator();
-        $coordinator->enqueue($this->tuiRequest('r1'));
-        $coordinator->enqueue($this->tuiRequest('r2'));
-
-        $this->assertTrue($coordinator->hasRequest('r1'));
-        $this->assertTrue($coordinator->hasRequest('r2'));
-
-        $coordinator->reset();
-
-        $this->assertFalse($coordinator->hasRequest('r1'));
-        $this->assertFalse($coordinator->hasRequest('r2'));
-
-        // After reset, the same ID can be re-enqueued without triggering the duplicate guard
-        $coordinator->enqueue($this->tuiRequest('r1'));
-        $this->assertTrue($coordinator->hasRequest('r1'));
+        // The same ID can be enqueued in the fresh instance without the
+        // duplicate guard firing (no shared request-id tracking).
+        $second->enqueue($this->tuiRequest('r1'));
+        $this->assertTrue($second->hasRequest('r1'));
     }
 
     // ─── removeForRun (child live-view leave/switch) ───────────────────

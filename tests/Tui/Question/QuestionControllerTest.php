@@ -34,12 +34,14 @@ class QuestionControllerTest extends TestCase
 {
     private QuestionCoordinator $coordinator;
     private QuestionController $controller;
+    private ChatScreen $screen;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->coordinator = new QuestionCoordinator();
-        $this->controller = new QuestionController($this->coordinator);
+        $this->screen = $this->makeScreen();
+        $this->controller = new QuestionController($this->coordinator, $this->screen);
     }
 
     // ── Lifecycle ──
@@ -79,39 +81,11 @@ class QuestionControllerTest extends TestCase
         // infrastructure (tui->mount(), insertOverlayBeforeEditor) and is
         // not unit-testable without it. This test at minimum proves the
         // editorWidget() call path does not crash.
-        $chatRef = new \ReflectionClass(ChatScreen::class);
-        /** @var ChatScreen $screen */
-        $screen = $chatRef->newInstanceWithoutConstructor();
-
-        $promptEditor = new PromptEditor();
-        $promptEditorProp = $chatRef->getProperty('promptEditor');
-        $promptEditorProp->setValue($screen, $promptEditor);
-
-        // Inject a theme so styleConfirmItems can access it
-        $palette = new ThemePalette(
-            name: 'test',
-            colors: [
-                ThemeColorEnum::Success->value => 'green',
-                ThemeColorEnum::Error->value => 'red',
-            ],
-        );
-        $theme = new DefaultTheme($palette);
-        $themeProp = $chatRef->getProperty('theme');
-        $themeProp->setValue($screen, $theme);
-
-        // Inject the screen into the controller
-        $ctrlRef = new \ReflectionClass($this->controller);
-        $screenProp = $ctrlRef->getProperty('screen');
-        $screenProp->setValue($this->controller, $screen);
-
         // Verify editorWidget() path (called by __other__ handler)
-        $editorWidget = $screen->editorWidget();
+        $editorWidget = $this->screen->editorWidget();
         $this->assertInstanceOf(EditorWidget::class, $editorWidget);
 
-        // Close lifecycle is tested by other tests (testCloseIsSafeWhenNotOpen);
-        // calling close() here requires a full set of ChatScreen dependencies
-        // (registry, tui, footerDataProvider, etc.) that are beyond the scope
-        // of this unit-level editorWidget() accessibility proof.
+        // Close lifecycle is tested by other tests (testCloseIsSafeWhenNotOpen).
     }
 
     // ── Build items ──
@@ -128,11 +102,8 @@ class QuestionControllerTest extends TestCase
         );
 
         $container = new ContainerWidget();
-        $ctrlRef = new \ReflectionClass($this->controller);
-
-        $chatRef = new \ReflectionClass(ChatScreen::class);
-        /** @var ChatScreen $screen */
-        $screen = $chatRef->newInstanceWithoutConstructor();
+        // Constructor-valid controller bound to a real screen carrying the
+        // test palette; the overlay container is injected for inspection.
         $palette = new ThemePalette(
             name: 'test',
             colors: [
@@ -140,19 +111,18 @@ class QuestionControllerTest extends TestCase
                 ThemeColorEnum::Muted->value => 'gray',
             ],
         );
-        $themeProp = $chatRef->getProperty('theme');
-        $themeProp->setValue($screen, new DefaultTheme($palette));
-        $screenProp = $ctrlRef->getProperty('screen');
-        $screenProp->setValue($this->controller, $screen);
+        $screen = new ChatScreen(new DefaultTheme($palette), 'test-session', new PromptEditor());
+        $controller = new QuestionController(new QuestionCoordinator(), $screen);
 
+        $ctrlRef = new \ReflectionClass($controller);
         $containerProp = $ctrlRef->getProperty('container');
-        $containerProp->setValue($this->controller, $container);
+        $containerProp->setValue($controller, $container);
 
-        $addHeader = new \ReflectionMethod($this->controller, 'addHeader');
-        $addHeader->invoke($this->controller, $request);
+        $addHeader = new \ReflectionMethod($controller, 'addHeader');
+        $addHeader->invoke($controller, $request);
 
-        $addBanner = new \ReflectionMethod($this->controller, 'addTextBanner');
-        $addBanner->invoke($this->controller, $request);
+        $addBanner = new \ReflectionMethod($controller, 'addTextBanner');
+        $addBanner->invoke($controller, $request);
 
         $childrenProp = new \ReflectionProperty(ContainerWidget::class, 'children');
         $children = $childrenProp->getValue($container);
@@ -197,12 +167,14 @@ class QuestionControllerTest extends TestCase
         $screen->mount($tui);
         $screen->setStatus('action', 'Type your answer and press Enter');
 
-        $this->controller->setRuntimeRefs($screen);
-        $this->controller->open($request);
+        // The controller is constructor-bound to its screen; use a controller
+        // bound to the mounted screen under test.
+        $controller = new QuestionController($this->coordinator, $screen);
+        $controller->open($request);
 
         $entries = $screen->registry()->getStatusEntries();
         $this->assertArrayNotHasKey('action', $entries);
-        $this->assertTrue($this->controller->isOpen());
+        $this->assertTrue($controller->isOpen());
     }
 
     /**
@@ -485,19 +457,12 @@ class QuestionControllerTest extends TestCase
         );
         $theme = new DefaultTheme($palette);
 
-        // Create a ChatScreen without constructor and inject the test theme
-        $chatRef = new \ReflectionClass(ChatScreen::class);
-        /** @var ChatScreen $screen */
-        $screen = $chatRef->newInstanceWithoutConstructor();
-        $themeProp = $chatRef->getProperty('theme');
-        $themeProp->setValue($screen, $theme);
+        // Constructor-valid controller bound to a real screen carrying the
+        // test theme.
+        $screen = new ChatScreen($theme, 'test-session', new PromptEditor());
+        $controller = new QuestionController(new QuestionCoordinator(), $screen);
 
-        // Inject the screen into the controller
-        $ctrlRef = new \ReflectionClass($this->controller);
-        $screenProp = $ctrlRef->getProperty('screen');
-        $screenProp->setValue($this->controller, $screen);
-
-        $invokeStyle = new \ReflectionMethod($this->controller, 'styleConfirmItems');
+        $invokeStyle = new \ReflectionMethod($controller, 'styleConfirmItems');
 
         // Thesis 1: Confirm kind items get styled
         // Even with icon markers already in labels, actual styling via
@@ -506,7 +471,7 @@ class QuestionControllerTest extends TestCase
             ['value' => 'yes', 'label' => "\u{2713} Yes"],
             ['value' => 'no', 'label' => "\u{2717} No"],
         ];
-        $styled = $invokeStyle->invoke($this->controller, $confirmItems, QuestionKind::Confirm);
+        $styled = $invokeStyle->invoke($controller, $confirmItems, QuestionKind::Confirm);
         $this->assertNotSame("\u{2713} Yes", $styled[0]['label'], 'Confirm Yes must be styled with Success color');
         $this->assertNotSame("\u{2717} No", $styled[1]['label'], 'Confirm No must be styled with Error color');
 
@@ -518,7 +483,7 @@ class QuestionControllerTest extends TestCase
             ['value' => 'no', 'label' => 'no'],
             ['value' => 'other', 'label' => 'other'],
         ];
-        $unstyled = $invokeStyle->invoke($this->controller, $choiceItems, QuestionKind::Choice);
+        $unstyled = $invokeStyle->invoke($controller, $choiceItems, QuestionKind::Choice);
         $this->assertSame($choiceItems, $unstyled, 'Choice items must be returned unchanged even when values are yes/no');
     }
 
@@ -679,6 +644,15 @@ class QuestionControllerTest extends TestCase
         $this->controller->restoreFromFreeForm();
 
         $this->assertFalse($this->controller->isAwaitingFreeForm());
+    }
+
+    private function makeScreen(): ChatScreen
+    {
+        return new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            'test-session',
+            new PromptEditor(),
+        );
     }
 
     // ── Helpers ──

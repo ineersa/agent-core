@@ -5,94 +5,60 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\Tui\Command\CommandMetadata;
-use Ineersa\Tui\Command\SlashCommandRegistry;
-use Ineersa\Tui\Picker\SessionPickerController;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 /**
  * Registers /new, /resume, and /rename slash commands in the TUI.
  *
- * On registration (called once per TUI iteration):
- *  - Wires picker controller per-run references.
- *  - Registers /new, /resume, and /rename commands idempotently so
- *    repeated registrations after session rebuilds do not
- *    cause duplicate-command errors.
- *
- * Command handlers are created fresh each registration with
- * references from the current TUI iteration (switch service,
- * session store, picker controller).
+ * Command metadata is registered once per process via
+ * {@see registerCatalog()}; each session iteration binds fresh handlers
+ * wired to the session's picker controller and switch service.
  */
-final class SessionCommandRegistrar implements TuiListenerRegistrar
+final class SessionCommandRegistrar implements TuiListenerRegistrar, SlashCommandCatalogRegistrar
 {
-    public function __construct(
-        private readonly SlashCommandRegistry $commandRegistry,
-        private readonly SessionPickerController $pickerController,
-    ) {
+    public function registerCatalog(SlashCommandCatalog $catalog): void
+    {
+        $catalog->registerMetadata(new CommandMetadata(
+            name: 'new',
+            description: 'Start a new session',
+            usage: '/new',
+            acceptsArguments: false,
+        ));
+        $catalog->registerMetadata(new CommandMetadata(
+            name: 'resume',
+            aliases: ['r'],
+            description: 'Resume or switch to another session',
+            usage: '/resume [session id]',
+            acceptsArguments: true,
+        ));
+        $catalog->registerMetadata(new CommandMetadata(
+            name: 'rename',
+            description: 'Rename a session',
+            usage: '/rename [session id] [new name]',
+            acceptsArguments: true,
+        ));
     }
 
     public function register(TuiRuntimeContext $context): void
     {
-        $tui = $context->tui;
-        $screen = $context->screen;
-        $state = $context->state;
+        $registry = $context->sessionServices->commandRegistry;
+        $pickerController = $context->sessionServices->sessionPicker;
 
-        // Wire the picker controller with per-iteration references
-        $this->pickerController->setRuntimeRefs($tui, $screen, $state);
+        // ── Bind /new slash command ──
+        $registry->bind('new', new NewSessionCommandHandler($context->switch));
 
-        // ── Register /new slash command (idempotent) ──
-        $newHandler = new NewSessionCommandHandler($context->switch);
-        if ($this->commandRegistry->has('new')) {
-            $this->commandRegistry->setHandler('new', $newHandler);
-        } else {
-            $this->commandRegistry->register(
-                new CommandMetadata(
-                    name: 'new',
-                    description: 'Start a new session',
-                    usage: '/new',
-                    acceptsArguments: false,
-                ),
-                $newHandler,
-            );
-        }
-
-        // ── Register /resume slash command (idempotent) ──
-        $resumeHandler = new ResumeSessionCommandHandler(
+        // ── Bind /resume slash command ──
+        $registry->bind('resume', new ResumeSessionCommandHandler(
             $context->switch,
             $context->sessionStore,
-            $this->pickerController,
-        );
-        if ($this->commandRegistry->has('resume')) {
-            $this->commandRegistry->setHandler('resume', $resumeHandler);
-        } else {
-            $this->commandRegistry->register(
-                new CommandMetadata(
-                    name: 'resume',
-                    aliases: ['r'],
-                    description: 'Resume or switch to another session',
-                    usage: '/resume [session id]',
-                    acceptsArguments: true,
-                ),
-                $resumeHandler,
-            );
-        }
+            $pickerController,
+        ));
 
-        // ── Register /rename slash command (idempotent) ──
-        $renameHandler = new RenameSessionCommandHandler(
+        // ── Bind /rename slash command ──
+        $registry->bind('rename', new RenameSessionCommandHandler(
             $context->sessionStore,
-            $this->pickerController,
-        );
-        if ($this->commandRegistry->has('rename')) {
-            $this->commandRegistry->setHandler('rename', $renameHandler);
-        } else {
-            $this->commandRegistry->register(
-                new CommandMetadata(
-                    name: 'rename',
-                    description: 'Rename a session',
-                    usage: '/rename [session id] [new name]',
-                    acceptsArguments: true,
-                ),
-                $renameHandler,
-            );
-        }
+            $pickerController,
+        ));
     }
 }

@@ -5,43 +5,33 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\Tui\Command\CommandMetadata;
-use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 /**
  * Registers the /copy (alias: /cp) slash command.
  *
- * Uses the idempotent registration pattern: if the command is already
- * registered (e.g. via multiple context construction), the handler is
- * replaced rather than throwing.
+ * Command metadata is registered once per process via
+ * {@see registerCatalog()}; each session binds a fresh handler.
  *
  * @internal Autowired via {@see TuiListenerRegistrar} and the `app.tui_listener` tag
  */
-final class CopyCommandRegistrar implements TuiListenerRegistrar
+final class CopyCommandRegistrar implements TuiListenerRegistrar, SlashCommandCatalogRegistrar
 {
-    public function __construct(
-        private readonly SlashCommandRegistry $commandRegistry,
-    ) {
+    public function registerCatalog(SlashCommandCatalog $catalog): void
+    {
+        $catalog->registerMetadata(new CommandMetadata(
+            name: 'copy',
+            aliases: ['cp'],
+            description: 'Copy the last model output to the clipboard',
+            usage: '/copy',
+        ));
     }
 
     public function register(TuiRuntimeContext $context): void
     {
         $handler = new CopyCommandHandler($context->state);
 
-        if ($this->commandRegistry->has('copy')) {
-            $this->commandRegistry->setHandler('copy', $handler);
-
-            return;
-        }
-
-        $this->commandRegistry->register(
-            new CommandMetadata(
-                name: 'copy',
-                aliases: ['cp'],
-                description: 'Copy the last model output to the clipboard',
-                usage: '/copy',
-            ),
-            $handler,
-        );
+        $context->sessionServices->commandRegistry->bind('copy', $handler);
     }
 }

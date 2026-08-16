@@ -194,24 +194,6 @@ final class QuestionCoordinator
     }
 
     /**
-     * Reset all question state without invoking callbacks.
-     *
-     * Used during session switches to clear stale HITL state that
-     * belongs to the old run.  Active/queued questions are dropped
-     * silently — the old run's cancel callback has already been
-     * invoked (or the run was cancelled independently).
-     */
-    public function reset(): void
-    {
-        $this->active = null;
-        $this->activeStatus = null;
-        $this->queue = new \SplQueue();
-        $this->callbacks = [];
-        $this->cancelCallbacks = [];
-        $this->requestIds = [];
-    }
-
-    /**
      * Silently drop active and queued questions owned by {@see $runId}.
      *
      * No answer/cancel callbacks fire. Other runs keep FIFO order, maps, and IDs.

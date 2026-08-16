@@ -9,7 +9,9 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Listener\SlashCommandCatalogRegistrar;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
@@ -42,16 +44,19 @@ use Symfony\Component\Tui\Tui;
  *  - All user submissions and runtime events are appended in real time
  *
  * Listener wiring is done via DI-tagged TuiListenerRegistrar services;
- * the registrars are stateless and receive a per-run TuiRuntimeContext.
+ * the registrars are stateless and receive a per-run TuiRuntimeContext
+ * carrying the per-session service scope ({@see TuiSessionServices}).
  *
  * ## Session switch lifecycle
  *
  * When a TUI slash command (/new, /resume) calls
  * {@see TuiSessionSwitchService} to request a session switch, the
- * service cancels the current run, resets stateful singletons, and
- * calls {@see Tui::stop()}.  InteractiveMode then rebuilds fresh
- * Tui/TuiSessionState/ChatScreen objects for the target session and
- * re-enters the event loop — all within the same CLI process.
+ * service cancels the current run and calls {@see Tui::stop()}.  Each
+ * loop iteration then composes a fresh per-session service scope via
+ * {@see TuiSessionCompositionFactory} (controllers, history, command
+ * registry, switch service, parent/child transcript projectors) and
+ * rebuilds Tui/TuiSessionState/ChatScreen objects for the target
+ * session — all within the same CLI process.
  *
  * Must not import Ineersa\AgentCore\Application, Infrastructure, or Messenger directly.
  * Must not receive raw RunEvent, command buses, stores, or agent-core services.
@@ -59,7 +64,8 @@ use Symfony\Component\Tui\Tui;
 final readonly class InteractiveMode
 {
     /**
-     * @param iterable<TuiListenerRegistrar> $listenerRegistrars
+     * @param iterable<TuiListenerRegistrar>         $listenerRegistrars
+     * @param iterable<SlashCommandCatalogRegistrar> $catalogRegistrars
      */
     public function __construct(
         private HatfieldSessionStore $sessionStore,
@@ -69,10 +75,12 @@ final readonly class InteractiveMode
         private PromptEditor $promptEditor,
         private TranscriptBlockFactory $blockFactory,
         private LoggerInterface $logger,
-        private TuiSessionSwitchService $switchService,
         private AppConfig $appConfig,
         private TranscriptDisplayConfigMapper $transcriptConfigMapper,
         private HistoryProviderInterface $historyProvider,
+        private SlashCommandCatalog $commandCatalog,
+        private iterable $catalogRegistrars,
+        private TuiSessionCompositionFactory $compositionFactory,
     ) {
     }
 
@@ -155,6 +163,16 @@ final readonly class InteractiveMode
         // TranscriptDisplayState initialized from the immutable config.
         $displayConfig = $this->transcriptConfigMapper->map($this->appConfig->tui->transcript);
 
+        // ── Seed the process-scoped slash command catalog once ──
+        // Command metadata/aliases/help data is registered exactly once per
+        // process, in tag-priority order (real commands before the -100
+        // prompt-template registrar so templates skip name collisions).  Each
+        // session iteration then binds only its own handlers via the fresh
+        // per-session SlashCommandRegistry.
+        foreach ($this->catalogRegistrars as $catalogRegistrar) {
+            $catalogRegistrar->registerCatalog($this->commandCatalog);
+        }
+
         while (true) {
             // ── Initialize session state ──
             if ($isDraft) {
@@ -166,7 +184,6 @@ final readonly class InteractiveMode
                 // `bin/console agent --prompt ...` starts a run immediately.
                 $state = $this->sessionInit->initialize('', $targetRequest);
             }
-            $state->replaceTranscript($this->sessionInit->buildInitialTranscript($state));
 
             // ── Initialize per-session transcript display state ──
             // The immutable config is mapped once above.  Each session
@@ -194,6 +211,23 @@ final readonly class InteractiveMode
             $this->promptEditor->setKeybindings(new Keybindings([
                 'new_line' => ['ctrl+j', 'shift+enter'],
             ]));
+
+            // ── Compose the per-session service scope ──
+            // Fresh controllers, question/history state, command registry,
+            // switch service, and parent/child transcript projectors — nothing
+            // is reused from the previous iteration.
+            $services = $this->compositionFactory->create($tui, $screen, $state, $client);
+
+            // ── Build initial transcript with the scope's parent applier ──
+            // Resume replay and subsequent parent polling share the same
+            // session-owned projector/projection state.
+            $state->replaceTranscript(
+                $this->sessionInit->buildInitialTranscript($state, $services->parentEventApplier),
+            );
+
+            // Seed session-scoped prompt history from the rebuilt transcript
+            // (UserMessage blocks); grown by SubmitListener on each submit.
+            $services->promptHistory->seedFrom($state->transcript);
 
             // Set initial transcript
             $screen->setTranscriptBlocks($state->transcript);
@@ -224,9 +258,6 @@ final readonly class InteractiveMode
             $ticks = new TuiTickDispatcher();
             $lifecycle = new TuiSessionLifecycleDispatcher();
 
-            // Bind switch service to this iteration's objects
-            $this->switchService->bindForIteration($tui, $client, $state);
-
             $context = new TuiRuntimeContext(
                 tui: $tui,
                 client: $client,
@@ -234,9 +265,10 @@ final readonly class InteractiveMode
                 screen: $screen,
                 sessionStore: $this->sessionStore,
                 ticks: $ticks,
-                switch: $this->switchService,
+                switch: $services->switch,
                 lifecycle: $lifecycle,
                 historyProvider: $this->historyProvider,
+                sessionServices: $services,
             );
 
             foreach ($this->listenerRegistrars as $registrar) {
@@ -264,7 +296,7 @@ final readonly class InteractiveMode
             $tui->run();
 
             // ── Determine exit reason and dispatch session ended ──
-            $switchTarget = $this->switchService->consumePendingSwitch();
+            $switchTarget = $services->switch->consumePendingSwitch();
             $endReason = (null !== $switchTarget)
                 ? TuiSessionLifecycleEndReasonEnum::Switch
                 : TuiSessionLifecycleEndReasonEnum::Quit;

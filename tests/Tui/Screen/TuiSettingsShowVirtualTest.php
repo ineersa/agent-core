@@ -14,7 +14,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Command\CommandParser;
-use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Listener\SettingsShowCommandHandler;
@@ -58,12 +58,12 @@ final class TuiSettingsShowVirtualTest extends TestCase
                 new AppConfig(tui: new TuiConfig(theme: 'cyberpunk'), logging: new LoggingConfig(), raw: $bootRaw, cwd: $cwd),
                 new SettingsValueResolver(PropertyAccess::createPropertyAccessorBuilder()->enableExceptionOnInvalidIndex()->getPropertyAccessor()),
             );
-            $registry = new SlashCommandRegistry();
+            $catalog = new SlashCommandCatalog();
             $harness = new VirtualTuiHarness(sessionId: 'settings-show-virtual');
-            (new SettingsShowCommandRegistrar($registry, $handler))->register(
-                $this->buildTuiContext()->withTui($harness->tui())->withState(new TuiSessionState('settings-show-virtual'))->withScreen($harness->screen())->build(),
-            );
-            $router = new SubmissionRouter(new CommandParser(), $registry);
+            (new SettingsShowCommandRegistrar($handler))->registerCatalog($catalog);
+            $context = $this->buildTuiContext()->withTui($harness->tui())->withState(new TuiSessionState('settings-show-virtual'))->withScreen($harness->screen())->withSessionServices($this->createSessionServices(catalog: $catalog))->build();
+            (new SettingsShowCommandRegistrar($handler))->register($context);
+            $router = new SubmissionRouter(new CommandParser(), $context->sessionServices->commandRegistry);
 
             $groups = $router->route('/settings-show');
             $this->assertInstanceOf(TranscriptMessage::class, $groups);

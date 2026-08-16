@@ -6,7 +6,7 @@ namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommand;
-use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Listener\CompactCommandRegistrar;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -22,22 +22,19 @@ final class CompactCommandRegistrarTest extends TestCase
     #[Test]
     public function registersCompactCommandWithMetadataAndAlias(): void
     {
-        $registry = new SlashCommandRegistry();
+        $catalog = new SlashCommandCatalog();
         $harness = new VirtualTuiHarness(sessionId: 'compact-registrar');
         $state = new TuiSessionState('compact-registrar');
-        $context = $this->buildTuiContext()
-            ->withTui($harness->tui())
-            ->withState($state)
-            ->withScreen($harness->screen())
-            ->build();
+        $context = $this->buildContext($harness, $state, $catalog);
 
-        $registrar = new CompactCommandRegistrar($registry);
+        $registrar = new CompactCommandRegistrar();
+        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
-        $this->assertTrue($registry->has('compact'));
-        $this->assertTrue($registry->has('cmp'));
+        $this->assertTrue($catalog->has('compact'));
+        $this->assertTrue($catalog->has('cmp'));
 
-        $meta = $registry->getMetadata('compact');
+        $meta = $catalog->getMetadata('compact');
         $this->assertInstanceOf(CommandMetadata::class, $meta);
         $this->assertSame('compact', $meta->name);
         $this->assertContains('cmp', $meta->aliases);
@@ -47,18 +44,15 @@ final class CompactCommandRegistrarTest extends TestCase
     #[Test]
     public function compactCommandAppearsInHelpOutput(): void
     {
-        $registry = new SlashCommandRegistry();
+        $catalog = new SlashCommandCatalog();
         $harness = new VirtualTuiHarness(sessionId: 'compact-help');
         $state = new TuiSessionState('compact-help');
-        $context = $this->buildTuiContext()
-            ->withTui($harness->tui())
-            ->withState($state)
-            ->withScreen($harness->screen())
-            ->build();
+        $context = $this->buildContext($harness, $state, $catalog);
 
-        (new CompactCommandRegistrar($registry))->register($context);
+        (new CompactCommandRegistrar())->registerCatalog($catalog);
+        (new CompactCommandRegistrar())->register($context);
 
-        $result = $registry->execute(new SlashCommand('help', '', '/help'));
+        $result = $context->sessionServices->commandRegistry->execute(new SlashCommand('help', '', '/help'));
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertStringContainsString('/compact', $result->text);
@@ -66,24 +60,31 @@ final class CompactCommandRegistrarTest extends TestCase
     }
 
     #[Test]
-    public function idempotentRegistrationReplacesHandlerWithoutThrowing(): void
+    public function repeatRegistrationBindsFreshHandlerWithoutThrowing(): void
     {
-        $registry = new SlashCommandRegistry();
-        $harness = new VirtualTuiHarness(sessionId: 'compact-idempotent');
-        $state = new TuiSessionState('compact-idempotent');
-        $context = $this->buildTuiContext()
+        $catalog = new SlashCommandCatalog();
+        $harness = new VirtualTuiHarness(sessionId: 'compact-repeat');
+        $state = new TuiSessionState('compact-repeat');
+        $context = $this->buildContext($harness, $state, $catalog);
+
+        $registrar = new CompactCommandRegistrar();
+        $registrar->registerCatalog($catalog);
+        $registrar->register($context);
+        $registrar->register($context);
+
+        $this->assertTrue($catalog->has('compact'));
+        $result = $context->sessionServices->commandRegistry->execute(new SlashCommand('compact', '', '/compact'));
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('No active session to compact.', $result->text);
+    }
+
+    private function buildContext(VirtualTuiHarness $harness, TuiSessionState $state, SlashCommandCatalog $catalog): \Ineersa\Tui\Runtime\TuiRuntimeContext
+    {
+        return $this->buildTuiContext()
             ->withTui($harness->tui())
             ->withState($state)
             ->withScreen($harness->screen())
+            ->withSessionServices($this->createSessionServices(catalog: $catalog))
             ->build();
-
-        $registrar = new CompactCommandRegistrar($registry);
-        $registrar->register($context);
-        $registrar->register($context);
-
-        $this->assertTrue($registry->has('compact'));
-        $result = $registry->execute(new SlashCommand('compact', '', '/compact'));
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertSame('No active session to compact.', $result->text);
     }
 }

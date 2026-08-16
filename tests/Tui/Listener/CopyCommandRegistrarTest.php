@@ -6,7 +6,7 @@ namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommand;
-use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\CopyCommandRegistrar;
@@ -40,19 +40,20 @@ final class CopyCommandRegistrarTest extends TestCase
     #[Test]
     public function registersCopyCommandWithMetadataAndAlias(): void
     {
-        $registry = new SlashCommandRegistry();
+        $catalog = new SlashCommandCatalog();
         $state = new TuiSessionState('test-session');
-        $context = $this->buildContext($state);
+        $context = $this->buildContext($state, $catalog);
 
-        $registrar = new CopyCommandRegistrar($registry);
+        $registrar = new CopyCommandRegistrar();
+        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
         // Command is registered
-        $this->assertTrue($registry->has('copy'));
-        $this->assertTrue($registry->has('cp'));
+        $this->assertTrue($catalog->has('copy'));
+        $this->assertTrue($catalog->has('cp'));
 
         // Metadata is correct
-        $meta = $registry->getMetadata('copy');
+        $meta = $catalog->getMetadata('copy');
         $this->assertInstanceOf(CommandMetadata::class, $meta);
         $this->assertSame('copy', $meta->name);
         $this->assertContains('cp', $meta->aliases);
@@ -63,14 +64,15 @@ final class CopyCommandRegistrarTest extends TestCase
     #[Test]
     public function copyCommandAppearsInHelpOutput(): void
     {
-        $registry = new SlashCommandRegistry();
+        $catalog = new SlashCommandCatalog();
         $state = new TuiSessionState('test-session');
-        $context = $this->buildContext($state);
+        $context = $this->buildContext($state, $catalog);
 
-        $registrar = new CopyCommandRegistrar($registry);
+        $registrar = new CopyCommandRegistrar();
+        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
-        $result = $registry->execute(new SlashCommand('help', '', '/help'));
+        $result = $context->sessionServices->commandRegistry->execute(new SlashCommand('help', '', '/help'));
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertStringContainsString('/copy', $result->text);
@@ -80,15 +82,16 @@ final class CopyCommandRegistrarTest extends TestCase
     #[Test]
     public function copyViaAliasDispatchesToHandler(): void
     {
-        $registry = new SlashCommandRegistry();
+        $catalog = new SlashCommandCatalog();
         $state = new TuiSessionState('test-session');
-        $context = $this->buildContext($state);
+        $context = $this->buildContext($state, $catalog);
 
-        $registrar = new CopyCommandRegistrar($registry);
+        $registrar = new CopyCommandRegistrar();
+        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
         // With no assistant message, /cp should show "nothing to copy"
-        $result = $registry->execute(new SlashCommand('cp', '', '/cp'));
+        $result = $context->sessionServices->commandRegistry->execute(new SlashCommand('cp', '', '/cp'));
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertStringContainsString('Nothing to copy', $result->text);
@@ -96,29 +99,31 @@ final class CopyCommandRegistrarTest extends TestCase
     }
 
     #[Test]
-    public function idempotentRegistrationDoesNotThrow(): void
+    public function repeatRegistrationBindsFreshHandlerWithoutThrowing(): void
     {
-        $registry = new SlashCommandRegistry();
+        $catalog = new SlashCommandCatalog();
         $state = new TuiSessionState('test-session');
-        $context = $this->buildContext($state);
+        $context = $this->buildContext($state, $catalog);
 
-        $registrar = new CopyCommandRegistrar($registry);
+        $registrar = new CopyCommandRegistrar();
+        $registrar->registerCatalog($catalog);
 
-        // First registration
+        // First session iteration
         $registrar->register($context);
-        $this->assertTrue($registry->has('copy'));
+        $this->assertTrue($catalog->has('copy'));
 
-        // Second registration — should replace handler without throwing
-        $registrar->register($context);
-        $this->assertTrue($registry->has('copy'));
+        // Second session iteration — binds a fresh handler without throwing
+        $secondContext = $this->buildContext($state, $catalog);
+        $registrar->register($secondContext);
+        $this->assertTrue($catalog->has('copy'));
 
-        // Verify the command still works after re-registration
-        $result = $registry->execute(new SlashCommand('copy', '', '/copy'));
+        // Verify the command still works after re-binding
+        $result = $secondContext->sessionServices->commandRegistry->execute(new SlashCommand('copy', '', '/copy'));
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertStringContainsString('Nothing to copy', $result->text);
     }
 
-    private function buildContext(TuiSessionState $state): TuiRuntimeContext
+    private function buildContext(TuiSessionState $state, SlashCommandCatalog $catalog): TuiRuntimeContext
     {
         $tui = new Tui();
         $theme = new DefaultTheme(new ThemePalette('test'));
@@ -129,6 +134,7 @@ final class CopyCommandRegistrarTest extends TestCase
             ->withTui($tui)
             ->withState($state)
             ->withScreen($screen)
+            ->withSessionServices($this->createSessionServices(catalog: $catalog))
             ->build();
     }
 

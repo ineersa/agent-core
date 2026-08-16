@@ -40,6 +40,9 @@ services:
     Ineersa\Tui\Listener\TuiListenerRegistrar:
       tags: ['app.tui_listener']
 
+    Ineersa\Tui\Listener\SlashCommandCatalogRegistrar:
+      tags: ['app.slash_command_catalog']
+
     Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface:
       tags: ['agent_core.before_provider_request_hook']
 
@@ -220,7 +223,7 @@ services:
 
   Ineersa\Tui\Extension\TuiCommandRegistryAdapter:
     arguments:
-      $slashCommandRegistry: '@Ineersa\Tui\Command\SlashCommandRegistry'
+      $commandCatalog: '@Ineersa\Tui\Command\SlashCommandCatalog'
 
   Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface:
     alias: Ineersa\Tui\Extension\TuiCommandRegistryAdapter
@@ -420,6 +423,39 @@ services:
   Ineersa\Tui\Application\InteractiveMode:
     arguments:
       $listenerRegistrars: !tagged_iterator { tag: app.tui_listener, default_priority_method: getPriority }
+      $catalogRegistrars: !tagged_iterator { tag: app.slash_command_catalog, default_priority_method: getPriority }
+
+  # ─── Per-session TUI composition ───
+  # Non-shared projector services: each get() returns a fresh projector
+  # with a fresh projection state, so every TuiSessionCompositionFactory::create()
+  # call gets independent parent and child projection scopes.
+  tui.session.parent_projection_state:
+    class: Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState
+    shared: false
+
+  tui.session.parent_transcript_projector:
+    class: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
+    shared: false
+    arguments:
+      $eventDispatcher: '@event_dispatcher'
+      $state: '@tui.session.parent_projection_state'
+
+  tui.session.child_projection_state:
+    class: Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState
+    shared: false
+
+  tui.session.child_transcript_projector:
+    class: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
+    shared: false
+    arguments:
+      $eventDispatcher: '@event_dispatcher'
+      $state: '@tui.session.child_projection_state'
+
+  Ineersa\Tui\Application\TuiSessionCompositionFactory:
+    arguments:
+      $projectors: !service_locator
+        parent: '@tui.session.parent_transcript_projector'
+        child: '@tui.session.child_transcript_projector'
 
   # ─── Runtime stream wiring ───
 
@@ -573,21 +609,6 @@ services:
 
   Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface:
     alias: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
-
-  # Isolated transcript projector for subagent readonly live view.
-  tui.subagent_live.projection_state:
-    class: Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState
-
-  tui.subagent_live.transcript_projector:
-    class: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
-    arguments:
-      $eventDispatcher: '@event_dispatcher'
-      $state: '@tui.subagent_live.projection_state'
-
-  Ineersa\Tui\Runtime\SubagentLiveChildViewPoller:
-    arguments:
-      $projector: '@tui.subagent_live.transcript_projector'
-
 
   Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface:
     alias: Ineersa\CodingAgent\Session\SessionHistoryProvider
