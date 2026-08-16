@@ -266,7 +266,8 @@ final class CacheCommandStoreTest extends KernelTestCase
 
     /**
      * The shared markStatus helper must release the per-run lock when save()
-     * fails; a leaked lock would block every later operation on the run.
+     * fails. The lock is probed with a non-blocking acquire so a regression
+     * fails fast instead of hanging the suite on a blocking reacquisition.
      */
     public function testSaveFailureReleasesRunLock(): void
     {
@@ -293,9 +294,18 @@ final class CacheCommandStoreTest extends KernelTestCase
         // Failed save must not have persisted the status…
         $this->assertSame(1, $healthyStore->countPending($runId));
 
-        // …and the run lock must be free for the next operation on the same run.
-        $healthyStore->markApplied($runId, 'key-lock-release');
-        $this->assertSame(0, $healthyStore->countPending($runId));
+        // …and the per-run lock must have been released by the failed save.
+        $lockKeyPrefix = (new \ReflectionClass(CacheCommandStore::class))->getConstant('LOCK_KEY_PREFIX');
+        $this->assertIsString($lockKeyPrefix);
+        $lock = $lockFactory->createLock($lockKeyPrefix.$runId);
+        $acquired = $lock->acquire(false);
+        try {
+            $this->assertTrue($acquired, 'Failed save must release the per-run lock.');
+        } finally {
+            if ($acquired) {
+                $lock->release();
+            }
+        }
     }
 
     protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel

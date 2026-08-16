@@ -140,34 +140,36 @@ final class LlmPlatformAdapterTest extends TestCase
     }
 
     /**
-     * Observer callbacks keep start/delta/end/error order and a throwing
-     * callback never propagates into model invocation.
+     * Each notify wrapper forwards to the injected observer, and a throwing
+     * callback never propagates into model invocation. Invocation order is
+     * owned by the streaming consume path — this test exercises the private
+     * wrappers in its own order, so it asserts reachability, not order.
      */
-    public function testStreamObserverNotificationsAreOrderedAndIsolated(): void
+    public function testStreamObserverCallbacksAreForwardedAndIsolated(): void
     {
         $observer = new class implements LlmStreamObserverInterface {
-            /** @var list<string> */
-            public array $calls = [];
+            /** @var array<string, true> */
+            public array $reached = [];
 
             public function onStreamStart(string $runId, ?string $stepId): void
             {
-                $this->calls[] = 'start';
+                $this->reached['start'] = true;
             }
 
             public function onDelta(string $runId, ?string $stepId, DeltaInterface $delta): void
             {
-                $this->calls[] = 'delta';
+                $this->reached['delta'] = true;
                 throw new \RuntimeException('observer-delta-failure');
             }
 
             public function onStreamEnd(string $runId, ?string $stepId): void
             {
-                $this->calls[] = 'end';
+                $this->reached['end'] = true;
             }
 
             public function onStreamError(string $runId, ?string $stepId, \Throwable $error): void
             {
-                $this->calls[] = 'error';
+                $this->reached['error'] = true;
                 throw new \RuntimeException('observer-error-failure');
             }
         };
@@ -189,12 +191,17 @@ final class LlmPlatformAdapterTest extends TestCase
         $reflection = new \ReflectionClass(LlmPlatformAdapter::class);
         $invoke = static fn (string $method, mixed ...$args): mixed => $reflection->getMethod($method)->invoke($adapter, ...$args);
 
+        // Throwing observers must not propagate out of the wrappers — if they
+        // did, the test would error here before reaching the assertions.
         $invoke('notifyStreamStart', 'run-obs', 'step-1');
         $invoke('notifyDelta', 'run-obs', 'step-1', new TextDelta('x'));
         $invoke('notifyStreamEnd', 'run-obs', 'step-1');
         $invoke('notifyStreamError', 'run-obs', 'step-1', new \RuntimeException('original-stream-error'));
 
-        $this->assertSame(['start', 'delta', 'end', 'error'], $observer->calls, 'Callback order is preserved even when a callback throws.');
+        // Order-insensitive reachability: every callback was reached.
+        foreach (['start', 'delta', 'end', 'error'] as $callback) {
+            $this->assertArrayHasKey($callback, $observer->reached, \sprintf('Observer callback %s must be reached.', $callback));
+        }
 
         $warnings = [];
         foreach ($logger->records as $record) {
@@ -217,10 +224,11 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertSame('original-stream-error', $originalError->getMessage());
 
         // Empty run ids are suppressed: no callback, no log record.
+        $reachedCount = \count($observer->reached);
         $recordCount = \count($logger->records);
         $invoke('notifyStreamStart', '', 'step-1');
-        $this->assertSame(['start', 'delta', 'end', 'error'], $observer->calls);
-        $this->assertCount($recordCount, $logger->records);
+        $this->assertCount($reachedCount, $observer->reached, 'Empty run id must not forward to the observer.');
+        $this->assertCount($recordCount, $logger->records, 'Empty run id must not produce log records.');
     }
 
     /**

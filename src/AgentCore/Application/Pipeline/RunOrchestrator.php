@@ -41,11 +41,9 @@ final readonly class RunOrchestrator
     public function onStartRun(StartRun $message): void
     {
         $this->dispatch(
-            $message->runId(),
             'command.start_run',
             self::ScopeStartRun,
             $message,
-            'command.start_run',
             ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId()],
         );
     }
@@ -57,11 +55,9 @@ final readonly class RunOrchestrator
     public function onApplyCommand(ApplyCommand $message): void
     {
         $this->dispatch(
-            $message->runId(),
             'command.apply',
             self::ScopeApplyCommand,
             $message,
-            'command.apply',
             ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId(), 'command_kind' => $message->kind],
         );
     }
@@ -75,7 +71,8 @@ final readonly class RunOrchestrator
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onApplyShellCommand(ApplyShellCommand $message): void
     {
-        $this->dispatch($message->runId(), self::ScopeApplyShellCommand, self::ScopeApplyShellCommand, $message, null, []);
+        // Null attributes keep the shell handler untraced (no span).
+        $this->dispatch(self::ScopeApplyShellCommand, self::ScopeApplyShellCommand, $message);
     }
 
     /**
@@ -86,11 +83,9 @@ final readonly class RunOrchestrator
     public function onAdvanceRun(AdvanceRun $message): void
     {
         $this->dispatch(
-            $message->runId(),
             'turn.orchestrator.advance',
             self::ScopeAdvanceRun,
             $message,
-            'turn.orchestrator.advance',
             ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId()],
         );
     }
@@ -102,11 +97,9 @@ final readonly class RunOrchestrator
     public function onLlmStepResult(LlmStepResult $message): void
     {
         $this->dispatch(
-            $message->runId(),
             'turn.orchestrator.llm_result',
             self::ScopeLlmResult,
             $message,
-            'turn.orchestrator.llm_result',
             ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId()],
         );
     }
@@ -118,11 +111,9 @@ final readonly class RunOrchestrator
     public function onToolCallResult(ToolCallResult $message): void
     {
         $this->dispatch(
-            $message->runId(),
             'turn.orchestrator.tool_result',
             self::ScopeToolResult,
             $message,
-            'turn.orchestrator.tool_result',
             ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId(), 'tool_call_id' => $message->toolCallId],
         );
     }
@@ -141,11 +132,9 @@ final readonly class RunOrchestrator
     public function onCompactRun(CompactRun $message): void
     {
         $this->dispatch(
-            $message->runId(),
             'command.compact',
             self::ScopeCompactRun,
             $message,
-            'command.compact',
             ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId(), 'trigger' => $message->trigger],
         );
     }
@@ -157,11 +146,9 @@ final readonly class RunOrchestrator
     public function onCompactionStepResult(CompactionStepResult $message): void
     {
         $this->dispatch(
-            $message->runId(),
             'result.compaction',
             self::ScopeCompactionResult,
             $message,
-            'result.compaction',
             ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId()],
         );
     }
@@ -170,29 +157,28 @@ final readonly class RunOrchestrator
      * Common Messenger-handler envelope: correlation log context, optional
      * root trace span, and locked pipeline processing.
      *
-     * Handlers that must stay untraced (ApplyShellCommand) pass a null span
-     * name; everything else keeps its exact span name and attributes.
+     * Handlers that must stay untraced (ApplyShellCommand) pass null
+     * attributes; everything else is traced with its event type as span
+     * name and the given attributes.
      *
-     * @param array<string, mixed> $spanAttributes
+     * @param ?array<string, mixed> $spanAttributes
      */
     private function dispatch(
-        string $runId,
         string $eventType,
         string $scope,
         AbstractAgentBusMessage $message,
-        ?string $spanName,
-        array $spanAttributes,
+        ?array $spanAttributes = null,
     ): void {
-        $this->withLogContext($runId, $eventType, function () use ($scope, $message, $spanName, $spanAttributes): void {
+        $this->withLogContext($message->runId(), $eventType, function () use ($scope, $message, $eventType, $spanAttributes): void {
             $handle = fn () => $this->runMessageProcessor->process($scope, $message);
 
-            if (null === $this->tracer || null === $spanName) {
+            if (null === $this->tracer || null === $spanAttributes) {
                 $handle();
 
                 return;
             }
 
-            $this->tracer->inSpan($spanName, $spanAttributes, $handle, root: true);
+            $this->tracer->inSpan($eventType, $spanAttributes, $handle, root: true);
         });
     }
 
