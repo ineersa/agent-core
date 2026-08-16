@@ -108,31 +108,13 @@ final class ToolBatchCollector
         string $toolCallId,
         string $questionId,
     ): array {
-        if (null !== $this->store) {
-            /* @var list<ExecuteToolCall> */
-            return $this->store->mutate(
-                $runId,
-                $turnNo,
-                $stepId,
-                function (?ToolBatchStateDTO $stored) use ($runId, $turnNo, $stepId, $toolCallId, $questionId): ToolBatchStoreMutation {
-                    if (null === $stored) {
-                        throw new \LogicException(\sprintf('Cannot admit tool-execution suspension for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
-                    }
-
-                    return new ToolBatchStoreMutation($this->applyHumanInputSuspensionToBatch($stored, $toolCallId, $questionId), $stored);
-                },
-            );
-        }
-
-        $batch = $this->loadBatch($runId, $turnNo, $stepId);
-        if (null === $batch) {
-            throw new \LogicException(\sprintf('Cannot admit tool-execution suspension for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
-        }
-
-        $effects = $this->applyHumanInputSuspensionToBatch($batch, $toolCallId, $questionId);
-        $this->saveBatch($runId, $turnNo, $stepId, $batch);
-
-        return $effects;
+        return $this->withBatch(
+            $runId,
+            $turnNo,
+            $stepId,
+            'Cannot admit tool-execution suspension for unknown batch run=%s turn=%d step=%s.',
+            fn (ToolBatchStateDTO $batch): array => $this->applyHumanInputSuspensionToBatch($batch, $toolCallId, $questionId),
+        );
     }
 
     /**
@@ -155,31 +137,13 @@ final class ToolBatchCollector
         string $questionId,
         ToolCallHumanInputAnswerDTO $answer,
     ): array {
-        if (null !== $this->store) {
-            /* @var list<ExecuteToolCall> */
-            return $this->store->mutate(
-                $runId,
-                $turnNo,
-                $stepId,
-                function (?ToolBatchStateDTO $stored) use ($runId, $turnNo, $stepId, $toolCallId, $questionId, $answer): ToolBatchStoreMutation {
-                    if (null === $stored) {
-                        throw new \LogicException(\sprintf('Cannot resume tool-execution human input for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
-                    }
-
-                    return new ToolBatchStoreMutation($this->applyHumanInputResumeToBatch($stored, $toolCallId, $questionId, $answer), $stored);
-                },
-            );
-        }
-
-        $batch = $this->loadBatch($runId, $turnNo, $stepId);
-        if (null === $batch) {
-            throw new \LogicException(\sprintf('Cannot resume tool-execution human input for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
-        }
-
-        $effects = $this->applyHumanInputResumeToBatch($batch, $toolCallId, $questionId, $answer);
-        $this->saveBatch($runId, $turnNo, $stepId, $batch);
-
-        return $effects;
+        return $this->withBatch(
+            $runId,
+            $turnNo,
+            $stepId,
+            'Cannot resume tool-execution human input for unknown batch run=%s turn=%d step=%s.',
+            fn (ToolBatchStateDTO $batch): array => $this->applyHumanInputResumeToBatch($batch, $toolCallId, $questionId, $answer),
+        );
     }
 
     /**
@@ -202,28 +166,57 @@ final class ToolBatchCollector
         string $questionId,
         mixed $answerValue,
     ): array {
+        return $this->withBatch(
+            $runId,
+            $turnNo,
+            $stepId,
+            'Cannot redrive tool-execution human input for unknown batch run=%s turn=%d step=%s.',
+            fn (ToolBatchStateDTO $batch): array => $this->applyHumanInputRedriveToBatch($batch, $questionId, $answerValue),
+        );
+    }
+
+    /**
+     * Apply a batch mutation through both store modes.
+     *
+     * With a durable store the mutation runs atomically inside
+     * {@see ToolBatchStoreInterface::mutate()}; otherwise the in-memory batch
+     * is loaded, mutated, and saved back. A missing batch fails with the
+     * caller's exact message in both modes.
+     *
+     * @param callable(ToolBatchStateDTO): list<ExecuteToolCall> $apply
+     * @param literal-string                                     $missingBatchMessage sprintf format with runId (%s), turnNo (%d), stepId (%s)
+     *
+     * @return list<ExecuteToolCall>
+     */
+    private function withBatch(
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        string $missingBatchMessage,
+        callable $apply,
+    ): array {
         if (null !== $this->store) {
             /* @var list<ExecuteToolCall> */
             return $this->store->mutate(
                 $runId,
                 $turnNo,
                 $stepId,
-                function (?ToolBatchStateDTO $stored) use ($runId, $turnNo, $stepId, $questionId, $answerValue): ToolBatchStoreMutation {
+                static function (?ToolBatchStateDTO $stored) use ($runId, $turnNo, $stepId, $missingBatchMessage, $apply): ToolBatchStoreMutation {
                     if (null === $stored) {
-                        throw new \LogicException(\sprintf('Cannot redrive tool-execution human input for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
+                        throw new \LogicException(\sprintf($missingBatchMessage, $runId, $turnNo, $stepId));
                     }
 
-                    return new ToolBatchStoreMutation($this->applyHumanInputRedriveToBatch($stored, $questionId, $answerValue), $stored);
+                    return new ToolBatchStoreMutation($apply($stored), $stored);
                 },
             );
         }
 
         $batch = $this->loadBatch($runId, $turnNo, $stepId);
         if (null === $batch) {
-            throw new \LogicException(\sprintf('Cannot redrive tool-execution human input for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
+            throw new \LogicException(\sprintf($missingBatchMessage, $runId, $turnNo, $stepId));
         }
 
-        $effects = $this->applyHumanInputRedriveToBatch($batch, $questionId, $answerValue);
+        $effects = $apply($batch);
         $this->saveBatch($runId, $turnNo, $stepId, $batch);
 
         return $effects;

@@ -543,7 +543,9 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         try {
             $response = $rawResult->getObject();
-        } catch (\Throwable) {
+        } catch (\Throwable $exception) {
+            $this->logDiagnosticFailure('raw_result_get_object', $exception);
+
             return [];
         }
 
@@ -561,7 +563,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         try {
             $diag['http_status_code'] = $response->getStatusCode();
-        } catch (\Throwable) {
+        } catch (\Throwable $exception) {
+            $this->logDiagnosticFailure('status_code', $exception);
         }
 
         // Extract headers including Retry-After for rate-limit feedback
@@ -570,18 +573,21 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $diag['response_content_type'] = $headers['content-type'][0] ?? null;
 
             // Parse Retry-After headers (retry-after-ms has priority)
-            $retryAfterMs = self::parseRetryAfterHeader($headers);
+            $retryAfterMs = $this->parseRetryAfterHeader($headers);
             if (null !== $retryAfterMs) {
                 $diag['retry_after_ms'] = $retryAfterMs;
             }
-        } catch (\Throwable) {
+        } catch (\Throwable $exception) {
+            $this->logDiagnosticFailure('headers', $exception);
         }
 
         // Try to parse response body for structured error fields.
         // For non-JSON bodies, record only safe metadata — never raw body content.
         try {
             $body = $response->getContent(false);
-        } catch (\Throwable) {
+        } catch (\Throwable $exception) {
+            $this->logDiagnosticFailure('body', $exception);
+
             return $diag;
         }
 
@@ -607,6 +613,24 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
+     * Log a swallowed response-diagnostic failure as intentional local
+     * degradation.
+     *
+     * Logs only stable structural metadata — never the exception object or
+     * message and never provider-controlled content (raw responses, bodies,
+     * headers, prompts, credentials, session content).
+     */
+    private function logDiagnosticFailure(string $stage, \Throwable $exception): void
+    {
+        $this->logger->warning('llm.provider.diagnostic_failed', [
+            'component' => 'llm_platform',
+            'event_type' => 'llm_platform.diagnostic_failed',
+            'diagnostic_stage' => $stage,
+            'exception_type' => $exception::class,
+        ]);
+    }
+
+    /**
      * Parse Retry-After delay from response headers.
      *
      * Supports, in priority order:
@@ -617,7 +641,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      *
      * @return int|null Delay in milliseconds, or null if no Retry-After header
      */
-    private static function parseRetryAfterHeader(array $headers): ?int
+    private function parseRetryAfterHeader(array $headers): ?int
     {
         // 1. retry-after-ms (custom header)
         $ms = $headers['retry-after-ms'][0] ?? null;
@@ -648,8 +672,9 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $diff = (int) ($date->format('U') - $now->format('U'));
 
             return $diff > 0 ? $diff * 1000 : 0;
-        } catch (\Exception) {
-            // Not a valid date
+        } catch (\Throwable $exception) {
+            // Not a valid date — intentional local degradation, logged safely.
+            $this->logDiagnosticFailure('retry_after_date', $exception);
         }
 
         return null;
@@ -910,80 +935,73 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
     private function notifyStreamStart(string $runId, ?string $stepId): void
     {
-        if (null === $this->streamObserver || '' === $runId) {
-            return;
-        }
-
-        try {
-            $this->streamObserver->onStreamStart($runId, $stepId);
-        } catch (\Throwable $e) {
-            // Observer failures must not break model invocation.
-            // This is intentional diagnostic local degradation:
-            // the observer is an optional side-channel and its
-            // failure should not abort the LLM request.
-            $this->logger->warning('LlmStreamObserver::onStreamStart threw', [
-                'run_id' => $runId,
-                'step_id' => $stepId,
-                'exception' => $e,
-            ]);
-        }
+        $this->notifyObserver(
+            $runId,
+            $stepId,
+            'LlmStreamObserver::onStreamStart threw',
+            fn () => $this->streamObserver->onStreamStart($runId, $stepId),
+            static fn (\Throwable $e): array => ['exception' => $e],
+        );
     }
 
     private function notifyDelta(string $runId, ?string $stepId, DeltaInterface $delta): void
     {
-        if (null === $this->streamObserver || '' === $runId) {
-            return;
-        }
-
-        try {
-            $this->streamObserver->onDelta($runId, $stepId, $delta);
-        } catch (\Throwable $e) {
-            // Observer failures must not break model invocation.
-            // Intentional diagnostic local degradation — optional side-channel.
-            $this->logger->warning('LlmStreamObserver::onDelta threw', [
-                'run_id' => $runId,
-                'step_id' => $stepId,
-                'delta_class' => $delta::class,
-                'exception' => $e,
-            ]);
-        }
+        $this->notifyObserver(
+            $runId,
+            $stepId,
+            'LlmStreamObserver::onDelta threw',
+            fn () => $this->streamObserver->onDelta($runId, $stepId, $delta),
+            static fn (\Throwable $e): array => ['delta_class' => $delta::class, 'exception' => $e],
+        );
     }
 
     private function notifyStreamEnd(string $runId, ?string $stepId): void
     {
-        if (null === $this->streamObserver || '' === $runId) {
-            return;
-        }
-
-        try {
-            $this->streamObserver->onStreamEnd($runId, $stepId);
-        } catch (\Throwable $e) {
-            // Observer failures must not break model invocation.
-            // Intentional diagnostic local degradation — optional side-channel.
-            $this->logger->warning('LlmStreamObserver::onStreamEnd threw', [
-                'run_id' => $runId,
-                'step_id' => $stepId,
-                'exception' => $e,
-            ]);
-        }
+        $this->notifyObserver(
+            $runId,
+            $stepId,
+            'LlmStreamObserver::onStreamEnd threw',
+            fn () => $this->streamObserver->onStreamEnd($runId, $stepId),
+            static fn (\Throwable $e): array => ['exception' => $e],
+        );
     }
 
     private function notifyStreamError(string $runId, ?string $stepId, \Throwable $error): void
+    {
+        $this->notifyObserver(
+            $runId,
+            $stepId,
+            'LlmStreamObserver::onStreamError threw',
+            fn () => $this->streamObserver->onStreamError($runId, $stepId, $error),
+            static fn (\Throwable $e): array => ['observer_exception' => $e, 'original_error' => $error],
+        );
+    }
+
+    /**
+     * Guard and invoke one stream-observer callback, isolating observer
+     * failures from model invocation.
+     *
+     * Observer failures must not break model invocation: this is intentional
+     * diagnostic local degradation — the observer is an optional side-channel
+     * and its failure should not abort the LLM request. Empty run IDs and a
+     * missing observer are suppressed before the callback runs.
+     *
+     * @param callable(): void                           $callback
+     * @param callable(\Throwable): array<string, mixed> $failureContext builds the warning context for the thrown observer exception
+     */
+    private function notifyObserver(string $runId, ?string $stepId, string $warningMessage, callable $callback, callable $failureContext): void
     {
         if (null === $this->streamObserver || '' === $runId) {
             return;
         }
 
         try {
-            $this->streamObserver->onStreamError($runId, $stepId, $error);
+            $callback();
         } catch (\Throwable $e) {
-            // Observer failures must not break model invocation.
-            // Intentional diagnostic local degradation — optional side-channel.
-            $this->logger->warning('LlmStreamObserver::onStreamError threw', [
+            $this->logger->warning($warningMessage, [
                 'run_id' => $runId,
                 'step_id' => $stepId,
-                'observer_exception' => $e,
-                'original_error' => $error,
+                ...$failureContext($e),
             ]);
         }
     }
