@@ -9,13 +9,13 @@ use PHPUnit\Framework\TestCase;
 
 final class ViewImageTranscriptFormatterTest extends TestCase
 {
-    public function testFormatsToolCallLinesFromNativeEnvelope(): void
+    public function testFormatsToolCallLinesFromFlatArguments(): void
     {
-        // Typed built-ins use the native Symfony method-parameter envelope:
-        // the DTO path field lives under the `arguments` key.
+        // Tool-call arguments are the flat provider map: the DTO path field
+        // is a top-level key.
         $formatter = new ViewImageTranscriptFormatter();
         $lines = $formatter->formatToolCallLines([
-            'arguments' => ['path' => '/a/b.png'],
+            'path' => '/a/b.png',
         ]);
 
         $this->assertSame(['path: /a/b.png'], $lines);

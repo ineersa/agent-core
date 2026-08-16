@@ -164,9 +164,9 @@ final class OutputCapTest extends TestCase
         $generic = $cap->buildContextualNotice('bash', ['command' => 'ls'], $result);
         $this->assertSame($result->noticeText, $generic);
 
-        // Typed read calls arrive in the native nested envelope.
-        $nestedNotice = $cap->buildContextualNotice('read', ['arguments' => ['path' => 'src/Foo.php', 'offset' => 40]], $result);
-        $this->assertStringContainsString('read(path: "src/Foo.php", offset: 40, limit: 200)', $nestedNotice);
+        // Typed read calls arrive flat (DTO fields at the top level).
+        $flatNotice = $cap->buildContextualNotice('read', ['path' => 'src/Foo.php', 'offset' => 40], $result);
+        $this->assertStringContainsString('read(path: "src/Foo.php", offset: 40, limit: 200)', $flatNotice);
     }
 
     #[DataProvider('documentClassificationProvider')]
@@ -189,18 +189,6 @@ final class OutputCapTest extends TestCase
     public static function documentClassificationProvider(): iterable
     {
         yield 'markdown read path' => ['read', ['path' => 'docs/settings.md'], false, 'docs/settings.md'];
-        yield 'typed read nested envelope path' => [
-            'read',
-            ['arguments' => ['path' => 'docs/settings.md']],
-            false,
-            'docs/settings.md',
-        ];
-        yield 'typed hatfield_docs nested envelope read is document' => [
-            'hatfield_docs',
-            ['arguments' => ['operation' => 'read', 'id' => 'settings']],
-            false,
-            'hatfield-docs-read.md',
-        ];
         yield 'raw tool with top-level arguments key stays flat' => [
             'mcp_search',
             ['arguments' => ['path' => 'docs/settings.md'], 'query' => 'x'],

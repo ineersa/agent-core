@@ -92,7 +92,7 @@ final class ViewImageToolTest extends TestCase
      * native DTO path and the provider schema must be the native nested
      * {arguments: {path}} shape carrying the exact crafted path description.
      */
-    public function testDefinitionUsesNativeNestedSchemaWithCraftedPathDescription(): void
+    public function testDefinitionUsesNativeFlatSchemaWithCraftedPathDescription(): void
     {
         $definition = $this->viewImageTool->definition();
 
@@ -100,7 +100,7 @@ final class ViewImageToolTest extends TestCase
         $this->assertNull($definition->parametersJsonSchema);
 
         $schema = NativeToolSchemaProbe::for($this->viewImageTool);
-        $args = $schema['properties']['arguments'];
+        $args = $schema;
 
         $this->assertSame('object', $args['type']);
         $this->assertSame(
@@ -229,7 +229,7 @@ final class ViewImageToolTest extends TestCase
         $filePath = $this->tmpDir.'/text.txt';
         $this->writeFixture($filePath, 'This is not an image.');
 
-        $result = $this->validationToolbox()->execute(new SymfonyToolCall('call-view', 'view_image', ['arguments' => ['path' => $filePath]]));
+        $result = $this->validationToolbox()->execute(new SymfonyToolCall('call-view', 'view_image', ['path' => $filePath]));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('Unsupported image type', $message);
@@ -241,7 +241,7 @@ final class ViewImageToolTest extends TestCase
         $filePath = $this->tmpDir.'/page.html';
         $this->writeFixture($filePath, '<html><body>not an image</body></html>');
 
-        $result = $this->validationToolbox()->execute(new SymfonyToolCall('call-view', 'view_image', ['arguments' => ['path' => $filePath]]));
+        $result = $this->validationToolbox()->execute(new SymfonyToolCall('call-view', 'view_image', ['path' => $filePath]));
 
         $this->assertStringContainsString('Unsupported image type', (string) $result->getResult());
     }
@@ -251,7 +251,7 @@ final class ViewImageToolTest extends TestCase
         $filePath = $this->tmpDir.'/doc.pdf';
         $this->writeFixture($filePath, '%PDF-1.4 fake pdf content');
 
-        $result = $this->validationToolbox()->execute(new SymfonyToolCall('call-view', 'view_image', ['arguments' => ['path' => $filePath]]));
+        $result = $this->validationToolbox()->execute(new SymfonyToolCall('call-view', 'view_image', ['path' => $filePath]));
 
         $this->assertStringContainsString('Unsupported image type', (string) $result->getResult());
     }
@@ -261,7 +261,7 @@ final class ViewImageToolTest extends TestCase
         $filePath = $this->tmpDir.'/empty.dat';
         $this->writeFixture($filePath, '');
 
-        $result = $this->validationToolbox()->execute(new SymfonyToolCall('call-view', 'view_image', ['arguments' => ['path' => $filePath]]));
+        $result = $this->validationToolbox()->execute(new SymfonyToolCall('call-view', 'view_image', ['path' => $filePath]));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('Failed to read header bytes', $message);
@@ -279,7 +279,7 @@ final class ViewImageToolTest extends TestCase
         imagepng($img, $imagePath);
         // imagedestroy is no-op since PHP 8.0, removed
 
-        $result = $this->validationToolbox($smallConfig)->execute(new SymfonyToolCall('call-view', 'view_image', ['arguments' => ['path' => $imagePath]]));
+        $result = $this->validationToolbox($smallConfig)->execute(new SymfonyToolCall('call-view', 'view_image', ['path' => $imagePath]));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('exceeds maximum allowed size', $message);
@@ -294,7 +294,7 @@ final class ViewImageToolTest extends TestCase
         $this->createPng1x1($imagePath);
 
         // Valid call runs through the validator and reaches the handler.
-        $result = $this->validationToolbox($largeConfig)->execute(new SymfonyToolCall('call-view', 'view_image', ['arguments' => ['path' => $imagePath]]));
+        $result = $this->validationToolbox($largeConfig)->execute(new SymfonyToolCall('call-view', 'view_image', ['path' => $imagePath]));
 
         $this->assertIsArray($result->getResult());
         $this->assertSame('image/png', $result->getResult()['media_type']);
@@ -311,7 +311,7 @@ final class ViewImageToolTest extends TestCase
         imagepng($img, $imagePath);
         // imagedestroy is no-op since PHP 8.0, removed
 
-        $result = $this->validationToolbox($smallConfig)->execute(new SymfonyToolCall('call-view', 'view_image', ['arguments' => ['path' => $imagePath]]));
+        $result = $this->validationToolbox($smallConfig)->execute(new SymfonyToolCall('call-view', 'view_image', ['path' => $imagePath]));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('exceed maximum allowed', $message);
@@ -327,7 +327,7 @@ final class ViewImageToolTest extends TestCase
         imagepng($img, $imagePath);
         // imagedestroy is no-op since PHP 8.0, removed
 
-        $result = $this->validationToolbox($smallConfig)->execute(new SymfonyToolCall('call-view', 'view_image', ['arguments' => ['path' => $imagePath]]));
+        $result = $this->validationToolbox($smallConfig)->execute(new SymfonyToolCall('call-view', 'view_image', ['path' => $imagePath]));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('exceed maximum allowed', $message);
@@ -355,7 +355,7 @@ final class ViewImageToolTest extends TestCase
 
     public function testThrowsOnNonExistentFile(): void
     {
-        $result = $this->validationToolbox()->execute(new SymfonyToolCall('call-view', 'view_image', ['arguments' => ['path' => $this->tmpDir.'/nonexistent.png']]));
+        $result = $this->validationToolbox()->execute(new SymfonyToolCall('call-view', 'view_image', ['path' => $this->tmpDir.'/nonexistent.png']));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('does not exist or is not readable', $message);
@@ -377,7 +377,7 @@ final class ViewImageToolTest extends TestCase
         $context = new ToolContext('run-nonvision', 1, 'call-nonvision', 'view_image', $token, 30);
 
         $execute = static function () use ($toolbox, $imagePath): ToolResult {
-            return $toolbox->execute(new SymfonyToolCall('call-nonvision', 'view_image', ['arguments' => ['path' => $imagePath]]));
+            return $toolbox->execute(new SymfonyToolCall('call-nonvision', 'view_image', ['path' => $imagePath]));
         };
         $result = $this->contextAccessor->with($context, $execute);
         $this->assertInstanceOf(ToolResult::class, $result);
@@ -403,7 +403,7 @@ final class ViewImageToolTest extends TestCase
 
         $toolbox = $this->validationToolbox(visionCheck: $visionCheck);
         $execute = static function () use ($toolbox, $imagePath): ToolResult {
-            return $toolbox->execute(new SymfonyToolCall('call-vision', 'view_image', ['arguments' => ['path' => $imagePath]]));
+            return $toolbox->execute(new SymfonyToolCall('call-vision', 'view_image', ['path' => $imagePath]));
         };
         $result = $this->contextAccessor->with($context, $execute);
         $this->assertInstanceOf(ToolResult::class, $result);
@@ -492,8 +492,8 @@ final class ViewImageToolTest extends TestCase
         $toolCall = new ToolCall(
             toolCallId: 'view_image_call_1',
             toolName: 'view_image',
-            // Native nested shape for DTO-typed tools.
-            arguments: ['arguments' => ['path' => $imagePath]],
+            // Flat provider arguments for the DTO-typed tool.
+            arguments: ['path' => $imagePath],
             orderIndex: 0,
             runId: 'test_run_1',
             mode: null,
@@ -949,7 +949,7 @@ final class ViewImageToolTest extends TestCase
         $imagePath = $this->tmpDir.'/test-no-checker.png';
         $this->createPng1x1($imagePath);
 
-        $result = $this->validationToolbox()->execute(new SymfonyToolCall('call-view', 'view_image', ['arguments' => ['path' => $imagePath]]));
+        $result = $this->validationToolbox()->execute(new SymfonyToolCall('call-view', 'view_image', ['path' => $imagePath]));
 
         $this->assertIsArray($result->getResult());
         $this->assertSame('image/png', $result->getResult()['media_type'], 'Tool should succeed when no vision check service is configured');

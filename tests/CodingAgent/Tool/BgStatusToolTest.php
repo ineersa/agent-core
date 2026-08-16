@@ -158,7 +158,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     {
         // pid is conditionally required by BgStatusArgumentsDTO When constraints;
         // validation rejects before the handler runs.
-        $result = $this->validationToolbox()->execute(new ToolCall('call-bg', 'bg_status', ['arguments' => ['action' => 'log']]));
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bg', 'bg_status', ['action' => 'log']));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('The "pid" argument is required and must be a positive integer for the log action.', $message);
@@ -208,7 +208,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $this->assertNull($definition->parametersJsonSchema);
 
         $schema = NativeToolSchemaProbe::for($this->tool);
-        $pid = $schema['properties']['arguments']['properties']['pid'];
+        $pid = $schema['properties']['pid'];
         // Assert\Positive maps to minimum:0 + exclusiveMinimum:true.
         $this->assertSame(0, $pid['minimum']);
         $this->assertTrue($pid['exclusiveMinimum']);
@@ -226,7 +226,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     {
         // action is Choice-constrained on the DTO; validation rejects before
         // the handler runs.
-        $result = $this->validationToolbox()->execute(new ToolCall('call-bg', 'bg_status', ['arguments' => ['action' => 'invalid']]));
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bg', 'bg_status', ['action' => 'invalid']));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('Invalid action ""invalid"". Use one of: list, log, stop.', $message);
@@ -294,7 +294,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     public function testMissingActionThrowsException(): void
     {
-        $result = $this->validationToolbox()->execute(new ToolCall('call-bg', 'bg_status', ['arguments' => []]));
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bg', 'bg_status', []));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('The "action" argument is required and must be a non-empty string.', $message);

@@ -259,15 +259,14 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
             $editDeltas = static function (string $callId, string $patch) use ($path): array {
                 return [
                     ['type' => 'tool_call_start', 'id' => $callId, 'name' => 'edit'],
-                    ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'edit', 'partial_json' => '{"arguments":'],
                     ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'edit', 'partial_json' => '{"path":"'],
                     ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'edit', 'partial_json' => $path],
                     ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'edit', 'partial_json' => '","patch":"'],
                     // Escape newlines for partial JSON stream; complete args carry the real patch.
                     ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'edit', 'partial_json' => str_replace("\n", '\\n', $patch)],
-                    ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'edit', 'partial_json' => '"}}'],
+                    ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'edit', 'partial_json' => '"}'],
                     ['type' => 'tool_call_complete', 'tool_calls' => [
-                        ['id' => $callId, 'name' => 'edit', 'arguments' => ['arguments' => ['path' => $path, 'patch' => $patch]]],
+                        ['id' => $callId, 'name' => 'edit', 'arguments' => ['path' => $path, 'patch' => $patch]],
                     ]],
                 ];
             };
@@ -302,12 +301,12 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
         $buildDeltas = static function (string $callId) use ($sessionId, $path): array {
             return [
                 ['type' => 'tool_call_start', 'id' => $callId, 'name' => 'write'],
-                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => '{"arguments":{"path":"../sg'],
+                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => '{"path":"../sg'],
                 ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => '-'.$sessionId],
                 ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => '.txt","content":"h'],
-                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => 'ello"}}'],
+                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => 'ello"}'],
                 ['type' => 'tool_call_complete', 'tool_calls' => [
-                    ['id' => $callId, 'name' => 'write', 'arguments' => ['arguments' => ['path' => $path, 'content' => 'hello']]],
+                    ['id' => $callId, 'name' => 'write', 'arguments' => ['path' => $path, 'content' => 'hello']],
                 ]],
             ];
         };

@@ -1,5 +1,5 @@
 {
-    "$schema": "TUI tool-call replay fixture \u2014 edit tool payload preview",
+    "$schema": "TUI tool-call replay fixture — edit tool payload preview",
     "model": "llama_cpp_test/test",
     "provider_id": "llama_cpp_test",
     "reasoning": "off",
@@ -30,79 +30,79 @@
             "type": "tool_input_delta",
             "id": "call_tui_edit_1",
             "name": "edit",
-            "partial_json": "{\"ar"
+            "partial_json": "{\"p"
         },
         {
             "type": "tool_input_delta",
             "id": "call_tui_edit_1",
             "name": "edit",
-            "partial_json": "gume"
+            "partial_json": "ath"
         },
         {
             "type": "tool_input_delta",
             "id": "call_tui_edit_1",
             "name": "edit",
-            "partial_json": "nts\""
+            "partial_json": "\":\""
         },
         {
             "type": "tool_input_delta",
             "id": "call_tui_edit_1",
             "name": "edit",
-            "partial_json": ":{\"p"
+            "partial_json": "tar"
         },
         {
             "type": "tool_input_delta",
             "id": "call_tui_edit_1",
             "name": "edit",
-            "partial_json": "ath\""
+            "partial_json": "get"
         },
         {
             "type": "tool_input_delta",
             "id": "call_tui_edit_1",
             "name": "edit",
-            "partial_json": ":\"ta"
+            "partial_json": ".tx"
         },
         {
             "type": "tool_input_delta",
             "id": "call_tui_edit_1",
             "name": "edit",
-            "partial_json": "rget"
+            "partial_json": "t\","
         },
         {
             "type": "tool_input_delta",
             "id": "call_tui_edit_1",
             "name": "edit",
-            "partial_json": ".txt"
+            "partial_json": "\"pa"
         },
         {
             "type": "tool_input_delta",
             "id": "call_tui_edit_1",
             "name": "edit",
-            "partial_json": "\",\"p"
+            "partial_json": "tch"
         },
         {
             "type": "tool_input_delta",
             "id": "call_tui_edit_1",
             "name": "edit",
-            "partial_json": "atch"
+            "partial_json": "\":\""
         },
         {
             "type": "tool_input_delta",
             "id": "call_tui_edit_1",
             "name": "edit",
-            "partial_json": "\":\"@"
+            "partial_json": "@@\\"
         },
         {
             "type": "tool_input_delta",
             "id": "call_tui_edit_1",
             "name": "edit",
-            "partial_json": "@\\n-"
+            "partial_json": "n-b"
         },
         {
             "type": "tool_input_delta",
             "id": "call_tui_edit_1",
             "name": "edit",
-            "partial_json": "befo"
+            "partial_json": "efo"
         },
         {
             "type": "tool_input_delta",
@@ -132,7 +132,7 @@
             "type": "tool_input_delta",
             "id": "call_tui_edit_1",
             "name": "edit",
-            "partial_json": "\"}}"
+            "partial_json": "\"}"
         },
         {
             "type": "tool_call_complete",
@@ -141,10 +141,8 @@
                     "id": "call_tui_edit_1",
                     "name": "edit",
                     "arguments": {
-                        "arguments": {
-                            "path": "target.txt",
-                            "patch": "@@\n-before\n+after\n"
-                        }
+                        "path": "target.txt",
+                        "patch": "@@\n-before\n+after\n"
                     }
                 }
             ]

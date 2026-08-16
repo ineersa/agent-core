@@ -58,15 +58,15 @@ final class WriteFileToolTest extends TestCase
         $this->assertNull($definition->parametersJsonSchema);
 
         $schema = NativeToolSchemaProbe::for($this->writeFileTool);
-        $args = $schema['properties']['arguments']['properties'];
+        $args = $schema['properties'];
 
         $this->assertSame('object', $schema['type']);
         $this->assertArrayHasKey('properties', $schema);
         $this->assertArrayHasKey('path', $args);
         $this->assertArrayHasKey('content', $args);
-        $this->assertContains('path', $schema['properties']['arguments']['required']);
-        $this->assertContains('content', $schema['properties']['arguments']['required']);
-        $this->assertFalse($schema['properties']['arguments']['additionalProperties']);
+        $this->assertContains('path', $schema['required']);
+        $this->assertContains('content', $schema['required']);
+        $this->assertFalse($schema['additionalProperties']);
     }
 
     /* ── __invoke() success tests ── */

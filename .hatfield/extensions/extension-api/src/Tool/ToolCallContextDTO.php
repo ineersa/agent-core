@@ -17,13 +17,16 @@ namespace Ineersa\Hatfield\ExtensionApi\Tool;
 final readonly class ToolCallContextDTO
 {
     /**
-     * @param array<string, mixed> $arguments Provider-visible tool call arguments, shape depends on the tool kind:
-     *                                        - Typed built-in tools (read, write, edit, bash, bg_status, view_image,
-     *                                        ask_human, subagent, fork, agent_retrieve, hatfield_docs) follow the
-     *                                        native Symfony AI method-parameter envelope: DTO fields are nested under
-     *                                        the `arguments` key, e.g. ['arguments' => ['path' => './file.txt']].
-     *                                        - Raw dynamic tools (MCP, extension-registered tools, settings) receive the
-     *                                        flat provider map verbatim, e.g. ['path' => './file.txt'].
+     * @param array<string, mixed> $arguments Provider-visible tool call arguments — the flat
+     *                                        provider/rewrite map for both typed built-in tools
+     *                                        (read, write, edit, bash, bg_status, view_image,
+     *                                        ask_human, subagent, fork, agent_retrieve,
+     *                                        hatfield_docs) and raw dynamic tools (MCP,
+     *                                        extension-registered, settings), e.g.
+     *                                        ['path' => './file.txt']. Typed built-ins receive
+     *                                        DTO fields at the top level; Hatfield wraps them
+     *                                        internally for native resolution, so hooks never
+     *                                        see an `arguments` nesting envelope.
      * @param array<string, mixed> $metadata  runtime context (e.g. session flags, provider metadata)
      */
     public function __construct(

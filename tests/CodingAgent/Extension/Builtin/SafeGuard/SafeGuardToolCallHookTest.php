@@ -68,53 +68,6 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
     }
 
-    public function testNestedTypedWriteOutsideCwdRequiresApproval(): void
-    {
-        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
-        // Typed built-in calls carry the native method-parameter envelope.
-        $dto = $this->hook->onToolCall(new ToolCallContextDTO('c4n', 'write', [
-            'arguments' => ['path' => '/tmp/out.txt', 'content' => 'x'],
-        ], 0));
-        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-        $this->assertSame('/tmp/out.txt', $dto->details['path'] ?? null);
-    }
-
-    public function testNestedTypedBashDestructiveRequiresApproval(): void
-    {
-        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
-        $dto = $this->hook->onToolCall(new ToolCallContextDTO('c2n', 'bash', [
-            'arguments' => ['command' => 'rm -rf /tmp/x'],
-        ], 0));
-        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-        $this->assertSame('rm -rf /tmp/x', $dto->details['command'] ?? null);
-    }
-
-    public function testNestedTypedEditOutsideCwdRequiresApproval(): void
-    {
-        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
-        $dto = $this->hook->onToolCall(new ToolCallContextDTO('c5n', 'edit', [
-            'arguments' => ['path' => '/tmp/out.txt', 'patch' => '@@ -1 +1 @@'],
-        ], 0));
-        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-    }
-
-    public function testNestedTypedReadProtectedFileRequiresApproval(): void
-    {
-        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
-        // Default protected patterns only exist when the policy is built from config.
-        $config = new SafeGuardConfig(autoDenyInNoninteractive: false);
-        $hook = new SafeGuardToolCallHook(
-            classifier: SafeGuardClassifier::fromConfig($config),
-            policy: SafeGuardPolicy::fromConfig($config),
-            cwd: $this->cwd,
-            autoDenyInNoninteractive: false,
-        );
-        $dto = $hook->onToolCall(new ToolCallContextDTO('c6n', 'read', [
-            'arguments' => ['path' => '/tmp/.env.local', 'offset' => 0],
-        ], 0));
-        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-    }
-
     public function testRawSettingsMutationWithChannelStillRequiresApproval(): void
     {
         putenv('HATFIELD_APPROVAL_CHANNEL=controller');
@@ -133,9 +86,8 @@ final class SafeGuardToolCallHookTest extends TestCase
     {
         putenv('HATFIELD_APPROVAL_CHANNEL=controller');
         // settings stays flat: a top-level `arguments` key in its raw
-        // value/schema must never be treated as the typed built-in envelope.
-        // Without the tool-name gate this would be misread as a set mutation
-        // and require approval; it must classify as Allow instead.
+        // value/schema is an ordinary field of the raw map, not a typed
+        // built-in envelope (typed calls never carry an envelope).
         $dto = $this->hook->onToolCall(new ToolCallContextDTO(
             'c9',
             'settings',

@@ -70,13 +70,13 @@ final class AskHumanToolTest extends TestCase
         $this->assertNull($definition->parametersJsonSchema);
 
         $schema = NativeToolSchemaProbe::for($this->tool);
-        $args = $schema['properties']['arguments']['properties'];
+        $args = $schema['properties'];
 
         $this->assertSame('object', $schema['type']);
         $this->assertArrayHasKey('question', $args);
         $this->assertArrayNotHasKey('prompt', $args);
-        $this->assertContains('question', $schema['properties']['arguments']['required']);
-        $this->assertFalse($schema['properties']['arguments']['additionalProperties']);
+        $this->assertContains('question', $schema['required']);
+        $this->assertFalse($schema['additionalProperties']);
     }
 
     public function testDefinitionSchemaHasNoSchemaProperty(): void
@@ -85,7 +85,7 @@ final class AskHumanToolTest extends TestCase
         $this->assertNull($definition->parametersJsonSchema);
 
         $schema = NativeToolSchemaProbe::for($this->tool);
-        $args = $schema['properties']['arguments']['properties'];
+        $args = $schema['properties'];
 
         $this->assertArrayNotHasKey('schema', $args);
         $this->assertArrayHasKey('kind', $args);
@@ -104,7 +104,7 @@ final class AskHumanToolTest extends TestCase
         $this->assertNull($definition->parametersJsonSchema);
 
         $schema = NativeToolSchemaProbe::for($this->tool);
-        $items = $schema['properties']['arguments']['properties']['choices']['items'];
+        $items = $schema['properties']['choices']['items'];
 
         $this->assertSame(['type' => 'string'], $items);
     }

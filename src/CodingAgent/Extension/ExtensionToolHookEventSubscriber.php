@@ -41,11 +41,25 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * This subscriber contains ZERO SafeGuard-specific knowledge. Any extension implementing
  * ApprovalAnswerHookInterface can drive its own vocabulary/outcome mapping.
  *
- * Tool-result hooks are currently observational because Symfony AI's
- * ToolCallSucceeded/ToolCallFailed events expose readonly result/exception data.
+ * Tool-result hooks are currently observational: Symfony AI's
+ * ToolCallSucceeded/ToolCallFailed events expose readonly result/exception
+ * data. The subscriber remembers the original flat provider ToolCall per
+ * native Tool definition for the synchronous lifecycle so failure hooks
+ * receive the original flat rewritten arguments (the native ToolCallFailed
+ * event exposes only the internal resolved parameter map).
  */
 final readonly class ExtensionToolHookEventSubscriber implements EventSubscriberInterface
 {
+    /**
+     * Original flat provider ToolCall per native Tool definition for the
+     * synchronous lifecycle (requested → succeeded/failed). WeakMap keeps the
+     * entry bounded by the toolbox's Tool metadata objects and drops entries
+     * automatically when a toolbox instance is garbage-collected.
+     *
+     * @var \WeakMap<\Symfony\AI\Platform\Tool\Tool, ToolCall>
+     */
+    private \WeakMap $pendingToolCalls;
+
     public function __construct(
         private ExtensionHookRegistry $hookRegistry,
         private string $cwd,
@@ -54,6 +68,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         private ?NoninteractiveChildRunProbe $noninteractiveChildProbe = null,
         private ?ChildRunExtensionAllowlistReaderInterface $extensionAllowlistReader = null,
     ) {
+        $this->pendingToolCalls = new \WeakMap();
     }
 
     public static function getSubscribedEvents(): array
@@ -68,6 +83,9 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
     public function onToolCallRequested(ToolCallRequested $event): void
     {
         $toolCall = $event->getToolCall();
+        // Remember the original flat provider call for the failure path:
+        // ToolCallFailed only exposes the internal resolved parameter map.
+        $this->pendingToolCalls[$event->getDefinition()] = $toolCall;
         $context = $this->toolCallContext($toolCall);
         $humanInputAnswer = $this->contextAccessor?->current()?->humanInputAnswer();
 
@@ -207,6 +225,10 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
 
     public function onToolCallSucceeded(ToolCallSucceeded $event): void
     {
+        // Success results carry the original flat ToolCall; the pending entry
+        // is no longer needed.
+        unset($this->pendingToolCalls[$event->getDefinition()]);
+
         $this->runResultHooks(
             toolCall: $event->getResult()->getToolCall(),
             isError: false,
@@ -217,12 +239,26 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
 
     public function onToolCallFailed(ToolCallFailed $event): void
     {
-        $this->runResultHooks(
-            toolCall: new ToolCall(
+        // ToolCallFailed exposes the internal resolved parameter map (nested
+        // `arguments` for typed DTO tools, and [] for resolver failures), not
+        // the original provider call. Result hooks must see the original flat
+        // rewritten arguments, so use the ToolCall remembered at
+        // ToolCallRequested for this definition.
+        $toolCall = $this->pendingToolCalls[$event->getDefinition()] ?? null;
+        unset($this->pendingToolCalls[$event->getDefinition()]);
+
+        if (null === $toolCall) {
+            // Defensive fallback: never leak the resolved nested map into the
+            // public Extension API. Build a call from the definition name only.
+            $toolCall = new ToolCall(
                 id: '',
                 name: $event->getDefinition()->getName(),
-                arguments: $event->getArguments(),
-            ),
+                arguments: [],
+            );
+        }
+
+        $this->runResultHooks(
+            toolCall: $toolCall,
             isError: true,
             rawResult: $event->getException()->getMessage(),
             details: [

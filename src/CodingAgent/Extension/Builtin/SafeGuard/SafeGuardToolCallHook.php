@@ -80,10 +80,9 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
     {
         $decision = $this->classifier->classify(
             toolName: $context->toolName,
-            // This hook is the authoritative envelope boundary: typed
-            // built-ins (bash/write/edit/read) arrive nested and are
-            // unwrapped here; settings and raw dynamic tools stay flat.
-            arguments: $this->innerArguments($context),
+            // ToolCallContextDTO::arguments is always the flat provider map
+            // (typed built-ins and raw dynamic tools alike).
+            arguments: $context->arguments,
             cwd: $this->cwd,
             policy: $this->policy,
         );
@@ -226,7 +225,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
      */
     private function extractCommand(ToolCallContextDTO $context): ?string
     {
-        $command = $this->innerArguments($context)['command'] ?? null;
+        $command = $context->arguments['command'] ?? null;
 
         return \is_string($command) && '' !== $command ? $command : null;
     }
@@ -238,7 +237,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
      */
     private function extractPath(ToolCallContextDTO $context): ?string
     {
-        $path = $this->innerArguments($context)['path'] ?? null;
+        $path = $context->arguments['path'] ?? null;
 
         return \is_string($path) && '' !== $path ? $path : null;
     }
@@ -270,31 +269,9 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
             return false;
         }
 
-        $operation = $this->innerArguments($context)['operation'] ?? null;
+        $operation = $context->arguments['operation'] ?? null;
 
         return \is_string($operation) && \in_array($operation, ['set', 'remove'], true);
-    }
-
-    /**
-     * Typed built-ins this hook classifies (bash/write/edit/read) carry the
-     * native Symfony method-parameter envelope (DTO fields under the
-     * `arguments` key). Raw tools (settings, MCP, extension) stay flat even
-     * when their schema/value has a top-level `arguments` key — unwrap only
-     * the configured typed built-in names.
-     *
-     * @return array<string, mixed>
-     */
-    private function innerArguments(ToolCallContextDTO $context): array
-    {
-        $arguments = $context->arguments;
-
-        if (!$this->classifier->isTypedBuiltInTool($context->toolName)) {
-            return $arguments;
-        }
-
-        return isset($arguments['arguments']) && \is_array($arguments['arguments'])
-            ? $arguments['arguments']
-            : $arguments;
     }
 
     /**

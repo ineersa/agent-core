@@ -72,9 +72,9 @@ final class HatfieldDocsToolTest extends TestCase
         $this->assertNull($def->parametersJsonSchema);
 
         $schema = NativeToolSchemaProbe::for($this->tool);
-        $args = $schema['properties']['arguments']['properties'];
-        $this->assertSame(['operation'], $schema['properties']['arguments']['required']);
-        $this->assertFalse($schema['properties']['arguments']['additionalProperties']);
+        $args = $schema['properties'];
+        $this->assertSame(['operation'], $schema['required']);
+        $this->assertFalse($schema['additionalProperties']);
         $this->assertSame(['list', 'read'], $args['operation']['enum']);
         $this->assertArrayNotHasKey('enum', $args['id']);
         $this->assertSame(

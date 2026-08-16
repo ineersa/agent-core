@@ -21,17 +21,70 @@
     "stop_reason": "tool_call",
     "expected_text": "",
     "deltas": [
-        {"type": "tool_call_start", "id": "call_tui_read_1", "name": "read"},
-        {"type": "tool_input_delta", "id": "call_tui_read_1", "name": "read", "partial_json": "{\"arg"},
-        {"type": "tool_input_delta", "id": "call_tui_read_1", "name": "read", "partial_json": "ument"},
-        {"type": "tool_input_delta", "id": "call_tui_read_1", "name": "read", "partial_json": "s\": {"},
-        {"type": "tool_input_delta", "id": "call_tui_read_1", "name": "read", "partial_json": "\"path"},
-        {"type": "tool_input_delta", "id": "call_tui_read_1", "name": "read", "partial_json": "\": \"."},
-        {"type": "tool_input_delta", "id": "call_tui_read_1", "name": "read", "partial_json": "/tes"},
-        {"type": "tool_input_delta", "id": "call_tui_read_1", "name": "read", "partial_json": "t.tx"},
-        {"type": "tool_input_delta", "id": "call_tui_read_1", "name": "read", "partial_json": "t\"}}"},
-        {"type": "tool_call_complete", "tool_calls": [
-            {"id": "call_tui_read_1", "name": "read", "arguments": {"arguments": {"path": "./test.txt"}}}
-        ]}
+        {
+            "type": "tool_call_start",
+            "id": "call_tui_read_1",
+            "name": "read"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_tui_read_1",
+            "name": "read",
+            "partial_json": "{\"p"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_tui_read_1",
+            "name": "read",
+            "partial_json": "ath"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_tui_read_1",
+            "name": "read",
+            "partial_json": "\":\""
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_tui_read_1",
+            "name": "read",
+            "partial_json": "./t"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_tui_read_1",
+            "name": "read",
+            "partial_json": "est"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_tui_read_1",
+            "name": "read",
+            "partial_json": ".tx"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_tui_read_1",
+            "name": "read",
+            "partial_json": "t\"}"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_tui_read_1",
+            "name": "read",
+            "partial_json": ""
+        },
+        {
+            "type": "tool_call_complete",
+            "tool_calls": [
+                {
+                    "id": "call_tui_read_1",
+                    "name": "read",
+                    "arguments": {
+                        "path": "./test.txt"
+                    }
+                }
+            ]
+        }
     ]
 }

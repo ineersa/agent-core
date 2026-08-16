@@ -219,7 +219,8 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         ?int $limit = null,
     ): void {
         static $seq = 0;
-        // Typed built-ins use the native Symfony method-parameter envelope.
+        // Tool-call arguments are the flat provider map (read DTO fields at
+        // the top level).
         $fields = ['path' => $path];
         if (null !== $offset) {
             $fields['offset'] = $offset;
@@ -227,7 +228,7 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         if (null !== $limit) {
             $fields['limit'] = $limit;
         }
-        $arguments = ['arguments' => $fields];
+        $arguments = $fields;
 
         ++$seq;
         $projector->accept(new RuntimeEvent(

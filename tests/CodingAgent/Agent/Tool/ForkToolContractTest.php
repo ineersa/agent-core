@@ -39,7 +39,7 @@ final class ForkToolContractTest extends TestCase
         $this->assertNull($definition->parametersJsonSchema);
 
         $schema = NativeToolSchemaProbe::for(new ForkToolDefinitionProvider($handler));
-        $args = $schema['properties']['arguments'];
+        $args = $schema;
 
         // Non-nullable `task` is required; nullable model/thinking are not.
         $this->assertSame(['task'], $args['required']);

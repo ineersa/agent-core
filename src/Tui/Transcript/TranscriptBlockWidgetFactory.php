@@ -563,8 +563,8 @@ final readonly class TranscriptBlockWidgetFactory
      */
     private function formatReadLineRange(array $arguments): string
     {
-        // Typed built-ins use the native Symfony method-parameter envelope.
-        $fields = $arguments['arguments'] ?? [];
+        // Tool-call arguments are the flat provider map.
+        $fields = $arguments;
 
         $offset = isset($fields['offset']) && is_numeric($fields['offset'])
             ? (int) $fields['offset']
@@ -593,16 +593,12 @@ final readonly class TranscriptBlockWidgetFactory
         $container = new ContainerWidget();
         $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
 
-        // Typed built-ins use the native Symfony method-parameter envelope:
-        // DTO fields live under the `arguments` key of the provider call.
-        $dtoFields = $arguments['arguments'] ?? [];
-
-        $path = $dtoFields['path'] ?? null;
+        $path = $arguments['path'] ?? null;
         if (\is_string($path) && '' !== $path) {
             $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, '    path: '.$path)));
         }
 
-        $patch = $dtoFields['patch'] ?? '';
+        $patch = $arguments['patch'] ?? '';
         if (\is_string($patch) && '' !== $patch) {
             $patchBody = $this->editDiffRenderer->buildPatchBodyWidget($patch, $theme, $this->displayConfig, $this->displayState);
             if (null !== $patchBody) {
@@ -621,10 +617,7 @@ final readonly class TranscriptBlockWidgetFactory
         $container = new ContainerWidget();
         $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
 
-        // Typed built-ins use the native Symfony method-parameter envelope.
-        $dtoFields = $arguments['arguments'] ?? [];
-
-        $path = $dtoFields['path'] ?? '';
+        $path = $arguments['path'] ?? '';
         if (!\is_string($path)) {
             $path = '';
         }
@@ -632,7 +625,7 @@ final readonly class TranscriptBlockWidgetFactory
             $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, '    path: '.$path)));
         }
 
-        $content = $dtoFields['content'] ?? '';
+        $content = $arguments['content'] ?? '';
         if (!\is_string($content)) {
             $content = '';
         }
@@ -654,8 +647,8 @@ final readonly class TranscriptBlockWidgetFactory
             return false;
         }
 
-        // Typed built-ins use the native Symfony method-parameter envelope.
-        $patch = $arguments['arguments']['patch'] ?? null;
+        // Tool-call arguments are the flat provider map.
+        $patch = $arguments['patch'] ?? null;
 
         return \is_string($patch) && '' !== $patch;
     }
@@ -670,8 +663,8 @@ final readonly class TranscriptBlockWidgetFactory
             return false;
         }
 
-        // Typed built-ins use the native Symfony method-parameter envelope.
-        $content = $arguments['arguments']['content'] ?? null;
+        // Tool-call arguments are the flat provider map.
+        $content = $arguments['content'] ?? null;
 
         return \is_string($content);
     }
@@ -932,15 +925,12 @@ final readonly class TranscriptBlockWidgetFactory
         $container = new ContainerWidget();
         $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
 
-        // Typed built-ins use the native Symfony method-parameter envelope.
-        $dtoFields = $arguments['arguments'] ?? [];
-
-        $path = $dtoFields['path'] ?? null;
+        $path = $arguments['path'] ?? null;
         if (\is_string($path) && '' !== $path) {
             $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, '    path: '.$path)));
         }
 
-        $patch = $dtoFields['patch'] ?? '';
+        $patch = $arguments['patch'] ?? '';
         if (\is_string($patch) && '' !== $patch) {
             $patchBody = $this->editDiffRenderer->buildPatchBodyWidget($patch, $theme, $this->displayConfig, $this->displayState);
             if (null !== $patchBody) {
@@ -971,10 +961,7 @@ final readonly class TranscriptBlockWidgetFactory
         $container = new ContainerWidget();
         $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
 
-        // Typed built-ins use the native Symfony method-parameter envelope.
-        $dtoFields = $arguments['arguments'] ?? [];
-
-        $path = $dtoFields['path'] ?? '';
+        $path = $arguments['path'] ?? '';
         if (!\is_string($path)) {
             $path = '';
         }
@@ -982,7 +969,7 @@ final readonly class TranscriptBlockWidgetFactory
             $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, '    path: '.$path)));
         }
 
-        $content = $dtoFields['content'] ?? '';
+        $content = $arguments['content'] ?? '';
         if (!\is_string($content)) {
             $content = '';
         }

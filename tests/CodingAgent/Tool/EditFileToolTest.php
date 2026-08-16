@@ -277,7 +277,7 @@ PATCH;
         // the EditFileTarget DTO constraint rejects the missing target before
         // the handler (and its lock-protected PatchApplier) ever runs.
         $toolbox = ToolValidationHarness::toolbox($this->editFileTool);
-        $result = $toolbox->execute(new ToolCall('call-edit', 'edit', ['arguments' => ['path' => $targetPath, 'patch' => "@@\n x\n"]]));
+        $result = $toolbox->execute(new ToolCall('call-edit', 'edit', ['path' => $targetPath, 'patch' => "@@\n x\n"]));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('does not exist or is not readable', $message);

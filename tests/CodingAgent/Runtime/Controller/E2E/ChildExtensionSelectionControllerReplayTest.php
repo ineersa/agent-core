@@ -124,12 +124,11 @@ YAML;
             'expected_text' => '',
             'deltas' => [
                 ['type' => 'tool_call_start', 'id' => 'call_subagent_ext_1', 'name' => 'subagent'],
-                ['type' => 'tool_input_delta', 'id' => 'call_subagent_ext_1', 'name' => 'subagent', 'partial_json' => '{"arguments":'],
                 ['type' => 'tool_input_delta', 'id' => 'call_subagent_ext_1', 'name' => 'subagent', 'partial_json' => '{"agent":'],
                 ['type' => 'tool_input_delta', 'id' => 'call_subagent_ext_1', 'name' => 'subagent', 'partial_json' => '"'.self::CHILD_AGENT.'"'],
                 ['type' => 'tool_input_delta', 'id' => 'call_subagent_ext_1', 'name' => 'subagent', 'partial_json' => ',"task":"'],
                 ['type' => 'tool_input_delta', 'id' => 'call_subagent_ext_1', 'name' => 'subagent', 'partial_json' => 'Reply with exactly '.self::CHILD_TOKEN.' only. No tools.'],
-                ['type' => 'tool_input_delta', 'id' => 'call_subagent_ext_1', 'name' => 'subagent', 'partial_json' => '"}}'],
+                ['type' => 'tool_input_delta', 'id' => 'call_subagent_ext_1', 'name' => 'subagent', 'partial_json' => '"}'],
             ],
         ];
 

@@ -267,7 +267,7 @@ final class BashToolTest extends IsolatedKernelTestCase
     {
         $this->createManager();
 
-        $result = $this->validationToolbox()->execute(new ToolCall('call-bash', 'bash', ['arguments' => []]));
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bash', 'bash', []));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('The "command" argument is required and must be a non-empty string.', $message);
@@ -278,7 +278,7 @@ final class BashToolTest extends IsolatedKernelTestCase
     {
         $this->createManager();
 
-        $result = $this->validationToolbox()->execute(new ToolCall('call-bash', 'bash', ['arguments' => ['command' => '']]));
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bash', 'bash', ['command' => '']));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('The "command" argument is required and must be a non-empty string.', $message);
@@ -289,7 +289,7 @@ final class BashToolTest extends IsolatedKernelTestCase
     {
         $this->createManager();
 
-        $result = $this->validationToolbox()->execute(new ToolCall('call-bash', 'bash', ['arguments' => ['command' => 'echo hi', 'timeout' => -5]]));
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bash', 'bash', ['command' => 'echo hi', 'timeout' => -5]));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('The "timeout" argument must be a positive integer.', $message);
@@ -307,7 +307,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             logTailChars: 20000,
         );
 
-        $result = $this->validationToolbox()->execute(new ToolCall('call-bash', 'bash', ['arguments' => ['command' => 'echo hi', 'timeout' => 9999]]));
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bash', 'bash', ['command' => 'echo hi', 'timeout' => 9999]));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('Timeout must not exceed 30 seconds (9999 provided).', $message);
@@ -685,7 +685,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertNull($def->parametersJsonSchema);
 
         $schema = NativeToolSchemaProbe::for($tool);
-        $args = $schema['properties']['arguments'];
+        $args = $schema;
 
         // Schema must have 'command' required
         $this->assertContains('command', $args['required']);

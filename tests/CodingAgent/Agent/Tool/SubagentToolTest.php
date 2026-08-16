@@ -21,6 +21,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
+use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -59,7 +60,7 @@ final class SubagentToolTest extends IsolatedKernelTestCase
         $this->assertNull($tool->definition()->parametersJsonSchema);
 
         $schema = NativeToolSchemaProbe::for($tool);
-        $args = $schema['properties']['arguments'];
+        $args = $schema;
 
         $this->assertFalse($args['additionalProperties']);
         $this->assertArrayNotHasKey('concurrency', $args['properties']);
@@ -107,7 +108,11 @@ final class SubagentToolTest extends IsolatedKernelTestCase
 
         $toolbox = new FaultTolerantToolbox(new RegistryBackedToolbox(
             registry: $registry,
-            argumentResolver: new RawAwareToolCallArgumentResolver($container->get(ToolCallArgumentResolverInterface::class)),
+            // Use the container's native resolver directly — the
+            // ToolCallArgumentResolverInterface alias already returns
+            // RawAwareToolCallArgumentResolver, so wrapping it again would
+            // double-wrap and empty the DTO.
+            argumentResolver: new RawAwareToolCallArgumentResolver($container->get(ToolCallArgumentResolver::class)),
             nativeToolFactory: NativeToolSchemaProbe::nativeToolFactory(),
             eventDispatcher: $dispatcher,
         ));
@@ -117,7 +122,8 @@ final class SubagentToolTest extends IsolatedKernelTestCase
             $tasks[] = ['agent' => 'scout', 'task' => 't'.$i];
         }
 
-        $result = $toolbox->execute(new ToolCall('tc-cap', 'subagent', ['arguments' => ['tasks' => $tasks]]));
+        // Flat provider arguments: subagent DTO fields at the top level.
+        $result = $toolbox->execute(new ToolCall('tc-cap', 'subagent', ['tasks' => $tasks]));
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('Parallel subagent execution supports at most 4 agents per tool call, but 9 tasks were requested.', $message);

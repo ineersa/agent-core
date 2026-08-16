@@ -35,7 +35,7 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
             'payload' => [
                 // Unique first-user tag for llama-proxy cache isolation.
                 // Child task asks for one read + normal fork handoff; production prompt must enforce finality.
-                'prompt' => '[llm-real:fork-deferred-v4] Call tool fork exactly once with JSON arguments {"arguments":{"task":'.json_encode(self::CHILD_TASK, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES).'}}. Do not call any tool except fork.',
+                'prompt' => '[llm-real:fork-deferred-v4] Call tool fork exactly once with JSON arguments {"task":'.json_encode(self::CHILD_TASK, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES).'}. Do not call any tool except fork.',
             ],
         ]);
 

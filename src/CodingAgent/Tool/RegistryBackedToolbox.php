@@ -118,8 +118,8 @@ final class RegistryBackedToolbox implements ToolboxInterface
                 throw $previous;
             }
 
-            // Resolver/denormalization failures (missing mandatory envelope
-            // parameters, type mismatches during DTO denormalization) carry
+            // Resolver/denormalization failures (missing mandatory parameters,
+            // type mismatches during DTO denormalization) carry
             // actionable correction detail the model can act on; the native
             // wrap would reduce them to a generic fault. Surface them as
             // non-retryable ToolCallException with the native message and

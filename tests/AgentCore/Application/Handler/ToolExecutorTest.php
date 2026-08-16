@@ -429,17 +429,22 @@ final class ToolExecutorTest extends TestCase
         $this->assertStringContainsString('Registry tool failed', $result->content[0]['text']);
     }
 
-    public function testResolverMissingEnvelopeBecomesActionableNonRetryableErrorResult(): void
+    public function testFlatDtoArgumentsResolveThroughExecutor(): void
     {
-        // Full production chain: a DTO-typed built-in called without the native
-        // `arguments` envelope fails in ToolCallArgumentResolver; the wrapped
-        // ToolException must reach ToolExecutor as a non-retryable
-        // ToolCallException carrying the actionable resolver message, so the
-        // model can correct the call instead of seeing a generic fault.
-        $handler = new #[AsTool('read', 'Read')] class {
+        // Full production chain: a DTO-typed built-in called with flat
+        // provider arguments resolves through the native resolver, is
+        // validated, and invokes the handler — no envelope required.
+        $seen = null;
+        $handler = new #[AsTool('read', 'Read')] class($seen) {
+            public function __construct(private mixed &$seen)
+            {
+            }
+
             public function __invoke(ReadFileArgumentsDTO $arguments): mixed
             {
-                return 'unreachable';
+                $this->seen = $arguments->path;
+
+                return 'ok:'.$arguments->path;
             }
         };
         $registry = new ToolRegistry();
@@ -456,18 +461,16 @@ final class ToolExecutorTest extends TestCase
             resultStore: new ToolExecutionResultStore(),
         );
 
-        // Flat args (missing the {arguments: {...}} envelope).
-        $result = $executor->execute(ToolCallBuilder::create('call-missing-envelope')
+        // Flat provider arguments (DTO fields at the top level).
+        $result = $executor->execute(ToolCallBuilder::create('call-flat')
             ->withToolName('read')
             ->withArguments(['path' => './x.txt'])
             ->withOrderIndex(0)
             ->build());
 
-        $this->assertTrue($result->isError);
-        $this->assertIsArray($result->details);
-        $this->assertSame(ToolCallException::class, $result->details['error_type']);
-        $this->assertFalse($result->details['retryable']);
-        $this->assertStringContainsString('Parameter "arguments" is mandatory for tool "read".', $result->content[0]['text']);
+        $this->assertFalse($result->isError);
+        $this->assertSame('ok:./x.txt', $result->content[0]['text'] ?? null);
+        $this->assertSame('./x.txt', $seen);
     }
 
     public function testDenormalizationFailureBecomesActionableNonRetryableErrorResult(): void
@@ -495,10 +498,10 @@ final class ToolExecutorTest extends TestCase
             resultStore: new ToolExecutionResultStore(),
         );
 
-        // Envelope present but the DTO field has the wrong type.
+        // DTO field has the wrong type.
         $result = $executor->execute(ToolCallBuilder::create('call-denorm')
             ->withToolName('read')
-            ->withArguments(['arguments' => ['path' => 123]])
+            ->withArguments(['path' => 123])
             ->withOrderIndex(0)
             ->build());
 

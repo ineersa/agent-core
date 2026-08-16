@@ -592,7 +592,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 text: 'read',
                 meta: [
                     'tool_name' => 'read',
-                    'arguments' => ['arguments' => ['path' => './virtual.txt', 'max_bytes' => 512]],
+                    'arguments' => ['path' => './virtual.txt', 'max_bytes' => 512],
                 ],
             ),
         ]);
@@ -684,7 +684,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 text: 'edit',
                 meta: [
                     'tool_name' => 'edit',
-                    'arguments' => ['arguments' => ['path' => '/tmp/test.md', 'patch' => $patch]],
+                    'arguments' => ['path' => '/tmp/test.md', 'patch' => $patch],
                 ],
             ),
         ]);
@@ -721,7 +721,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 text: 'edit',
                 meta: [
                     'tool_name' => 'edit',
-                    'arguments' => ['arguments' => ['path' => '/tmp/test.md', 'patch' => $patch]],
+                    'arguments' => ['path' => '/tmp/test.md', 'patch' => $patch],
                 ],
             ),
         ]);
@@ -747,7 +747,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 text: 'edit',
                 meta: [
                     'tool_name' => 'edit',
-                    'arguments' => ['arguments' => ['path' => 'src/Foo.php', 'patch' => $patch]],
+                    'arguments' => ['path' => 'src/Foo.php', 'patch' => $patch],
                 ],
             ),
         ]);
@@ -774,7 +774,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 text: 'write',
                 meta: [
                     'tool_name' => 'write',
-                    'arguments' => ['arguments' => ['path' => 'out.txt', 'content' => "alpha\nbeta"]],
+                    'arguments' => ['path' => 'out.txt', 'content' => "alpha\nbeta"],
                 ],
             ),
         ]);
@@ -803,7 +803,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 text: 'ask_human',
                 meta: [
                     'tool_name' => 'ask_human',
-                    'arguments' => ['arguments' => ['prompt' => $prompt, 'schema' => ['type' => 'string']]],
+                    'arguments' => ['prompt' => $prompt, 'schema' => ['type' => 'string']],
                 ],
             ),
             new TranscriptBlock(
@@ -850,7 +850,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 meta: [
                     'tool_call_id' => 'call-a',
                     'tool_name' => 'bash',
-                    'arguments' => ['arguments' => ['command' => 'composer install']],
+                    'arguments' => ['command' => 'composer install'],
                 ],
             ),
             new TranscriptBlock(
@@ -902,7 +902,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 meta: [
                     'tool_call_id' => 'call-a',
                     'tool_name' => 'bash',
-                    'arguments' => ['arguments' => ['command' => 'find bin']],
+                    'arguments' => ['command' => 'find bin'],
                 ],
             ),
             new TranscriptBlock(

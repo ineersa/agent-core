@@ -66,10 +66,10 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         $this->assertSame(2, $this->appendedEvents[0]->turnNo);
         $this->assertSame('sh_tc_1', $this->appendedEvents[0]->payload['tool_call_id'] ?? null);
         $this->assertSame('bash', $this->appendedEvents[0]->payload['tool_name'] ?? null);
-        // Direct shell must carry the canonical bash provider envelope so TUI can
+        // Direct shell must carry the canonical flat bash provider arguments so TUI can
         // render the bash card and the native resolver accepts the call.
-        $this->assertSame(['arguments' => ['command' => 'echo hello']], $this->appendedEvents[0]->payload['arguments'] ?? null);
-        $this->assertArrayNotHasKey('timeout', $this->appendedEvents[0]->payload['arguments']['arguments'] ?? []);
+        $this->assertSame(['command' => 'echo hello'], $this->appendedEvents[0]->payload['arguments'] ?? null);
+        $this->assertArrayNotHasKey('timeout', $this->appendedEvents[0]->payload['arguments'] ?? []);
         $this->assertArrayNotHasKey('timeout', $this->appendedEvents[0]->payload);
 
         // Seq 2: tool_execution_end

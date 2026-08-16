@@ -13,7 +13,7 @@
             "type": "tool_input_delta",
             "id": "call_ask_human_overlay",
             "name": "ask_human",
-            "partial_json": "{\"arguments\":{\"question\":\"**Overlay proof** with `inline` code\",\"ui_kind\":\"text\"}}"
+            "partial_json": "{\"question\":\"**Overlay proof** with `inline` code\",\"ui_kind\":\"text\"}"
         },
         {
             "type": "tool_call_complete",
@@ -22,10 +22,8 @@
                     "id": "call_ask_human_overlay",
                     "name": "ask_human",
                     "arguments": {
-                        "arguments": {
-                            "question": "**Overlay proof** with `inline` code",
-                            "ui_kind": "text"
-                        }
+                        "question": "**Overlay proof** with `inline` code",
+                        "ui_kind": "text"
                     }
                 }
             ]

@@ -43,7 +43,7 @@ final class SubagentParallelLiveE2eTest extends ControllerE2eTestCase
             'type' => 'start_run',
             'payload' => [
                 'prompt' => '[llm-real:subagent-parallel-v1] Agents "'.self::CHILD_A.'" and "'.self::CHILD_B.'" are defined in this project. '
-                    .'Call tool subagent exactly once with JSON arguments {"arguments":{"tasks":[{"agent":"'.self::CHILD_A.'","task":"Reply with exactly '.self::TOKEN_A.' only. No tools."},{"agent":"'.self::CHILD_B.'","task":"Reply with exactly '.self::TOKEN_B.' only. No tools."}]}}. '
+                    .'Call tool subagent exactly once with JSON arguments {"tasks":[{"agent":"'.self::CHILD_A.'","task":"Reply with exactly '.self::TOKEN_A.' only. No tools."},{"agent":"'.self::CHILD_B.'","task":"Reply with exactly '.self::TOKEN_B.' only. No tools."}]}. '
                     .'Do not call any tool except subagent.',
             ],
         ]);
