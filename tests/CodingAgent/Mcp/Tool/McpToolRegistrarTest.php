@@ -463,13 +463,8 @@ final class McpToolRegistrarTest extends TestCase
 
         // hidden_perm should NOT be registered as a dynamic tool
         // (the collision was caught); but srv_good should be registered.
-        $dynamicTools = $this->registry->getDynamicTools();
-        $dynamicNames = array_map(static fn (array $t): string => $t['name'], $dynamicTools);
-        $this->assertNotContains('hidden_perm', $dynamicNames, 'Hidden permanent collision should not be registered as dynamic');
-
-        // Non-colliding MCP tool should be registered
         $names = $this->registry->activeToolNames();
-        // hidden_perm is excluded from visibility but srv_good should be visible
+        // hidden_perm is excluded from visibility but srv_good should be visible.
         $this->assertNotContains('hidden_perm', $names, 'Hidden permanent should not appear in active names');
         $this->assertContains('srv_good', $names, 'Non-colliding MCP tool should register and be visible');
 
@@ -489,7 +484,7 @@ final class McpToolRegistrarTest extends TestCase
 
     /* ── Test thesis 4: Idempotent synchronization for unchanged catalogs ── */
 
-    public function testUnchangedCatalogRegistrationPreservesHandlerIdentityAndRevision(): void
+    public function testUnchangedCatalogRegistrationPreservesHandlerIdentity(): void
     {
         $catalog = new McpToolCatalogDTO(
             runId: 'run-1',
@@ -517,7 +512,6 @@ final class McpToolRegistrarTest extends TestCase
 
         $registrar->registerForRun('run-1');
         $firstHandler = $this->registry->toolDefinition('srv_x')?->handler;
-        $firstRevision = $this->registry->revision();
         $this->assertNotNull($firstHandler);
 
         // Same catalog on the next LLM step: no remove/re-register churn.
@@ -525,10 +519,9 @@ final class McpToolRegistrarTest extends TestCase
         $secondHandler = $this->registry->toolDefinition('srv_x')?->handler;
 
         $this->assertSame($firstHandler, $secondHandler, 'Unchanged catalog must preserve the registered handler object');
-        $this->assertSame($firstRevision, $this->registry->revision(), 'Unchanged catalog must not churn the registry revision');
     }
 
-    public function testChangedCatalogReplacesHandlersAndBumpsRevision(): void
+    public function testChangedCatalogReplacesHandlers(): void
     {
         $catalog1 = new McpToolCatalogDTO(
             runId: 'run-1',

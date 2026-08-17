@@ -322,7 +322,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         return new FaultTolerantToolbox(new RegistryBackedToolbox(
             registry: $registry,
             argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
-            nativeToolFactory: NativeToolSchemaProbe::nativeToolFactory(),
+            schemaFactory: NativeToolSchemaProbe::schemaFactory(),
             eventDispatcher: $dispatcher,
         ));
     }

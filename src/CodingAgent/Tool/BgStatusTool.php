@@ -11,13 +11,12 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
-use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * Inspect, tail-log, and stop background processes.
  *
  * Implements HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and the Symfony AI native tool contract (AsTool).
+ * as a permanent tool and the Symfony AI native tool contract (typed DTO arguments).
  *
  * Actions:
  *  - list:  Show all tracked background processes with status, scoped to
@@ -32,7 +31,6 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  * to every BackgroundProcessManager call. This ensures the LLM only sees
  * and operates on processes it owns.
  */
-#[AsTool(self::NAME, self::DESCRIPTION)]
 final class BgStatusTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'bg_status';

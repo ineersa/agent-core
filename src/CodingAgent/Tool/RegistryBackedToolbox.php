@@ -8,18 +8,19 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
+use Ineersa\CodingAgent\Tool\Event\ToolCallFailedEvent;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\Exception\ToolException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionException;
+use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\Toolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
-use Symfony\AI\Agent\Toolbox\ToolFactory\ReflectionToolFactory;
-use Symfony\AI\Agent\Toolbox\ToolFactoryInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult;
+use Symfony\AI\Platform\Contract\JsonSchema\Factory;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Tool\ExecutionReference;
 use Symfony\AI\Platform\Tool\Tool;
@@ -49,34 +50,43 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * schema is exposed at the Tool root (no `{arguments: ...}` envelope), and
  * the flat provider map is wrapped internally before native resolution.
  *
- * Mutable registry semantics are preserved: getTools() and execute() always
- * observe the live registry revision, and the native Toolbox (with all active
- * handlers and their exact per-handler metadata) is rebuilt only when the
- * registry revision actually changes — not on every LLM step. The registry
- * revision increments only when effective contents/visibility change, so
- * repeated no-op mutations keep the cached native Toolbox hot.
+ * Mutable registry semantics are preserved without a revision counter:
+ * provider Tool metadata and the one-definition native Toolbox are memoized
+ * per immutable ToolDefinitionDTO instance (WeakMap). Unchanged definitions
+ * reuse both; an effective replacement creates a new DTO identity; removal
+ * drops the registry's reference so the weak cache entries become
+ * collectible; visibility filtering only changes enumeration. execute()
+ * re-reads the current definition after rewrite hooks so a mutation can
+ * never execute a stale handler through a cached Toolbox.
  */
-final class RegistryBackedToolbox implements ToolboxInterface
+final readonly class RegistryBackedToolbox implements ToolboxInterface
 {
-    /** Registry revision the cached fields below were built for; null = not built. */
-    private ?int $revision = null;
+    /**
+     * Provider-visible Tool metadata per canonical definition.
+     *
+     * @var \WeakMap<ToolDefinitionDTO, Tool>
+     */
+    private \WeakMap $metadataCache;
 
-    /** @var list<Tool>|null Provider-visible tool metadata in registry order */
-    private ?array $tools = null;
-
-    /** @var Toolbox|null Native toolbox covering every active handler */
-    private ?Toolbox $toolbox = null;
+    /**
+     * One-definition native Symfony Toolbox per canonical definition.
+     *
+     * @var \WeakMap<ToolDefinitionDTO, Toolbox>
+     */
+    private \WeakMap $toolboxCache;
 
     public function __construct(
         private ToolRegistryInterface $registry,
         private ToolCallArgumentResolverInterface $argumentResolver,
-        private ToolFactoryInterface $nativeToolFactory = new ReflectionToolFactory(),
+        private Factory $schemaFactory = new Factory(),
         private ?EventDispatcherInterface $eventDispatcher = null,
         private ?ExtensionHookRegistry $rewriteHookProvider = null,
         private ?StackToolExecutionContextAccessor $contextAccessor = null,
         private ?ChildRunExtensionAllowlistReaderInterface $extensionAllowlistReader = null,
         private ?LoggerInterface $logger = null,
     ) {
+        $this->metadataCache = new \WeakMap();
+        $this->toolboxCache = new \WeakMap();
     }
 
     /**
@@ -84,9 +94,13 @@ final class RegistryBackedToolbox implements ToolboxInterface
      */
     public function getTools(): array
     {
-        $this->ensureSnapshot();
+        $tools = [];
 
-        return $this->tools ?? [];
+        foreach ($this->registry->activeToolDefinitions() as $definition) {
+            $tools[] = $this->metadataFor($definition);
+        }
+
+        return $tools;
     }
 
     /**
@@ -102,12 +116,31 @@ final class RegistryBackedToolbox implements ToolboxInterface
 
         $rewrittenCall = $this->applyRewrites($toolCall);
 
-        try {
-            $this->ensureSnapshot();
-            \assert($this->toolbox instanceof Toolbox); // set unconditionally by ensureSnapshot()
+        // Re-read the current definition after rewrite hooks: the registry
+        // may have mutated since the first lookup, and the cached
+        // one-definition Toolbox must never execute a stale handler.
+        $definition = $this->registry->toolDefinition($rewrittenCall->getName());
 
-            return $this->toolbox->execute($rewrittenCall);
-        } catch (ToolExecutionException $e) {
+        if (null === $definition) {
+            throw ToolNotFoundException::notFoundForToolCall($rewrittenCall);
+        }
+
+        try {
+            return $this->toolboxFor($definition)->execute($rewrittenCall);
+        } catch (ToolExecutionExceptionInterface $e) {
+            // The native ToolCallFailed event does not carry the original
+            // provider ToolCall; publish the exact rewritten call while it
+            // is still in scope so failure result hooks keep the flat
+            // rewritten arguments and the tool call id.
+            $this->eventDispatcher?->dispatch(new ToolCallFailedEvent(
+                toolCall: $rewrittenCall,
+                exception: $e instanceof ToolExecutionException && null !== $e->getPrevious() ? $e->getPrevious() : $e,
+            ));
+
+            if (!$e instanceof ToolExecutionException) {
+                throw $e;
+            }
+
             $previous = $e->getPrevious();
 
             // Thin outer translation: the native Toolbox wraps every handler
@@ -133,47 +166,39 @@ final class RegistryBackedToolbox implements ToolboxInterface
     }
 
     /**
-     * Rebuild the cached native Toolbox and provider Tool list when the
-     * registry revision changed; no-op otherwise.
+     * Build or reuse the provider-visible Tool metadata for one canonical
+     * definition. Definitions are immutable value objects, so identity is a
+     * stable cache key; a replacement registration creates a new definition
+     * and therefore new metadata.
      */
-    private function ensureSnapshot(): void
+    private function metadataFor(ToolDefinitionDTO $definition): Tool
     {
-        $revision = $this->registry->revision();
-
-        if (null !== $this->toolbox && $this->revision === $revision) {
-            return;
+        if (isset($this->metadataCache[$definition])) {
+            return $this->metadataCache[$definition];
         }
 
-        $tools = [];
-        $handlers = [];
-        $metadataByHandler = [];
-        $seenHandlers = [];
+        return $this->metadataCache[$definition] = $this->buildMetadata($definition);
+    }
 
-        foreach ($this->registry->activeToolDefinitions() as $definition) {
-            $tool = $this->metadataFor($definition);
-            $tools[] = $tool;
-
-            $objectId = spl_object_id($definition->handler);
-            $metadataByHandler[$objectId][] = $tool;
-
-            // The same handler object may be registered under several names;
-            // the native Toolbox iterates handlers and the factory returns all
-            // names per handler, so each object must appear exactly once.
-            if (!isset($seenHandlers[$objectId])) {
-                $seenHandlers[$objectId] = true;
-                $handlers[] = $definition->handler;
-            }
+    /**
+     * Build or reuse the one-definition native Toolbox for one canonical
+     * definition. The native Toolbox caches its metadata internally, so
+     * reusing the instance also keeps the Tool metadata object identity
+     * stable across calls for the same definition.
+     */
+    private function toolboxFor(ToolDefinitionDTO $definition): Toolbox
+    {
+        if (isset($this->toolboxCache[$definition])) {
+            return $this->toolboxCache[$definition];
         }
 
-        $this->tools = $tools;
-        $this->toolbox = new Toolbox(
-            tools: $handlers,
-            toolFactory: new DefinitionToolFactory($metadataByHandler),
+        return $this->toolboxCache[$definition] = new Toolbox(
+            tools: [$definition->handler],
+            toolFactory: new SingleToolFactory($this->metadataFor($definition)),
             argumentResolver: $this->argumentResolver,
             logger: $this->logger ?? new NullLogger(),
             eventDispatcher: $this->eventDispatcher,
         );
-        $this->revision = $revision;
     }
 
     private function applyRewrites(ToolCall $toolCall): ToolCall
@@ -212,19 +237,19 @@ final class RegistryBackedToolbox implements ToolboxInterface
     /**
      * Build the native Symfony AI Tool metadata for one registered definition.
      *
-     * Typed DTO handlers (parametersJsonSchema === null) get their metadata
-     * from Symfony AI's native ReflectionToolFactory (AsTool + JsonSchema
-     * Factory) so DTO types/constraints and the provider-visible schema cannot
-     * drift. The registry definition remains canonical for name/description.
-     * The provider-visible schema is the single DTO parameter's object schema
-     * hoisted to the Tool root (flat arguments, no parameter envelope); the
-     * argument resolver wraps flat payloads back under the parameter name
-     * before native resolution.
+     * Typed DTO handlers (parametersJsonSchema === null) get their provider
+     * schema from Symfony AI's JsonSchema Factory directly
+     * (buildParameters(handler::class, '__invoke')) so DTO types/constraints
+     * and the provider-visible schema cannot drift. The registry definition
+     * remains canonical for name/description. The provider-visible schema is
+     * the single DTO parameter's object schema hoisted to the Tool root (flat
+     * arguments, no parameter envelope); the argument resolver wraps flat
+     * payloads back under the parameter name before native resolution.
      *
      * Raw-array handlers (runtime-provided schema) keep their schema and are
      * flagged so the argument resolver passes the flat provider map through.
      */
-    private function metadataFor(ToolDefinitionDTO $definition): Tool
+    private function buildMetadata(ToolDefinitionDTO $definition): Tool
     {
         if (null !== $definition->parametersJsonSchema) {
             return new Tool(
@@ -236,13 +261,13 @@ final class RegistryBackedToolbox implements ToolboxInterface
             );
         }
 
-        $native = $this->nativeMetadataFor($definition);
+        $parameters = $this->schemaFactory->buildParameters($definition->handler::class, '__invoke');
 
         return new Tool(
-            reference: $native->getReference(),
+            reference: new ExecutionReference($definition->handler::class, '__invoke'),
             name: $definition->name,
             description: $definition->description,
-            parameters: $this->flattenDtoParameters($native, $definition->name),
+            parameters: $this->flattenDtoParameters($parameters, $definition->name),
         );
     }
 
@@ -259,11 +284,12 @@ final class RegistryBackedToolbox implements ToolboxInterface
      * (scalar parameters, multiple parameters) is an internal contract
      * violation and fails fast instead of silently producing a wrong schema.
      *
+     * @param array<string, mixed>|null $parameters
+     *
      * @return array<string, mixed>
      */
-    private function flattenDtoParameters(Tool $native, string $toolName): array
+    private function flattenDtoParameters(?array $parameters, string $toolName): array
     {
-        $parameters = $native->getParameters();
         $properties = \is_array($parameters) ? ($parameters['properties'] ?? null) : null;
 
         if (!\is_array($parameters)
@@ -280,17 +306,6 @@ final class RegistryBackedToolbox implements ToolboxInterface
         }
 
         return $this->normalizeNullableRequired($dtoSchema);
-    }
-
-    private function nativeMetadataFor(ToolDefinitionDTO $definition): Tool
-    {
-        $metadata = iterator_to_array($this->nativeToolFactory->getTool($definition->handler), false);
-
-        if ([] === $metadata) {
-            throw ToolException::missingAttribute($definition->handler::class);
-        }
-
-        return $metadata[0];
     }
 
     /**

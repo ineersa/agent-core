@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tool\Constraints;
+namespace Ineersa\CodingAgent\Tool\Validation\SubagentTasks;
 
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Symfony\Component\Validator\Constraint;

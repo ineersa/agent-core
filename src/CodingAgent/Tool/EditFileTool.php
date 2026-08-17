@@ -9,13 +9,11 @@ use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\Edit\PatchApplier;
 use Ineersa\CodingAgent\Tool\Edit\PatchFailureFormatter;
-use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 use Symfony\Component\Lock\LockFactory;
 
 /**
  * Edit an existing file by applying Codex-style @@ hunks.
  */
-#[AsTool(self::NAME, self::DESCRIPTION)]
 final class EditFileTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'edit';

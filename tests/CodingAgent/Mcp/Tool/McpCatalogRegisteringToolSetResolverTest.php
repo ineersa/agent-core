@@ -334,17 +334,15 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, $this->metadataReader(), $store, new TestLogger());
 
         // Two LLM steps with an unchanged catalog: the resolver must not
-        // churn the registered handler object or the registry revision.
+        // churn the registered handler object.
         $wrapper->resolve('toolset:run:run-xyz:turn:1', turnNo: 1, runId: 'run-xyz');
         $firstHandler = $registry->toolDefinition('srv_calc')?->handler;
-        $firstRevision = $registry->revision();
 
         $wrapper->resolve('toolset:run:run-xyz:turn:2', turnNo: 2, runId: 'run-xyz');
         $secondHandler = $registry->toolDefinition('srv_calc')?->handler;
 
         $this->assertNotNull($firstHandler);
         $this->assertSame($firstHandler, $secondHandler);
-        $this->assertSame($firstRevision, $registry->revision());
     }
 
     private function makeChildParentCatalogPair(string $parentToolName, string $childToolName): array

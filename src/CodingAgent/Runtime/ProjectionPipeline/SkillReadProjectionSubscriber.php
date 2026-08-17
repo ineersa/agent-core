@@ -104,8 +104,7 @@ final readonly class SkillReadProjectionSubscriber implements EventSubscriberInt
             return;
         }
 
-        // Tool-call arguments are the flat provider map; read's DTO path
-        // field is a top-level key.
+        // read's path field is a top-level key of the flat provider map.
         $path = $arguments['path'] ?? null;
         if (!\is_string($path) || '' === $path) {
             return;

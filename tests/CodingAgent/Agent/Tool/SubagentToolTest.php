@@ -13,10 +13,10 @@ use Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
-use Ineersa\CodingAgent\Tool\Constraints\SubagentTasksLimitValidator;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
+use Ineersa\CodingAgent\Tool\Validation\SubagentTasks\SubagentTasksLimitValidator;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
@@ -113,7 +113,7 @@ final class SubagentToolTest extends IsolatedKernelTestCase
             // RawAwareToolCallArgumentResolver, so wrapping it again would
             // double-wrap and empty the DTO.
             argumentResolver: new RawAwareToolCallArgumentResolver($container->get(ToolCallArgumentResolver::class)),
-            nativeToolFactory: NativeToolSchemaProbe::nativeToolFactory(),
+            schemaFactory: NativeToolSchemaProbe::schemaFactory(),
             eventDispatcher: $dispatcher,
         ));
 

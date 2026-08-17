@@ -10,13 +10,12 @@ use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ImageProcessing\ImageAttachmentProcessor;
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
-use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * View an image file and return compact metadata (no base64/data_url).
  *
  * Implements HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and the Symfony AI native tool contract (AsTool).
+ * as a permanent tool and the Symfony AI native tool contract (typed DTO arguments).
  *
  * The tool returns only image metadata (path, media_type, bytes, width, height)
  * as a JSON text result. The actual image data is NOT included in the tool
@@ -31,7 +30,6 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  * dimensions to produce its metadata output; failures here are operational
  * (races, I/O), not policy rejections.
  */
-#[AsTool(self::NAME, self::DESCRIPTION)]
 final class ViewImageTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'view_image';

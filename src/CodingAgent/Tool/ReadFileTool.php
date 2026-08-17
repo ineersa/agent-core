@@ -8,13 +8,12 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
-use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * Read a text file as plain UTF-8 content.
  *
  * Implements both HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and the Symfony AI native tool contract (AsTool).
+ * as a permanent tool and the Symfony AI native tool contract (typed DTO arguments).
  * The provider schema is generated natively from ReadFileArgumentsDTO.
  *
  * Target preconditions (safety blocks, existence, readability, MIME/binary/
@@ -32,7 +31,6 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  * - Continuation hint appended when truncation occurs.
  * - Cancellation checkpoints wrap the read path.
  */
-#[AsTool(self::NAME, self::DESCRIPTION)]
 final class ReadFileTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'read';

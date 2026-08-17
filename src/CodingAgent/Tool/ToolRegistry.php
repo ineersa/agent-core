@@ -59,12 +59,6 @@ final class ToolRegistry implements ToolRegistryInterface
     private ?array $allowedNames = null;
 
     /**
-     * Monotonic revision counter; bumped only when the effective active
-     * tool set or visibility changes (see {@see ToolRegistryInterface::revision()}).
-     */
-    private int $revision = 0;
-
-    /**
      * @param iterable<HatfieldToolProviderInterface> $providers Tagged built-in tool providers
      */
     public function __construct(
@@ -84,11 +78,6 @@ final class ToolRegistry implements ToolRegistryInterface
                 timeoutSeconds: $definition->timeoutSeconds,
             );
         }
-    }
-
-    public function revision(): int
-    {
-        return $this->revision;
     }
 
     public function registerTool(
@@ -123,7 +112,6 @@ final class ToolRegistry implements ToolRegistryInterface
             extensionOwnerClass: $extensionOwnerClass,
         );
         $this->permanentOrder[] = $name;
-        ++$this->revision;
     }
 
     public function addDynamicTool(
@@ -142,7 +130,8 @@ final class ToolRegistry implements ToolRegistryInterface
         }
 
         // Idempotent: replacing a dynamic tool with an identical definition
-        // is a no-op and must not invalidate revision-based caches.
+        // keeps the canonical definition object (and therefore any caches
+        // keyed on its identity) hot.
         $existing = $this->dynamicTools[$name] ?? null;
         if (null !== $existing
             && $existing->handler === $handler
@@ -167,7 +156,6 @@ final class ToolRegistry implements ToolRegistryInterface
             promptGuidelines: [],
             executionMode: $executionMode,
         );
-        ++$this->revision;
     }
 
     public function removeDynamicTool(string $name): void
@@ -181,59 +169,11 @@ final class ToolRegistry implements ToolRegistryInterface
             $this->dynamicOrder,
             static fn (string $existing): bool => $existing !== $name,
         ));
-        ++$this->revision;
     }
 
     /**
-     * @param list<array{name: string, description: string, parametersJsonSchema: array<string, mixed>, handler: mixed}> $tools
+     * @return list<string>
      */
-    public function setDynamicTools(array $tools): void
-    {
-        $this->dynamicTools = [];
-        $this->dynamicOrder = [];
-
-        foreach ($tools as $tool) {
-            $name = $tool['name'];
-            // Duplicate names within the input list keep their first position.
-            if (!isset($this->dynamicTools[$name])) {
-                $this->dynamicOrder[] = $name;
-            }
-
-            $this->dynamicTools[$name] = new ToolDefinitionDTO(
-                name: $name,
-                description: $tool['description'],
-                handler: $tool['handler'],
-                parametersJsonSchema: $tool['parametersJsonSchema'],
-                promptLine: '',  // dynamic tools have no prompt metadata
-                promptGuidelines: [],
-                executionMode: ToolExecutionMode::Sequential,
-            );
-        }
-
-        // Always bumps: unchanged-catalog idempotency is owned by
-        // McpToolRegistrar's fingerprint, not by registry set comparison.
-        ++$this->revision;
-    }
-
-    /**
-     * @return list<array{name: string, description: string, parametersJsonSchema: array<string, mixed>, handler: mixed}>
-     */
-    public function getDynamicTools(): array
-    {
-        $result = [];
-        foreach ($this->dynamicOrder as $name) {
-            $dto = $this->dynamicTools[$name];
-            $result[] = [
-                'name' => $dto->name,
-                'description' => $dto->description,
-                'parametersJsonSchema' => $dto->parametersJsonSchema,
-                'handler' => $dto->handler,
-            ];
-        }
-
-        return $result;
-    }
-
     public function permanentToolLines(): array
     {
         $lines = [];
@@ -388,14 +328,13 @@ final class ToolRegistry implements ToolRegistryInterface
         // Empty or whitespace-only input clears the allowlist.
         $effective = [] === $allowed ? null : $allowed;
 
-        // No-op detection: re-applying the same visibility must not
-        // invalidate revision-based caches (order-insensitive).
+        // No-op detection: re-applying the same visibility must not churn
+        // the definition set (order-insensitive).
         if ($this->sameNameSet($effective, $this->allowedNames)) {
             return;
         }
 
         $this->allowedNames = $effective;
-        ++$this->revision;
     }
 
     public function setExcludedToolNames(array $names): void
@@ -412,14 +351,13 @@ final class ToolRegistry implements ToolRegistryInterface
             $excluded[$name] = true;
         }
 
-        // No-op detection: re-applying the same visibility must not
-        // invalidate revision-based caches (order-insensitive).
+        // No-op detection: re-applying the same visibility must not churn
+        // the definition set (order-insensitive).
         if ($this->sameNameSet($excluded, $this->excludedNames)) {
             return;
         }
 
         $this->excludedNames = $excluded;
-        ++$this->revision;
     }
 
     public function excludedToolNames(): array

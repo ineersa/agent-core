@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tool\Constraints;
+namespace Ineersa\CodingAgent\Tool\Validation\EditFile;
 
 use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;

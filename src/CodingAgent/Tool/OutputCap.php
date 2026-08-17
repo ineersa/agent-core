@@ -128,11 +128,9 @@ final class OutputCap
             return null;
         }
 
-        $fields = $arguments;
-
         if ('hatfield_docs' === $toolName) {
             // Only successful document reads are doc-like; list stays defaultCap.
-            return ('read' === ($fields['operation'] ?? null))
+            return ('read' === ($arguments['operation'] ?? null))
                 ? 'hatfield-docs-read.md'
                 : null;
         }
@@ -169,8 +167,7 @@ final class OutputCap
             return $capResult->noticeText;
         }
 
-        $fields = $arguments;
-        $originalOffset = $fields['offset'] ?? null;
+        $originalOffset = $arguments['offset'] ?? null;
         $offset = (\is_int($originalOffset) && $originalOffset > 0) ? $originalOffset : 1;
         $escapedGrepPath = escapeshellarg($originalPath);
 

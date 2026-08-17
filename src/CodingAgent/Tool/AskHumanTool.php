@@ -7,14 +7,13 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO;
 use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
-use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * Model-visible ask_human tool — returns an interrupt payload immediately
  * so the AgentCore pipeline pauses the run and waits for human input.
  *
  * Implements HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and the Symfony AI native tool contract (AsTool).
+ * as a permanent tool and the Symfony AI native tool contract (typed DTO arguments).
  *
  * This is a thin non-blocking tool. It does NOT wait for user input;
  * AgentCore's existing WaitingHuman / HumanResponse flow owns pausing
@@ -34,7 +33,6 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  *   interrupt result. AgentCore only generically preserves `kind=interrupt`
  *   payloads from any toolbox tool result.
  */
-#[AsTool(self::NAME, self::DESCRIPTION)]
 final class AskHumanTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'ask_human';

@@ -22,7 +22,10 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
  *
  * Tool definitions are stored as ToolDefinitionDTO internally and
  * exposed via activeToolDefinitions() / toolDefinition() for downstream
- * adapters (e.g. RegistryBackedToolbox in TOOLS-R03).
+ * adapters (e.g. RegistryBackedToolbox in TOOLS-R03). Definitions are
+ * canonical immutable objects: an effective replacement creates a new
+ * definition instance, so downstream identity-keyed caches stay correct
+ * without a revision counter.
  *
  * The executionMode defaults to Sequential. Tool authors set it at
  * registration time; the corresponding value flows through ActiveToolSet
@@ -30,22 +33,6 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
  */
 interface ToolRegistryInterface
 {
-    /**
-     * Monotonic revision counter for the effective registry contents.
-     *
-     * Increments only when the effective active tool set or its visibility
-     * changes: permanent/dynamic add, remove, or replace, and allowlist/
-     * denylist changes. Repeated no-op mutations (idempotent re-registration,
-     * removing an unknown dynamic tool, replacing a dynamic tool with an
-     * identical definition, re-applying the same visibility filters) do NOT
-     * increment.
-     *
-     * Callers that cache derived artifacts (e.g. provider Tool metadata or a
-     * native Symfony Toolbox) key the cache on this value and rebuild only
-     * when it changes.
-     */
-    public function revision(): int;
-
     /**
      * Register a permanent tool.
      *
@@ -109,22 +96,6 @@ interface ToolRegistryInterface
      * Remove a dynamic tool by name. No-op if not found.
      */
     public function removeDynamicTool(string $name): void;
-
-    /**
-     * Replace all dynamic tools with the given set.
-     *
-     * @param list<array{name: string, description: string, parametersJsonSchema: array<string, mixed>, handler: mixed}> $tools
-     *
-     * @throws \InvalidArgumentException on name conflict with permanent tools
-     */
-    public function setDynamicTools(array $tools): void;
-
-    /**
-     * Return all currently registered dynamic tools.
-     *
-     * @return list<array{name: string, description: string, parametersJsonSchema: array<string, mixed>, handler: mixed}>
-     */
-    public function getDynamicTools(): array;
 
     /**
      * Return deduped permanent tool prompt lines in registration order.

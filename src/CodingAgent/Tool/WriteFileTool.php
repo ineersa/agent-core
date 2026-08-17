@@ -8,13 +8,12 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\WriteFileArgumentsDTO;
-use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * Write (create or replace) a file at the specified path.
  *
  * Implements HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and the Symfony AI native tool contract (AsTool).
+ * as a permanent tool and the Symfony AI native tool contract (typed DTO arguments).
  *
  * Features:
  * - Creates parent directories when they do not exist.
@@ -22,7 +21,6 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  * - Checks cancellation before writing and before returning.
  * - Uses LOCK_EX for safe concurrent writes.
  */
-#[AsTool(self::NAME, self::DESCRIPTION)]
 final class WriteFileTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'write';

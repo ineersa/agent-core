@@ -9,15 +9,18 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
+use Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber;
 use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
-use Ineersa\CodingAgent\Tool\Constraints\ViewImageTargetValidator;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
+use Ineersa\CodingAgent\Tool\Validation\ViewImage\ViewImageTargetValidator;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use PHPUnit\Framework\TestCase;
-use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallFailed;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
@@ -105,7 +108,7 @@ final class RegistryBackedToolboxTest extends TestCase
 
     public function testGetToolsForDtoToolUsesNativeGeneratedSchema(): void
     {
-        $handler = new #[AsTool('view_image', 'View an image')] class {
+        $handler = new class {
             public function __invoke(ViewImageArgumentsDTO $arguments): string
             {
                 return 'ok';
@@ -239,7 +242,7 @@ final class RegistryBackedToolboxTest extends TestCase
     public function testExecuteResolvesDtoToolThroughNativeResolver(): void
     {
         $registry = new ToolRegistry();
-        $handler = new #[AsTool('view_image', 'View')] class {
+        $handler = new class {
             public ?ViewImageArgumentsDTO $seen = null;
 
             public function __invoke(ViewImageArgumentsDTO $arguments): string
@@ -267,7 +270,7 @@ final class RegistryBackedToolboxTest extends TestCase
     public function testSnakeCaseProviderKeysDenormalizeToCamelCaseDtoProperties(): void
     {
         $registry = new ToolRegistry();
-        $handler = new #[AsTool('agent_retrieve', 'Retrieve')] class {
+        $handler = new class {
             public ?AgentRetrieveArgumentsDTO $seen = null;
 
             public function __invoke(AgentRetrieveArgumentsDTO $arguments): string
@@ -301,7 +304,7 @@ final class RegistryBackedToolboxTest extends TestCase
     {
         // Native Symfony AI behavior: unknown keys are not resolved onto the DTO.
         $registry = new ToolRegistry();
-        $handler = new #[AsTool('view_image', 'View')] class {
+        $handler = new class {
             public function __invoke(ViewImageArgumentsDTO $arguments): string
             {
                 return 'ok:'.$arguments->path;
@@ -351,7 +354,7 @@ final class RegistryBackedToolboxTest extends TestCase
     public function testTypedToolRequestedSeesFlatArgsAndResolvedCarriesDto(): void
     {
         $registry = new ToolRegistry();
-        $handler = new #[AsTool('view_image', 'View')] class {
+        $handler = new class {
             public function __invoke(ViewImageArgumentsDTO $arguments): string
             {
                 return 'ok';
@@ -501,7 +504,7 @@ final class RegistryBackedToolboxTest extends TestCase
     public function testMissingMandatoryArgumentsBecomeFaultTolerantResultWithViolations(): void
     {
         $registry = new ToolRegistry();
-        $handler = new #[AsTool('view_image', 'View')] class {
+        $handler = new class {
             public function __invoke(ViewImageArgumentsDTO $arguments): string
             {
                 return 'nope';
@@ -538,7 +541,7 @@ final class RegistryBackedToolboxTest extends TestCase
     public function testDtoConstraintViolationBecomesFaultTolerantResultWithViolations(): void
     {
         $registry = new ToolRegistry();
-        $handler = new #[AsTool('view_image', 'View')] class {
+        $handler = new class {
             public function __invoke(ViewImageArgumentsDTO $arguments): string
             {
                 return 'nope';
@@ -578,7 +581,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $registry->registerTool(
             name: 'fragile',
             description: 'Fragile',
-            handler: new #[AsTool('fragile', 'Fragile')] class {
+            handler: new class {
                 public function __invoke(FragileCountArgumentsDTO $arguments): string
                 {
                     return 'count:'.$arguments->count;
@@ -850,7 +853,7 @@ final class RegistryBackedToolboxTest extends TestCase
     public function testRewriteOfDtoToolRewritesFlatArgumentsBeforeResolution(): void
     {
         $registry = new ToolRegistry();
-        $handler = new #[AsTool('view_image', 'View')] class {
+        $handler = new class {
             public ?string $seen = null;
 
             public function __invoke(ViewImageArgumentsDTO $arguments): string
@@ -879,10 +882,73 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertSame('rewritten.png', $handler->seen);
     }
 
+    public function testTypedFailureDeliversRewrittenFlatArgsAndCallIdToExtensionResultHook(): void
+    {
+        // Behavior-level proof of the failure path: a typed DTO tool fails
+        // after a rewrite hook; the extension result hook must see the exact
+        // rewritten flat provider arguments and the original tool call id
+        // (previously recovered via cross-event WeakMap state keyed by Tool
+        // definition; now carried by the app-owned ToolCallFailedEvent).
+        $seen = null;
+        $resultHook = new class($seen) implements ToolResultHookInterface {
+            public function __construct(private mixed &$seen)
+            {
+            }
+
+            public function onToolResult(ToolResultContextDTO $context): ToolResultDecisionDTO
+            {
+                $this->seen = $context;
+
+                return ToolResultDecisionDTO::keep();
+            }
+        };
+
+        $hookRegistry = new ExtensionHookRegistry();
+        $hookRegistry->addToolResultHook($resultHook);
+
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, '/tmp'));
+
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'view_image',
+            description: 'View',
+            handler: new class {
+                public function __invoke(ViewImageArgumentsDTO $arguments): string
+                {
+                    throw new ToolCallException('rejected at runtime');
+                }
+            },
+            promptLine: 'view_image',
+        );
+
+        $rewriteProvider = $this->stubRewriteProvider('view_image', [
+            new readonly class implements ToolCallRewriteHookInterface {
+                public function rewriteArguments(ToolCallContextDTO $context): ?array
+                {
+                    return ['path' => 'rewritten.png'];
+                }
+            },
+        ]);
+
+        $toolbox = $this->createToolbox($registry, $dispatcher, $rewriteProvider);
+
+        $this->expectException(ToolCallException::class);
+        $toolbox->execute(new ToolCall('call-fail-hook', 'view_image', ['path' => 'original.png']));
+
+        $this->assertNotNull($seen);
+        $this->assertSame('call-fail-hook', $seen->toolCallId);
+        $this->assertSame('view_image', $seen->toolName);
+        $this->assertTrue($seen->isError);
+        $this->assertSame(['path' => 'rewritten.png'], $seen->arguments);
+        $this->assertSame(ToolCallException::class, $seen->details['error_type']);
+        $this->assertSame('rejected at runtime', $seen->details['message']);
+    }
+
     public function testNestedLegacyEnvelopeInputIsRejectedWithoutCompatibilityShim(): void
     {
         $registry = new ToolRegistry();
-        $handler = new #[AsTool('view_image', 'View')] class {
+        $handler = new class {
             public function __invoke(ViewImageArgumentsDTO $arguments): string
             {
                 return 'nope';
@@ -990,8 +1056,25 @@ final class RegistryBackedToolboxTest extends TestCase
         $after = $toolbox->getTools();
 
         $this->assertCount(2, $after);
-        $this->assertNotSame($before[0], $after[0], 'Snapshot must be rebuilt after a real registry mutation');
+        // Metadata is memoized per definition: the unchanged permanent
+        // definition keeps its metadata object; only the new dynamic
+        // definition contributes a new entry.
+        $this->assertSame($before[0], $after[0], 'Unchanged definitions must keep their cached metadata');
         $this->assertSame('mcp_x', $after[1]->getName());
+    }
+
+    public function testExecuteUsesReplacementDefinitionAfterDynamicReplace(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: ['type' => 'object'], handler: $this->dummyHandler('old'));
+        $toolbox = $this->createToolbox($registry);
+
+        // Warm the per-definition toolbox, then replace the dynamic tool
+        // with a new handler (new definition identity).
+        $this->assertSame('old', $toolbox->execute(new ToolCall('c1', 'mcp_x', []))->getResult());
+        $registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: ['type' => 'object'], handler: $this->dummyHandler('new'));
+
+        $this->assertSame('new', $toolbox->execute(new ToolCall('c2', 'mcp_x', []))->getResult());
     }
 
     public function testConsecutiveExecutesDispatchSameToolMetadataObjects(): void

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\Arguments;
 
-use Ineersa\CodingAgent\Tool\Constraints\ReadFileTarget;
+use Ineersa\CodingAgent\Tool\Validation\ReadFile\ReadFileTarget;
 use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\Component\Validator\Constraints as Assert;
 

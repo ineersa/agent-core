@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution;
 
-use Ineersa\CodingAgent\Tool\Constraints\SubagentTasksLimit;
 use Ineersa\CodingAgent\Tool\Schema\SubagentTasksSchemaProvider;
+use Ineersa\CodingAgent\Tool\Validation\SubagentTasks\SubagentTasksLimit;
 use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\Component\Validator\Constraints as Assert;
 

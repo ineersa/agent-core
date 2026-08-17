@@ -11,7 +11,6 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentArgumentsDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
-use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * Execution handler for the `subagent` tool.
@@ -20,18 +19,16 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  * service locator so ToolRegistry can register the tool definition without
  * constructing the heavy subagent execution graph at container compile time.
  */
-// The %d below is template-only: the attribute never reaches the provider.
 // SubagentToolDefinitionBuilder formats DESCRIPTION_TEMPLATE with
 // agents.max_agents for the canonical schema.
-#[AsTool(self::NAME, self::DESCRIPTION_TEMPLATE)]
 final class SubagentToolHandler
 {
     public const string NAME = 'subagent';
 
     /**
      * Provider-visible description template; SubagentToolDefinitionBuilder
-     * formats the %d with agents.max_agents so AsTool and the registry
-     * metadata can never drift.
+     * formats the %d with agents.max_agents for the canonical registry
+     * metadata.
      */
     public const string DESCRIPTION_TEMPLATE = 'Launch interactive foreground subagent(s). Single mode uses "agent" and "task". Parallel mode uses "tasks" with up to %d agents per call (agents.max_agents). The tool blocks until all children finish. Single-mode results include the full child handoff inline; parallel results are bounded summaries — use agent_retrieve for complete parallel handoffs or extra detail.';
 

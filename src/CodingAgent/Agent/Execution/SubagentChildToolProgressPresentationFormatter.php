@@ -57,8 +57,6 @@ final class SubagentChildToolProgressPresentationFormatter
      */
     public function safeArgPairs(string $toolName, array $args): array
     {
-        // Tool-call arguments are always the flat provider map (typed
-        // built-ins and raw dynamic tools alike).
         $keys = match ($toolName) {
             'read', 'write', 'edit' => ['path'],
             'bash', 'shell' => ['command', 'cmd'],

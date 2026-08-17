@@ -50,7 +50,7 @@ final class ToolValidationHarness
         return new FaultTolerantToolbox(new RegistryBackedToolbox(
             registry: new ToolRegistry([$provider]),
             argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
-            nativeToolFactory: NativeToolSchemaProbe::nativeToolFactory(),
+            schemaFactory: NativeToolSchemaProbe::schemaFactory(),
             eventDispatcher: $dispatcher,
         ));
     }

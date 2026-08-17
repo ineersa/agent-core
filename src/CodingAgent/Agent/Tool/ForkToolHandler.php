@@ -11,9 +11,7 @@ use Ineersa\CodingAgent\Agent\Fork\ForkExecutionServiceInterface;
 use Ineersa\CodingAgent\Tool\Arguments\ForkArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
-use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
-#[AsTool(self::NAME, self::DESCRIPTION)]
 final class ForkToolHandler
 {
     public const string NAME = 'fork';

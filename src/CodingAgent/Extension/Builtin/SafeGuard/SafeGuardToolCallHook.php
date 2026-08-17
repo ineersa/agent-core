@@ -80,8 +80,6 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
     {
         $decision = $this->classifier->classify(
             toolName: $context->toolName,
-            // ToolCallContextDTO::arguments is always the flat provider map
-            // (typed built-ins and raw dynamic tools alike).
             arguments: $context->arguments,
             cwd: $this->cwd,
             policy: $this->policy,

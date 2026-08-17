@@ -853,7 +853,7 @@ services:
   # Symfony AI SchemaProviderInterface (#[Schema(provider: ...)]). The native
   # Describer default chain would instantiate SchemaAttributeDescriber without
   # providers, so the chain is rebuilt explicitly with the provider-aware
-  # describer and fed into the ReflectionToolFactory used by
+  # describer and fed into the JsonSchema Factory used by
   # RegistryBackedToolbox. Providers are autowired with the same config
   # instances their matching runtime constraints consume, so the schema bounds
   # and validation limits cannot drift.
@@ -895,15 +895,11 @@ services:
     arguments:
       $objectDescriber: '@Symfony\AI\Platform\Contract\JsonSchema\Describer\Describer'
 
-  Symfony\AI\Agent\Toolbox\ToolFactory\ReflectionToolFactory:
-    arguments:
-      $factory: '@Symfony\AI\Platform\Contract\JsonSchema\Factory'
-
   Ineersa\CodingAgent\Tool\RegistryBackedToolbox:
     arguments:
       $registry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
       $argumentResolver: '@Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface'
-      $nativeToolFactory: '@Symfony\AI\Agent\Toolbox\ToolFactory\ReflectionToolFactory'
+      $schemaFactory: '@Symfony\AI\Platform\Contract\JsonSchema\Factory'
       $eventDispatcher: '@event_dispatcher'
       $rewriteHookProvider: '@Ineersa\CodingAgent\Extension\ExtensionHookRegistry'
       $contextAccessor: '@Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor'

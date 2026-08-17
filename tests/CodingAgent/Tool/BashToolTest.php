@@ -20,12 +20,12 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BashBackgroundPromptAdapterInterface;
 use Ineersa\CodingAgent\Tool\BashTool;
-use Ineersa\CodingAgent\Tool\Constraints\BashTimeoutMaxValidator;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
+use Ineersa\CodingAgent\Tool\Validation\BashTimeout\BashTimeoutMaxValidator;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
@@ -916,7 +916,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         return new FaultTolerantToolbox(new RegistryBackedToolbox(
             registry: $registry,
             argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
-            nativeToolFactory: NativeToolSchemaProbe::nativeToolFactory(),
+            schemaFactory: NativeToolSchemaProbe::schemaFactory(),
             eventDispatcher: $dispatcher,
         ));
     }

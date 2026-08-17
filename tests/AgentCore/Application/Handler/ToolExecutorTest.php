@@ -435,7 +435,7 @@ final class ToolExecutorTest extends TestCase
         // provider arguments resolves through the native resolver, is
         // validated, and invokes the handler — no envelope required.
         $seen = null;
-        $handler = new #[AsTool('read', 'Read')] class($seen) {
+        $handler = new class($seen) {
             public function __construct(private mixed &$seen)
             {
             }
@@ -478,7 +478,7 @@ final class ToolExecutorTest extends TestCase
         // A wrong-typed DTO field fails during denormalization; the wrapped
         // NotNormalizableValueException must reach the model as an actionable
         // non-retryable ToolCallException message, not a generic fault.
-        $handler = new #[AsTool('read', 'Read')] class {
+        $handler = new class {
             public function __invoke(ReadFileArgumentsDTO $arguments): mixed
             {
                 return 'unreachable';

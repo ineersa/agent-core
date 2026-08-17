@@ -12,7 +12,6 @@ use Ineersa\CodingAgent\Docs\BuiltinDocsCatalog;
 use Ineersa\CodingAgent\Docs\BuiltinDocsCatalogException;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Tool\Arguments\HatfieldDocsArgumentsDTO;
-use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * Read-only parent-agent catalog for curated Hatfield documentation.
@@ -22,7 +21,6 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  * lifetime. Lookup is by logical ID only; arbitrary filesystem paths are
  * never accepted.
  */
-#[AsTool(self::NAME, self::DESCRIPTION)]
 final class HatfieldDocsTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'hatfield_docs';

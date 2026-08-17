@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension\Agent;
 
-use Ineersa\CodingAgent\Tool\DefinitionToolFactory;
+use Ineersa\CodingAgent\Tool\SingleToolFactory;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentToolDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
 use Psr\Log\LoggerInterface;
@@ -81,7 +81,7 @@ final class IsolatedAgentToolbox implements ToolboxInterface
 
         $toolbox = new Toolbox(
             tools: [$handler],
-            toolFactory: new DefinitionToolFactory([spl_object_id($handler) => [$this->metadataByName[$toolCall->getName()]]]),
+            toolFactory: new SingleToolFactory($this->metadataByName[$toolCall->getName()]),
             argumentResolver: $this->argumentResolver,
             logger: $this->logger ?? new NullLogger(),
         );

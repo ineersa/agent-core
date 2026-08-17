@@ -12,12 +12,10 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
 use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
-use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * Model-visible `agent_retrieve` tool for parent-scoped subagent artifacts.
  */
-#[AsTool(self::NAME, self::DESCRIPTION)]
 final class AgentRetrieveTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'agent_retrieve';

@@ -154,29 +154,6 @@ final class ToolRegistryTest extends TestCase
         $this->assertSame([], $this->registry->activeToolNames());
     }
 
-    public function testSetDynamicToolsReplacesAll(): void
-    {
-        $this->registry->addDynamicTool(name: 'old', description: 'Old', parametersJsonSchema: [], handler: $this->dummyHandler());
-        $this->registry->setDynamicTools([
-            ['name' => 'new1', 'description' => 'New1', 'parametersJsonSchema' => [], 'handler' => $this->dummyHandler()],
-            ['name' => 'new2', 'description' => 'New2', 'parametersJsonSchema' => [], 'handler' => $this->dummyHandler()],
-        ]);
-
-        $this->assertSame(['new1', 'new2'], $this->registry->activeToolNames());
-    }
-
-    public function testGetDynamicToolsReturnsOrderedList(): void
-    {
-        $this->registry->addDynamicTool(name: 'a', description: 'A', parametersJsonSchema: ['type' => 'object'], handler: $this->dummyHandler());
-        $this->registry->addDynamicTool(name: 'b', description: 'B', parametersJsonSchema: ['type' => 'array'], handler: $this->dummyHandler());
-
-        $tools = $this->registry->getDynamicTools();
-        $this->assertCount(2, $tools);
-        $this->assertSame('a', $tools[0]['name']);
-        $this->assertSame('b', $tools[1]['name']);
-        $this->assertSame(['type' => 'object'], $tools[0]['parametersJsonSchema']);
-    }
-
     public function testDynamicToolNameConflictWithPermanentThrows(): void
     {
         $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read', promptGuidelines: []);
@@ -330,7 +307,6 @@ final class ToolRegistryTest extends TestCase
         $this->assertSame([], $this->registry->permanentToolLines());
         $this->assertSame([], $this->registry->permanentGuidelines());
         $this->assertSame([], $this->registry->activeToolNames());
-        $this->assertSame([], $this->registry->getDynamicTools());
     }
 
     public function testToolWithNoGuidelines(): void
@@ -671,102 +647,55 @@ final class ToolRegistryTest extends TestCase
 
     /* ───────── Private helpers ───────── */
 
-    /* ───────── Revision contract (cache invalidation) ───────── */
+    /* ───────── Definition identity (cache contract) ───────── */
 
-    public function testRevisionStartsAtZeroAndBumpsOnPermanentRegistration(): void
-    {
-        $this->assertSame(0, $this->registry->revision());
-
-        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read');
-
-        $this->assertSame(1, $this->registry->revision());
-    }
-
-    public function testIdenticalPermanentReRegistrationDoesNotBumpRevision(): void
+    public function testIdenticalPermanentReRegistrationKeepsFirstDefinition(): void
     {
         $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read');
-        $revision = $this->registry->revision();
+        $first = $this->registry->toolDefinition('read');
 
         // Same name re-registration is a no-op (first wins) regardless of payload.
         $this->registry->registerTool(name: 'read', description: 'Different', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'other');
 
-        $this->assertSame($revision, $this->registry->revision());
+        $this->assertSame($first, $this->registry->toolDefinition('read'));
     }
 
-    public function testIdenticalDynamicReRegistrationDoesNotBumpRevision(): void
+    public function testIdenticalDynamicReRegistrationKeepsDefinitionIdentity(): void
     {
         $handler = $this->dummyHandler();
         $schema = ['type' => 'object'];
 
         $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: $schema, handler: $handler);
-        $revision = $this->registry->revision();
+        $first = $this->registry->toolDefinition('mcp_x');
 
         // Identical re-add: same handler object, description, and schema.
         $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: $schema, handler: $handler);
 
-        $this->assertSame($revision, $this->registry->revision());
-        $this->assertSame($handler, $this->registry->toolDefinition('mcp_x')?->handler);
+        $this->assertSame($first, $this->registry->toolDefinition('mcp_x'));
+        $this->assertSame($handler, $first?->handler);
     }
 
-    public function testDynamicReplaceWithDifferentContentBumpsRevision(): void
+    public function testDynamicReplaceCreatesNewDefinitionIdentity(): void
     {
         $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: [], handler: $this->dummyHandler());
-        $revision = $this->registry->revision();
+        $first = $this->registry->toolDefinition('mcp_x');
 
         $this->registry->addDynamicTool(name: 'mcp_x', description: 'X2', parametersJsonSchema: [], handler: $this->dummyHandler());
 
-        $this->assertGreaterThan($revision, $this->registry->revision());
+        $replacement = $this->registry->toolDefinition('mcp_x');
+        $this->assertNotSame($first, $replacement);
+        $this->assertSame('X2', $replacement?->description);
     }
 
-    public function testRemoveUnknownDynamicToolDoesNotBumpRevision(): void
+    public function testRemoveAndReAddDynamicToolCreatesNewDefinitionIdentity(): void
     {
         $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: [], handler: $this->dummyHandler());
-        $revision = $this->registry->revision();
+        $first = $this->registry->toolDefinition('mcp_x');
 
-        $this->registry->removeDynamicTool('unknown');
-
-        $this->assertSame($revision, $this->registry->revision());
-    }
-
-    public function testRemoveDynamicToolBumpsRevision(): void
-    {
-        $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: [], handler: $this->dummyHandler());
         $this->registry->removeDynamicTool('mcp_x');
-
-        $this->assertSame(2, $this->registry->revision());
-        $this->assertSame([], $this->registry->activeToolNames());
-    }
-
-    public function testReapplyingSameVisibilityDoesNotBumpRevision(): void
-    {
-        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read');
         $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: [], handler: $this->dummyHandler());
 
-        $this->registry->setAllowedToolNames(['mcp_x', 'read']);
-        $this->registry->setExcludedToolNames(['read']);
-        $revision = $this->registry->revision();
-
-        // Same effective visibility, different input order: no-op.
-        $this->registry->setAllowedToolNames(['read', 'mcp_x']);
-        $this->registry->setExcludedToolNames(['read']);
-
-        $this->assertSame($revision, $this->registry->revision());
-    }
-
-    public function testVisibilityChangeBumpsRevision(): void
-    {
-        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read');
-        $revision = $this->registry->revision();
-
-        $this->registry->setExcludedToolNames(['read']);
-        $this->assertGreaterThan($revision, $this->registry->revision());
-        $this->assertSame([], $this->registry->activeToolNames());
-
-        // Clearing the denylist restores visibility and bumps again.
-        $revision = $this->registry->revision();
-        $this->registry->setExcludedToolNames([]);
-        $this->assertGreaterThan($revision, $this->registry->revision());
-        $this->assertSame(['read'], $this->registry->activeToolNames());
+        $this->assertNotSame($first, $this->registry->toolDefinition('mcp_x'));
     }
 
     private function createProvider(

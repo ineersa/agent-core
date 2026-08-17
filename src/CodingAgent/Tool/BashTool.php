@@ -12,13 +12,12 @@ use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Psr\Log\LoggerInterface;
-use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 /**
  * Execute a shell command with foreground supervision via BackgroundProcessManager.
  *
  * Implements HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and the Symfony AI native tool contract (AsTool).
+ * as a permanent tool and the Symfony AI native tool contract (typed DTO arguments).
  *
  * Key design:
  * - Every bash command starts immediately through
@@ -57,18 +56,14 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
  * string directly — the model is treated as a trusted caller within the
  * same agent session.
  */
-// The %d below is template-only: the attribute never reaches the provider.
-// ToolDefinitionDTO::definition() formats DESCRIPTION_TEMPLATE with the
-// configured background-prompt threshold for the canonical schema.
-#[AsTool(self::NAME, self::DESCRIPTION_TEMPLATE)]
 final class BashTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'bash';
 
     /**
      * Provider-visible description template; definition() formats the %d
-     * with the configured background-prompt threshold so AsTool and the
-     * registry metadata can never drift.
+     * with the configured background-prompt threshold for the canonical
+     * registry metadata.
      */
     public const string DESCRIPTION_TEMPLATE = 'Execute a shell command with timeout. The command runs until completion, hits the timeout, or is cancelled. Long-running commands may be offered to move to background after %d seconds.';
 

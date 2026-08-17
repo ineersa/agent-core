@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\Arguments;
 
-use Ineersa\CodingAgent\Tool\Constraints\BashTimeoutMax;
 use Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider;
+use Ineersa\CodingAgent\Tool\Validation\BashTimeout\BashTimeoutMax;
 use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\Component\Validator\Constraints as Assert;
 

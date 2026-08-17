@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tool\Constraints;
+namespace Ineersa\CodingAgent\Tool\Validation\ViewImage;
 
 use Symfony\Component\Validator\Constraint;
 
