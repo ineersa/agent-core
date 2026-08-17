@@ -457,6 +457,7 @@ parameters:
       - TuiStatus
       - TuiEditor
       - TuiFooter
+      - TuiCompactHeader
       - TuiWidget
       - TuiTheme
       - SymfonyTui
@@ -484,6 +485,7 @@ parameters:
     TuiHeader:
       - TuiWidget
       - TuiTheme
+      - SymfonyTui
 
     TuiTranscript:
       # Typed subagent_progress DTOs live under Runtime/Contract (serializer boundary).
@@ -498,6 +500,7 @@ parameters:
     TuiStatus:
       - TuiWidget
       - TuiTheme
+      - SymfonyTui
 
     TuiExport:
       - TuiCommand
@@ -533,11 +536,13 @@ parameters:
     TuiFooter:
       - TuiWidget
       - TuiTheme
+      - SymfonyTui
 
     TuiStartup:
       - AppRuntimeContract
       - TuiTheme
       - TuiWidget
+      - SymfonyTui
 
     TuiCompactHeader:
       - AppRuntimeContract
@@ -547,6 +552,7 @@ parameters:
       - AppMcpConfig
       - TuiTheme
       - TuiWidget
+      - SymfonyTui
 
     TuiWidget:
       - TuiTheme

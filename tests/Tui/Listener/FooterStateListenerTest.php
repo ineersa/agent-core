@@ -8,13 +8,13 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\Tui\Footer\FooterBarWidget;
 use Ineersa\Tui\Listener\FooterStateInitializer;
 use Ineersa\Tui\Listener\FooterStateListener;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
-use Ineersa\Tui\Widget\LiveTextWidget;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Event\TickEvent;
@@ -82,11 +82,11 @@ final class FooterStateListenerTest extends TestCase
         $this->assertGreaterThan($afterFirst, $afterSecond);
     }
 
-    private function footerWidget(ChatScreen $screen): LiveTextWidget
+    private function footerWidget(ChatScreen $screen): FooterBarWidget
     {
         $ref = new \ReflectionProperty(ChatScreen::class, 'footerWidget');
         $widget = $ref->getValue($screen);
-        $this->assertInstanceOf(LiveTextWidget::class, $widget);
+        $this->assertInstanceOf(FooterBarWidget::class, $widget);
 
         return $widget;
     }

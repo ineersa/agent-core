@@ -11,9 +11,6 @@ use Ineersa\Tui\Layout\TuiSlotRegistry;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Widget\TuiRenderContext;
-use Ineersa\Tui\Widget\TuiWidget;
-use Ineersa\Tui\Widget\WidgetPlacementEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Event\InputEvent;
@@ -29,56 +26,6 @@ final class SlotBasedTuiExtensionContextTest extends TestCase
     {
         $this->registry = new TuiSlotRegistry();
         $this->context = new SlotBasedTuiExtensionContext($this->registry);
-    }
-
-    public function testSetHeader(): void
-    {
-        $widget = $this->createDummyWidget();
-        $this->context->setHeader($widget);
-        $this->assertSame($widget, $this->registry->getHeader());
-
-        $this->context->setHeader(null);
-        $this->assertNull($this->registry->getHeader());
-    }
-
-    public function testSetFooter(): void
-    {
-        $widget = $this->createDummyWidget();
-        $this->context->setFooter($widget);
-        $this->assertSame($widget, $this->registry->getFooter());
-    }
-
-    public function testSetEditorComponent(): void
-    {
-        $widget = $this->createDummyWidget();
-        $this->context->setEditorComponent($widget);
-        $this->assertSame($widget, $this->registry->getEditorComponent());
-    }
-
-    public function testSetWidget(): void
-    {
-        $widget = $this->createDummyWidget();
-        $this->context->setWidget('test', $widget, WidgetPlacementEnum::AboveEditor);
-
-        $widgets = $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
-        $this->assertCount(1, $widgets);
-        $this->assertSame($widget, $widgets[0]);
-
-        // Remove by setting null
-        $this->context->setWidget('test', null);
-        $this->assertCount(0, $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
-    }
-
-    public function testSetWidgetPassesOrder(): void
-    {
-        $first = $this->createDummyWidget();
-        $second = $this->createDummyWidget();
-
-        $this->context->setWidget('first', $first, WidgetPlacementEnum::AboveEditor, 5);
-        $this->context->setWidget('second', $second, WidgetPlacementEnum::AboveEditor, 0);
-
-        $widgets = $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
-        $this->assertSame([$second, $first], $widgets);
     }
 
     public function testSetStatus(): void
@@ -126,6 +73,28 @@ final class SlotBasedTuiExtensionContextTest extends TestCase
 
         $handlers = $this->registry->getInputHandlers();
         $this->assertSame(InputPriority::MODEL_CONTROL, $handlers[0]['priority']);
+    }
+
+    public function testStatusClosureRoutesThroughScreenAndSyncsNativeWidget(): void
+    {
+        $editor = new PromptEditor();
+        $theme = new DefaultTheme(new ThemePalette('default'));
+        $screen = new ChatScreen($theme, 'test-session', $editor);
+        $tui = new Tui();
+        $screen->mount($tui);
+
+        $screen->extensionContext()->setStatus('session', 'No sessions found');
+        $screen->extensionContext()->setStatus('history', 'Session has no user prompts yet');
+
+        // Registry state is kept in sync through the ChatScreen closure.
+        $this->assertSame(
+            ['session' => 'No sessions found', 'history' => 'Session has no user prompts yet'],
+            $screen->registry()->getStatusEntries(),
+        );
+
+        // Removal through the same routed path.
+        $screen->extensionContext()->setStatus('session', null);
+        $this->assertSame(['history' => 'Session has no user prompts yet'], $screen->registry()->getStatusEntries());
     }
 
     public function testSlotHandlersInterleaveByNativePriorityAndCanStopPropagation(): void
@@ -181,15 +150,5 @@ final class SlotBasedTuiExtensionContextTest extends TestCase
         $tui->handleInput('x');
 
         $this->assertSame(['first', 'second'], $order);
-    }
-
-    private function createDummyWidget(): TuiWidget
-    {
-        return new class implements TuiWidget {
-            public function render(TuiRenderContext $context): array
-            {
-                return ['dummy'];
-            }
-        };
     }
 }

@@ -22,12 +22,10 @@ use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\CompactHeader\CompactHeaderSnapshotProvider;
-use Ineersa\Tui\CompactHeader\CompactHeaderWidget;
 use Ineersa\Tui\Listener\CompactHeaderRegistrar;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
-use Ineersa\Tui\Widget\WidgetPlacementEnum;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -81,8 +79,9 @@ final class CompactHeaderRegistrarTest extends TestCase
         (new CompactHeaderRegistrar($provider, new NullLogger()))->register($context);
         $context->ticks->dispatch(new TickEvent());
 
-        $widgets = $harness->screen()->registry()->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
-        $this->assertCount(0, $widgets);
+        // Snapshot must stay unset (hidden) when the provider throws.
+        $harness->render();
+        $this->assertStringNotContainsString('reg-skill', $harness->plainScreenText());
     }
 
     #[Test]
@@ -108,10 +107,6 @@ final class CompactHeaderRegistrarTest extends TestCase
 
         (new CompactHeaderRegistrar($provider))->register($context);
 
-        $widgets = $harness->screen()->registry()->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
-        $this->assertCount(1, $widgets);
-        $this->assertInstanceOf(CompactHeaderWidget::class, $widgets[0]);
-
         $harness->render();
         $this->assertStringContainsString('reg-skill', $harness->plainScreenText());
     }
@@ -135,11 +130,13 @@ final class CompactHeaderRegistrarTest extends TestCase
             ->build();
         (new CompactHeaderRegistrar($provider, new NullLogger()))->register($context);
         $context->ticks->dispatch(new TickEvent());
-        $this->assertNotEmpty($harness->screen()->registry()->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
+        $harness->render();
+        $this->assertStringContainsString('reg-skill', $harness->plainScreenText());
 
         $state->subagentLiveView->active = true;
         $context->ticks->dispatch(new TickEvent());
-        $this->assertEmpty($harness->screen()->registry()->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
+        $harness->render();
+        $this->assertStringNotContainsString('reg-skill', $harness->plainScreenText());
     }
 
     private function promptCatalog(): PromptTemplateCatalogInterface

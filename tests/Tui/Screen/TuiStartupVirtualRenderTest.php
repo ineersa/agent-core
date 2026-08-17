@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
+use Ineersa\Tui\CompactHeader\CompactHeaderSnapshot;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 
 /**
@@ -77,6 +79,112 @@ final class TuiStartupVirtualRenderTest extends TestCase
 
         $screen->setWorkingMessage(null);
         $this->assertSame($idleRevision, $this->workingWidgetRenderRevision($screen));
+    }
+
+    /**
+     * Replaces the deleted CompactHeaderPinnedOrderTest: the directly mounted
+     * compact header renders between the status panel and the editor separator,
+     * i.e. after transcript/status chrome and before the footer.
+     */
+    #[Test]
+    public function testChromeOrderHeaderStatusCompactFooterOnMountedScreen(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $screen = $harness->screen();
+        $factory = new TranscriptBlockFactory();
+        $screen->setTranscriptBlocks([
+            $factory->system(runId: self::SESSION_ID, text: 'anchor transcript', seq: 1),
+        ]);
+        $screen->setStatus('agents-live', 'child: running');
+        $screen->compactHeaderWidget()->setSnapshot(new CompactHeaderSnapshot(
+            prompts: ['review'],
+            skills: ['pinned-skill'],
+        ));
+        $screen->setWorkingVisible(true);
+        $screen->setWorkingMessage(null);
+
+        $plain = $harness->plainScreenText();
+
+        // Header logo at the top…
+        $logoPos = strpos($plain, '█');
+        $this->assertNotFalse($logoPos, 'Header logo missing');
+        // …status panel after the transcript…
+        $statusPos = strpos($plain, 'agents-live');
+        $this->assertNotFalse($statusPos, 'Status panel entry missing');
+        // …compact header after the status panel…
+        $skillPos = strpos($plain, 'pinned-skill');
+        $this->assertNotFalse($skillPos, 'Compact header snapshot missing');
+        // …footer last.
+        $footerPos = strpos($plain, 'session '.self::SESSION_ID);
+        $this->assertNotFalse($footerPos, 'Footer session label missing');
+
+        $this->assertLessThan($statusPos, $logoPos ?: \PHP_INT_MAX);
+        $this->assertLessThan($skillPos, $statusPos);
+        $this->assertLessThan($footerPos, $skillPos);
+    }
+
+    #[Test]
+    public function testPendingMessagesRenderAboveWorkingStatus(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $screen = $harness->screen();
+        $factory = new TranscriptBlockFactory();
+        $screen->setTranscriptBlocks([
+            $factory->system(runId: self::SESSION_ID, text: 'anchor transcript', seq: 1),
+        ]);
+
+        $screen->syncQueuedUserMessages(['k1' => 'Message queued — waiting for compaction to complete...']);
+        $screen->setWorkingVisible(true);
+        $screen->setWorkingMessage('Working...');
+
+        $plain = $harness->plainScreenText();
+
+        $pendingPos = strpos($plain, '⏳ Message queued');
+        $this->assertNotFalse($pendingPos, 'Pending message row missing');
+        $workingPos = strpos($plain, 'Working...');
+        $this->assertNotFalse($workingPos, 'Working row missing');
+        $this->assertLessThan($workingPos, $pendingPos, 'Pending messages must render above the working status');
+
+        // Clearing the queue removes the pending row.
+        $screen->syncQueuedUserMessages([]);
+        $plain = $harness->plainScreenText();
+        $this->assertStringNotContainsString('⏳ Message queued', $plain);
+    }
+
+    #[Test]
+    public function testChromeRowsReflowAtNarrowWidthAfterResize(): void
+    {
+        $harness = new VirtualTuiHarness(columns: 120, rows: 80, sessionId: self::SESSION_ID);
+        $screen = $harness->screen();
+        $factory = new TranscriptBlockFactory();
+        $screen->setTranscriptBlocks([
+            $factory->system(runId: self::SESSION_ID, text: 'anchor transcript', seq: 1),
+        ]);
+        $screen->setStatus('agents-live', 'child: a very long status message that should wrap on narrow terminals');
+        $screen->compactHeaderWidget()->setSnapshot(new CompactHeaderSnapshot(
+            prompts: ['one', 'two', 'three', 'four', 'five', 'six'],
+        ));
+        $screen->setWorkingVisible(true);
+        $screen->setWorkingMessage(null);
+
+        $wide = $harness->plainScreenText();
+
+        $harness->terminal()->simulateResize(40, 80);
+        $harness->render();
+        $narrow = $harness->plainScreenText();
+
+        $this->assertNotSame($wide, $narrow, 'Resize must reflow mounted chrome rows');
+        $this->assertStringContainsString('█', $narrow, 'Header logo must survive narrow reflow');
+        $this->assertStringContainsString('session '.self::SESSION_ID, $narrow, 'Footer must survive narrow reflow');
+        $this->assertStringContainsString('agents-live', $narrow, 'Status panel must survive narrow reflow');
+
+        foreach (explode("\n", $narrow) as $i => $line) {
+            $this->assertLessThanOrEqual(
+                40,
+                AnsiUtils::visibleWidth($line),
+                "mounted row {$i} exceeds narrow width after resize",
+            );
+        }
     }
 
     private function workingWidgetRenderRevision(ChatScreen $screen): int

@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Screen;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
+use Ineersa\Tui\CompactHeader\CompactHeaderWidget;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Extension\SlotBasedTuiExtensionContext;
 use Ineersa\Tui\Extension\TuiExtensionContext;
@@ -26,8 +27,6 @@ use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptMountedWidget;
 use Ineersa\Tui\Widget\LiveTextWidget;
-use Ineersa\Tui\Widget\TuiRenderContext;
-use Ineersa\Tui\Widget\WidgetPlacementEnum;
 use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Style\Padding;
 use Symfony\Component\Tui\Style\Style;
@@ -41,11 +40,14 @@ use Symfony\Component\Tui\Widget\LoaderWidget;
  * Production screen bridge between the TUI layout/widget system and Symfony TUI.
  *
  * ChatScreen owns:
- *  - TuiSlotRegistry and SlotBasedTuiExtensionContext (extension slot model)
- *  - Default renderable TuiWidget instances (HeaderWidget, etc.)
+ *  - TuiSlotRegistry and SlotBasedTuiExtensionContext (status/working/input slot model)
+ *  - Directly mounted native Symfony widgets for the chrome regions: header,
+ *    loaded resources, transcript, pending, working loader, status panel,
+ *    compact header, prompt editor, footer.
  *  - A PromptEditor facade (DI service) wrapping a real Symfony EditorWidget
- *  - LiveTextWidget adapters that re-render at the live terminal width on every
- *    tick — so separators, header, and footer respond to terminal resize.
+ *  - LiveTextWidget ONLY for the blank top margin and the three responsive
+ *    separator rows: Symfony TextWidget drops whitespace-only text and no
+ *    native scrollback/separator primitive is exact for those (bounded KEEP).
  *  - A first-class mounted Symfony transcript subtree ({@see TranscriptMountedWidget})
  *
  * ChatScreen receives a PromptEditor (DI service wrapping EditorWidget)
@@ -54,10 +56,8 @@ use Symfony\Component\Tui\Widget\LoaderWidget;
  *
  * ## Resize responsiveness
  *
- * Structural widgets (separators, header, footer, top margin, extension slots)
- * use {@see LiveTextWidget} with a producer closure that reads the current
- * {@see RenderContext} and re-computes content at the live terminal width.
- * Dynamic non-transcript sections (status panel) also use {@see LiveTextWidget}.
+ * The native chrome widgets render through the Symfony widget tree with the
+ * live RenderContext, so terminal resize reflows them automatically.
  * Working status is a single mounted native {@see LoaderWidget} (circle spinner)
  * driven through start/stop + finished-indicator states. The transcript is a
  * mounted Symfony container whose children re-render through the live widget
@@ -68,28 +68,20 @@ final class ChatScreen
     /** Number of blank lines rendered before the header logo. */
     private const int TOP_MARGIN_LINES = 4;
 
-    /* ── Symfony widget refs (internal) ── */
+    /* ── Native Symfony chrome widgets (directly mounted) ── */
     private readonly LiveTextWidget $topMarginWidget;
-    private readonly LiveTextWidget $headerWidget;
+    private readonly HeaderWidget $headerWidget;
     private readonly LiveTextWidget $headerSepWidget;
-    private readonly LiveTextWidget $loadedResourcesWidget;
+    private readonly LoadedResourcesWidget $loadedResourcesWidget;
     private readonly TranscriptMountedWidget $transcriptWidget;
-    private readonly LiveTextWidget $pendingWidget;
+    private readonly PendingMessagesWidget $pendingWidget;
     private readonly LoaderWidget $workingWidget;
-    private readonly LiveTextWidget $statusPanelWidget;
-    private readonly LiveTextWidget $aboveEditorWidget;
+    private readonly StatusPanelWidget $statusPanelWidget;
+    private readonly CompactHeaderWidget $compactHeaderWidget;
     private readonly LiveTextWidget $editorSepWidget;
-    private readonly LiveTextWidget $belowEditorWidget;
+    private readonly FooterBarWidget $footerWidget;
     private readonly LiveTextWidget $footerSepWidget;
-    private readonly LiveTextWidget $footerWidget;
-
-    /* ── TUI renderables (theme-agnostic, read by producer closures) ── */
-    private readonly HeaderWidget $headerRenderable;
-    private readonly PendingMessagesWidget $pendingRenderable;
-    private readonly StatusPanelWidget $statusPanelRenderable;
     private readonly FooterDataProvider $footerDataProvider;
-    private readonly FooterBarWidget $footerRenderable;
-    private readonly LoadedResourcesWidget $loadedResourcesRenderable;
 
     /* ── Slot system ── */
     private readonly TuiSlotRegistry $registry;
@@ -110,27 +102,29 @@ final class ChatScreen
     ) {
         $this->registry = new TuiSlotRegistry();
 
-        // ── Instantiate default renderables ──
-        $this->headerRenderable = new HeaderWidget();
+        // ── Instantiate directly mounted native chrome widgets ──
+        $this->headerWidget = new HeaderWidget($theme);
         $this->transcriptWidget = new TranscriptMountedWidget(
             theme: $theme,
             displayConfig: $displayConfig,
             displayState: $displayState,
         );
-        $this->pendingRenderable = new PendingMessagesWidget();
-        $this->statusPanelRenderable = new StatusPanelWidget();
+        $this->pendingWidget = new PendingMessagesWidget($theme);
+        $this->statusPanelWidget = new StatusPanelWidget($theme);
         $this->footerDataProvider = new FooterDataProvider();
-        // Route extension working-slot mutations through ChatScreen so the native
-        // LoaderWidget start/stop lifecycle stays in sync with the registry.
+        // Route extension status/working-slot mutations through ChatScreen so the
+        // native widgets stay in sync with the registry.
         $this->extensionContext = new SlotBasedTuiExtensionContext(
             $this->registry,
             $this->footerDataProvider,
             $this->setWorkingMessage(...),
             $this->setWorkingVisible(...),
+            $this->setStatus(...),
         );
         $this->footerDataProvider->setProvider('_default', $this->createDefaultFooterProvider());
-        $this->footerRenderable = new FooterBarWidget($this->footerDataProvider);
-        $this->loadedResourcesRenderable = new LoadedResourcesWidget();
+        $this->footerWidget = new FooterBarWidget($theme, $this->footerDataProvider);
+        $this->loadedResourcesWidget = new LoadedResourcesWidget($theme);
+        $this->compactHeaderWidget = new CompactHeaderWidget($theme);
 
         // ── Top margin ──
         // Produces TOP_MARGIN_LINES blank lines.  Unlike TextWidget,
@@ -140,33 +134,12 @@ final class ChatScreen
         );
 
         // ═══════════════════════════════════════════════════
-        //  Producer closures for responsive widgets
+        //  Responsive separators (bounded LiveTextWidget KEEP)
         //
-        //  Each closure captures $this and reads from the
-        //  renderable/registry on every render.  The Symfony
-        //  render cache (keyed on revision × columns × rows)
-        //  ensures we only re-compute when dimensions change
-        //  or invalidate() is called.
+        //  Only the blank top margin and the three separator rows still use
+        //  LiveTextWidget: Symfony TextWidget drops whitespace-only text and
+        //  there is no native scrollback/separator primitive that is exact.
         // ═══════════════════════════════════════════════════
-
-        // ── Header ──
-        $this->headerWidget = new LiveTextWidget(
-            function (RenderContext $symfonyCtx): string {
-                $src = $this->registry->getHeader() ?? $this->headerRenderable;
-                $tuiCtx = $this->tuiContext($symfonyCtx);
-
-                return implode("\n", $src->render($tuiCtx));
-            },
-        );
-
-        // ── Loaded resources (startup block) ──
-        $this->loadedResourcesWidget = new LiveTextWidget(
-            function (RenderContext $symfonyCtx): string {
-                $tuiCtx = $this->tuiContext($symfonyCtx);
-
-                return implode("\n", $this->loadedResourcesRenderable->render($tuiCtx));
-            },
-        );
 
         // ── Separator (used for all separator rows) ──
         $this->headerSepWidget = new LiveTextWidget(
@@ -181,44 +154,11 @@ final class ChatScreen
         // Transcript is mounted as a first-class Symfony widget subtree
         // (constructed above). Markdown children receive live WidgetContext.
 
-        // ── Pending messages ──
-        $this->pendingWidget = new LiveTextWidget(
-            function (RenderContext $symfonyCtx): string {
-                $tuiCtx = $this->tuiContext($symfonyCtx);
-
-                return implode("\n", $this->pendingRenderable->render($tuiCtx));
-            },
-        );
-
         // ── Working status ──
         // One native LoaderWidget for active/idle/hidden: start() while working,
         // stop()+finished indicator for idle/hidden so the two-line footprint stays stable.
         $this->workingWidget = (new LoaderWidget(''))->setSpinner('circle');
         $this->syncWorkingSlot();
-
-        // ── Status panel ──
-        $this->statusPanelWidget = new LiveTextWidget(
-            function (RenderContext $symfonyCtx): string {
-                $entries = $this->registry->getStatusEntries();
-                $this->statusPanelRenderable->setEntries($entries);
-                $tuiCtx = $this->tuiContext($symfonyCtx);
-
-                return implode("\n", $this->statusPanelRenderable->render($tuiCtx));
-            },
-        );
-
-        // ── Extension widgets: above editor ──
-        $this->aboveEditorWidget = new LiveTextWidget(
-            function (RenderContext $symfonyCtx): string {
-                $tuiCtx = $this->tuiContext($symfonyCtx);
-                $lines = [];
-                foreach ($this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor) as $widget) {
-                    $lines = array_merge($lines, $widget->render($tuiCtx));
-                }
-
-                return implode("\n", $lines);
-            },
-        );
 
         // ── Editor separator ──
         $this->editorSepWidget = new LiveTextWidget(
@@ -233,19 +173,6 @@ final class ChatScreen
         // ── Interactive editor (via PromptEditor facade over Symfony EditorWidget) ──
         $this->promptEditor->setMinVisibleLines(1)->setMaxVisibleLines(10);
 
-        // ── Extension widgets: below editor ──
-        $this->belowEditorWidget = new LiveTextWidget(
-            function (RenderContext $symfonyCtx): string {
-                $tuiCtx = $this->tuiContext($symfonyCtx);
-                $lines = [];
-                foreach ($this->registry->getWidgetsByPlacement(WidgetPlacementEnum::BelowEditor) as $widget) {
-                    $lines = array_merge($lines, $widget->render($tuiCtx));
-                }
-
-                return implode("\n", $lines);
-            },
-        );
-
         // ── Footer separator ──
         $this->footerSepWidget = new LiveTextWidget(
             function (RenderContext $symfonyCtx): string {
@@ -254,17 +181,6 @@ final class ChatScreen
                     str_repeat('─', $symfonyCtx->getColumns()),
                 );
             },
-        );
-
-        // ── Footer ──
-        $this->footerWidget = new LiveTextWidget(
-            function (RenderContext $symfonyCtx): string {
-                $src = $this->registry->getFooter() ?? $this->footerRenderable;
-                $tuiCtx = $this->tuiContext($symfonyCtx);
-
-                return implode("\n", $src->render($tuiCtx));
-            },
-            truncate: true,
         );
     }
 
@@ -302,8 +218,6 @@ final class ChatScreen
         $this->workingWidget->setStyle(new Style(padding: Padding::from([0, 0, 0, 2])));
 
         // Add widgets in display order (top → bottom).
-        // LiveTextWidget producers already read live RenderContext columns,
-        // so no cached terminalWidth is needed.
         $tui->add($this->topMarginWidget);
         $tui->add($this->headerWidget);
         $tui->add($this->headerSepWidget);
@@ -312,7 +226,7 @@ final class ChatScreen
         $tui->add($this->pendingWidget);
         $tui->add($this->workingWidget);
         $tui->add($this->statusPanelWidget);
-        $tui->add($this->aboveEditorWidget);
+        $tui->add($this->compactHeaderWidget);
         $tui->add($this->editorSepWidget);
         $tui->add($this->promptEditor->getWidget());
 
@@ -324,7 +238,6 @@ final class ChatScreen
         // re-computes the frame/border and editor content correctly.
         $this->promptEditor->getWidget()->invalidate();
 
-        $tui->add($this->belowEditorWidget);
         $tui->add($this->footerSepWidget);
         $tui->add($this->footerWidget);
     }
@@ -373,19 +286,17 @@ final class ChatScreen
 
     public function setLoadedResourcesSummary(?LoadedResourcesSummaryDTO $summary): void
     {
-        $this->loadedResourcesRenderable->setSummary($summary);
-        $this->loadedResourcesWidget->invalidate();
+        $this->loadedResourcesWidget->setSummary($summary);
     }
 
     public function hasLoadedResourcesBlock(): bool
     {
-        return $this->loadedResourcesRenderable->hasContent();
+        return $this->loadedResourcesWidget->hasContent();
     }
 
     public function toggleLoadedResourcesExpanded(): void
     {
-        $this->loadedResourcesRenderable->toggleExpanded();
-        $this->loadedResourcesWidget->invalidate();
+        $this->loadedResourcesWidget->toggleExpanded();
     }
 
     /**
@@ -422,12 +333,11 @@ final class ChatScreen
     public function syncQueuedUserMessages(array $queuedMessages): void
     {
         $next = array_values($queuedMessages);
-        if ($next === $this->pendingRenderable->messages()) {
+        if ($next === $this->pendingWidget->messages()) {
             return;
         }
 
-        $this->pendingRenderable->setMessages($next);
-        $this->pendingWidget->invalidate();
+        $this->pendingWidget->setMessages($next);
     }
 
     public function setWorkingMessage(?string $message): void
@@ -460,10 +370,10 @@ final class ChatScreen
         }
 
         // Panel-only: keyed statuses never fan out into the footer bar.
-        // Footer content comes from explicit FooterSegmentProvider / setFooter APIs.
-        // LiveTextWidget re-reads registry entries on render via setEntries().
+        // Footer content comes from explicit FooterSegmentProvider APIs.
+        // Push the full entry map so the native StatusPanelWidget repaints.
         $this->registry->setStatus($key, $text);
-        $this->statusPanelWidget->invalidate();
+        $this->statusPanelWidget->setEntries($this->registry->getStatusEntries());
     }
 
     /**
@@ -530,28 +440,20 @@ final class ChatScreen
     }
 
     /**
-     * Invalidate only above-editor extension widgets (compact header, etc.).
-     */
-    public function refreshAboveEditorWidgets(): void
-    {
-        $this->aboveEditorWidget->invalidate();
-    }
-
-    /**
      * Invalidate all mutable widgets so they re-render on the next tick.
      *
-     * Extension widgets and status entries change via {@see setStatus()} or
-     * extension calls and already invalidate targeted widgets.  This method
-     * is a safety net for external state changes.
+     * Status entries, pending messages, and snapshots change via ChatScreen
+     * mutators and already invalidate their targeted widgets. This method
+     * is a safety net for external state changes, so it also re-pushes the
+     * registry status entries into the native status panel.
      */
     public function refresh(): void
     {
         // Transcript is a mounted Symfony subtree; children invalidate themselves.
         $this->pendingWidget->invalidate();
         $this->workingWidget->invalidate();
-        $this->statusPanelWidget->invalidate();
-        $this->aboveEditorWidget->invalidate();
-        $this->belowEditorWidget->invalidate();
+        $this->statusPanelWidget->setEntries($this->registry->getStatusEntries());
+        $this->compactHeaderWidget->invalidate();
         $this->footerWidget->invalidate();
         // Invalidate the editor widget so broad screen refreshes (startup,
         // model change) also re-render the editor frame with current styles.
@@ -582,17 +484,15 @@ final class ChatScreen
         // Remove editor area and everything below it (reverse mount order).
         $this->tui->remove($this->footerWidget);
         $this->tui->remove($this->footerSepWidget);
-        $this->tui->remove($this->belowEditorWidget);
         $this->tui->remove($this->promptEditor->getWidget());
         $this->tui->remove($this->editorSepWidget);
 
-        // Add the overlay (appended after aboveEditorWidget).
+        // Add the overlay (appended after the compact header).
         $this->tui->add($widget);
 
         // Restore editor area widgets in original mount order.
         $this->tui->add($this->editorSepWidget);
         $this->tui->add($this->promptEditor->getWidget());
-        $this->tui->add($this->belowEditorWidget);
         $this->tui->add($this->footerSepWidget);
         $this->tui->add($this->footerWidget);
     }
@@ -621,13 +521,11 @@ final class ChatScreen
         // Remove everything below the editor (reverse mount order).
         $this->tui->remove($this->footerWidget);
         $this->tui->remove($this->footerSepWidget);
-        $this->tui->remove($this->belowEditorWidget);
 
         // Add the overlay (appended after the editor).
         $this->tui->add($widget);
 
         // Restore below-editor widgets in original mount order.
-        $this->tui->add($this->belowEditorWidget);
         $this->tui->add($this->footerSepWidget);
         $this->tui->add($this->footerWidget);
     }
@@ -696,6 +594,18 @@ final class ChatScreen
     }
 
     /**
+     * The screen-owned compact-header widget (above the editor).
+     *
+     * Narrow internal getter for {@see CompactHeaderRegistrar} so the
+     * registrar drives the directly mounted widget instead of a registry
+     * slot. ChatScreen already exposes other widget owners/theme.
+     */
+    public function compactHeaderWidget(): CompactHeaderWidget
+    {
+        return $this->compactHeaderWidget;
+    }
+
+    /**
      * Update the session ID displayed in the default footer segment.
      *
      * Used by SubmitListener when a draft session (empty ID) is
@@ -745,20 +655,6 @@ final class ChatScreen
     }
 
     /* ────────── Helpers ────────── */
-
-    /**
-     * Build a TuiRenderContext from a Symfony RenderContext.
-     *
-     * Uses the live terminal columns from Symfony's render pipeline,
-     * so TuiWidgets always render at the current terminal width.
-     */
-    private function tuiContext(RenderContext $symfonyCtx): TuiRenderContext
-    {
-        return new TuiRenderContext(
-            terminalWidth: $symfonyCtx->getColumns(),
-            theme: $this->theme,
-        );
-    }
 
     private function createDefaultFooterProvider(): FooterSegmentProvider
     {

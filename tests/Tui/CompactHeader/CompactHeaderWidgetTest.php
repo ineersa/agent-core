@@ -9,25 +9,27 @@ use Ineersa\Tui\CompactHeader\CompactHeaderWidget;
 use Ineersa\Tui\CompactHeader\McpServerHeaderEntry;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
-use Ineersa\Tui\Widget\TuiRenderContext;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Ansi\AnsiUtils;
+use Symfony\Component\Tui\Render\Renderer;
+use Symfony\Component\Tui\Widget\ContainerWidget;
 
 final class CompactHeaderWidgetTest extends TestCase
 {
     #[Test]
     public function emptySnapshotRendersZeroLines(): void
     {
-        $widget = new CompactHeaderWidget();
+        $widget = new CompactHeaderWidget($this->theme());
         $widget->setSnapshot(new CompactHeaderSnapshot());
 
-        $this->assertSame([], $widget->render($this->context(80)));
+        $this->assertSame([], $this->renderWidget($widget, 80));
     }
 
     #[Test]
     public function rendersPromptsSkillsAgentsAndMcpSections(): void
     {
-        $widget = new CompactHeaderWidget();
+        $widget = new CompactHeaderWidget($this->theme());
         $widget->setSnapshot(new CompactHeaderSnapshot(
             prompts: ['review'],
             skills: ['castor'],
@@ -39,7 +41,7 @@ final class CompactHeaderWidgetTest extends TestCase
             ],
         ));
 
-        $plain = $this->plainLines($widget->render($this->context(120)));
+        $plain = $this->plainLines($this->renderWidget($widget, 120));
 
         $this->assertStringContainsString('prompts', $plain);
         $this->assertStringContainsString('│', $plain);
@@ -65,7 +67,7 @@ final class CompactHeaderWidgetTest extends TestCase
     #[Test]
     public function mcpIconsMapByConnectionAndAvailability(): void
     {
-        $widget = new CompactHeaderWidget();
+        $widget = new CompactHeaderWidget($this->theme());
         $widget->setSnapshot(new CompactHeaderSnapshot(
             mcpServers: [
                 new McpServerHeaderEntry('global-ok', 1, true, true),
@@ -74,7 +76,7 @@ final class CompactHeaderWidgetTest extends TestCase
             ],
         ));
 
-        $plain = $this->plainLines($widget->render($this->context(100)));
+        $plain = $this->plainLines($this->renderWidget($widget, 100));
 
         $this->assertStringContainsString('✓', $plain);
         $this->assertStringContainsString('◈', $plain);
@@ -87,21 +89,54 @@ final class CompactHeaderWidgetTest extends TestCase
     #[Test]
     public function wrapsAtNarrowWidth(): void
     {
-        $widget = new CompactHeaderWidget();
+        $widget = new CompactHeaderWidget($this->theme());
         $widget->setSnapshot(new CompactHeaderSnapshot(
             prompts: ['one', 'two', 'three', 'four', 'five', 'six'],
         ));
 
-        $lines = $widget->render($this->context(40));
+        $lines = $this->renderWidget($widget, 40);
         $this->assertGreaterThan(1, \count($lines));
     }
 
-    private function context(int $width): TuiRenderContext
+    #[Test]
+    public function everyRowFitsPathologicalNarrowWidth(): void
     {
-        return new TuiRenderContext(
-            terminalWidth: $width,
-            theme: new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette()),
-        );
+        $widget = new CompactHeaderWidget($this->theme());
+        $widget->setSnapshot(new CompactHeaderSnapshot(
+            prompts: ['one', 'two', 'three', 'four', 'five', 'six'],
+            skills: ['alpha', 'beta', 'gamma', 'delta'],
+            agentNames: ['scout', 'worker', 'reviewer', 'researcher'],
+            mcpServers: [
+                new McpServerHeaderEntry('context7', 2, true, true),
+                new McpServerHeaderEntry('websearch', 3, true, false),
+            ],
+        ));
+
+        foreach ([20, 30, 40, 80] as $width) {
+            $lines = $this->renderWidget($widget, $width);
+            $this->assertGreaterThan(0, \count($lines), "width {$width} must render rows");
+            foreach ($lines as $i => $line) {
+                $this->assertLessThanOrEqual(
+                    $width,
+                    AnsiUtils::visibleWidth($line),
+                    "row {$i} visible width exceeds {$width}",
+                );
+            }
+        }
+    }
+
+    private function theme(): DefaultTheme
+    {
+        return new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
+    }
+
+    /** @return string[] */
+    private function renderWidget(CompactHeaderWidget $widget, int $width): array
+    {
+        $root = new ContainerWidget();
+        $root->add($widget);
+
+        return (new Renderer())->render($root, $width, 40);
     }
 
     /** @param list<string> $lines */
