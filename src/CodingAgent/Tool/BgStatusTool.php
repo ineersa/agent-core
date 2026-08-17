@@ -35,7 +35,6 @@ final class BgStatusTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'bg_status';
 
-    /** Provider-visible description; shared with the registry definition. */
     public const string DESCRIPTION = 'List background processes in the current session, inspect their logs, or stop them.';
 
     public function __construct(

@@ -34,7 +34,6 @@ final class ViewImageTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'view_image';
 
-    /** Provider-visible description; shared with the registry definition. */
     public const string DESCRIPTION = 'View an image file by attaching it to the next provider request and return compact metadata (media type, dimensions, file size). Supports JPEG, PNG, GIF, and WebP.';
 
     /** @var list<string> Magic-byte MIME types accepted by view_image. Shared with ViewImageTargetValidator so validation and execution cannot drift. */

@@ -58,7 +58,6 @@ final class CastorLlmModeToolCallHookTest extends TestCase
         $result = $this->hook->rewriteArguments($context);
 
         $this->assertIsArray($result);
-        // Rewritten arguments keep the flat provider shape.
         $this->assertArrayHasKey('command', $result);
         $command = $result['command'];
         $this->assertIsString($command);

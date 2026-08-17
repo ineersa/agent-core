@@ -20,7 +20,6 @@ final class AgentRetrieveTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'agent_retrieve';
 
-    /** Provider-visible description; shared with the registry definition. */
     public const string DESCRIPTION = 'Retrieve a completed or failed subagent artifact handoff, metadata, or bounded event/history summary from the current parent session.';
 
     public function __construct(

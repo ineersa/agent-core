@@ -82,8 +82,7 @@ final readonly class ExecuteShellToolCallWorker
 
         // Include arguments so transcript projection can build a ToolCall block
         // for direct !shell executions that never stream tool_call.* events.
-        // bash is a typed DTO tool with flat provider arguments, so the
-        // canonical shape ({command: ...}) matches LLM-streamed calls.
+        // The canonical {command: ...} shape matches LLM-streamed calls.
         $arguments = ['command' => $commandText];
         $this->eventStore->append(new RunEvent(
             runId: $runId,

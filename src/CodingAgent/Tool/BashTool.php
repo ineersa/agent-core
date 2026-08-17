@@ -60,11 +60,6 @@ final class BashTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'bash';
 
-    /**
-     * Provider-visible description template; definition() formats the %d
-     * with the configured background-prompt threshold for the canonical
-     * registry metadata.
-     */
     public const string DESCRIPTION_TEMPLATE = 'Execute a shell command with timeout. The command runs until completion, hits the timeout, or is cancelled. Long-running commands may be offered to move to background after %d seconds.';
 
     public function __construct(

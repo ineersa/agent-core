@@ -256,7 +256,6 @@ STRING;
      *
      * Checks known path-carrying argument keys and returns the first
      * string value found.  Returns null when no path argument exists.
-     * All tool calls (typed built-ins and raw tools) are read flat.
      *
      * @param array<string, mixed> $arguments
      */

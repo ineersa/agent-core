@@ -37,7 +37,6 @@ final class AskHumanTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'ask_human';
 
-    /** Provider-visible description; shared with the registry definition. */
     public const string DESCRIPTION = 'Ask the user for input, confirmation, a choice, or approval when you need their response before continuing.';
 
     public function __construct(

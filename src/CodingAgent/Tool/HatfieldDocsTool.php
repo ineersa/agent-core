@@ -25,7 +25,6 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'hatfield_docs';
 
-    /** Provider-visible description; shared with the registry definition. */
     public const string DESCRIPTION = 'List or read bundled Hatfield documentation by logical document ID.';
 
     /**

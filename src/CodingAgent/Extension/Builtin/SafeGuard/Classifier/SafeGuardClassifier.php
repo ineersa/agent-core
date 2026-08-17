@@ -58,8 +58,7 @@ final class SafeGuardClassifier
     /**
      * Classify a tool call against the active policy.
      *
-     * Arguments are the effective flat provider field map (typed built-ins
-     * and raw tools alike); the classifier does not sniff argument shapes.
+     * The classifier does not sniff argument shapes.
      *
      * @param string               $toolName  e.g., "bash", "write", "edit", "read"
      * @param array<string, mixed> $arguments Tool-specific decoded arguments

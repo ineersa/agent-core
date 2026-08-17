@@ -51,16 +51,7 @@ before handler execution (policy normalization, path rewriting, etc.).
 
 ### Argument shapes
 
-Rewrite hooks (and result hooks, via `ToolCallContextDTO` / the succeeded/failed events)
-receive the **provider-visible flat argument map** for **both** typed built-in tools
-(`read`, `write`, `edit`, `bash`, `bg_status`, `view_image`, `ask_human`, `subagent`,
-`fork`, `agent_retrieve`, `hatfield_docs`) and raw dynamic tools (MCP tools,
-extension-registered tools, `settings`), e.g. `['path' => './file.txt', 'offset' => 10]`.
-
-Typed built-ins expose DTO fields at the top level of the map (matching their flat
-provider-visible JSON Schema). The host wraps the flat map internally for native
-Symfony AI DTO resolution, so hooks never see an `arguments` nesting envelope.
-Rewrite hooks must return the same flat shape.
+Rewrite and result hooks receive the flat provider-visible argument map (typed built-ins and raw dynamic tools alike); rewrite hooks must return the same flat shape.
 
 ## Tool-result hooks
 

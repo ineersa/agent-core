@@ -563,7 +563,6 @@ final readonly class TranscriptBlockWidgetFactory
      */
     private function formatReadLineRange(array $arguments): string
     {
-        // Tool-call arguments are the flat provider map.
         $fields = $arguments;
 
         $offset = isset($fields['offset']) && is_numeric($fields['offset'])
@@ -647,7 +646,6 @@ final readonly class TranscriptBlockWidgetFactory
             return false;
         }
 
-        // Tool-call arguments are the flat provider map.
         $patch = $arguments['patch'] ?? null;
 
         return \is_string($patch) && '' !== $patch;
@@ -663,7 +661,6 @@ final readonly class TranscriptBlockWidgetFactory
             return false;
         }
 
-        // Tool-call arguments are the flat provider map.
         $content = $arguments['content'] ?? null;
 
         return \is_string($content);

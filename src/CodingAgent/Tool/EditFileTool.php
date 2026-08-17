@@ -18,7 +18,6 @@ final class EditFileTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'edit';
 
-    /** Provider-visible description; shared with the registry definition. */
     public const string DESCRIPTION = 'Apply @@ hunks to an existing file. Every hunk body line must start with a diff prefix: a leading space for unchanged context, `-` for removal, or `+` for addition. The target file must exist; use the write tool for new files.';
 
     private readonly PatchApplier $applier;

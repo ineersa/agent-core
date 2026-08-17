@@ -25,7 +25,6 @@ final class WriteFileTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'write';
 
-    /** Provider-visible description; shared with the registry definition. */
     public const string DESCRIPTION = 'Create a new file or overwrite an existing file with the given text content. Creates parent directories automatically if they do not exist. Non-empty text content is automatically newline-terminated for POSIX compatibility.';
 
     public function __construct(

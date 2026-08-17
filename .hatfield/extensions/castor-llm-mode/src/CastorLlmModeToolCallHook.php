@@ -23,8 +23,6 @@ final class CastorLlmModeToolCallHook implements ToolCallRewriteHookInterface
             return null;
         }
 
-        // bash is a typed DTO built-in with flat provider arguments; the
-        // command field is a top-level key. Rewrites return the flat map.
         $command = $context->arguments['command'] ?? null;
         if (!\is_string($command)) {
             return null;
@@ -34,7 +32,6 @@ final class CastorLlmModeToolCallHook implements ToolCallRewriteHookInterface
             return null;
         }
 
-        // Rewritten arguments keep the flat provider shape.
         return ['command' => $this->rewriter->rewrite($command)];
     }
 }

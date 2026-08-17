@@ -35,7 +35,6 @@ final class ReadFileTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'read';
 
-    /** Provider-visible description; shared with the registry definition. */
     public const string DESCRIPTION = 'Read a text file and return plain content. Supports offset (starting line) and limit (max lines) for reading specific sections. Binary files, image files, PDFs, and device paths are rejected.';
 
     /** Default maximum lines for an unrestricted read. */
