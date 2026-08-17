@@ -7,7 +7,9 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\CodingAgent\Session\SessionToolBatchStore;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
+use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use Psr\Log\NullLogger;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
@@ -60,7 +62,7 @@ $paths = new class($base) implements ToolBatchRunStoragePathsInterface {
 };
 
 [$serializer, $validator] = Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::create();
-$store = new SessionToolBatchStore($paths, new LockFactory(new FlockStore()), new NullLogger(), $serializer, $validator);
+$store = new SessionToolBatchStore($paths, new LockFactory(new FlockStore()), new NullLogger(), $serializer, $validator, new AtomicFileWriter(new Filesystem()));
 
 try {
     $store->mutate('run-par', 1, 'step-1', static function (?ToolBatchStateDTO $current) use ($callId): ToolBatchStoreMutation {

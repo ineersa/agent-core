@@ -25,8 +25,10 @@ use Ineersa\CodingAgent\Session\SessionToolBatchStoreException;
 use Ineersa\CodingAgent\Session\ToolBatchSnapshotEnvelopeDTO;
 use Ineersa\CodingAgent\Tests\Session\Support\ParentSessionToolBatchRunStoragePaths;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Process\Process;
@@ -138,7 +140,7 @@ final class SessionToolBatchStoreTest extends TestCase
 
         $pathResolver = new SessionAgentArtifactPathResolver($this->hatfieldSessionStore);
         [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
-        $registry = new AgentArtifactRegistry($pathResolver, $serializer, $validator, new LockFactory(new FlockStore()));
+        $registry = new AgentArtifactRegistry($pathResolver, $serializer, $validator, new LockFactory(new FlockStore()), new AtomicFileWriter(new Filesystem()));
 
         $entry = new AgentArtifactEntryDTO(
             artifactId: $artifactId,
@@ -154,7 +156,7 @@ final class SessionToolBatchStoreTest extends TestCase
         $directory = new AgentChildRunDirectory($this->hatfieldSessionStore, $registry, new NullLogger());
         $directory->register($entry);
 
-        $childStore = new SessionToolBatchStore(new ChildAwareToolBatchRunStoragePaths($this->hatfieldSessionStore, $directory, $pathResolver), new LockFactory(new FlockStore()), new NullLogger(), $serializer, $validator);
+        $childStore = new SessionToolBatchStore(new ChildAwareToolBatchRunStoragePaths($this->hatfieldSessionStore, $directory, $pathResolver), new LockFactory(new FlockStore()), new NullLogger(), $serializer, $validator, new AtomicFileWriter(new Filesystem()));
         $childStore->save($childRunId, 2, 'step-child', $this->emptyBatch(['c1']));
 
         $expectedDir = $parentDir.'/artifacts/agents/'.$artifactId.'/runtime/tool-batches';
@@ -329,7 +331,7 @@ final class SessionToolBatchStoreTest extends TestCase
         [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
         $directory ??= new AgentChildRunDirectory(
             $hatfield,
-            new AgentArtifactRegistry($pathResolver, $serializer, $validator, new LockFactory(new FlockStore())),
+            new AgentArtifactRegistry($pathResolver, $serializer, $validator, new LockFactory(new FlockStore()), new AtomicFileWriter(new Filesystem())),
             new NullLogger(),
         );
 
@@ -339,6 +341,7 @@ final class SessionToolBatchStoreTest extends TestCase
             new NullLogger(),
             $serializer,
             $validator,
+            new AtomicFileWriter(new Filesystem()),
         );
     }
 

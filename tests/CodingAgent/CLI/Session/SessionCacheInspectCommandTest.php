@@ -31,6 +31,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\AI\Platform\Event\InvocationEvent;
 use Symfony\AI\Platform\Message\Content\Text;
@@ -43,6 +44,7 @@ use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
@@ -360,6 +362,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
             serializer: $serializer,
             validator: (new ValidatorBuilder())->enableAttributeMapping()->getValidator(),
             lockFactory: new LockFactory(new FlockStore()),
+            atomicFileWriter: new AtomicFileWriter(new Filesystem()),
         );
     }
 

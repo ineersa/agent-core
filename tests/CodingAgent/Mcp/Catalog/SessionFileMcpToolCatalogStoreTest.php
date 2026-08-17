@@ -10,7 +10,9 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
 
 /**
  * Test thesis 1: Catalog store round-trip — write a catalog with connected
@@ -32,7 +34,7 @@ class SessionFileMcpToolCatalogStoreTest extends TestCase
     {
         $this->projectDir = TestDirectoryIsolation::createProjectTempDir('mcp-catalog-store');
         TestDirectoryIsolation::createHatfieldTree($this->projectDir, true);
-        $this->store = new SessionFileMcpToolCatalogStore($this->projectDir);
+        $this->store = new SessionFileMcpToolCatalogStore($this->projectDir, new AtomicFileWriter(new Filesystem()));
     }
 
     protected function tearDown(): void

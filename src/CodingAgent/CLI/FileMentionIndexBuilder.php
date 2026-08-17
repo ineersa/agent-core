@@ -179,7 +179,7 @@ final class FileMentionIndexBuilder
                     continue; // Should not happen for simple scalars.
                 }
 
-                fwrite($handle, $line."\n");
+                $this->writeEntryLine($handle, $line."\n");
                 ++$count;
             }
 
@@ -193,6 +193,29 @@ final class FileMentionIndexBuilder
             return $count;
         } finally {
             fclose($handle);
+        }
+    }
+
+    /**
+     * Write a complete line to the temp index handle, tolerating short writes.
+     *
+     * The ignored fwrite result previously could silently truncate a line and
+     * produce a corrupt index after rename. Streaming stays in this builder
+     * (50k entries must not be materialized for the string writer).
+     *
+     * @param resource $handle
+     */
+    private function writeEntryLine($handle, string $line): void
+    {
+        $total = \strlen($line);
+        $written = 0;
+
+        while ($written < $total) {
+            $chunk = fwrite($handle, substr($line, $written));
+            if (false === $chunk || 0 === $chunk) {
+                throw new \RuntimeException('Failed to write file mention index temp file.');
+            }
+            $written += $chunk;
         }
     }
 

@@ -6,11 +6,12 @@ namespace Ineersa\CodingAgent\Tests\Auth;
 
 use Ineersa\CodingAgent\Auth\CodexAuthRecord;
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
-use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
 use Ineersa\CodingAgent\Auth\CodexOAuthService;
 use Ineersa\CodingAgent\Auth\CodexTokenRefresher;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
@@ -29,7 +30,7 @@ final class CodexOAuthServiceTest extends TestCase
 
         $store = new FlockStore($this->tmpDir);
         $lockFactory = new LockFactory($store);
-        $this->storage = new CodexAuthStorage($this->tmpDir, $lockFactory);
+        $this->storage = new CodexAuthStorage($this->tmpDir, $lockFactory, new AtomicFileWriter(new Filesystem()));
         $this->refresher = new CodexTokenRefresher();
     }
 
@@ -37,12 +38,7 @@ final class CodexOAuthServiceTest extends TestCase
     {
         parent::tearDown();
 
-        $path = $this->tmpDir.'/'.CodexOAuthConfig::AUTH_FILE;
-        if (file_exists($path)) {
-            @unlink($path);
-        }
-        @rmdir($this->tmpDir.'/.hatfield');
-        @rmdir($this->tmpDir);
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
     public function testConstructWithStorage(): void

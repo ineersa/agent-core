@@ -15,8 +15,10 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Lock\LockFactory;
@@ -38,6 +40,7 @@ final class ProviderQuotaProbeServiceTest extends TestCase
         $this->authStorage = new CodexAuthStorage(
             $this->tmpDir,
             new LockFactory(new FlockStore($this->tmpDir)),
+            new AtomicFileWriter(new Filesystem()),
         );
     }
 

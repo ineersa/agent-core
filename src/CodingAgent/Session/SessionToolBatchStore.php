@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Session;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
+use Ineersa\CodingAgent\Utility\AtomicFileWriter;
+use Ineersa\CodingAgent\Utility\AtomicFileWriterException;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
@@ -44,6 +46,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         private readonly LoggerInterface $logger,
         private readonly SerializerInterface $serializer,
         private readonly ValidatorInterface $validator,
+        private readonly AtomicFileWriter $atomicFileWriter,
     ) {
     }
 
@@ -220,43 +223,22 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         $this->ensureDirectory($dir);
 
         $path = $this->snapshotPath($runId, $turnNo, $stepId);
-        $tempPath = $path.'.tmp.'.bin2hex(random_bytes(8));
 
         try {
-            try {
-                $json = $this->serializer->serialize($envelope, 'json', self::SERIALIZER_CONTEXT);
-            } catch (SerializerExceptionInterface $exception) {
-                throw new SessionToolBatchStoreException('Tool batch snapshot write failed.', ['run_id' => $runId, 'turn_no' => $turnNo, 'step_id' => $stepId, 'component' => 'session_tool_batch_store'], $exception);
-            }
+            $json = $this->serializer->serialize($envelope, 'json', self::SERIALIZER_CONTEXT);
+        } catch (SerializerExceptionInterface $exception) {
+            throw new SessionToolBatchStoreException('Tool batch snapshot write failed.', ['run_id' => $runId, 'turn_no' => $turnNo, 'step_id' => $stepId, 'component' => 'session_tool_batch_store'], $exception);
+        }
 
-            $written = file_put_contents($tempPath, $json, \LOCK_EX);
-            if (false === $written || $written !== \strlen($json)) {
-                throw new SessionToolBatchStoreException('Failed to write tool batch snapshot temp file.', ['run_id' => $runId, 'turn_no' => $turnNo, 'step_id' => $stepId, 'path' => $tempPath, 'component' => 'session_tool_batch_store']);
-            }
-
-            if (!rename($tempPath, $path)) {
-                $this->unlinkOrThrow($tempPath, $runId, $turnNo, $stepId);
-                throw new SessionToolBatchStoreException('Failed to atomic-rename tool batch snapshot.', ['run_id' => $runId, 'turn_no' => $turnNo, 'step_id' => $stepId, 'path' => $path, 'component' => 'session_tool_batch_store']);
-            }
-        } catch (SessionToolBatchStoreException $exception) {
-            throw $exception;
-        } catch (\Throwable $throwable) {
-            if (is_file($tempPath)) {
-                try {
-                    $this->unlinkOrThrow($tempPath, $runId, $turnNo, $stepId);
-                } catch (SessionToolBatchStoreException $cleanupException) {
-                    $this->logger->warning('tool_batch.snapshot_write_temp_cleanup_failed', [
-                        'run_id' => $runId,
-                        'turn_no' => $turnNo,
-                        'step_id' => $stepId,
-                        'component' => 'session_tool_batch_store',
-                        'event_type' => 'write_temp_cleanup',
-                        'error' => $cleanupException->getMessage(),
-                    ]);
-                }
-            }
-
-            throw new SessionToolBatchStoreException('Tool batch snapshot write failed.', ['run_id' => $runId, 'turn_no' => $turnNo, 'step_id' => $stepId, 'component' => 'session_tool_batch_store'], $throwable);
+        // Shared atomic writer (sibling temp `<name>.json.tmp.<rand>`,
+        // LOCK_EX full write, checked rename, cleanup on every failure —
+        // the orphan-reconciliation glob in load()/delete() stays coherent
+        // with that temp naming). The temp write/rename previously
+        // rethrew its own exception before cleanup, leaking the temp.
+        try {
+            $this->atomicFileWriter->write($path, $json);
+        } catch (AtomicFileWriterException $exception) {
+            throw new SessionToolBatchStoreException('rename' === $exception->stage ? 'Failed to atomic-rename tool batch snapshot.' : 'Failed to write tool batch snapshot temp file.', ['run_id' => $runId, 'turn_no' => $turnNo, 'step_id' => $stepId, 'path' => $exception->tempPath ?? $path, 'component' => 'session_tool_batch_store'], $exception);
         }
     }
 

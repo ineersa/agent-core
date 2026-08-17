@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
+use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -25,6 +26,7 @@ final readonly class AgentChildRunStoreFactory
         private SessionAgentArtifactPathResolver $pathResolver,
         private NormalizerInterface&DenormalizerInterface $serializer,
         private LockFactory $lockFactory,
+        private AtomicFileWriter $atomicFileWriter,
     ) {
     }
 
@@ -37,6 +39,7 @@ final readonly class AgentChildRunStoreFactory
             parentRunId: $parentRunId,
             agentRunId: $agentRunId,
             artifactId: $artifactId,
+            atomicFileWriter: $this->atomicFileWriter,
         );
     }
 }
