@@ -46,7 +46,6 @@ final class AgentArtifactRegistry
         private readonly NormalizerInterface&DenormalizerInterface $serializer,
         private readonly ValidatorInterface $validator,
         private readonly LockFactory $lockFactory,
-        private readonly AtomicFileWriter $atomicFileWriter,
     ) {
     }
 
@@ -575,18 +574,8 @@ final class AgentArtifactRegistry
             \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR,
         );
 
-        // Shared atomic writer: sibling temp + LOCK_EX full write + 0644
-        // before publish + checked rename + cleanup on every failure.
-        // Symfony Filesystem::dumpFile() cannot guarantee the caller-selected
-        // 0644 file / 0755 directory modes before publish. Rename failures
-        // fail closed (previously ignored, leaking the temp file).
         try {
-            $this->atomicFileWriter->write(
-                $path,
-                $json,
-                fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS,
-                directoryMode: SessionAgentArtifactPathResolver::DIR_PERMISSIONS,
-            );
+            AtomicFileWriter::write($path, $json, fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
         } catch (AtomicFileWriterException $exception) {
             throw new \RuntimeException(\sprintf('Failed to write registry.json for parent run "%s".', $parentRunId), previous: $exception);
         }
@@ -605,15 +594,8 @@ final class AgentArtifactRegistry
 
         $json = json_encode($this->normalizeEntry($entry), \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR);
 
-        // Same shared atomic writer as writeRegistry(); rename failures now
-        // fail closed (previously ignored, leaking the temp file).
         try {
-            $this->atomicFileWriter->write(
-                $path,
-                $json,
-                fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS,
-                directoryMode: SessionAgentArtifactPathResolver::DIR_PERMISSIONS,
-            );
+            AtomicFileWriter::write($path, $json, fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
         } catch (AtomicFileWriterException $exception) {
             throw new \RuntimeException(\sprintf('Failed to write metadata.json for artifact "%s" parent "%s".', $entry->artifactId, $parentRunId), previous: $exception);
         }
@@ -631,15 +613,8 @@ final class AgentArtifactRegistry
         $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
         $path = $this->pathResolver->absolutePath($parentRunId, $paths->handoffPath);
 
-        // Same shared atomic writer as writeRegistry(); rename failures now
-        // fail closed (previously ignored, leaking the temp file).
         try {
-            $this->atomicFileWriter->write(
-                $path,
-                $content,
-                fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS,
-                directoryMode: SessionAgentArtifactPathResolver::DIR_PERMISSIONS,
-            );
+            AtomicFileWriter::write($path, $content, fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
         } catch (AtomicFileWriterException $exception) {
             throw new \RuntimeException(\sprintf('Failed to write handoff.md for artifact "%s" parent "%s".', $artifactId, $parentRunId), previous: $exception);
         }

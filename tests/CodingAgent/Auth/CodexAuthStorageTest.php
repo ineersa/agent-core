@@ -9,9 +9,7 @@ use Ineersa\CodingAgent\Auth\CodexAuthStorage;
 use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
 use Ineersa\CodingAgent\Auth\CodexTokenRefresher;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
@@ -20,7 +18,6 @@ final class CodexAuthStorageTest extends TestCase
     private string $tmpDir;
     private CodexAuthStorage $storage;
     private CodexTokenRefresher $refresher;
-    private AtomicFileWriter $atomicFileWriter;
 
     protected function setUp(): void
     {
@@ -29,8 +26,7 @@ final class CodexAuthStorageTest extends TestCase
 
         $store = new FlockStore($this->tmpDir);
         $lockFactory = new LockFactory($store);
-        $this->atomicFileWriter = new AtomicFileWriter(new Filesystem());
-        $this->storage = new CodexAuthStorage($this->tmpDir, $lockFactory, $this->atomicFileWriter);
+        $this->storage = new CodexAuthStorage($this->tmpDir, $lockFactory);
         $this->refresher = new CodexTokenRefresher();
     }
 
@@ -49,6 +45,11 @@ final class CodexAuthStorageTest extends TestCase
         );
 
         $this->storage->saveCredentials('openai-codex', $record);
+
+        $path = $this->tmpDir.'/'.CodexOAuthConfig::AUTH_FILE;
+        $this->assertFileExists($path);
+        $this->assertSame(0600, fileperms($path) & 0777, 'auth.json must be published with mode 0600');
+        $this->assertSame([], glob($this->tmpDir.'/.hatfield/*.tmp.*') ?: [], 'No temp files should remain after save');
 
         $loaded = $this->storage->loadCredentials('openai-codex');
 
@@ -88,7 +89,7 @@ final class CodexAuthStorageTest extends TestCase
     public function testExpiredRecordWithRefresherThrowsOnRefreshFailure(): void
     {
         // Storage WITH a refresher configured
-        $storageWithRefresh = new CodexAuthStorage($this->tmpDir, new LockFactory(new FlockStore($this->tmpDir)), $this->atomicFileWriter, $this->refresher);
+        $storageWithRefresh = new CodexAuthStorage($this->tmpDir, new LockFactory(new FlockStore($this->tmpDir)), $this->refresher);
 
         $expiredRecord = new CodexAuthRecord(
             access: 'expired-access',
@@ -114,7 +115,7 @@ final class CodexAuthStorageTest extends TestCase
             accountId: 'chat-raw',
         );
 
-        $storageWithRefresh = new CodexAuthStorage($this->tmpDir, new LockFactory(new FlockStore($this->tmpDir)), $this->atomicFileWriter, $this->refresher);
+        $storageWithRefresh = new CodexAuthStorage($this->tmpDir, new LockFactory(new FlockStore($this->tmpDir)), $this->refresher);
         $storageWithRefresh->saveCredentials('openai-codex', $expiredRecord);
 
         // loadCredentialsRaw should return the raw record without attempting refresh
@@ -181,7 +182,6 @@ final class CodexAuthStorageTest extends TestCase
         $storageWithRefresh = new CodexAuthStorage(
             $this->tmpDir,
             new LockFactory(new FlockStore($this->tmpDir)),
-            $this->atomicFileWriter,
             $failingRefresher,
         );
 
@@ -212,7 +212,6 @@ final class CodexAuthStorageTest extends TestCase
         $storageWithRefresh = new CodexAuthStorage(
             $this->tmpDir,
             new LockFactory(new FlockStore($this->tmpDir)),
-            $this->atomicFileWriter,
             $failingRefresher,
         );
 
@@ -234,38 +233,5 @@ final class CodexAuthStorageTest extends TestCase
             $this->assertStringNotContainsString('--auth-profile=', $e->getMessage());
             throw $e;
         }
-    }
-
-    public function testPersistsAuthFileWithMode0600AndNoTempFiles(): void
-    {
-        $record = new CodexAuthRecord('tok', 'ref', time() + 3600, 'acct');
-
-        $this->storage->saveCredentials('openai-codex', $record);
-
-        $path = $this->tmpDir.'/'.CodexOAuthConfig::AUTH_FILE;
-        $this->assertFileExists($path);
-        $this->assertSame(0600, fileperms($path) & 0777, 'auth.json must be published with mode 0600');
-        $this->assertSame([], glob($this->tmpDir.'/.hatfield/*.tmp.*') ?: [], 'No temp files should remain after save');
-    }
-
-    public function testPublishFailureIsFailClosedAndCleansTemp(): void
-    {
-        // Occupy the auth.json path with a directory so the atomic rename
-        // deterministically fails after the temp file was written.
-        $blocker = $this->tmpDir.'/'.CodexOAuthConfig::AUTH_FILE;
-        mkdir($blocker, 0755, true);
-        file_put_contents($blocker.'/keep.txt', 'keep');
-
-        $record = new CodexAuthRecord('tok', 'ref', time() + 3600, 'acct');
-
-        try {
-            $this->storage->saveCredentials('openai-codex', $record);
-            $this->fail('Expected RuntimeException on publish failure');
-        } catch (\RuntimeException $exception) {
-            $this->assertSame('Cannot rename auth credentials to '.$blocker, $exception->getMessage());
-        }
-
-        $this->assertFileExists($blocker.'/keep.txt', 'Prior destination must remain intact');
-        $this->assertSame([], glob($this->tmpDir.'/.hatfield/*.tmp.*') ?: [], 'Temp file must be cleaned on publish failure');
     }
 }

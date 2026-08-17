@@ -46,7 +46,6 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         private readonly LoggerInterface $logger,
         private readonly SerializerInterface $serializer,
         private readonly ValidatorInterface $validator,
-        private readonly AtomicFileWriter $atomicFileWriter,
     ) {
     }
 
@@ -230,13 +229,8 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
             throw new SessionToolBatchStoreException('Tool batch snapshot write failed.', ['run_id' => $runId, 'turn_no' => $turnNo, 'step_id' => $stepId, 'component' => 'session_tool_batch_store'], $exception);
         }
 
-        // Shared atomic writer (sibling temp `<name>.json.tmp.<rand>`,
-        // LOCK_EX full write, checked rename, cleanup on every failure —
-        // the orphan-reconciliation glob in load()/delete() stays coherent
-        // with that temp naming). The temp write/rename previously
-        // rethrew its own exception before cleanup, leaking the temp.
         try {
-            $this->atomicFileWriter->write($path, $json);
+            AtomicFileWriter::write($path, $json);
         } catch (AtomicFileWriterException $exception) {
             throw new SessionToolBatchStoreException('rename' === $exception->stage ? 'Failed to atomic-rename tool batch snapshot.' : 'Failed to write tool batch snapshot temp file.', ['run_id' => $runId, 'turn_no' => $turnNo, 'step_id' => $stepId, 'path' => 'rename' === $exception->stage ? $path : ($exception->tempPath ?? $path), 'component' => 'session_tool_batch_store'], $exception);
         }

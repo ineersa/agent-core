@@ -46,7 +46,6 @@ final class AgentChildRunStore implements RunStoreInterface
         private readonly string $agentRunId,
         /** Artifact directory name within artifacts/agents/. */
         private readonly string $artifactId,
-        private readonly AtomicFileWriter $atomicFileWriter,
     ) {
         // Defense-in-depth path validation: reject traversal/spurious components.
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
@@ -118,19 +117,8 @@ final class AgentChildRunStore implements RunStoreInterface
 
             $path = $this->statePath();
 
-            // Shared atomic writer: sibling temp + LOCK_EX full write + 0644
-            // before publish + checked rename + cleanup on every failure.
-            // Symfony Filesystem::dumpFile() cannot guarantee the caller-
-            // selected 0644 file / 0755 directory modes before publish.
-            // Rename failures now fail closed (previously ignored, leaving
-            // the temp file behind while the CAS still reported success).
             try {
-                $this->atomicFileWriter->write(
-                    $path,
-                    $json,
-                    fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS,
-                    directoryMode: SessionAgentArtifactPathResolver::DIR_PERMISSIONS,
-                );
+                AtomicFileWriter::write($path, $json, fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
             } catch (AtomicFileWriterException $exception) {
                 throw new \RuntimeException(\sprintf('Failed to write state.json for child run "%s".', $this->agentRunId), previous: $exception);
             }

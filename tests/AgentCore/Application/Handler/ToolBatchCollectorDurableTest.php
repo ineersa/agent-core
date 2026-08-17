@@ -19,10 +19,8 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionToolBatchStore;
 use Ineersa\CodingAgent\Tests\Session\Support\ParentSessionToolBatchRunStoragePaths;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
@@ -315,7 +313,6 @@ final class ToolBatchCollectorDurableTest extends TestCase
             new NullLogger(),
             $serializer,
             $validator,
-            new AtomicFileWriter(new Filesystem()),
         );
     }
 

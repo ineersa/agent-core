@@ -24,7 +24,6 @@ final class SessionFileMcpToolCatalogStore implements McpToolCatalogStoreInterfa
      */
     public function __construct(
         private readonly string $projectCwd,
-        private readonly AtomicFileWriter $atomicFileWriter,
     ) {
     }
 
@@ -42,11 +41,7 @@ final class SessionFileMcpToolCatalogStore implements McpToolCatalogStoreInterfa
                 \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR,
             );
 
-            // Shared atomic writer (sibling temp, LOCK_EX full write, checked
-            // rename, cleanup on every failure). Write failures previously
-            // were silently ignored (temp left behind, no publish); they now
-            // fail closed under the same RuntimeException contract.
-            $this->atomicFileWriter->write($targetPath, $json);
+            AtomicFileWriter::write($targetPath, $json);
         } catch (AtomicFileWriterException $exception) {
             throw new \RuntimeException('rename' === $exception->stage ? \sprintf('Failed to atomic-rename MCP catalog for run "%s".', $runId) : \sprintf('Failed to write MCP catalog for run "%s".', $runId), previous: $exception);
         }

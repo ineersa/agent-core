@@ -13,9 +13,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
@@ -79,7 +77,6 @@ final class AgentArtifactRegistryTest extends TestCase
             serializer: $serializer,
             validator: $validator,
             lockFactory: new LockFactory(new FlockStore()),
-            atomicFileWriter: new AtomicFileWriter(new Filesystem()),
         );
     }
 

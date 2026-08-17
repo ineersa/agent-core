@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi\Codex;
 
 use Ineersa\CodingAgent\Auth\CodexAuthRecord;
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
+use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
 use Ineersa\CodingAgent\Auth\CodexOAuthService;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
@@ -17,11 +18,9 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Codex\CodexSymfonyAiProviderBuilder;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache;
-use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -41,14 +40,19 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
 
         $store = new FlockStore($this->tmpDir);
         $lockFactory = new LockFactory($store);
-        $this->authStorage = new CodexAuthStorage($this->tmpDir, $lockFactory, new AtomicFileWriter(new Filesystem()));
+        $this->authStorage = new CodexAuthStorage($this->tmpDir, $lockFactory);
     }
 
     protected function tearDown(): void
     {
         parent::tearDown();
 
-        TestDirectoryIsolation::removeDirectory($this->tmpDir);
+        $path = $this->tmpDir.'/'.CodexOAuthConfig::AUTH_FILE;
+        if (file_exists($path)) {
+            @unlink($path);
+        }
+        @rmdir($this->tmpDir.'/.hatfield');
+        @rmdir($this->tmpDir);
     }
 
     public function testCodexProviderWithAuthStorageCredentials(): void

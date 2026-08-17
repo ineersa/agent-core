@@ -13,9 +13,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
@@ -384,7 +382,7 @@ final class AgentChildRunStoreTest extends TestCase
         $statePath = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/state.json";
         $this->assertFileExists($statePath);
 
-        // Verify no temp files linger (shared writer temp naming `<name>.tmp.<rand>`)
+        // Verify no temp files linger
         $artifactDir = \dirname($statePath);
         $tmpFiles = glob($artifactDir.'/*.tmp.*');
         $this->assertCount(0, false !== $tmpFiles ? $tmpFiles : [], 'No .tmp files should remain after CAS');
@@ -401,7 +399,6 @@ final class AgentChildRunStoreTest extends TestCase
             parentRunId: $parentRunId,
             agentRunId: $agentRunId,
             artifactId: $artifactId,
-            atomicFileWriter: new AtomicFileWriter(new Filesystem()),
         );
     }
 }

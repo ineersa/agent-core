@@ -9,8 +9,6 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Ineersa\CodingAgent\Utility\AtomicFileWriter;
-use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
@@ -64,7 +62,6 @@ final class AgentArtifactSessionListingTest extends IsolatedKernelTestCase
             serializer: $serializer,
             validator: $validator,
             lockFactory: new LockFactory(new FlockStore()),
-            atomicFileWriter: new AtomicFileWriter(new Filesystem()),
         );
     }
 

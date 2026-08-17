@@ -30,7 +30,6 @@ final class CodexAuthStorage
     public function __construct(
         private readonly string $homeDir,
         private readonly LockFactory $lockFactory,
-        private readonly AtomicFileWriter $atomicFileWriter,
         private readonly ?CodexTokenRefresher $tokenRefresher = null,
         private readonly ?LoggerInterface $logger = null,
     ) {
@@ -180,15 +179,8 @@ final class CodexAuthStorage
 
         $json = json_encode($data, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR);
 
-        // Shared atomic writer: sibling temp + LOCK_EX full write + checked
-        // 0600 before publish + checked rename + cleanup on every failure.
-        // Symfony Filesystem::dumpFile() cannot guarantee a caller-selected
-        // 0600 before publish (it derives the mode from the destination or
-        // umask), so credentials go through the shared writer. Directory is
-        // created 0700 like before; rename failures keep the distinct
-        // message so callers can tell publish apart from write problems.
         try {
-            $this->atomicFileWriter->write($path, $json, fileMode: 0600, directoryMode: 0700);
+            AtomicFileWriter::write($path, $json, fileMode: 0600, directoryMode: 0700);
         } catch (AtomicFileWriterException $exception) {
             throw new \RuntimeException('rename' === $exception->stage ? \sprintf('Cannot rename auth credentials to %s', $path) : \sprintf('Cannot write auth credentials to %s', $path), previous: $exception);
         }
