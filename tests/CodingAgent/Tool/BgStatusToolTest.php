@@ -209,9 +209,9 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
         $schema = NativeToolSchemaProbe::for($this->tool);
         $pid = $schema['properties']['pid'];
-        // Assert\Positive maps to minimum:0 + exclusiveMinimum:true.
-        $this->assertSame(0, $pid['minimum']);
-        $this->assertTrue($pid['exclusiveMinimum']);
+        // Assert\Range(min: 1) maps to modern minimum: 1 (provider-compatible).
+        $this->assertSame(1, $pid['minimum']);
+        $this->assertArrayNotHasKey('exclusiveMinimum', $pid);
     }
 
     public function testDefinitionUsesParallelExecutionMode(): void

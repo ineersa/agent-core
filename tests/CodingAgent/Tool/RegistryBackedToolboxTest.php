@@ -267,7 +267,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertSame('img.png', $handler->seen->path);
     }
 
-    public function testSnakeCaseProviderKeysDenormalizeToCamelCaseDtoProperties(): void
+    public function testSnakeCaseProviderKeysDenormalizeToSnakeCaseDtoProperties(): void
     {
         $registry = new ToolRegistry();
         $handler = new class {
@@ -277,7 +277,7 @@ final class RegistryBackedToolboxTest extends TestCase
             {
                 $this->seen = $arguments;
 
-                return 'ok:'.$arguments->artifactId;
+                return 'ok:'.$arguments->artifact_id;
             }
         };
         $registry->registerTool(
@@ -295,8 +295,8 @@ final class RegistryBackedToolboxTest extends TestCase
 
         $this->assertSame('ok:agent_abc', $result->getResult());
         $this->assertInstanceOf(AgentRetrieveArgumentsDTO::class, $handler->seen);
-        $this->assertSame('agent_abc', $handler->seen->artifactId);
-        $this->assertNull($handler->seen->agentRunId);
+        $this->assertSame('agent_abc', $handler->seen->artifact_id);
+        $this->assertNull($handler->seen->agent_run_id);
         $this->assertSame(5, $handler->seen->limit);
     }
 

@@ -19,8 +19,9 @@ use Symfony\AI\Platform\Tool\Tool;
 
 /**
  * Container wiring of ToolCallArgumentResolver: config/services.yaml injects
- * the app serializer (camel_case_to_snake_case name converter), so provider
- * keys like artifact_id must denormalize onto DTO properties like artifactId.
+ * the app serializer (camel_case_to_snake_case name converter). The DTO
+ * argument boundary is canonical snake_case (artifact_id/agent_run_id), so
+ * the reflected provider schema and the serializer accept the same keys.
  */
 final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
 {
@@ -40,9 +41,21 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
         $this->assertArrayHasKey('arguments', $arguments);
         $dto = $arguments['arguments'];
         $this->assertInstanceOf(AgentRetrieveArgumentsDTO::class, $dto);
-        $this->assertSame('agent_abc', $dto->artifactId);
-        $this->assertNull($dto->agentRunId);
+        $this->assertSame('agent_abc', $dto->artifact_id);
+        $this->assertNull($dto->agent_run_id);
         $this->assertSame(5, $dto->limit);
+    }
+
+    public function testContainerAgentRetrieveSchemaUsesSnakeCaseProviderKeys(): void
+    {
+        $parameters = $this->toolboxParameters('agent_retrieve');
+
+        $properties = $parameters['properties'] ?? [];
+        $this->assertIsArray($properties);
+        $this->assertArrayHasKey('artifact_id', $properties, 'agent_retrieve provider schema must expose artifact_id.');
+        $this->assertArrayHasKey('agent_run_id', $properties, 'agent_retrieve provider schema must expose agent_run_id.');
+        $this->assertArrayNotHasKey('artifactId', $properties, 'agent_retrieve provider schema must not expose camelCase artifactId.');
+        $this->assertArrayNotHasKey('agentRunId', $properties, 'agent_retrieve provider schema must not expose camelCase agentRunId.');
     }
 
     public function testContainerResolverDenormalizesParallelSubagentTasksIntoDtos(): void
@@ -79,6 +92,21 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
             \sprintf('Timeout in seconds (default: %d, max: %d). Use for commands that may hang.', $config->defaultTimeoutSeconds, $config->maxTimeoutSeconds),
             $timeout['description'],
         );
+    }
+
+    public function testContainerSchemaExposesPositiveIntegerBoundsWithoutExclusiveMinimum(): void
+    {
+        // Assert\Range(min: 1) must produce modern `minimum: 1` — the draft-04
+        // boolean `exclusiveMinimum: true` form (Assert\Positive) is rejected
+        // by OpenAI/Codex. Regression for the provider-side tools[1].parameters
+        // rejection on the child toolset.
+        foreach (['bash' => ['timeout'], 'read' => ['offset', 'limit'], 'bg_status' => ['pid']] as $toolName => $properties) {
+            foreach ($properties as $property) {
+                $schema = $this->toolboxParameterSchema($toolName, $property);
+                $this->assertSame(1, $schema['minimum'], \sprintf('Tool %s.%s must expose minimum: 1.', $toolName, $property));
+                $this->assertArrayNotHasKey('exclusiveMinimum', $schema, \sprintf('Tool %s.%s must not expose a boolean exclusiveMinimum.', $toolName, $property));
+            }
+        }
     }
 
     public function testContainerSchemaExposesConfiguredSubagentTasksLimit(): void
@@ -158,14 +186,25 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
      */
     private function toolboxParameterSchema(string $toolName, string $property): array
     {
+        $parameters = $this->toolboxParameters($toolName);
+        $propertySchema = $parameters['properties'][$property] ?? null;
+        $this->assertIsArray($propertySchema, \sprintf('Tool %s must expose a %s property schema.', $toolName, $property));
+
+        return $propertySchema;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function toolboxParameters(string $toolName): array
+    {
         $toolbox = self::getContainer()->get(ToolboxInterface::class);
         foreach ($toolbox->getTools() as $tool) {
             if ($tool->getName() === $toolName) {
                 $parameters = $tool->getParameters() ?? [];
-                $propertySchema = $parameters['properties'][$property] ?? null;
-                $this->assertIsArray($propertySchema, \sprintf('Tool %s must expose a %s property schema.', $toolName, $property));
+                $this->assertIsArray($parameters, \sprintf('Tool %s must expose a parameter schema.', $toolName));
 
-                return $propertySchema;
+                return $parameters;
             }
         }
 

@@ -281,7 +281,7 @@ final class BashTool implements HatfieldToolProviderInterface
 
     private function resolveTimeout(BashArgumentsDTO $arguments): int
     {
-        // Argument bounds are validated natively (Assert\Positive +
+        // Argument bounds are validated natively (Assert\Range +
         // BashTimeoutMax against the configured max); this only applies
         // the configured default when the model omitted timeout.
         return $arguments->timeout ?? $this->config->defaultTimeoutSeconds;

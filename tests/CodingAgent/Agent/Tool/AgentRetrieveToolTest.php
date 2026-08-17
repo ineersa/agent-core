@@ -46,7 +46,7 @@ final class AgentRetrieveToolTest extends IsolatedKernelTestCase
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('requires an active parent run context');
-        $tool->__invoke(new AgentRetrieveArgumentsDTO(artifactId: 'agent_x'));
+        $tool->__invoke(new AgentRetrieveArgumentsDTO(artifact_id: 'agent_x'));
     }
 
     public function testMissingIdentifiersAreRejectedByDtoConstraints(): void

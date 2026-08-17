@@ -21,7 +21,7 @@ final class BgStatusArgumentsDTO
         #[Assert\Choice(choices: ['list', 'log', 'stop'], message: 'Invalid action "{{ value }}". Use one of: list, log, stop.')]
         public readonly string $action = '',
         #[Schema(description: 'Process PID (required for log and stop actions)')]
-        #[Assert\Positive(message: 'The "pid" argument must be a positive integer.')]
+        #[Assert\Range(min: 1, minMessage: 'The "pid" argument must be a positive integer.')]
         #[Assert\When(
             expression: 'this.action === "log"',
             constraints: [

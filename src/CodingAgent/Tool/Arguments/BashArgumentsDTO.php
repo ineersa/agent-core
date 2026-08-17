@@ -24,7 +24,7 @@ final class BashArgumentsDTO
         #[Assert\NotBlank(normalizer: 'trim', message: 'The "command" argument is required and must be a non-empty string.')]
         public readonly string $command = '',
         #[Schema(provider: BashTimeoutSchemaProvider::class)]
-        #[Assert\Positive(message: 'The "timeout" argument must be a positive integer.')]
+        #[Assert\Range(min: 1, minMessage: 'The "timeout" argument must be a positive integer.')]
         #[BashTimeoutMax]
         public readonly ?int $timeout = null,
     ) {

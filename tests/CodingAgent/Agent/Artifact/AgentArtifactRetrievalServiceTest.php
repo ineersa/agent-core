@@ -371,8 +371,8 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
     private function args(array $arguments): AgentRetrieveArgumentsDTO
     {
         return new AgentRetrieveArgumentsDTO(
-            artifactId: isset($arguments['artifact_id']) && \is_string($arguments['artifact_id']) ? $arguments['artifact_id'] : null,
-            agentRunId: isset($arguments['agent_run_id']) && \is_string($arguments['agent_run_id']) ? $arguments['agent_run_id'] : null,
+            artifact_id: isset($arguments['artifact_id']) && \is_string($arguments['artifact_id']) ? $arguments['artifact_id'] : null,
+            agent_run_id: isset($arguments['agent_run_id']) && \is_string($arguments['agent_run_id']) ? $arguments['agent_run_id'] : null,
             mode: isset($arguments['mode']) && \is_string($arguments['mode']) ? $arguments['mode'] : null,
             limit: isset($arguments['limit']) && \is_int($arguments['limit']) ? $arguments['limit'] : null,
         );
