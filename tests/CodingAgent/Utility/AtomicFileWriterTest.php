@@ -103,7 +103,9 @@ final class AtomicFileWriterTest extends TestCase
     public function testUnlockedReadersSeeOnlyOldOrCompleteContentDuringRepeatedWrites(): void
     {
         $dest = $this->tmpDir.'/big.json';
-        file_put_contents($dest, '{"version":0}');
+        // Old-complete seed: same schema as the replacement payload so a
+        // reader sampling before the first publish sees a valid old value.
+        file_put_contents($dest, json_encode(['content' => 'old'], \JSON_THROW_ON_ERROR));
 
         // 4 MiB payload keeps the truncate-then-write window wide enough that a
         // tight reader loop reliably catches a partial read on a non-atomic
