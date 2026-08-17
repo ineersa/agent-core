@@ -15,7 +15,7 @@ use Symfony\Component\Process\Process;
  */
 final class GitBranchDetector
 {
-    public function detect(): string
+    public static function detect(): string
     {
         try {
             $process = new Process(['git', 'rev-parse', '--abbrev-ref', 'HEAD']);

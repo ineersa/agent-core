@@ -22,7 +22,7 @@ final class GitBranchDetectorTest extends TestCase
             $previous = getcwd();
             chdir($dir);
             try {
-                $this->assertSame('', (new GitBranchDetector())->detect());
+                $this->assertSame('', GitBranchDetector::detect());
             } finally {
                 chdir($previous);
             }
@@ -59,7 +59,7 @@ final class GitBranchDetectorTest extends TestCase
             $previous = getcwd();
             chdir($repo);
             try {
-                $this->assertSame('testbranch', (new GitBranchDetector())->detect());
+                $this->assertSame('testbranch', GitBranchDetector::detect());
             } finally {
                 chdir($previous);
             }

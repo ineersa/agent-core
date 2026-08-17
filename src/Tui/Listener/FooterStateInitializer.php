@@ -24,7 +24,6 @@ final readonly class FooterStateInitializer
     public function __construct(
         private HatfieldSessionStore $sessionStore,
         private AppConfig $appConfig,
-        private GitBranchDetector $gitBranchDetector,
     ) {
     }
 
@@ -67,7 +66,7 @@ final readonly class FooterStateInitializer
 
         $cwd = getcwd();
         $state->cwd = false !== $cwd ? self::shortCwd($cwd) : '';
-        $state->branch = $this->gitBranchDetector->detect();
+        $state->branch = GitBranchDetector::detect();
     }
 
     /**
