@@ -22,7 +22,9 @@ use Symfony\Component\Tui\Widget\AbstractWidget;
  * multi-colored token/cost blocks stay visually grouped.
  *
  * Truncation delegates to Symfony TUI's {@see AnsiUtils} for accurate
- * visible-width computation and ANSI-preserving truncation.
+ * visible-width computation and ANSI-preserving truncation. Every
+ * returned line is truncated to the renderer column width, so the
+ * widget never overflows the terminal at any width.
  *
  * Keyed status panel rows are intentionally not rendered here; they live
  * only in the status panel via ChatScreen::setStatus().
@@ -43,7 +45,10 @@ final class FooterBarWidget extends AbstractWidget
         $segments = $this->dataProvider->getSegments();
 
         if ([] === $segments) {
-            return [$this->theme->color(ThemeColorEnum::Footer, '  ◆ agent-core  |  type /help for commands')];
+            return [AnsiUtils::truncateToWidth(
+                $this->theme->color(ThemeColorEnum::Footer, '  ◆ agent-core  |  type /help for commands'),
+                $context->getColumns(),
+            )];
         }
 
         // ── Build segment structs with ANSI text and separator prefix ──
@@ -124,7 +129,11 @@ final class FooterBarWidget extends AbstractWidget
             if (AnsiUtils::visibleWidth($lineContent) > $available) {
                 $lineContent = AnsiUtils::truncateToWidth($lineContent, $available);
             }
-            $output[] = \sprintf('  %s', $lineContent);
+            // Outer width guarantee: the packing budget max(10, columns - 2)
+            // can exceed the real column count at pathological widths, so the
+            // final line is truncated to the renderer width (the same contract
+            // the old LiveTextWidget(truncate: true) bridge enforced).
+            $output[] = AnsiUtils::truncateToWidth(\sprintf('  %s', $lineContent), $context->getColumns());
         }
 
         return $output;

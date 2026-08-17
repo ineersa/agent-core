@@ -154,6 +154,44 @@ final class FooterBarWidgetTest extends TestCase
         }
     }
 
+    public function testRendersAtPathologicalNarrowWidthsWithoutOverflow(): void
+    {
+        $provider = new FooterDataProvider();
+        $provider->addProvider(new class implements FooterSegmentProvider {
+            /** @return list<FooterSegment> */
+            public function getSegments(): array
+            {
+                return [
+                    new FooterSegment(text: 'model: test/model', priority: 100),
+                    new FooterSegment(text: 'tokens: 1234', priority: 101),
+                    new FooterSegment(text: 'branch: some-very-long-feature-branch', priority: 111),
+                ];
+            }
+        });
+
+        $widget = new FooterBarWidget($this->theme(), $provider);
+
+        // The packing budget is max(10, columns - 2), so widths <= 11 can
+        // emit 12-column lines; the outer truncation must still guarantee
+        // every row fits the real column count (and the Symfony Renderer
+        // must not throw RenderException on overflow).
+        foreach ([4, 6, 8, 11, 12, 20] as $width) {
+            $lines = $this->renderWidget($widget, $width);
+            $this->assertGreaterThan(0, \count($lines), "width {$width} must render rows");
+            foreach ($lines as $i => $line) {
+                $this->assertLessThanOrEqual($width, AnsiUtils::visibleWidth($line), "row {$i} visible width exceeds {$width}");
+            }
+        }
+
+        // The empty-provider default footer line must also fit the terminal.
+        $empty = new FooterBarWidget($this->theme(), new FooterDataProvider());
+        foreach ([8, 11, 20, 40] as $width) {
+            $lines = $this->renderWidget($empty, $width);
+            $this->assertCount(1, $lines, "width {$width} must render the default footer");
+            $this->assertLessThanOrEqual($width, AnsiUtils::visibleWidth($lines[0]), "default footer exceeds {$width}");
+        }
+    }
+
     private function theme(): DefaultTheme
     {
         // Empty palette matches the previous constructor default theme.

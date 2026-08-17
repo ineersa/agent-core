@@ -470,8 +470,8 @@ final class ChatScreen
      * overlay, then re-adds everything in original order so the overlay
      * renders directly above the editor area:
      *
-     *   … → status → aboveEditorWidget → overlay → editorSep → editor →
-     *   belowEditorWidget → footerSep → footer
+     *   … → status → compactHeader → overlay → editorSep → editor →
+     *   footerSep → footer
      *
      * @throws \LogicException when the screen has not been mounted yet
      */
@@ -500,11 +500,11 @@ final class ChatScreen
     /**
      * Insert an interactive overlay widget below the editor.
      *
-     * Removes the below-editor area and footer, adds the overlay, then
+     * Removes the footer, adds the overlay, then
      * restores everything in original order so the overlay renders
      * directly below the editor:
      *
-     *   … → editor → overlay → belowEditorWidget → footerSep → footer
+     *   … → editor → overlay → footerSep → footer
      *
      * Used by completion menus that should appear below the prompt
      * while the editor keeps focus (unlike question/picker overlays
@@ -525,7 +525,7 @@ final class ChatScreen
         // Add the overlay (appended after the editor).
         $this->tui->add($widget);
 
-        // Restore below-editor widgets in original mount order.
+        // Restore footer widgets in original mount order.
         $this->tui->add($this->footerSepWidget);
         $this->tui->add($this->footerWidget);
     }
