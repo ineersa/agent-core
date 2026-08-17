@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Auth;
 
+use Ineersa\CodingAgent\Utility\AtomicFileWriter;
+use Ineersa\CodingAgent\Utility\AtomicFileWriterException;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 
@@ -174,33 +176,14 @@ final class CodexAuthStorage
     private function writeToFile(array $data): void
     {
         $path = $this->authJsonPath();
-        $dir = \dirname($path);
-
-        if (!@is_dir($dir)) {
-            @mkdir($dir, 0700, true);
-        }
 
         $json = json_encode($data, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR);
 
-        // Write to a temp file and chmod before rename to avoid a world-readable
-        // window on the credentials (TOCTOU). The temp file is in the same
-        // directory so the rename is atomic within the same filesystem.
-        $tmpPath = $path.'.'.bin2hex(random_bytes(8)).'.tmp';
-        $written = @file_put_contents($tmpPath, $json, \LOCK_EX);
-        if (false === $written) {
-            @unlink($tmpPath);
-            throw new \RuntimeException(\sprintf('Cannot write auth credentials to %s', $path));
+        try {
+            AtomicFileWriter::write($path, $json, fileMode: 0600, directoryMode: 0700);
+        } catch (AtomicFileWriterException $exception) {
+            throw new \RuntimeException('rename' === $exception->stage ? \sprintf('Cannot rename auth credentials to %s', $path) : \sprintf('Cannot write auth credentials to %s', $path), previous: $exception);
         }
-
-        @chmod($tmpPath, 0600);
-
-        if (!@rename($tmpPath, $path)) {
-            @unlink($tmpPath);
-            throw new \RuntimeException(\sprintf('Cannot rename auth credentials to %s', $path));
-        }
-
-        // Defensive chmod after rename (preserves 0600 even if umask interfered)
-        @chmod($path, 0600);
     }
 
     private function authJsonPath(): string
