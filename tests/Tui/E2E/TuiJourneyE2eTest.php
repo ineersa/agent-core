@@ -189,7 +189,9 @@ final class TuiJourneyE2eTest extends TestCase
      * Types "/he" — live completion opens the Completions overlay showing
      * the /help suggestion. First Tab accepts it (editor becomes "/help",
      * overlay disappears). Second Tab with the overlay gone must not reopen
-     * it. Ends with C-u so later shell phases start clean.
+     * it. Additional literal text must append after the accepted completion
+     * (cursor-at-end contract). Ends with C-u so later shell phases start
+     * clean.
      */
     private function journeyPhaseSlashCompletion(TmuxPane $pane): void
     {
@@ -235,7 +237,22 @@ final class TuiJourneyE2eTest extends TestCase
             history: 2000,
         );
 
-        $this->saveAnsiSnapshot($pane, 'journey-slash-completion-accepted');
+        // Cursor-at-end proof: after Tab accepted "/help ", additional literal
+        // text must appear AFTER the accepted completion in the visible editor.
+        // This exercises the real terminal → InputEvent → CompletionListener →
+        // EditorWidget path; a cursor left at the start would render "xyz/help ".
+        $this->tmux->sendLiteral($pane, 'xyz');
+        $this->tmux->waitForCallback(
+            $pane,
+            static function (string $cap): bool {
+                return str_contains($cap, '/help xyz');
+            },
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+            message: 'Typing after the accepted completion must append after /help (cursor at end)',
+            history: 2000,
+        );
+
+        $this->saveAnsiSnapshot($pane, 'journey-slash-completion-cursor-at-end');
 
         // Clear editor so later shell phases start clean.
         $this->tmux->sendKey($pane, 'C-u');

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Stream;
 
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
 
@@ -40,6 +42,30 @@ final class StdoutRuntimeEventSinkTest extends TestCase
         $this->assertSame(JsonlCodec::encodeEvent($event), $output);
         $this->assertStringContainsString('https://example.com/path/to', $output);
         $this->assertSame(1, substr_count($output, "\n"));
+    }
+
+    public function testEmitThrowsTypedTransportExceptionOnWriteFailure(): void
+    {
+        // Force the sink to believe STDOUT is a pipe and point it at a
+        // read-only handle so fwrite fails — the producer boundary must
+        // surface a typed RuntimeTransportException (fatal for the poller).
+        $readOnly = fopen('php://memory', 'rb');
+        $this->assertNotFalse($readOnly);
+
+        $isPipe = new \ReflectionProperty(StdoutRuntimeEventSink::class, 'isPipe');
+        $stdout = new \ReflectionProperty(StdoutRuntimeEventSink::class, 'stdout');
+        $isPipe->setValue(null, true);
+        $stdout->setValue(null, $readOnly);
+
+        try {
+            $this->expectException(RuntimeTransportException::class);
+            $sink = new StdoutRuntimeEventSink();
+            $sink->emit($this->slashSensitiveEvent());
+        } finally {
+            $stdout->setValue(null, null);
+            $isPipe->setValue(null, null);
+            fclose($readOnly);
+        }
     }
 
     private function slashSensitiveEvent(): RuntimeEvent

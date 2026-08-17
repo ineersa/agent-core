@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryProviderInterface;
+use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Symfony\Component\Tui\Event\InputEvent;
 use Symfony\Component\Tui\Event\TickEvent;
@@ -60,6 +61,6 @@ final readonly class LoadedResourcesStartupRegistrar implements TuiListenerRegis
 
             $screen->toggleLoadedResourcesExpanded();
             $tui->requestRender();
-        }, priority: 50);
+        }, priority: InputPriority::EXTENSION_DEFAULT);
     }
 }

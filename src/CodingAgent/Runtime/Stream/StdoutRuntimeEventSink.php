@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Stream;
 
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 
@@ -37,7 +38,7 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
     public function emit(RuntimeEvent $event): void
     {
         if (false === $this->write($event)) {
-            throw new \RuntimeException(\sprintf('StdoutRuntimeEventSink: fwrite to STDOUT pipe failed (event: %s). The controller process may be dead — aborting LLM consumer.', $event->type));
+            throw new RuntimeTransportException(\sprintf('StdoutRuntimeEventSink: fwrite to STDOUT pipe failed (event: %s). The controller process may be dead — aborting LLM consumer.', $event->type));
         }
     }
 

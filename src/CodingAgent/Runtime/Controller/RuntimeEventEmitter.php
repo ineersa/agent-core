@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -61,7 +62,7 @@ final class RuntimeEventEmitter
     {
         $this->stdout = fopen('php://stdout', 'wb');
         if (false === $this->stdout) {
-            throw new \RuntimeException('Cannot open stdout for controller mode');
+            throw new RuntimeTransportException('Cannot open stdout for controller mode');
         }
     }
 

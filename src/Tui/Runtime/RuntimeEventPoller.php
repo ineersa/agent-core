@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -260,7 +261,10 @@ final class RuntimeEventPoller
                 'consecutive_errors' => $state->runtimePollErrorCount,
             ]);
 
-            if (!$this->isFatalPollingError($e) && $state->runtimePollErrorCount < 3) {
+            // Only typed transport failures are immediately fatal. Any other
+            // exception (domain, EventStore, mapper, malformed events) stays
+            // retryable until the consecutive-error ceiling is reached.
+            if (!$e instanceof RuntimeTransportException && $state->runtimePollErrorCount < 3) {
                 // Show transient status on the first non-fatal error
                 // so the user sees something instead of silence.
                 // The poller will retry; if the issue persists, the
@@ -295,18 +299,5 @@ final class RuntimeEventPoller
 
             return TranscriptChangeSet::incremental([$block]);
         }
-    }
-
-    private function isFatalPollingError(\Throwable $e): bool
-    {
-        $message = strtolower($e->getMessage());
-
-        foreach (['process', 'pipe', 'transport', 'no such file', 'exited', 'closed', 'stdin', 'stdout'] as $needle) {
-            if (str_contains($message, $needle)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Symfony\Component\Tui\Event\InputEvent;
 
@@ -14,7 +15,7 @@ use Symfony\Component\Tui\Event\InputEvent;
  * on {@see \Ineersa\Tui\Runtime\TuiSessionState}. Does not touch Hatfield settings,
  * session metadata, runtime commands, or canonical events.
  *
- * Registered at priority 98: Ctrl+C/D handling and completion-overlay cleanup
+ * Registered at priority {@see InputPriority::PREVIEW_EXPANSION}: Ctrl+C/D handling and completion-overlay cleanup
  * keep their higher-priority slots, while Ctrl+O is consumed before lower-priority
  * model/completion/editor input routing can treat it as normal editor input.
  */
@@ -43,7 +44,7 @@ final class PreviewExpansionInputListener implements TuiListenerRegistrar
 
                 $tui->requestRender();
             },
-            priority: 98,
+            priority: InputPriority::PREVIEW_EXPANSION,
         );
     }
 }

@@ -669,6 +669,27 @@ final class ChatScreen
         return $this->registry;
     }
 
+    /**
+     * Register slot input handlers on the mounted Tui as native InputEvent
+     * listeners with their explicit priorities.
+     *
+     * Must be called AFTER listener registrars have run so any handler an
+     * internal extension context registered during setup is captured.
+     * Handlers added later are not picked up — the extension-facing
+     * contract has no input registration today, so there is no consumer
+     * of late registration.
+     */
+    public function registerSlotInputListeners(): void
+    {
+        if (null === $this->tui) {
+            return;
+        }
+
+        foreach ($this->registry->getInputHandlers() as $entry) {
+            $this->tui->addListener($entry['handler'], priority: $entry['priority']);
+        }
+    }
+
     public function extensionContext(): TuiExtensionContext
     {
         return $this->extensionContext;

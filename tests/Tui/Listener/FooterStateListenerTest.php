@@ -14,6 +14,7 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
+use Ineersa\Tui\Utility\GitBranchDetector;
 use Ineersa\Tui\Widget\LiveTextWidget;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -101,6 +102,7 @@ final class FooterStateListenerTest extends TestCase
                 sessions: new SessionsConfig(),
                 cwd: '/tmp',
             ),
+            new GitBranchDetector(),
         );
     }
 
