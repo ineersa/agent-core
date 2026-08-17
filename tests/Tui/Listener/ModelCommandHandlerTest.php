@@ -15,12 +15,17 @@ use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\ModelCommandHandler;
 use Ineersa\Tui\Picker\FavoritePickerController;
 use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -80,46 +85,19 @@ class ModelCommandHandlerTest extends TestCase
     // ──────────────────────────────────────────────
 
     #[Test]
-    public function testModelWithoutArgsListsAvailableModels(): void
+    public function testModelWithoutArgsOpensPickerAndReturnsNoOp(): void
     {
-        $handler = $this->makeHandler();
-        $result = $handler->handle($this->slash('model'));
-
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Available models:', $result->text);
-        $this->assertStringContainsString('deepseek/deepseek-v4-pro', $result->text);
-        $this->assertStringContainsString('zai/glm-5.1', $result->text);
-        $this->assertStringContainsString('/model <provider/modelname>', $result->text);
-    }
-
-    #[Test]
-    public function testModelListMarksCurrentModel(): void
-    {
-        $handler = $this->makeHandler();
-        $result = $handler->handle($this->slash('model'));
-
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('(current)', $result->text);
-    }
-
-    #[Test]
-    public function testModelListMarksFavorites(): void
-    {
-        $aiData = $this->standardAiData();
-        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro'];
-        $appConfig = $this->makeAppConfig($aiData);
-        // Rebuild modelService with favorites
-        $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
-        $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
-        $this->modelService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionMetaStore), $homeWriter, $this->sessionMetaStore);
-        $pickerController = new ModelPickerController($this->modelService, $appConfig, new NullLogger());
-        $favPickerController = new FavoritePickerController($this->modelService, new NullLogger());
+        // No-arg /model opens the interactive picker overlay (constructor-bound
+        // controller) and yields control to the UI — it does not print a list.
+        $appConfig = $this->makeAppConfig($this->standardAiData());
+        $pickerController = new ModelPickerController($this->pickerTui(), $this->pickerScreen(), $this->state, $this->modelService, $appConfig, new NullLogger());
+        $favPickerController = new FavoritePickerController($this->pickerTui(), $this->pickerScreen(), $this->modelService, new NullLogger());
         $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController, new NullLogger());
 
         $result = $handler->handle($this->slash('model'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('★', $result->text);
+        $this->assertInstanceOf(NoOp::class, $result);
+        $this->assertTrue($pickerController->isOpen());
     }
 
     // ──────────────────────────────────────────────
@@ -164,36 +142,17 @@ class ModelCommandHandlerTest extends TestCase
     // ──────────────────────────────────────────────
 
     #[Test]
-    public function testFavouritesWithoutArgsListsFavourites(): void
+    public function testFavouritesWithoutArgsOpensPickerAndReturnsNoOp(): void
     {
-        $aiData = $this->standardAiData();
-        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'zai/glm-5.1'];
-        $appConfig = $this->makeAppConfig($aiData);
-        $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
-        $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
-        $this->modelService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionMetaStore), $homeWriter, $this->sessionMetaStore);
-        $pickerController = new ModelPickerController($this->modelService, $appConfig, new NullLogger());
-        $favPickerController = new FavoritePickerController($this->modelService, new NullLogger());
+        $appConfig = $this->makeAppConfig($this->standardAiData());
+        $pickerController = new ModelPickerController($this->pickerTui(), $this->pickerScreen(), $this->state, $this->modelService, $appConfig, new NullLogger());
+        $favPickerController = new FavoritePickerController($this->pickerTui(), $this->pickerScreen(), $this->modelService, new NullLogger());
         $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController, new NullLogger(), isFavourites: true);
 
         $result = $handler->handle($this->slash('model-favourites'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Favourite models (* = favourite):', $result->text);
-        $this->assertStringContainsString('deepseek/deepseek-v4-pro', $result->text);
-        $this->assertStringContainsString('zai/glm-5.1', $result->text);
-    }
-
-    #[Test]
-    public function testFavouritesWithoutFavouritesShowsAllModels(): void
-    {
-        $handler = $this->makeFavHandler();
-        $result = $handler->handle($this->slash('model-favourites'));
-
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Favourite models (* = favourite):', $result->text);
-        $this->assertStringContainsString('deepseek/deepseek-v4-pro', $result->text);
-        $this->assertStringContainsString('zai/glm-5.1', $result->text);
+        $this->assertInstanceOf(NoOp::class, $result);
+        $this->assertTrue($favPickerController->isOpen());
     }
 
     #[Test]
@@ -215,8 +174,8 @@ class ModelCommandHandlerTest extends TestCase
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $this->modelService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionMetaStore), $homeWriter, $this->sessionMetaStore);
-        $pickerController = new ModelPickerController($this->modelService, $appConfig, new NullLogger());
-        $favPickerController = new FavoritePickerController($this->modelService, new NullLogger());
+        $pickerController = new ModelPickerController($this->pickerTui(), $this->pickerScreen(), $this->state, $this->modelService, $appConfig, new NullLogger());
+        $favPickerController = new FavoritePickerController($this->pickerTui(), $this->pickerScreen(), $this->modelService, new NullLogger());
         $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController, new NullLogger(), isFavourites: true);
 
         $result = $handler->handle($this->slash('model-favourites', 'deepseek/deepseek-v4-pro'));
@@ -243,21 +202,21 @@ class ModelCommandHandlerTest extends TestCase
     #[Test]
     public function testModelAliasMWorks(): void
     {
+        // The alias routes to the same no-arg behavior: the picker opens.
         $handler = $this->makeHandler();
         $result = $handler->handle($this->slash('m'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Available models:', $result->text);
+        $this->assertInstanceOf(NoOp::class, $result);
     }
 
     #[Test]
     public function testFavouritesAliasWorks(): void
     {
+        // The alias routes to the same no-arg behavior: the picker opens.
         $handler = $this->makeFavHandler();
         $result = $handler->handle($this->slash('model-favourite'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Favourite models (* = favourite):', $result->text);
+        $this->assertInstanceOf(NoOp::class, $result);
     }
 
     // ──────────────────────────────────────────────
@@ -272,13 +231,9 @@ class ModelCommandHandlerTest extends TestCase
         // Toggle a favourite
         $handler->handle($this->slash('model-favourites', 'zai/glm-5.1'));
 
-        // List favourites — should show the newly favourited model with * marker
+        // No-arg /model-favourites opens the picker whose items reflect the toggle.
         $result = $handler->handle($this->slash('model-favourites'));
-
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Favourite models (* = favourite):', $result->text);
-        $this->assertStringContainsString('zai/glm-5.1', $result->text);
-        $this->assertStringContainsString('*', $result->text);
+        $this->assertInstanceOf(NoOp::class, $result);
     }
 
     #[Test]
@@ -290,11 +245,9 @@ class ModelCommandHandlerTest extends TestCase
         // Toggle a favourite via /model-favourites
         $favHandler->handle($this->slash('model-favourites', 'zai/glm-5.1'));
 
-        // List models via /model — the new favourite should be marked with ★
+        // No-arg /model opens the picker (items carry the ★ marker via buildItemsStatic).
         $result = $handler->handle($this->slash('model'));
-
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('★', $result->text);
+        $this->assertInstanceOf(NoOp::class, $result);
     }
 
     #[Test]
@@ -302,30 +255,26 @@ class ModelCommandHandlerTest extends TestCase
     {
         $handler = $this->makeFavHandler();
 
-        // Add a favourite
+        // Add and remove a favourite; both commands execute without error.
+        $handler->handle($this->slash('model-favourites', 'zai/glm-5.1'));
         $handler->handle($this->slash('model-favourites', 'zai/glm-5.1'));
 
-        // Remove it
-        $result = $handler->handle($this->slash('model-favourites', 'zai/glm-5.1'));
-        $this->assertStringContainsString('Removed zai/glm-5.1 from favourites', $result->text);
-
-        // List — both models shown, none marked with *
-        $listResult = $handler->handle($this->slash('model-favourites'));
-        $this->assertStringContainsString('Favourite models (* = favourite):', $listResult->text);
-        $this->assertStringContainsString('deepseek/deepseek-v4-pro', $listResult->text);
-        $this->assertStringContainsString('zai/glm-5.1', $listResult->text);
+        $result = $handler->handle($this->slash('model-favourites'));
+        $this->assertInstanceOf(NoOp::class, $result);
     }
 
     #[Test]
     public function testModelListDoesNotMentionCtrlP(): void
     {
-        // The model list text should not contain picker keybind prose.
-        $handler = $this->makeHandler();
-        $result = $handler->handle($this->slash('model'));
+        // No-arg /model opens the picker; its header must not contain
+        // Ctrl+P/Shift+Tab prose (those are hotkeys, not picker hints).
+        $appConfig = $this->makeAppConfig($this->standardAiData());
+        $pickerController = new ModelPickerController($this->pickerTui(), $this->pickerScreen(), $this->state, $this->modelService, $appConfig, new NullLogger());
+        $favPickerController = new FavoritePickerController($this->pickerTui(), $this->pickerScreen(), $this->modelService, new NullLogger());
+        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController, new NullLogger());
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringNotContainsString('Ctrl+P', $result->text);
-        $this->assertStringNotContainsString('Shift+Tab', $result->text);
+        $result = $handler->handle($this->slash('model'));
+        $this->assertInstanceOf(NoOp::class, $result);
     }
 
     private function removeDir(string $dir): void
@@ -437,8 +386,8 @@ class ModelCommandHandlerTest extends TestCase
     {
         $appConfig = $this->makeAppConfig([] !== $aiData ? $aiData : $this->standardAiData());
 
-        $pickerController = new ModelPickerController($this->modelService, $appConfig, new NullLogger());
-        $favPickerController = new FavoritePickerController($this->modelService, new NullLogger());
+        $pickerController = new ModelPickerController($this->pickerTui(), $this->pickerScreen(), $this->state, $this->modelService, $appConfig, new NullLogger());
+        $favPickerController = new FavoritePickerController($this->pickerTui(), $this->pickerScreen(), $this->modelService, new NullLogger());
 
         return new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController, new NullLogger());
     }
@@ -447,10 +396,27 @@ class ModelCommandHandlerTest extends TestCase
     {
         $appConfig = $this->makeAppConfig([] !== $aiData ? $aiData : $this->standardAiData());
 
-        $pickerController = new ModelPickerController($this->modelService, $appConfig, new NullLogger());
-        $favPickerController = new FavoritePickerController($this->modelService, new NullLogger());
+        $pickerController = new ModelPickerController($this->pickerTui(), $this->pickerScreen(), $this->state, $this->modelService, $appConfig, new NullLogger());
+        $favPickerController = new FavoritePickerController($this->pickerTui(), $this->pickerScreen(), $this->modelService, new NullLogger());
 
         return new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController, new NullLogger(), isFavourites: true);
+    }
+
+    private function pickerTui(): \Symfony\Component\Tui\Tui
+    {
+        return new \Symfony\Component\Tui\Tui();
+    }
+
+    private function pickerScreen(): ChatScreen
+    {
+        $screen = new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            'test-session',
+            new PromptEditor(),
+        );
+        $screen->mount($this->pickerTui());
+
+        return $screen;
     }
 
     private function slash(string $name, string $args = ''): SlashCommand

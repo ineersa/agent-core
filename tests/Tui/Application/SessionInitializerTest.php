@@ -48,6 +48,7 @@ use Symfony\Component\Lock\Store\FlockStore;
 final class SessionInitializerTest extends TestCase
 {
     private string $projectDir = '';
+    private TuiRuntimeEventApplier $eventApplier;
     private SessionRunEventStore $eventStore;
     private SessionInitializer $sessionInit;
 
@@ -93,12 +94,13 @@ final class SessionInitializerTest extends TestCase
             transcriptProjector: $transcriptProjector
         );
 
+        $this->eventApplier = new TuiRuntimeEventApplier($transcriptProjector, SubagentProgressSerializerTestSupport::denormalizer());
+
         $this->sessionInit = new SessionInitializer(
             sessionStore: $hatfieldSessionStore,
             eventStore: $this->eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($transcriptProjector, SubagentProgressSerializerTestSupport::denormalizer()),
             historyProvider: $historyProvider,
             sessionTranscriptProvider: $sessionTranscriptProvider
         );
@@ -119,7 +121,7 @@ final class SessionInitializerTest extends TestCase
         // expects mock expectations on setUp-managed mocks.
 
         $state = new TuiSessionState('test-fresh', false);
-        $blocks = $this->sessionInit->buildInitialTranscript($state);
+        $blocks = $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         $this->assertCount(1, $blocks);
         $this->assertSame(TranscriptBlockKindEnum::System, $blocks[0]->kind);
@@ -135,7 +137,7 @@ final class SessionInitializerTest extends TestCase
         file_put_contents($sessionDir.'/events.jsonl', '');
 
         $state = new TuiSessionState($runId, true);
-        $blocks = $this->sessionInit->buildInitialTranscript($state);
+        $blocks = $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         $this->assertCount(1, $blocks);
         $this->assertSame(TranscriptBlockKindEnum::System, $blocks[0]->kind);
@@ -190,7 +192,7 @@ final class SessionInitializerTest extends TestCase
         ));
 
         $state = new TuiSessionState($runId, true);
-        $blocks = $this->sessionInit->buildInitialTranscript($state);
+        $blocks = $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         $this->assertSame(7, $state->lastSeq);
         $found = false;
@@ -218,7 +220,7 @@ final class SessionInitializerTest extends TestCase
         ));
 
         $state = new TuiSessionState($runId, true);
-        $blocks = $this->sessionInit->buildInitialTranscript($state);
+        $blocks = $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         $this->assertSame(3, $state->lastSeq);
         $this->assertCount(1, $blocks);
@@ -253,7 +255,7 @@ final class SessionInitializerTest extends TestCase
         // Draft sessions never enter the replay path, so projector is unused.
 
         $state = $this->sessionInit->initializeDraft();
-        $blocks = $this->sessionInit->buildInitialTranscript($state);
+        $blocks = $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         $this->assertCount(1, $blocks);
         $this->assertSame(TranscriptBlockKindEnum::System, $blocks[0]->kind);
@@ -427,18 +429,18 @@ final class SessionInitializerTest extends TestCase
             new RuntimeEventTranslator(new EventDispatcher())
         );
 
+        $eventApplier = new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer());
         $sessionInit = new SessionInitializer(
             sessionStore: $hatfieldSessionStore,
             eventStore: $this->eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer()),
             historyProvider: $historyProvider,
             sessionTranscriptProvider: $sessionTranscriptProvider
         );
 
         $state = new TuiSessionState($runId, true);
-        $blocks = $sessionInit->buildInitialTranscript($state);
+        $blocks = $sessionInit->buildInitialTranscript($state, $eventApplier);
 
         // Retained-history events only: T1 + T3 = 2 blocks
         $this->assertCount(2, $blocks, 'Only retained-history blocks should appear');
@@ -502,18 +504,18 @@ final class SessionInitializerTest extends TestCase
             new RuntimeEventTranslator(new EventDispatcher())
         );
 
+        $eventApplier = new TuiRuntimeEventApplier($this->buildRealTranscriptProjector(), SubagentProgressSerializerTestSupport::denormalizer());
         $sessionInit = new SessionInitializer(
             sessionStore: $hatfieldSessionStore,
             eventStore: $this->eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($this->buildRealTranscriptProjector(), SubagentProgressSerializerTestSupport::denormalizer()),
             historyProvider: $historyProvider,
             sessionTranscriptProvider: $sessionTranscriptProvider
         );
 
         $state = new TuiSessionState($runId, true);
-        $sessionInit->buildInitialTranscript($state);
+        $sessionInit->buildInitialTranscript($state, $eventApplier);
 
         $this->assertSame(RunActivityStateEnum::Cancelled, $state->activity);
         $this->assertSame(2, $state->lastSeq);
@@ -537,12 +539,12 @@ final class SessionInitializerTest extends TestCase
         $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
         $sessionTranscriptProvider->expects($this->never())->method('transcriptAtPosition');
 
-        $sessionInit = $this->buildSessionInitializerWithProviders($historyProvider, $sessionTranscriptProvider);
+        [$sessionInit, $eventApplier] = $this->buildSessionInitializerWithProviders($historyProvider, $sessionTranscriptProvider);
         $state = new TuiSessionState($runId, true);
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('history unavailable');
-        $sessionInit->buildInitialTranscript($state);
+        $sessionInit->buildInitialTranscript($state, $eventApplier);
     }
 
     public function testRetainedHistoryResumeUsesCanonicalLastSeqNotTranscriptBlockSeq(): void
@@ -572,9 +574,9 @@ final class SessionInitializerTest extends TestCase
             replayEvents: []
         ));
 
-        $sessionInit = $this->buildSessionInitializerWithProviders($historyProvider, $sessionTranscriptProvider);
+        [$sessionInit, $eventApplier] = $this->buildSessionInitializerWithProviders($historyProvider, $sessionTranscriptProvider);
         $state = new TuiSessionState($runId, true);
-        $sessionInit->buildInitialTranscript($state);
+        $sessionInit->buildInitialTranscript($state, $eventApplier);
 
         $this->assertSame(99, $state->lastSeq, 'lastSeq must use canonical stream max, not TranscriptBlock::seq');
     }
@@ -614,9 +616,9 @@ final class SessionInitializerTest extends TestCase
         ));
 
         $projector = $this->buildRealTranscriptProjector();
-        $sessionInit = $this->buildSessionInitializerWithProviders($historyProvider, $sessionTranscriptProvider, $projector);
+        [$sessionInit, $eventApplier] = $this->buildSessionInitializerWithProviders($historyProvider, $sessionTranscriptProvider, $projector);
         $state = new TuiSessionState($runId, true);
-        $sessionInit->buildInitialTranscript($state);
+        $sessionInit->buildInitialTranscript($state, $eventApplier);
 
         $this->assertSame(120, $state->usage->latestInputTokens);
         $this->assertSame(120, $state->usage->inputTokens);
@@ -639,11 +641,14 @@ final class SessionInitializerTest extends TestCase
         }
     }
 
+    /**
+     * @return array{SessionInitializer, TuiRuntimeEventApplier}
+     */
     private function buildSessionInitializerWithProviders(
         HistoryProviderInterface $historyProvider,
         SessionTranscriptProviderInterface $sessionTranscriptProvider,
         ?TranscriptProjectorInterface $projector = null,
-    ): SessionInitializer {
+    ): array {
         $projector ??= $this->buildRealTranscriptProjector();
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),
@@ -655,16 +660,16 @@ final class SessionInitializerTest extends TestCase
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class)
         );
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
+        $eventApplier = new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer());
 
-        return new SessionInitializer(
+        return [new SessionInitializer(
             sessionStore: $hatfieldSessionStore,
             eventStore: $this->eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer()),
             historyProvider: $historyProvider,
             sessionTranscriptProvider: $sessionTranscriptProvider
-        );
+        ), $eventApplier];
     }
 
     /**

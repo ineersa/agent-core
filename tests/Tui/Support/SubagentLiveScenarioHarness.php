@@ -22,6 +22,7 @@ use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\SlashCommand;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
@@ -30,7 +31,6 @@ use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\AgentsMainCommandHandler;
 use Ineersa\Tui\Listener\CancelListener;
-use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
@@ -108,7 +108,6 @@ final class SubagentLiveScenarioHarness
 
         $client = new RecordingAgentSessionClient();
         $questionCoordinator = new QuestionCoordinator();
-        $questionController = new QuestionController($questionCoordinator);
 
         $tui = new Tui();
         $theme = new DefaultTheme(new ThemePalette('scenario'));
@@ -120,9 +119,9 @@ final class SubagentLiveScenarioHarness
             new TranscriptDisplayConfig(),
             new TranscriptDisplayState());
 
-        $registry = new SlashCommandRegistry();
+        $catalog = new SlashCommandCatalog();
         foreach (['agents-main', 'agents-live', 'tasks'] as $name) {
-            $registry->register(
+            $catalog->register(
                 new CommandMetadata(name: $name, description: 'test', usage: '/'.$name),
                 new class($name) implements SlashCommandHandler {
                     public function __construct(private string $name)
@@ -137,7 +136,16 @@ final class SubagentLiveScenarioHarness
             );
         }
 
-        $router = new SubmissionRouter(new CommandParser(), $registry);
+        $questionController = new QuestionController($questionCoordinator, $screen);
+        $services = $testCase->createSessionServices(
+            tui: $tui,
+            state: $state,
+            screen: $screen,
+            client: $client,
+            questionCoordinator: $questionCoordinator,
+            questionController: $questionController,
+            submissionRouter: new SubmissionRouter(new CommandParser(), new SlashCommandRegistry($catalog)),
+        );
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),
             logging: new LoggingConfig(),
@@ -163,17 +171,14 @@ final class SubagentLiveScenarioHarness
             switch: $switchService,
             lifecycle: new TuiSessionLifecycleDispatcher(),
             historyProvider: $historyProvider ?? self::emptyHistoryProvider(),
+            sessionServices: $services,
         );
 
         $submitListener = new SubmitListener(
             sessionStore: $sessionStore,
-            submissionRouter: $router,
             blockFactory: new TranscriptBlockFactory(),
-            coordinator: $questionCoordinator,
-            questionController: $questionController,
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: new NullLogger(),
-            history: new PromptHistory(),
             pastedImageSubmissionService: new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
                 new \Ineersa\Tui\ImagePaste\PastedImageValidationService(new \Ineersa\CodingAgent\Config\ImageToolConfig(), new \Ineersa\AgentCore\Tests\Support\TestLogger()),
                 $context->sessionStore,
@@ -199,8 +204,6 @@ final class SubagentLiveScenarioHarness
         $cancelListener = new CancelListener(
             new NullLogger(),
             $boundary,
-            $questionController,
-            $questionCoordinator,
         );
         $cancelListener->register($context);
 

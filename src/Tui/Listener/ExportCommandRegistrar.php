@@ -5,25 +5,34 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\Tui\Command\CommandMetadata;
-use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 /**
  * Registers the /export (alias: /exp) slash command.
  *
- * Uses the idempotent registration pattern: if the command is already
- * registered (e.g. via multiple context construction), the handler is
- * replaced rather than throwing.
+ * Command metadata is registered once per process via
+ * {@see registerCatalog()}; each session binds a fresh handler.
  *
  * @internal Autowired via {@see TuiListenerRegistrar} and the `app.tui_listener` tag
  */
-final class ExportCommandRegistrar implements TuiListenerRegistrar
+final class ExportCommandRegistrar implements TuiListenerRegistrar, SlashCommandCatalogRegistrar
 {
     public function __construct(
-        private readonly SlashCommandRegistry $commandRegistry,
         private readonly SessionEventsExportService $exportService,
     ) {
+    }
+
+    public function registerCatalog(SlashCommandCatalog $catalog): void
+    {
+        $catalog->registerMetadata(new CommandMetadata(
+            name: 'export',
+            aliases: ['exp'],
+            description: 'Export the current session transcript to a file',
+            usage: '/export [path]',
+            acceptsArguments: true,
+        ));
     }
 
     public function register(TuiRuntimeContext $context): void
@@ -34,21 +43,6 @@ final class ExportCommandRegistrar implements TuiListenerRegistrar
             $this->exportService,
         );
 
-        if ($this->commandRegistry->has('export')) {
-            $this->commandRegistry->setHandler('export', $handler);
-
-            return;
-        }
-
-        $this->commandRegistry->register(
-            new CommandMetadata(
-                name: 'export',
-                aliases: ['exp'],
-                description: 'Export the current session transcript to a file',
-                usage: '/export [path]',
-                acceptsArguments: true,
-            ),
-            $handler,
-        );
+        $context->sessionServices->commandRegistry->bind('export', $handler);
     }
 }

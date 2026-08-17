@@ -10,10 +10,7 @@ use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
-use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Listener\SubmitListener;
-use Ineersa\Tui\Question\QuestionController;
-use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -112,20 +109,22 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
             ->withClient($client)
             ->withState($state)
             ->withScreen($screen)
+            ->withSessionServices($this->createSessionServices(
+                tui: $tui,
+                state: $state,
+                screen: $screen,
+                submissionRouter: new SubmissionRouter(
+                    new \Ineersa\Tui\Command\CommandParser(),
+                    new \Ineersa\Tui\Command\SlashCommandRegistry(new \Ineersa\Tui\Command\SlashCommandCatalog()),
+                ),
+            ))
             ->build();
 
         $listener = new SubmitListener(
             sessionStore: $context->sessionStore,
-            submissionRouter: new SubmissionRouter(
-                new \Ineersa\Tui\Command\CommandParser(),
-                new \Ineersa\Tui\Command\SlashCommandRegistry(),
-            ),
             blockFactory: new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
-            coordinator: new QuestionCoordinator(),
-            questionController: new QuestionController(new QuestionCoordinator()),
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: new NullLogger(),
-            history: new PromptHistory(),
             pastedImageSubmissionService: new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
                 new \Ineersa\Tui\ImagePaste\PastedImageValidationService(
                     new \Ineersa\CodingAgent\Config\ImageToolConfig(),

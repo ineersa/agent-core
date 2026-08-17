@@ -9,11 +9,12 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\ExportCommandRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\TuiSessionServicesFactoryTrait;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -21,20 +22,23 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(ExportCommandRegistrar::class)]
 final class ExportCommandRegistrarTest extends TestCase
 {
+    use TuiSessionServicesFactoryTrait;
+
     #[Test]
     public function registersExportCommandWithMetadata(): void
     {
-        $registry = new SlashCommandRegistry();
-        $registrar = new ExportCommandRegistrar($registry, new SessionEventsExportService());
+        $catalog = new SlashCommandCatalog();
+        $registrar = new ExportCommandRegistrar(new SessionEventsExportService());
 
-        $this->assertFalse($registry->has('export'), 'Export should not be registered yet');
+        $this->assertFalse($catalog->has('export'), 'Export should not be registered yet');
 
-        $registrar->register($this->createContext());
+        $registrar->registerCatalog($catalog);
+        $registrar->register($this->createContext($catalog));
 
-        $this->assertTrue($registry->has('export'), 'Export should be registered after register()');
-        $this->assertTrue($registry->has('exp'), 'Alias /exp should be registered');
+        $this->assertTrue($catalog->has('export'), 'Export should be registered after registerCatalog()');
+        $this->assertTrue($catalog->has('exp'), 'Alias /exp should be registered');
 
-        $meta = $registry->getMetadata('export');
+        $meta = $catalog->getMetadata('export');
         $this->assertNotNull($meta);
         $this->assertSame('export', $meta->name);
         $this->assertContains('exp', $meta->aliases);
@@ -43,32 +47,30 @@ final class ExportCommandRegistrarTest extends TestCase
     }
 
     #[Test]
-    public function registersIdempotentlyWithoutThrowing(): void
+    public function repeatsBindingWithoutThrowing(): void
     {
-        $registry = new SlashCommandRegistry();
-        $registrar = new ExportCommandRegistrar($registry, new SessionEventsExportService());
+        $catalog = new SlashCommandCatalog();
+        $registrar = new ExportCommandRegistrar(new SessionEventsExportService());
+        $registrar->registerCatalog($catalog);
 
-        // First registration.
-        $registrar->register($this->createContext());
-        $this->assertTrue($registry->has('export'));
+        // First session iteration.
+        $registrar->register($this->createContext($catalog));
+        $this->assertTrue($catalog->has('export'));
 
-        // Second registration — must not throw.
-        $registrar->register($this->createContext());
-        $this->assertTrue($registry->has('export'));
-
-        // Third registration — still fine.
-        $registrar->register($this->createContext());
-        $this->assertTrue($registry->has('export'));
+        // Second session iteration — must not throw.
+        $registrar->register($this->createContext($catalog));
+        $this->assertTrue($catalog->has('export'));
     }
 
     #[Test]
     public function metadataDescriptionContainsExport(): void
     {
-        $registry = new SlashCommandRegistry();
-        $registrar = new ExportCommandRegistrar($registry, new SessionEventsExportService());
-        $registrar->register($this->createContext());
+        $catalog = new SlashCommandCatalog();
+        $registrar = new ExportCommandRegistrar(new SessionEventsExportService());
+        $registrar->registerCatalog($catalog);
+        $registrar->register($this->createContext($catalog));
 
-        $meta = $registry->getMetadata('export');
+        $meta = $catalog->getMetadata('export');
         $this->assertNotNull($meta);
         $this->assertStringContainsStringIgnoringCase('export', $meta->description);
     }
@@ -80,7 +82,7 @@ final class ExportCommandRegistrarTest extends TestCase
      * doubled with createStub(). We use uninitialized surrogates via
      * reflection exclusively for tests — not in production code.
      */
-    private function createContext(): TuiRuntimeContext
+    private function createContext(?SlashCommandCatalog $catalog = null): TuiRuntimeContext
     {
         $state = new TuiSessionState('test-session');
 
@@ -104,6 +106,7 @@ final class ExportCommandRegistrarTest extends TestCase
             switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
             lifecycle: (new \ReflectionClass(\Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher::class))->newInstanceWithoutConstructor(),
             historyProvider: $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface::class),
+            sessionServices: $this->createSessionServices(catalog: $catalog ?? new SlashCommandCatalog()),
         );
     }
 }

@@ -48,7 +48,7 @@ final class HistoryPickerControllerTest extends TestCase
     {
         $provider = $this->createStub(HistoryProviderInterface::class);
         $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
-        $controller = new HistoryPickerController($provider, $switcher);
+        $controller = new HistoryPickerController($this->tui, $this->screen, $this->state, $provider, $switcher);
 
         $this->assertFalse($controller->isOpen());
     }
@@ -98,8 +98,7 @@ final class HistoryPickerControllerTest extends TestCase
         $provider->method('forSession')->willReturn($history);
         $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
 
-        $controller = new HistoryPickerController($provider, $switcher);
-        $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
+        $controller = new HistoryPickerController($this->tui, $this->screen, $this->state, $provider, $switcher);
         $controller->open();
 
         $this->assertTrue($controller->isOpen());
@@ -115,8 +114,7 @@ final class HistoryPickerControllerTest extends TestCase
         $provider->method('forSession')->willReturn($history);
         $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
 
-        $controller = new HistoryPickerController($provider, $switcher);
-        $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
+        $controller = new HistoryPickerController($this->tui, $this->screen, $this->state, $provider, $switcher);
         $controller->open();
 
         $this->assertFalse($controller->isOpen());
@@ -132,8 +130,7 @@ final class HistoryPickerControllerTest extends TestCase
         $switcher = $this->createMock(TuiSessionSwitchServiceInterface::class);
         $switcher->expects($this->once())->method('selectHistoryTurn')->with(3);
 
-        $controller = new HistoryPickerController($provider, $switcher);
-        $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
+        $controller = new HistoryPickerController($this->tui, $this->screen, $this->state, $provider, $switcher);
         $controller->open();
 
         $overlay = $controller->overlay();

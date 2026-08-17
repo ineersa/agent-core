@@ -8,9 +8,8 @@ use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\SlashCommand;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandHandler;
-use Ineersa\Tui\Command\SlashCommandRegistry;
-use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 /**
  * Registers virtual slash commands for every prompt template in the catalog.
@@ -19,14 +18,15 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  * CopyCommandRegistrar, etc.) win on name collisions. When a template name
  * matches an already-registered command, the template is silently skipped.
  *
- * Template commands return {@see DispatchRuntime} with the original slash
+ * Template commands are registered into the process-scoped
+ * {@see SlashCommandCatalog} exactly once per process; their handler is
+ * stateless and returns {@see DispatchRuntime} with the original slash
  * text; expansion happens later at the in-process runtime boundary
  * (PT-02), not in the TUI.
  */
-final class PromptTemplateCommandRegistrar implements TuiListenerRegistrar
+final class PromptTemplateCommandRegistrar implements SlashCommandCatalogRegistrar
 {
     public function __construct(
-        private readonly SlashCommandRegistry $registry,
         private readonly PromptTemplateCatalogInterface $catalog,
     ) {
     }
@@ -36,7 +36,7 @@ final class PromptTemplateCommandRegistrar implements TuiListenerRegistrar
         return -100;
     }
 
-    public function register(TuiRuntimeContext $context): void
+    public function registerCatalog(SlashCommandCatalog $commandCatalog): void
     {
         $handler = new class implements SlashCommandHandler {
             public function handle(SlashCommand $command): DispatchRuntime
@@ -47,11 +47,11 @@ final class PromptTemplateCommandRegistrar implements TuiListenerRegistrar
 
         foreach ($this->catalog->allPromptTemplateCommands() as $template) {
             // Real/built-in commands win — skip if already registered.
-            if ($this->registry->has($template->name)) {
+            if ($commandCatalog->has($template->name)) {
                 continue;
             }
 
-            $this->registry->register(
+            $commandCatalog->register(
                 new CommandMetadata(
                     name: $template->name,
                     aliases: [],

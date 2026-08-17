@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Runtime\Contract;
 
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
-use Ineersa\Tui\Runtime\TuiSessionState;
-use Symfony\Component\Tui\Tui;
 
 /**
  * TUI-level session switch lifecycle contract.
@@ -18,18 +15,11 @@ use Symfony\Component\Tui\Tui;
  *
  * One implementation (TuiSessionSwitchService) fulfills this
  * contract; TUI runtime code types against this interface only.
+ * The implementation is constructed per session iteration with the
+ * iteration's Tui, AgentSessionClient, and TuiSessionState.
  */
 interface TuiSessionSwitchServiceInterface
 {
-    /**
-     * Bind per-iteration references before the event loop starts.
-     */
-    public function bindForIteration(
-        Tui $tui,
-        AgentSessionClient $client,
-        TuiSessionState $state,
-    ): void;
-
     /**
      * Request a switch to an existing session by ID.
      */

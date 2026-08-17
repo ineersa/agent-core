@@ -10,6 +10,7 @@ use Ineersa\Tui\Command\DispatchShellCommand;
 use Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO;
 use Ineersa\Tui\Command\Hotkey\HotkeyRegistry;
 use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
@@ -62,7 +63,7 @@ final class TuiVirtualInputTest extends TestCase
     public function testDoubleBangRejectionRoutesLocallyAndRendersOnVirtualScreen(): void
     {
         $submitted = '!!echo should-not-run';
-        $router = new SubmissionRouter(new CommandParser(), new SlashCommandRegistry());
+        $router = new SubmissionRouter(new CommandParser(), new SlashCommandRegistry(new SlashCommandCatalog()));
 
         $result = $router->route($submitted);
 
@@ -104,7 +105,7 @@ final class TuiVirtualInputTest extends TestCase
         (new AppHotkeyRegistrar($hotkeyRegistry))->register($context);
         (new EditorHotkeyRegistrar($harness->screen()->promptEditor(), $hotkeyRegistry))->register($context);
 
-        $router = new SubmissionRouter(new CommandParser(), new SlashCommandRegistry($hotkeyRegistry));
+        $router = new SubmissionRouter(new CommandParser(), new SlashCommandRegistry(new SlashCommandCatalog($hotkeyRegistry)));
         $result = $router->route('/hotkeys');
 
         $this->assertInstanceOf(HotkeyTableData::class, $result);
@@ -159,7 +160,7 @@ final class TuiVirtualInputTest extends TestCase
         (new AppHotkeyRegistrar($hotkeyRegistry))->register($context);
         (new EditorHotkeyRegistrar($harness->screen()->promptEditor(), $hotkeyRegistry))->register($context);
 
-        $router = new SubmissionRouter(new CommandParser(), new SlashCommandRegistry($hotkeyRegistry));
+        $router = new SubmissionRouter(new CommandParser(), new SlashCommandRegistry(new SlashCommandCatalog($hotkeyRegistry)));
         $result = $router->route('/hotkeys');
         $this->assertInstanceOf(HotkeyTableData::class, $result);
 

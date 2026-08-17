@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\Tui\Picker\SubagentLivePickerController;
-use Ineersa\Tui\Question\QuestionController;
-use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Symfony\Component\Tui\Event\InputEvent;
@@ -16,20 +13,14 @@ use Symfony\Component\Tui\Event\InputEvent;
  */
 final class SubagentLiveToggleInputListener implements TuiListenerRegistrar
 {
-    public function __construct(
-        private readonly SubagentLivePickerController $pickerController,
-        private readonly QuestionCoordinator $questionCoordinator,
-        private readonly QuestionController $questionController,
-    ) {
-    }
-
     public function register(TuiRuntimeContext $context): void
     {
+        $services = $context->sessionServices;
         $state = $context->state;
         $screen = $context->screen;
-        $picker = $this->pickerController;
-        $questionCoordinator = $this->questionCoordinator;
-        $questionController = $this->questionController;
+        $picker = $services->subagentLivePicker;
+        $questionCoordinator = $services->questionCoordinator;
+        $questionController = $services->questionController;
 
         $context->tui->addListener(
             static function (InputEvent $event) use ($context, $state, $screen, $picker, $questionCoordinator, $questionController): void {

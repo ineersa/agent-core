@@ -378,9 +378,14 @@ final class PromptHistoryListenerTest extends TestCase
             ->withTui($tui)
             ->withState($this->state)
             ->withScreen($this->screen)
+            ->withSessionServices($this->createSessionServices(
+                state: $this->state,
+                screen: $this->screen,
+                promptHistory: $this->history,
+            ))
             ->build();
 
-        $listener = new PromptHistoryListener($this->history);
+        $listener = new PromptHistoryListener();
         $listener->register($context);
     }
 

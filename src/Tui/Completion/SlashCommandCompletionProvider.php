@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Completion;
 
-use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 
 /**
  * Completion provider for slash commands.
@@ -13,7 +13,7 @@ use Ineersa\Tui\Command\SlashCommandRegistry;
  * Matches both canonical command names and aliases; inserts
  * canonical command text when an alias match is accepted.
  *
- * Uses {@see SlashCommandRegistry::allMetadata()} at suggestion time
+ * Uses {@see SlashCommandCatalog::allMetadata()} at suggestion time
  * so runtime-registered commands (e.g. /model, /model-favourites)
  * are included.
  *
@@ -26,7 +26,7 @@ use Ineersa\Tui\Command\SlashCommandRegistry;
 final readonly class SlashCommandCompletionProvider implements CompletionProvider
 {
     public function __construct(
-        private SlashCommandRegistry $registry,
+        private SlashCommandCatalog $catalog,
     ) {
     }
 
@@ -43,7 +43,7 @@ final readonly class SlashCommandCompletionProvider implements CompletionProvide
         // Collect unique canonical matches (deduplicate alias + name collisions)
         $matched = [];
 
-        foreach ($this->registry->allMetadata() as $meta) {
+        foreach ($this->catalog->allMetadata() as $meta) {
             $canonical = $meta->name;
 
             // Match canonical name (empty prefix = show all)

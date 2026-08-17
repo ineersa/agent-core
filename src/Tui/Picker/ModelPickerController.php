@@ -35,11 +35,10 @@ final class ModelPickerController
 {
     private ?PickerOverlay $overlay = null;
 
-    private ?Tui $tui = null;
-    private ?ChatScreen $screen = null;
-    private ?TuiSessionState $state = null;
-
     public function __construct(
+        private readonly Tui $tui,
+        private readonly ChatScreen $screen,
+        private readonly TuiSessionState $state,
         private readonly ModelSelectionService $modelService,
         private readonly AppConfig $appConfig,
         private readonly LoggerInterface $logger,
@@ -47,19 +46,7 @@ final class ModelPickerController
     }
 
     /**
-     * Set the per-run TUI references that are only available at
-     * listener registration time (called by ModelControlListener).
-     */
-    public function setRuntimeRefs(Tui $tui, ChatScreen $screen, TuiSessionState $state): void
-    {
-        $this->tui = $tui;
-        $this->screen = $screen;
-        $this->state = $state;
-    }
-
-    /**
-     * Open the interactive model picker on the TUI (no-arg, uses references
-     * previously set via {@see setRuntimeRefs()}).
+     * Open the interactive model picker on the TUI.
      *
      * Builds a SelectListWidget, mounts via PickerOverlay, sets focus, and
      * wires selection/cancellation/favorite-toggle callbacks.
@@ -67,10 +54,6 @@ final class ModelPickerController
     public function open(): void
     {
         if ($this->overlay?->isOpen() ?? false) {
-            return;
-        }
-
-        if (null === $this->tui || null === $this->screen || null === $this->state) {
             return;
         }
 
@@ -254,8 +237,7 @@ final class ModelPickerController
     /**
      * Execute model selection, persist, and update footer state.
      *
-     * Uses controller-owned dependencies set via the constructor and
-     * per-run refs set via {@see setRuntimeRefs()}.
+     * Uses controller-owned dependencies bound via the constructor.
      *
      * @internal called from static closures within {@see open()}
      */

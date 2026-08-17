@@ -66,12 +66,15 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
         );
 
         $picker = new SubagentLivePickerController(
+            $harness->tui(),
+            $harness->screen(),
+            $state,
+            $spy,
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $snapshotProvider,
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),
         );
-        $picker->setRuntimeRefs($harness->tui(), $harness->screen(), $state, $spy);
 
         $method = new \ReflectionMethod(SubagentLivePickerController::class, 'enterLiveView');
         $method->invoke($picker, $child, $state, $harness->screen());
@@ -159,16 +162,14 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
 
         $snapshotProvider = new FixedChildRunTranscriptSnapshotProvider($snapshot);
         $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
-            $snapshotProvider,
-            $this->createStub(ChildAgentEventsPathResolverInterface::class),
-            new SessionEventsExportService(),
-        );
-        $picker->setRuntimeRefs(
             $harness->tui(),
             $harness->screen(),
             $state,
             $client,
+            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
+            $snapshotProvider,
+            $this->createStub(ChildAgentEventsPathResolverInterface::class),
+            new SessionEventsExportService(),
             onHumanInputRequested: $onHuman,
             onLeavingChildRun: $onLeaving,
         );

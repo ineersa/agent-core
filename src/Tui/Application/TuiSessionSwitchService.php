@@ -6,93 +6,65 @@ namespace Ineersa\Tui\Application;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
-use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
-use Ineersa\Tui\Question\QuestionController;
-use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Tui;
 
 /**
- * Session switch lifecycle seam for the TUI.
+ * Session switch lifecycle seam for one TUI session iteration.
  *
- * Future slash commands (e.g. /new, /resume) call {@see requestResume()}
- * or {@see requestNewDraft()} to trigger a session switch.  The service
- * cancels the current run, resets stateful singletons, records the
- * pending target, and calls {@see Tui::stop()} to exit the current event
- * loop.  InteractiveMode then consumes the pending target and rebuilds
- * TUI/session objects in the same CLI process.
+ * Constructed per session iteration with the iteration's Tui,
+ * AgentSessionClient, and TuiSessionState bound in the constructor —
+ * no late rebinding.  Slash commands (/new, /resume) call
+ * {@see requestResume()} or {@see requestNewDraft()} to trigger a
+ * session switch: the service cancels the current run, records the
+ * pending target, and calls {@see Tui::stop()} to exit the current
+ * event loop.  InteractiveMode then consumes the pending target and
+ * rebuilds TUI/session objects in the same CLI process.
  *
- * Per-iteration bindings ({@see bindForIteration()}) are refreshed each
- * loop by InteractiveMode so that the service always references the
- * current TUI and session objects.
- *
- * Process-scoped dependencies (QuestionCoordinator, QuestionController,
- * TranscriptProjectorInterface, HatfieldSessionStore) are injected once
- * via the constructor.
+ * Question/overlay/projector cleanup for the old session is implicit:
+ * the next iteration composes fresh QuestionCoordinator,
+ * QuestionController, and transcript projector instances, so no
+ * reset choreography is needed here.
  */
 class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
 {
-    // ── Per-iteration bindings (reset each loop) ──
-    private ?Tui $tui = null;
-    private ?AgentSessionClient $client = null;
-    private ?TuiSessionState $state = null;
-
     // ── Pending switch state (consumed after event loop exits) ──
     private ?string $pendingResumeSessionId = null;
     private ?StartRunRequest $pendingDraftRequest = null;
     private bool $isPendingDraft = false;
 
     public function __construct(
-        private readonly QuestionCoordinator $questionCoordinator,
-        private readonly QuestionController $questionController,
-        private readonly TranscriptProjectorInterface $projector,
+        private readonly Tui $tui,
+        private readonly AgentSessionClient $client,
+        private readonly TuiSessionState $state,
         private readonly LoggerInterface $logger,
     ) {
     }
 
     /**
-     * Bind per-iteration references before the event loop starts.
-     *
-     * Called by InteractiveMode each loop iteration after creating
-     * fresh Tui / TuiSessionState objects but before registering
-     * listeners.
-     */
-    public function bindForIteration(
-        Tui $tui,
-        AgentSessionClient $client,
-        TuiSessionState $state,
-    ): void {
-        $this->tui = $tui;
-        $this->client = $client;
-        $this->state = $state;
-    }
-
-    /**
      * Request a switch to an existing session by ID.
      *
-     * Cancels the current run (if active), resets question/overlay
-     * state, and records the target session ID.  The TUI event loop
-     * is stopped; InteractiveMode picks up the target on the next
-     * loop iteration.
+     * Cancels the current run (if active) and records the target
+     * session ID.  The TUI event loop is stopped; InteractiveMode
+     * picks up the target on the next loop iteration.
      */
     public function requestResume(string $sessionId): void
     {
         $this->cancelCurrentRun();
-        $this->resetLocalState();
         $this->pendingResumeSessionId = $sessionId;
         $this->isPendingDraft = false;
-        $this->tui?->stop();
+        $this->tui->stop();
     }
 
     /**
      * Request a switch to a fresh draft session.
      *
-     * Same cancel/reset semantics as {@see requestResume()} but
-     * targets a lazy draft — no DB session row is created until
-     * the first user-submitted message (see SubmitListener).
+     * Same cancel semantics as {@see requestResume()} but targets a
+     * lazy draft — no DB session row is created until the first
+     * user-submitted message (see SubmitListener).
      *
      * @param StartRunRequest|null $request Optional pre-configured
      *                                      request (e.g. from /new --model).
@@ -100,10 +72,9 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
     public function requestNewDraft(?StartRunRequest $request = null): void
     {
         $this->cancelCurrentRun();
-        $this->resetLocalState();
         $this->pendingDraftRequest = $request;
         $this->isPendingDraft = true;
-        $this->tui?->stop();
+        $this->tui->stop();
     }
 
     /**
@@ -147,7 +118,7 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
 
     public function selectHistoryTurn(int $targetTurnNo): void
     {
-        if (null === $this->state?->handle || null === $this->client) {
+        if (null === $this->state->handle) {
             throw new \RuntimeException('Cannot select history: no active session or run handle.');
         }
 
@@ -185,7 +156,7 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
      */
     private function cancelCurrentRun(): void
     {
-        if (null === $this->state?->handle || null === $this->client) {
+        if (null === $this->state->handle) {
             return;
         }
 
@@ -211,19 +182,5 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
                 'exception_message' => $e->getMessage(),
             ]);
         }
-    }
-
-    /**
-     * Reset stateful singletons so the next session starts clean.
-     *
-     * - QuestionCoordinator: clear active/queued questions and callbacks.
-     * - QuestionController: close any open overlay.
-     * - TranscriptProjector: clear projected blocks from the old session.
-     */
-    private function resetLocalState(): void
-    {
-        $this->questionCoordinator->reset();
-        $this->questionController->close();
-        $this->projector->reset();
     }
 }

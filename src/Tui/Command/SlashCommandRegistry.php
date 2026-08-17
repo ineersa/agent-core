@@ -4,114 +4,48 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Command;
 
-use Ineersa\Tui\Command\Hotkey\HotkeyRegistry;
 use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
 
 /**
- * Registry of slash commands with built-in help, lookup, and dispatch.
+ * Session-scoped slash command registry with built-in help and dispatch.
  *
- * Commands are registered with metadata (name, aliases, description,
- * usage) and a handler. The registry resolves aliases, dispatches
- * execution, and formats built-in /help from its own metadata.
+ * Created fresh for each TUI session.  Command metadata, aliases, help,
+ * and completion data live in the process-scoped {@see SlashCommandCatalog};
+ * this registry owns only the session-local handler bindings and the
+ * execution rules (session handler → catalog default handler → built-in
+ * help/hotkeys → unknown command).
+ *
+ * Registrars bind their per-session handlers via {@see bind()} during
+ * {@see \Ineersa\Tui\Listener\TuiListenerRegistrar::register()}.  Extension
+ * commands registered dynamically on the shared catalog are resolved at
+ * execute time, so they are visible immediately.
  *
  * Unknown commands return a friendly TranscriptMessage rather than
  * throwing — the registry treats unknown input as user-facing, not as
  * a programming error.
- *
- * Extension seam: later tasks (AI/model, EDITOR-08 completion) call
- * {@see register()} to add new commands without modifying submission
- * routing.
  */
 final class SlashCommandRegistry
 {
-    /** @var array<string, SlashCommandHandler> canonical name → handler */
+    /** @var array<string, SlashCommandHandler> canonical name → session handler */
     private array $handlers = [];
 
-    private ?string $activeSessionId = null;
-
-    /** @var array<string, CommandMetadata> canonical name → metadata */
-    private array $metadata = [];
-
-    /** @var array<string, string> alias → canonical name */
-    private array $aliasMap = [];
-
     public function __construct(
-        private readonly HotkeyRegistry $hotkeyRegistry = new HotkeyRegistry(),
+        private readonly SlashCommandCatalog $catalog,
     ) {
-        // Built-in /help — metadata only; handle is built-in to execute()
-        $this->addMetadata(
-            new CommandMetadata(
-                name: 'help',
-                aliases: ['h', '?'],
-                description: 'Show available commands and their descriptions',
-                usage: '/help [command]',
-            ),
-        );
-
-        // Built-in /hotkeys — metadata only; handle is built-in to execute()
-        $this->addMetadata(
-            new CommandMetadata(
-                name: 'hotkeys',
-                aliases: ['hk'],
-                description: 'Show keyboard shortcuts grouped by context',
-                usage: '/hotkeys',
-            ),
-        );
-
-        // Built-in /clear
-        $this->register(
-            new CommandMetadata(
-                name: 'clear',
-                aliases: ['cls'],
-                description: 'Clear the conversation transcript',
-                usage: '/clear',
-            ),
-            new ClearScreenCommand(),
-        );
-
-        // Built-in /exit
-        $this->register(
-            new CommandMetadata(
-                name: 'exit',
-                aliases: ['quit', 'q'],
-                description: 'Exit the TUI application',
-                usage: '/exit',
-            ),
-            new ExitTuiCommand(),
-        );
     }
 
     /**
-     * Register a command with its metadata and handler.
+     * Bind the session-local handler for an already-registered command.
      *
-     * @throws \InvalidArgumentException if the command name or any alias
-     *                                   is already registered
+     * @throws \InvalidArgumentException if no command is registered with that name
      */
-    public function register(CommandMetadata $metadata, SlashCommandHandler $handler): void
+    public function bind(string $name, SlashCommandHandler $handler): void
     {
-        $name = $metadata->name;
-
-        if (isset($this->metadata[$name])) {
-            throw new \InvalidArgumentException("Command '{$name}' is already registered.");
+        $canonical = $this->catalog->resolveName($name);
+        if (null === $canonical) {
+            throw new \InvalidArgumentException("Cannot bind handler: command '{$name}' is not registered.");
         }
-
-        foreach ($metadata->aliases as $alias) {
-            if (isset($this->aliasMap[$alias])) {
-                $existing = $this->aliasMap[$alias];
-                throw new \InvalidArgumentException("Alias '{$alias}' is already registered for command '{$existing}'.");
-            }
-            // Also guard against aliases that collide with canonical names
-            if (isset($this->metadata[$alias])) {
-                throw new \InvalidArgumentException("Alias '{$alias}' conflicts with registered command name.");
-            }
-        }
-
-        $this->handlers[$name] = $handler;
-        $this->metadata[$name] = $metadata;
-
-        foreach ($metadata->aliases as $alias) {
-            $this->aliasMap[$alias] = $name;
-        }
+        $this->handlers[$canonical] = $handler;
     }
 
     /**
@@ -119,41 +53,34 @@ final class SlashCommandRegistry
      *
      * Resolution order:
      *  1. If the name matches a registered alias, resolve to canonical name.
-     *  2. If the canonical name has a registered handler, delegate to it.
-     *  3. If the name is "help" and no custom handler overrides it, build help.
-     *  4. Otherwise return a friendly "unknown command" TranscriptMessage.
+     *  2. If the canonical name has a session-local handler, delegate to it.
+     *  3. Otherwise fall back to the catalog's default handler (extension,
+     *     prompt-template, or built-in stateless commands).
+     *  4. If the name is "help" and no custom handler overrides it, build help.
+     *  5. Otherwise return a friendly "unknown command" TranscriptMessage.
      *
-     * Step 3 allows registering a custom /help handler that overrides
+     * Step 4 allows registering a custom /help handler that overrides
      * the built-in behavior.
      */
-    public function setActiveSessionId(?string $sessionId): void
-    {
-        $this->activeSessionId = $sessionId;
-    }
-
-    public function getActiveSessionId(): ?string
-    {
-        return $this->activeSessionId;
-    }
-
     public function execute(SlashCommand $command): CommandResult
     {
-        $canonical = $this->resolveName($command->name);
+        $canonical = $this->catalog->resolveName($command->name);
 
-        // Custom handler takes precedence (allows overriding built-in help)
-        if (null !== $canonical && isset($this->handlers[$canonical])) {
+        $handler = null !== $canonical
+            ? ($this->handlers[$canonical] ?? $this->catalog->defaultHandler($canonical))
+            : null;
+
+        if (null !== $handler) {
             $effectiveCommand = $command;
 
             // When the command does not declare that it accepts arguments,
             // silently strip any extra text so `/clear foo` behaves like
             // `/clear` and `/exit now` like `/exit` — avoiding misleading
             // "Unknown command" errors for built-in no-arg commands.
-            $meta = $this->metadata[$canonical] ?? null;
+            $meta = $this->catalog->getMetadata($canonical);
             if (null !== $meta && !$meta->acceptsArguments && '' !== $command->args) {
                 $effectiveCommand = new SlashCommand($command->name, '', $command->originalText);
             }
-
-            $handler = $this->handlers[$canonical];
 
             return $handler->handle($effectiveCommand);
         }
@@ -165,7 +92,7 @@ final class SlashCommandRegistry
 
         // Built-in hotkeys (reads from live HotkeyRegistry)
         if ('hotkeys' === $canonical) {
-            return new HotkeyTableData($this->hotkeyRegistry->grouped());
+            return new HotkeyTableData($this->catalog->hotkeyRegistry()->grouped());
         }
 
         // Unknown command → friendly typed result
@@ -179,107 +106,7 @@ final class SlashCommandRegistry
         );
     }
 
-    /**
-     * Check whether a command name or alias is registered.
-     */
-    public function has(string $name): bool
-    {
-        $canonical = $this->resolveName($name);
-
-        return null !== $canonical;
-    }
-
-    /**
-     * Get metadata for a command by name or alias.
-     *
-     * @return CommandMetadata|null metadata, or null if not registered
-     */
-    public function getMetadata(string $name): ?CommandMetadata
-    {
-        $canonical = $this->resolveName($name);
-
-        return null !== $canonical ? ($this->metadata[$canonical] ?? null) : null;
-    }
-
-    /**
-     * Get all registered command metadata, sorted by command name.
-     *
-     * @return list<CommandMetadata>
-     */
-    public function allMetadata(): array
-    {
-        $all = array_values($this->metadata);
-        usort($all, static fn (CommandMetadata $a, CommandMetadata $b) => strcmp($a->name, $b->name),
-        );
-
-        return $all;
-    }
-
-    /**
-     * Get all metadata as a map of canonical name → metadata.
-     *
-     * @return array<string, CommandMetadata>
-     */
-    public function allMetadataMap(): array
-    {
-        return $this->metadata;
-    }
-
-    /**
-     * Get the number of registered commands.
-     */
-    public function count(): int
-    {
-        return \count($this->metadata);
-    }
-
-    /**
-     * Set or replace the handler for an already-registered command.
-     *
-     * @throws \InvalidArgumentException if no command is registered with that name
-     */
-    public function setHandler(string $name, SlashCommandHandler $handler): void
-    {
-        $canonical = $this->resolveName($name);
-        if (null === $canonical) {
-            throw new \InvalidArgumentException("Cannot set handler: command '{$name}' is not registered.");
-        }
-        $this->handlers[$canonical] = $handler;
-    }
-
     // ── Internal ────────────────────────────────────────────────────
-
-    /**
-     * Register metadata without a handler (used for built-in /help).
-     */
-    private function addMetadata(CommandMetadata $metadata): void
-    {
-        $name = $metadata->name;
-        $this->metadata[$name] = $metadata;
-        foreach ($metadata->aliases as $alias) {
-            $this->aliasMap[$alias] = $name;
-        }
-    }
-
-    /**
-     * Resolve a name or alias to its canonical command name.
-     *
-     * @return string|null the canonical name, or null if not found
-     */
-    private function resolveName(string $name): ?string
-    {
-        // Direct canonical name match
-        if (isset($this->metadata[$name])) {
-            return $name;
-        }
-
-        // Alias resolution
-        if (isset($this->aliasMap[$name])) {
-            return $this->aliasMap[$name];
-        }
-
-        return null;
-    }
 
     /**
      * Build a TranscriptMessage with formatted help text.
@@ -298,7 +125,7 @@ final class SlashCommandRegistry
             '',
         ];
 
-        foreach ($this->allMetadata() as $meta) {
+        foreach ($this->catalog->allMetadata() as $meta) {
             $aliases = [] !== $meta->aliases
                 ? ' ('.implode(', ', $meta->aliases).')'
                 : '';
@@ -324,7 +151,7 @@ final class SlashCommandRegistry
     private function buildSingleCommandHelp(string $name): TranscriptMessage
     {
         $normalized = trim($name);
-        $meta = $this->getMetadata($normalized);
+        $meta = $this->catalog->getMetadata($normalized);
 
         // Unknown command name in `/help <name>` — fall back to the
         // general help listing instead of reporting an error, so

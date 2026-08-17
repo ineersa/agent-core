@@ -13,7 +13,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjectionEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\DispatchRuntime;
-use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Listener\CompactCommandRegistrar;
@@ -34,17 +34,20 @@ final class TuiCompactCommandVirtualTest extends TestCase
         $harness = new VirtualTuiHarness(sessionId: 'compact-virtual');
         $state = new TuiSessionState('compact-virtual');
         $state->handle = new RunHandle('run-virtual');
+        $catalog = new SlashCommandCatalog();
         $context = $this->buildTuiContext()
             ->withTui($harness->tui())
             ->withState($state)
             ->withScreen($harness->screen())
             ->withClient($this->createStub(AgentSessionClient::class))
+            ->withSessionServices($this->createSessionServices(catalog: $catalog))
             ->build();
 
-        $registry = new SlashCommandRegistry();
-        (new CompactCommandRegistrar($registry))->register($context);
+        $registrar = new CompactCommandRegistrar();
+        $registrar->registerCatalog($catalog);
+        $registrar->register($context);
 
-        $router = new SubmissionRouter(new CommandParser(), $registry);
+        $router = new SubmissionRouter(new CommandParser(), $context->sessionServices->commandRegistry);
         $result = $router->route('/compact');
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
