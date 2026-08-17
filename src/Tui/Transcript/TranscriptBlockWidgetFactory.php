@@ -11,24 +11,13 @@ use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
- * Centralizes block-kind-specific rendering for the transcript widget tree.
+ * Orchestrates transcript block routing for the transcript widget tree.
  *
- * Responsibilities include glyphs, theme colors, fallback display text, system severity,
- * markdown/thinking paths, and compact tool cards.
- *
- * User / assistant / visible thinking → {@see MarkdownWidget}.
- * Hidden thinking → compact placeholder from {@see TranscriptDisplayConfig} only,
- * not {@see TranscriptBlock::$collapsed}.
- * {@see TranscriptBlockKindEnum::ToolCall} and normal {@see TranscriptBlockKindEnum::ToolResult}
- * → compact multi-line cards (YAML-like args with preview; edit/write payload previews; preview-truncated result body).
- * Structured subagent tool results are delegated to {@see SubagentResultRenderer} before generic
- * ToolResult cards. All other kinds → {@see TextWidget} flat line.
- *
- * Tool-exchange pairing/suppression and shared tool-result presentation facts live in
- * {@see TranscriptToolPresentationPolicy}; tool-call/result/exchange rendering is
- * delegated to {@see TranscriptToolRenderer}; non-tool kinds (markdown/thinking,
- * question, system, flat fallback) are delegated to {@see TranscriptBlockRenderer}.
- * This factory only orchestrates kind routing.
+ * Structured subagent results are delegated to {@see SubagentResultRenderer};
+ * tool pairing/suppression and shared result facts to
+ * {@see TranscriptToolPresentationPolicy}; tool-call/result/exchange rendering to
+ * {@see TranscriptToolRenderer}; remaining kinds (markdown/thinking, question,
+ * system, flat fallback) to {@see TranscriptBlockRenderer}.
  */
 final readonly class TranscriptBlockWidgetFactory
 {
