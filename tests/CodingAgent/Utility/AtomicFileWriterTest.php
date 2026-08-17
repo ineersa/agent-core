@@ -104,17 +104,12 @@ fwrite(STDOUT, 'OK reads='.$reads);
 exit(0);
 PHP;
 
-        $process = new Process([\PHP_BINARY, '-r', $readerScript, $dest, hash('sha256', $old), hash('sha256', $new)]);
+        $process = new Process([\PHP_BINARY, '-r', $readerScript, $dest, hash('sha256', $old), hash('sha256', $new)], timeout: 5.0);
         $process->start();
 
         // Wait for the reader to signal readiness before replacing content.
-        $readyDeadline = microtime(true) + 5.0;
-        while (!$process->isTerminated() && microtime(true) < $readyDeadline) {
-            if (str_contains($process->getIncrementalOutput(), "READY\n")) {
-                break;
-            }
-            usleep(5_000);
-        }
+        $ready = $process->waitUntil(static fn (string $type, string $output): bool => str_contains($output, "READY\n"));
+        $this->assertTrue($ready, 'Reader must signal READY before any writes');
 
         for ($i = 0; $i < 25; ++$i) {
             AtomicFileWriter::write($dest, $new);
