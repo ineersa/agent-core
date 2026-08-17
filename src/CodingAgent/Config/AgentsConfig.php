@@ -42,9 +42,8 @@ final readonly class AgentsConfig
      * Build from raw config data (e.g. a YAML-parsed array).
      *
      * Explicitly configured values are validated strictly: a malformed
-     * section or entry fails configuration load instead of being silently
-     * ignored or replaced by a default (a dropped setting would look
-     * configured but never apply). Omission (null) yields the defaults.
+     * section or entry fails configuration load instead of being ignored
+     * or replaced by a default. Omission (null) yields the defaults.
      */
     public static function fromRaw(mixed $raw): self
     {

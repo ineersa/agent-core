@@ -26,9 +26,8 @@ final readonly class PromptsConfig
      * Build from raw config data (e.g. a YAML-parsed array).
      *
      * Explicitly configured values are validated strictly: a malformed
-     * section or entry fails configuration load instead of being silently
-     * dropped (a dropped path would look configured but never load).
-     * Omission (null) yields the default empty list.
+     * section or entry fails configuration load. Omission (null) yields
+     * the default empty list.
      */
     public static function fromRaw(mixed $raw): self
     {

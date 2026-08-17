@@ -20,9 +20,8 @@ final readonly class ForksConfigDTO
      * Build from raw config data (e.g. a YAML-parsed array).
      *
      * Explicitly configured values are validated strictly: a present value
-     * of the wrong type fails configuration load instead of silently
-     * resolving to the default. Omission (null) and explicit null or blank
-     * strings keep the documented "unset" default (null).
+     * of the wrong type fails configuration load. Omission (null) and
+     * explicit null or blank strings keep the documented "unset" default.
      */
     public static function fromRaw(mixed $raw): self
     {

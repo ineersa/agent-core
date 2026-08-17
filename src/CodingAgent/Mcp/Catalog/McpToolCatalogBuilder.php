@@ -10,11 +10,10 @@ use Psr\Log\LoggerInterface;
 /**
  * Builds MCP tool catalogs from raw discovery results.
  *
- * Owns the catalog-construction policy that was previously embedded in
- * {@see \Ineersa\CodingAgent\Mcp\Handler\McpInitializeSessionHandler}:
- * tool name mapping, include/exclude filters, cross-server duplicate
- * detection, and config hashing. The lifecycle handler keeps discovery,
- * partial/final store writes, failure invalidation, and logging.
+ * Owns the catalog-construction policy: tool name mapping, include/exclude
+ * filters, cross-server duplicate detection, and config hashing. The
+ * lifecycle handler keeps discovery, partial/final store writes, failure
+ * invalidation, and logging.
  */
 final class McpToolCatalogBuilder
 {

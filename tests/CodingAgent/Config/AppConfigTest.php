@@ -18,10 +18,10 @@ use Symfony\Component\Validator\Validation;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
- * Tests that AppConfig rejects invalid ai.default_model at boot time.
- *
- * Uses the production fromContainer() factory through a controlled
- * AppConfigLoader so only the AI config section changes across tests.
+ * Tests AppConfig hydration via the production fromContainer() factory
+ * through a controlled AppConfigLoader: ai.default_model validation at
+ * boot time and fail-fast handling of malformed prompts/agents/forks
+ * sections (detailed per-field cases live in the DTO tests).
  */
 class AppConfigTest extends TestCase
 {
@@ -51,31 +51,8 @@ class AppConfigTest extends TestCase
         $this->loader = new AppConfigLoader($pathResolver);
         $this->resources = new AppResourceLocator($this->tmpDir);
 
-        // Write a base defaults file that will be overwritten per test.
-        $this->writeDefaults([
-            'tui' => ['theme' => 'cyberpunk', 'theme_paths' => ['/app/config/themes']],
-            'sessions' => ['path' => '.hatfield/sessions'],
-            'logging' => ['path' => '.hatfield/logs', 'level' => 'info', 'max_files' => 14],
-            'ai' => [
-                'default_model' => 'deepseek/deepseek-v4-pro',
-                'providers' => [
-                    'deepseek' => [
-                        'type' => 'generic',
-                        'enabled' => true,
-                        'base_url' => 'https://api.deepseek.com',
-                        'models' => [
-                            'deepseek-v4-pro' => [
-                                'name' => 'DeepSeek V4 Pro',
-                                'context_window' => 131072,
-                                'max_tokens' => 131072,
-                                'input' => ['text'],
-                                'reasoning' => true,
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-        ]);
+        // Base defaults drive testing; per-test sections are overlaid via defaultsWith().
+        $this->defaultsWith([]);
     }
 
     protected function tearDown(): void
@@ -302,12 +279,12 @@ class AppConfigTest extends TestCase
     }
 
     // ──────────────────────────────────────────────
-    //  Target section fail-fast hydration (prompts / agents / forks)
+    //  Target sections (prompts / agents / forks)
     // ──────────────────────────────────────────────
     //
-    // Explicit malformed values must fail configuration load instead of
-    // being silently dropped or replaced by a default. Omission keeps the
-    // documented defaults.
+    // Explicit malformed values fail configuration load; omission keeps
+    // the documented defaults. Detailed per-field failure cases live in
+    // PromptsConfigTest / AgentsConfigTest.
 
     public function testTargetSectionsDefaultWhenOmitted(): void
     {
@@ -321,130 +298,53 @@ class AppConfigTest extends TestCase
         $this->assertNull($config->forks->thinkingLevel);
     }
 
-    public function testPromptsSectionWrongTypeFails(): void
-    {
-        $this->defaultsWith(['prompts' => 'not-a-list']);
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid value for prompts');
-
-        $this->buildConfig();
-    }
-
-    public function testPromptsNonStringEntryFails(): void
-    {
-        $this->defaultsWith(['prompts' => ['ok.md', 123]]);
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid value for prompts');
-
-        $this->buildConfig();
-    }
-
-    public function testPromptsBlankEntryFails(): void
-    {
-        $this->defaultsWith(['prompts' => ['ok.md', '  ']]);
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid value for prompts');
-
-        $this->buildConfig();
-    }
-
-    public function testPromptsValidListHydrates(): void
-    {
-        $this->defaultsWith(['prompts' => ['a.md', 'b.md']]);
-
-        $config = $this->buildConfig();
-
-        $this->assertCount(2, $config->prompts->paths);
-        $this->assertStringEndsWith('a.md', $config->prompts->paths[0]);
-        $this->assertStringEndsWith('b.md', $config->prompts->paths[1]);
-    }
-
-    public function testAgentsSectionScalarFails(): void
-    {
-        $this->defaultsWith(['agents' => 5]);
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid value for agents');
-
-        $this->buildConfig();
-    }
-
-    public function testAgentsEnabledWrongTypeFails(): void
-    {
-        $this->defaultsWith(['agents' => ['enabled' => 'yes']]);
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid value for agents.enabled');
-
-        $this->buildConfig();
-    }
-
-    public function testAgentsPathsNonStringEntryFails(): void
-    {
-        $this->defaultsWith(['agents' => ['paths' => ['ok', 5]]]);
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid value for agents.paths');
-
-        $this->buildConfig();
-    }
-
-    public function testAgentsMaxAgentsInvalidFails(): void
-    {
-        $this->defaultsWith(['agents' => ['max_agents' => 0]]);
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid value for agents.max_agents');
-
-        $this->buildConfig();
-    }
-
-    public function testAgentsValidValuesHydrate(): void
+    public function testTargetSectionsHydrateValidValues(): void
     {
         $this->defaultsWith([
+            'prompts' => ['a.md', 'b.md'],
             'agents' => [
                 'enabled' => false,
                 'max_agents' => 6,
                 'paths' => ['custom'],
                 'subagent_excluded_tools' => ['settings'],
             ],
+            'forks' => ['model' => 'deepseek/deepseek-v4-pro', 'thinking_level' => 'high'],
         ]);
 
         $config = $this->buildConfig();
 
+        $this->assertCount(2, $config->prompts->paths);
+        $this->assertStringEndsWith('a.md', $config->prompts->paths[0]);
         $this->assertFalse($config->agents->enabled);
         $this->assertSame(6, $config->agents->maxAgents);
         $this->assertCount(1, $config->agents->paths);
         $this->assertStringEndsWith('custom', $config->agents->paths[0]);
         $this->assertSame(['settings'], $config->agents->subagentExcludedTools);
-    }
-
-    public function testForksModelWrongTypeFails(): void
-    {
-        $this->defaultsWith(['forks' => ['model' => 5]]);
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid value for forks.model');
-
-        $this->buildConfig();
-    }
-
-    public function testForksValidValuesHydrate(): void
-    {
-        $this->defaultsWith([
-            'forks' => [
-                'model' => 'deepseek/deepseek-v4-pro',
-                'thinking_level' => 'high',
-            ],
-        ]);
-
-        $config = $this->buildConfig();
-
         $this->assertSame('deepseek/deepseek-v4-pro', $config->forks->model);
         $this->assertSame('high', $config->forks->thinkingLevel);
+    }
+
+    /**
+     * @return iterable<string, array{0: array<string, mixed>, 1: string}>
+     */
+    public static function malformedTargetSectionCases(): iterable
+    {
+        yield 'prompts wrong type' => [['prompts' => 'not-a-list'], 'Invalid value for prompts'];
+        yield 'prompts non-string entry' => [['prompts' => ['ok.md', 123]], 'expected list of strings, got int'];
+        yield 'agents wrong type' => [['agents' => 5], 'Invalid value for agents'];
+        yield 'agents.paths non-string entry' => [['agents' => ['paths' => ['ok', 5]]], 'Invalid value for agents.paths'];
+        yield 'forks.model wrong type' => [['forks' => ['model' => 5]], 'Invalid value for forks.model'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('malformedTargetSectionCases')]
+    public function testTargetSectionMalformedInputFails(array $overrides, string $messageFragment): void
+    {
+        $this->defaultsWith($overrides);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage($messageFragment);
+
+        $this->buildConfig();
     }
 
     // ──────────────────────────────────────────────
@@ -470,7 +370,15 @@ class AppConfigTest extends TestCase
      */
     private function defaultsWith(array $overrides): void
     {
-        $this->writeDefaults(array_merge([
+        $this->writeDefaults(array_merge(self::baseDefaults(), $overrides));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function baseDefaults(): array
+    {
+        return [
             'tui' => ['theme' => 'cyberpunk', 'theme_paths' => ['/app/config/themes']],
             'sessions' => ['path' => '.hatfield/sessions'],
             'logging' => ['path' => '.hatfield/logs', 'level' => 'info', 'max_files' => 14],
@@ -493,7 +401,7 @@ class AppConfigTest extends TestCase
                     ],
                 ],
             ],
-        ], $overrides));
+        ];
     }
 
     private function buildConfig(): AppConfig

@@ -178,16 +178,19 @@ final class AppConfigLoader
 
             if ('list' === $type && \is_array($value)) {
                 $resolved = [];
+                // Prompts/agents paths fail on malformed entries — a dropped
+                // path would look configured but never load. Other list keys
+                // (e.g. tui.theme_paths) keep the legacy skip behavior.
+                $strict = '[prompts]' === $path || '[agents][paths]' === $path;
                 foreach ($value as $item) {
                     if (!\is_string($item)) {
-                        // Explicit non-string list entries are invalid config,
-                        // not omissions — fail instead of silently dropping the
-                        // entry (a dropped path would look configured but never
-                        // load).
+                        if (!$strict) {
+                            continue;
+                        }
                         $name = trim(str_replace(['[', ']'], ['.', ''], $path), '.');
                         throw new \InvalidArgumentException(\sprintf('Invalid value for %s: expected list of strings, got %s.', $name, get_debug_type($item)));
                     }
-                    if ('' === trim($item)) {
+                    if ($strict && '' === trim($item)) {
                         $name = trim(str_replace(['[', ']'], ['.', ''], $path), '.');
                         throw new \InvalidArgumentException(\sprintf('Invalid value for %s: expected list of strings, got blank string.', $name));
                     }
