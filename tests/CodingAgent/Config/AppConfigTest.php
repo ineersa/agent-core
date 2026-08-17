@@ -18,10 +18,10 @@ use Symfony\Component\Validator\Validation;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
- * Tests that AppConfig rejects invalid ai.default_model at boot time.
- *
- * Uses the production fromContainer() factory through a controlled
- * AppConfigLoader so only the AI config section changes across tests.
+ * Tests AppConfig hydration via the production fromContainer() factory
+ * through a controlled AppConfigLoader: ai.default_model validation at
+ * boot time and fail-fast handling of malformed prompts/agents/forks
+ * sections (detailed per-field cases live in the DTO tests).
  */
 class AppConfigTest extends TestCase
 {
@@ -51,31 +51,8 @@ class AppConfigTest extends TestCase
         $this->loader = new AppConfigLoader($pathResolver);
         $this->resources = new AppResourceLocator($this->tmpDir);
 
-        // Write a base defaults file that will be overwritten per test.
-        $this->writeDefaults([
-            'tui' => ['theme' => 'cyberpunk', 'theme_paths' => ['/app/config/themes']],
-            'sessions' => ['path' => '.hatfield/sessions'],
-            'logging' => ['path' => '.hatfield/logs', 'level' => 'info', 'max_files' => 14],
-            'ai' => [
-                'default_model' => 'deepseek/deepseek-v4-pro',
-                'providers' => [
-                    'deepseek' => [
-                        'type' => 'generic',
-                        'enabled' => true,
-                        'base_url' => 'https://api.deepseek.com',
-                        'models' => [
-                            'deepseek-v4-pro' => [
-                                'name' => 'DeepSeek V4 Pro',
-                                'context_window' => 131072,
-                                'max_tokens' => 131072,
-                                'input' => ['text'],
-                                'reasoning' => true,
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-        ]);
+        // Base defaults drive testing; per-test sections are overlaid via defaultsWith().
+        $this->defaultsWith([]);
     }
 
     protected function tearDown(): void
@@ -302,6 +279,118 @@ class AppConfigTest extends TestCase
     }
 
     // ──────────────────────────────────────────────
+    //  Target sections (prompts / agents / forks)
+    // ──────────────────────────────────────────────
+    //
+    // Explicit malformed values fail configuration load; omission keeps
+    // the documented defaults. Detailed per-field failure cases live in
+    // PromptsConfigTest / AgentsConfigTest.
+
+    public function testTargetSectionsDefaultWhenOmitted(): void
+    {
+        $config = $this->buildConfig();
+
+        $this->assertSame([], $config->prompts->paths);
+        $this->assertTrue($config->agents->enabled);
+        $this->assertSame(4, $config->agents->maxAgents);
+        $this->assertSame([], $config->agents->paths);
+        $this->assertNull($config->forks->model);
+        $this->assertNull($config->forks->thinkingLevel);
+    }
+
+    public function testTargetSectionsHydrateValidValues(): void
+    {
+        $this->defaultsWith([
+            'prompts' => ['a.md', 'b.md'],
+            'agents' => [
+                'enabled' => false,
+                'max_agents' => 6,
+                'paths' => ['custom'],
+                'subagent_excluded_tools' => ['settings'],
+            ],
+            'forks' => ['model' => 'deepseek/deepseek-v4-pro', 'thinking_level' => 'high'],
+        ]);
+
+        $config = $this->buildConfig();
+
+        $this->assertCount(2, $config->prompts->paths);
+        $this->assertStringEndsWith('a.md', $config->prompts->paths[0]);
+        $this->assertFalse($config->agents->enabled);
+        $this->assertSame(6, $config->agents->maxAgents);
+        $this->assertCount(1, $config->agents->paths);
+        $this->assertStringEndsWith('custom', $config->agents->paths[0]);
+        $this->assertSame(['settings'], $config->agents->subagentExcludedTools);
+        $this->assertSame('deepseek/deepseek-v4-pro', $config->forks->model);
+        $this->assertSame('high', $config->forks->thinkingLevel);
+    }
+
+    public function testEmptySectionArraysRemainValidDefaults(): void
+    {
+        // Empty YAML mapping and empty list both decode to []; shape is
+        // indistinguishable, so empty [] stays a valid empty/default section.
+        $this->defaultsWith([
+            'prompts' => [],
+            'agents' => ['paths' => []],
+            'forks' => [],
+        ]);
+
+        $config = $this->buildConfig();
+
+        $this->assertSame([], $config->prompts->paths);
+        $this->assertTrue($config->agents->enabled);
+        $this->assertSame([], $config->agents->paths);
+        $this->assertNull($config->forks->model);
+        $this->assertNull($config->forks->thinkingLevel);
+    }
+
+    public function testForksNullAndBlankUnsetValuesLoadAsNull(): void
+    {
+        $this->defaultsWith([
+            'forks' => ['model' => null, 'thinking_level' => '  '],
+        ]);
+
+        $config = $this->buildConfig();
+
+        $this->assertNull($config->forks->model);
+        $this->assertNull($config->forks->thinkingLevel);
+    }
+
+    /**
+     * @return iterable<string, array{0: array<string, mixed>, 1: string}>
+     */
+    public static function malformedTargetSectionCases(): iterable
+    {
+        yield 'prompts wrong type' => [['prompts' => 'not-a-list'], 'Invalid value for prompts: expected list of strings, got string'];
+        yield 'prompts non-string entry' => [['prompts' => ['ok.md', 123]], 'Invalid value for prompts[1]'];
+        yield 'prompts associative map' => [['prompts' => ['a.md' => 'x']], 'Invalid value for prompts: expected list of strings, got associative array'];
+        yield 'prompts explicit null' => [['prompts' => null], 'Invalid value for prompts: expected list of strings, got null'];
+        yield 'agents wrong type' => [['agents' => 5], 'Invalid value for agents: expected mapping, got int'];
+        yield 'agents sequential list' => [['agents' => ['a', 'b']], 'Invalid value for agents: expected mapping, got list'];
+        yield 'agents explicit null' => [['agents' => null], 'Invalid value for agents: expected mapping, got null'];
+        yield 'agents unknown key' => [['agents' => ['bogus' => 1]], 'Invalid key for agents: "bogus" is not supported'];
+        yield 'agents.paths non-string entry' => [['agents' => ['paths' => ['ok', 5]]], 'Invalid value for agents.paths[1]'];
+        yield 'agents.paths associative map' => [['agents' => ['paths' => ['a' => 'x.md']]], 'Invalid value for agents.paths: expected list of strings, got associative array'];
+        yield 'agents.extensions unknown key' => [['agents' => ['extensions' => ['bogus' => 1]]], 'Invalid key for agents.extensions: "bogus" is not supported'];
+        yield 'agents.extensions explicit null' => [['agents' => ['extensions' => null]], 'Invalid value for agents.extensions: expected mapping, got null'];
+        yield 'forks wrong type' => [['forks' => 5], 'Invalid value for forks: expected mapping, got int'];
+        yield 'forks sequential list' => [['forks' => ['a', 'b']], 'Invalid value for forks: expected mapping, got list'];
+        yield 'forks explicit null' => [['forks' => null], 'Invalid value for forks: expected mapping, got null'];
+        yield 'forks unknown key' => [['forks' => ['bogus' => 1]], 'Invalid key for forks: "bogus" is not supported'];
+        yield 'forks.model wrong type' => [['forks' => ['model' => 5]], 'Invalid value for forks.model'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('malformedTargetSectionCases')]
+    public function testTargetSectionMalformedInputFails(array $overrides, string $messageFragment): void
+    {
+        $this->defaultsWith($overrides);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage($messageFragment);
+
+        $this->buildConfig();
+    }
+
+    // ──────────────────────────────────────────────
     //  Helpers
     // ──────────────────────────────────────────────
 
@@ -314,6 +403,48 @@ class AppConfigTest extends TestCase
             $this->defaultsDir.'/hatfield.defaults.yaml',
             \Symfony\Component\Yaml\Yaml::dump($data),
         );
+    }
+
+    /**
+     * Write defaults with the base sections plus the given top-level
+     * section overrides (prompts / agents / forks).
+     *
+     * @param array<string, mixed> $overrides
+     */
+    private function defaultsWith(array $overrides): void
+    {
+        $this->writeDefaults(array_merge(self::baseDefaults(), $overrides));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function baseDefaults(): array
+    {
+        return [
+            'tui' => ['theme' => 'cyberpunk', 'theme_paths' => ['/app/config/themes']],
+            'sessions' => ['path' => '.hatfield/sessions'],
+            'logging' => ['path' => '.hatfield/logs', 'level' => 'info', 'max_files' => 14],
+            'ai' => [
+                'default_model' => 'deepseek/deepseek-v4-pro',
+                'providers' => [
+                    'deepseek' => [
+                        'type' => 'generic',
+                        'enabled' => true,
+                        'base_url' => 'https://api.deepseek.com',
+                        'models' => [
+                            'deepseek-v4-pro' => [
+                                'name' => 'DeepSeek V4 Pro',
+                                'context_window' => 131072,
+                                'max_tokens' => 131072,
+                                'input' => ['text'],
+                                'reasoning' => true,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
     }
 
     private function buildConfig(): AppConfig

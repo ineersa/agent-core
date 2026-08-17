@@ -25,20 +25,34 @@ final readonly class PromptsConfig
     /**
      * Build from raw config data (e.g. a YAML-parsed array).
      *
-     * Non-array input and non-string / blank string entries are silently
-     * ignored (the prompt-template loader treats missing paths as diagnostics).
+     * Explicitly configured values are validated strictly: a malformed
+     * section or entry fails configuration load. Omission (the key absent
+     * from the merged config) is handled by the caller and yields the
+     * default empty list.
      */
     public static function fromRaw(mixed $raw): self
     {
+        if (null === $raw) {
+            throw new \InvalidArgumentException('Invalid value for prompts: expected list of strings, got null.');
+        }
+
         if (!\is_array($raw)) {
-            return new self();
+            throw new \InvalidArgumentException(\sprintf('Invalid value for prompts: expected list of strings, got %s.', get_debug_type($raw)));
+        }
+
+        if (!array_is_list($raw)) {
+            throw new \InvalidArgumentException('Invalid value for prompts: expected list of strings, got associative array.');
         }
 
         $paths = [];
-        foreach ($raw as $value) {
-            if (\is_string($value) && '' !== trim($value)) {
-                $paths[] = $value;
+        foreach ($raw as $index => $value) {
+            if (!\is_string($value)) {
+                throw new \InvalidArgumentException(\sprintf('Invalid value for prompts[%d]: expected a non-empty string, got %s.', $index, get_debug_type($value)));
             }
+            if ('' === trim($value)) {
+                throw new \InvalidArgumentException(\sprintf('Invalid value for prompts[%d]: expected a non-empty string, got blank string.', $index));
+            }
+            $paths[] = $value;
         }
 
         return new self($paths);

@@ -766,7 +766,8 @@ parameters:
       - AppMcpMessage
       - SymfonyMessenger
 
-    AppMcpCatalog: ~
+    AppMcpCatalog:
+      - AppMcpConfig
 
     AppMcpTool:
       - AgentCore
