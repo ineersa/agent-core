@@ -219,13 +219,16 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         ?int $limit = null,
     ): void {
         static $seq = 0;
-        $arguments = ['path' => $path];
+        // Tool-call arguments are the flat provider map (read DTO fields at
+        // the top level).
+        $fields = ['path' => $path];
         if (null !== $offset) {
-            $arguments['offset'] = $offset;
+            $fields['offset'] = $offset;
         }
         if (null !== $limit) {
-            $arguments['limit'] = $limit;
+            $fields['limit'] = $limit;
         }
+        $arguments = $fields;
 
         ++$seq;
         $projector->accept(new RuntimeEvent(

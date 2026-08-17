@@ -1,5 +1,5 @@
 {
-    "$schema": "TUI tool-call replay fixture \u2014 edit tool payload preview",
+    "$schema": "TUI tool-call replay fixture — edit tool payload preview",
     "model": "llama_cpp_test/test",
     "provider_id": "llama_cpp_test",
     "reasoning": "off",

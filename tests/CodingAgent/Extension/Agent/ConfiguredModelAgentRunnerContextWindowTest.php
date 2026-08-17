@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Extension\Agent\ConfiguredModelAgentRunner;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
 use Symfony\AI\Platform\PlatformInterface;
 
 /**
@@ -23,7 +24,7 @@ final class ConfiguredModelAgentRunnerContextWindowTest extends TestCase
     public function returnsNullWhenCatalogUnavailable(): void
     {
         $platform = $this->createStub(PlatformInterface::class);
-        $runner = new ConfiguredModelAgentRunner($platform, null, new NullLogger());
+        $runner = new ConfiguredModelAgentRunner($platform, null, new NullLogger(), $this->createStub(ToolCallArgumentResolverInterface::class));
 
         $this->assertNull($runner->contextWindow('llama_cpp/flash'));
         $this->assertNull($runner->contextWindow('not-a-valid-ref'));
@@ -52,7 +53,7 @@ final class ConfiguredModelAgentRunnerContextWindowTest extends TestCase
         ]));
 
         $platform = $this->createStub(PlatformInterface::class);
-        $runner = new ConfiguredModelAgentRunner($platform, $catalog, new NullLogger());
+        $runner = new ConfiguredModelAgentRunner($platform, $catalog, new NullLogger(), $this->createStub(ToolCallArgumentResolverInterface::class));
 
         $this->assertSame(131072, $runner->contextWindow('llama_cpp/flash'));
         $this->assertNull($runner->contextWindow('llama_cpp/no_window'));

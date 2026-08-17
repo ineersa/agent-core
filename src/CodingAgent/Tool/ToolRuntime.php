@@ -21,7 +21,7 @@ use Symfony\Component\Process\Process;
  *    ToolContext cancellation token and a monotonic timeout deadline, and calls
  *    Process::stop($graceSeconds) on cancellation or timeout.
  *
- * Designed for use inside ToolHandlerInterface::__invoke() implementations.
+ * Designed for use inside invokable tool handler implementations.
  * The ambient ToolContext (populated by ToolExecutor) provides the cancellation
  * token and default timeout. When no context is active, cancellation checks are
  * skipped but the explicit $timeoutSeconds parameter still applies.

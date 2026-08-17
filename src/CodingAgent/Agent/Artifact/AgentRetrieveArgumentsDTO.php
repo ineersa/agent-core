@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
+use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\Component\Validator\Constraints as Assert;
-use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
  * Validated tool arguments for {@see AgentArtifactRetrievalService}.
@@ -15,31 +15,51 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
 final class AgentRetrieveArgumentsDTO
 {
     public function __construct(
-        public readonly ?string $artifactId = null,
-        public readonly ?string $agentRunId = null,
+        #[Schema(description: 'Child artifact id (e.g. agent_abc123) within the current parent session.')]
+        #[Assert\Length(min: 1)]
+        #[Assert\When(
+            expression: 'this.agent_run_id === null',
+            constraints: [
+                new Assert\NotBlank(normalizer: 'trim', message: 'Provide at least one identifier: artifact_id or agent_run_id.'),
+            ],
+        )]
+        public readonly ?string $artifact_id = null,
+        #[Schema(description: 'Child AgentCore run id (UUID) for the subagent run.')]
+        #[Assert\Length(min: 1)]
+        #[Assert\When(
+            expression: 'this.artifact_id === null',
+            constraints: [
+                new Assert\NotBlank(normalizer: 'trim', message: 'Provide at least one identifier: artifact_id or agent_run_id.'),
+            ],
+        )]
+        public readonly ?string $agent_run_id = null,
+        #[Schema(description: 'Output mode. Default handoff.')]
+        #[Assert\Choice(choices: ['handoff', 'metadata', 'events', 'history', 'debug'], message: 'Invalid mode "{{ value }}". Supported modes: handoff, metadata, events, history, debug.')]
         public readonly ?string $mode = null,
+        #[Schema(description: 'Max rows for events/history modes (default '.AgentArtifactRetrievalService::DEFAULT_LIMIT.').')]
+        #[Assert\Range(min: 1, max: AgentArtifactRetrievalService::MAX_LIMIT)]
         public readonly ?int $limit = null,
     ) {
     }
 
     public function trimmedArtifactId(): ?string
     {
-        if (null === $this->artifactId) {
+        if (null === $this->artifact_id) {
             return null;
         }
 
-        $trimmed = trim($this->artifactId);
+        $trimmed = trim($this->artifact_id);
 
         return '' === $trimmed ? null : $trimmed;
     }
 
     public function trimmedAgentRunId(): ?string
     {
-        if (null === $this->agentRunId) {
+        if (null === $this->agent_run_id) {
             return null;
         }
 
-        $trimmed = trim($this->agentRunId);
+        $trimmed = trim($this->agent_run_id);
 
         return '' === $trimmed ? null : $trimmed;
     }
@@ -70,14 +90,5 @@ final class AgentRetrieveArgumentsDTO
         }
 
         return $this->limit;
-    }
-
-    #[Assert\Callback]
-    public function validateIdentifiers(ExecutionContextInterface $context): void
-    {
-        if (null === $this->trimmedArtifactId() && null === $this->trimmedAgentRunId()) {
-            $context->buildViolation('Provide at least one identifier: artifact_id or agent_run_id.')
-                ->addViolation();
-        }
     }
 }

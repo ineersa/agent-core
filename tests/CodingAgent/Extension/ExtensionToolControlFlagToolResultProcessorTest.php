@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Extension\ExtensionToolControlFlagToolResultProcessor;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -146,9 +145,9 @@ final class ExtensionToolControlFlagToolResultProcessorTest extends TestCase
         );
     }
 
-    private function dummyHandler(): ToolHandlerInterface
+    private function dummyHandler(): object
     {
-        return new class implements ToolHandlerInterface {
+        return new class {
             public function __invoke(array $arguments): mixed
             {
                 return null;

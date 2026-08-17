@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ContextualExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
@@ -21,7 +20,7 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
  * {@see ToolInvocationContextDTO} built from the ambient ToolExecutor context
  * (run id, cooperative cancellation token, and timeout budget).
  */
-final readonly class ExtensionToolHandlerAdapter implements ToolHandlerInterface
+final readonly class ExtensionToolHandlerAdapter
 {
     public function __construct(
         private ExtensionToolHandlerInterface|ContextualExtensionToolHandlerInterface $extensionHandler,
@@ -29,6 +28,9 @@ final readonly class ExtensionToolHandlerAdapter implements ToolHandlerInterface
     ) {
     }
 
+    /**
+     * @param array<string, mixed> $arguments
+     */
     public function __invoke(array $arguments): mixed
     {
         if ($this->extensionHandler instanceof ContextualExtensionToolHandlerInterface) {

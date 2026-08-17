@@ -117,3 +117,8 @@ Workers perform **best-effort graceful disconnect** on worker stop (`McpWorkerSh
 
 - Agents / child tools: [agents.md](agents.md)
 - Settings overview: [settings.md](settings.md)
+
+## Argument validation
+
+Dynamic MCP tools use their runtime-provided schemas, and Hatfield forwards their arguments without the built-in DTO validation path.
+

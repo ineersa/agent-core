@@ -7,15 +7,17 @@ namespace Ineersa\CodingAgent\Tests\Agent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionServiceInterface;
 use Ineersa\CodingAgent\Agent\Fork\ForkRuntimeConfigResolver;
 use Ineersa\CodingAgent\Agent\Tool\ForkToolDefinitionBuilder;
+use Ineersa\CodingAgent\Agent\Tool\ForkToolDefinitionProvider;
 use Ineersa\CodingAgent\Agent\Tool\ForkToolHandler;
 use Ineersa\CodingAgent\Config\ForksConfigDTO;
 use Ineersa\CodingAgent\Config\ModelResolver;
+use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
+use Ineersa\CodingAgent\Tool\Arguments\ForkArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -33,18 +35,22 @@ final class ForkToolContractTest extends TestCase
             new NarrowExecutionServiceLocator(new FakeForkExecutionService(new DeferredToolCompletionOutcome('x'))),
         );
         $definition = ForkToolDefinitionBuilder::build($handler);
-        $schema = $definition->parametersJsonSchema;
+        // Typed DTO tool: schema is generated natively from ForkArgumentsDTO.
+        $this->assertNull($definition->parametersJsonSchema);
 
-        $this->assertSame(['task'], $schema['required']);
-        $this->assertFalse($schema['additionalProperties']);
-        $this->assertSame(1, $schema['properties']['task']['minLength']);
-        $this->assertSame(1, $schema['properties']['model']['minLength']);
-        $this->assertNotContains('model', $schema['required']);
+        $schema = NativeToolSchemaProbe::for(new ForkToolDefinitionProvider($handler));
+        $args = $schema;
+
+        // Non-nullable `task` is required; nullable model/thinking are not.
+        $this->assertSame(['task'], $args['required']);
+        $this->assertFalse($args['additionalProperties']);
+        $this->assertSame(1, $args['properties']['task']['minLength']);
+        $this->assertNotContains('model', $args['required']);
         $this->assertSame(
             'Launch an isolated fork child with inherited parent conversation context. Blocks until completion and returns a dense handoff.',
             $definition->description,
         );
-        $this->assertSame(ModelResolver::LEVELS, $schema['properties']['thinking']['enum']);
+        $this->assertSame(ModelResolver::LEVELS, $args['properties']['thinking']['enum']);
     }
 
     public function testInvokeReturnsDeferredOutcomeAndDelegatesParameters(): void
@@ -62,11 +68,11 @@ final class ForkToolContractTest extends TestCase
             orderIndex: 0,
         );
 
-        $outcome = $accessor->with($context, static fn () => $handler->__invoke([
-            'task' => '  Do work  ',
-            'model' => 'provider/model',
-            'thinking' => 'high',
-        ]));
+        $outcome = $accessor->with($context, static fn () => $handler->__invoke(new ForkArgumentsDTO(
+            task: '  Do work  ',
+            model: 'provider/model',
+            thinking: 'high',
+        )));
 
         $this->assertSame('deferred-fork-1', $outcome->deferredId);
         $this->assertSame('Do work', $fake->lastTask);
@@ -92,12 +98,13 @@ final class ForkToolContractTest extends TestCase
             orderIndex: 0,
         );
 
-        try {
-            $accessor->with($context, static fn () => $handler->__invoke(['task' => 'ok', 'thinking' => 'invalid']));
-            $this->fail('Expected ToolCallException');
-        } catch (ToolCallException $e) {
-            $this->assertStringContainsString('thinking must be one of', $e->getMessage());
-        }
+        // Invalid thinking is rejected by schema/Validator before the handler runs.
+        // Handler path only trims and delegates a valid DTO.
+        $outcome = $accessor->with($context, static fn () => $handler->__invoke(new ForkArgumentsDTO(
+            task: 'ok',
+            thinking: 'high',
+        )));
+        $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
     }
 
     public function testConfigResolverPrecedence(): void

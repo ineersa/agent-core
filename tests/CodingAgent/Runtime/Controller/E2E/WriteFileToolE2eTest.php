@@ -36,7 +36,8 @@ final class WriteFileToolE2eTest extends ControllerE2eTestCase
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => '[llm-real:write-file] Use exactly one tool call: tool name `write` with arguments `{ "path": "./test-write.txt", "content": "hello world" }`. '
+                'prompt' => '[llm-real:write-file-flat-v2] Call the `write` tool exactly once now. '
+                    .'Set the `path` argument to `./test-write.txt` and the `content` argument to `hello world`. '
                     .'Do not use an absolute path, do not omit `./`, and do not call any other tool. '
                     .'After the tool succeeds, answer exactly `done`.',
             ],

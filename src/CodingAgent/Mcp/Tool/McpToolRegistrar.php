@@ -24,6 +24,10 @@ use Psr\Log\LoggerInterface;
  * handled runs in long-lived consumers.  Only tool names tracked by
  * this registrar instance are removed; unrelated dynamic tools
  * (extension-registered, other consumers) are never touched.
+ *
+ * Synchronization is idempotent: an unchanged catalog (same catalog run id
+ * and effective content) is a no-op, so per-LLM-step resolver calls do not
+ * churn handler objects or the registry revision.
  */
 final class McpToolRegistrar
 {
@@ -31,6 +35,15 @@ final class McpToolRegistrar
      * @var array<string, true> MCP-owned dynamic tool names tracked by this instance
      */
     private array $ownedNames = [];
+
+    /**
+     * Deterministic fingerprint of the last synchronized catalog (including
+     * the catalog run id). A matching fingerprint means the registered MCP
+     * dynamic tools are already current, so the remove/re-register cycle is
+     * skipped entirely: handler object identities and the registry revision
+     * stay stable across unchanged LLM steps.
+     */
+    private ?string $catalogFingerprint = null;
 
     public function __construct(
         private readonly McpToolCatalogStoreInterface $catalogStore,
@@ -43,11 +56,13 @@ final class McpToolRegistrar
     /**
      * Synchronize MCP dynamic tools for a run from the session catalog.
      *
-     * Removes previously MCP-owned dynamic tools tracked by this
-     * registrar instance before reading the catalog so stale tools
-     * from a prior run are cleared even when the current-run catalog
-     * is missing or fails.  Then reads the catalog; if present,
-     * registers tools from connected servers.
+     * An unchanged catalog (matching fingerprint) is a no-op — previously
+     * registered MCP tools stay in place with their handler identities
+     * intact. When the catalog changed or is missing, previously MCP-owned
+     * dynamic tools tracked by this registrar instance are removed first so
+     * stale tools from a prior run are cleared even when the current-run
+     * catalog is missing; then the catalog is registered from connected
+     * servers.
      *
      * Collision diagnostics are logged at warning level with
      * structured context (component=mcp, mcp_event=tool.collision);
@@ -71,20 +86,67 @@ final class McpToolRegistrar
      */
     public function registerUsingCatalogFrom(string $runId, string $catalogRunId): void
     {
+        // Read the catalog first: the fingerprint must cover both the
+        // catalog run id and the effective content so switching runs or
+        // catalogs can never reuse a stale snapshot.
+        $catalog = $this->catalogStore->read($catalogRunId);
+        $fingerprint = $this->fingerprintFor($catalogRunId, $catalog);
+
+        // Idempotent no-op: this exact catalog state was already
+        // synchronized by this registrar instance. Keep the registered
+        // McpToolHandler objects and the registry revision stable instead
+        // of removing and re-creating every owned tool on every LLM step.
+        if ($fingerprint === $this->catalogFingerprint) {
+            return;
+        }
+
         // Remove previously MCP-owned dynamic tools from this registrar
         // instance so stale tools from prior runs/catalogs are cleared
         // before new registration.  Unrelated dynamic tools are never
         // touched.
         $this->removeOwnedTools();
 
-        // Read the current-run catalog.  Null means no catalog exists
-        // yet — this is acceptable (no-op after stale removal).
-        $catalog = $this->catalogStore->read($catalogRunId);
+        // Null means no catalog exists yet — after stale removal this is
+        // a no-op (no tools registered for this catalog state).
         if (null === $catalog) {
+            $this->catalogFingerprint = $fingerprint;
+
             return;
         }
 
         $this->registerFromCatalog($catalog, $runId);
+        $this->catalogFingerprint = $fingerprint;
+    }
+
+    /**
+     * Deterministic content fingerprint of the effective MCP registration
+     * surface: catalog run id plus every connected server's tool identity,
+     * description, and input schema, in catalog order. Non-cryptographic
+     * (xxh128) — it only guards against redundant re-registration churn.
+     */
+    private function fingerprintFor(string $catalogRunId, ?\Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO $catalog): string
+    {
+        $content = [$catalogRunId];
+
+        if (null !== $catalog) {
+            foreach ($catalog->servers as $serverEntry) {
+                if (McpServerCatalogStatusEnum::CONNECTED !== $serverEntry->status) {
+                    continue;
+                }
+
+                foreach ($serverEntry->tools as $tool) {
+                    $content[] = [
+                        $serverEntry->serverName,
+                        $tool->mcpName,
+                        $tool->hatfieldName,
+                        $tool->description,
+                        $tool->inputSchema,
+                    ];
+                }
+            }
+        }
+
+        return hash('xxh128', serialize($content));
     }
 
     /**

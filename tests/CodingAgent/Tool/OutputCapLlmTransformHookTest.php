@@ -404,6 +404,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
             toolCallId: 'call-read-late',
             toolName: 'read',
             details: [
+                // Tool-call arguments are the flat provider map.
                 'arguments' => ['path' => './src/file.php', 'offset' => 42],
                 'raw_result' => $largeText,
             ],

@@ -269,9 +269,9 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             ->with(
                 'mocked_tool',
                 'Mocked description',
-                ['type' => 'object'],
                 $this->isInstanceOf(ExtensionToolHandlerAdapter::class),
                 'mocked_tool: Mocked description',
+                ['type' => 'object'],
                 ['Guideline'],
                 $this->anything(),
                 null,

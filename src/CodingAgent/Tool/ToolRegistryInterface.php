@@ -22,7 +22,10 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
  *
  * Tool definitions are stored as ToolDefinitionDTO internally and
  * exposed via activeToolDefinitions() / toolDefinition() for downstream
- * adapters (e.g. RegistryBackedToolbox in TOOLS-R03).
+ * adapters (e.g. RegistryBackedToolbox in TOOLS-R03). Definitions are
+ * canonical immutable objects: an effective replacement creates a new
+ * definition instance, so downstream identity-keyed caches stay correct
+ * without a revision counter.
  *
  * The executionMode defaults to Sequential. Tool authors set it at
  * registration time; the corresponding value flows through ActiveToolSet
@@ -41,24 +44,24 @@ interface ToolRegistryInterface
      * handler) is idempotent. Re-registration with different metadata
      * for an existing name is a no-op (first wins).
      *
-     * @param string               $name                 Model-visible tool name
-     * @param string               $description          Provider-schema description
-     * @param array<string, mixed> $parametersJsonSchema JSON Schema for tool parameters
-     * @param ToolHandlerInterface $handler              Typed execution handler
-     * @param string               $promptLine           Single-line description for <available_tools>
-     * @param list<string>         $promptGuidelines     Zero or more guideline strings for <guidelines>
-     * @param ToolExecutionMode    $executionMode        Execution mode (default: Sequential)
-     * @param int|null             $timeoutSeconds       Optional cooperative timeout budget for this tool; null means no ambient deadline
-     * @param string|null          $extensionOwnerClass  Owning extension FQCN when registered by an extension; null for built-ins
+     * @param string                    $name                 Model-visible tool name
+     * @param string                    $description          Provider-schema description
+     * @param array<string, mixed>|null $parametersJsonSchema JSON Schema for raw-array handlers; null for typed DTO handlers (native generation)
+     * @param object                    $handler              Invokable execution handler
+     * @param string                    $promptLine           Single-line description for <available_tools>
+     * @param list<string>              $promptGuidelines     Zero or more guideline strings for <guidelines>
+     * @param ToolExecutionMode         $executionMode        Execution mode (default: Sequential)
+     * @param int|null                  $timeoutSeconds       Optional cooperative timeout budget for this tool; null means no ambient deadline
+     * @param string|null               $extensionOwnerClass  Owning extension FQCN when registered by an extension; null for built-ins
      *
      * @throws \InvalidArgumentException on empty name or description
      */
     public function registerTool(
         string $name,
         string $description,
-        array $parametersJsonSchema,
-        ToolHandlerInterface $handler,
+        object $handler,
         string $promptLine,
+        ?array $parametersJsonSchema = null,
         array $promptGuidelines = [],
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
         ?int $timeoutSeconds = null,
@@ -76,7 +79,7 @@ interface ToolRegistryInterface
      *                                                   conflict with a permanent tool name)
      * @param string               $description          Provider-schema description
      * @param array<string, mixed> $parametersJsonSchema JSON Schema for tool parameters
-     * @param ToolHandlerInterface $handler              Typed execution handler
+     * @param object               $handler              Invokable execution handler
      * @param ToolExecutionMode    $executionMode        Execution mode (default: Sequential)
      *
      * @throws \InvalidArgumentException on name conflict with permanent tool
@@ -84,8 +87,8 @@ interface ToolRegistryInterface
     public function addDynamicTool(
         string $name,
         string $description,
+        object $handler,
         array $parametersJsonSchema,
-        ToolHandlerInterface $handler,
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
     ): void;
 
@@ -93,22 +96,6 @@ interface ToolRegistryInterface
      * Remove a dynamic tool by name. No-op if not found.
      */
     public function removeDynamicTool(string $name): void;
-
-    /**
-     * Replace all dynamic tools with the given set.
-     *
-     * @param list<array{name: string, description: string, parametersJsonSchema: array<string, mixed>, handler: mixed}> $tools
-     *
-     * @throws \InvalidArgumentException on name conflict with permanent tools
-     */
-    public function setDynamicTools(array $tools): void;
-
-    /**
-     * Return all currently registered dynamic tools.
-     *
-     * @return list<array{name: string, description: string, parametersJsonSchema: array<string, mixed>, handler: mixed}>
-     */
-    public function getDynamicTools(): array;
 
     /**
      * Return deduped permanent tool prompt lines in registration order.
