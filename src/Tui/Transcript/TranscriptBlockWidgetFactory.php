@@ -14,7 +14,6 @@ use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\MarkdownWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Centralizes block-kind-specific rendering for the transcript widget tree.
@@ -29,9 +28,14 @@ use Symfony\Component\Yaml\Yaml;
  * → compact multi-line cards (YAML-like args with preview; edit/write payload previews; preview-truncated result body).
  * Structured subagent tool results are delegated to {@see SubagentResultRenderer} before generic
  * ToolResult cards. All other kinds → {@see TextWidget} flat line.
+ *
+ * Tool-exchange pairing/suppression and shared tool-result presentation facts live in
+ * {@see TranscriptToolPresentationPolicy}; this factory renders.
  */
 final readonly class TranscriptBlockWidgetFactory
 {
+    private readonly TranscriptToolPresentationPolicy $toolPresentationPolicy;
+
     public function __construct(
         private readonly SubagentResultRenderer $subagentRenderer = new SubagentResultRenderer(),
         private readonly TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
@@ -42,6 +46,7 @@ final readonly class TranscriptBlockWidgetFactory
         private readonly ToolArgumentColoredFormatter $toolArgumentColoredFormatter = new ToolArgumentColoredFormatter(),
         private readonly ViewImageTranscriptFormatter $viewImageFormatter = new ViewImageTranscriptFormatter(),
     ) {
+        $this->toolPresentationPolicy = new TranscriptToolPresentationPolicy($this->subagentRenderer);
     }
 
     public function displayConfig(): TranscriptDisplayConfig
@@ -61,7 +66,7 @@ final readonly class TranscriptBlockWidgetFactory
 
     public function isTranscriptWidgetSuppressed(TranscriptBlock $block): bool
     {
-        return $this->shouldSuppressTranscriptWidget($block);
+        return $this->toolPresentationPolicy->isTranscriptWidgetSuppressed($block);
     }
 
     /**
@@ -75,7 +80,7 @@ final readonly class TranscriptBlockWidgetFactory
         }
 
         // ask_human HITL: Question block is authoritative; suppress duplicate tool cards (single-block render path).
-        if ($this->shouldSuppressTranscriptWidget($block)) {
+        if ($this->isTranscriptWidgetSuppressed($block)) {
             return new TextWidget('');
         }
 
@@ -186,42 +191,12 @@ final readonly class TranscriptBlockWidgetFactory
         array $consumedToolResultIds,
         array $consumedToolCallIds,
     ): ?TranscriptBlock {
-        if (TranscriptBlockKindEnum::ToolCall !== $callBlock->kind) {
-            return null;
-        }
-
-        if ($this->shouldSuppressTranscriptWidget($callBlock)) {
-            return null;
-        }
-
-        $callId = $callBlock->meta['tool_call_id'] ?? null;
-        if (!\is_string($callId) || '' === $callId || isset($consumedToolCallIds[$callId])) {
-            return null;
-        }
-
-        $candidates = $toolResultsByCallId[$callId] ?? [];
-        if ([] === $candidates) {
-            return null;
-        }
-
-        $result = $this->selectBestToolResultForExchange($callBlock, $candidates, $consumedToolResultIds);
-        if (null === $result) {
-            return null;
-        }
-
-        if ($this->shouldSuppressTranscriptWidget($result)) {
-            return null;
-        }
-
-        if ($this->subagentRenderer->supports($result)) {
-            return null;
-        }
-
-        if (!$this->toolNamesCompatibleForExchange($callBlock, $result)) {
-            return null;
-        }
-
-        return $result;
+        return $this->toolPresentationPolicy->findCombinableToolResultForCall(
+            $callBlock,
+            $toolResultsByCallId,
+            $consumedToolResultIds,
+            $consumedToolCallIds,
+        );
     }
 
     /**
@@ -231,24 +206,7 @@ final readonly class TranscriptBlockWidgetFactory
         TranscriptBlock $block,
         array $consumedToolCallIds,
     ): bool {
-        if (TranscriptBlockKindEnum::ToolResult !== $block->kind) {
-            return false;
-        }
-
-        if ($this->shouldSuppressTranscriptWidget($block)) {
-            return false;
-        }
-
-        if ($this->subagentRenderer->supports($block)) {
-            return false;
-        }
-
-        $callId = $block->meta['tool_call_id'] ?? null;
-        if (!\is_string($callId) || '' === $callId) {
-            return false;
-        }
-
-        return isset($consumedToolCallIds[$callId]);
+        return $this->toolPresentationPolicy->shouldSkipStandaloneToolResultInList($block, $consumedToolCallIds);
     }
 
     /**
@@ -260,12 +218,11 @@ final readonly class TranscriptBlockWidgetFactory
         array &$consumedToolResultIds,
         array &$consumedToolCallIds,
     ): void {
-        $consumedToolResultIds[$resultBlock->id] = true;
-
-        $callId = $resultBlock->meta['tool_call_id'] ?? null;
-        if (\is_string($callId) && '' !== $callId) {
-            $consumedToolCallIds[$callId] = true;
-        }
+        $this->toolPresentationPolicy->markToolResultConsumedForExchange(
+            $resultBlock,
+            $consumedToolResultIds,
+            $consumedToolCallIds,
+        );
     }
 
     /**
@@ -273,105 +230,7 @@ final readonly class TranscriptBlockWidgetFactory
      */
     public function shouldSuppressEmptyAssistantPlaceholder(TranscriptBlock $block, ?TranscriptBlock $nextBlock): bool
     {
-        if (TranscriptBlockKindEnum::AssistantMessage !== $block->kind) {
-            return false;
-        }
-
-        if ('' !== $block->text) {
-            return false;
-        }
-
-        return null !== $nextBlock && TranscriptBlockKindEnum::Question === $nextBlock->kind;
-    }
-
-    /**
-     * @param list<TranscriptBlock> $candidates
-     * @param array<string, true>   $consumedToolResultIds
-     */
-    private function selectBestToolResultForExchange(
-        TranscriptBlock $callBlock,
-        array $candidates,
-        array $consumedToolResultIds,
-    ): ?TranscriptBlock {
-        $best = null;
-        $bestScore = \PHP_INT_MIN;
-
-        foreach ($candidates as $candidate) {
-            if (isset($consumedToolResultIds[$candidate->id])) {
-                continue;
-            }
-
-            if (!$this->toolNamesCompatibleForExchange($callBlock, $candidate)) {
-                continue;
-            }
-
-            $score = $this->toolResultExchangeCandidateScore($candidate);
-            if ($score > $bestScore) {
-                $best = $candidate;
-                $bestScore = $score;
-            }
-        }
-
-        return $best;
-    }
-
-    private function toolResultExchangeCandidateScore(TranscriptBlock $resultBlock): int
-    {
-        $score = 0;
-
-        if ($this->toolResultIsFullRender($resultBlock)) {
-            $score += 1000;
-        }
-
-        $body = $this->toolResultBodyText($resultBlock);
-        if ('' !== trim($body)) {
-            $score += 500 + min(\strlen($body), 200);
-        }
-
-        if ($resultBlock->streaming) {
-            $score -= 50;
-        }
-
-        $score += $resultBlock->seq;
-
-        return $score;
-    }
-
-    private function toolNamesCompatibleForExchange(TranscriptBlock $callBlock, TranscriptBlock $resultBlock): bool
-    {
-        $callName = $callBlock->meta['tool_name'] ?? null;
-        $resultName = $resultBlock->meta['tool_name'] ?? null;
-        if (!\is_string($callName) || '' === $callName || !\is_string($resultName) || '' === $resultName) {
-            return true;
-        }
-
-        return $callName === $resultName;
-    }
-
-    /**
-     * ask_human HITL: Question block is the authoritative transcript record; hide duplicate tool cards.
-     *
-     * Projection typically emits ToolCall/ToolResult before the Question block in the same poll batch;
-     * a one-tick gap with only suppressed cards is acceptable and preferable to flashing raw payloads.
-     */
-    private function shouldSuppressTranscriptWidget(TranscriptBlock $block): bool
-    {
-        if (TranscriptBlockKindEnum::ToolCall === $block->kind && $this->isAskHumanToolName($block->meta['tool_name'] ?? null)) {
-            return true;
-        }
-
-        if (TranscriptBlockKindEnum::ToolResult === $block->kind
-            && $this->isAskHumanToolName($block->meta['tool_name'] ?? null)
-            && !$this->toolResultIsFullRender($block)) {
-            return true;
-        }
-
-        return false;
-    }
-
-    private function isAskHumanToolName(mixed $toolName): bool
-    {
-        return \is_string($toolName) && 'ask_human' === $toolName;
+        return $this->toolPresentationPolicy->shouldSuppressEmptyAssistantPlaceholder($block, $nextBlock);
     }
 
     /**
@@ -528,7 +387,7 @@ final readonly class TranscriptBlockWidgetFactory
         array $arguments,
     ): TextWidget {
         $headerLine = $this->skillReadHeaderLabel($callBlock, $arguments);
-        $fullRender = $this->toolResultIsFullRender($resultBlock);
+        $fullRender = $this->toolPresentationPolicy->toolResultIsFullRender($resultBlock);
         $expanded = $this->displayState->previewableBlocksExpanded;
 
         // Collapsed successful skill reads hide args/result; keep only the compact header + expand hint.
@@ -676,7 +535,7 @@ final readonly class TranscriptBlockWidgetFactory
         $header = $this->toolResultHeaderLabel($block);
         $lines = [\sprintf('%s %s', TranscriptGlyphs::GLYPH_TOOL, $header)];
 
-        $body = $this->toolResultBodyText($block);
+        $body = $this->toolPresentationPolicy->toolResultBodyText($block);
         if ('' !== $body) {
             $bodyLines = explode("\n", $body);
             $preview = $this->applyToolResultPreview($bodyLines, $block);
@@ -693,7 +552,7 @@ final readonly class TranscriptBlockWidgetFactory
             $lines[0] .= $suffix;
         }
 
-        $color = $this->toolResultIsFullRender($block) && $this->metaIsTruthy($block->meta['is_error'] ?? false)
+        $color = $this->toolPresentationPolicy->toolResultIsFullRender($block) && $this->toolPresentationPolicy->metaIsTruthy($block->meta['is_error'] ?? false)
             ? ThemeColorEnum::Error
             : ThemeColorEnum::ToolOutput;
 
@@ -707,7 +566,7 @@ final readonly class TranscriptBlockWidgetFactory
      */
     private function applyToolResultPreview(array $bodyLines, TranscriptBlock $block): array
     {
-        return $this->applyLinePreview($bodyLines, $this->toolResultIsFullRender($block));
+        return $this->applyLinePreview($bodyLines, $this->toolPresentationPolicy->toolResultIsFullRender($block));
     }
 
     /**
@@ -720,44 +579,6 @@ final readonly class TranscriptBlockWidgetFactory
         $limit = $lineLimit ?? $this->displayConfig->toolResultPreviewLines;
 
         return $this->linePreviewService->apply($lines, $limit, $fullRender, $this->displayState);
-    }
-
-    private function compactSuccessfulEditWriteResultBody(TranscriptBlock $block, string $result): string
-    {
-        if ($this->toolResultIsFullRender($block)) {
-            return $result;
-        }
-
-        $toolName = $block->meta['tool_name'] ?? null;
-        if (!\is_string($toolName) || 'edit' !== $toolName) {
-            // write (and other) successful tool results are already compact status lines.
-            return $result;
-        }
-
-        $marker = 'Updated file context:';
-        $pos = strpos($result, $marker);
-        if (false !== $pos) {
-            return rtrim(substr($result, 0, $pos));
-        }
-
-        return $result;
-    }
-
-    /**
-     * Error, cancelled, and timed_out tool results bypass preview so diagnostics are not hidden.
-     *
-     * Projection currently sets is_error for cancelled/timed_out as well; color still keys off is_error when full.
-     */
-    private function toolResultIsFullRender(TranscriptBlock $block): bool
-    {
-        return $this->metaIsTruthy($block->meta['is_error'] ?? false)
-            || $this->metaIsTruthy($block->meta['cancelled'] ?? false)
-            || $this->metaIsTruthy($block->meta['timed_out'] ?? false);
-    }
-
-    private function metaIsTruthy(mixed $value): bool
-    {
-        return true === $value || 1 === $value || '1' === $value;
     }
 
     private function toolCallHeaderLabel(TranscriptBlock $block): string
@@ -791,31 +612,6 @@ final readonly class TranscriptBlockWidgetFactory
     private function looksLikeMultilineBody(string $text): bool
     {
         return str_contains($text, "\n");
-    }
-
-    private function toolResultBodyText(TranscriptBlock $block): string
-    {
-        $result = $block->meta['result'] ?? null;
-        if (\is_string($result) && '' !== $result) {
-            return $this->compactSuccessfulEditWriteResultBody($block, $result);
-        }
-        if (\is_scalar($result) && '' !== (string) $result) {
-            return (string) $result;
-        }
-        if (\is_array($result) || \is_object($result)) {
-            return trim(Yaml::dump($result, 4, 2, Yaml::DUMP_MULTI_LINE_LITERAL_BLOCK));
-        }
-
-        $text = $block->text;
-        $toolName = $block->meta['tool_name'] ?? null;
-        if (\is_string($toolName) && '' !== $toolName && $text === $toolName) {
-            return '';
-        }
-        if ('Tool result' === $text) {
-            return '';
-        }
-
-        return $text;
     }
 
     private function buildSystemWidget(TranscriptBlock $block, TuiTheme $theme): TextWidget
@@ -1058,7 +854,7 @@ final readonly class TranscriptBlockWidgetFactory
             $result = $resultBlock->meta['result'] ?? null;
             $bodyLines = $this->viewImageFormatter->formatToolResultLines($result);
             if ([] === $bodyLines && \is_string($result) && '' !== $result) {
-                if ($this->toolResultIsFullRender($resultBlock)) {
+                if ($this->toolPresentationPolicy->toolResultIsFullRender($resultBlock)) {
                     return [$result];
                 }
 
@@ -1068,7 +864,7 @@ final readonly class TranscriptBlockWidgetFactory
             return $bodyLines;
         }
 
-        $body = $this->toolResultBodyText($resultBlock);
+        $body = $this->toolPresentationPolicy->toolResultBodyText($resultBlock);
         if ('' === $body) {
             return [];
         }
@@ -1086,7 +882,7 @@ final readonly class TranscriptBlockWidgetFactory
 
     private function toolExchangeBodyColor(TranscriptBlock $resultBlock): ThemeColorEnum
     {
-        if ($this->toolResultIsFullRender($resultBlock) && $this->metaIsTruthy($resultBlock->meta['is_error'] ?? false)) {
+        if ($this->toolPresentationPolicy->toolResultIsFullRender($resultBlock) && $this->toolPresentationPolicy->metaIsTruthy($resultBlock->meta['is_error'] ?? false)) {
             return ThemeColorEnum::Error;
         }
 
@@ -1114,7 +910,7 @@ final readonly class TranscriptBlockWidgetFactory
         $result = $block->meta['result'] ?? null;
         $bodyLines = $this->viewImageFormatter->formatToolResultLines($result);
         if ([] === $bodyLines && \is_string($result) && '' !== $result) {
-            if ($this->toolResultIsFullRender($block)) {
+            if ($this->toolPresentationPolicy->toolResultIsFullRender($block)) {
                 $bodyLines = [$result];
             } else {
                 $bodyLines = ['(image metadata)'];
@@ -1124,7 +920,7 @@ final readonly class TranscriptBlockWidgetFactory
             $lines[] = '    '.$bodyLine;
         }
 
-        $color = $this->toolResultIsFullRender($block) && $this->metaIsTruthy($block->meta['is_error'] ?? false)
+        $color = $this->toolPresentationPolicy->toolResultIsFullRender($block) && $this->toolPresentationPolicy->metaIsTruthy($block->meta['is_error'] ?? false)
             ? ThemeColorEnum::Error
             : ThemeColorEnum::ToolOutput;
 
