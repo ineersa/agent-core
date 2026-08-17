@@ -179,6 +179,27 @@ YAML
         $this->assertNotContains('/app/config/themes', $config['tui']['theme_paths']);
     }
 
+    public function testThemePathsSkipsNonStringEntriesAndResolvesValidOnes(): void
+    {
+        $cwd = $this->tmpDir.'/project';
+        TestDirectoryIsolation::ensureDirectory($cwd.'/.hatfield');
+
+        // Legacy theme_paths behavior: a non-string entry is skipped, not
+        // fatal, while valid entries still resolve.
+        file_put_contents($cwd.'/.hatfield/settings.yaml', <<<'YAML'
+tui:
+    theme_paths:
+        - 'custom/themes'
+        - 42
+YAML
+        );
+
+        $resolution = $this->loader->load($this->defaultsPath, $cwd);
+        $config = $resolution->effective;
+
+        $this->assertSame([$cwd.'/custom/themes'], $config['tui']['theme_paths']);
+    }
+
     public function testSessionsPathResolved(): void
     {
         $cwd = $this->tmpDir.'/project';
