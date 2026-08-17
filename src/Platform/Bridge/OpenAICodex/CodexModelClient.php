@@ -133,7 +133,7 @@ class CodexModelClient implements ModelClientInterface
         ]);
 
         // Release the failed 401 connection before the retry POST
-        // (mirrors LlmRetryingHttpClient's cancel-before-retry).
+        // (mirrors RetryableHttpClient's cancel-before-retry).
         $failedResponse->cancel();
 
         return $this->httpClient->request('POST', $this->baseUrl.$this->path, $retryOptions);
