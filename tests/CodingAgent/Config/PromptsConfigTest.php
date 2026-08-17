@@ -19,16 +19,33 @@ final class PromptsConfigTest extends TestCase
         $this->assertSame([], $config->paths);
     }
 
-    public function testFromRawWithNull(): void
+    public function testFromRawWithNullFails(): void
     {
-        $config = PromptsConfig::fromRaw(null);
-        $this->assertSame([], $config->paths);
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for prompts: expected list of strings, got null');
+
+        PromptsConfig::fromRaw(null);
+    }
+
+    public function testFromRawRejectsAssociativeMap(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for prompts: expected list of strings, got associative array');
+
+        PromptsConfig::fromRaw(['a.md' => 'b.md']);
+    }
+
+    public function testFromRawWithEmptyListIsValid(): void
+    {
+        $this->assertSame([], PromptsConfig::fromRaw([])->paths);
     }
 
     public function testFromRawWithNonArray(): void
     {
-        $config = PromptsConfig::fromRaw('not-an-array');
-        $this->assertSame([], $config->paths);
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for prompts');
+
+        PromptsConfig::fromRaw('not-an-array');
     }
 
     public function testFromRawWithValidPaths(): void
@@ -37,16 +54,26 @@ final class PromptsConfigTest extends TestCase
         $this->assertSame(['path/to/a.md', '/absolute/b.md'], $config->paths);
     }
 
-    public function testFromRawFiltersNonStringEntries(): void
+    public function testFromRawRejectsNonStringEntries(): void
     {
-        $config = PromptsConfig::fromRaw(['valid.md', 42, null, ['nested'], 'also-valid.md']);
-        $this->assertSame(['valid.md', 'also-valid.md'], $config->paths);
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for prompts[1]');
+
+        PromptsConfig::fromRaw(['valid.md', 42, null, ['nested'], 'also-valid.md']);
     }
 
-    public function testFromRawFiltersBlankEntries(): void
+    public function testFromRawRejectsBlankEntries(): void
     {
-        $config = PromptsConfig::fromRaw(['  ', '', "\t", 'valid.md']);
-        $this->assertSame(['valid.md'], $config->paths);
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for prompts[0]');
+
+        PromptsConfig::fromRaw(['  ', '', "\t", 'valid.md']);
+    }
+
+    public function testFromRawRetainsWhitespaceInValidPaths(): void
+    {
+        $config = PromptsConfig::fromRaw(['  padded.md  ', 'valid.md']);
+        $this->assertSame(['  padded.md  ', 'valid.md'], $config->paths);
     }
 
     public function testFromAppConfig(): void

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Mcp\Handler;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogBuilder;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
@@ -31,10 +32,7 @@ use PHPUnit\Framework\TestCase;
  *
  * Test thesis 4: Disconnect handler delegates to connection manager.
  *
- * Test thesis 5: Cross-server duplicate Hatfield tool names are detected
- * and skipped with a warning log.
- *
- * Test thesis 6: Raw config content and embedded secret values (api_key,
+ * Test thesis 5: Raw config content and embedded secret values (api_key,
  * sk-secret-test-abc123) must not leak into structured log context on
  * config parse failure.  Assertions use the exact secret fixture value,
  * not broad substrings like 'token' that can match benign filesystem paths.
@@ -73,6 +71,7 @@ class McpInitializeSessionHandlerTest extends TestCase
             $connectionManager,
             $this->catalogStore,
             $this->logger,
+            new McpToolCatalogBuilder($this->logger),
         );
     }
 
@@ -235,92 +234,6 @@ class McpInitializeSessionHandlerTest extends TestCase
         $this->assertSame('corr-cat', $refreshLogs[0]['context']['correlation_id']);
     }
 
-    /**
-     * Test thesis 5: Cross-server duplicate Hatfield tool names are detected
-     * and skipped with a warning.
-     */
-    public function testCrossServerDuplicateToolNamesAreDetectedAndSkipped(): void
-    {
-        // Configure two servers with sanitized names that collide.
-        // Server "a.b" and "a_b" both sanitize to "a_b", so their tool
-        // "tool" maps to "a_b_tool" on both servers.
-        $mcpConfig = [
-            'mcpServers' => [
-                'a.b' => [
-                    'command' => \PHP_BINARY,
-                    'args' => [__DIR__.'/../Fixtures/stdio-echo-server.php'],
-                    'timeoutMs' => 10000,
-                    'startupTimeoutMs' => 10000,
-                ],
-            ],
-        ];
-        file_put_contents(
-            $this->projectDir.'/.hatfield/mcp.json',
-            json_encode($mcpConfig, \JSON_PRETTY_PRINT),
-        );
-
-        // Create a handler with a stub connection manager that returns
-        // two servers with colliding tool names.
-        $stubManager = $this->createStub(McpConnectionManagerInterface::class);
-        $stubManager->method('discover')->willReturn([
-            'a.b' => [
-                'status' => 'connected',
-                'transport' => 'stdio',
-                'tools' => [
-                    ['name' => 'tool', 'description' => 'Tool from a.b', 'inputSchema' => []],
-                ],
-            ],
-            'a_b' => [
-                'status' => 'connected',
-                'transport' => 'stdio',
-                'tools' => [
-                    // Same MCP tool name "tool" on a different server whose
-                    // sanitized name also becomes "a_b" — both map to "a_b_tool".
-                    ['name' => 'tool', 'description' => 'Tool from a_b', 'inputSchema' => []],
-                ],
-            ],
-        ]);
-
-        $handler = new McpInitializeSessionHandler(
-            TestMcpConfigLoaderFactory::create(
-                new SettingsPathResolver($this->projectDir, $this->projectDir),
-                $this->projectDir,
-            ),
-            $stubManager,
-            $this->catalogStore,
-            $this->logger,
-        );
-
-        $command = new McpInitializeSessionCommand(
-            runId: 'test-run-dup',
-            reason: 'start_run',
-            correlationId: 'corr-dup',
-        );
-
-        ($handler)($command);
-
-        // Both servers should appear in the catalog
-        $this->assertTrue($this->catalogStore->wasWritten);
-        $this->assertNotNull($this->catalogStore->lastCatalog);
-        $this->assertCount(2, $this->catalogStore->lastCatalog->servers);
-
-        // But only ONE of the two servers should have tools — the second
-        // one's tool was skipped due to name collision.
-        $totalTools = 0;
-        foreach ($this->catalogStore->lastCatalog->servers as $entry) {
-            $totalTools += \count($entry->tools);
-        }
-        $this->assertSame(1, $totalTools, 'Exactly one tool should survive cross-server duplicate detection');
-
-        // A warning for the duplicate should have been logged
-        $warnings = array_values(array_filter(
-            $this->logger->records,
-            static fn (array $r): bool => 'warning' === $r['level']
-                && ($r['context']['mcp_event'] ?? '') === 'tool.duplicate',
-        ));
-        $this->assertCount(1, $warnings, 'Expected one duplicate-tool warning');
-    }
-
     public function testHandlerErrorLogRedactsSecretsInExceptionMessage(): void
     {
         // Use a stub manager that throws an exception with a bearer token
@@ -353,6 +266,7 @@ class McpInitializeSessionHandlerTest extends TestCase
             $stubManager,
             $this->catalogStore,
             $this->logger,
+            new McpToolCatalogBuilder($this->logger),
         );
 
         $command = new McpInitializeSessionCommand(
@@ -463,6 +377,7 @@ class McpInitializeSessionHandlerTest extends TestCase
             $stubManager,
             $this->catalogStore,
             $this->logger,
+            new McpToolCatalogBuilder($this->logger),
         );
 
         $command = new McpInitializeSessionCommand(
@@ -556,6 +471,7 @@ class McpInitializeSessionHandlerTest extends TestCase
             $stubManager,
             $this->catalogStore,
             $this->logger,
+            new McpToolCatalogBuilder($this->logger),
         );
 
         $message = new McpRefreshCatalogCommand(

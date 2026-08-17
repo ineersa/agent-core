@@ -68,10 +68,32 @@ final class AgentsConfigTest extends TestCase
 
     public function testFromRawNonArray(): void
     {
-        $config = AgentsConfig::fromRaw('not-an-array');
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for agents');
 
-        $this->assertTrue($config->enabled);
-        $this->assertCount(0, $config->paths);
+        AgentsConfig::fromRaw('not-an-array');
+    }
+
+    /**
+     * @return iterable<string, array{0: mixed, 1: string}>
+     */
+    public static function malformedRawCases(): iterable
+    {
+        yield 'explicit null section' => [null, 'Invalid value for agents: expected mapping, got null'];
+        yield 'sequential list section' => [['a', 'b'], 'Invalid value for agents: expected mapping, got list'];
+        yield 'unknown key' => [['bogus' => 1], 'Invalid key for agents: "bogus" is not supported'];
+        yield 'associative paths' => [['paths' => ['a' => 'x.md']], 'Invalid value for agents.paths: expected list of strings, got associative array'];
+        yield 'extensions explicit null' => [['extensions' => null], 'Invalid value for agents.extensions: expected mapping, got null'];
+        yield 'extensions unknown key' => [['extensions' => ['bogus' => 1]], 'Invalid key for agents.extensions: "bogus" is not supported'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('malformedRawCases')]
+    public function testFromRawRejectsMalformedRaw(mixed $raw, string $messageFragment): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage($messageFragment);
+
+        AgentsConfig::fromRaw($raw);
     }
 
     public function testFromRawWithEnabled(): void
@@ -96,24 +118,48 @@ final class AgentsConfigTest extends TestCase
         $this->assertSame('.hatfield/team-agents', $config->paths[1]);
     }
 
-    public function testFromRawIgnoresBlankPaths(): void
+    public function testFromRawRejectsBlankPaths(): void
     {
-        $config = AgentsConfig::fromRaw([
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for agents.paths[0]');
+
+        AgentsConfig::fromRaw([
             'paths' => ['', '  ', 'valid-path'],
         ]);
-
-        $this->assertCount(1, $config->paths);
-        $this->assertSame('valid-path', $config->paths[0]);
     }
 
-    public function testFromRawIgnoresNonStringPaths(): void
+    public function testFromRawRejectsNonStringPaths(): void
     {
-        $config = AgentsConfig::fromRaw([
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for agents.paths[0]');
+
+        AgentsConfig::fromRaw([
             'paths' => [123, true, null, 'valid-path'],
         ]);
+    }
 
-        $this->assertCount(1, $config->paths);
-        $this->assertSame('valid-path', $config->paths[0]);
+    public function testFromRawRejectsWrongTypeEnabled(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for agents.enabled');
+
+        AgentsConfig::fromRaw(['enabled' => 'yes']);
+    }
+
+    public function testFromRawRejectsNonPositiveMaxAgents(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for agents.max_agents');
+
+        AgentsConfig::fromRaw(['max_agents' => 0]);
+    }
+
+    public function testFromRawRejectsWrongTypeMaxAgents(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for agents.max_agents');
+
+        AgentsConfig::fromRaw(['max_agents' => '3']);
     }
 
     public function testPathResolutionThroughAppConfigLoader(): void
@@ -243,7 +289,7 @@ final class AgentsConfigTest extends TestCase
     public function testFromRawRejectsUnusedAgentsExtensionsEnabled(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('agents.extensions');
+        $this->expectExceptionMessage('use frontmatter extensions or always_on');
 
         AgentsConfig::fromRaw([
             'extensions' => [

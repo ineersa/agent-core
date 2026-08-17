@@ -25,19 +25,32 @@ final readonly class ChildExtensionsConfigDTO
     public static function fromRaw(mixed $raw, string $path, bool $acceptEnabled = true): self
     {
         if (null === $raw) {
-            return new self();
+            throw new \InvalidArgumentException(\sprintf('Invalid value for %s: expected mapping, got null.', $path));
         }
 
         if (!\is_array($raw)) {
             throw new \InvalidArgumentException(\sprintf('Invalid value for %s: expected mapping, got %s.', $path, get_debug_type($raw)));
         }
 
+        if ([] !== $raw && array_is_list($raw)) {
+            throw new \InvalidArgumentException(\sprintf('Invalid value for %s: expected mapping, got list.', $path));
+        }
+
+        if (!$acceptEnabled && \array_key_exists('enabled', $raw)) {
+            throw new \InvalidArgumentException(\sprintf('Invalid key for %s: "enabled" is not supported (use frontmatter extensions or always_on).', $path));
+        }
+
+        $allowed = ['always_on'];
+        if ($acceptEnabled) {
+            $allowed[] = 'enabled';
+        }
+        $unknown = array_diff(array_keys($raw), $allowed);
+        if ([] !== $unknown) {
+            throw new \InvalidArgumentException(\sprintf('Invalid key for %s: "%s" is not supported.', $path, reset($unknown)));
+        }
+
         $alwaysOn = self::parseClassList($raw, 'always_on', $path.'.always_on');
         if (!$acceptEnabled) {
-            if (\array_key_exists('enabled', $raw)) {
-                throw new \InvalidArgumentException(\sprintf('Invalid key for %s: "enabled" is not supported (use frontmatter extensions or always_on).', $path));
-            }
-
             return new self(alwaysOn: $alwaysOn);
         }
 

@@ -41,38 +41,81 @@ final readonly class AgentsConfig
     /**
      * Build from raw config data (e.g. a YAML-parsed array).
      *
-     * Non-array input and non-string / blank string entries are silently
-     * ignored (the discovery service treats missing paths as diagnostics).
+     * Explicitly configured values are validated strictly: a malformed
+     * section or entry fails configuration load instead of being ignored
+     * or replaced by a default. Omission (the key absent from the merged
+     * config) is handled by the caller and yields the defaults.
      */
     public static function fromRaw(mixed $raw): self
     {
+        if (null === $raw) {
+            throw new \InvalidArgumentException('Invalid value for agents: expected mapping, got null.');
+        }
+
         if (!\is_array($raw)) {
-            return new self();
+            throw new \InvalidArgumentException(\sprintf('Invalid value for agents: expected mapping, got %s.', get_debug_type($raw)));
+        }
+
+        if ([] !== $raw && array_is_list($raw)) {
+            throw new \InvalidArgumentException('Invalid value for agents: expected mapping, got list.');
+        }
+
+        $unknown = array_diff(array_keys($raw), [
+            'enabled',
+            'paths',
+            'max_agents',
+            'subagent_tool_timeout_seconds',
+            'subagent_excluded_tools',
+            'extensions',
+        ]);
+        if ([] !== $unknown) {
+            throw new \InvalidArgumentException(\sprintf('Invalid key for agents: "%s" is not supported.', reset($unknown)));
         }
 
         $enabled = true;
-        if (\array_key_exists('enabled', $raw) && \is_bool($raw['enabled'])) {
+        if (\array_key_exists('enabled', $raw)) {
+            if (!\is_bool($raw['enabled'])) {
+                throw new \InvalidArgumentException(\sprintf('Invalid value for agents.enabled: expected boolean, got %s.', get_debug_type($raw['enabled'])));
+            }
             $enabled = $raw['enabled'];
         }
 
         $paths = [];
-        $rawPaths = $raw['paths'] ?? [];
-        if (\is_array($rawPaths)) {
-            foreach ($rawPaths as $value) {
-                if (\is_string($value) && '' !== trim($value)) {
-                    $paths[] = $value;
+        if (\array_key_exists('paths', $raw)) {
+            $pathsValue = $raw['paths'];
+            if (!\is_array($pathsValue)) {
+                throw new \InvalidArgumentException(\sprintf('Invalid value for agents.paths: expected list of strings, got %s.', get_debug_type($pathsValue)));
+            }
+            if (!array_is_list($pathsValue)) {
+                throw new \InvalidArgumentException('Invalid value for agents.paths: expected list of strings, got associative array.');
+            }
+            foreach ($pathsValue as $index => $value) {
+                if (!\is_string($value)) {
+                    throw new \InvalidArgumentException(\sprintf('Invalid value for agents.paths[%d]: expected a non-empty string, got %s.', $index, get_debug_type($value)));
                 }
+                if ('' === trim($value)) {
+                    throw new \InvalidArgumentException(\sprintf('Invalid value for agents.paths[%d]: expected a non-empty string, got blank string.', $index));
+                }
+                $paths[] = $value;
             }
         }
 
         $maxAgents = 4;
-        if (\array_key_exists('max_agents', $raw) && \is_int($raw['max_agents']) && $raw['max_agents'] > 0) {
+        if (\array_key_exists('max_agents', $raw)) {
+            if (!\is_int($raw['max_agents'])) {
+                throw new \InvalidArgumentException(\sprintf('Invalid value for agents.max_agents: expected a positive integer, got %s.', get_debug_type($raw['max_agents'])));
+            }
+            if ($raw['max_agents'] <= 0) {
+                throw new \InvalidArgumentException(\sprintf('Invalid value for agents.max_agents: %d is not a positive integer.', $raw['max_agents']));
+            }
             $maxAgents = $raw['max_agents'];
         }
 
         $subagentToolTimeoutSeconds = self::resolveSubagentToolTimeoutSeconds($raw);
         $subagentExcludedTools = self::resolveSubagentExcludedTools($raw);
-        $extensions = ChildExtensionsConfigDTO::fromRaw($raw['extensions'] ?? null, 'agents.extensions', acceptEnabled: false);
+        $extensions = \array_key_exists('extensions', $raw)
+            ? ChildExtensionsConfigDTO::fromRaw($raw['extensions'], 'agents.extensions', acceptEnabled: false)
+            : new ChildExtensionsConfigDTO();
 
         return new self(
             enabled: $enabled,
