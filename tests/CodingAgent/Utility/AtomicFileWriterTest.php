@@ -94,6 +94,27 @@ final class AtomicFileWriterTest extends TestCase
     }
 
     /**
+     * An overlong basename makes fopen fail deterministically (ENAMETOOLONG)
+     * without permission tricks. The write stage must surface as a typed
+     * AtomicFileWriterException — not a converted warning/ErrorException — and
+     * leave neither destination nor temp behind.
+     */
+    public function testOverlongBasenameFailsAtWriteStageWithTypedExceptionAndNoTemp(): void
+    {
+        $path = $this->tmpDir.'/'.str_repeat('a', 300).'.json';
+
+        try {
+            $this->writer->write($path, 'content');
+            $this->fail('Expected AtomicFileWriterException on write failure');
+        } catch (AtomicFileWriterException $exception) {
+            $this->assertSame('write', $exception->stage);
+        }
+
+        $this->assertFileDoesNotExist($path, 'Destination must not be published');
+        $this->assertSame([], glob($this->tmpDir.'/*.tmp.*') ?: [], 'No temp file may remain after write failure');
+    }
+
+    /**
      * Unlocked readers must observe only the old or the complete new content
      * during repeated large replacements — never a partial in-place write.
      *

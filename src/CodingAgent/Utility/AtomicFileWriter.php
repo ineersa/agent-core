@@ -70,7 +70,10 @@ final class AtomicFileWriter
         $tmpPath = $destination.'.tmp.'.bin2hex(random_bytes(8));
 
         try {
-            $written = file_put_contents($tmpPath, $contents, \LOCK_EX);
+            // Suppress the warning: Symfony's debug ErrorHandler would convert
+            // it into an ErrorException, bypassing the typed write-stage signal
+            // (false / short-byte) and the cleanup below.
+            $written = @file_put_contents($tmpPath, $contents, \LOCK_EX);
             if (false === $written || $written !== \strlen($contents)) {
                 throw new AtomicFileWriterException('write', $tmpPath, \sprintf('Failed to write temporary file "%s".', $tmpPath));
             }
@@ -96,10 +99,11 @@ final class AtomicFileWriter
                 // is already published with the correct mode.
                 @chmod($destination, $fileMode);
             }
-        } catch (AtomicFileWriterException $exception) {
-            if (file_exists($tmpPath)) {
-                @unlink($tmpPath);
-            }
+        } catch (\Throwable $exception) {
+            // Best-effort cleanup for every failure path (including unexpected
+            // throwables); the primary error is always rethrown. @unlink on a
+            // missing temp is a silent no-op, so no existence guard is needed.
+            @unlink($tmpPath);
 
             throw $exception;
         }

@@ -238,7 +238,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         try {
             $this->atomicFileWriter->write($path, $json);
         } catch (AtomicFileWriterException $exception) {
-            throw new SessionToolBatchStoreException('rename' === $exception->stage ? 'Failed to atomic-rename tool batch snapshot.' : 'Failed to write tool batch snapshot temp file.', ['run_id' => $runId, 'turn_no' => $turnNo, 'step_id' => $stepId, 'path' => $exception->tempPath ?? $path, 'component' => 'session_tool_batch_store'], $exception);
+            throw new SessionToolBatchStoreException('rename' === $exception->stage ? 'Failed to atomic-rename tool batch snapshot.' : 'Failed to write tool batch snapshot temp file.', ['run_id' => $runId, 'turn_no' => $turnNo, 'step_id' => $stepId, 'path' => 'rename' === $exception->stage ? $path : ($exception->tempPath ?? $path), 'component' => 'session_tool_batch_store'], $exception);
         }
     }
 
