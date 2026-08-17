@@ -17,12 +17,9 @@ use Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO;
 use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
 use Ineersa\Tui\Command\StatusUpdate;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
-use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\ImagePaste\PastedImagePlaceholderFormatter;
 use Ineersa\Tui\ImagePaste\PastedImageSubmissionService;
-use Ineersa\Tui\Question\QuestionController;
-use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
@@ -30,7 +27,6 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
-use Ineersa\Tui\Transcript\HotkeyTableRenderer;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\SubmitEvent;
@@ -51,38 +47,32 @@ final class SubmitListener implements TuiListenerRegistrar
 {
     public function __construct(
         private readonly HatfieldSessionStore $sessionStore,
-        private readonly SubmissionRouter $submissionRouter,
         private readonly TranscriptBlockFactory $blockFactory,
-        private readonly QuestionCoordinator $coordinator,
-        private readonly QuestionController $questionController,
         private readonly SubagentLiveInputPolicy $subagentLiveInputPolicy,
         private readonly LoggerInterface $logger,
-        private readonly PromptHistory $history,
         private readonly PastedImageSubmissionService $pastedImageSubmissionService,
     ) {
     }
 
     public function register(TuiRuntimeContext $context): void
     {
+        $services = $context->sessionServices;
         $sessionStore = $this->sessionStore;
-        $router = $this->submissionRouter;
+        $router = $services->submissionRouter;
         $blockFactory = $this->blockFactory;
         $client = $context->client;
         $state = $context->state;
         $screen = $context->screen;
         $tui = $context->tui;
 
-        $questionCoordinator = $this->coordinator;
-        $questionController = $this->questionController;
+        $questionCoordinator = $services->questionCoordinator;
+        $questionController = $services->questionController;
 
         $logger = $this->logger;
         $subagentLiveInputPolicy = $this->subagentLiveInputPolicy;
         $lifecycle = $context->lifecycle;
-        $history = $this->history;
+        $history = $services->promptHistory;
         $pastedImageSubmissionService = $this->pastedImageSubmissionService;
-
-        // Wire the question controller with TUI runtime references
-        $questionController->setRuntimeRefs($context, $screen);
 
         $context->tui->addListener(static function (SubmitEvent $event) use (
             $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,
@@ -231,20 +221,19 @@ final class SubmitListener implements TuiListenerRegistrar
         }
 
         if ($result instanceof HotkeyTableData) {
-            // Render a theme-colored hotkeys table via TuiTranscript renderer.
-            $renderer = new HotkeyTableRenderer();
-            $styledText = $renderer->render(
-                self::hotkeyGroupsToArrays($result->groups),
-                $screen->theme(),
-                $result->emptyMessage,
-            );
+            // Structured hotkey metadata only — HotkeyTableWidget renders at display time.
+            // Plain empty text keeps events.jsonl free of pre-rendered ANSI.
             $seq = \count($state->transcript) + 1;
-            $state->appendTranscriptBlock($blockFactory->system(
+            $block = $blockFactory->system(
                 runId: $state->sessionId,
-                text: $styledText,
+                text: '',
                 seq: $seq,
                 style: 'hotkey-table',
-            ));
+            );
+            $state->appendTranscriptBlock($block->with(meta: array_merge($block->meta, [
+                'hotkey_groups' => self::hotkeyGroupsToArrays($result->groups),
+                'empty_message' => $result->emptyMessage,
+            ])));
             $screen->setTranscriptBlocks($state->transcript);
 
             return;
@@ -751,8 +740,9 @@ final class SubmitListener implements TuiListenerRegistrar
     // ─── Hotkey table data adapter ────────────────────────────────────
 
     /**
-     * Convert HotkeyTableData's grouped HotkeyBindingDTOs to plain arrays
-     * suitable for the theme-aware {@see HotkeyTableRenderer}.
+     * Convert HotkeyTableData's grouped HotkeyBindingDTOs to plain arrays for
+     * transcript meta (TuiListener → TuiTranscript). Shape is intentional plain
+     * arrays so TuiTranscript never imports HotkeyBindingDTO (Deptrac).
      *
      * @param array<string, list<HotkeyBindingDTO>> $groups
      *

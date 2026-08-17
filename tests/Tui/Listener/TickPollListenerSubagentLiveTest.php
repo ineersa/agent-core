@@ -21,8 +21,6 @@ use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
-use Ineersa\Tui\Question\QuestionController;
-use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
@@ -87,22 +85,22 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState());
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
 
-        $listenerRef = new \ReflectionClass(TickPollListener::class);
-        $listener = $listenerRef->newInstanceWithoutConstructor();
-        $listenerRef->getProperty('subagentLivePickerController')->setValue($listener, $this->closedSubagentLivePicker());
-        $listenerRef->getProperty('poller')->setValue($listener, $poller);
-        $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $childPoller);
-        $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
-        $ctrlRef = new \ReflectionClass(QuestionController::class);
-        $listenerRef->getProperty('questionController')->setValue($listener, $ctrlRef->newInstanceWithoutConstructor());
-        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
-
+        $services = $this->createSessionServices(
+            tui: $tui,
+            state: $state,
+            screen: $screen,
+            parentPoller: $poller,
+            childPoller: $childPoller,
+            subagentLivePicker: $this->closedSubagentLivePicker(),
+        );
         $context = $this->buildTuiContext()
             ->withTui($tui)
             ->withClient($client)
             ->withState($state)
             ->withScreen($screen)
+            ->withSessionServices($services)
             ->build();
+        $listener = new TickPollListener(new RuntimeQuestionEventHandler());
         $listener->register($context);
         $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
         ($handlerRef->getValue($context->ticks)[0])();
@@ -176,22 +174,22 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState());
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
 
-        $listenerRef = new \ReflectionClass(TickPollListener::class);
-        $listener = $listenerRef->newInstanceWithoutConstructor();
-        $listenerRef->getProperty('subagentLivePickerController')->setValue($listener, $this->closedSubagentLivePicker());
-        $listenerRef->getProperty('poller')->setValue($listener, $poller);
-        $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $childPoller);
-        $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
-        $ctrlRef = new \ReflectionClass(QuestionController::class);
-        $listenerRef->getProperty('questionController')->setValue($listener, $ctrlRef->newInstanceWithoutConstructor());
-        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
-
+        $services = $this->createSessionServices(
+            tui: $tui,
+            state: $state,
+            screen: $screen,
+            parentPoller: $poller,
+            childPoller: $childPoller,
+            subagentLivePicker: $this->closedSubagentLivePicker(),
+        );
         $context = $this->buildTuiContext()
             ->withTui($tui)
             ->withClient($client)
             ->withState($state)
             ->withScreen($screen)
+            ->withSessionServices($services)
             ->build();
+        $listener = new TickPollListener(new RuntimeQuestionEventHandler());
         $listener->register($context);
         $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
         ($handlerRef->getValue($context->ticks)[0])();

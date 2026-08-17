@@ -13,67 +13,30 @@ use Psr\Log\LoggerInterface;
  *
  * Unlike {@see StdoutRuntimeEventSink}, write failures are logged and swallowed so a
  * dead controller pipe cannot roll back or fail an already-durable EventStore append.
+ * Encoding and writing are delegated to {@see StdoutRuntimeEventSink::write()} so both
+ * sinks share one pipe detection, handle, and JsonlCodec encoding.
  */
 final class CommittedRuntimeEventStdoutSink implements RuntimeEventSinkInterface
 {
-    /** @var resource|false|null */
-    private static $stdout;
-
-    /** @var bool|null */
-    private static $isPipe;
-
     public function __construct(
         private readonly LoggerInterface $logger,
+        private readonly StdoutRuntimeEventSink $stdoutSink,
     ) {
     }
 
     public function emit(RuntimeEvent $event): void
     {
-        if (!$this->isStdoutPipe()) {
-            return;
-        }
-
-        $handle = $this->stdoutHandle();
-        if (false === $handle) {
-            return;
-        }
-
         try {
-            $encoded = json_encode($event->toArray(), \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR);
-            $line = $encoded."\n";
-            $written = @fwrite($handle, $line);
-            if (false === $written || 0 === $written) {
-                $this->logWriteFailure($event, error_get_last()['message'] ?? 'fwrite failed');
-
-                return;
-            }
-
-            fflush($handle);
+            $result = $this->stdoutSink->write($event);
         } catch (\Throwable $e) {
             $this->logWriteFailure($event, $e->getMessage(), $e::class);
-        }
-    }
 
-    private function isStdoutPipe(): bool
-    {
-        if (null === self::$isPipe) {
-            self::$isPipe = \function_exists('posix_isatty') && !posix_isatty(\STDOUT);
+            return;
         }
 
-        return (bool) self::$isPipe;
-    }
-
-    /**
-     * @return resource|false
-     */
-    private function stdoutHandle(): mixed
-    {
-        if (null === self::$stdout) {
-            $opened = fopen('php://stdout', 'ab');
-            self::$stdout = false === $opened ? false : $opened;
+        if (false === $result) {
+            $this->logWriteFailure($event, error_get_last()['message'] ?? 'fwrite failed');
         }
-
-        return self::$stdout;
     }
 
     private function logWriteFailure(RuntimeEvent $event, string $message, ?string $exceptionClass = null): void

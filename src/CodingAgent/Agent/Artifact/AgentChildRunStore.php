@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
+use Ineersa\CodingAgent\Utility\AtomicFileWriter;
+use Ineersa\CodingAgent\Utility\AtomicFileWriterException;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -114,19 +116,12 @@ final class AgentChildRunStore implements RunStoreInterface
             $json = json_encode($data, \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR);
 
             $path = $this->statePath();
-            $dir = \dirname($path);
-            if (!is_dir($dir)) {
-                mkdir($dir, SessionAgentArtifactPathResolver::DIR_PERMISSIONS, true);
-            }
 
-            // Atomic temp-file + rename to avoid partial writes.
-            $tmpPath = $path.'.'.bin2hex(random_bytes(4)).'.tmp';
-            $written = file_put_contents($tmpPath, $json, \LOCK_EX);
-            if (false === $written) {
-                throw new \RuntimeException(\sprintf('Failed to write state.json for child run "%s".', $this->agentRunId));
+            try {
+                AtomicFileWriter::write($path, $json, fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
+            } catch (AtomicFileWriterException $exception) {
+                throw new \RuntimeException(\sprintf('Failed to write state.json for child run "%s".', $this->agentRunId), previous: $exception);
             }
-            chmod($tmpPath, SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
-            rename($tmpPath, $path);
 
             return true;
         } finally {

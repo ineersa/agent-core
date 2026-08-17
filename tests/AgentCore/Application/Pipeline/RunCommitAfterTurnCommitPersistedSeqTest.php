@@ -24,15 +24,6 @@ use Ineersa\CodingAgent\Session\History\HistoryProjector;
 use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Component\Serializer\Encoder\JsonEncoder;
-use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
-use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
-use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
-use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
 
 /**
  * Piece 3B1: AfterTurnCommit hook summaries must use allocated persisted seq, not input seq 0.
@@ -74,12 +65,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             hotPromptStateRebuilder: $replayService,
             stepDispatcher: new StepDispatcher(new TestMessageBus()),
             logger: new TestLogger(),
-            hookDispatcher: new HookDispatcher(
-                [$subscriber],
-                new EventDispatcher(),
-                $this->createHookSerializer(),
-                $this->createHookSerializer(),
-            ),
+            hookDispatcher: new HookDispatcher([$subscriber]),
         );
 
         $previous = $runStore->get('child-run-1');
@@ -90,6 +76,8 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             version: $previous->version + 1,
             turnNo: 1,
             lastSeq: 0,
+            retryableFailure: true,
+            retryAttempts: 3,
             model: 'test-model');
 
         $events = [
@@ -104,13 +92,12 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
         $this->assertSame(2, $captured->events[1]->seq);
         $this->assertSame('running', $captured->status);
         $this->assertNotSame(0, $captured->events[0]->seq);
-    }
 
-    private function createHookSerializer(): Serializer
-    {
-        return new Serializer([
-            new ArrayDenormalizer(),
-            new ObjectNormalizer(new ClassMetadataFactory(new AttributeLoader()), new MetadataAwareNameConverter(new ClassMetadataFactory(new AttributeLoader()), new CamelCaseToSnakeCaseNameConverter())),
-        ], [new JsonEncoder()]);
+        // The assigned-sequence bump (input seq 0 -> persisted seq 2) must
+        // preserve the in-flight retry episode, not reset retryAttempts to 0.
+        $persisted = $runStore->get('child-run-1');
+        $this->assertNotNull($persisted);
+        $this->assertSame(3, $persisted->retryAttempts);
+        $this->assertTrue($persisted->retryableFailure);
     }
 }

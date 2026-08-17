@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
@@ -12,11 +14,10 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
-use Ineersa\Tui\Question\QuestionController;
-use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
@@ -111,13 +112,21 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
 
     private function pickerReportingOpen(TuiSessionState $state, ChatScreen $screen): SubagentLivePickerController
     {
-        $picker = (new \ReflectionClass(SubagentLivePickerController::class))->newInstanceWithoutConstructor();
+        $picker = new SubagentLivePickerController(
+            new Tui(),
+            $screen,
+            $state,
+            $this->createStub(AgentSessionClient::class),
+            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
+            $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
+            $this->createStub(ChildAgentEventsPathResolverInterface::class),
+            new SessionEventsExportService(),
+        );
         $overlay = new \Ineersa\Tui\Picker\PickerOverlay();
         $overlayRef = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');
         $overlayRef->setValue($picker, $overlay);
         $openRef = new \ReflectionProperty(\Ineersa\Tui\Picker\PickerOverlay::class, 'isOpen');
         $openRef->setValue($overlay, true);
-        $picker->setRuntimeRefs(new Tui(), $screen, $state);
 
         return $picker;
     }
@@ -131,22 +140,23 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
             $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
-        $listenerRef = new \ReflectionClass(TickPollListener::class);
-        $listener = $listenerRef->newInstanceWithoutConstructor();
-        $listenerRef->getProperty('subagentLivePickerController')->setValue($listener, $picker);
-        $listenerRef->getProperty('poller')->setValue($listener, $poller);
-        $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()));
-        $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
-        $listenerRef->getProperty('questionController')->setValue($listener, (new \ReflectionClass(QuestionController::class))->newInstanceWithoutConstructor());
-        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
-
+        $services = $this->createSessionServices(
+            tui: new Tui(),
+            state: $state,
+            screen: $screen,
+            parentPoller: $poller,
+            childPoller: new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
+            subagentLivePicker: $picker,
+        );
         $context = $this->buildTuiContext()
             ->withTui(new Tui())
             ->withClient($this->createStub(AgentSessionClient::class))
             ->withState($state)
             ->withScreen($screen)
+            ->withSessionServices($services)
             ->build();
 
+        $listener = new TickPollListener(new RuntimeQuestionEventHandler());
         $listener->register($context);
         $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
         ($handlerRef->getValue($context->ticks)[0])();

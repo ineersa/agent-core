@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpRetryPolicy;
-use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmRetryingHttpClient;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpRetryStrategy;
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
 use Ineersa\Platform\Bridge\Generic\SanitizedGenericModelClient;
 use Psr\Log\LoggerInterface;
@@ -20,6 +20,7 @@ use Symfony\AI\Platform\Provider;
 use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Component\HttpClient\EventSourceHttpClient;
 use Symfony\Component\HttpClient\HttpClient;
+use Symfony\Component\HttpClient\RetryableHttpClient;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -80,8 +81,14 @@ class SymfonyAiProviderFactory
      *
      * When an HttpClient is explicitly injected (e.g. test environment
      * via services_test.yaml, or by a test replay factory), use it
-     * directly.  Otherwise create a default one wrapped with
-     * {@see LlmRetryingHttpClient} for automatic retry/backoff.
+     * directly.  Otherwise create a default one wrapped with Symfony's
+     * {@see RetryableHttpClient}, whose orchestration (attempt loop,
+     * cancel-before-retry, cancellable pauses) is driven by
+     * {@see LlmHttpRetryStrategy}.
+     *
+     * No logger is passed to RetryableHttpClient: its built-in retry log
+     * includes the raw exception message, which would violate logging
+     * privacy. The strategy emits its own privacy-safe retry log instead.
      */
     private function getHttpClient(?string $providerId = null): HttpClientInterface
     {
@@ -99,11 +106,10 @@ class SymfonyAiProviderFactory
         );
         $baseClient = HttpClient::create($policy->httpClientOptions());
 
-        return new LlmRetryingHttpClient(
-            httpClient: $baseClient,
-            policy: $policy,
-            logger: $this->logger ?? new NullLogger(),
-            providerId: $providerId,
+        return new RetryableHttpClient(
+            $baseClient,
+            new LlmHttpRetryStrategy($policy, $this->logger ?? new NullLogger(), $providerId),
+            maxRetries: $policy->maxRetries,
         );
     }
 

@@ -65,8 +65,6 @@ final class HistoryCommandHandlerTest extends TestCase
         $provider->method('forSession')->willReturn($history);
 
         $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
-        $picker = new HistoryPickerController($provider, $switcher);
-
         $tui = new Tui();
         $screen = new ChatScreen(
             new DefaultTheme(new ThemePalette('test')),
@@ -75,8 +73,7 @@ final class HistoryCommandHandlerTest extends TestCase
         );
         $screen->mount($tui);
         $state = new TuiSessionState(sessionId: 'test-session', resuming: false);
-
-        $picker->setRuntimeRefs($tui, $screen, $state);
+        $picker = new HistoryPickerController($tui, $screen, $state, $provider, $switcher);
 
         return $picker;
     }

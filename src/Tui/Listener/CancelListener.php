@@ -7,8 +7,6 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
-use Ineersa\Tui\Question\QuestionController;
-use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
@@ -38,20 +36,19 @@ final class CancelListener implements TuiListenerRegistrar
     public function __construct(
         private readonly LoggerInterface $logger,
         private readonly RuntimeExceptionBoundary $boundary,
-        private readonly QuestionController $questionController,
-        private readonly QuestionCoordinator $questionCoordinator,
     ) {
     }
 
     public function register(TuiRuntimeContext $context): void
     {
+        $services = $context->sessionServices;
         $client = $context->client;
         $state = $context->state;
         $screen = $context->screen;
         $logger = $this->logger;
         $boundary = $this->boundary;
-        $questionController = $this->questionController;
-        $questionCoordinator = $this->questionCoordinator;
+        $questionController = $services->questionController;
+        $questionCoordinator = $services->questionCoordinator;
 
         $context->tui->addListener(static function (CancelEvent $event) use ($client, $state, $screen, $logger, $boundary, $questionController, $questionCoordinator): void {
             // Free-form typing (__other__ escape hatch): ESC returns to the

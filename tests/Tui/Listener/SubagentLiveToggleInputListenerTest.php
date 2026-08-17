@@ -12,8 +12,6 @@ use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\SubagentLiveToggleInputListener;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
-use Ineersa\Tui\Question\QuestionController;
-use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
@@ -35,22 +33,29 @@ final class SubagentLiveToggleInputListenerTest extends TestCase
         $state->subagentLiveView->active = true;
 
         $picker = new SubagentLivePickerController(
+            $harness->tui(),
+            $harness->screen(),
+            $state,
+            $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient::class),
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),
         );
-        $picker->setRuntimeRefs($harness->tui(), $harness->screen(), $state);
 
         $context = $this->buildTuiContext()
             ->withTui($harness->tui())
             ->withState($state)
             ->withScreen($harness->screen())
+            ->withSessionServices($this->createSessionServices(
+                tui: $harness->tui(),
+                state: $state,
+                screen: $harness->screen(),
+                subagentLivePicker: $picker,
+            ))
             ->build();
 
-        $questionCoordinator = new QuestionCoordinator();
-        $questionController = new QuestionController($questionCoordinator);
-        (new SubagentLiveToggleInputListener($picker, $questionCoordinator, $questionController))->register($context);
+        (new SubagentLiveToggleInputListener())->register($context);
         $harness->startInputLoop();
         $harness->sendInput("\x1c");
 

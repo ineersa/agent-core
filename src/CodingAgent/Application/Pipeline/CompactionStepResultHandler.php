@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageHandlerLogComponentInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -28,13 +29,18 @@ use Psr\Log\NullLogger;
  * Lives in CodingAgent because it depends on CompactionServiceInterface
  * for building the compacted message list.
  */
-final class CompactionStepResultHandler implements RunMessageHandler
+final class CompactionStepResultHandler implements RunMessageHandler, RunMessageHandlerLogComponentInterface
 {
     public function __construct(
         private CompactionServiceInterface $compactionService,
         private EventFactory $eventFactory,
         private LoggerInterface $logger = new NullLogger(),
     ) {
+    }
+
+    public function getLogComponent(): string
+    {
+        return 'compaction';
     }
 
     public function supports(object $message): bool
@@ -419,22 +425,15 @@ final class CompactionStepResultHandler implements RunMessageHandler
         $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $successSpecs);
 
         // Atomically replace RunState.messages with the compacted list.
-        $nextState = new RunState(
-            runId: $state->runId,
-            status: $finalStatus,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq + \count($events),
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $compactResult->compactedMessages,
-            activeStepId: null,
-            retryableFailure: $state->retryableFailure,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        $nextState = $state->with([
+            'status' => $finalStatus,
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + \count($events),
+            'messages' => $compactResult->compactedMessages,
+            'activeStepId' => null,
+            // Compaction replaces the conversation: explicit retry-episode reset.
+            'retryAttempts' => 0,
+        ]);
 
         // Continue the LLM turn ONLY when the compaction was holding a
         // pending turn open (pre-LLM guard path) AND cancellation has NOT
@@ -475,21 +474,13 @@ final class CompactionStepResultHandler implements RunMessageHandler
     {
         $count = \count($events);
 
-        return new RunState(
-            runId: $state->runId,
-            status: $status ?? $state->status,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq + $count,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $state->messages,
-            activeStepId: $clearActiveStepId ? null : $state->activeStepId,
-            retryableFailure: $state->retryableFailure,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        return $state->with([
+            'status' => $status ?? $state->status,
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + $count,
+            'activeStepId' => $clearActiveStepId ? null : $state->activeStepId,
+            // Compaction events restart the retry episode (context replaced).
+            'retryAttempts' => 0,
+        ]);
     }
 }

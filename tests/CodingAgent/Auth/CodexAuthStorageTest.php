@@ -32,12 +32,7 @@ final class CodexAuthStorageTest extends TestCase
 
     protected function tearDown(): void
     {
-        $path = $this->tmpDir.'/'.CodexOAuthConfig::AUTH_FILE;
-        if (file_exists($path)) {
-            @unlink($path);
-        }
-        @rmdir($this->tmpDir.'/.hatfield');
-        @rmdir($this->tmpDir);
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
     public function testSaveAndLoadRoundTrip(): void
@@ -50,6 +45,11 @@ final class CodexAuthStorageTest extends TestCase
         );
 
         $this->storage->saveCredentials('openai-codex', $record);
+
+        $path = $this->tmpDir.'/'.CodexOAuthConfig::AUTH_FILE;
+        $this->assertFileExists($path);
+        $this->assertSame(0600, fileperms($path) & 0777, 'auth.json must be published with mode 0600');
+        $this->assertSame([], glob($this->tmpDir.'/.hatfield/*.tmp.*') ?: [], 'No temp files should remain after save');
 
         $loaded = $this->storage->loadCredentials('openai-codex');
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Stream;
 
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 
 /**
@@ -19,6 +20,10 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
  * through the in-process sink instead. In the LLM consumer, STDOUT is a pipe
  * to the controller.
  *
+ * Single owner of stdout pipe detection, the lazy php://stdout handle, and
+ * {@see JsonlCodec::encodeEvent()} encoding; {@see CommittedRuntimeEventStdoutSink}
+ * delegates here so transient and committed JSONL never drift.
+ *
  * @internal
  */
 final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
@@ -29,18 +34,26 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
     /** @var bool|null */
     private static $isPipe;
 
-    public function __construct()
+    public function emit(RuntimeEvent $event): void
     {
+        if (false === $this->write($event)) {
+            throw new \RuntimeException(\sprintf('StdoutRuntimeEventSink: fwrite to STDOUT pipe failed (event: %s). The controller process may be dead — aborting LLM consumer.', $event->type));
+        }
     }
 
-    public function emit(RuntimeEvent $event): void
+    /**
+     * Writes one event to STDOUT when it is a pipe, encoded via {@see JsonlCodec::encodeEvent()}.
+     *
+     * @return bool|null null when STDOUT is not a pipe or the handle could not be opened; false when fwrite failed or wrote zero bytes; true when written and flushed
+     */
+    public function write(RuntimeEvent $event): ?bool
     {
         if (null === self::$isPipe) {
             self::$isPipe = \function_exists('posix_isatty') && !posix_isatty(\STDOUT);
         }
 
         if (!self::$isPipe) {
-            return;
+            return null;
         }
 
         if (null === self::$stdout) {
@@ -49,17 +62,18 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
         }
 
         if (false === self::$stdout) {
-            return;
+            return null;
         }
 
-        $encoded = json_encode($event->toArray(), \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR);
-        $line = $encoded."\n";
+        $line = JsonlCodec::encodeEvent($event);
 
         $written = @fwrite(self::$stdout, $line);
         if (false === $written || 0 === $written) {
-            throw new \RuntimeException(\sprintf('StdoutRuntimeEventSink: fwrite to STDOUT pipe failed (event: %s). The controller process may be dead — aborting LLM consumer.', $event->type));
+            return false;
         }
 
         fflush(self::$stdout);
+
+        return true;
     }
 }

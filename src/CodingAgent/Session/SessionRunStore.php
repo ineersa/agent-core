@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Session;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -32,6 +33,7 @@ final class SessionRunStore implements RunStoreInterface
         HatfieldSessionStore $hatfieldSessionStore,
         private readonly NormalizerInterface&DenormalizerInterface $serializer,
         private readonly LockFactory $lockFactory,
+        private readonly Filesystem $filesystem,
     ) {
         $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
     }
@@ -92,13 +94,11 @@ final class SessionRunStore implements RunStoreInterface
             $data = $this->serializer->normalize($state);
             $json = json_encode($data, \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR);
 
-            $path = $this->statePath($state->runId);
-            $dir = \dirname($path);
-            if (!is_dir($dir)) {
-                mkdir($dir, 0777, true);
-            }
-
-            file_put_contents($path, $json, \LOCK_EX);
+            // dumpFile() writes a temp file and renames it into place, so unlocked
+            // readers observe either the old or the new complete state — never a
+            // partial in-place truncate-then-write. The per-run lock + CAS above
+            // still serialize writers.
+            $this->filesystem->dumpFile($this->statePath($state->runId), $json);
 
             return true;
         } finally {

@@ -20,16 +20,14 @@ use PHPUnit\Framework\TestCase;
  *  - Launches the TUI once with APP_ENV=test + replay fixtures so
  *    model-dependent steps are deterministic and require no live
  *    llama.cpp.
- *  - UI-only tmux steps (shell) run before
- *    model interaction; /hotkeys and !! rejection are virtual-only
- *    ({@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest}).
+ *  - UI-only tmux steps (/hotkeys, shell) run before model interaction.
  *  - A single model-interaction step submits a prompt and verifies
  *    the replay-backed assistant block appears.
  *  - Teardown sends Ctrl+D for a clean exit; TmuxHarness destructor
  *    kills the tmux session.
  *
- * Harness launch count: 1 (integration smoke). Startup, reasoning, /hotkeys, and
- * !! proofs live in virtual tests under tests/Tui/Screen/.
+ * Harness launch count: 1 (integration smoke). Reasoning and !! proofs live
+ * in virtual tests under tests/Tui/Screen/.
  *
  * @group tui-e2e-replay
  */
@@ -66,9 +64,11 @@ final class TuiJourneyE2eTest extends TestCase
      *
      * Exercises in order (tmux integration smoke):
      *  1. Startup layout (logo, status, footer)
-     *  2. Shell !ls prefix — real command output proof + ordering
-     *  3. Inline shell on completed run + follow-up (issue #183 repro)
-     *  4. Clean exit via Ctrl+D
+     *  2. /hotkeys — real registrars → SubmitListener → mounted HotkeyTableWidget
+     *  3. Slash completion — /he opens Completions with /help, Tab accepts, overlay closes
+     *  4. Shell !ls prefix — real command output proof + ordering
+     *  5. Inline shell on completed run + follow-up (issue #183 repro)
+     *  6. Clean exit via Ctrl+D
      *
      * Virtual-only (not in this journey): startup detail {@see TuiStartupVirtualRenderTest},
      * Shift+Tab reasoning status/border {@see TuiReasoningCycleTest},
@@ -76,10 +76,9 @@ final class TuiJourneyE2eTest extends TestCase
      * @ file completion menu/accept {@see TuiFileCompletionRenderTest},
      * /export local confirmation {@see TuiExportCommandVirtualTest}; available-tools HTML {@see TuiExportCommandE2eTest},
      * model replay assistant block + cache footer {@see TuiModelInteractionVirtualTest},
-     * /hotkeys table, !! rejection — {@see TuiVirtualInputTest}.
+     * !! rejection — {@see TuiVirtualInputTest}.
      *
      * !! double-bang rejection is covered by {@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest}.
-     * /hotkeys keyboard shortcuts table is covered by {@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest::testHotkeysSlashCommandRoutesLocallyAndRendersKeyboardShortcutsTable}.
      *
      * Ctrl+J newline is tested separately in HotkeySmokeTest
      * (it is sensitive to terminal configuration and a race
@@ -97,6 +96,8 @@ final class TuiJourneyE2eTest extends TestCase
 
         try {
             $this->journeyPhase1StartupLayout($pane);
+            $this->journeyPhaseHotkeysCatalog($pane);
+            $this->journeyPhaseSlashCompletion($pane);
             $this->journeyPhase4ShellPrefixOutput($pane);
             $this->journeyPhase9InlineShellOnCompletedRun($pane);
 
@@ -137,6 +138,107 @@ final class TuiJourneyE2eTest extends TestCase
         $this->assertStringContainsString('◆', $capture, 'Footer widget missing');
         // Session ID in footer is covered by {@see TuiModelInteractionVirtualTest}.
         // At startup the footer shows model, token, timer, CWD, branch.
+    }
+
+    /**
+     * Phase hotkeys: real /hotkeys slash path through InteractiveMode registrars,
+     * SubmitListener structured meta, TranscriptBlockWidgetFactory, and mounted
+     * HotkeyTableWidget. Leaves the editor clean for later shell phases.
+     */
+    private function journeyPhaseHotkeysCatalog(TmuxPane $pane): void
+    {
+        $this->tmux->sendKey($pane, 'C-u');
+        $this->tmux->sendLiteral($pane, '/hotkeys');
+        $this->tmux->sendKey($pane, 'Enter');
+
+        $this->tmux->waitForCallback(
+            $pane,
+            static function (string $cap): bool {
+                return str_contains($cap, 'Keyboard shortcuts')
+                    && str_contains($cap, 'Ctrl+C')
+                    && (str_contains($cap, '┌') || str_contains($cap, '│'));
+            },
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+            message: '/hotkeys must render Keyboard shortcuts heading, Ctrl+C, and table borders',
+            history: 2000,
+        );
+
+        $capture = $this->tmux->capturePlainWithHistory($pane, 2000);
+        $this->assertStringContainsString('Keyboard shortcuts', $capture);
+        $this->assertStringContainsString('Ctrl+C', $capture);
+        $this->assertTrue(
+            str_contains($capture, 'Global') || str_contains($capture, 'Editor'),
+            '/hotkeys table must show a real registrar context group',
+        );
+        $this->assertTrue(
+            str_contains($capture, '┌') || str_contains($capture, '│') || str_contains($capture, '└'),
+            '/hotkeys table must show border chrome',
+        );
+
+        $this->saveAnsiSnapshot($pane, 'journey-hotkeys');
+
+        // Clear any residual editor text so later shell phases start clean.
+        $this->tmux->sendKey($pane, 'C-u');
+    }
+
+    /**
+     * Phase completion: slash-command completion through the real
+     * CompletionListener → CompletionMenu path (replay-backed, no model
+     * interaction needed).
+     *
+     * Types "/he" — live completion opens the Completions overlay showing
+     * the /help suggestion. First Tab accepts it (editor becomes "/help",
+     * overlay disappears). Second Tab with the overlay gone must not reopen
+     * it. Ends with C-u so later shell phases start clean.
+     */
+    private function journeyPhaseSlashCompletion(TmuxPane $pane): void
+    {
+        $this->tmux->sendKey($pane, 'C-u'); // Clear editor
+        $this->tmux->sendLiteral($pane, '/he');
+
+        // Live completion overlay must appear with the /help suggestion.
+        $this->tmux->waitForCallback(
+            $pane,
+            static function (string $cap): bool {
+                return str_contains($cap, 'Completions')
+                    && str_contains($cap, '/help');
+            },
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+            message: 'Typing "/he" must open the Completions overlay showing /help',
+            history: 2000,
+        );
+
+        $this->saveAnsiSnapshot($pane, 'journey-slash-completion-open');
+
+        // First Tab accepts the selected /help suggestion and closes the overlay.
+        $this->tmux->sendKey($pane, 'Tab');
+        $this->tmux->waitForCallback(
+            $pane,
+            static function (string $cap): bool {
+                return !str_contains($cap, 'Completions')
+                    && str_contains($cap, '/help');
+            },
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+            message: 'Tab must accept /help and remove the Completions overlay',
+            history: 2000,
+        );
+
+        // Second Tab: overlay already gone — must not reopen or submit.
+        $this->tmux->sendKey($pane, 'Tab');
+        $this->tmux->waitForCallback(
+            $pane,
+            static function (string $cap): bool {
+                return !str_contains($cap, 'Completions');
+            },
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+            message: 'Second Tab must not reopen the Completions overlay',
+            history: 2000,
+        );
+
+        $this->saveAnsiSnapshot($pane, 'journey-slash-completion-accepted');
+
+        // Clear editor so later shell phases start clean.
+        $this->tmux->sendKey($pane, 'C-u');
     }
 
     /**

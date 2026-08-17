@@ -58,22 +58,12 @@ final readonly class RunCommit
                     $persistedEvents = $persisted;
                     $lastPersisted = $persisted[array_key_last($persisted)];
                     if ($resolvedNextState->lastSeq !== $lastPersisted->seq) {
-                        $bumpedState = new RunState(
-                            runId: $resolvedNextState->runId,
-                            status: $resolvedNextState->status,
-                            version: $resolvedNextState->version + 1,
-                            turnNo: $resolvedNextState->turnNo,
-                            lastSeq: $lastPersisted->seq,
-                            isStreaming: $resolvedNextState->isStreaming,
-                            streamingMessage: $resolvedNextState->streamingMessage,
-                            pendingToolCalls: $resolvedNextState->pendingToolCalls,
-                            errorMessage: $resolvedNextState->errorMessage,
-                            messages: $resolvedNextState->messages,
-                            activeStepId: $resolvedNextState->activeStepId,
-                            retryableFailure: $resolvedNextState->retryableFailure,
-                            pendingHumanInputRequests: $resolvedNextState->pendingHumanInputRequests,
-                            model: $resolvedNextState->model,
-                        );
+                        // Keep the entire state (including the active retry
+                        // episode counter) across the assigned-sequence bump.
+                        $bumpedState = $resolvedNextState->with([
+                            'version' => $resolvedNextState->version + 1,
+                            'lastSeq' => $lastPersisted->seq,
+                        ]);
                         if (!$this->runStore->compareAndSwap($bumpedState, $resolvedNextState->version)) {
                             $this->logger->warning('persistence.last_seq_cas_conflict', [
                                 'run_id' => $resolvedNextState->runId,
@@ -115,22 +105,15 @@ final readonly class RunCommit
                 // already restored it (or failed — in either case $state
                 // is our best reference).
                 try {
-                    $failedState = new RunState(
-                        runId: $state->runId,
-                        status: RunStatus::Failed,
-                        version: $state->version + 1,
-                        turnNo: $state->turnNo,
-                        lastSeq: $state->lastSeq,
-                        isStreaming: $state->isStreaming,
-                        streamingMessage: $state->streamingMessage,
-                        pendingToolCalls: $state->pendingToolCalls,
-                        errorMessage: 'Event persistence failed: '.$exception->getMessage(),
-                        messages: $state->messages,
-                        activeStepId: $state->activeStepId,
-                        retryableFailure: false,
-                        pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                        model: $state->model,
-                    );
+                    // Terminal failure: the retry episode dies with the run,
+                    // so the reset is explicit rather than a silent field drop.
+                    $failedState = $state->with([
+                        'status' => RunStatus::Failed,
+                        'version' => $state->version + 1,
+                        'errorMessage' => 'Event persistence failed: '.$exception->getMessage(),
+                        'retryableFailure' => false,
+                        'retryAttempts' => 0,
+                    ]);
                     $this->runStore->compareAndSwap($failedState, $state->version);
                 } catch (\Throwable $markFailedException) {
                     // Best effort — cannot mark failed in store.

@@ -19,6 +19,8 @@ use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
+use Ineersa\AgentCore\Domain\Command\PendingCommand;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
@@ -33,6 +35,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
+use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
@@ -454,25 +457,111 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->assertCount(0, $advanceCommands);
     }
 
-    public function testCopyStatePreservesRetryAttempts(): void
+    public function testMailboxApplicationPreservesRetryAttempts(): void
     {
+        $commandStore = new InMemoryCommandStore();
         $policy = new CommandMailboxPolicy(
-            commandStore: new InMemoryCommandStore(),
+            commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
 
         $state = new RunState(
             runId: 'run-copy-retry',
             status: RunStatus::Running,
+            retryableFailure: true,
             retryAttempts: 2,
             model: 'test-model');
 
-        $reflection = new \ReflectionClass($policy);
-        $copyState = $reflection->getMethod('copyState');
-        /** @var RunState $copied */
-        $copied = $copyState->invoke($policy, $state, ['messages' => []]);
+        $commandStore->enqueue(new PendingCommand(
+            runId: 'run-copy-retry',
+            kind: 'steer',
+            idempotencyKey: 'steer-retry',
+            payload: [
+                'message' => [
+                    'role' => 'user',
+                    'content' => [['type' => 'text', 'text' => 'steer text']],
+                ],
+            ],
+        ));
 
-        $this->assertSame(2, $copied->retryAttempts);
+        $result = $policy->applyPendingTurnStartCommands($state);
+
+        // The mailbox messages copy (previously a private copyState
+        // reimplementation of RunState::with()) must not drop the in-flight
+        // retry episode.
+        $this->assertSame(2, $result->state->retryAttempts);
+        $this->assertTrue($result->state->retryableFailure);
+        $this->assertSame(RunStatus::Running, $result->state->status);
+    }
+
+    public function testMailboxApplicationJoinsMultipartTextWithNewline(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $policy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: new CommandRouter([]),
+        );
+
+        $state = new RunState(
+            runId: 'run-multipart-text',
+            status: RunStatus::Running,
+            model: 'test-model');
+
+        $commandStore->enqueue(new PendingCommand(
+            runId: 'run-multipart-text',
+            kind: 'steer',
+            idempotencyKey: 'steer-multipart',
+            payload: [
+                'message' => [
+                    'role' => 'user',
+                    'content' => [
+                        ['type' => 'text', 'text' => 'first part'],
+                        ['type' => 'text', 'text' => 'second part'],
+                    ],
+                ],
+            ],
+        ));
+
+        $result = $policy->applyPendingTurnStartCommands($state);
+
+        // Approved semantics: multi-part mailbox text renders as
+        // newline-joined text in the canonical agent_command_applied
+        // payload, matching the other content-part extraction paths.
+        $applied = array_values(array_filter(
+            $result->eventSpecs,
+            static fn (array $spec): bool => 'agent_command_applied' === $spec['type'],
+        ));
+        $this->assertCount(1, $applied);
+        $this->assertSame("first part\nsecond part", $applied[0]['payload']['text']);
+
+        // The persisted message itself keeps its structured parts.
+        $this->assertCount(1, $result->state->messages);
+        $this->assertSame('first part', $result->state->messages[0]->content[0]['text']);
+        $this->assertSame('second part', $result->state->messages[0]->content[1]['text']);
+    }
+
+    public function testMissingAndMalformedMessageEnvelopesAreRejectedWithExactReasons(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $policy = new CommandMailboxPolicy($commandStore, new CommandRouter([]));
+        $runId = 'run-mailbox-envelope';
+
+        $commandStore->enqueue(new PendingCommand(runId: $runId, kind: 'steer', idempotencyKey: 'env-missing'));
+        $commandStore->enqueue(new PendingCommand(runId: $runId, kind: 'steer', idempotencyKey: 'env-malformed', payload: ['message' => ['role' => 'user']]));
+
+        $result = $policy->applyPendingTurnStartCommands(RunStateBuilder::queued($runId)->withTurnNo(1)->build());
+
+        $rejected = array_values(array_filter(
+            $result->eventSpecs,
+            static fn (array $spec): bool => RunEventTypeEnum::AgentCommandRejected->value === $spec['type'],
+        ));
+
+        $this->assertCount(2, $rejected, 'Rejection events keep store FIFO order.');
+        $this->assertSame('env-missing', $rejected[0]['payload']['idempotency_key']);
+        $this->assertSame('Invalid command payload: missing message envelope.', $rejected[0]['payload']['reason']);
+        $this->assertSame('env-malformed', $rejected[1]['payload']['idempotency_key']);
+        $this->assertSame('Invalid command payload: malformed message envelope.', $rejected[1]['payload']['reason']);
+        $this->assertSame([], $commandStore->pending($runId), 'Both commands are marked rejected, not left pending.');
     }
 
     private function currentTurnNo(CommandMailboxFixture $fixture, string $runId): int

@@ -12,11 +12,10 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Ineersa\Tui\Widget\SelectListKeybindings;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
-use Symfony\Component\Tui\Input\Key;
-use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -36,11 +35,10 @@ final class ModelPickerController
 {
     private ?PickerOverlay $overlay = null;
 
-    private ?Tui $tui = null;
-    private ?ChatScreen $screen = null;
-    private ?TuiSessionState $state = null;
-
     public function __construct(
+        private readonly Tui $tui,
+        private readonly ChatScreen $screen,
+        private readonly TuiSessionState $state,
         private readonly ModelSelectionService $modelService,
         private readonly AppConfig $appConfig,
         private readonly LoggerInterface $logger,
@@ -48,19 +46,7 @@ final class ModelPickerController
     }
 
     /**
-     * Set the per-run TUI references that are only available at
-     * listener registration time (called by ModelControlListener).
-     */
-    public function setRuntimeRefs(Tui $tui, ChatScreen $screen, TuiSessionState $state): void
-    {
-        $this->tui = $tui;
-        $this->screen = $screen;
-        $this->state = $state;
-    }
-
-    /**
-     * Open the interactive model picker on the TUI (no-arg, uses references
-     * previously set via {@see setRuntimeRefs()}).
+     * Open the interactive model picker on the TUI.
      *
      * Builds a SelectListWidget, mounts via PickerOverlay, sets focus, and
      * wires selection/cancellation/favorite-toggle callbacks.
@@ -68,10 +54,6 @@ final class ModelPickerController
     public function open(): void
     {
         if ($this->overlay?->isOpen() ?? false) {
-            return;
-        }
-
-        if (null === $this->tui || null === $this->screen || null === $this->state) {
             return;
         }
 
@@ -89,22 +71,14 @@ final class ModelPickerController
         );
 
         // ── Keybindings: remove ctrl+f from cursor_right so we can intercept it ──
-        $kb = new Keybindings([
-            'select_up' => [Key::UP],
-            'select_down' => [Key::DOWN],
-            'select_page_up' => [Key::PAGE_UP],
-            'select_page_down' => [Key::PAGE_DOWN],
-            'select_confirm' => [Key::ENTER],
-            'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
-            // cursor_left / cursor_right omitted (no paging via left/right)
-        ]);
+        $kb = SelectListKeybindings::standard();
 
         // ── Build items: favorites-first with markers ──
         $items = $this->buildItems();
 
         $listWidget = new SelectListWidget(
             items: $items,
-            maxVisible: 10,
+            maxVisible: SelectListKeybindings::MAX_VISIBLE,
             keybindings: $kb,
         );
 
@@ -263,8 +237,7 @@ final class ModelPickerController
     /**
      * Execute model selection, persist, and update footer state.
      *
-     * Uses controller-owned dependencies set via the constructor and
-     * per-run refs set via {@see setRuntimeRefs()}.
+     * Uses controller-owned dependencies bound via the constructor.
      *
      * @internal called from static closures within {@see open()}
      */
@@ -285,11 +258,7 @@ final class ModelPickerController
         }
 
         // Update footer state — reset reasoning to off when model doesn't support thinking
-        $this->state->footerModel = FooterStateInitializer::shortModelName(
-            $ref->providerId.'/'.$ref->modelName,
-        );
-        $this->state->footerReasoning = $this->modelService->getDisplayReasoning($this->state->sessionId);
-        $this->state->contextWindow = FooterStateInitializer::resolveContextWindowForRef($this->appConfig, $ref);
+        FooterStateInitializer::applyModelSelection($this->state, $ref, $this->modelService, $this->appConfig);
 
         // Apply editor border colour matching the new reasoning level.
         $this->screen->applyEditorBorderColor($this->state->footerReasoning);

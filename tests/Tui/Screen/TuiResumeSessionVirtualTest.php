@@ -36,9 +36,9 @@ final class TuiResumeSessionVirtualTest extends TestCase
     #[Test]
     public function testSessionInitializerReconstructsCanonicalBlocksOnVirtualScreen(): void
     {
-        $initializer = ResumeSessionInitializerTestFactory::create($this->createStub(EntityManagerInterface::class), $this->projectDir);
+        [$initializer, $eventApplier] = ResumeSessionInitializerTestFactory::createWithApplier($this->createStub(EntityManagerInterface::class), $this->projectDir);
         $state = new TuiSessionState(self::SESSION_ID, true);
-        $blocks = $initializer->buildInitialTranscript($state);
+        $blocks = $initializer->buildInitialTranscript($state, $eventApplier);
 
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
         $harness->screen()->setTranscriptBlocks($blocks);

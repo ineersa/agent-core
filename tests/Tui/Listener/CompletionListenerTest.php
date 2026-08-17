@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\CommandMetadata;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Completion\SlashCommandCompletionProvider;
@@ -36,6 +37,7 @@ final class CompletionListenerTest extends TestCase
     private TuiSessionState $state;
     private ChatScreen $screen;
     private Tui $tui;
+    private SlashCommandCatalog $catalog;
     private SlashCommandRegistry $registry;
 
     protected function setUp(): void
@@ -48,7 +50,8 @@ final class CompletionListenerTest extends TestCase
         $this->tui = new Tui();
         $this->screen->mount($this->tui);
 
-        $this->registry = new SlashCommandRegistry();
+        $this->catalog = new SlashCommandCatalog();
+        $this->registry = new SlashCommandRegistry($this->catalog);
 
         $this->registerListener();
     }
@@ -244,6 +247,48 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\t");
 
         $this->assertSame('/exit ', $this->editor->getText());
+    }
+
+    #[Test]
+    public function downNavigationScrollsNativeWindowBeyondMaxVisible(): void
+    {
+        // Built-ins: /clear /exit /help /hotkeys (4). Add enough extras so total > 10
+        // (SelectListWidget maxVisible=10) and selection must scroll the window.
+        for ($i = 0; $i < 12; ++$i) {
+            $name = \sprintf('cmd%02d', $i);
+            $this->catalog->register(
+                new CommandMetadata(name: $name, aliases: [], description: 'extra '.$name),
+                new readonly class implements SlashCommandHandler {
+                    public function handle(\Ineersa\Tui\Command\SlashCommand $command): \Ineersa\Tui\Command\CommandResult
+                    {
+                        return new \Ineersa\Tui\Command\NoOp();
+                    }
+                },
+            );
+        }
+
+        // Re-register listener against the expanded registry.
+        $this->tui = new Tui();
+        $this->editor = new PromptEditor();
+        $theme = new DefaultTheme(new ThemePalette('default'));
+        $this->screen = new ChatScreen($theme, 'test-session', $this->editor);
+        $this->screen->mount($this->tui);
+        $this->registerListener();
+
+        $this->editor->typeText('/');
+        $this->tui->handleInput("\t");
+
+        // Move past the first page of 10 visible items (index 10 = 11th item).
+        for ($i = 0; $i < 10; ++$i) {
+            $this->tui->handleInput("\x1b[B");
+        }
+
+        $this->tui->handleInput("\t");
+        $accepted = $this->editor->getText();
+        $this->assertNotSame('/clear ', $accepted, 'Selection must leave the first item after 10 downs');
+        $this->assertMatchesRegularExpression('#^/[a-z0-9]+ $#', $accepted);
+        // With alphabetical slash suggestions, index 10 should not be /clear.
+        $this->assertStringStartsWith('/', $accepted);
     }
 
     // ── Up/Down passes through when menu closed ──────────────────
@@ -642,13 +687,13 @@ final class CompletionListenerTest extends TestCase
         $isolatedScreen->mount($isolatedTui);
         $isolatedTui->setFocus($isolatedScreen->editorWidget());
 
-        $registry = new SlashCommandRegistry();
-        $registry->register(
+        $catalog = new SlashCommandCatalog();
+        $catalog->register(
             new CommandMetadata(name: 'testcmd', aliases: [], description: 'Test'),
             $handler,
         );
 
-        $provider = new SlashCommandCompletionProvider($registry);
+        $provider = new SlashCommandCompletionProvider($catalog);
         $listener = new CompletionListener($provider);
 
         $client = $this->createStub(AgentSessionClient::class);
@@ -672,6 +717,7 @@ final class CompletionListenerTest extends TestCase
             switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
             lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
             historyProvider: $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface::class),
+            sessionServices: $this->createSessionServices(),
         );
         $listener->register($isolatedContext);
 
@@ -814,7 +860,7 @@ final class CompletionListenerTest extends TestCase
             $reader = new \Ineersa\Tui\Completion\FileMentionIndexReader($indexPath);
             $fileProvider = new \Ineersa\Tui\Completion\FileMentionCompletionProvider($reader);
             $registry = new \Ineersa\Tui\Completion\CompletionProviderRegistry([
-                new SlashCommandCompletionProvider($this->registry),
+                new SlashCommandCompletionProvider($this->catalog),
                 $fileProvider,
             ]);
 
@@ -847,6 +893,7 @@ final class CompletionListenerTest extends TestCase
                 switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
                 lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
                 historyProvider: $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface::class),
+                sessionServices: $this->createSessionServices(),
             );
             $listener->register($context);
 
@@ -877,7 +924,7 @@ final class CompletionListenerTest extends TestCase
             $reader = new \Ineersa\Tui\Completion\FileMentionIndexReader($indexPath);
             $fileProvider = new \Ineersa\Tui\Completion\FileMentionCompletionProvider($reader);
             $registry = new \Ineersa\Tui\Completion\CompletionProviderRegistry([
-                new SlashCommandCompletionProvider($this->registry),
+                new SlashCommandCompletionProvider($this->catalog),
                 $fileProvider,
             ]);
 
@@ -909,6 +956,7 @@ final class CompletionListenerTest extends TestCase
                 switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
                 lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
                 historyProvider: $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface::class),
+                sessionServices: $this->createSessionServices(),
             );
             $listener->register($context);
 
@@ -967,6 +1015,7 @@ final class CompletionListenerTest extends TestCase
                 switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
                 lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
                 historyProvider: $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface::class),
+                sessionServices: $this->createSessionServices(),
             );
             $listener->register($context);
 
@@ -1030,6 +1079,7 @@ final class CompletionListenerTest extends TestCase
                 switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
                 lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
                 historyProvider: $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface::class),
+                sessionServices: $this->createSessionServices(),
             );
             $listener->register($context);
 
@@ -1056,7 +1106,7 @@ final class CompletionListenerTest extends TestCase
 
     private function registerListener(): void
     {
-        $provider = new SlashCommandCompletionProvider($this->registry);
+        $provider = new SlashCommandCompletionProvider($this->catalog);
         $listener = new CompletionListener($provider);
 
         $context = $this->createContext();

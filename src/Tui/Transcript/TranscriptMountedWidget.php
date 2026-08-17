@@ -194,35 +194,8 @@ final class TranscriptMountedWidget extends ContainerWidget
      */
     private function bind(AbstractWidget $widget, TranscriptVisualNode $node): AbstractWidget
     {
-        if ($widget instanceof StreamingMarkdownTranscriptWidget) {
-            if (TranscriptVisualNode::KIND_MARKDOWN !== $node->kind) {
-                return $this->createAndBind($node);
-            }
-            $widget->apply($node);
-
-            return $widget;
-        }
-
-        if ($widget instanceof ToolExchangeTranscriptWidget) {
-            if (TranscriptVisualNode::KIND_TOOL_EXCHANGE !== $node->kind) {
-                return $this->createAndBind($node);
-            }
-            $widget->apply($node);
-
-            return $widget;
-        }
-
-        if ($widget instanceof QuestionTranscriptWidget) {
-            if (TranscriptVisualNode::KIND_QUESTION !== $node->kind) {
-                return $this->createAndBind($node);
-            }
-            $widget->apply($node);
-
-            return $widget;
-        }
-
-        if ($widget instanceof SubagentTranscriptWidget) {
-            if (TranscriptVisualNode::KIND_SUBAGENT !== $node->kind) {
+        if ($widget instanceof MutableTranscriptWidget) {
+            if (!$widget->canBind($node)) {
                 return $this->createAndBind($node);
             }
             $widget->apply($node);
@@ -265,11 +238,7 @@ final class TranscriptMountedWidget extends ContainerWidget
     private function createAndBind(TranscriptVisualNode $node): AbstractWidget
     {
         $widget = $this->createWidgetFor($node);
-        if ($widget instanceof StreamingMarkdownTranscriptWidget
-            || $widget instanceof ToolExchangeTranscriptWidget
-            || $widget instanceof QuestionTranscriptWidget
-            || $widget instanceof SubagentTranscriptWidget
-        ) {
+        if ($widget instanceof MutableTranscriptWidget) {
             $widget->apply($node);
         }
 

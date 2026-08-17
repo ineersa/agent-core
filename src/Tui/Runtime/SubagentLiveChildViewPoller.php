@@ -9,7 +9,6 @@ use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
@@ -70,15 +69,11 @@ final class SubagentLiveChildViewPoller
         $scratch->activity = $live->childActivity;
         $scratch->queuedUserMessages = $live->childQueuedUserMessages;
 
+        $callbacks = $this->makeCallbacks($onHumanInputRequested, $onToolQuestionRequested, $onToolTerminal);
+
         foreach ($snapshot->replayEvents as $event) {
             $this->eventApplier->apply($scratch, $event, replayMode: true);
-            $this->dispatchEventCallbacks(
-                $event,
-                $live->selected->agentRunId,
-                $onHumanInputRequested,
-                $onToolQuestionRequested,
-                $onToolTerminal,
-            );
+            $callbacks->dispatch($event, $live->selected->agentRunId);
         }
 
         $live->childActivity = $scratch->activity;
@@ -118,7 +113,7 @@ final class SubagentLiveChildViewPoller
         }
         $live->childLastPoll = $now;
 
-        $events = $this->runtimeEvents($client, $live->selected->agentRunId);
+        $events = RuntimeEventCallbacks::eventList($client, $live->selected->agentRunId);
         if ([] === $events) {
             return null;
         }
@@ -127,6 +122,8 @@ final class SubagentLiveChildViewPoller
         $scratch = new TuiSessionState($live->selected->agentRunId);
         $scratch->activity = $live->childActivity;
         $scratch->queuedUserMessages = $live->childQueuedUserMessages;
+
+        $callbacks = $this->makeCallbacks($onHumanInputRequested, $onToolQuestionRequested, $onToolTerminal);
 
         foreach ($events as $event) {
             $seq = $event->seq;
@@ -141,13 +138,7 @@ final class SubagentLiveChildViewPoller
             $live->childReplayEvents[] = $event;
             $changed = true;
 
-            $this->dispatchEventCallbacks(
-                $event,
-                $live->selected->agentRunId,
-                $onHumanInputRequested,
-                $onToolQuestionRequested,
-                $onToolTerminal,
-            );
+            $callbacks->dispatch($event, $live->selected->agentRunId);
         }
 
         if ($changed) {
@@ -170,59 +161,19 @@ final class SubagentLiveChildViewPoller
      * @param ?callable(RuntimeEvent): void $onToolQuestionRequested
      * @param ?callable(RuntimeEvent): void $onToolTerminal
      */
-    private function dispatchEventCallbacks(
-        RuntimeEvent $event,
-        string $childRunId,
+    private function makeCallbacks(
         ?callable $onHumanInputRequested,
         ?callable $onToolQuestionRequested,
         ?callable $onToolTerminal,
-    ): void {
-        if (null !== $onHumanInputRequested && RuntimeEventTypeEnum::HumanInputRequested->value === $event->type) {
-            $this->invokeEventCallback($onHumanInputRequested, $event, $childRunId, 'onHumanInputRequested');
-        }
-
-        if (null !== $onToolQuestionRequested && RuntimeEventTypeEnum::ToolQuestionRequested->value === $event->type) {
-            $this->invokeEventCallback($onToolQuestionRequested, $event, $childRunId, 'onToolQuestionRequested');
-        }
-
-        if (null !== $onToolTerminal && (
-            RuntimeEventTypeEnum::ToolExecutionCompleted->value === $event->type
-            || RuntimeEventTypeEnum::ToolExecutionFailed->value === $event->type
-            || RuntimeEventTypeEnum::ToolExecutionCancelled->value === $event->type
-        )) {
-            $this->invokeEventCallback($onToolTerminal, $event, $childRunId, 'onToolTerminal');
-        }
-    }
-
-    /**
-     * @param callable(RuntimeEvent): void $callback
-     */
-    private function invokeEventCallback(callable $callback, RuntimeEvent $runtimeEvent, string $childRunId, string $callbackName): void
-    {
-        try {
-            $callback($runtimeEvent);
-        } catch (\Throwable $e) {
-            $this->logger->warning('SubagentLiveChildViewPoller event callback failed', [
-                'component' => 'tui.subagent_live_child_poller',
-                'event_type' => 'subagent_live_child_poller.callback_failed',
-                'run_id' => $childRunId,
-                'callback' => $callbackName,
-                'runtime_event_type' => $runtimeEvent->type,
-                'seq' => $runtimeEvent->seq,
-                'exception_class' => $e::class,
-                'exception_message' => $e->getMessage(),
-            ]);
-        }
-    }
-
-    /** @return list<RuntimeEvent> */
-    private function runtimeEvents(AgentSessionClient $client, string $runId): array
-    {
-        $events = $client->events($runId);
-        if ($events instanceof \Traversable) {
-            return iterator_to_array($events, false);
-        }
-
-        return $events;
+    ): RuntimeEventCallbacks {
+        return new RuntimeEventCallbacks(
+            $this->logger,
+            'SubagentLiveChildViewPoller event callback failed',
+            'tui.subagent_live_child_poller',
+            'subagent_live_child_poller.callback_failed',
+            $onHumanInputRequested,
+            $onToolQuestionRequested,
+            $onToolTerminal,
+        );
     }
 }

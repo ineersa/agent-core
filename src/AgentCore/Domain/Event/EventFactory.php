@@ -53,21 +53,11 @@ final readonly class EventFactory
 
     public function incrementStateVersion(RunState $state, int $eventCount): RunState
     {
-        return new RunState(
-            runId: $state->runId,
-            status: $state->status,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq + $eventCount,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $state->messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: $state->retryableFailure,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
+        // Stale-result/version bumps must not drop retry accounting: the
+        // auto-retry counter is read by the next LlmStepResultHandler.
+        return $state->with([
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + $eventCount,
+        ]);
     }
 }

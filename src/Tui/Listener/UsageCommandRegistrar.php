@@ -6,22 +6,34 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaProbeServiceInterface;
 use Ineersa\Tui\Command\CommandMetadata;
-use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Psr\Log\LoggerInterface;
 
 /**
  * Registers the /usage slash command.
  *
+ * Command metadata is registered once per process via
+ * {@see registerCatalog()}; each session binds a fresh handler.
+ *
  * @internal Autowired via {@see TuiListenerRegistrar} and the `app.tui_listener` tag
  */
-final class UsageCommandRegistrar implements TuiListenerRegistrar
+final class UsageCommandRegistrar implements TuiListenerRegistrar, SlashCommandCatalogRegistrar
 {
     public function __construct(
-        private readonly SlashCommandRegistry $commandRegistry,
         private readonly ProviderQuotaProbeServiceInterface $quotaProbe,
         private readonly LoggerInterface $logger,
     ) {
+    }
+
+    public function registerCatalog(SlashCommandCatalog $catalog): void
+    {
+        $catalog->registerMetadata(new CommandMetadata(
+            name: 'usage',
+            description: 'Show OpenAI Codex and z.ai quota status plus session usage',
+            usage: '/usage',
+            acceptsArguments: false,
+        ));
     }
 
     public function register(TuiRuntimeContext $context): void
@@ -34,20 +46,6 @@ final class UsageCommandRegistrar implements TuiListenerRegistrar
             $this->logger,
         );
 
-        if ($this->commandRegistry->has('usage')) {
-            $this->commandRegistry->setHandler('usage', $handler);
-
-            return;
-        }
-
-        $this->commandRegistry->register(
-            new CommandMetadata(
-                name: 'usage',
-                description: 'Show OpenAI Codex and z.ai quota status plus session usage',
-                usage: '/usage',
-                acceptsArguments: false,
-            ),
-            $handler,
-        );
+        $context->sessionServices->commandRegistry->bind('usage', $handler);
     }
 }

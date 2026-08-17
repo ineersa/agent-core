@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Editor;
 
+use Symfony\Component\Tui\Widget\Util\StringUtils;
+
 /**
  * Lightweight immutable snapshot of editor text state.
  *
@@ -45,19 +47,10 @@ final readonly class EditorState
      */
     public static function fromText(string $text): self
     {
-        // Sanitize invalid UTF-8 (match StringUtils::sanitizeUtf8)
-        if ('' !== $text && false === preg_match('//u', $text)) {
-            $sanitized = @iconv('UTF-8', 'UTF-8//IGNORE', $text);
-            $text = false === $sanitized ? '' : $sanitized;
-        }
-
-        // Normalize line endings
+        // Match EditorDocument::setText order: sanitizeUtf8 → CRLF/CR → stripControlBytes.
+        $text = StringUtils::sanitizeUtf8($text);
         $text = str_replace(["\r\n", "\r"], "\n", $text);
-
-        // Strip control bytes (match StringUtils::stripControlBytes):
-        //   C0 controls except TAB (\x09) and LF (\x0a), plus DEL (\x7f)
-        //   C1 controls encoded as UTF-8 \xc2[\x80-\x9f]
-        $text = preg_replace("/[\x00-\x08\x0b-\x1f\x7f]|\xc2[\x80-\x9f]/", '', $text) ?? '';
+        $text = StringUtils::stripControlBytes($text);
 
         $lines = '' === $text ? [''] : explode("\n", $text);
 

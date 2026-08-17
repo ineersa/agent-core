@@ -9,6 +9,7 @@ use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\ExitApplication;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\TranscriptMessage;
@@ -17,105 +18,86 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 #[CoversClass(SlashCommandRegistry::class)]
-#[CoversClass(CommandMetadata::class)]
 final class SlashCommandRegistryTest extends TestCase
 {
+    private SlashCommandCatalog $catalog;
     private SlashCommandRegistry $registry;
 
     protected function setUp(): void
     {
-        $this->registry = new SlashCommandRegistry();
+        $this->catalog = new SlashCommandCatalog();
+        $this->registry = new SlashCommandRegistry($this->catalog);
     }
 
-    // ─── Registration ────────────────────────────────────────────────
+    // ─── Session handler binding ─────────────────────────────────────
 
     #[Test]
-    public function registersAndLooksUpByCanonicalName(): void
+    public function bindThrowsForUnregisteredName(): void
     {
-        $handler = $this->createMockHandler();
-        $metadata = new CommandMetadata(name: 'foo', description: 'Does foo things');
-
-        $this->registry->register($metadata, $handler);
-
-        $this->assertTrue($this->registry->has('foo'));
-        $this->assertSame($metadata, $this->registry->getMetadata('foo'));
-    }
-
-    #[Test]
-    public function looksUpByAlias(): void
-    {
-        $handler = $this->createMockHandler();
-        $metadata = new CommandMetadata(name: 'foo', aliases: ['f', 'bar']);
-
-        $this->registry->register($metadata, $handler);
-
-        $this->assertTrue($this->registry->has('f'));
-        $this->assertTrue($this->registry->has('bar'));
-        $this->assertSame($metadata, $this->registry->getMetadata('f'));
-        $this->assertSame($metadata, $this->registry->getMetadata('bar'));
-    }
-
-    #[Test]
-    public function hasReturnsFalseForUnregisteredName(): void
-    {
-        $this->assertFalse($this->registry->has('nonexistent'));
-    }
-
-    #[Test]
-    public function getMetadataReturnsNullForUnregisteredName(): void
-    {
-        $this->assertNull($this->registry->getMetadata('nonexistent'));
-    }
-
-    #[Test]
-    public function throwsWhenRegisteringDuplicateName(): void
-    {
-        $this->registry->register(
-            new CommandMetadata(name: 'dup'),
-            $this->createMockHandler(),
-        );
-
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage("Command 'dup' is already registered.");
+        $this->expectExceptionMessage("Cannot bind handler: command 'nope' is not registered.");
 
-        $this->registry->register(
-            new CommandMetadata(name: 'dup'),
-            $this->createMockHandler(),
-        );
+        $this->registry->bind('nope', $this->createMockHandler());
     }
 
     #[Test]
-    public function throwsWhenAliasConflictsWithExistingAlias(): void
+    public function bindViaAliasBindsCanonicalHandler(): void
     {
-        $this->registry->register(
-            new CommandMetadata(name: 'first', aliases: ['shared']),
+        $this->catalog->register(
+            new CommandMetadata(name: 'mycmd', aliases: ['mc']),
             $this->createMockHandler(),
         );
 
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage("Alias 'shared' is already registered for command 'first'.");
+        $this->registry->bind('mc', new FixedMessageTestHandler('replaced'));
 
-        $this->registry->register(
-            new CommandMetadata(name: 'second', aliases: ['shared']),
-            $this->createMockHandler(),
-        );
+        $result = $this->registry->execute(new SlashCommand('mycmd', '', '/mycmd'));
+        $this->assertSame('replaced', $result->text);
     }
 
     #[Test]
-    public function throwsWhenAliasConflictsWithExistingCommandName(): void
+    public function sessionHandlerOverridesCatalogDefault(): void
     {
-        $this->registry->register(
-            new CommandMetadata(name: 'existing'),
-            $this->createMockHandler(),
+        // Catalog default handler exists (e.g. extension command)…
+        $this->catalog->register(
+            new CommandMetadata(name: 'hybrid', description: 'Has default and session handler'),
+            new FixedMessageTestHandler('default'),
         );
 
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage("Alias 'existing' conflicts with registered command name.");
+        $this->assertSame('default', $this->registry->execute(new SlashCommand('hybrid', '', '/hybrid'))->text);
 
-        $this->registry->register(
-            new CommandMetadata(name: 'other', aliases: ['existing']),
-            $this->createMockHandler(),
+        // …and the session binds its own handler for this iteration.
+        $this->registry->bind('hybrid', new FixedMessageTestHandler('session'));
+
+        $this->assertSame('session', $this->registry->execute(new SlashCommand('hybrid', '', '/hybrid'))->text);
+    }
+
+    #[Test]
+    public function unbindableSessionRegistryStillResolvesCatalogDefault(): void
+    {
+        // A fresh registry that never binds the command still resolves the
+        // process-owned default handler (extension/prompt-template commands).
+        $this->catalog->register(
+            new CommandMetadata(name: 'ext', description: 'Extension command'),
+            new FixedMessageTestHandler('extension'),
         );
+
+        $freshRegistry = new SlashCommandRegistry($this->catalog);
+        $this->assertSame('extension', $freshRegistry->execute(new SlashCommand('ext', '', '/ext'))->text);
+    }
+
+    #[Test]
+    public function bindDoesNotLeakToAnotherRegistryInstance(): void
+    {
+        $this->catalog->register(
+            new CommandMetadata(name: 'session-cmd', description: 'Per-session handler'),
+            new FixedMessageTestHandler('default'),
+        );
+
+        $other = new SlashCommandRegistry($this->catalog);
+        $this->registry->bind('session-cmd', new FixedMessageTestHandler('session'));
+
+        $this->assertSame('session', $this->registry->execute(new SlashCommand('session-cmd', '', '/session-cmd'))->text);
+        $this->assertSame('default', $other->execute(new SlashCommand('session-cmd', '', '/session-cmd'))->text);
     }
 
     // ─── Built-in: /help ─────────────────────────────────────────────
@@ -135,7 +117,7 @@ final class SlashCommandRegistryTest extends TestCase
     #[Test]
     public function executeHelpListsCustomRegisteredCommands(): void
     {
-        $this->registry->register(
+        $this->catalog->register(
             new CommandMetadata(name: 'custom', description: 'A custom command'),
             $this->createMockHandler(),
         );
@@ -149,7 +131,7 @@ final class SlashCommandRegistryTest extends TestCase
     #[Test]
     public function executeHelpWithAliasShowsAliasesInList(): void
     {
-        $this->registry->register(
+        $this->catalog->register(
             new CommandMetadata(name: 'custom', aliases: ['c', 'cmd'], description: 'Custom'),
             $this->createMockHandler(),
         );
@@ -218,36 +200,11 @@ final class SlashCommandRegistryTest extends TestCase
     {
         $handler = new FixedMessageTestHandler('CUSTOM HELP OUTPUT');
 
-        $this->registry->setHandler('help', $handler);
+        $this->registry->bind('help', $handler);
 
         $result = $this->registry->execute(new SlashCommand('help', '', '/help'));
 
         $this->assertSame('CUSTOM HELP OUTPUT', $result->text);
-    }
-
-    #[Test]
-    public function setHandlerThrowsForUnregisteredName(): void
-    {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage("Cannot set handler: command 'nope' is not registered.");
-
-        $this->registry->setHandler('nope', $this->createMockHandler());
-    }
-
-    #[Test]
-    public function setHandlerViaAliasWorks(): void
-    {
-        $this->registry->register(
-            new CommandMetadata(name: 'mycmd', aliases: ['mc']),
-            $this->createMockHandler(),
-        );
-
-        $handler = new FixedMessageTestHandler('replaced');
-
-        $this->registry->setHandler('mc', $handler);
-
-        $result = $this->registry->execute(new SlashCommand('mycmd', '', '/mycmd'));
-        $this->assertSame('replaced', $result->text);
     }
 
     // ─── Built-in: /hotkeys table ────────────────────────────────────
@@ -255,7 +212,7 @@ final class SlashCommandRegistryTest extends TestCase
     #[Test]
     public function executeHotkeysReturnsHotkeyTableDataForEmptyRegistry(): void
     {
-        // Default registry has an empty HotkeyRegistry → HotkeyTableData with isEmpty=true
+        // Default catalog has an empty HotkeyRegistry → HotkeyTableData with isEmpty=true
         $result = $this->registry->execute(new SlashCommand('hotkeys', '', '/hotkeys'));
 
         $this->assertInstanceOf(
@@ -292,7 +249,7 @@ final class SlashCommandRegistryTest extends TestCase
             priority: 20,
         ));
 
-        $reg = new SlashCommandRegistry($hotkeyReg);
+        $reg = new SlashCommandRegistry(new SlashCommandCatalog($hotkeyReg));
         $result = $reg->execute(new SlashCommand('hotkeys', '', '/hotkeys'));
 
         $this->assertInstanceOf(
@@ -407,9 +364,9 @@ final class SlashCommandRegistryTest extends TestCase
     // ─── Custom handler execution ────────────────────────────────────
 
     #[Test]
-    public function executeDispatchesToRegisteredHandler(): void
+    public function executeDispatchesToCatalogHandler(): void
     {
-        $this->registry->register(
+        $this->catalog->register(
             new CommandMetadata(name: 'noop', description: 'Does nothing'),
             $this->createMockHandler(),
         );
@@ -424,7 +381,7 @@ final class SlashCommandRegistryTest extends TestCase
     {
         $handler = new EchoHandler();
 
-        $this->registry->register(
+        $this->catalog->register(
             new CommandMetadata(name: 'echo', aliases: ['e'], description: 'Echo args', acceptsArguments: true),
             $handler,
         );
@@ -459,7 +416,7 @@ final class SlashCommandRegistryTest extends TestCase
     public function argAcceptingCommandReceivesArgs(): void
     {
         $handler = new EchoHandler();
-        $this->registry->register(
+        $this->catalog->register(
             new CommandMetadata(name: 'argcmd', description: 'Accepts args', acceptsArguments: true),
             $handler,
         );
@@ -476,7 +433,7 @@ final class SlashCommandRegistryTest extends TestCase
         // Default acceptsArguments=false: handler receives empty args even
         // if the user typed extras.
         $handler = new EchoHandler();
-        $this->registry->register(
+        $this->catalog->register(
             new CommandMetadata(name: 'noarg', description: 'Does not accept args'),
             $handler,
         );
@@ -485,96 +442,6 @@ final class SlashCommandRegistryTest extends TestCase
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertStringContainsString('got args: (none)', $result->text);
-    }
-
-    // ─── Metadata access ─────────────────────────────────────────────
-
-    #[Test]
-    public function allMetadataReturnsSortedList(): void
-    {
-        // Register out of order
-        $this->registry->register(
-            new CommandMetadata(name: 'zebra'),
-            $this->createMockHandler(),
-        );
-        $this->registry->register(
-            new CommandMetadata(name: 'alpha'),
-            $this->createMockHandler(),
-        );
-
-        $all = $this->registry->allMetadata();
-        $names = array_map(static fn (CommandMetadata $m) => $m->name, $all);
-
-        // Should be sorted alphabetically
-        $this->assertSame(['alpha', 'clear', 'exit', 'help', 'hotkeys', 'zebra'], $names);
-    }
-
-    #[Test]
-    public function allMetadataMapReturnsNameToMetadataMap(): void
-    {
-        $this->registry->register(
-            new CommandMetadata(name: 'custom'),
-            $this->createMockHandler(),
-        );
-
-        $map = $this->registry->allMetadataMap();
-
-        $this->assertArrayHasKey('help', $map);
-        $this->assertArrayHasKey('clear', $map);
-        $this->assertArrayHasKey('exit', $map);
-        $this->assertArrayHasKey('hotkeys', $map);
-        $this->assertArrayHasKey('custom', $map);
-    }
-
-    #[Test]
-    public function countReflectsRegisteredCommands(): void
-    {
-        $this->assertSame(4, $this->registry->count()); // help, clear, exit, hotkeys
-
-        $this->registry->register(
-            new CommandMetadata(name: 'extra'),
-            $this->createMockHandler(),
-        );
-
-        $this->assertSame(5, $this->registry->count());
-    }
-
-    // ─── Built-in command metadata ───────────────────────────────────
-
-    #[Test]
-    public function builtInHelpHasCorrectMetadata(): void
-    {
-        $meta = $this->registry->getMetadata('help');
-
-        $this->assertNotNull($meta);
-        $this->assertSame('help', $meta->name);
-        $this->assertContains('h', $meta->aliases);
-        $this->assertContains('?', $meta->aliases);
-        $this->assertNotEmpty($meta->description);
-        $this->assertNotEmpty($meta->usage);
-    }
-
-    #[Test]
-    public function builtInClearHasCorrectMetadata(): void
-    {
-        $meta = $this->registry->getMetadata('clear');
-
-        $this->assertNotNull($meta);
-        $this->assertSame('clear', $meta->name);
-        $this->assertContains('cls', $meta->aliases);
-        $this->assertNotEmpty($meta->description);
-    }
-
-    #[Test]
-    public function builtInExitHasCorrectMetadata(): void
-    {
-        $meta = $this->registry->getMetadata('exit');
-
-        $this->assertNotNull($meta);
-        $this->assertSame('exit', $meta->name);
-        $this->assertContains('quit', $meta->aliases);
-        $this->assertContains('q', $meta->aliases);
-        $this->assertNotEmpty($meta->description);
     }
 
     // ─── Private helpers ─────────────────────────────────────────────

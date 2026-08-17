@@ -40,7 +40,6 @@ final readonly class SessionInitializer
         private SessionRunEventStore $eventStore,
         private TranscriptBlockFactory $blockFactory,
         private LoggerInterface $logger,
-        private TuiRuntimeEventApplier $eventApplier,
         private HistoryProviderInterface $historyProvider,
         private SessionTranscriptProviderInterface $sessionTranscriptProvider,
     ) {
@@ -106,17 +105,21 @@ final readonly class SessionInitializer
      * Build the initial transcript blocks for the session.
      *
      * On resume, rebuilds the retained-history transcript at the current
-     * position. On fresh session, returns a welcome block.
+     * position using the caller-provided fresh parent event applier (whose
+     * projector is scoped to the current session). On fresh session, returns
+     * a welcome block.
      *
      * Returns plain projection blocks; theme colors/prefixes are applied
      * at display time by ChatScreen/TranscriptMountedWidget.
      *
+     * @param TuiRuntimeEventApplier $eventApplier session-scoped parent applier
+     *
      * @return list<TranscriptBlock>
      */
-    public function buildInitialTranscript(TuiSessionState $state): array
+    public function buildInitialTranscript(TuiSessionState $state, TuiRuntimeEventApplier $eventApplier): array
     {
         if ($state->resuming) {
-            return $this->replayFromEvents($state);
+            return $this->replayFromEvents($state, $eventApplier);
         }
 
         // Fresh session or draft: no file persistence — events.jsonl is the canonical record.
@@ -134,9 +137,11 @@ final readonly class SessionInitializer
     /**
      * Rebuild retained-history transcript for resume (never full-stream fallback).
      *
+     * @param TuiRuntimeEventApplier $eventApplier session-scoped parent applier
+     *
      * @return list<TranscriptBlock>
      */
-    private function replayFromEvents(TuiSessionState $state): array
+    private function replayFromEvents(TuiSessionState $state, TuiRuntimeEventApplier $eventApplier): array
     {
         // Use the session ID as the run ID (they are the same in Hatfield).
         $runId = $state->sessionId;
@@ -192,7 +197,7 @@ final readonly class SessionInitializer
         $historyAwareBlocks = $snapshot->transcriptBlocks;
 
         foreach ($snapshot->replayEvents as $runtimeEvent) {
-            $this->eventApplier->apply($state, $runtimeEvent, replayMode: true);
+            $eventApplier->apply($state, $runtimeEvent, replayMode: true);
         }
 
         // Set lastSeq so the live poller does not re-process replayed events.

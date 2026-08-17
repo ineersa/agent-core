@@ -4,26 +4,24 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\AdvanceRunCallbackFactory;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
-use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
-use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
-final readonly class ToolCallResultHandler implements RunMessageHandler
+final readonly class ToolCallResultHandler implements RunMessageHandler, RunMessageHandlerLogComponentInterface
 {
     private const string SYNTHETIC_USER_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
 
@@ -36,6 +34,11 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
         private ?RunMetrics $metrics = null,
         private ?MessageBusInterface $commandBus = null,
     ) {
+    }
+
+    public function getLogComponent(): string
+    {
+        return 'tool';
     }
 
     public function supports(object $message): bool
@@ -188,22 +191,17 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             ];
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
-            $nextState = new RunState(
-                runId: $state->runId,
-                status: RunStatus::Cancelled,
-                version: $state->version + 1,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq + \count($events),
-                isStreaming: false,
-                streamingMessage: null,
-                pendingToolCalls: [],
-                errorMessage: $state->errorMessage,
-                messages: $messages,
-                activeStepId: $state->activeStepId,
-                retryableFailure: false,
-                pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                model: $state->model,
-            );
+            $nextState = $state->with([
+                'status' => RunStatus::Cancelled,
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($events),
+                'isStreaming' => false,
+                'streamingMessage' => null,
+                'pendingToolCalls' => [],
+                'messages' => $messages,
+                'retryableFailure' => false,
+                'retryAttempts' => 0,
+            ]);
 
             $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
             $postCancelAdvance = $this->postCancelAdvanceCallback($runId);
@@ -286,7 +284,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             $interruptPayload = null;
 
             foreach ($outcome->orderedResults as $orderedResult) {
-                $notifications = $this->denormalizeModelNotifications($orderedResult);
+                $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $orderedResult->result['details'] ?? null);
                 $toolMsg = $this->messageNormalizer->toolMessage($orderedResult, $notifications);
                 $messages[] = $toolMsg;
                 $toolMsgArray = $toolMsg->toArray();
@@ -310,7 +308,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
 
                 // Emit model_notification events for any notifications
                 // attached to this tool result.
-                foreach ($this->collectModelNotificationEventSpecs($notifications) as $notifSpec) {
+                foreach (ModelNotificationCodec::toEventSpecs($this->serializer, $notifications) as $notifSpec) {
                     $eventSpecs[] = $notifSpec;
                 }
 
@@ -355,22 +353,17 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
 
         $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
-        $nextState = new RunState(
-            runId: $state->runId,
-            status: $status,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq + \count($events),
-            isStreaming: false,
-            streamingMessage: null,
-            pendingToolCalls: $pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: false,
-            pendingHumanInputRequests: $pendingHumanInputRequests,
-            model: $state->model,
-        );
+        $nextState = $state->with([
+            'status' => $status,
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + \count($events),
+            'isStreaming' => false,
+            'streamingMessage' => null,
+            'pendingToolCalls' => $pendingToolCalls,
+            'messages' => $messages,
+            'retryableFailure' => false,
+            'pendingHumanInputRequests' => $pendingHumanInputRequests,
+        ]);
 
         return new HandlerResult(
             nextState: $nextState,
@@ -435,22 +428,15 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
         \assert($pendingRequestCountBefore + 1 === \count($pendingHumanInputRequests));
 
         return new HandlerResult(
-            nextState: new RunState(
-                runId: $state->runId,
-                status: RunStatus::WaitingHuman,
-                version: $state->version + 1,
-                turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq + \count($events),
-                isStreaming: false,
-                streamingMessage: null,
-                pendingToolCalls: $state->pendingToolCalls,
-                errorMessage: $state->errorMessage,
-                messages: $state->messages,
-                activeStepId: $state->activeStepId,
-                retryableFailure: false,
-                pendingHumanInputRequests: $pendingHumanInputRequests,
-                model: $state->model,
-            ),
+            nextState: $state->with([
+                'status' => RunStatus::WaitingHuman,
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($events),
+                'isStreaming' => false,
+                'streamingMessage' => null,
+                'retryableFailure' => false,
+                'pendingHumanInputRequests' => $pendingHumanInputRequests,
+            ]),
             events: $events,
             postCommitEffects: $effects,
         );
@@ -562,7 +548,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             'payload' => $toolExecutionEndPayload,
         ];
 
-        $notifications = $this->denormalizeModelNotifications($result);
+        $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $result->result['details'] ?? null);
         $toolMsg = $this->messageNormalizer->toolMessage($result, $notifications);
         $messages[] = $toolMsg;
         $toolMsgArray = $toolMsg->toArray();
@@ -601,21 +587,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             return null;
         }
 
-        return function () use ($runId): void {
-            $stepId = \sprintf('post-cancel-advance-%d', hrtime(true));
-
-            try {
-                $this->commandBus->dispatch(new AdvanceRun(
-                    runId: $runId,
-                    turnNo: 0,
-                    stepId: $stepId,
-                    attempt: 1,
-                    idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
-                ));
-            } catch (ExceptionInterface $exception) {
-                throw new \RuntimeException('Failed to dispatch AdvanceRun after cancellation terminalized.', previous: $exception);
-            }
-        };
+        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, 'post-cancel-advance', 'Failed to dispatch AdvanceRun after cancellation terminalized.');
     }
 
     private function followUpAdvanceCallback(string $runId): ?callable
@@ -624,21 +596,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             return null;
         }
 
-        return function () use ($runId): void {
-            $stepId = \sprintf('advance-after-tools-%d', hrtime(true));
-
-            try {
-                $this->commandBus->dispatch(new AdvanceRun(
-                    runId: $runId,
-                    turnNo: 0,
-                    stepId: $stepId,
-                    attempt: 1,
-                    idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
-                ));
-            } catch (ExceptionInterface $exception) {
-                throw new \RuntimeException('Failed to dispatch AdvanceRun after tool batch completion.', previous: $exception);
-            }
-        };
+        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, 'advance-after-tools', 'Failed to dispatch AdvanceRun after tool batch completion.');
     }
 
     /**
@@ -688,62 +646,10 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
     }
 
     /**
-     * Decode model_notifications once from the ToolCallResult details array boundary.
-     *
-     * @return list<ModelNotificationDTO>
-     */
-    private function denormalizeModelNotifications(ToolCallResult $result): array
-    {
-        $raw = $result->result['details']['model_notifications'] ?? null;
-        if (!\is_array($raw) || [] === $raw) {
-            return [];
-        }
-
-        /** @var list<ModelNotificationDTO> $notifications */
-        $notifications = $this->serializer->denormalize($raw, ModelNotificationDTO::class.'[]');
-
-        return $notifications;
-    }
-
-    /**
-     * Collect model_notification RunEvent specs from typed notifications.
-     *
-     * @param list<ModelNotificationDTO> $notifications
-     *
-     * @return list<array{type: string, payload: array<string, mixed>}>
-     */
-    private function collectModelNotificationEventSpecs(array $notifications): array
-    {
-        if ([] === $notifications) {
-            return [];
-        }
-
-        $specs = [];
-        foreach ($notifications as $notif) {
-            /** @var array<string, mixed> $payload */
-            $payload = $this->serializer->normalize($notif, null, [
-                AbstractObjectNormalizer::SKIP_NULL_VALUES => true,
-            ]);
-            $specs[] = [
-                'type' => RunEventTypeEnum::ModelNotification->value,
-                'payload' => $payload,
-            ];
-        }
-
-        return $specs;
-    }
-
-    /**
      * @return list<callable(): void>
      */
     private function turnCompletedCallbacks(string $runId, int $turnNo): array
     {
-        if (null === $this->metrics) {
-            return [];
-        }
-
-        return [function () use ($runId, $turnNo): void {
-            $this->metrics->recordTurnCompleted($runId, $turnNo);
-        }];
+        return null === $this->metrics ? [] : $this->metrics->turnCompletedCallback($runId, $turnNo);
     }
 }

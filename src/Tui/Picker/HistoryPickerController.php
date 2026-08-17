@@ -10,10 +10,9 @@ use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\TuiTheme;
+use Ineersa\Tui\Widget\SelectListKeybindings;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
-use Symfony\Component\Tui\Input\Key;
-use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -29,30 +28,18 @@ final class HistoryPickerController
 {
     private ?PickerOverlay $overlay = null;
 
-    private ?Tui $tui = null;
-    private ?ChatScreen $screen = null;
-    private ?TuiSessionState $state = null;
-
     public function __construct(
+        private readonly Tui $tui,
+        private readonly ChatScreen $screen,
+        private readonly TuiSessionState $state,
         private readonly HistoryProviderInterface $historyProvider,
         private readonly TuiSessionSwitchServiceInterface $switcher,
     ) {
     }
 
-    public function setRuntimeRefs(Tui $tui, ChatScreen $screen, TuiSessionState $state): void
-    {
-        $this->tui = $tui;
-        $this->screen = $screen;
-        $this->state = $state;
-    }
-
     public function open(): void
     {
         if ($this->overlay?->isOpen() ?? false) {
-            return;
-        }
-
-        if (null === $this->tui || null === $this->screen || null === $this->state) {
             return;
         }
 
@@ -73,14 +60,7 @@ final class HistoryPickerController
             truncate: true,
         );
 
-        $kb = new Keybindings([
-            'select_up' => [Key::UP],
-            'select_down' => [Key::DOWN],
-            'select_page_up' => [Key::PAGE_UP],
-            'select_page_down' => [Key::PAGE_DOWN],
-            'select_confirm' => [Key::ENTER],
-            'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
-        ]);
+        $kb = SelectListKeybindings::standard();
 
         $theme = $screen->theme();
         $initialSelectedIndex = self::initialSelectedIndex($history);
@@ -88,7 +68,7 @@ final class HistoryPickerController
 
         $listWidget = new SelectListWidget(
             items: $items,
-            maxVisible: 10,
+            maxVisible: SelectListKeybindings::MAX_VISIBLE,
             keybindings: $kb,
         );
         $listWidget->setSelectedIndex(max(0, $initialSelectedIndex));

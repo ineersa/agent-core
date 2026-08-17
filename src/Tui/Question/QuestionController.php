@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Question;
 
-use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Widget\SelectListKeybindings;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
-use Symfony\Component\Tui\Input\Key;
-use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -36,24 +34,12 @@ final class QuestionController
     private bool $isOpen = false;
     private bool $awaitingFreeForm = false;
     private ?QuestionRequest $activeRequest = null;
-    private ?ChatScreen $screen = null;
 
     public function __construct(
         private readonly QuestionCoordinator $coordinator,
+        private readonly ChatScreen $screen,
         private readonly QuestionOverlayPromptRenderer $promptRenderer = new QuestionOverlayPromptRenderer(),
     ) {
-    }
-
-    /**
-     * Set the per-run TUI references that are only available at
-     * listener registration time.
-     */
-    /**
-     * @param TuiRuntimeContext $_context Unused; kept for caller compatibility
-     */
-    public function setRuntimeRefs(TuiRuntimeContext $_context, ChatScreen $screen): void
-    {
-        $this->screen = $screen;
     }
 
     /**
@@ -64,10 +50,6 @@ final class QuestionController
      */
     public function open(QuestionRequest $request): void
     {
-        if (null === $this->screen) {
-            throw new \LogicException('setRuntimeRefs() must be called before open()');
-        }
-
         if ($this->isOpen) {
             return;
         }
@@ -92,15 +74,15 @@ final class QuestionController
     public function close(): void
     {
         if (null !== $this->container) {
-            $this->screen?->removeOverlay($this->container);
+            $this->screen->removeOverlay($this->container);
             $this->container = null;
         }
         $this->listWidget = null;
         $this->isOpen = false;
         $this->awaitingFreeForm = false;
-        $this->screen?->setStatus('action', null);
+        $this->screen->setStatus('action', null);
         // Targeted overlay removal; full refresh() still redraws the screen — deeper compositor follow-up if flicker persists.
-        $this->screen?->refresh();
+        $this->screen->refresh();
     }
 
     /**
@@ -138,7 +120,7 @@ final class QuestionController
 
         $this->awaitingFreeForm = false;
 
-        if (null !== $this->activeRequest && null !== $this->screen) {
+        if (null !== $this->activeRequest) {
             $this->open($this->activeRequest);
         }
     }
@@ -166,10 +148,10 @@ final class QuestionController
      */
     private function dismissToEditor(): void
     {
-        $this->screen?->setFocus($this->screen->editorWidget());
+        $this->screen->setFocus($this->screen->editorWidget());
         $this->close();
         $this->awaitingFreeForm = true;
-        $this->screen?->setStatus('action', 'Type your answer and press Enter');
+        $this->screen->setStatus('action', 'Type your answer and press Enter');
     }
 
     /**
@@ -182,12 +164,8 @@ final class QuestionController
             QuestionKind::Confirm => "\u{2753} Confirmation required",
             QuestionKind::Choice => "\u{1F4CB} Choose an option",
         };
-        $theme = $this->screen?->theme();
-        if (null !== $theme) {
-            $this->container->add($this->promptRenderer->buildIndentedHeader($headerText, $theme));
-        } else {
-            $this->container->add(new TextWidget(text: '  '.$headerText, truncate: false));
-        }
+        $theme = $this->screen->theme();
+        $this->container->add($this->promptRenderer->buildIndentedHeader($headerText, $theme));
     }
 
     /**
@@ -198,14 +176,7 @@ final class QuestionController
         // Repeat the active prompt in the overlay so the user does not have to look
         // back at the transcript while typing. Wrap to multiple lines (truncate: false)
         // instead of the old single-line ellipsis truncation.
-        $theme = $this->screen?->theme();
-        if (null === $theme) {
-            $this->container->add(new TextWidget(text: $request->prompt, truncate: false));
-            $this->container->add(new TextWidget(text: '[type answer and press Enter]', truncate: false));
-
-            return;
-        }
-
+        $theme = $this->screen->theme();
         $this->container->add($this->promptRenderer->buildPromptWidget($request->prompt, $theme));
         $this->container->add($this->promptRenderer->buildIndentedHint('[type answer and press Enter]', $theme));
     }
@@ -219,27 +190,16 @@ final class QuestionController
     private function addSelectList(QuestionRequest $request): void
     {
         // Interactive kinds: transcript may not carry the same prompt; keep a short prompt line without truncation.
-        $theme = $this->screen?->theme();
-        if (null !== $theme) {
-            $this->container->add($this->promptRenderer->buildPromptWidget($request->prompt, $theme));
-        } else {
-            $this->container->add(new TextWidget(text: $request->prompt, truncate: false));
-        }
+        $theme = $this->screen->theme();
+        $this->container->add($this->promptRenderer->buildPromptWidget($request->prompt, $theme));
 
         $items = $this->buildItems($request);
         $items = $this->styleConfirmItems($items, $request->kind);
-        $kb = new Keybindings([
-            'select_up' => [Key::UP],
-            'select_down' => [Key::DOWN],
-            'select_page_up' => [Key::PAGE_UP],
-            'select_page_down' => [Key::PAGE_DOWN],
-            'select_confirm' => [Key::ENTER],
-            'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
-        ]);
+        $kb = SelectListKeybindings::standard();
 
         $this->listWidget = new SelectListWidget(
             items: $items,
-            maxVisible: 10,
+            maxVisible: SelectListKeybindings::MAX_VISIBLE,
             keybindings: $kb,
         );
 
@@ -291,10 +251,6 @@ final class QuestionController
     private function styleConfirmItems(array $items, QuestionKind $kind): array
     {
         if (QuestionKind::Confirm !== $kind) {
-            return $items;
-        }
-
-        if (null === $this->screen) {
             return $items;
         }
 

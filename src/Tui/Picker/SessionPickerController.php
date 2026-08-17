@@ -6,15 +6,13 @@ namespace Ineersa\Tui\Picker;
 
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
-use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Ineersa\Tui\Widget\SelectListKeybindings;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SelectionChangeEvent;
-use Symfony\Component\Tui\Input\Key;
-use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -41,31 +39,12 @@ final class SessionPickerController
 {
     private ?PickerOverlay $overlay = null;
 
-    private ?Tui $tui = null;
-    private ?ChatScreen $screen = null;
-    private ?TuiSessionState $state = null;
-
     public function __construct(
+        private readonly Tui $tui,
+        private readonly ChatScreen $screen,
         private readonly HatfieldSessionStore $sessionStore,
         private readonly TuiSessionSwitchServiceInterface $switch,
     ) {
-    }
-
-    /**
-     * Set the per-run TUI references that are only available at
-     * listener registration time (called by SessionCommandRegistrar).
-     *
-     * The {@see TuiSessionState} reference is accepted to mirror the
-     * pattern followed by other picker controllers and to guarantee
-     * per-iteration runtime refs are all wired together.  It is not
-     * currently read inside this picker but is reserved for future
-     * use (e.g. highlighting the current session in the resume list).
-     */
-    public function setRuntimeRefs(Tui $tui, ChatScreen $screen, TuiSessionState $state): void
-    {
-        $this->tui = $tui;
-        $this->screen = $screen;
-        $this->state = $state;
     }
 
     /**
@@ -91,10 +70,10 @@ final class SessionPickerController
                 $sessionId = $item['value'];
 
                 // Close the picker overlay WITHOUT requesting a render.
-                // applySelectEffect() → requestResume() calls
-                // resetLocalState() + Tui::stop(), so a render at this
-                // point would paint a torn-down widget tree and cause
-                // screen freeze / cursor weirdness.
+                // applySelectEffect() → requestResume() cancels the run and
+                // calls Tui::stop(), so a render at this point would paint a
+                // torn-down widget tree and cause screen freeze / cursor
+                // weirdness.
                 // The Esc/cancel path uses closePicker(true) because it
                 // stays in the same TUI session and needs the repaint.
                 $this->closePicker(requestRender: false);
@@ -122,10 +101,8 @@ final class SessionPickerController
                 // before closing so the cursor lands on the space
                 // after the session id, ready for the new name.
                 $screen = $this->screen;
-                if (null !== $screen) {
-                    $screen->promptEditor()->replaceText('/rename '.$sessionId.' ');
-                    $screen->requestRender(true);
-                }
+                $screen->promptEditor()->replaceText('/rename '.$sessionId.' ');
+                $screen->requestRender(true);
 
                 $this->closePicker();
             },
@@ -227,10 +204,6 @@ final class SessionPickerController
             return;
         }
 
-        if (null === $this->tui || null === $this->screen || null === $this->state) {
-            return;
-        }
-
         $sessions = $this->sessionStore->listSessions();
 
         if ([] === $sessions) {
@@ -250,14 +223,7 @@ final class SessionPickerController
         );
 
         // ── Keybindings ──
-        $kb = new Keybindings([
-            'select_up' => [Key::UP],
-            'select_down' => [Key::DOWN],
-            'select_page_up' => [Key::PAGE_UP],
-            'select_page_down' => [Key::PAGE_DOWN],
-            'select_confirm' => [Key::ENTER],
-            'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
-        ]);
+        $kb = SelectListKeybindings::standard();
 
         // ── Build items ──
         // Accent-colour the initially selected row (index 0) so the
@@ -270,7 +236,7 @@ final class SessionPickerController
 
         $listWidget = new SelectListWidget(
             items: $items,
-            maxVisible: 10,
+            maxVisible: SelectListKeybindings::MAX_VISIBLE,
             keybindings: $kb,
         );
 

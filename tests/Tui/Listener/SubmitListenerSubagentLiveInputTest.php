@@ -11,15 +11,14 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\SlashCommand;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
-use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Listener\SubmitListener;
-use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionRequest;
@@ -46,10 +45,9 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
     private TuiSessionState $state;
     /** @var AgentSessionClient&\PHPUnit\Framework\MockObject\MockObject */
     private AgentSessionClient $client;
-    private SlashCommandRegistry $registry;
+    private SlashCommandCatalog $catalog;
     private SubmissionRouter $router;
     private QuestionCoordinator $questionCoordinator;
-    private QuestionController $questionController;
 
     /** @var array<string, int> */
     private array $handlerCalls = [];
@@ -60,15 +58,14 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
         $this->state->handle = new RunHandle('parent-run-1');
         $this->client = $this->createMock(AgentSessionClient::class);
         $this->questionCoordinator = new QuestionCoordinator();
-        $this->questionController = new QuestionController($this->questionCoordinator);
         $this->handlerCalls = [];
 
-        $this->registry = new SlashCommandRegistry();
+        $this->catalog = new SlashCommandCatalog();
         foreach (['new', 'resume', 'tasks', 'rename', 'agents-main', 'agents-live'] as $name) {
             $this->registerCountingHandler($name);
         }
 
-        $this->router = new SubmissionRouter(new CommandParser(), $this->registry);
+        $this->router = new SubmissionRouter(new CommandParser(), new SlashCommandRegistry($this->catalog));
         $this->enterLiveView(childRunId: 'child-run-1', childActivity: RunActivityStateEnum::Running);
     }
 
@@ -204,7 +201,7 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
     private function registerCountingHandler(string $name): void
     {
         $test = $this;
-        $this->registry->register(
+        $this->catalog->register(
             new CommandMetadata(name: $name, description: 'test', usage: '/'.$name),
             new class($test, $name) implements SlashCommandHandler {
                 public function __construct(
@@ -245,17 +242,20 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
             ->withClient($this->client)
             ->withState($this->state)
             ->withScreen($screen)
+            ->withSessionServices($this->createSessionServices(
+                tui: $tui,
+                state: $this->state,
+                screen: $screen,
+                questionCoordinator: $this->questionCoordinator,
+                submissionRouter: $this->router,
+            ))
             ->build();
 
         $listener = new SubmitListener(
             sessionStore: $context->sessionStore,
-            submissionRouter: $this->router,
             blockFactory: new TranscriptBlockFactory(),
-            coordinator: $this->questionCoordinator,
-            questionController: $this->questionController,
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: new NullLogger(),
-            history: new PromptHistory(),
             pastedImageSubmissionService: new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
                 new \Ineersa\Tui\ImagePaste\PastedImageValidationService(new \Ineersa\CodingAgent\Config\ImageToolConfig(), new \Ineersa\AgentCore\Tests\Support\TestLogger()),
                 $context->sessionStore,

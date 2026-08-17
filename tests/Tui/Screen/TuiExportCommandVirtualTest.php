@@ -13,7 +13,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\DispatchRuntime;
-use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Export\SessionEventsExportService;
@@ -65,17 +65,19 @@ final class TuiExportCommandVirtualTest extends TestCase
         $state = new TuiSessionState(self::SESSION_ID);
         $sessionStore = $this->createSessionStoreForProject();
 
+        $catalog = new SlashCommandCatalog();
         $context = $this->buildTuiContext()
             ->withTui($harness->tui())
             ->withState($state)
             ->withScreen($harness->screen())
             ->withSessionStore($sessionStore)
+            ->withSessionServices($this->createSessionServices(catalog: $catalog))
             ->build();
 
-        $registry = new SlashCommandRegistry();
-        (new ExportCommandRegistrar($registry, new SessionEventsExportService()))->register($context);
+        (new ExportCommandRegistrar(new SessionEventsExportService()))->registerCatalog($catalog);
+        (new ExportCommandRegistrar(new SessionEventsExportService()))->register($context);
 
-        $router = new SubmissionRouter(new CommandParser(), $registry);
+        $router = new SubmissionRouter(new CommandParser(), $context->sessionServices->commandRegistry);
         $result = $router->route('/export');
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);

@@ -75,6 +75,11 @@ parameters:
         - type: directory
           value: src/Tui/Footer/.*
 
+    - name: TuiImagePaste
+      collectors:
+        - type: directory
+          value: src/Tui/ImagePaste/.*
+
     - name: TuiWidget
       collectors:
         - type: directory
@@ -387,6 +392,15 @@ parameters:
       - TuiWidget
       - TuiTheme
       - TuiQuestion
+      # Per-session composition: fresh command registry (TuiCommand),
+      # picker controllers (TuiPicker), and the subagent live picker's
+      # export service (TuiExport).
+      - TuiCommand
+      - TuiPicker
+      - TuiExport
+      # TuiSessionCompositionFactory constructs TuiRuntimeEventApplier
+      # with the serializer denormalizer.
+      - SymfonySerializer
       - SymfonyTui
       - SymfonyConsole
 
@@ -423,6 +437,13 @@ parameters:
       - TuiScreen
       - TuiTheme
       - TuiPicker
+      # TuiRuntimeContext carries the per-session service scope composed by
+      # TuiSessionCompositionFactory (TuiApplication) to shared registrars.
+      - TuiApplication
+      # TuiSessionState carries staged paste DTOs (docblock type on
+      # pastedImagePendingByIndex) so the session state bag can hold
+      # paste pipeline state; ImagePaste itself may already depend on TuiRuntime.
+      - TuiImagePaste
       - SymfonyTui
 
     TuiScreen:
@@ -501,6 +522,7 @@ parameters:
       - TuiEditor
       - TuiFooter
       - TuiTheme
+      - TuiWidget
       - SymfonyTui
 
     TuiEditor:

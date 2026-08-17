@@ -101,30 +101,14 @@ final readonly class CommandMailboxPolicy
             if (\in_array($pendingCommand->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {
                 $messagePayload = $pendingCommand->payload['message'] ?? null;
                 if (!\is_array($messagePayload)) {
-                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid command payload: missing message envelope.');
-                    $eventSpecs[] = [
-                        'type' => RunEventTypeEnum::AgentCommandRejected->value,
-                        'payload' => [
-                            'kind' => $pendingCommand->kind,
-                            'idempotency_key' => $pendingCommand->idempotencyKey,
-                            'reason' => 'Invalid command payload: missing message envelope.',
-                        ],
-                    ];
+                    $eventSpecs[] = $this->rejectCommand($state, $pendingCommand, 'Invalid command payload: missing message envelope.');
 
                     continue;
                 }
 
                 $hydratedMessage = AgentMessage::fromPayload($messagePayload);
                 if (null === $hydratedMessage) {
-                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid command payload: malformed message envelope.');
-                    $eventSpecs[] = [
-                        'type' => RunEventTypeEnum::AgentCommandRejected->value,
-                        'payload' => [
-                            'kind' => $pendingCommand->kind,
-                            'idempotency_key' => $pendingCommand->idempotencyKey,
-                            'reason' => 'Invalid command payload: malformed message envelope.',
-                        ],
-                    ];
+                    $eventSpecs[] = $this->rejectCommand($state, $pendingCommand, 'Invalid command payload: malformed message envelope.');
 
                     continue;
                 }
@@ -201,11 +185,33 @@ final readonly class CommandMailboxPolicy
         }
 
         return new CommandApplicationResult(
-            $this->copyState($state, ['messages' => $messages]),
+            $state->with(['messages' => $messages]),
             $eventSpecs,
             $shouldContinue,
             $effects,
         );
+    }
+
+    /**
+     * Reject a pending command in the store and produce its rejection event spec.
+     *
+     * markRejected runs before the event is built so a failed store write
+     * aborts before any rejection event is emitted.
+     *
+     * @return array{type: string, payload: array<string, mixed>}
+     */
+    private function rejectCommand(RunState $state, PendingCommand $command, string $reason): array
+    {
+        $this->commandStore->markRejected($state->runId, $command->idempotencyKey, $reason);
+
+        return [
+            'type' => RunEventTypeEnum::AgentCommandRejected->value,
+            'payload' => [
+                'kind' => $command->kind,
+                'idempotency_key' => $command->idempotencyKey,
+                'reason' => $reason,
+            ],
+        ];
     }
 
     /**
@@ -215,16 +221,7 @@ final readonly class CommandMailboxPolicy
     {
         $handler = $this->commandRouter->handlerFor($command->kind);
         if (null === $handler) {
-            $this->commandStore->markRejected($state->runId, $command->idempotencyKey, 'No extension command handler registered.');
-
-            return [[
-                'type' => RunEventTypeEnum::AgentCommandRejected->value,
-                'payload' => [
-                    'kind' => $command->kind,
-                    'idempotency_key' => $command->idempotencyKey,
-                    'reason' => 'No extension command handler registered.',
-                ],
-            ]];
+            return [$this->rejectCommand($state, $command, 'No extension command handler registered.')];
         }
 
         $cancellation = $command->options;
@@ -237,16 +234,7 @@ final readonly class CommandMailboxPolicy
                 $cancellation,
             );
         } catch (\Throwable $throwable) {
-            $this->commandStore->markRejected($state->runId, $command->idempotencyKey, $throwable->getMessage());
-
-            return [[
-                'type' => RunEventTypeEnum::AgentCommandRejected->value,
-                'payload' => [
-                    'kind' => $command->kind,
-                    'idempotency_key' => $command->idempotencyKey,
-                    'reason' => $throwable->getMessage(),
-                ],
-            ]];
+            return [$this->rejectCommand($state, $command, $throwable->getMessage())];
         }
 
         $this->commandStore->markApplied($state->runId, $command->idempotencyKey);
@@ -288,37 +276,12 @@ final readonly class CommandMailboxPolicy
     }
 
     /**
-     * @param array<string, mixed> $overrides
-     */
-    private function copyState(RunState $state, array $overrides = []): RunState
-    {
-        return new RunState(
-            runId: $overrides['runId'] ?? $state->runId,
-            status: $overrides['status'] ?? $state->status,
-            version: $overrides['version'] ?? $state->version,
-            turnNo: $overrides['turnNo'] ?? $state->turnNo,
-            lastSeq: $overrides['lastSeq'] ?? $state->lastSeq,
-            isStreaming: $overrides['isStreaming'] ?? $state->isStreaming,
-            streamingMessage: \array_key_exists('streamingMessage', $overrides)
-                ? $overrides['streamingMessage']
-                : $state->streamingMessage,
-            pendingToolCalls: $overrides['pendingToolCalls'] ?? $state->pendingToolCalls,
-            errorMessage: \array_key_exists('errorMessage', $overrides)
-                ? $overrides['errorMessage']
-                : $state->errorMessage,
-            messages: $overrides['messages'] ?? $state->messages,
-            activeStepId: \array_key_exists('activeStepId', $overrides)
-                ? $overrides['activeStepId']
-                : $state->activeStepId,
-            retryableFailure: $overrides['retryableFailure'] ?? $state->retryableFailure,
-            retryAttempts: $overrides['retryAttempts'] ?? $state->retryAttempts,
-            pendingHumanInputRequests: $overrides['pendingHumanInputRequests'] ?? $state->pendingHumanInputRequests,
-            model: $state->model,
-        );
-    }
-
-    /**
      * Extract concatenated text content from an AgentMessage-like array.
+     *
+     * Text parts are joined with a newline, matching the other
+     * content-part extraction paths (normalizer, tool-result transcript,
+     * provider conversion) so multi-part messages render consistently in
+     * canonical agent_command_applied payloads and transcript text.
      *
      * @param array<string, mixed> $messageArray
      */
@@ -336,6 +299,6 @@ final readonly class CommandMailboxPolicy
             }
         }
 
-        return implode('', $parts);
+        return implode("\n", $parts);
     }
 }

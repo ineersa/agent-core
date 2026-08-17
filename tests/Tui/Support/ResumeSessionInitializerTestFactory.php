@@ -41,6 +41,20 @@ final class ResumeSessionInitializerTestFactory
 {
     public static function create(EntityManagerInterface $entityManager, string $projectDir): SessionInitializer
     {
+        [$initializer, $_] = self::createWithApplier($entityManager, $projectDir);
+
+        return $initializer;
+    }
+
+    /**
+     * Create the session initializer plus the session-scoped parent event
+     * applier (same projector) so callers can pass the applier into
+     * {@see SessionInitializer::buildInitialTranscript()}.
+     *
+     * @return array{SessionInitializer, TuiRuntimeEventApplier}
+     */
+    public static function createWithApplier(EntityManagerInterface $entityManager, string $projectDir): array
+    {
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),
             logging: new LoggingConfig(),
@@ -77,12 +91,14 @@ final class ResumeSessionInitializerTestFactory
 
         $historyProvider = new SessionHistoryProvider($eventStore, new HistoryProjector());
 
-        return new SessionInitializer(
+        $eventApplier = new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer());
+
+        return [new SessionInitializer(
             sessionStore: $sessionStore,
             eventStore: $eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer()),
+
             historyProvider: $historyProvider,
             sessionTranscriptProvider: new SessionTranscriptProvider(
                 eventStore: $eventStore,
@@ -90,6 +106,6 @@ final class ResumeSessionInitializerTestFactory
                 eventMapper: $mapper,
                 transcriptProjector: $projector
             )
-        );
+        ), $eventApplier];
     }
 }

@@ -13,9 +13,13 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\ResumeSessionCommandHandler;
 use Ineersa\Tui\Picker\SessionPickerController;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
+use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -24,12 +28,12 @@ use PHPUnit\Framework\TestCase;
 final class ResumeSessionCommandHandlerTest extends TestCase
 {
     #[Test]
-    public function testHandleWithNoArgsOpensPickerAndReturnsNoOp(): void
+    public function testHandleWithNoArgsReturnsNoOpWithoutConsultingSwitch(): void
     {
         $switch = $this->createSwitchSpy();
-        $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
-        $pickerController = new SessionPickerController($sessionStore, $switch);
+        $sessionStore = $this->createEmptySessionStore();
+        $screen = $this->pickerScreen();
+        $pickerController = new SessionPickerController($this->pickerTui(), $screen, $sessionStore, $switch);
 
         $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
 
@@ -37,8 +41,11 @@ final class ResumeSessionCommandHandlerTest extends TestCase
 
         $this->assertInstanceOf(NoOp::class, $result);
         $this->assertNull($switch->resumedSessionId, 'Switch should NOT be called when no args given');
-        // Picker should be opened — picker state not directly verifiable without TUI
-        $this->assertFalse($pickerController->isOpen(), 'Picker requires TUI runtime refs so it stays closed');
+        // No sessions in the store: the picker reports the empty state
+        // instead of mounting an overlay (real behavior, constructor-valid
+        // controller).
+        $this->assertFalse($pickerController->isOpen());
+        $this->assertSame('No sessions found', $screen->registry()->getStatusEntries()['session'] ?? null);
     }
 
     #[Test]
@@ -47,7 +54,7 @@ final class ResumeSessionCommandHandlerTest extends TestCase
         $switch = $this->createSwitchSpy();
         $em = $this->createEntityManagerWithSession(42, 'Test Session');
         $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
-        $pickerController = new SessionPickerController($sessionStore, $switch);
+        $pickerController = new SessionPickerController($this->pickerTui(), $this->pickerScreen(), $sessionStore, $switch);
 
         $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
 
@@ -64,7 +71,7 @@ final class ResumeSessionCommandHandlerTest extends TestCase
         // EntityManager as stub — find() returns null for any ID
         $em = $this->createStub(EntityManagerInterface::class);
         $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
-        $pickerController = new SessionPickerController($sessionStore, $switch);
+        $pickerController = new SessionPickerController($this->pickerTui(), $this->pickerScreen(), $sessionStore, $switch);
 
         $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
 
@@ -82,7 +89,7 @@ final class ResumeSessionCommandHandlerTest extends TestCase
         $switch = $this->createSwitchSpy();
         $em = $this->createStub(EntityManagerInterface::class);
         $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
-        $pickerController = new SessionPickerController($sessionStore, $switch);
+        $pickerController = new SessionPickerController($this->pickerTui(), $this->pickerScreen(), $sessionStore, $switch);
 
         $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
 
@@ -100,7 +107,7 @@ final class ResumeSessionCommandHandlerTest extends TestCase
         $switch = $this->createSwitchSpy();
         $em = $this->createStub(EntityManagerInterface::class);
         $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
-        $pickerController = new SessionPickerController($sessionStore, $switch);
+        $pickerController = new SessionPickerController($this->pickerTui(), $this->pickerScreen(), $sessionStore, $switch);
 
         $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
 
@@ -139,17 +146,34 @@ final class ResumeSessionCommandHandlerTest extends TestCase
         return $em;
     }
 
+    private function createEmptySessionStore(): HatfieldSessionStore
+    {
+        // A real HatfieldSessionRepository (final class) whose findForCatalog()
+        // query chain is driven by PHPUnit public doubles — all real objects
+        // and stubs, no reflection.
+        $query = $this->createStub(\Doctrine\ORM\Query::class);
+        $query->method('getResult')->willReturn([]);
+        $qb = $this->createStub(\Doctrine\ORM\QueryBuilder::class);
+        $qb->method('select')->willReturnSelf();
+        $qb->method('from')->willReturnSelf();
+        $qb->method('orderBy')->willReturnSelf();
+        $qb->method('getQuery')->willReturn($query);
+        $em = $this->createStub(EntityManagerInterface::class);
+        $em->method('createQueryBuilder')->willReturn($qb);
+        $em->method('getClassMetadata')->willReturn(
+            new \Doctrine\ORM\Mapping\ClassMetadata(HatfieldSession::class),
+        );
+        $registry = $this->createStub(\Doctrine\Persistence\ManagerRegistry::class);
+        $registry->method('getManagerForClass')->willReturn($em);
+        $em->method('getRepository')->willReturn(new \Ineersa\CodingAgent\Entity\HatfieldSessionRepository($registry));
+
+        return new HatfieldSessionStore($this->createAppConfig(), $em);
+    }
+
     private function createSwitchSpy(): object
     {
         return new class implements TuiSessionSwitchServiceInterface {
             public ?string $resumedSessionId = null;
-
-            public function bindForIteration(
-                \Symfony\Component\Tui\Tui $tui,
-                \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
-                \Ineersa\Tui\Runtime\TuiSessionState $state,
-            ): void {
-            }
 
             public function requestResume(string $sessionId): void
             {
@@ -171,5 +195,19 @@ final class ResumeSessionCommandHandlerTest extends TestCase
                 return false;
             }
         };
+    }
+
+    private function pickerTui(): \Symfony\Component\Tui\Tui
+    {
+        return new \Symfony\Component\Tui\Tui();
+    }
+
+    private function pickerScreen(): ChatScreen
+    {
+        return new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            'test-session',
+            new PromptEditor(),
+        );
     }
 }

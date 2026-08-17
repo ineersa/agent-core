@@ -4,96 +4,56 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Command\CommandMetadata;
-use Ineersa\Tui\Command\SlashCommandRegistry;
-use Ineersa\Tui\Picker\SubagentLivePickerController;
-use Ineersa\Tui\Question\QuestionController;
-use Ineersa\Tui\Question\QuestionCoordinator;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
-final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
+/**
+ * Registers /agents-live and /agents-main slash commands in the TUI.
+ *
+ * Command metadata is registered once per process via
+ * {@see registerCatalog()}; each session binds fresh handlers wired to
+ * the session's subagent live picker controller, question coordinator,
+ * and question controller.
+ */
+final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar, SlashCommandCatalogRegistrar
 {
-    public function __construct(
-        private readonly SlashCommandRegistry $commandRegistry,
-        private readonly SubagentLivePickerController $pickerController,
-        private readonly RuntimeQuestionEventHandler $runtimeQuestionEventHandler,
-        private readonly QuestionCoordinator $questionCoordinator,
-        private readonly QuestionController $questionController,
-    ) {
+    public function registerCatalog(SlashCommandCatalog $catalog): void
+    {
+        $catalog->registerMetadata(new CommandMetadata(
+            name: 'agents-live',
+            description: 'Open interactive live view for a subagent',
+            usage: '/agents-live',
+            acceptsArguments: false,
+        ));
+        $catalog->registerMetadata(new CommandMetadata(
+            name: 'agents-main',
+            aliases: ['main'],
+            description: 'Return from subagent live view to the main session',
+            usage: '/agents-main',
+            acceptsArguments: false,
+        ));
     }
 
     public function register(TuiRuntimeContext $context): void
     {
+        $services = $context->sessionServices;
         $client = $context->client;
         $state = $context->state;
         $screen = $context->screen;
-        $runtimeQuestionEventHandler = $this->runtimeQuestionEventHandler;
-        $questionCoordinator = $this->questionCoordinator;
-        $questionController = $this->questionController;
+        $questionCoordinator = $services->questionCoordinator;
+        $questionController = $services->questionController;
 
-        $onHumanInputRequested = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
-            $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator, $state, $screen);
-        };
-        $onToolQuestionRequested = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $runtimeQuestionEventHandler): void {
-            $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator, $state);
-        };
-        $onToolTerminal = static function (RuntimeEvent $event) use ($questionCoordinator, $questionController, $runtimeQuestionEventHandler): void {
-            $runtimeQuestionEventHandler->handleToolTerminal($event, $questionCoordinator, $questionController);
-        };
+        $registry = $services->commandRegistry;
 
-        $onLeavingChildRun = static function (string $childRunId) use ($questionCoordinator, $questionController): void {
-            $questionCoordinator->removeForRun($childRunId);
-            $questionController->close();
-        };
+        $registry->bind('agents-live', new AgentsLiveCommandHandler($services->subagentLivePicker));
 
-        $this->pickerController->setRuntimeRefs(
-            $context->tui,
-            $context->screen,
-            $context->state,
-            $client,
-            onHumanInputRequested: $onHumanInputRequested,
-            onToolQuestionRequested: $onToolQuestionRequested,
-            onToolTerminal: $onToolTerminal,
-            onLeavingChildRun: $onLeavingChildRun,
-        );
-
-        $liveHandler = new AgentsLiveCommandHandler($this->pickerController);
-        if ($this->commandRegistry->has('agents-live')) {
-            $this->commandRegistry->setHandler('agents-live', $liveHandler);
-        } else {
-            $this->commandRegistry->register(
-                new CommandMetadata(
-                    name: 'agents-live',
-                    description: 'Open interactive live view for a subagent',
-                    usage: '/agents-live',
-                    acceptsArguments: false,
-                ),
-                $liveHandler,
-            );
-        }
-
-        $mainHandler = new AgentsMainCommandHandler(
-            $context->state,
-            $context->screen,
+        $registry->bind('agents-main', new AgentsMainCommandHandler(
+            $state,
+            $screen,
             $questionCoordinator,
             $questionController,
             $client,
-        );
-
-        if ($this->commandRegistry->has('agents-main')) {
-            $this->commandRegistry->setHandler('agents-main', $mainHandler);
-        } else {
-            $this->commandRegistry->register(
-                new CommandMetadata(
-                    name: 'agents-main',
-                    aliases: ['main'],
-                    description: 'Return from subagent live view to the main session',
-                    usage: '/agents-main',
-                    acceptsArguments: false,
-                ),
-                $mainHandler,
-            );
-        }
+        ));
     }
 }

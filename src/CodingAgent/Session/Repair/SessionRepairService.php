@@ -232,23 +232,11 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 
         $finalReplay = $hypotheticalReplay;
 
-        $persisted = new RunState(
-            runId: $finalReplay->runId,
-            status: $finalReplay->status,
-            version: $storedState->version + 1,
-            turnNo: $finalReplay->turnNo,
-            lastSeq: $finalReplay->lastSeq,
-            isStreaming: false,
-            streamingMessage: null,
-            pendingToolCalls: $finalReplay->pendingToolCalls,
-            errorMessage: $finalReplay->errorMessage,
-            messages: $finalReplay->messages,
-            activeStepId: $finalReplay->activeStepId,
-            retryableFailure: $finalReplay->retryableFailure,
-            retryAttempts: $finalReplay->retryAttempts,
-            pendingHumanInputRequests: $finalReplay->pendingHumanInputRequests,
-            model: $finalReplay->model,
-        );
+        $persisted = $finalReplay->with([
+            'version' => $storedState->version + 1,
+            'isStreaming' => false,
+            'streamingMessage' => null,
+        ]);
 
         if (!$this->runStore->compareAndSwap($persisted, $storedState->version)) {
             $this->logger->warning('session_repair.cas_degraded', [
