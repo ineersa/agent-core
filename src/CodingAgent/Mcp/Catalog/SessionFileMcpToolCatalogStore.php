@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Mcp\Catalog;
 
+use Ineersa\CodingAgent\Utility\AtomicFileWriter;
+use Ineersa\CodingAgent\Utility\AtomicFileWriterException;
+
 /**
  * Session-file implementation of the MCP tool catalog store.
  *
@@ -31,7 +34,6 @@ final class SessionFileMcpToolCatalogStore implements McpToolCatalogStoreInterfa
         $this->ensureDirectory($dir);
 
         $targetPath = $dir.'/mcp-tools.json';
-        $tempPath = $dir.'/mcp-tools.json.tmp.'.bin2hex(random_bytes(8));
 
         try {
             $json = json_encode(
@@ -39,16 +41,9 @@ final class SessionFileMcpToolCatalogStore implements McpToolCatalogStoreInterfa
                 \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR,
             );
 
-            file_put_contents($tempPath, $json, \LOCK_EX);
-
-            // Atomic rename: readers see old file or new file, never partial.
-            if (!rename($tempPath, $targetPath)) {
-                @unlink($tempPath);
-                throw new \RuntimeException(\sprintf('Failed to atomic-rename MCP catalog for run "%s".', $runId));
-            }
-        } catch (\Throwable $e) {
-            @unlink($tempPath);
-            throw $e;
+            AtomicFileWriter::write($targetPath, $json);
+        } catch (AtomicFileWriterException $exception) {
+            throw new \RuntimeException('rename' === $exception->stage ? \sprintf('Failed to atomic-rename MCP catalog for run "%s".', $runId) : \sprintf('Failed to write MCP catalog for run "%s".', $runId), previous: $exception);
         }
     }
 

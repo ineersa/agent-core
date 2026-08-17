@@ -384,7 +384,7 @@ final class AgentChildRunStoreTest extends TestCase
 
         // Verify no temp files linger
         $artifactDir = \dirname($statePath);
-        $tmpFiles = glob($artifactDir.'/*.tmp');
+        $tmpFiles = glob($artifactDir.'/*.tmp.*');
         $this->assertCount(0, false !== $tmpFiles ? $tmpFiles : [], 'No .tmp files should remain after CAS');
     }
 
