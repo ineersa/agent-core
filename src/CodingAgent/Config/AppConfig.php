@@ -111,7 +111,9 @@ final class AppConfig
                 ToolsConfig::class,
             ),
             ai: $ai,
-            prompts: PromptsConfig::fromRaw($data['prompts'] ?? []),
+            prompts: \array_key_exists('prompts', $data)
+                ? PromptsConfig::fromRaw($data['prompts'])
+                : new PromptsConfig(),
             compaction: $denormalizer->denormalize(
                 (array) ($data['compaction'] ?? []),
                 CompactionConfig::class,
@@ -120,8 +122,12 @@ final class AppConfig
                 (array) ($data['context_budget_reminders'] ?? []),
                 ContextBudgetReminderConfig::class,
             ),
-            forks: ForksConfigDTO::fromRaw($data['forks'] ?? null),
-            agents: AgentsConfig::fromRaw($data['agents'] ?? []),
+            forks: \array_key_exists('forks', $data)
+                ? ForksConfigDTO::fromRaw($data['forks'])
+                : new ForksConfigDTO(),
+            agents: \array_key_exists('agents', $data)
+                ? AgentsConfig::fromRaw($data['agents'])
+                : new AgentsConfig(),
             runtime: self::denormalizeAndValidateRuntimeConfig($data, $denormalizer, $validator),
             raw: $data,
             catalog: $catalog,

@@ -74,6 +74,28 @@ final class AgentsConfigTest extends TestCase
         AgentsConfig::fromRaw('not-an-array');
     }
 
+    /**
+     * @return iterable<string, array{0: mixed, 1: string}>
+     */
+    public static function malformedRawCases(): iterable
+    {
+        yield 'explicit null section' => [null, 'Invalid value for agents: expected mapping, got null'];
+        yield 'sequential list section' => [['a', 'b'], 'Invalid value for agents: expected mapping, got list'];
+        yield 'unknown key' => [['bogus' => 1], 'Invalid key for agents'];
+        yield 'associative paths' => [['paths' => ['a' => 'x.md']], 'Invalid value for agents.paths: expected list of strings, got associative array'];
+        yield 'extensions explicit null' => [['extensions' => null], 'Invalid value for agents.extensions: expected mapping, got null'];
+        yield 'extensions unknown key' => [['extensions' => ['bogus' => 1]], 'Invalid key for agents.extensions'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('malformedRawCases')]
+    public function testFromRawRejectsMalformedRaw(mixed $raw, string $messageFragment): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage($messageFragment);
+
+        AgentsConfig::fromRaw($raw);
+    }
+
     public function testFromRawWithEnabled(): void
     {
         $config = AgentsConfig::fromRaw(['enabled' => false]);

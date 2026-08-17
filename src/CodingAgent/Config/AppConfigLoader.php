@@ -56,8 +56,12 @@ final class AppConfigLoader
      * conditionals in {@see resolveConfigPaths()}.
      *
      * Keys use Symfony PropertyAccess bracket notation for array access.
-     * The value indicates whether the resolved value is a list (each element
-     * resolved individually) or a string (resolved as a single path).
+     * Value semantics:
+     *  - 'list': sequential list, each element resolved; non-string entries skipped
+     *  - 'strict-list': like 'list', but associative values and non-string or
+     *    blank entries are rejected (a dropped path would look configured but
+     *    never load)
+     *  - 'string': single path resolved as a whole
      */
     private const PATH_CONFIG = [
         '[tui][theme_paths]' => 'list',
@@ -65,8 +69,8 @@ final class AppConfigLoader
         '[logging][path]' => 'string',
         '[tools][output_cap][path]' => 'string',
         '[tools][background_process][path]' => 'string',
-        '[prompts]' => 'list',
-        '[agents][paths]' => 'list',
+        '[prompts]' => 'strict-list',
+        '[agents][paths]' => 'strict-list',
     ];
 
     public function __construct(
@@ -176,23 +180,22 @@ final class AppConfigLoader
                 continue;
             }
 
-            if ('list' === $type && \is_array($value)) {
+            if (('list' === $type || 'strict-list' === $type) && \is_array($value)) {
+                $strict = 'strict-list' === $type;
+                $name = trim(str_replace(['[', ']'], ['.', ''], $path), '.');
+                if ($strict && !array_is_list($value)) {
+                    throw new \InvalidArgumentException(\sprintf('Invalid value for %s: expected list of strings, got associative array.', $name));
+                }
                 $resolved = [];
-                // Prompts/agents paths fail on malformed entries — a dropped
-                // path would look configured but never load. Other list keys
-                // (e.g. tui.theme_paths) keep the legacy skip behavior.
-                $strict = '[prompts]' === $path || '[agents][paths]' === $path;
-                foreach ($value as $item) {
+                foreach ($value as $index => $item) {
                     if (!\is_string($item)) {
                         if (!$strict) {
-                            continue;
+                            continue; // Legacy list keys (e.g. tui.theme_paths) skip non-strings.
                         }
-                        $name = trim(str_replace(['[', ']'], ['.', ''], $path), '.');
-                        throw new \InvalidArgumentException(\sprintf('Invalid value for %s: expected list of strings, got %s.', $name, get_debug_type($item)));
+                        throw new \InvalidArgumentException(\sprintf('Invalid value for %s[%d]: expected a non-empty string, got %s.', $name, $index, get_debug_type($item)));
                     }
                     if ($strict && '' === trim($item)) {
-                        $name = trim(str_replace(['[', ']'], ['.', ''], $path), '.');
-                        throw new \InvalidArgumentException(\sprintf('Invalid value for %s: expected list of strings, got blank string.', $name));
+                        throw new \InvalidArgumentException(\sprintf('Invalid value for %s[%d]: expected a non-empty string, got blank string.', $name, $index));
                     }
                     $resolved[] = $this->pathResolver->resolve($item, $cwd);
                 }

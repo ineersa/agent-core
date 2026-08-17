@@ -324,15 +324,58 @@ class AppConfigTest extends TestCase
         $this->assertSame('high', $config->forks->thinkingLevel);
     }
 
+    public function testEmptySectionArraysRemainValidDefaults(): void
+    {
+        // Empty YAML mapping and empty list both decode to []; shape is
+        // indistinguishable, so empty [] stays a valid empty/default section.
+        $this->defaultsWith([
+            'prompts' => [],
+            'agents' => ['paths' => []],
+            'forks' => [],
+        ]);
+
+        $config = $this->buildConfig();
+
+        $this->assertSame([], $config->prompts->paths);
+        $this->assertTrue($config->agents->enabled);
+        $this->assertSame([], $config->agents->paths);
+        $this->assertNull($config->forks->model);
+        $this->assertNull($config->forks->thinkingLevel);
+    }
+
+    public function testForksNullAndBlankUnsetValuesLoadAsNull(): void
+    {
+        $this->defaultsWith([
+            'forks' => ['model' => null, 'thinking_level' => '  '],
+        ]);
+
+        $config = $this->buildConfig();
+
+        $this->assertNull($config->forks->model);
+        $this->assertNull($config->forks->thinkingLevel);
+    }
+
     /**
      * @return iterable<string, array{0: array<string, mixed>, 1: string}>
      */
     public static function malformedTargetSectionCases(): iterable
     {
-        yield 'prompts wrong type' => [['prompts' => 'not-a-list'], 'Invalid value for prompts'];
-        yield 'prompts non-string entry' => [['prompts' => ['ok.md', 123]], 'expected list of strings, got int'];
-        yield 'agents wrong type' => [['agents' => 5], 'Invalid value for agents'];
-        yield 'agents.paths non-string entry' => [['agents' => ['paths' => ['ok', 5]]], 'Invalid value for agents.paths'];
+        yield 'prompts wrong type' => [['prompts' => 'not-a-list'], 'Invalid value for prompts: expected list of strings, got string'];
+        yield 'prompts non-string entry' => [['prompts' => ['ok.md', 123]], 'Invalid value for prompts[1]'];
+        yield 'prompts associative map' => [['prompts' => ['a.md' => 'x']], 'Invalid value for prompts: expected list of strings, got associative array'];
+        yield 'prompts explicit null' => [['prompts' => null], 'Invalid value for prompts: expected list of strings, got null'];
+        yield 'agents wrong type' => [['agents' => 5], 'Invalid value for agents: expected mapping, got int'];
+        yield 'agents sequential list' => [['agents' => ['a', 'b']], 'Invalid value for agents: expected mapping, got list'];
+        yield 'agents explicit null' => [['agents' => null], 'Invalid value for agents: expected mapping, got null'];
+        yield 'agents unknown key' => [['agents' => ['bogus' => 1]], 'Invalid key for agents'];
+        yield 'agents.paths non-string entry' => [['agents' => ['paths' => ['ok', 5]]], 'Invalid value for agents.paths[1]'];
+        yield 'agents.paths associative map' => [['agents' => ['paths' => ['a' => 'x.md']]], 'Invalid value for agents.paths: expected list of strings, got associative array'];
+        yield 'agents.extensions unknown key' => [['agents' => ['extensions' => ['bogus' => 1]]], 'Invalid key for agents.extensions'];
+        yield 'agents.extensions explicit null' => [['agents' => ['extensions' => null]], 'Invalid value for agents.extensions: expected mapping, got null'];
+        yield 'forks wrong type' => [['forks' => 5], 'Invalid value for forks: expected mapping, got int'];
+        yield 'forks sequential list' => [['forks' => ['a', 'b']], 'Invalid value for forks: expected mapping, got list'];
+        yield 'forks explicit null' => [['forks' => null], 'Invalid value for forks: expected mapping, got null'];
+        yield 'forks unknown key' => [['forks' => ['bogus' => 1]], 'Invalid key for forks'];
         yield 'forks.model wrong type' => [['forks' => ['model' => 5]], 'Invalid value for forks.model'];
     }
 

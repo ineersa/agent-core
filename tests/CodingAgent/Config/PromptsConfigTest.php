@@ -19,10 +19,25 @@ final class PromptsConfigTest extends TestCase
         $this->assertSame([], $config->paths);
     }
 
-    public function testFromRawWithNull(): void
+    public function testFromRawWithNullFails(): void
     {
-        $config = PromptsConfig::fromRaw(null);
-        $this->assertSame([], $config->paths);
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for prompts: expected list of strings, got null');
+
+        PromptsConfig::fromRaw(null);
+    }
+
+    public function testFromRawRejectsAssociativeMap(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for prompts: expected list of strings, got associative array');
+
+        PromptsConfig::fromRaw(['a.md' => 'b.md']);
+    }
+
+    public function testFromRawWithEmptyListIsValid(): void
+    {
+        $this->assertSame([], PromptsConfig::fromRaw([])->paths);
     }
 
     public function testFromRawWithNonArray(): void

@@ -43,16 +43,33 @@ final readonly class AgentsConfig
      *
      * Explicitly configured values are validated strictly: a malformed
      * section or entry fails configuration load instead of being ignored
-     * or replaced by a default. Omission (null) yields the defaults.
+     * or replaced by a default. Omission (the key absent from the merged
+     * config) is handled by the caller and yields the defaults.
      */
     public static function fromRaw(mixed $raw): self
     {
         if (null === $raw) {
-            return new self();
+            throw new \InvalidArgumentException('Invalid value for agents: expected mapping, got null.');
         }
 
         if (!\is_array($raw)) {
             throw new \InvalidArgumentException(\sprintf('Invalid value for agents: expected mapping, got %s.', get_debug_type($raw)));
+        }
+
+        if ([] !== $raw && array_is_list($raw)) {
+            throw new \InvalidArgumentException('Invalid value for agents: expected mapping, got list.');
+        }
+
+        $unknown = array_diff(array_keys($raw), [
+            'enabled',
+            'paths',
+            'max_agents',
+            'subagent_tool_timeout_seconds',
+            'subagent_excluded_tools',
+            'extensions',
+        ]);
+        if ([] !== $unknown) {
+            throw new \InvalidArgumentException(\sprintf('Invalid key for agents: "%s" is not supported.', array_key_first($unknown)));
         }
 
         $enabled = true;
@@ -65,10 +82,14 @@ final readonly class AgentsConfig
 
         $paths = [];
         if (\array_key_exists('paths', $raw)) {
-            if (!\is_array($raw['paths'])) {
-                throw new \InvalidArgumentException(\sprintf('Invalid value for agents.paths: expected list of strings, got %s.', get_debug_type($raw['paths'])));
+            $pathsValue = $raw['paths'];
+            if (!\is_array($pathsValue)) {
+                throw new \InvalidArgumentException(\sprintf('Invalid value for agents.paths: expected list of strings, got %s.', get_debug_type($pathsValue)));
             }
-            foreach ($raw['paths'] as $index => $value) {
+            if (!array_is_list($pathsValue)) {
+                throw new \InvalidArgumentException('Invalid value for agents.paths: expected list of strings, got associative array.');
+            }
+            foreach ($pathsValue as $index => $value) {
                 if (!\is_string($value)) {
                     throw new \InvalidArgumentException(\sprintf('Invalid value for agents.paths[%d]: expected a non-empty string, got %s.', $index, get_debug_type($value)));
                 }
@@ -92,7 +113,9 @@ final readonly class AgentsConfig
 
         $subagentToolTimeoutSeconds = self::resolveSubagentToolTimeoutSeconds($raw);
         $subagentExcludedTools = self::resolveSubagentExcludedTools($raw);
-        $extensions = ChildExtensionsConfigDTO::fromRaw($raw['extensions'] ?? null, 'agents.extensions', acceptEnabled: false);
+        $extensions = \array_key_exists('extensions', $raw)
+            ? ChildExtensionsConfigDTO::fromRaw($raw['extensions'], 'agents.extensions', acceptEnabled: false)
+            : new ChildExtensionsConfigDTO();
 
         return new self(
             enabled: $enabled,
