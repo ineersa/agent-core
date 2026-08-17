@@ -180,7 +180,16 @@ final class AppConfigLoader
                 $resolved = [];
                 foreach ($value as $item) {
                     if (!\is_string($item)) {
-                        continue;
+                        // Explicit non-string list entries are invalid config,
+                        // not omissions — fail instead of silently dropping the
+                        // entry (a dropped path would look configured but never
+                        // load).
+                        $name = trim(str_replace(['[', ']'], ['.', ''], $path), '.');
+                        throw new \InvalidArgumentException(\sprintf('Invalid value for %s: expected list of strings, got %s.', $name, get_debug_type($item)));
+                    }
+                    if ('' === trim($item)) {
+                        $name = trim(str_replace(['[', ']'], ['.', ''], $path), '.');
+                        throw new \InvalidArgumentException(\sprintf('Invalid value for %s: expected list of strings, got blank string.', $name));
                     }
                     $resolved[] = $this->pathResolver->resolve($item, $cwd);
                 }

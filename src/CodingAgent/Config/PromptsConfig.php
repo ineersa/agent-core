@@ -25,20 +25,30 @@ final readonly class PromptsConfig
     /**
      * Build from raw config data (e.g. a YAML-parsed array).
      *
-     * Non-array input and non-string / blank string entries are silently
-     * ignored (the prompt-template loader treats missing paths as diagnostics).
+     * Explicitly configured values are validated strictly: a malformed
+     * section or entry fails configuration load instead of being silently
+     * dropped (a dropped path would look configured but never load).
+     * Omission (null) yields the default empty list.
      */
     public static function fromRaw(mixed $raw): self
     {
-        if (!\is_array($raw)) {
+        if (null === $raw) {
             return new self();
         }
 
+        if (!\is_array($raw)) {
+            throw new \InvalidArgumentException(\sprintf('Invalid value for prompts: expected list of strings, got %s.', get_debug_type($raw)));
+        }
+
         $paths = [];
-        foreach ($raw as $value) {
-            if (\is_string($value) && '' !== trim($value)) {
-                $paths[] = $value;
+        foreach ($raw as $index => $value) {
+            if (!\is_string($value)) {
+                throw new \InvalidArgumentException(\sprintf('Invalid value for prompts[%d]: expected a non-empty string, got %s.', $index, get_debug_type($value)));
             }
+            if ('' === trim($value)) {
+                throw new \InvalidArgumentException(\sprintf('Invalid value for prompts[%d]: expected a non-empty string, got blank string.', $index));
+            }
+            $paths[] = $value;
         }
 
         return new self($paths);

@@ -68,10 +68,10 @@ final class AgentsConfigTest extends TestCase
 
     public function testFromRawNonArray(): void
     {
-        $config = AgentsConfig::fromRaw('not-an-array');
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for agents');
 
-        $this->assertTrue($config->enabled);
-        $this->assertCount(0, $config->paths);
+        AgentsConfig::fromRaw('not-an-array');
     }
 
     public function testFromRawWithEnabled(): void
@@ -96,24 +96,48 @@ final class AgentsConfigTest extends TestCase
         $this->assertSame('.hatfield/team-agents', $config->paths[1]);
     }
 
-    public function testFromRawIgnoresBlankPaths(): void
+    public function testFromRawRejectsBlankPaths(): void
     {
-        $config = AgentsConfig::fromRaw([
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for agents.paths[0]');
+
+        AgentsConfig::fromRaw([
             'paths' => ['', '  ', 'valid-path'],
         ]);
-
-        $this->assertCount(1, $config->paths);
-        $this->assertSame('valid-path', $config->paths[0]);
     }
 
-    public function testFromRawIgnoresNonStringPaths(): void
+    public function testFromRawRejectsNonStringPaths(): void
     {
-        $config = AgentsConfig::fromRaw([
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for agents.paths[0]');
+
+        AgentsConfig::fromRaw([
             'paths' => [123, true, null, 'valid-path'],
         ]);
+    }
 
-        $this->assertCount(1, $config->paths);
-        $this->assertSame('valid-path', $config->paths[0]);
+    public function testFromRawRejectsWrongTypeEnabled(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for agents.enabled');
+
+        AgentsConfig::fromRaw(['enabled' => 'yes']);
+    }
+
+    public function testFromRawRejectsNonPositiveMaxAgents(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for agents.max_agents');
+
+        AgentsConfig::fromRaw(['max_agents' => 0]);
+    }
+
+    public function testFromRawRejectsWrongTypeMaxAgents(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for agents.max_agents');
+
+        AgentsConfig::fromRaw(['max_agents' => '3']);
     }
 
     public function testPathResolutionThroughAppConfigLoader(): void

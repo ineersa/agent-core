@@ -120,7 +120,7 @@ final class AppConfig
                 (array) ($data['context_budget_reminders'] ?? []),
                 ContextBudgetReminderConfig::class,
             ),
-            forks: self::denormalizeForksConfig($data, $denormalizer),
+            forks: ForksConfigDTO::fromRaw($data['forks'] ?? null),
             agents: AgentsConfig::fromRaw($data['agents'] ?? []),
             runtime: self::denormalizeAndValidateRuntimeConfig($data, $denormalizer, $validator),
             raw: $data,
@@ -193,25 +193,5 @@ final class AppConfig
 
             throw new \RuntimeException(\sprintf('Configured ai.default_model "%s" is not available. Available models: %s. Correct ai.default_model or remove it to use the first available model.', $defaultModel, implode(', ', $modelStrings)));
         }
-    }
-
-    /**
-     * Denormalize the forks config section, handling the levels sub-map.
-     *
-     * The Symfony ObjectNormalizer does not automatically denormalize nested
-     * arrays of typed objects for array<string, SomeDTO> constructor types.
-     * We denormalize the scalar properties first, then manually denormalize
-     * each level entry.
-     *
-     * @param array<string, mixed>  $data         The full merged config array
-     * @param DenormalizerInterface $denormalizer The serializer denormalizer
-     */
-    private static function denormalizeForksConfig(array $data, DenormalizerInterface $denormalizer): ForksConfigDTO
-    {
-        $rawForks = (array) ($data['forks'] ?? []);
-
-        // Nested extensions lists need strict list-of-string validation that
-        // ObjectNormalizer will not enforce; parse via fromRaw.
-        return ForksConfigDTO::fromRaw($rawForks);
     }
 }

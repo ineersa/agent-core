@@ -17,25 +17,26 @@ final readonly class ForksConfigDTO
     }
 
     /**
-     * @param array<string, mixed> $raw
+     * Build from raw config data (e.g. a YAML-parsed array).
+     *
+     * Explicitly configured values are validated strictly: a present value
+     * of the wrong type fails configuration load instead of silently
+     * resolving to the default. Omission (null) and explicit null or blank
+     * strings keep the documented "unset" default (null).
      */
-    public static function fromRaw(array $raw): self
+    public static function fromRaw(mixed $raw): self
     {
-        $model = null;
-        if (\array_key_exists('model', $raw) && (\is_string($raw['model']) || null === $raw['model'])) {
-            $model = null === $raw['model'] || '' === trim($raw['model']) ? null : trim($raw['model']);
+        if (null === $raw) {
+            return new self();
         }
 
-        $thinkingLevel = null;
-        if (\array_key_exists('thinking_level', $raw) && (\is_string($raw['thinking_level']) || null === $raw['thinking_level'])) {
-            $thinkingLevel = null === $raw['thinking_level'] || '' === trim($raw['thinking_level'])
-                ? null
-                : trim($raw['thinking_level']);
+        if (!\is_array($raw)) {
+            throw new \InvalidArgumentException(\sprintf('Invalid value for forks: expected mapping, got %s.', get_debug_type($raw)));
         }
 
         return new self(
-            model: $model,
-            thinkingLevel: $thinkingLevel,
+            model: self::parseOptionalScalar($raw, 'model', 'forks.model'),
+            thinkingLevel: self::parseOptionalScalar($raw, 'thinking_level', 'forks.thinking_level'),
             extensions: ChildExtensionsConfigDTO::fromRaw($raw['extensions'] ?? null, 'forks.extensions'),
         );
     }
@@ -43,5 +44,26 @@ final readonly class ForksConfigDTO
     public static function fromAppConfig(AppConfig $appConfig): self
     {
         return $appConfig->forks;
+    }
+
+    /**
+     * @param array<string, mixed> $raw
+     */
+    private static function parseOptionalScalar(array $raw, string $key, string $path): ?string
+    {
+        if (!\array_key_exists($key, $raw)) {
+            return null;
+        }
+
+        $value = $raw[$key];
+        if (!\is_string($value) && null !== $value) {
+            throw new \InvalidArgumentException(\sprintf('Invalid value for %s: expected string or null, got %s.', $path, get_debug_type($value)));
+        }
+
+        if (null === $value || '' === trim($value)) {
+            return null;
+        }
+
+        return trim($value);
     }
 }

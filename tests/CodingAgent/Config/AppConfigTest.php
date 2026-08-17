@@ -302,6 +302,152 @@ class AppConfigTest extends TestCase
     }
 
     // ──────────────────────────────────────────────
+    //  Target section fail-fast hydration (prompts / agents / forks)
+    // ──────────────────────────────────────────────
+    //
+    // Explicit malformed values must fail configuration load instead of
+    // being silently dropped or replaced by a default. Omission keeps the
+    // documented defaults.
+
+    public function testTargetSectionsDefaultWhenOmitted(): void
+    {
+        $config = $this->buildConfig();
+
+        $this->assertSame([], $config->prompts->paths);
+        $this->assertTrue($config->agents->enabled);
+        $this->assertSame(4, $config->agents->maxAgents);
+        $this->assertSame([], $config->agents->paths);
+        $this->assertNull($config->forks->model);
+        $this->assertNull($config->forks->thinkingLevel);
+    }
+
+    public function testPromptsSectionWrongTypeFails(): void
+    {
+        $this->defaultsWith(['prompts' => 'not-a-list']);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for prompts');
+
+        $this->buildConfig();
+    }
+
+    public function testPromptsNonStringEntryFails(): void
+    {
+        $this->defaultsWith(['prompts' => ['ok.md', 123]]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for prompts');
+
+        $this->buildConfig();
+    }
+
+    public function testPromptsBlankEntryFails(): void
+    {
+        $this->defaultsWith(['prompts' => ['ok.md', '  ']]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for prompts');
+
+        $this->buildConfig();
+    }
+
+    public function testPromptsValidListHydrates(): void
+    {
+        $this->defaultsWith(['prompts' => ['a.md', 'b.md']]);
+
+        $config = $this->buildConfig();
+
+        $this->assertCount(2, $config->prompts->paths);
+        $this->assertStringEndsWith('a.md', $config->prompts->paths[0]);
+        $this->assertStringEndsWith('b.md', $config->prompts->paths[1]);
+    }
+
+    public function testAgentsSectionScalarFails(): void
+    {
+        $this->defaultsWith(['agents' => 5]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for agents');
+
+        $this->buildConfig();
+    }
+
+    public function testAgentsEnabledWrongTypeFails(): void
+    {
+        $this->defaultsWith(['agents' => ['enabled' => 'yes']]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for agents.enabled');
+
+        $this->buildConfig();
+    }
+
+    public function testAgentsPathsNonStringEntryFails(): void
+    {
+        $this->defaultsWith(['agents' => ['paths' => ['ok', 5]]]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for agents.paths');
+
+        $this->buildConfig();
+    }
+
+    public function testAgentsMaxAgentsInvalidFails(): void
+    {
+        $this->defaultsWith(['agents' => ['max_agents' => 0]]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for agents.max_agents');
+
+        $this->buildConfig();
+    }
+
+    public function testAgentsValidValuesHydrate(): void
+    {
+        $this->defaultsWith([
+            'agents' => [
+                'enabled' => false,
+                'max_agents' => 6,
+                'paths' => ['custom'],
+                'subagent_excluded_tools' => ['settings'],
+            ],
+        ]);
+
+        $config = $this->buildConfig();
+
+        $this->assertFalse($config->agents->enabled);
+        $this->assertSame(6, $config->agents->maxAgents);
+        $this->assertCount(1, $config->agents->paths);
+        $this->assertStringEndsWith('custom', $config->agents->paths[0]);
+        $this->assertSame(['settings'], $config->agents->subagentExcludedTools);
+    }
+
+    public function testForksModelWrongTypeFails(): void
+    {
+        $this->defaultsWith(['forks' => ['model' => 5]]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for forks.model');
+
+        $this->buildConfig();
+    }
+
+    public function testForksValidValuesHydrate(): void
+    {
+        $this->defaultsWith([
+            'forks' => [
+                'model' => 'deepseek/deepseek-v4-pro',
+                'thinking_level' => 'high',
+            ],
+        ]);
+
+        $config = $this->buildConfig();
+
+        $this->assertSame('deepseek/deepseek-v4-pro', $config->forks->model);
+        $this->assertSame('high', $config->forks->thinkingLevel);
+    }
+
+    // ──────────────────────────────────────────────
     //  Helpers
     // ──────────────────────────────────────────────
 
@@ -314,6 +460,40 @@ class AppConfigTest extends TestCase
             $this->defaultsDir.'/hatfield.defaults.yaml',
             \Symfony\Component\Yaml\Yaml::dump($data),
         );
+    }
+
+    /**
+     * Write defaults with the base sections plus the given top-level
+     * section overrides (prompts / agents / forks).
+     *
+     * @param array<string, mixed> $overrides
+     */
+    private function defaultsWith(array $overrides): void
+    {
+        $this->writeDefaults(array_merge([
+            'tui' => ['theme' => 'cyberpunk', 'theme_paths' => ['/app/config/themes']],
+            'sessions' => ['path' => '.hatfield/sessions'],
+            'logging' => ['path' => '.hatfield/logs', 'level' => 'info', 'max_files' => 14],
+            'ai' => [
+                'default_model' => 'deepseek/deepseek-v4-pro',
+                'providers' => [
+                    'deepseek' => [
+                        'type' => 'generic',
+                        'enabled' => true,
+                        'base_url' => 'https://api.deepseek.com',
+                        'models' => [
+                            'deepseek-v4-pro' => [
+                                'name' => 'DeepSeek V4 Pro',
+                                'context_window' => 131072,
+                                'max_tokens' => 131072,
+                                'input' => ['text'],
+                                'reasoning' => true,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ], $overrides));
     }
 
     private function buildConfig(): AppConfig
