@@ -11,7 +11,7 @@ use Symfony\Component\Tui\Widget\ContainerWidget;
 /**
  * Semantic mounted node for HITL question transcript records.
  */
-final class QuestionTranscriptWidget extends ContainerWidget
+final class QuestionTranscriptWidget extends ContainerWidget implements MutableTranscriptWidget
 {
     private ?TranscriptVisualNode $node = null;
 
@@ -21,6 +21,11 @@ final class QuestionTranscriptWidget extends ContainerWidget
         private readonly TranscriptBlockWidgetFactory $factory,
         private readonly TuiTheme $theme,
     ) {
+    }
+
+    public function canBind(TranscriptVisualNode $node): bool
+    {
+        return TranscriptVisualNode::KIND_QUESTION === $node->kind;
     }
 
     public function node(): ?TranscriptVisualNode

@@ -14,7 +14,7 @@ use Symfony\Component\Tui\Widget\MarkdownWidget;
  * Keeps a stable outer identity and mutates the inner MarkdownWidget in place
  * across ordinary token updates. Symfony owns render caching.
  */
-final class StreamingMarkdownTranscriptWidget extends ContainerWidget
+final class StreamingMarkdownTranscriptWidget extends ContainerWidget implements MutableTranscriptWidget
 {
     private ?TranscriptVisualNode $node = null;
 
@@ -24,6 +24,11 @@ final class StreamingMarkdownTranscriptWidget extends ContainerWidget
         private readonly TranscriptBlockWidgetFactory $factory,
         private readonly TuiTheme $theme,
     ) {
+    }
+
+    public function canBind(TranscriptVisualNode $node): bool
+    {
+        return TranscriptVisualNode::KIND_MARKDOWN === $node->kind;
     }
 
     public function node(): ?TranscriptVisualNode
