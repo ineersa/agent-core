@@ -7,6 +7,7 @@ namespace Ineersa\Tests\Tui\Runtime;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
@@ -290,23 +291,44 @@ final class RuntimeEventPollerTest extends TestCase
         $this->assertStringContainsString('Connection timeout', $this->state->lastRuntimePollError);
     }
 
-    public function testPollHandlesFatalErrorWithErrorBlock(): void
+    public function testPollHandlesFatalTypedTransportErrorWithErrorBlock(): void
     {
         $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
-            ->willThrowException(new \RuntimeException('pipe broken')); // "pipe" is in fatal list
+            ->willThrowException(new RuntimeTransportException('pipe broken'));
 
         $this->logger->expects($this->once())
             ->method('warning');
 
         $result = $this->poller->poll($this->state, $this->client);
 
-        // Should return an error change set (fatal on first hit since fatal errors skip retry)
+        // Typed transport failures are fatal on first hit (skip retry).
         $this->assertInstanceOf(TranscriptChangeSet::class, $result);
         $this->assertCount(1, $result->upserts);
         $this->assertSame(RunActivityStateEnum::Failed, $this->state->activity);
         $this->assertStringContainsString('Runtime transport error', $result->upserts[0]->text);
+    }
+
+    public function testPlainRuntimeExceptionWithTransportKeywordsStaysRetryable(): void
+    {
+        // Regression: the old message-substring fatal classification would
+        // treat any RuntimeException mentioning process/pipe/closed as fatal.
+        // Only the typed RuntimeTransportException is fatal now.
+        $this->client->expects($this->once())
+            ->method('events')
+            ->with('test-run')
+            ->willThrowException(new \RuntimeException('process pipe closed while reading events'));
+
+        $this->logger->expects($this->once())
+            ->method('warning')
+            ->with('RuntimeEventPoller polling error', $this->anything());
+
+        $result = $this->poller->poll($this->state, $this->client);
+
+        $this->assertNull($result); // Transient retry
+        $this->assertSame(1, $this->state->runtimePollErrorCount);
+        $this->assertSame(RunActivityStateEnum::Idle, $this->state->activity);
     }
 
     public function testPollHandlesControllerRestartLimitWithFailedStateAndPollError(): void
@@ -316,7 +338,7 @@ final class RuntimeEventPollerTest extends TestCase
         $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
-            ->willThrowException(new \RuntimeException($message));
+            ->willThrowException(new RuntimeTransportException($message));
 
         $this->logger->expects($this->once())
             ->method('warning');

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Editor;
 
-use Symfony\Component\String\UnicodeString;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Widget\EditorWidget;
 
@@ -153,11 +152,11 @@ final class PromptEditor
 
         // Extract the suffix we need to delete: everything from
         // replacementStart to the end of the current editor text.
-        // We use Symfony UnicodeString for UTF-8 safe substring
-        // operations — replacement offsets are byte-level.
-        $suffixToDelete = (new UnicodeString($current))
-            ->slice($replacementStart)
-            ->toString();
+        // replacementStart is a BYTE offset (completion providers use
+        // byte arithmetic on the raw editor text), so a byte substring
+        // is the correct extraction — grapheme/codepoint slicing would
+        // misplace the range when non-ASCII text precedes it.
+        $suffixToDelete = substr($current, $replacementStart);
 
         // Delete the suffix one grapheme at a time through the
         // editor's normal Backspace path.  Symfony TUI's
@@ -175,9 +174,7 @@ final class PromptEditor
         $finalInsertText = $insertText;
 
         if ($replacementEnd < $currentLen) {
-            $trailing = (new UnicodeString($current))
-                ->slice($replacementEnd)
-                ->toString();
+            $trailing = substr($current, $replacementEnd);
             $finalInsertText .= $trailing;
         }
 
@@ -192,12 +189,16 @@ final class PromptEditor
     /**
      * Replace all editor text and leave the cursor at the end.
      *
-     * Clears the editor, then inserts the replacement text through
-     * the editor's normal character-input path.  Because EditorWidget
-     * does not expose a public cursor-position API and the task policy
-     * forbids private-property access (reflection, Closure::bind), we
-     * avoid cursor management entirely: insertText() advances the
-     * cursor past every typed character.
+     * Delegates to {@see typeText()}: {@see EditorWidget::handleInput()}
+     * rejects control characters (including "\n" via
+     * StringUtils::hasControlChars), so inserting multiline text through
+     * the character-input path would silently drop newlines. typeText()
+     * sets the buffer directly (preserving "\n") and navigates to the
+     * end with the documented synthetic DOWN/END keystrokes.
+     *
+     * EditorWidget exposes no public cursor-position API and the task
+     * policy forbids private access, so the synthetic-navigation
+     * workaround stays until an upstream cursor API exists.
      *
      * Prefer {@see acceptCompletion()} for completion acceptance —
      * it preserves multi-line content and respects the editor's
@@ -207,13 +208,7 @@ final class PromptEditor
      */
     public function replaceText(string $text): void
     {
-        // Clear puts the cursor at (0,0).
-        $this->widget->setText('');
-
-        // Regular text insertion advances cursor past every character.
-        // EditorWidget::handleInput() delegates to
-        // EditorDocument::insertText() which slides the cursor forward.
-        $this->widget->handleInput($text);
+        $this->typeText($text);
     }
 
     // ─── Lifecycle ───────────────────────────────────────────────

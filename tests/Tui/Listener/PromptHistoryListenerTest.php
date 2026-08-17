@@ -130,6 +130,43 @@ final class PromptHistoryListenerTest extends TestCase
     }
 
     #[Test]
+    public function typingAfterHistoryRecallLandsAtEnd(): void
+    {
+        $this->state->transcript = [
+            self::userBlock('second prompt', 1),
+        ];
+
+        $this->registerListener();
+
+        // Recall via Up
+        $this->editor->getWidget()->handleInput("\x1b[A");
+        $this->assertSame('second prompt', $this->editor->getText());
+
+        // The recalled text must leave the cursor at the END so subsequent
+        // typing appends (raw EditorWidget::setText would leave the cursor
+        // at (0,0) and insert at the start).
+        $this->editor->getWidget()->handleInput('!');
+        $this->assertSame('second prompt!', $this->editor->getText());
+    }
+
+    #[Test]
+    public function typingAfterMultilineHistoryRecallLandsAtEnd(): void
+    {
+        $this->state->transcript = [
+            self::userBlock("multi\nline prompt", 1),
+        ];
+
+        $this->registerListener();
+
+        $this->editor->getWidget()->handleInput("\x1b[A");
+        $this->assertSame("multi\nline prompt", $this->editor->getText());
+
+        // Cursor must be on the last line at the end.
+        $this->editor->getWidget()->handleInput('!');
+        $this->assertSame("multi\nline prompt!", $this->editor->getText());
+    }
+
+    #[Test]
     public function downOnEmptyEditorWithoutHistoryDoesNothing(): void
     {
         $this->state->transcript = [];

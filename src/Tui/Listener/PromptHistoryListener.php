@@ -42,11 +42,23 @@ final class PromptHistoryListener implements TuiListenerRegistrar
     {
         $state = $context->state;
         $editor = $context->screen->editorWidget();
+        $promptEditor = $context->screen->promptEditor();
         $screen = $context->screen;
 
         $history = $context->sessionServices->promptHistory;
 
-        $editor->onInput(static function (string $data) use ($state, $editor, $screen, $history): bool {
+        // Guard: typeText() navigates the cursor with synthetic DOWN/END
+        // keystrokes through handleInput(), which re-enters this onInput
+        // callback. While a recall is in flight those synthetic keys must
+        // reach the editor (cursor movement) without touching the history
+        // navigation cursor.
+        $recalling = false;
+
+        $editor->onInput(static function (string $data) use ($state, $editor, $promptEditor, $screen, $history, &$recalling): bool {
+            // @phpstan-ignore if.alwaysFalse (re-entered synchronously by typeText()'s synthetic keys)
+            if ($recalling) {
+                return false;
+            }
             if ($state->subagentLiveView->active) {
                 if ($history->isNavigating()) {
                     $history->exitNavigation();
@@ -66,7 +78,18 @@ final class PromptHistoryListener implements TuiListenerRegistrar
                 if ('' === $editor->getText() || $history->isNavigating()) {
                     $text = $history->previous();
                     if (null !== $text) {
-                        $editor->setText($text);
+                        // Recall through the PromptEditor owner so the cursor
+                        // lands at the END of the recalled text (raw
+                        // EditorWidget::setText would leave it at (0,0) and
+                        // subsequent typing would insert at the start). The
+                        // guard above keeps typeText()'s synthetic DOWN/END
+                        // keys from advancing/exiting history navigation.
+                        $recalling = true;
+                        try {
+                            $promptEditor->typeText($text);
+                        } finally {
+                            $recalling = false;
+                        }
                         $screen->requestRender();
 
                         return true; // Consume the event
@@ -90,7 +113,12 @@ final class PromptHistoryListener implements TuiListenerRegistrar
                 if ($history->isNavigating()) {
                     $text = $history->next();
                     if (null !== $text) {
-                        $editor->setText($text);
+                        $recalling = true;
+                        try {
+                            $promptEditor->typeText($text);
+                        } finally {
+                            $recalling = false;
+                        }
                         $screen->requestRender();
 
                         return true;

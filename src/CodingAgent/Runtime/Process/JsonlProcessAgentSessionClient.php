@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Runtime\Process;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
@@ -260,7 +261,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         ]);
         $this->stopProcess();
 
-        throw new \RuntimeException('Agent process did not emit run_started event within '.$timeout.'s'."\n".$this->diagnosticOutput());
+        throw new RuntimeTransportException('Agent process did not emit run_started event within '.$timeout.'s'."\n".$this->diagnosticOutput());
     }
 
     public function attach(string $runId): RunHandle
@@ -564,7 +565,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         );
 
         if (!\is_resource($process)) {
-            throw new \RuntimeException('Failed to start controller process via proc_open().');
+            throw new RuntimeTransportException('Failed to start controller process via proc_open().');
         }
 
         /* @var array<int, resource> $pipes */
@@ -583,7 +584,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     /**
      * Enforce restart rate limiting: max MAX_RESTARTS per RESTART_WINDOW seconds.
      *
-     * @throws \RuntimeException when the restart limit is exceeded
+     * @throws RuntimeTransportException when the restart limit is exceeded
      */
     private function enforceRestartRateLimit(): void
     {
@@ -597,7 +598,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         }
 
         if (\count($this->restartTimestamps) >= self::MAX_RESTARTS) {
-            throw new \RuntimeException(\sprintf('Controller process has crashed too many times (%d restarts in %.0fs).', self::MAX_RESTARTS, self::RESTART_WINDOW));
+            throw new RuntimeTransportException(\sprintf('Controller process has crashed too many times (%d restarts in %.0fs).', self::MAX_RESTARTS, self::RESTART_WINDOW));
         }
 
         $this->restartTimestamps[] = $now;
@@ -639,7 +640,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             usleep(10_000);
         }
 
-        throw new \RuntimeException('Controller did not emit runtime.ready within '.$timeout.'s'."\n".$this->diagnosticOutput());
+        throw new RuntimeTransportException('Controller did not emit runtime.ready within '.$timeout.'s'."\n".$this->diagnosticOutput());
     }
 
     /**
@@ -744,13 +745,13 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     private function writeCommand(RuntimeCommand $command): void
     {
         if (null === $this->process || !isset($this->pipes[0]) || !\is_resource($this->pipes[0])) {
-            throw new \RuntimeException('Controller stdin pipe is not available. '.$this->diagnosticOutput());
+            throw new RuntimeTransportException('Controller stdin pipe is not available. '.$this->diagnosticOutput());
         }
 
         $line = JsonlCodec::encodeCommand($command);
         $written = @fwrite($this->pipes[0], $line);
         if (false === $written || $written < \strlen($line)) {
-            throw new \RuntimeException('Failed to write command to controller stdin. '.$this->diagnosticOutput());
+            throw new RuntimeTransportException('Failed to write command to controller stdin. '.$this->diagnosticOutput());
         }
 
         fflush($this->pipes[0]);
@@ -850,7 +851,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             return;
         }
 
-        throw new \RuntimeException(\sprintf('Controller process exited while %s. %s', $context, $this->diagnosticOutput()));
+        throw new RuntimeTransportException(\sprintf('Controller process exited while %s. %s', $context, $this->diagnosticOutput()));
     }
 
     /** @phpstan-impure */
