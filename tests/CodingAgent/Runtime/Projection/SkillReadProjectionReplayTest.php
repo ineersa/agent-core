@@ -88,6 +88,7 @@ final class SkillReadProjectionReplayTest extends TestCase
                     [
                         'id' => 'call-skill-replay',
                         'name' => 'read',
+                        // Tool-call arguments are the flat provider map.
                         'arguments' => [
                             'path' => $skillFile,
                             'offset' => 1,

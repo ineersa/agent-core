@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO;
 use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
 
 /**
  * Model-visible ask_human tool — returns an interrupt payload immediately
  * so the AgentCore pipeline pauses the run and waits for human input.
  *
- * Implements both HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and ToolHandlerInterface for execution.
+ * Implements HatfieldToolProviderInterface for automatic registration
+ * as a permanent tool and the Symfony AI native tool contract (typed DTO arguments).
  *
  * This is a thin non-blocking tool. It does NOT wait for user input;
  * AgentCore's existing WaitingHuman / HumanResponse flow owns pausing
@@ -22,8 +23,8 @@ use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
  * ## Key design
  *
  * - Returns `kind=interrupt` payload immediately; no oneshot/blocking path.
- * - Uses Symfony Serializer/Validator (via AskHumanPayloadFactory) for
- *   type-safe argument denormalization, validation, and payload building.
+ * - Arguments are resolved/validated natively by Symfony AI (DTO + Symfony
+ *   Validator); AskHumanPayloadFactory only builds the interrupt payload.
  * - Always generates stable output `question_id` from question/kind/choices/header hash.
  * - Normalizes bare string choices to structured `{label, description}` objects.
  * - Preserves UI metadata: header, kind, choices.
@@ -32,8 +33,12 @@ use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
  *   interrupt result. AgentCore only generically preserves `kind=interrupt`
  *   payloads from any toolbox tool result.
  */
-final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+final class AskHumanTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'ask_human';
+
+    public const string DESCRIPTION = 'Ask the user for input, confirmation, a choice, or approval when you need their response before continuing.';
+
     public function __construct(
         private readonly AskHumanPayloadFactory $payloadFactory,
     ) {
@@ -45,13 +50,9 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
      * Returns an interrupt payload immediately. The run is paused by
      * AgentCore's existing WaitingHuman / HumanResponse flow.
      *
-     * @param array<string, mixed> $arguments Tool call arguments
-     *
      * @return array<string, mixed> Interrupt payload with kind=interrupt
-     *
-     * @throws \Ineersa\AgentCore\Contract\Tool\ToolCallException On validation failure
      */
-    public function __invoke(array $arguments): array
+    public function __invoke(AskHumanArgumentsDTO $arguments): array
     {
         return $this->payloadFactory->createPayload($arguments);
     }
@@ -62,35 +63,8 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'ask_human',
-            description: 'Ask the user for input, confirmation, a choice, or approval when you need their response before continuing.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'question' => [
-                        'type' => 'string',
-                        'description' => 'The clear, concise question to display to the user.',
-                    ],
-                    'kind' => [
-                        'type' => 'string',
-                        'enum' => ['confirm'],
-                        'description' => 'Optional. Set to "confirm" for yes/no or approval questions (boolean). Omit for free-form text or when providing "choices". Mutually exclusive with "choices".',
-                    ],
-                    'choices' => [
-                        'type' => 'array',
-                        'items' => [
-                            'type' => 'string',
-                        ],
-                        'description' => 'Non-empty list of answer choices as simple strings. Providing choices selects choice mode; omit kind. Mutually exclusive with kind="confirm". Do not pass an empty list.',
-                    ],
-                    'header' => [
-                        'type' => 'string',
-                        'description' => 'Optional header text shown above the question in the UI.',
-                    ],
-                ],
-                'required' => ['question'],
-                'additionalProperties' => false,
-            ],
+            name: self::NAME,
+            description: self::DESCRIPTION,
             handler: $this,
             promptLine: 'ask_human question [kind] [choices] — ask the user for input, confirmation, a choice, or approval',
             promptGuidelines: [

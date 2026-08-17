@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
-use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
+use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\Edit\PatchApplier;
 use Ineersa\CodingAgent\Tool\Edit\PatchFailureFormatter;
 use Symfony\Component\Lock\LockFactory;
@@ -14,8 +14,12 @@ use Symfony\Component\Lock\LockFactory;
 /**
  * Edit an existing file by applying Codex-style @@ hunks.
  */
-final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+final class EditFileTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'edit';
+
+    public const string DESCRIPTION = 'Apply @@ hunks to an existing file. Every hunk body line must start with a diff prefix: a leading space for unchanged context, `-` for removal, or `+` for addition. The target file must exist; use the write tool for new files.';
+
     private readonly PatchApplier $applier;
 
     public function __construct(
@@ -32,13 +36,19 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         );
     }
 
-    public function __invoke(array $arguments): string
+    public function __invoke(EditFileArgumentsDTO $arguments): string
     {
-        $this->validateArguments($arguments);
-
         return $this->toolRuntime->run(function () use ($arguments): string {
-            $targetPath = $this->resolveAndVerifyTarget($arguments['path']);
-            $result = $this->applier->apply($targetPath, $arguments['patch']);
+            $path = $arguments->path;
+            $patch = $arguments->patch;
+
+            // Target existence/readability is validated by the EditFileTarget
+            // DTO constraint before execution. Patch applicability (stale,
+            // ambiguous, or malformed hunks) and write failures are
+            // execution-time, state-dependent results under the applier's
+            // lock and stay in PatchApplier.
+            $targetPath = PathResolver::resolve($path);
+            $result = $this->applier->apply($targetPath, $patch);
 
             if ($result['patchedContent'] === $result['originalContent']) {
                 return 'No changes (patch produced identical content)';
@@ -57,23 +67,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'edit',
-            description: 'Apply @@ hunks to an existing file. Every hunk body line must start with a diff prefix: a leading space for unchanged context, `-` for removal, or `+` for addition. The target file must exist; use the write tool for new files.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'path' => [
-                        'type' => 'string',
-                        'description' => 'File path to edit (absolute, or relative to the working directory)',
-                    ],
-                    'patch' => [
-                        'type' => 'string',
-                        'description' => 'Codex-style hunk body beginning with `@@`; prefix each body line with a space for unchanged context, `-` for removal, or `+` for addition. Multiple sequential, non-overlapping hunks are allowed.',
-                    ],
-                ],
-                'required' => ['path', 'patch'],
-                'additionalProperties' => false,
-            ],
+            name: self::NAME,
+            description: self::DESCRIPTION,
             handler: $this,
             executionMode: ToolExecutionMode::Sequential,
             promptLine: 'edit path patch — apply @@ hunks to an existing file',
@@ -91,34 +86,6 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'If an edit fails as stale or ambiguous, use the error context or a targeted `read` with `offset`/`limit`, then regenerate the patch.',
             ],
         );
-    }
-
-    /**
-     * @param array{path?: scalar|null, patch?: scalar|null} $arguments
-     */
-    private function validateArguments(array $arguments): void
-    {
-        $path = $arguments['path'] ?? null;
-        $patch = $arguments['patch'] ?? null;
-
-        if (!\is_string($path) || '' === $path) {
-            throw new ToolCallException('The "path" argument is required and must be a non-empty string.', retryable: false, hint: 'Provide a valid file path.');
-        }
-
-        if (!\is_string($patch) || '' === $patch) {
-            throw new ToolCallException('The "patch" argument is required and must be a non-empty string.', retryable: false, hint: 'Provide a patch with @@ hunks; each body line must begin with a diff prefix (space, `-`, or `+`).');
-        }
-    }
-
-    private function resolveAndVerifyTarget(string $path): string
-    {
-        $targetPath = PathResolver::resolve($path);
-
-        if (!is_file($targetPath) || !is_readable($targetPath)) {
-            throw new ToolCallException(\sprintf('File "%s" does not exist or is not readable.', $targetPath), retryable: false, hint: 'Use the write tool to create new files.');
-        }
-
-        return $targetPath;
     }
 
     /**

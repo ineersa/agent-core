@@ -14,7 +14,6 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use PHPUnit\Framework\Attributes\Group;
@@ -43,20 +42,20 @@ final class Gf05ChildAppendStructuralPermanentSubsetContractTest extends \PHPUni
     public function testChildAppendRendersPermanentSubsetPlaceholdersWithoutTextScrubbing(): void
     {
         $registry = new ToolRegistry();
-        $registry->registerTool('read', 'Read', ['type' => 'object'], $this->handler(), promptLine: 'ALLOWED_READ_PROMPT_LINE');
+        $registry->registerTool(name: 'read', description: 'Read', handler: $this->handler(), parametersJsonSchema: ['type' => 'object'], promptLine: 'ALLOWED_READ_PROMPT_LINE');
         $registry->registerTool(
-            'fork',
-            'Fork parent tool',
-            ['type' => 'object'],
-            $this->handler(),
+            name: 'fork',
+            description: 'Fork parent tool',
+            handler: $this->handler(),
+            parametersJsonSchema: ['type' => 'object'],
             promptLine: 'DISALLOWED_FORK_PROMPT_LINE',
             promptGuidelines: ['DISALLOWED_FORK_GUIDELINE_BLOCK'],
         );
         $registry->addDynamicTool(
-            'mcp_dynamic',
-            'GF05_DYNAMIC_PROVIDER_DESCRIPTION_MUST_NOT_LEAK',
-            ['type' => 'object'],
-            $this->handler(),
+            name: 'mcp_dynamic',
+            description: 'GF05_DYNAMIC_PROVIDER_DESCRIPTION_MUST_NOT_LEAK',
+            handler: $this->handler(),
+            parametersJsonSchema: ['type' => 'object'],
         );
 
         $benignContributor = 'GF05_BENIGN_CONTRIBUTOR_PROSE_KEEP_ME';
@@ -113,9 +112,9 @@ final class Gf05ChildAppendStructuralPermanentSubsetContractTest extends \PHPUni
         $this->assertStringNotContainsString('GF05_DYNAMIC_PROVIDER_DESCRIPTION_MUST_NOT_LEAK', $systemText);
     }
 
-    private function handler(): ToolHandlerInterface
+    private function handler(): object
     {
-        return new class implements ToolHandlerInterface {
+        return new class {
             public function __invoke(array $arguments): string
             {
                 return 'ok';

@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -153,29 +152,6 @@ final class ToolRegistryTest extends TestCase
     {
         $this->registry->removeDynamicTool('nonexistent');
         $this->assertSame([], $this->registry->activeToolNames());
-    }
-
-    public function testSetDynamicToolsReplacesAll(): void
-    {
-        $this->registry->addDynamicTool(name: 'old', description: 'Old', parametersJsonSchema: [], handler: $this->dummyHandler());
-        $this->registry->setDynamicTools([
-            ['name' => 'new1', 'description' => 'New1', 'parametersJsonSchema' => [], 'handler' => $this->dummyHandler()],
-            ['name' => 'new2', 'description' => 'New2', 'parametersJsonSchema' => [], 'handler' => $this->dummyHandler()],
-        ]);
-
-        $this->assertSame(['new1', 'new2'], $this->registry->activeToolNames());
-    }
-
-    public function testGetDynamicToolsReturnsOrderedList(): void
-    {
-        $this->registry->addDynamicTool(name: 'a', description: 'A', parametersJsonSchema: ['type' => 'object'], handler: $this->dummyHandler());
-        $this->registry->addDynamicTool(name: 'b', description: 'B', parametersJsonSchema: ['type' => 'array'], handler: $this->dummyHandler());
-
-        $tools = $this->registry->getDynamicTools();
-        $this->assertCount(2, $tools);
-        $this->assertSame('a', $tools[0]['name']);
-        $this->assertSame('b', $tools[1]['name']);
-        $this->assertSame(['type' => 'object'], $tools[0]['parametersJsonSchema']);
     }
 
     public function testDynamicToolNameConflictWithPermanentThrows(): void
@@ -331,7 +307,6 @@ final class ToolRegistryTest extends TestCase
         $this->assertSame([], $this->registry->permanentToolLines());
         $this->assertSame([], $this->registry->permanentGuidelines());
         $this->assertSame([], $this->registry->activeToolNames());
-        $this->assertSame([], $this->registry->getDynamicTools());
     }
 
     public function testToolWithNoGuidelines(): void
@@ -672,10 +647,61 @@ final class ToolRegistryTest extends TestCase
 
     /* ───────── Private helpers ───────── */
 
+    /* ───────── Definition identity (cache contract) ───────── */
+
+    public function testIdenticalPermanentReRegistrationKeepsFirstDefinition(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read');
+        $first = $this->registry->toolDefinition('read');
+
+        // Same name re-registration is a no-op (first wins) regardless of payload.
+        $this->registry->registerTool(name: 'read', description: 'Different', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'other');
+
+        $this->assertSame($first, $this->registry->toolDefinition('read'));
+    }
+
+    public function testIdenticalDynamicReRegistrationKeepsDefinitionIdentity(): void
+    {
+        $handler = $this->dummyHandler();
+        $schema = ['type' => 'object'];
+
+        $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: $schema, handler: $handler);
+        $first = $this->registry->toolDefinition('mcp_x');
+
+        // Identical re-add: same handler object, description, and schema.
+        $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: $schema, handler: $handler);
+
+        $this->assertSame($first, $this->registry->toolDefinition('mcp_x'));
+        $this->assertSame($handler, $first?->handler);
+    }
+
+    public function testDynamicReplaceCreatesNewDefinitionIdentity(): void
+    {
+        $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: [], handler: $this->dummyHandler());
+        $first = $this->registry->toolDefinition('mcp_x');
+
+        $this->registry->addDynamicTool(name: 'mcp_x', description: 'X2', parametersJsonSchema: [], handler: $this->dummyHandler());
+
+        $replacement = $this->registry->toolDefinition('mcp_x');
+        $this->assertNotSame($first, $replacement);
+        $this->assertSame('X2', $replacement?->description);
+    }
+
+    public function testRemoveAndReAddDynamicToolCreatesNewDefinitionIdentity(): void
+    {
+        $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: [], handler: $this->dummyHandler());
+        $first = $this->registry->toolDefinition('mcp_x');
+
+        $this->registry->removeDynamicTool('mcp_x');
+        $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: [], handler: $this->dummyHandler());
+
+        $this->assertNotSame($first, $this->registry->toolDefinition('mcp_x'));
+    }
+
     private function createProvider(
         string $name,
         string $description,
-        ToolHandlerInterface $handler,
+        object $handler,
         string $promptLine,
         array $promptGuidelines = [],
     ): HatfieldToolProviderInterface {
@@ -701,9 +727,9 @@ final class ToolRegistryTest extends TestCase
         };
     }
 
-    private function dummyHandler(): ToolHandlerInterface
+    private function dummyHandler(): object
     {
-        return new class implements ToolHandlerInterface {
+        return new class {
             public function __invoke(array $arguments = []): string
             {
                 return 'handler result';

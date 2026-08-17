@@ -229,6 +229,13 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
         return [];
     }
 
+    protected function controllerSubprocessEnv(): array
+    {
+        // Two LLM turns (start + follow-up); the follow-up request can cold-miss
+        // the llama-proxy cache and needs more than the 5s test HttpClient default.
+        return ['HATFIELD_TEST_LLM_HTTP_TIMEOUT' => '60'];
+    }
+
     /**
      * Collect the follow-up phase after a shell tool completion without treating
      * a delayed standalone-shell parent terminal as the follow-up terminal.

@@ -144,26 +144,6 @@ final class OutputCap
     }
 
     /**
-     * Find a file-path value from tool call arguments.
-     *
-     * Checks known path-carrying argument keys and returns the first
-     * string value found.  Returns null when no path argument exists.
-     *
-     * @param array<string, mixed> $arguments
-     */
-    public function extractPathFromArguments(array $arguments): ?string
-    {
-        foreach (self::PATH_ARGUMENT_KEYS as $key) {
-            $value = $arguments[$key] ?? null;
-            if (\is_string($value) && '' !== $value) {
-                return $value;
-            }
-        }
-
-        return null;
-    }
-
-    /**
      * Build a context-aware capping notice.
      *
      * For read tools: guides follow-up reads to the original file path with
@@ -269,6 +249,26 @@ STRING;
         }
 
         closedir($handle);
+    }
+
+    /**
+     * Find a file-path value from tool call arguments.
+     *
+     * Checks known path-carrying argument keys and returns the first
+     * string value found.  Returns null when no path argument exists.
+     *
+     * @param array<string, mixed> $arguments
+     */
+    private function extractPathFromArguments(array $arguments): ?string
+    {
+        foreach (self::PATH_ARGUMENT_KEYS as $key) {
+            $value = $arguments[$key] ?? null;
+            if (\is_string($value) && '' !== $value) {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     /**

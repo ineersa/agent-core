@@ -163,6 +163,10 @@ final class OutputCapTest extends TestCase
 
         $generic = $cap->buildContextualNotice('bash', ['command' => 'ls'], $result);
         $this->assertSame($result->noticeText, $generic);
+
+        // Typed read calls arrive flat (DTO fields at the top level).
+        $flatNotice = $cap->buildContextualNotice('read', ['path' => 'src/Foo.php', 'offset' => 40], $result);
+        $this->assertStringContainsString('read(path: "src/Foo.php", offset: 40, limit: 200)', $flatNotice);
     }
 
     #[DataProvider('documentClassificationProvider')]
@@ -185,6 +189,13 @@ final class OutputCapTest extends TestCase
     public static function documentClassificationProvider(): iterable
     {
         yield 'markdown read path' => ['read', ['path' => 'docs/settings.md'], false, 'docs/settings.md'];
+        yield 'raw tool with top-level arguments key stays flat' => [
+            'mcp_search',
+            ['arguments' => ['path' => 'docs/settings.md'], 'query' => 'x'],
+            false,
+            null,
+        ];
+        yield 'raw tool flat path is still extracted' => ['mcp_fetch', ['path' => 'a.txt'], false, 'a.txt'];
         yield 'file_path key' => ['read', ['file_path' => './a.php'], false, './a.php'];
         yield 'file key' => ['write', ['file' => 'x.txt'], false, 'x.txt'];
         yield 'hatfield_docs list is default' => [

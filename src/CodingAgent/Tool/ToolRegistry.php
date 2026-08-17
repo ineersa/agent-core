@@ -61,8 +61,9 @@ final class ToolRegistry implements ToolRegistryInterface
     /**
      * @param iterable<HatfieldToolProviderInterface> $providers Tagged built-in tool providers
      */
-    public function __construct(iterable $providers = [])
-    {
+    public function __construct(
+        iterable $providers = [],
+    ) {
         foreach ($providers as $provider) {
             $definition = $provider->definition();
 
@@ -82,9 +83,9 @@ final class ToolRegistry implements ToolRegistryInterface
     public function registerTool(
         string $name,
         string $description,
-        array $parametersJsonSchema,
-        ToolHandlerInterface $handler,
+        object $handler,
         string $promptLine,
+        ?array $parametersJsonSchema = null,
         array $promptGuidelines = [],
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
         ?int $timeoutSeconds = null,
@@ -102,8 +103,8 @@ final class ToolRegistry implements ToolRegistryInterface
         $this->permanentTools[$name] = new ToolDefinitionDTO(
             name: $name,
             description: $description,
-            parametersJsonSchema: $parametersJsonSchema,
             handler: $handler,
+            parametersJsonSchema: $parametersJsonSchema,
             promptLine: $promptLine,
             promptGuidelines: $promptGuidelines,
             executionMode: $executionMode,
@@ -116,8 +117,8 @@ final class ToolRegistry implements ToolRegistryInterface
     public function addDynamicTool(
         string $name,
         string $description,
+        object $handler,
         array $parametersJsonSchema,
-        ToolHandlerInterface $handler,
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
     ): void {
         if ('' === $name || '' === $description) {
@@ -128,16 +129,29 @@ final class ToolRegistry implements ToolRegistryInterface
             throw new \InvalidArgumentException(\sprintf('Cannot register dynamic tool "%s": a permanent tool with the same name already exists.', $name));
         }
 
+        // Idempotent: replacing a dynamic tool with an identical definition
+        // keeps the canonical definition object (and therefore any caches
+        // keyed on its identity) hot.
+        $existing = $this->dynamicTools[$name] ?? null;
+        if (null !== $existing
+            && $existing->handler === $handler
+            && $existing->description === $description
+            && $existing->parametersJsonSchema === $parametersJsonSchema
+            && $existing->executionMode === $executionMode
+        ) {
+            return;
+        }
+
         // Replace if already a dynamic tool (update in place)
-        if (!isset($this->dynamicTools[$name])) {
+        if (null === $existing) {
             $this->dynamicOrder[] = $name;
         }
 
         $this->dynamicTools[$name] = new ToolDefinitionDTO(
             name: $name,
             description: $description,
-            parametersJsonSchema: $parametersJsonSchema,
             handler: $handler,
+            parametersJsonSchema: $parametersJsonSchema,
             promptLine: '',  // dynamic tools have no prompt metadata
             promptGuidelines: [],
             executionMode: $executionMode,
@@ -158,42 +172,8 @@ final class ToolRegistry implements ToolRegistryInterface
     }
 
     /**
-     * @param list<array{name: string, description: string, parametersJsonSchema: array<string, mixed>, handler: mixed}> $tools
+     * @return list<string>
      */
-    public function setDynamicTools(array $tools): void
-    {
-        $this->dynamicTools = [];
-        $this->dynamicOrder = [];
-
-        foreach ($tools as $tool) {
-            $this->addDynamicTool(
-                $tool['name'],
-                $tool['description'],
-                $tool['parametersJsonSchema'],
-                $tool['handler'],
-            );
-        }
-    }
-
-    /**
-     * @return list<array{name: string, description: string, parametersJsonSchema: array<string, mixed>, handler: mixed}>
-     */
-    public function getDynamicTools(): array
-    {
-        $result = [];
-        foreach ($this->dynamicOrder as $name) {
-            $dto = $this->dynamicTools[$name];
-            $result[] = [
-                'name' => $dto->name,
-                'description' => $dto->description,
-                'parametersJsonSchema' => $dto->parametersJsonSchema,
-                'handler' => $dto->handler,
-            ];
-        }
-
-        return $result;
-    }
-
     public function permanentToolLines(): array
     {
         $lines = [];
@@ -346,7 +326,15 @@ final class ToolRegistry implements ToolRegistryInterface
         }
 
         // Empty or whitespace-only input clears the allowlist.
-        $this->allowedNames = [] === $allowed ? null : $allowed;
+        $effective = [] === $allowed ? null : $allowed;
+
+        // No-op detection: re-applying the same visibility must not churn
+        // the definition set (order-insensitive).
+        if ($this->sameNameSet($effective, $this->allowedNames)) {
+            return;
+        }
+
+        $this->allowedNames = $effective;
     }
 
     public function setExcludedToolNames(array $names): void
@@ -361,6 +349,12 @@ final class ToolRegistry implements ToolRegistryInterface
                 throw new \InvalidArgumentException(\sprintf('Unknown tool name in exclusions: "%s".', $name));
             }
             $excluded[$name] = true;
+        }
+
+        // No-op detection: re-applying the same visibility must not churn
+        // the definition set (order-insensitive).
+        if ($this->sameNameSet($excluded, $this->excludedNames)) {
+            return;
         }
 
         $this->excludedNames = $excluded;
@@ -458,6 +452,26 @@ final class ToolRegistry implements ToolRegistryInterface
     private function isKnownToolName(string $name): bool
     {
         return isset($this->permanentTools[$name]) || isset($this->dynamicTools[$name]);
+    }
+
+    /**
+     * Order-insensitive comparison of two name=>true maps (null = no filter).
+     *
+     * @param array<string, true>|null $a
+     * @param array<string, true>|null $b
+     */
+    private function sameNameSet(?array $a, ?array $b): bool
+    {
+        if (null === $a || null === $b) {
+            return $a === $b;
+        }
+
+        $aKeys = array_keys($a);
+        $bKeys = array_keys($b);
+        sort($aKeys);
+        sort($bKeys);
+
+        return $aKeys === $bKeys;
     }
 
     /**

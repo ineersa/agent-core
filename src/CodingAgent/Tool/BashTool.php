@@ -10,13 +10,14 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Psr\Log\LoggerInterface;
 
 /**
  * Execute a shell command with foreground supervision via BackgroundProcessManager.
  *
- * Implements both HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and ToolHandlerInterface for execution.
+ * Implements HatfieldToolProviderInterface for automatic registration
+ * as a permanent tool and the Symfony AI native tool contract (typed DTO arguments).
  *
  * Key design:
  * - Every bash command starts immediately through
@@ -55,8 +56,12 @@ use Psr\Log\LoggerInterface;
  * string directly — the model is treated as a trusted caller within the
  * same agent session.
  */
-final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+final class BashTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'bash';
+
+    public const string DESCRIPTION_TEMPLATE = 'Execute a shell command with timeout. The command runs until completion, hits the timeout, or is cancelled. Long-running commands may be offered to move to background after %d seconds.';
+
     public function __construct(
         private readonly BackgroundProcessManager $manager,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
@@ -70,18 +75,17 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
     /**
      * Execute a bash command with foreground supervision.
      *
-     * @param array<string, mixed> $arguments Must contain 'command' (string).
-     *                                        Optional 'timeout' (int|null).
+     * @param BashArgumentsDTO $arguments
+     *                                    Optional 'timeout' (int|null)
      *
      * @return string Command output or backgrounding notice
      *
      * @throws ToolCallException on validation errors or execution failures
      */
-    public function __invoke(array $arguments): string
+    public function __invoke(BashArgumentsDTO $arguments): string
     {
         return $this->toolRuntime->run(function () use ($arguments): string {
-            // Validate and extract arguments
-            $command = $this->validateCommand($arguments);
+            $command = trim($arguments->command);
             $timeout = $this->resolveTimeout($arguments);
 
             // Resolve session context.
@@ -260,25 +264,8 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'bash',
-            description: \sprintf('Execute a shell command with timeout. The command runs until completion, hits the timeout, or is cancelled. Long-running commands may be offered to move to background after %d seconds.', $this->config->backgroundPromptThresholdSeconds),
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'command' => [
-                        'type' => 'string',
-                        'description' => 'Shell command executed through bash -c; use shell quoting as needed.',
-                    ],
-                    'timeout' => [
-                        'type' => 'integer',
-                        'description' => \sprintf('Timeout in seconds (default: %d, max: %d). Use for commands that may hang.', $this->config->defaultTimeoutSeconds, $this->config->maxTimeoutSeconds),
-                        'minimum' => 1,
-                        'maximum' => $this->config->maxTimeoutSeconds,
-                    ],
-                ],
-                'required' => ['command'],
-                'additionalProperties' => false,
-            ],
+            name: self::NAME,
+            description: \sprintf(self::DESCRIPTION_TEMPLATE, $this->config->backgroundPromptThresholdSeconds),
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
             promptLine: 'bash command [timeout=N] — execute a shell command with foreground supervision and optional timeout',
@@ -292,51 +279,12 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
 
     // ─── Private helpers ────────────────────────────────────────────
 
-    /**
-     * Validate the command argument.
-     *
-     * @param array<string, mixed> $arguments
-     *
-     * @return string The validated command string
-     *
-     * @throws ToolCallException when command is missing or invalid
-     */
-    private function validateCommand(array $arguments): string
+    private function resolveTimeout(BashArgumentsDTO $arguments): int
     {
-        $command = $arguments['command'] ?? null;
-
-        if (!\is_string($command) || '' === trim($command)) {
-            throw new ToolCallException('The "command" argument is required and must be a non-empty string.', retryable: false, hint: 'Provide a shell command to execute, e.g., {"command": "ls -la"}');
-        }
-
-        return $command;
-    }
-
-    /**
-     * Resolve the effective timeout from the arguments or config default.
-     *
-     * @param array<string, mixed> $arguments
-     *
-     * @return int Timeout seconds (config default when not explicitly provided)
-     */
-    private function resolveTimeout(array $arguments): int
-    {
-        $timeout = $arguments['timeout'] ?? null;
-
-        if (null === $timeout) {
-            return $this->config->defaultTimeoutSeconds;
-        }
-
-        if (!\is_int($timeout) || $timeout < 1) {
-            throw new ToolCallException('The "timeout" argument must be a positive integer.', retryable: false, hint: 'Provide a positive integer for timeout seconds, or omit it to use the default.');
-        }
-
-        $maxTimeout = $this->config->maxTimeoutSeconds;
-        if ($timeout > $maxTimeout) {
-            throw new ToolCallException(\sprintf('Timeout must not exceed %d seconds (%d provided).', $maxTimeout, $timeout), retryable: false, hint: \sprintf('Reduce the timeout to at most %d seconds, or omit to use the default (%d).', $maxTimeout, $this->config->defaultTimeoutSeconds));
-        }
-
-        return $timeout;
+        // Argument bounds are validated natively (Assert\Range +
+        // BashTimeoutMax against the configured max); this only applies
+        // the configured default when the model omitted timeout.
+        return $arguments->timeout ?? $this->config->defaultTimeoutSeconds;
     }
 
     /**

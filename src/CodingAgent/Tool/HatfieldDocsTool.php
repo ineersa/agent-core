@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Docs\BuiltinDocsCatalog;
 use Ineersa\CodingAgent\Docs\BuiltinDocsCatalogException;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\Tool\Arguments\HatfieldDocsArgumentsDTO;
 
 /**
  * Read-only parent-agent catalog for curated Hatfield documentation.
@@ -20,8 +21,12 @@ use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
  * lifetime. Lookup is by logical ID only; arbitrary filesystem paths are
  * never accepted.
  */
-final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+final class HatfieldDocsTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'hatfield_docs';
+
+    public const string DESCRIPTION = 'List or read bundled Hatfield documentation by logical document ID.';
+
     /**
      * Lazy catalog keyed by logical document ID (filename stem).
      *
@@ -37,19 +42,17 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
     }
 
     /**
-     * @param array<string, mixed> $arguments
-     *
      * @return string TOON-encoded list metadata, or raw Markdown body for read
      */
-    public function __invoke(array $arguments): string
+    public function __invoke(HatfieldDocsArgumentsDTO $arguments): string
     {
         return $this->toolRuntime->run(function () use ($arguments): string {
-            $operation = $arguments['operation'] ?? null;
-
-            return match ($operation) {
+            // operation is Choice-constrained on the DTO; id is required for
+            // read via a When constraint, so no default branch is needed.
+            return match ($arguments->operation) {
                 'list' => Toon::encode($this->listDocuments()),
                 'read' => $this->readDocument($arguments),
-                default => throw new ToolCallException('The "operation" argument must be one of: list, read.', retryable: false),
+                default => throw new \LogicException('Unreachable: operation is Choice-constrained on HatfieldDocsArgumentsDTO and rejected before invocation.'),
             };
         });
     }
@@ -57,25 +60,8 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'hatfield_docs',
-            description: 'List or read bundled Hatfield documentation by logical document ID.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'operation' => [
-                        'type' => 'string',
-                        'enum' => ['list', 'read'],
-                        'description' => 'list catalog entries, or read one document by id.',
-                    ],
-                    'id' => [
-                        'type' => 'string',
-                        'description' => 'Logical document ID (required for read).',
-                        'minLength' => 1,
-                    ],
-                ],
-                'required' => ['operation'],
-                'additionalProperties' => false,
-            ],
+            name: self::NAME,
+            description: self::DESCRIPTION,
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
             promptLine: 'hatfield_docs list|read [id] — list or read bundled Hatfield docs',
@@ -102,15 +88,10 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
         return ['documents' => $documents];
     }
 
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    private function readDocument(array $arguments): string
+    private function readDocument(HatfieldDocsArgumentsDTO $arguments): string
     {
-        $id = $arguments['id'] ?? null;
-        if (!\is_string($id) || '' === $id) {
-            throw new ToolCallException('Unknown document id.', retryable: false, hint: 'Use operation=list to see approved IDs.');
-        }
+        /** @var string $id DTO When constraint requires a non-blank id for read. */
+        $id = (string) $arguments->id;
 
         $catalog = $this->catalog();
         if (!isset($catalog[$id])) {

@@ -16,7 +16,6 @@ use Ineersa\CodingAgent\Mcp\Tool\McpToolHandler;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolHandlerFactory;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolInvoker;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -464,13 +463,8 @@ final class McpToolRegistrarTest extends TestCase
 
         // hidden_perm should NOT be registered as a dynamic tool
         // (the collision was caught); but srv_good should be registered.
-        $dynamicTools = $this->registry->getDynamicTools();
-        $dynamicNames = array_map(static fn (array $t): string => $t['name'], $dynamicTools);
-        $this->assertNotContains('hidden_perm', $dynamicNames, 'Hidden permanent collision should not be registered as dynamic');
-
-        // Non-colliding MCP tool should be registered
         $names = $this->registry->activeToolNames();
-        // hidden_perm is excluded from visibility but srv_good should be visible
+        // hidden_perm is excluded from visibility but srv_good should be visible.
         $this->assertNotContains('hidden_perm', $names, 'Hidden permanent should not appear in active names');
         $this->assertContains('srv_good', $names, 'Non-colliding MCP tool should register and be visible');
 
@@ -486,6 +480,138 @@ final class McpToolRegistrarTest extends TestCase
         $this->assertSame('run-hidden', $warnings[0]['context']['run_id']);
         $this->assertSame('run-hidden', $warnings[0]['context']['session_id']);
         $this->assertSame('tool.register_failed', $warnings[0]['context']['event_type']);
+    }
+
+    /* ── Test thesis 4: Idempotent synchronization for unchanged catalogs ── */
+
+    public function testUnchangedCatalogRegistrationPreservesHandlerIdentity(): void
+    {
+        $catalog = new McpToolCatalogDTO(
+            runId: 'run-1',
+            servers: [
+                'srv' => new McpServerCatalogEntryDTO(
+                    serverName: 'srv',
+                    transport: 'stdio',
+                    status: McpServerCatalogStatusEnum::CONNECTED,
+                    tools: [
+                        new McpToolDefinitionDTO(
+                            hatfieldName: 'srv_x',
+                            serverName: 'srv',
+                            mcpName: 'x',
+                            description: 'Tool X',
+                            inputSchema: ['type' => 'object', 'properties' => ['p' => ['type' => 'string']]],
+                        ),
+                    ],
+                ),
+            ],
+        );
+
+        $storeData = ['run-1' => $catalog];
+        $store = $this->makeMutableStore($storeData);
+        $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
+
+        $registrar->registerForRun('run-1');
+        $firstHandler = $this->registry->toolDefinition('srv_x')?->handler;
+        $this->assertNotNull($firstHandler);
+
+        // Same catalog on the next LLM step: no remove/re-register churn.
+        $registrar->registerForRun('run-1');
+        $secondHandler = $this->registry->toolDefinition('srv_x')?->handler;
+
+        $this->assertSame($firstHandler, $secondHandler, 'Unchanged catalog must preserve the registered handler object');
+    }
+
+    public function testChangedCatalogReplacesHandlers(): void
+    {
+        $catalog1 = new McpToolCatalogDTO(
+            runId: 'run-1',
+            servers: [
+                'srv' => new McpServerCatalogEntryDTO(
+                    serverName: 'srv',
+                    transport: 'stdio',
+                    status: McpServerCatalogStatusEnum::CONNECTED,
+                    tools: [
+                        new McpToolDefinitionDTO(
+                            hatfieldName: 'srv_x',
+                            serverName: 'srv',
+                            mcpName: 'x',
+                            description: 'Tool X',
+                            inputSchema: [],
+                        ),
+                    ],
+                ),
+            ],
+        );
+        $catalog2 = new McpToolCatalogDTO(
+            runId: 'run-2',
+            servers: [
+                'srv' => new McpServerCatalogEntryDTO(
+                    serverName: 'srv',
+                    transport: 'stdio',
+                    status: McpServerCatalogStatusEnum::CONNECTED,
+                    tools: [
+                        new McpToolDefinitionDTO(
+                            hatfieldName: 'srv_x',
+                            serverName: 'srv',
+                            mcpName: 'x',
+                            description: 'Tool X updated',
+                            inputSchema: [],
+                        ),
+                    ],
+                ),
+            ],
+        );
+
+        $storeData = ['run-1' => $catalog1];
+        $store = $this->makeMutableStore($storeData);
+        $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
+
+        $registrar->registerForRun('run-1');
+        $firstHandler = $this->registry->toolDefinition('srv_x')?->handler;
+
+        $storeData['run-2'] = $catalog2;
+        $registrar->registerForRun('run-2');
+        $secondHandler = $this->registry->toolDefinition('srv_x')?->handler;
+
+        $this->assertNotSame($firstHandler, $secondHandler, 'Changed catalog must re-create the handler');
+        $this->assertSame('Tool X updated', $this->registry->toolDefinition('srv_x')?->description);
+    }
+
+    public function testMissingCatalogAfterRegistrationRemovesOwnedTools(): void
+    {
+        $catalog = new McpToolCatalogDTO(
+            runId: 'run-1',
+            servers: [
+                'srv' => new McpServerCatalogEntryDTO(
+                    serverName: 'srv',
+                    transport: 'stdio',
+                    status: McpServerCatalogStatusEnum::CONNECTED,
+                    tools: [
+                        new McpToolDefinitionDTO(
+                            hatfieldName: 'srv_x',
+                            serverName: 'srv',
+                            mcpName: 'x',
+                            description: 'Tool X',
+                            inputSchema: [],
+                        ),
+                    ],
+                ),
+            ],
+        );
+
+        $storeData = ['run-1' => $catalog];
+        $store = $this->makeMutableStore($storeData);
+        $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
+
+        $registrar->registerForRun('run-1');
+        $this->assertContains('srv_x', $this->registry->activeToolNames());
+
+        // Catalog disappears (e.g. run switch to a run without a catalog):
+        // stale MCP tools must be removed, not silently retained.
+        unset($storeData['run-1']);
+        $registrar->registerForRun('run-1');
+
+        $this->assertSame([], $this->registry->activeToolNames());
     }
 
     private function makeHandlerFactory(): McpToolHandlerFactory
@@ -586,9 +712,9 @@ final class McpToolRegistrarTest extends TestCase
         };
     }
 
-    private function dummyHandler(): ToolHandlerInterface
+    private function dummyHandler(): object
     {
-        return new class implements ToolHandlerInterface {
+        return new class {
             public function __invoke(array $arguments = []): string
             {
                 return 'dummy';

@@ -4,11 +4,19 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution;
 
+use Ineersa\CodingAgent\Tool\Schema\SubagentTasksSchemaProvider;
+use Ineersa\CodingAgent\Tool\Validation\SubagentTasks\SubagentTasksLimit;
+use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\Component\Validator\Constraints as Assert;
-use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
  * Validated `subagent` tool arguments (single or parallel mode).
+ *
+ * Mode selection is declarative: providing `tasks` selects parallel mode and
+ * excludes agent/task; omitting it selects single mode which requires both.
+ * The parallel task-count bound (agents.max_agents) is settings-derived:
+ * SubagentTasksLimit validates the runtime limit and
+ * SubagentTasksSchemaProvider feeds the schema fragment from the same config.
  */
 final class SubagentArgumentsDTO
 {
@@ -16,8 +24,43 @@ final class SubagentArgumentsDTO
      * @param list<SubagentTaskDTO>|null $tasks
      */
     public function __construct(
+        #[Schema(description: 'Agent definition name for single mode.')]
+        #[Assert\When(
+            expression: 'this.tasks !== null',
+            constraints: [
+                new Assert\IsNull(message: 'Use either single mode {"agent","task"} or parallel mode {"tasks":[...]}, not both.'),
+            ],
+        )]
+        #[Assert\When(
+            expression: 'this.tasks === null',
+            constraints: [
+                new Assert\NotBlank(normalizer: 'trim', message: 'Single subagent mode requires non-empty "agent" and "task" strings.'),
+            ],
+        )]
         public readonly ?string $agent = null,
+        #[Schema(description: 'Task text for single mode.')]
+        #[Assert\When(
+            expression: 'this.tasks !== null',
+            constraints: [
+                new Assert\IsNull(message: 'Use either single mode {"agent","task"} or parallel mode {"tasks":[...]}, not both.'),
+            ],
+        )]
+        #[Assert\When(
+            expression: 'this.tasks === null',
+            constraints: [
+                new Assert\NotBlank(normalizer: 'trim', message: 'Single subagent mode requires non-empty "agent" and "task" strings.'),
+            ],
+        )]
         public readonly ?string $task = null,
+        #[Schema(provider: SubagentTasksSchemaProvider::class)]
+        #[Assert\When(
+            expression: 'this.tasks !== null',
+            constraints: [
+                new Assert\Count(min: 1, minMessage: 'Parallel subagent mode requires a non-empty "tasks" array.'),
+            ],
+        )]
+        #[Assert\Valid]
+        #[SubagentTasksLimit]
         public readonly ?array $tasks = null,
     ) {
     }
@@ -62,46 +105,5 @@ final class SubagentArgumentsDTO
         $tasks = $this->tasks;
 
         return $tasks;
-    }
-
-    #[Assert\Callback]
-    public function validateMode(ExecutionContextInterface $context): void
-    {
-        $hasSingleAgent = null !== $this->trimmedAgent();
-        $hasSingleTask = null !== $this->trimmedTask();
-        $hasTasksArray = null !== $this->tasks;
-
-        if ($hasTasksArray) {
-            if ($hasSingleAgent || $hasSingleTask) {
-                $context->buildViolation('Use either single mode {"agent","task"} or parallel mode {"tasks":[...]}, not both.')
-                    ->addViolation();
-
-                return;
-            }
-
-            if (!\is_array($this->tasks) || [] === $this->tasks) {
-                $context->buildViolation('Parallel subagent mode requires a non-empty "tasks" array.')
-                    ->addViolation();
-
-                return;
-            }
-
-            foreach ($this->tasks as $index => $task) {
-                if (!$task instanceof SubagentTaskDTO) {
-                    $context->buildViolation(\sprintf('tasks[%d] must be an object with "agent" and "task" strings.', $index))
-                        ->atPath('tasks')
-                        ->addViolation();
-
-                    return;
-                }
-            }
-
-            return;
-        }
-
-        if (!$hasSingleAgent || !$hasSingleTask) {
-            $context->buildViolation('Single subagent mode requires non-empty "agent" and "task" strings.')
-                ->addViolation();
-        }
     }
 }

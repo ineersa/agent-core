@@ -16,7 +16,10 @@ namespace Ineersa\Hatfield\ExtensionApi\Tool;
 final readonly class ToolResultContextDTO
 {
     /**
-     * @param array<string, mixed>             $arguments tool parameters that were passed
+     * @param array<string, mixed>             $arguments tool parameters that were passed — the flat
+     *                                                    provider/rewrite map for both typed built-in
+     *                                                    and raw dynamic tools (never an internal
+     *                                                    resolution envelope)
      * @param array<int, array<string, mixed>> $content   tool result content blocks
      * @param array<string, mixed>             $details   tool result details metadata
      * @param array<string, mixed>             $metadata  runtime context (e.g. session flags, provider metadata)

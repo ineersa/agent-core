@@ -35,7 +35,6 @@ use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PromptContractTestSupport;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\ProviderBoundaryCaptureSupport;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\Group;
@@ -407,9 +406,9 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
         return new AgentMcpToolsResolver($catalogStore, TestMcpConfigLoaderFactory::loaderForServers([]));
     }
 
-    private function dummyHandler(): ToolHandlerInterface
+    private function dummyHandler(): object
     {
-        return new class implements ToolHandlerInterface {
+        return new class {
             public function __invoke(array $arguments): string
             {
                 return 'ok';

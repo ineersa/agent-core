@@ -11,12 +11,23 @@ use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
+use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BgStatusTool;
 use Ineersa\CodingAgent\Tool\OutputCap;
+use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
+use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
+use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
+use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
+use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
+use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
+use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\BgStatusTool
@@ -106,7 +117,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
             $this->manager->start('echo "bg process"', self::TEST_SESSION);
         });
 
-        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'list']));
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list')));
 
         $data = Toon::decode($result);
         $this->assertIsArray($data);
@@ -120,7 +131,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     public function testListEmpty(): void
     {
-        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'list']));
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list')));
 
         $data = Toon::decode($result);
         $this->assertIsArray($data);
@@ -137,7 +148,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
         $this->waitUntilLogContains($started->logPath, 'hello from bg');
 
-        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'log', 'pid' => $started->pid]));
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'log', pid: $started->pid)));
 
         $this->assertStringContainsString('hello from bg', $result);
         $this->assertStringContainsString('BEGIN LOG', $result);
@@ -145,16 +156,22 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     public function testLogThrowsOnMissingPid(): void
     {
-        $this->expectException(\Throwable::class);
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'log']));
+        // pid is conditionally required by BgStatusArgumentsDTO When constraints;
+        // validation rejects before the handler runs.
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bg', 'bg_status', ['action' => 'log']));
+
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('The "pid" argument is required and must be a positive integer for the log action.', $message);
     }
 
     public function testLogThrowsOnUnknownPid(): void
     {
         $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('echo "test"', self::TEST_SESSION));
 
+        // Unknown pid is an execution failure (process lookup), not an input
+        // validation error — the handler must still run and fail deterministically.
         $this->expectException(\Throwable::class);
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'log', 'pid' => 999999]));
+        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'log', pid: 999999)));
     }
 
     /* ── stop action ── */
@@ -164,7 +181,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('sleep 30', self::TEST_SESSION));
         // start() persists the row and returns a live PID; stop needs no fixed delay.
 
-        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started->pid]));
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'stop', pid: $started->pid)));
 
         $this->assertStringContainsString('PID '.$started->pid, $result);
         $this->assertStringContainsString('stopped', $result);
@@ -175,7 +192,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('echo "quick"', self::TEST_SESSION));
         $this->waitUntilFinished($started->pid);
 
-        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started->pid]));
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'stop', pid: $started->pid)));
 
         $this->assertStringContainsString('already finished', $result);
     }
@@ -186,7 +203,15 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     {
         $definition = $this->tool->definition();
         $this->assertSame('bg_status', $definition->name);
-        $this->assertSame(1, $definition->parametersJsonSchema['properties']['pid']['minimum']);
+        // Typed DTO tool: schema is generated natively from BgStatusArgumentsDTO
+        // (parametersJsonSchema === null routes through the native factory).
+        $this->assertNull($definition->parametersJsonSchema);
+
+        $schema = NativeToolSchemaProbe::for($this->tool);
+        $pid = $schema['properties']['pid'];
+        // Assert\Range(min: 1) maps to modern minimum: 1 (provider-compatible).
+        $this->assertSame(1, $pid['minimum']);
+        $this->assertArrayNotHasKey('exclusiveMinimum', $pid);
     }
 
     public function testDefinitionUsesParallelExecutionMode(): void
@@ -199,8 +224,12 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     public function testInvalidActionThrowsException(): void
     {
-        $this->expectException(\Throwable::class);
-        ($this->tool)(['action' => 'invalid']);
+        // action is Choice-constrained on the DTO; validation rejects before
+        // the handler runs.
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bg', 'bg_status', ['action' => 'invalid']));
+
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('Invalid action ""invalid"". Use one of: list, log, stop.', $message);
     }
 
     /* ── Session scoping ── */
@@ -210,8 +239,8 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $this->withContext('session-A', fn () => $this->manager->start('echo "A-for-test-B"', 'session-A'));
         $this->withContext('session-B', fn () => $this->manager->start('echo "B-for-test-A"', 'session-B'));
 
-        $resultA = $this->withContext('session-A', fn (): string => ($this->tool)(['action' => 'list']));
-        $resultB = $this->withContext('session-B', fn (): string => ($this->tool)(['action' => 'list']));
+        $resultA = $this->withContext('session-A', fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list')));
+        $resultB = $this->withContext('session-B', fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list')));
 
         $dataA = Toon::decode($resultA);
         $dataB = Toon::decode($resultB);
@@ -254,7 +283,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start($command, self::TEST_SESSION));
         $this->waitUntilLogContains($started->logPath, $sentinel);
 
-        $result = $this->withContext(self::TEST_SESSION, static fn (): string => $lowCapTool(['action' => 'log', 'pid' => $started->pid]));
+        $result = $this->withContext(self::TEST_SESSION, static fn (): string => $lowCapTool(new BgStatusArgumentsDTO(action: 'log', pid: $started->pid)));
 
         // Tool returns raw output; capping is centralized.
         $this->assertStringNotContainsString('Output capped', $result);
@@ -265,8 +294,37 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     public function testMissingActionThrowsException(): void
     {
-        $this->expectException(\Throwable::class);
-        ($this->tool)([]);
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bg', 'bg_status', []));
+
+        $message = (string) $result->getResult();
+        $this->assertStringContainsString('The "action" argument is required and must be a non-empty string.', $message);
+    }
+
+    /**
+     * Production-shaped execution path for invalid-argument tests (registry →
+     * native resolver → ValidateToolCallArgumentsListener → FaultTolerantToolbox).
+     * BgStatusArgumentsDTO uses only built-in constraints, so the default
+     * listener validator applies.
+     */
+    private function validationToolbox(): FaultTolerantToolbox
+    {
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(ToolCallArgumentsResolved::class, new ValidateToolCallArgumentsListener());
+
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'bg_status',
+            description: 'bg_status',
+            handler: $this->tool,
+            promptLine: 'bg_status',
+        );
+
+        return new FaultTolerantToolbox(new RegistryBackedToolbox(
+            registry: $registry,
+            argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+            schemaFactory: NativeToolSchemaProbe::schemaFactory(),
+            eventDispatcher: $dispatcher,
+        ));
     }
 
     /* ── Helpers ── */
