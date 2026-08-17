@@ -58,6 +58,8 @@ final class SafeGuardClassifier
     /**
      * Classify a tool call against the active policy.
      *
+     * The classifier does not sniff argument shapes.
+     *
      * @param string               $toolName  e.g., "bash", "write", "edit", "read"
      * @param array<string, mixed> $arguments Tool-specific decoded arguments
      * @param string               $cwd       Current working directory

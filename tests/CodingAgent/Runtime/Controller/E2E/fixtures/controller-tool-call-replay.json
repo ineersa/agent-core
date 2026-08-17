@@ -7,22 +7,66 @@
     "recording_source": "llama_cpp_test/test",
     "input": {
         "messages": [
-            {"role": "user", "content": "Call the tool named read exactly once with path ./notes.txt. Do not use an absolute path, and do not call any other tool. After the tool succeeds, answer exactly done."}
+            {
+                "role": "user",
+                "content": "Call the tool named read exactly once with path ./notes.txt. Do not use an absolute path, and do not call any other tool. After the tool succeeds, answer exactly done."
+            }
         ]
     },
     "deltas": [
-        {"type": "tool_call_start", "id": "call_ctrl_1", "name": "read"},
-        {"type": "tool_input_delta", "id": "call_ctrl_1", "name": "read", "partial_json": "{\"pa"},
-        {"type": "tool_input_delta", "id": "call_ctrl_1", "name": "read", "partial_json": "th\":"},
-        {"type": "tool_input_delta", "id": "call_ctrl_1", "name": "read", "partial_json": " \"./"},
-        {"type": "tool_input_delta", "id": "call_ctrl_1", "name": "read", "partial_json": "not"},
-        {"type": "tool_input_delta", "id": "call_ctrl_1", "name": "read", "partial_json": "es"},
-        {"type": "tool_input_delta", "id": "call_ctrl_1", "name": "read", "partial_json": ".t"},
-        {"type": "tool_input_delta", "id": "call_ctrl_1", "name": "read", "partial_json": "xt"},
-        {"type": "tool_input_delta", "id": "call_ctrl_1", "name": "read", "partial_json": "\"}"},
-        {"type": "tool_call_complete", "tool_calls": [
-            {"id": "call_ctrl_1", "name": "read", "arguments": {"path": "./notes.txt"}}
-        ]}
+        {
+            "type": "tool_call_start",
+            "id": "call_ctrl_1",
+            "name": "read"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_ctrl_1",
+            "name": "read",
+            "partial_json": "{\"pa"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_ctrl_1",
+            "name": "read",
+            "partial_json": "th\":"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_ctrl_1",
+            "name": "read",
+            "partial_json": "\"./n"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_ctrl_1",
+            "name": "read",
+            "partial_json": "otes"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_ctrl_1",
+            "name": "read",
+            "partial_json": ".txt"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_ctrl_1",
+            "name": "read",
+            "partial_json": "\"}"
+        },
+        {
+            "type": "tool_call_complete",
+            "tool_calls": [
+                {
+                    "id": "call_ctrl_1",
+                    "name": "read",
+                    "arguments": {
+                        "path": "./notes.txt"
+                    }
+                }
+            ]
+        }
     ],
     "usage": {
         "input_tokens": 85,

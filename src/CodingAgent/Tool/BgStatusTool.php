@@ -10,12 +10,13 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
 
 /**
  * Inspect, tail-log, and stop background processes.
  *
- * Implements both HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and ToolHandlerInterface for execution.
+ * Implements HatfieldToolProviderInterface for automatic registration
+ * as a permanent tool and the Symfony AI native tool contract (typed DTO arguments).
  *
  * Actions:
  *  - list:  Show all tracked background processes with status, scoped to
@@ -30,8 +31,12 @@ use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
  * to every BackgroundProcessManager call. This ensures the LLM only sees
  * and operates on processes it owns.
  */
-final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+final class BgStatusTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'bg_status';
+
+    public const string DESCRIPTION = 'List background processes in the current session, inspect their logs, or stop them.';
+
     public function __construct(
         private readonly BackgroundProcessManager $manager,
         private readonly BackgroundProcessConfig $config,
@@ -42,28 +47,23 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
     /**
      * Execute the bg_status tool.
      *
-     * @param array<string, mixed> $arguments Must contain 'action' (string)
+     * @param BgStatusArgumentsDTO $arguments
      *                                        and optionally 'pid' (int)
      *
      * @return string Human-readable result content
      *
      * @throws ToolCallException on validation or execution failures
      */
-    public function __invoke(array $arguments): string
+    public function __invoke(BgStatusArgumentsDTO $arguments): string
     {
-        // Validate required argument
-        $action = $arguments['action'] ?? null;
-        if (!\is_string($action) || '' === $action) {
-            throw new ToolCallException('The "action" argument is required and must be a non-empty string.', retryable: false, hint: 'Use one of: list, log, stop.');
-        }
-
-        $action = strtolower($action);
-
-        return match ($action) {
+        // action is Choice-constrained and pid is conditionally required on
+        // the DTO; the native ValidateToolCallArgumentsListener guarantees
+        // both before the handler runs.
+        return match ($arguments->action) {
             'list' => $this->handleList(),
             'log' => $this->handleLog($arguments),
             'stop' => $this->handleStop($arguments),
-            default => throw new ToolCallException(\sprintf('Invalid action "%s".', $action), retryable: false, hint: 'Use one of: list, log, stop.'),
+            default => throw new \LogicException('Unreachable: action is Choice-constrained on BgStatusArgumentsDTO and rejected before invocation.'),
         };
     }
 
@@ -73,25 +73,8 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'bg_status',
-            description: 'List background processes in the current session, inspect their logs, or stop them.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'action' => [
-                        'type' => 'string',
-                        'enum' => ['list', 'log', 'stop'],
-                        'description' => "Action: list session processes, log a process's output tail, or stop a process.",
-                    ],
-                    'pid' => [
-                        'type' => 'integer',
-                        'minimum' => 1,
-                        'description' => 'Process PID (required for log and stop actions)',
-                    ],
-                ],
-                'required' => ['action'],
-                'additionalProperties' => false,
-            ],
+            name: self::NAME,
+            description: self::DESCRIPTION,
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
             promptLine: 'bg_status action [pid] — list, view logs for, or stop background processes',
@@ -147,18 +130,14 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
     }
 
     /**
-     * @param array<string, mixed> $arguments
-     *
      * @return string Log tail content
      *
      * @throws ToolCallException
      */
-    private function handleLog(array $arguments): string
+    private function handleLog(BgStatusArgumentsDTO $arguments): string
     {
-        $pid = $arguments['pid'] ?? null;
-        if (!\is_int($pid) || $pid <= 0) {
-            throw new ToolCallException('The "pid" argument is required and must be a positive integer for the log action.', retryable: false, hint: 'Provide the PID from bg_status list output.');
-        }
+        /** @var int $pid DTO When constraints require a positive pid for the log action. */
+        $pid = $arguments->pid;
 
         try {
             $sessionId = $this->contextAccessor->current()?->runId();
@@ -188,18 +167,14 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
     }
 
     /**
-     * @param array<string, mixed> $arguments
-     *
      * @return string Stop result summary
      *
      * @throws ToolCallException
      */
-    private function handleStop(array $arguments): string
+    private function handleStop(BgStatusArgumentsDTO $arguments): string
     {
-        $pid = $arguments['pid'] ?? null;
-        if (!\is_int($pid) || $pid <= 0) {
-            throw new ToolCallException('The "pid" argument is required and must be a positive integer for the stop action.', retryable: false, hint: 'Provide the PID from bg_status list output.');
-        }
+        /** @var int $pid DTO When constraints require a positive pid for the stop action. */
+        $pid = $arguments->pid;
 
         try {
             $sessionId = $this->contextAccessor->current()?->runId();

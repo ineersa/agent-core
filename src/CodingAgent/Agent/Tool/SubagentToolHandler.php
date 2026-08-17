@@ -7,10 +7,8 @@ namespace Ineersa\CodingAgent\Agent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
-use Ineersa\CodingAgent\Agent\Execution\SubagentArgumentsFactory;
+use Ineersa\CodingAgent\Agent\Execution\SubagentArgumentsDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
-use Ineersa\CodingAgent\Config\AgentsConfig;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
 
@@ -21,13 +19,15 @@ use Psr\Container\ContainerInterface;
  * service locator so ToolRegistry can register the tool definition without
  * constructing the heavy subagent execution graph at container compile time.
  */
-final class SubagentToolHandler implements ToolHandlerInterface
+final class SubagentToolHandler
 {
+    public const string NAME = 'subagent';
+
+    public const string DESCRIPTION_TEMPLATE = 'Launch interactive foreground subagent(s). Single mode uses "agent" and "task". Parallel mode uses "tasks" with up to %d agents per call (agents.max_agents). The tool blocks until all children finish. Single-mode results include the full child handoff inline; parallel results are bounded summaries — use agent_retrieve for complete parallel handoffs or extra detail.';
+
     private const string EXECUTION_SERVICE_LOCATOR_KEY = 'execution';
 
     public function __construct(
-        private readonly SubagentArgumentsFactory $argumentsFactory,
-        private readonly AgentsConfig $agentsConfig,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ToolRuntime $toolRuntime,
         /** @var ContainerInterface SubagentExecutionService is resolved only on invoke. */
@@ -35,10 +35,7 @@ final class SubagentToolHandler implements ToolHandlerInterface
     ) {
     }
 
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    public function __invoke(array $arguments): DeferredToolCompletionOutcome
+    public function __invoke(SubagentArgumentsDTO $arguments): DeferredToolCompletionOutcome
     {
         return $this->toolRuntime->run(function () use ($arguments): DeferredToolCompletionOutcome {
             $context = $this->contextAccessor->current();
@@ -51,16 +48,13 @@ final class SubagentToolHandler implements ToolHandlerInterface
                 throw new ToolCallException('Subagent tool requires a valid parent run ID. No run context is active.', retryable: false);
             }
 
-            $parsed = $this->argumentsFactory->fromToolArguments($arguments);
+            $parsed = $arguments;
 
             if ($parsed->isParallelMode()) {
-                $tasks = $parsed->parallelTasks();
-                $maxAgents = $this->agentsConfig->maxAgents;
-                if (\count($tasks) > $maxAgents) {
-                    throw new ToolCallException(\sprintf('Parallel subagent execution supports at most %d agents per tool call, but %d tasks were requested.', $maxAgents, \count($tasks)), retryable: false, hint: \sprintf('Split the work into multiple subagent calls with at most %d tasks each.', $maxAgents));
-                }
-
-                return $this->executionService()->executeParallel($parentRunId, $tasks);
+                // The per-call task-count limit (agents.max_agents) is enforced
+                // by SubagentTasksLimit on SubagentArgumentsDTO; execution only
+                // sees validated arguments.
+                return $this->executionService()->executeParallel($parentRunId, $parsed->parallelTasks());
             }
 
             return $this->executionService()->execute(

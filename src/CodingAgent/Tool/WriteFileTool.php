@@ -7,12 +7,13 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
+use Ineersa\CodingAgent\Tool\Arguments\WriteFileArgumentsDTO;
 
 /**
  * Write (create or replace) a file at the specified path.
  *
- * Implements both HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and ToolHandlerInterface for execution.
+ * Implements HatfieldToolProviderInterface for automatic registration
+ * as a permanent tool and the Symfony AI native tool contract (typed DTO arguments).
  *
  * Features:
  * - Creates parent directories when they do not exist.
@@ -20,8 +21,12 @@ use Ineersa\CodingAgent\Path\PathResolver;
  * - Checks cancellation before writing and before returning.
  * - Uses LOCK_EX for safe concurrent writes.
  */
-final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+final class WriteFileTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'write';
+
+    public const string DESCRIPTION = 'Create a new file or overwrite an existing file with the given text content. Creates parent directories automatically if they do not exist. Non-empty text content is automatically newline-terminated for POSIX compatibility.';
+
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
     ) {
@@ -30,26 +35,15 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
     /**
      * Execute the write tool.
      *
-     * @param array<string, mixed> $arguments Must contain 'path' (string) and 'content' (string)
-     *
      * @return string Success message with byte count
      *
      * @throws \RuntimeException on filesystem errors or cancellation
      */
-    public function __invoke(array $arguments): string
+    public function __invoke(WriteFileArgumentsDTO $arguments): string
     {
         return $this->toolRuntime->run(static function () use ($arguments): string {
-            // Validate required arguments
-            $path = $arguments['path'] ?? null;
-            $content = $arguments['content'] ?? null;
-
-            if (!\is_string($path) || '' === $path) {
-                throw new ToolCallException('The "path" argument is required and must be a non-empty string.', retryable: false, hint: 'Provide a valid file path.');
-            }
-
-            if (!\is_string($content)) {
-                throw new ToolCallException('The "content" argument is required and must be a string.', retryable: false, hint: 'Provide the text content to write.');
-            }
+            $path = $arguments->path;
+            $content = $arguments->content;
 
             // Resolve the path to an absolute normalized form
             $resolvedPath = PathResolver::resolve($path);
@@ -83,23 +77,8 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'write',
-            description: 'Create a new file or overwrite an existing file with the given text content. Creates parent directories automatically if they do not exist. Non-empty text content is automatically newline-terminated for POSIX compatibility.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'path' => [
-                        'type' => 'string',
-                        'description' => 'File path to write (absolute, or relative to the working directory)',
-                    ],
-                    'content' => [
-                        'type' => 'string',
-                        'description' => 'Text content to write to the file',
-                    ],
-                ],
-                'required' => ['path', 'content'],
-                'additionalProperties' => false,
-            ],
+            name: self::NAME,
+            description: self::DESCRIPTION,
             handler: $this,
             executionMode: ToolExecutionMode::Sequential,
             promptLine: 'write path content — create or overwrite a text file',

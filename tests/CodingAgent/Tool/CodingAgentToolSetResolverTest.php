@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\TestCase;
 
@@ -170,9 +169,9 @@ final class CodingAgentToolSetResolverTest extends TestCase
         );
     }
 
-    private function dummyHandler(): ToolHandlerInterface
+    private function dummyHandler(): object
     {
-        return new class implements ToolHandlerInterface {
+        return new class {
             public function __invoke(array $arguments = []): string
             {
                 return 'handler result';

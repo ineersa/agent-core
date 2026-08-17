@@ -49,6 +49,10 @@ to allow / block / replace-result. Allow re-runs the **exact** original tool cal
 `registerToolCallRewriteHook($toolName, $hook)` can adjust arguments for a specific tool
 before handler execution (policy normalization, path rewriting, etc.).
 
+### Argument shapes
+
+Rewrite and result hooks receive the flat provider-visible argument map (typed built-ins and raw dynamic tools alike); rewrite hooks must return the same flat shape.
+
 ## Tool-result hooks
 
 `registerToolResultHook()` runs after tool execution in registration order.

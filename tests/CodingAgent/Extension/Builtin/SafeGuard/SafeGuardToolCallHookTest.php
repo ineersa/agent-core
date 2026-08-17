@@ -68,6 +68,35 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
     }
 
+    public function testRawSettingsMutationWithChannelStillRequiresApproval(): void
+    {
+        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        // settings is a raw-array tool: arguments stay flat, never enveloped.
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO(
+            'c8',
+            'settings',
+            ['operation' => 'set', 'path' => 'tui.theme', 'scope' => 'project', 'value' => 'nord'],
+            0,
+        ));
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame('custom_dangerous', $dto->details['category'] ?? null);
+    }
+
+    public function testRawSettingsWithTopLevelArgumentsKeyIsNotMisunwrapped(): void
+    {
+        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        // settings stays flat: a top-level `arguments` key in its raw
+        // value/schema is an ordinary field of the raw map, not a typed
+        // built-in envelope (typed calls never carry an envelope).
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO(
+            'c9',
+            'settings',
+            ['arguments' => ['operation' => 'set', 'path' => 'tui.theme', 'scope' => 'project']],
+            0,
+        ));
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
+    }
+
     public function testResolveApprovalAnswerAllowReturnsAllow(): void
     {
         $decision = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO('q', '✅ Allow', 'bash', ['category' => 'destructive']));

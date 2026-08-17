@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Mcp\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 
 /**
  * Per-tool MCP execution handler.
@@ -17,7 +16,7 @@ use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
  * This class is a tiny value-object-like callable.  It is NOT
  * autowireable — instances must be produced by {@see McpToolHandlerFactory}.
  */
-final readonly class McpToolHandler implements ToolHandlerInterface
+final readonly class McpToolHandler
 {
     /**
      * @param McpToolInvoker $invoker Shared runtime invoker
@@ -29,6 +28,9 @@ final readonly class McpToolHandler implements ToolHandlerInterface
     ) {
     }
 
+    /**
+     * @param array<string, mixed> $arguments
+     */
     public function __invoke(array $arguments): mixed
     {
         try {

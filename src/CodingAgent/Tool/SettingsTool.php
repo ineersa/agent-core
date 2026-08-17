@@ -22,7 +22,7 @@ use Ineersa\CodingAgent\Config\SettingsValueResolver;
  * writable. Disk changes require a Hatfield restart to take effect.
  * Do not use generic file tools to read or edit settings YAML.
  */
-final class SettingsTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+final class SettingsTool implements HatfieldToolProviderInterface
 {
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
@@ -58,6 +58,10 @@ final class SettingsTool implements HatfieldToolProviderInterface, ToolHandlerIn
 
     public function definition(): ToolDefinitionDTO
     {
+        // Deliberately stays a raw-array tool: set() distinguishes an OMITTED
+        // `value` (array_key_exists check) from an EXPLICIT null ("use null to
+        // set null"), which a typed DTO property cannot express, and the value
+        // schema is an open JSON union. See the `value` schema property below.
         return new ToolDefinitionDTO(
             name: 'settings',
             description: 'Read, set, or remove one Hatfield setting by dotted path.',

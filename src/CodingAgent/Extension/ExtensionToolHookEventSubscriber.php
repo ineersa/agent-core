@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
+use Ineersa\CodingAgent\Tool\Event\ToolCallFailedEvent;
 use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
@@ -17,7 +18,6 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionKindEnum;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionKindEnum;
 use Psr\Log\LoggerInterface;
-use Symfony\AI\Agent\Toolbox\Event\ToolCallFailed;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
 use Symfony\AI\Agent\Toolbox\ToolResult;
@@ -41,8 +41,11 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * This subscriber contains ZERO SafeGuard-specific knowledge. Any extension implementing
  * ApprovalAnswerHookInterface can drive its own vocabulary/outcome mapping.
  *
- * Tool-result hooks are currently observational because Symfony AI's
- * ToolCallSucceeded/ToolCallFailed events expose readonly result/exception data.
+ * Tool-result hooks are currently observational: Symfony AI's
+ * ToolCallSucceeded carries the readonly result; failures arrive through the
+ * app-owned {@see ToolCallFailedEvent}, which carries the exact rewritten
+ * flat provider ToolCall and the effective exception (the native
+ * ToolCallFailed event exposes only the internal resolved parameter map).
  */
 final readonly class ExtensionToolHookEventSubscriber implements EventSubscriberInterface
 {
@@ -61,7 +64,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         return [
             ToolCallRequested::class => 'onToolCallRequested',
             ToolCallSucceeded::class => 'onToolCallSucceeded',
-            ToolCallFailed::class => 'onToolCallFailed',
+            ToolCallFailedEvent::class => 'onToolCallFailed',
         ];
     }
 
@@ -215,19 +218,18 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         );
     }
 
-    public function onToolCallFailed(ToolCallFailed $event): void
+    public function onToolCallFailed(ToolCallFailedEvent $event): void
     {
+        // The app-owned event carries the exact rewritten flat provider
+        // ToolCall and the effective original failure; result hooks must
+        // never see the internal resolved parameter map.
         $this->runResultHooks(
-            toolCall: new ToolCall(
-                id: '',
-                name: $event->getDefinition()->getName(),
-                arguments: $event->getArguments(),
-            ),
+            toolCall: $event->toolCall,
             isError: true,
-            rawResult: $event->getException()->getMessage(),
+            rawResult: $event->exception->getMessage(),
             details: [
-                'error_type' => $event->getException()::class,
-                'message' => $event->getException()->getMessage(),
+                'error_type' => $event->exception::class,
+                'message' => $event->exception->getMessage(),
             ],
         );
     }

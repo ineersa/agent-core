@@ -12,13 +12,19 @@ use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber;
+use Ineersa\CodingAgent\Tool\Event\ToolCallFailedEvent;
 use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
+use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Tool\ExecutionReference;
 use Symfony\AI\Platform\Tool\Tool;
@@ -312,6 +318,118 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $this->assertSame('q-missing', $context['question_id'] ?? null);
         $this->assertSame($missingHookClass, $context['hook_class'] ?? null);
         $this->assertArrayNotHasKey('answer', $context);
+    }
+
+    public function testTypedFailureResultHookSeesOriginalFlatArguments(): void
+    {
+        $seen = null;
+        $hook = new class($seen) implements ToolResultHookInterface {
+            public function __construct(private mixed &$seen)
+            {
+            }
+
+            public function onToolResult(ToolResultContextDTO $context): ToolResultDecisionDTO
+            {
+                $this->seen = $context;
+
+                return ToolResultDecisionDTO::keep();
+            }
+        };
+
+        $registry = new ExtensionHookRegistry();
+        $registry->addToolResultHook($hook);
+        $subscriber = new ExtensionToolHookEventSubscriber($registry, '/tmp');
+
+        // The app-owned failure event carries the exact rewritten flat
+        // provider ToolCall and the effective original exception.
+        $toolCall = new ToolCall('call-fail-typed', 'read', ['path' => './x.txt']);
+        $subscriber->onToolCallFailed(new ToolCallFailedEvent(
+            toolCall: $toolCall,
+            exception: new \RuntimeException('Invalid arguments provided for "read" tool.'),
+        ));
+
+        $this->assertNotNull($seen);
+        $this->assertSame('read', $seen->toolName);
+        $this->assertSame('call-fail-typed', $seen->toolCallId);
+        $this->assertTrue($seen->isError);
+        // Original flat rewritten provider arguments, never a resolved map.
+        $this->assertSame(['path' => './x.txt'], $seen->arguments);
+        $this->assertSame(\RuntimeException::class, $seen->details['error_type']);
+    }
+
+    public function testRawFailureResultHookSeesOriginalFlatArguments(): void
+    {
+        $seen = null;
+        $hook = new class($seen) implements ToolResultHookInterface {
+            public function __construct(private mixed &$seen)
+            {
+            }
+
+            public function onToolResult(ToolResultContextDTO $context): ToolResultDecisionDTO
+            {
+                $this->seen = $context;
+
+                return ToolResultDecisionDTO::keep();
+            }
+        };
+
+        $registry = new ExtensionHookRegistry();
+        $registry->addToolResultHook($hook);
+        $subscriber = new ExtensionToolHookEventSubscriber($registry, '/tmp');
+
+        // Raw tool with a legitimate top-level `arguments` field in its flat map.
+        $toolCall = new ToolCall('call-fail-raw', 'mcp_search', ['arguments' => ['q' => 'x'], 'query' => 'x']);
+        $subscriber->onToolCallFailed(new ToolCallFailedEvent(
+            toolCall: $toolCall,
+            exception: new \RuntimeException('server exploded'),
+        ));
+
+        $this->assertNotNull($seen);
+        $this->assertSame('mcp_search', $seen->toolName);
+        $this->assertTrue($seen->isError);
+        $this->assertSame(['arguments' => ['q' => 'x'], 'query' => 'x'], $seen->arguments);
+    }
+
+    public function testSucceededResultHookSeesOriginalFlatArguments(): void
+    {
+        $seen = null;
+        $hook = new class($seen) implements ToolResultHookInterface {
+            public function __construct(private mixed &$seen)
+            {
+            }
+
+            public function onToolResult(ToolResultContextDTO $context): ToolResultDecisionDTO
+            {
+                $this->seen = $context;
+
+                return ToolResultDecisionDTO::keep();
+            }
+        };
+
+        $registry = new ExtensionHookRegistry();
+        $registry->addToolResultHook($hook);
+        $subscriber = new ExtensionToolHookEventSubscriber($registry, '/tmp');
+
+        $toolCall = new ToolCall('call-ok', 'read', ['path' => './ok.txt']);
+        $result = new ToolResult($toolCall, 'ok');
+
+        $subscriber->onToolCallSucceeded(new ToolCallSucceeded(
+            tool: new class {
+            },
+            definition: new Tool(
+                reference: new ExecutionReference(self::class),
+                name: 'read',
+                description: 'test',
+                parameters: null,
+            ),
+            arguments: ['arguments' => $toolCall->getArguments()],
+            result: $result,
+        ));
+
+        $this->assertNotNull($seen);
+        $this->assertFalse($seen->isError);
+        $this->assertSame('call-ok', $seen->toolCallId);
+        $this->assertSame(['path' => './ok.txt'], $seen->arguments);
     }
 
     private function requested(ToolCall $toolCall): ToolCallRequested
