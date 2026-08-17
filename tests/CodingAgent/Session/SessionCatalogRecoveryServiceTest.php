@@ -110,12 +110,18 @@ final class SessionCatalogRecoveryServiceTest extends IsolatedKernelTestCase
         $this->assertSame($originalBytes, file_get_contents($eventsPath), 'recovery must not rewrite events.jsonl');
 
         // Existing SessionInitializer replay remains usable after catalog recovery.
+        // The session-scoped parent applier is composed per session; the test
+        // builds one over a stub projector (blocks come from the provider).
         /** @var SessionInitializer $initializer */
         $initializer = self::getContainer()->get(SessionInitializer::class);
+        $eventApplier = new \Ineersa\Tui\Runtime\TuiRuntimeEventApplier(
+            $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class),
+            $this->createStub(\Symfony\Component\Serializer\Normalizer\DenormalizerInterface::class),
+        );
         $state = $initializer->initialize($sessionId);
         $this->assertTrue($state->resuming);
         $this->assertSame($sessionId, $state->sessionId);
-        $blocks = $initializer->buildInitialTranscript($state);
+        $blocks = $initializer->buildInitialTranscript($state, $eventApplier);
         $this->assertNotEmpty($blocks);
         $joined = '';
         foreach ($blocks as $block) {

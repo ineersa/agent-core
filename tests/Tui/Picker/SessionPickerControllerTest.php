@@ -9,11 +9,15 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Picker\SessionPickerController;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
+use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
+use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
+use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -30,7 +34,7 @@ final class SessionPickerControllerTest extends TestCase
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
             $em,
         );
-        $controller = new SessionPickerController($sessionStore, $switch);
+        $controller = new SessionPickerController($this->tui(), $this->screen(), $sessionStore, $switch);
 
         $this->assertFalse($controller->isOpen());
     }
@@ -119,13 +123,6 @@ final class SessionPickerControllerTest extends TestCase
         $switch = new class implements TuiSessionSwitchServiceInterface {
             public ?string $resumedSessionId = null;
 
-            public function bindForIteration(
-                \Symfony\Component\Tui\Tui $tui,
-                \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
-                \Ineersa\Tui\Runtime\TuiSessionState $state,
-            ): void {
-            }
-
             public function requestResume(string $sessionId): void
             {
                 $this->resumedSessionId = $sessionId;
@@ -152,7 +149,7 @@ final class SessionPickerControllerTest extends TestCase
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
             $em,
         );
-        $controller = new SessionPickerController($sessionStore, $switch);
+        $controller = new SessionPickerController($this->tui(), $this->screen(), $sessionStore, $switch);
 
         $controller->applySelectEffect('42');
 
@@ -168,7 +165,7 @@ final class SessionPickerControllerTest extends TestCase
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
             $em,
         );
-        $controller = new SessionPickerController($sessionStore, $switch);
+        $controller = new SessionPickerController($this->tui(), $this->screen(), $sessionStore, $switch);
 
         // Should not throw when no picker is open
         $controller->closePicker();
@@ -177,46 +174,62 @@ final class SessionPickerControllerTest extends TestCase
     }
 
     #[Test]
-    public function testOpenForRenameCommandIsSafeWithoutRuntimeRefs(): void
-    {
-        $switch = $this->createStub(TuiSessionSwitchServiceInterface::class);
-        $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore(
-            new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
-            $em,
-        );
-        $controller = new SessionPickerController($sessionStore, $switch);
-
-        // Without TUI runtime refs, openForRenameCommand should be a no-op
-        // and must not throw.
-        $controller->openForRenameCommand();
-
-        $this->assertFalse($controller->isOpen(), 'Picker should not be open without TUI refs');
-    }
-
-    #[Test]
     public function testOpenForRenameCommandDoesNotMutateSwitch(): void
     {
-        $switch = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $switch = $this->createMock(TuiSessionSwitchServiceInterface::class);
+        $switch->expects($this->never())->method('requestResume');
+        $switch->expects($this->never())->method('requestNewDraft');
+
+        $query = $this->createStub(\Doctrine\ORM\Query::class);
+        $query->method('getResult')->willReturn([]);
+        $qb = $this->createStub(\Doctrine\ORM\QueryBuilder::class);
+        $qb->method('select')->willReturnSelf();
+        $qb->method('from')->willReturnSelf();
+        $qb->method('orderBy')->willReturnSelf();
+        $qb->method('getQuery')->willReturn($query);
         $em = $this->createStub(EntityManagerInterface::class);
+        $em->method('createQueryBuilder')->willReturn($qb);
+        $em->method('getClassMetadata')->willReturn(
+            new \Doctrine\ORM\Mapping\ClassMetadata(\Ineersa\CodingAgent\Entity\HatfieldSession::class),
+        );
+        $registry = $this->createStub(\Doctrine\Persistence\ManagerRegistry::class);
+        $registry->method('getManagerForClass')->willReturn($em);
+        $em->method('getRepository')->willReturn(new \Ineersa\CodingAgent\Entity\HatfieldSessionRepository($registry));
         $sessionStore = new HatfieldSessionStore(
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
             $em,
         );
-        $controller = new SessionPickerController($sessionStore, $switch);
+        $screen = $this->screen();
+        $controller = new SessionPickerController($this->tui(), $screen, $sessionStore, $switch);
 
-        // openForRenameCommand should never call the switch service
-        // (unlike open() which calls applySelectEffect -> requestResume).
-        // This is indirectly verified because openForRenameCommand returns
-        // without throwing (no runtime refs), but the important thing is
-        // the method never references $this->switch at all.
+        // openForRenameCommand must never call the switch service (unlike
+        // open() which calls applySelectEffect -> requestResume).  With an
+        // empty session store the picker reports the empty state instead of
+        // mounting an overlay.
         $controller->openForRenameCommand();
 
         $this->assertFalse($controller->isOpen());
+        $this->assertSame('No sessions found', $screen->registry()->getStatusEntries()['session'] ?? null);
     }
 
     private function createTheme(): DefaultTheme
     {
         return new DefaultTheme(new ThemePalette('test'));
+    }
+
+    private function tui(): \Symfony\Component\Tui\Tui
+    {
+        return new \Symfony\Component\Tui\Tui();
+    }
+
+    private function screen(): ChatScreen
+    {
+        return new ChatScreen(
+            $this->createTheme(),
+            'test-session',
+            new PromptEditor(),
+            new TranscriptDisplayConfig(),
+            new TranscriptDisplayState(),
+        );
     }
 }

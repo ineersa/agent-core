@@ -61,7 +61,7 @@ final class AgentsMainCommandHandlerTest extends TestCase
     private function handler(TuiSessionState $state, ChatScreen $screen): AgentsMainCommandHandler
     {
         $coordinator = new QuestionCoordinator();
-        $controller = new QuestionController($coordinator);
+        $controller = new QuestionController($coordinator, $screen);
 
         return new AgentsMainCommandHandler($state, $screen, $coordinator, $controller);
     }

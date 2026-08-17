@@ -9,7 +9,7 @@ use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaProbeServiceInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaReportDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaSectionDTO;
 use Ineersa\Tui\Command\CommandParser;
-use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Listener\UsageCommandRegistrar;
@@ -49,7 +49,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
             }
         };
 
-        $registry = new SlashCommandRegistry();
+        $catalog = new SlashCommandCatalog();
         $state = new TuiSessionState('usage-virtual');
         $state->footerModel = 'openai-codex/gpt-5.6-luna';
         $state->footerReasoning = 'high';
@@ -63,17 +63,18 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $state->usage->hasCacheTelemetry = true;
 
         $harness = new VirtualTuiHarness(sessionId: 'usage-virtual');
-        (new UsageCommandRegistrar($registry, $probe, new TestLogger()))->register(
-            $this->buildTuiContext()
-                ->withTui($harness->tui())
-                ->withState($state)
-                ->withScreen($harness->screen())
-                ->build(),
-        );
+        (new UsageCommandRegistrar($probe, new TestLogger()))->registerCatalog($catalog);
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState($state)
+            ->withScreen($harness->screen())
+            ->withSessionServices($this->createSessionServices(catalog: $catalog))
+            ->build();
+        (new UsageCommandRegistrar($probe, new TestLogger()))->register($context);
 
-        $this->assertTrue($registry->has('usage'));
+        $this->assertTrue($catalog->has('usage'));
         $meta = null;
-        foreach ($registry->allMetadata() as $item) {
+        foreach ($catalog->allMetadata() as $item) {
             if ('usage' === $item->name) {
                 $meta = $item;
                 break;
@@ -82,7 +83,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $this->assertNotNull($meta);
         $this->assertStringContainsString('quota', strtolower((string) $meta->description));
 
-        $router = new SubmissionRouter(new CommandParser(), $registry);
+        $router = new SubmissionRouter(new CommandParser(), $context->sessionServices->commandRegistry);
         $result = $router->route('/usage');
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertSame('markdown', $result->style);
@@ -117,21 +118,22 @@ final class TuiUsageCommandVirtualTest extends TestCase
             }
         };
 
-        $registry = new SlashCommandRegistry();
+        $catalog = new SlashCommandCatalog();
         $state = new TuiSessionState('usage-empty');
         $state->usage->inputTokens = 11;
         $state->usage->outputTokens = 2;
         $state->usage->totalCost = 0.01;
         $harness = new VirtualTuiHarness(sessionId: 'usage-empty');
-        (new UsageCommandRegistrar($registry, $probe, new TestLogger()))->register(
-            $this->buildTuiContext()
-                ->withTui($harness->tui())
-                ->withState($state)
-                ->withScreen($harness->screen())
-                ->build(),
-        );
+        (new UsageCommandRegistrar($probe, new TestLogger()))->registerCatalog($catalog);
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState($state)
+            ->withScreen($harness->screen())
+            ->withSessionServices($this->createSessionServices(catalog: $catalog))
+            ->build();
+        (new UsageCommandRegistrar($probe, new TestLogger()))->register($context);
 
-        $result = (new SubmissionRouter(new CommandParser(), $registry))->route('/usage');
+        $result = (new SubmissionRouter(new CommandParser(), $context->sessionServices->commandRegistry))->route('/usage');
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertStringNotContainsString('No configured providers', $result->text);
         $this->assertStringNotContainsString('### OpenAI Codex', $result->text);
@@ -144,7 +146,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
     #[Test]
     public function testUsageShowsAndClearsProbingWorkingIndicator(): void
     {
-        $registry = new SlashCommandRegistry();
+        $catalog = new SlashCommandCatalog();
         $state = new TuiSessionState('usage-working');
         $harness = new VirtualTuiHarness(sessionId: 'usage-working');
         $screen = $harness->screen();
@@ -166,15 +168,16 @@ final class TuiUsageCommandVirtualTest extends TestCase
             }
         };
 
-        (new UsageCommandRegistrar($registry, $probe, new TestLogger()))->register(
-            $this->buildTuiContext()
-                ->withTui($tui)
-                ->withState($state)
-                ->withScreen($screen)
-                ->build(),
-        );
+        (new UsageCommandRegistrar($probe, new TestLogger()))->registerCatalog($catalog);
+        $context = $this->buildTuiContext()
+            ->withTui($tui)
+            ->withState($state)
+            ->withScreen($screen)
+            ->withSessionServices($this->createSessionServices(catalog: $catalog))
+            ->build();
+        (new UsageCommandRegistrar($probe, new TestLogger()))->register($context);
 
-        $result = (new SubmissionRouter(new CommandParser(), $registry))->route('/usage');
+        $result = (new SubmissionRouter(new CommandParser(), $context->sessionServices->commandRegistry))->route('/usage');
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertSame('Checking provider usage...', $workingDuringProbe);
         $this->assertSame('', $screen->registry()->getWorkingMessage());
@@ -190,22 +193,23 @@ final class TuiUsageCommandVirtualTest extends TestCase
             }
         };
 
-        $registry = new SlashCommandRegistry();
+        $catalog = new SlashCommandCatalog();
         $state = new TuiSessionState('usage-virtual-fail');
         $state->usage->inputTokens = 10;
         $state->usage->outputTokens = 5;
         $state->usage->totalCost = 0.001;
 
         $harness = new VirtualTuiHarness(sessionId: 'usage-virtual-fail');
-        (new UsageCommandRegistrar($registry, $probe, new TestLogger()))->register(
-            $this->buildTuiContext()
-                ->withTui($harness->tui())
-                ->withState($state)
-                ->withScreen($harness->screen())
-                ->build(),
-        );
+        (new UsageCommandRegistrar($probe, new TestLogger()))->registerCatalog($catalog);
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState($state)
+            ->withScreen($harness->screen())
+            ->withSessionServices($this->createSessionServices(catalog: $catalog))
+            ->build();
+        (new UsageCommandRegistrar($probe, new TestLogger()))->register($context);
 
-        $result = (new SubmissionRouter(new CommandParser(), $registry))->route('/usage');
+        $result = (new SubmissionRouter(new CommandParser(), $context->sessionServices->commandRegistry))->route('/usage');
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertStringContainsString('Provider probes failed', $result->text);
         $this->assertStringNotContainsString('secret-line', $result->text);

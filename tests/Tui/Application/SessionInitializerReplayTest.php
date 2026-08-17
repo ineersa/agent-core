@@ -58,6 +58,7 @@ use Symfony\Component\Lock\Store\FlockStore;
 final class SessionInitializerReplayTest extends TestCase
 {
     private string $projectDir = '';
+    private TuiRuntimeEventApplier $eventApplier;
     private SessionRunEventStore $eventStore;
     private SessionInitializer $sessionInit;
     private TranscriptProjector $projector;
@@ -108,12 +109,14 @@ final class SessionInitializerReplayTest extends TestCase
 
         $historyProvider = new SessionHistoryProvider($this->eventStore, new HistoryProjector());
 
+        $this->eventApplier = new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer());
+
         $this->sessionInit = new SessionInitializer(
             sessionStore: $hatfieldSessionStore,
             eventStore: $this->eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer()),
+
             historyProvider: $historyProvider,
             sessionTranscriptProvider: new SessionTranscriptProvider(
                 eventStore: $this->eventStore,
@@ -157,7 +160,7 @@ final class SessionInitializerReplayTest extends TestCase
         ]);
 
         $state = new TuiSessionState($runId, true);
-        $blocks = $this->sessionInit->buildInitialTranscript($state);
+        $blocks = $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         // Should have: UserMessage + AssistantMessage
         $this->assertGreaterThanOrEqual(2, \count($blocks), 'Expected at least 2 blocks');
@@ -242,7 +245,7 @@ final class SessionInitializerReplayTest extends TestCase
         ]);
 
         $state = new TuiSessionState($runId, true);
-        $blocks = $this->sessionInit->buildInitialTranscript($state);
+        $blocks = $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         // Verify block kinds appear in order
         $kinds = array_map(static fn ($b) => $b->kind, $blocks);
@@ -289,7 +292,7 @@ final class SessionInitializerReplayTest extends TestCase
         ]);
 
         $state = new TuiSessionState($runId, true);
-        $blocks = $this->sessionInit->buildInitialTranscript($state);
+        $blocks = $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         $kinds = array_map(static fn ($b) => $b->kind, $blocks);
 
@@ -360,7 +363,7 @@ final class SessionInitializerReplayTest extends TestCase
         $this->append($runId, 137, 'agent_end', ['reason' => 'cancelled']);
 
         $state = new TuiSessionState($runId, true);
-        $blocks = $this->sessionInit->buildInitialTranscript($state);
+        $blocks = $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         $this->assertSame(137, $state->lastSeq);
         $this->assertSame(RunActivityStateEnum::Cancelled, $state->activity);
@@ -393,7 +396,7 @@ final class SessionInitializerReplayTest extends TestCase
         ]);
 
         $state = new TuiSessionState($runId, true);
-        $blocks = $this->sessionInit->buildInitialTranscript($state);
+        $blocks = $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         $kinds = array_map(static fn ($b) => $b->kind, $blocks);
 
@@ -435,7 +438,7 @@ final class SessionInitializerReplayTest extends TestCase
 
         // Replay session
         $state = new TuiSessionState($runId, true);
-        $initialBlocks = $this->sessionInit->buildInitialTranscript($state);
+        $initialBlocks = $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         $this->assertSame(2, $state->lastSeq, 'lastSeq should be max source seq after replay');
 
@@ -517,7 +520,7 @@ final class SessionInitializerReplayTest extends TestCase
         ]);
 
         $state = new TuiSessionState($runId, true);
-        $this->sessionInit->buildInitialTranscript($state);
+        $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         // Passive resume clears active HITL state until a new live turn starts.
         $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
@@ -550,7 +553,7 @@ final class SessionInitializerReplayTest extends TestCase
         ]);
 
         $state = new TuiSessionState($runId, true);
-        $blocks = $this->sessionInit->buildInitialTranscript($state);
+        $blocks = $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         // lastSeq must be 3 (max source seq), not 1 (max mapped seq).
         // This prevents the live poller from re-processing dropped events.
@@ -585,7 +588,7 @@ final class SessionInitializerReplayTest extends TestCase
         ]);
 
         $state = new TuiSessionState($runId, true);
-        $this->sessionInit->buildInitialTranscript($state);
+        $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         $this->assertArrayHasKey('ik-pending', $state->queuedUserMessages);
         $this->assertSame('STEER_QUEUED_MARKER', $state->queuedUserMessages['ik-pending']);
@@ -621,7 +624,7 @@ final class SessionInitializerReplayTest extends TestCase
         ]);
 
         $state = new TuiSessionState($runId, true);
-        $blocks = $this->sessionInit->buildInitialTranscript($state);
+        $blocks = $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         $this->assertArrayNotHasKey('ik-applied', $state->queuedUserMessages);
         $this->assertSame([], $state->queuedUserMessages);
@@ -651,7 +654,7 @@ final class SessionInitializerReplayTest extends TestCase
         $this->append($runId, 3, 'agent_end', ['reason' => 'completed']);
 
         $state = new TuiSessionState($runId, true);
-        $this->sessionInit->buildInitialTranscript($state);
+        $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         $this->assertTrue($state->isShellRun, 'Shell-only canonical history must restore isShellRun');
         $this->assertSame(RunActivityStateEnum::Completed, $state->activity);
@@ -681,7 +684,7 @@ final class SessionInitializerReplayTest extends TestCase
         ]);
 
         $state = new TuiSessionState($runId, true);
-        $this->sessionInit->buildInitialTranscript($state);
+        $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
         $this->assertFalse($state->isCompacting);
@@ -703,7 +706,7 @@ final class SessionInitializerReplayTest extends TestCase
         $this->append($runId, 2, 'turn_started', ['turn_no' => 1]);
 
         $state = new TuiSessionState($runId, true);
-        $this->sessionInit->buildInitialTranscript($state);
+        $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
 
         $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
         $this->assertFalse($state->isCompacting);

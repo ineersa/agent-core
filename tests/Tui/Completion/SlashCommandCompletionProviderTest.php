@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Completion;
 
 use Ineersa\Tui\Command\CommandMetadata;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandHandler;
-use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Completion\CompletionContext;
 use Ineersa\Tui\Completion\CompletionSuggestion;
 use Ineersa\Tui\Completion\SlashCommandCompletionProvider;
@@ -17,13 +17,13 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(SlashCommandCompletionProvider::class)]
 final class SlashCommandCompletionProviderTest extends TestCase
 {
-    private SlashCommandRegistry $registry;
+    private SlashCommandCatalog $catalog;
     private SlashCommandCompletionProvider $provider;
 
     protected function setUp(): void
     {
-        $this->registry = new SlashCommandRegistry();
-        $this->provider = new SlashCommandCompletionProvider($this->registry);
+        $this->catalog = new SlashCommandCatalog();
+        $this->provider = new SlashCommandCompletionProvider($this->catalog);
     }
 
     // ── Slash context detection ──────────────────────────────────────
@@ -174,7 +174,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     public function includesRuntimeRegisteredCommands(): void
     {
         // Simulate ModelControlListener registering /model at runtime
-        $this->registry->register(
+        $this->catalog->register(
             new CommandMetadata(
                 name: 'model',
                 aliases: ['m'],
@@ -194,7 +194,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function runtimeRegisteredCommandsAppearWithEmptyPrefix(): void
     {
-        $this->registry->register(
+        $this->catalog->register(
             new CommandMetadata(
                 name: 'custom',
                 aliases: [],
@@ -213,7 +213,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function runtimeRegisteredAliasesWork(): void
     {
-        $this->registry->register(
+        $this->catalog->register(
             new CommandMetadata(
                 name: 'model',
                 aliases: ['m'],

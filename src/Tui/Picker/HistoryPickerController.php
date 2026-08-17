@@ -28,30 +28,18 @@ final class HistoryPickerController
 {
     private ?PickerOverlay $overlay = null;
 
-    private ?Tui $tui = null;
-    private ?ChatScreen $screen = null;
-    private ?TuiSessionState $state = null;
-
     public function __construct(
+        private readonly Tui $tui,
+        private readonly ChatScreen $screen,
+        private readonly TuiSessionState $state,
         private readonly HistoryProviderInterface $historyProvider,
         private readonly TuiSessionSwitchServiceInterface $switcher,
     ) {
     }
 
-    public function setRuntimeRefs(Tui $tui, ChatScreen $screen, TuiSessionState $state): void
-    {
-        $this->tui = $tui;
-        $this->screen = $screen;
-        $this->state = $state;
-    }
-
     public function open(): void
     {
         if ($this->overlay?->isOpen() ?? false) {
-            return;
-        }
-
-        if (null === $this->tui || null === $this->screen || null === $this->state) {
             return;
         }
 

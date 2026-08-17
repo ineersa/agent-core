@@ -21,13 +21,6 @@ final class NewSessionCommandHandlerTest extends TestCase
         $switch = new class implements TuiSessionSwitchServiceInterface {
             public bool $draftRequested = false;
 
-            public function bindForIteration(
-                \Symfony\Component\Tui\Tui $tui,
-                \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
-                \Ineersa\Tui\Runtime\TuiSessionState $state,
-            ): void {
-            }
-
             public function requestResume(string $sessionId): void
             {
             }

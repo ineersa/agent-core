@@ -8,6 +8,7 @@ use Ineersa\Tui\Command\ClearTranscript;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\DispatchShellCommand;
 use Ineersa\Tui\Command\ExitApplication;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
@@ -24,7 +25,7 @@ final class SubmissionRouterTest extends TestCase
     {
         $this->router = new SubmissionRouter(
             new CommandParser(),
-            new SlashCommandRegistry(),
+            new SlashCommandRegistry(new SlashCommandCatalog()),
         );
     }
 

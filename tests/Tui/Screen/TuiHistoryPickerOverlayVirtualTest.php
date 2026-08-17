@@ -29,8 +29,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends TestCase
         $harness = new VirtualTuiHarness(sessionId: $sessionId);
         $provider = $this->createStub(HistoryProviderInterface::class);
         $provider->method('forSession')->willReturn($this->sampleHistory());
-        $picker = new HistoryPickerController($provider, $this->createStub(TuiSessionSwitchServiceInterface::class));
-        $picker->setRuntimeRefs($harness->tui(), $harness->screen(), new TuiSessionState($sessionId));
+        $picker = new HistoryPickerController($harness->tui(), $harness->screen(), new TuiSessionState($sessionId), $provider, $this->createStub(TuiSessionSwitchServiceInterface::class));
 
         (new HistoryCommandHandler($picker))->handle(new SlashCommand('history', '', '/history'));
 
@@ -48,8 +47,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends TestCase
         $harness = new VirtualTuiHarness(sessionId: $sessionId);
         $provider = $this->createStub(HistoryProviderInterface::class);
         $provider->method('forSession')->willReturn($this->sampleHistory());
-        $picker = new HistoryPickerController($provider, $this->createStub(TuiSessionSwitchServiceInterface::class));
-        $picker->setRuntimeRefs($harness->tui(), $harness->screen(), new TuiSessionState($sessionId));
+        $picker = new HistoryPickerController($harness->tui(), $harness->screen(), new TuiSessionState($sessionId), $provider, $this->createStub(TuiSessionSwitchServiceInterface::class));
 
         (new HistoryCommandHandler($picker))->handle(new SlashCommand('history', '', '/history'));
         $picker->closePicker();

@@ -5,13 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\Tui\Picker\SubagentLivePickerController;
-use Ineersa\Tui\Question\QuestionController;
-use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
-use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
-use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -19,43 +14,37 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 /**
  * Tick listener that polls for new runtime events.
  *
- * Delegates polling logic to RuntimeEventPoller and updates the
- * transcript display and working status when new events arrive.
+ * Delegates polling logic to the per-session RuntimeEventPoller and
+ * updates the transcript display and working status when new events arrive.
  *
- * Also wires runtime human_input.requested events into the TUI
+ * Also wires runtime human_input.requested events into the per-session
  * QuestionCoordinator/QuestionController so that HITL/interrupt
  * questions show interactive overlays and answers are dispatched
  * back to the runtime via answer_human commands.
  *
  * Implements TuiListenerRegistrar for DI-driven registration.
- * The service itself is stateless; per-run state comes from the context.
+ * The service itself is stateless; per-run state comes from the context's
+ * session service scope.
  */
 final class TickPollListener implements TuiListenerRegistrar
 {
     public function __construct(
-        private readonly SubagentLivePickerController $subagentLivePickerController,
-        private readonly RuntimeEventPoller $poller,
-        private readonly SubagentLiveChildViewPoller $subagentLiveChildPoller,
-        private readonly QuestionCoordinator $questionCoordinator,
-        private readonly QuestionController $questionController,
         private readonly RuntimeQuestionEventHandler $runtimeQuestionEventHandler,
     ) {
     }
 
     public function register(TuiRuntimeContext $context): void
     {
-        $poller = $this->poller;
+        $services = $context->sessionServices;
+        $poller = $services->parentPoller;
         $state = $context->state;
         $client = $context->client;
         $screen = $context->screen;
-        $questionCoordinator = $this->questionCoordinator;
-        $questionController = $this->questionController;
-        $subagentLiveChildPoller = $this->subagentLiveChildPoller;
+        $questionCoordinator = $services->questionCoordinator;
+        $questionController = $services->questionController;
+        $subagentLiveChildPoller = $services->childPoller;
         $runtimeQuestionEventHandler = $this->runtimeQuestionEventHandler;
-        $subagentLivePickerController = $this->subagentLivePickerController;
-
-        // Wire the question controller with TUI runtime references
-        $questionController->setRuntimeRefs($screen);
+        $subagentLivePickerController = $services->subagentLivePicker;
 
         $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller, $runtimeQuestionEventHandler, $subagentLivePickerController): ?bool {
             $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler): void {

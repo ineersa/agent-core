@@ -8,9 +8,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\Tui\Command\CommandMetadata;
-use Ineersa\Tui\Command\SlashCommandRegistry;
-use Ineersa\Tui\Picker\FavoritePickerController;
-use Ineersa\Tui\Picker\ModelPickerController;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\InputEvent;
@@ -26,64 +24,57 @@ use Symfony\Component\Tui\Event\InputEvent;
  *
  * Persists changes through ModelSelectionService and updates
  * TuiSessionState for immediate footer refresh.
+ *
+ * Command metadata is registered once per process via
+ * {@see registerCatalog()}; each session binds fresh handlers wired to
+ * the session's picker controllers.
  */
-final class ModelControlListener implements TuiListenerRegistrar
+final class ModelControlListener implements TuiListenerRegistrar, SlashCommandCatalogRegistrar
 {
     public function __construct(
         private readonly ModelSelectionService $modelService,
-        private readonly SlashCommandRegistry $commandRegistry,
         private readonly AppConfig $appConfig,
-        private readonly ModelPickerController $pickerController,
-        private readonly FavoritePickerController $favPickerController,
         private readonly LoggerInterface $logger,
     ) {
     }
 
+    public function registerCatalog(SlashCommandCatalog $catalog): void
+    {
+        $catalog->registerMetadata(new CommandMetadata(
+            name: 'model',
+            aliases: ['m'],
+            description: 'Select the active AI model',
+            usage: '/model [provider/modelname]',
+            acceptsArguments: true,
+        ));
+        $catalog->registerMetadata(new CommandMetadata(
+            name: 'model-favourites',
+            aliases: ['model-favourite'],
+            description: 'Manage favourite AI models',
+            usage: '/model-favourites [provider/modelname]',
+            acceptsArguments: true,
+        ));
+    }
+
     public function register(TuiRuntimeContext $context): void
     {
+        $services = $context->sessionServices;
         $state = $context->state;
         $tui = $context->tui;
         $screen = $context->screen;
         $modelService = $this->modelService;
         $appConfig = $this->appConfig;
+        $commandRegistry = $services->commandRegistry;
+        $pickerController = $services->modelPicker;
+        $favPickerController = $services->favoritePicker;
 
-        // Wire the picker controllers with references only available at register() time
-        $this->pickerController->setRuntimeRefs($tui, $screen, $state);
-        $this->favPickerController->setRuntimeRefs($tui, $screen, $state);
+        // ── Bind /model slash command to the session handler ──
+        $modelHandler = new ModelCommandHandler($modelService, $appConfig, $state, $pickerController, $favPickerController, $this->logger, $screen, sessionClient: $context->client);
+        $commandRegistry->bind('model', $modelHandler);
 
-        // ── Register /model slash command (idempotent) ──
-        $modelHandler = new ModelCommandHandler($modelService, $appConfig, $state, $this->pickerController, $this->favPickerController, $this->logger, $screen, sessionClient: $context->client);
-        if ($this->commandRegistry->has('model')) {
-            $this->commandRegistry->setHandler('model', $modelHandler);
-        } else {
-            $this->commandRegistry->register(
-                new CommandMetadata(
-                    name: 'model',
-                    aliases: ['m'],
-                    description: 'Select the active AI model',
-                    usage: '/model [provider/modelname]',
-                    acceptsArguments: true,
-                ),
-                $modelHandler,
-            );
-        }
-
-        // ── Register /model-favourites slash command ──
-        $favCmdHandler = new ModelCommandHandler($modelService, $appConfig, $state, $this->pickerController, $this->favPickerController, $this->logger, $screen, isFavourites: true, sessionClient: $context->client);
-        if ($this->commandRegistry->has('model-favourites')) {
-            $this->commandRegistry->setHandler('model-favourites', $favCmdHandler);
-        } else {
-            $this->commandRegistry->register(
-                new CommandMetadata(
-                    name: 'model-favourites',
-                    aliases: ['model-favourite'],
-                    description: 'Manage favourite AI models',
-                    usage: '/model-favourites [provider/modelname]',
-                    acceptsArguments: true,
-                ),
-                $favCmdHandler,
-            );
-        }
+        // ── Bind /model-favourites slash command ──
+        $favCmdHandler = new ModelCommandHandler($modelService, $appConfig, $state, $pickerController, $favPickerController, $this->logger, $screen, isFavourites: true, sessionClient: $context->client);
+        $commandRegistry->bind('model-favourites', $favCmdHandler);
 
         // ── Register Ctrl+P — cycle favorite models ──
         $sessionClient = $context->client;

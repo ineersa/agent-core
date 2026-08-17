@@ -16,6 +16,7 @@ use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\SlashCommand;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
@@ -23,7 +24,6 @@ use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Listener\SubmitListener;
-use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionRequest;
@@ -50,10 +50,9 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     /** @var AgentSessionClient&\PHPUnit\Framework\MockObject\MockObject */
     private AgentSessionClient $client;
     private LoggerInterface $logger;
-    private SlashCommandRegistry $registry;
+    private SlashCommandCatalog $catalog;
     private SubmissionRouter $router;
     private QuestionCoordinator $questionCoordinator;
-    private QuestionController $questionController;
     private string $tempCwd;
 
     protected function setUp(): void
@@ -64,11 +63,10 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->client = $this->createMock(AgentSessionClient::class);
         $this->logger = new NullLogger();
         $this->questionCoordinator = new QuestionCoordinator();
-        $this->questionController = new QuestionController($this->questionCoordinator);
 
-        // Build a registry with a template command returning DispatchRuntime
-        $this->registry = new SlashCommandRegistry();
-        $this->registry->register(
+        // Build a catalog with a template command returning DispatchRuntime
+        $this->catalog = new SlashCommandCatalog();
+        $this->catalog->register(
             new CommandMetadata(
                 name: 'review',
                 description: 'Review code',
@@ -84,7 +82,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         );
 
         $parser = new CommandParser();
-        $this->router = new SubmissionRouter($parser, $this->registry);
+        $this->router = new SubmissionRouter($parser, new SlashCommandRegistry($this->catalog));
     }
 
     protected function tearDown(): void
@@ -524,8 +522,8 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     public function localSlashHelpDoesNotAppendToPromptHistory(): void
     {
         $history = new PromptHistory();
-        $registry = new SlashCommandRegistry();
-        $registry->register(
+        $catalogLocal = new SlashCommandCatalog();
+        $catalogLocal->register(
             new CommandMetadata(
                 name: 'localonly',
                 description: 'Local only',
@@ -539,7 +537,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 }
             },
         );
-        $router = new SubmissionRouter(new CommandParser(), $registry);
+        $router = new SubmissionRouter(new CommandParser(), new SlashCommandRegistry($catalogLocal));
 
         $this->dispatchSubmit('/localonly', history: $history, router: $router);
 
@@ -635,7 +633,15 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             ->withTui($tui)
             ->withClient($this->client)
             ->withState($this->state)
-            ->withScreen($screen);
+            ->withScreen($screen)
+            ->withSessionServices($this->createSessionServices(
+                tui: $tui,
+                state: $this->state,
+                screen: $screen,
+                questionCoordinator: $this->questionCoordinator,
+                submissionRouter: $router ?? $this->router,
+                promptHistory: $history,
+            ));
 
         if (null !== $sessionStore) {
             $builder = $builder->withSessionStore($sessionStore);
@@ -645,13 +651,9 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $listener = new SubmitListener(
             sessionStore: $context->sessionStore,
-            submissionRouter: $router ?? $this->router,
             blockFactory: new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
-            coordinator: $this->questionCoordinator,
-            questionController: $this->questionController,
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: $this->logger,
-            history: $history ?? new PromptHistory(),
             pastedImageSubmissionService: new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
                 new \Ineersa\Tui\ImagePaste\PastedImageValidationService(new \Ineersa\CodingAgent\Config\ImageToolConfig(), new \Ineersa\AgentCore\Tests\Support\TestLogger()),
                 $context->sessionStore,

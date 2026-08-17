@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
@@ -274,12 +275,15 @@ final class SubagentLivePickerControllerTest extends TestCase
             ->willReturn(new ChildRunTranscriptSnapshotDTO([$block], [], 4));
 
         $picker = new SubagentLivePickerController(
+            $harness->tui(),
+            $harness->screen(),
+            $state,
+            $this->createStub(AgentSessionClient::class),
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $snapshotProvider,
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),
         );
-        $picker->setRuntimeRefs($harness->tui(), $harness->screen(), $state);
 
         $method = new \ReflectionMethod(SubagentLivePickerController::class, 'enterLiveView');
         $method->invoke($picker, $child, $state, $harness->screen());
@@ -600,15 +604,16 @@ final class SubagentLivePickerControllerTest extends TestCase
 
     private function picker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
     {
-        $picker = new SubagentLivePickerController(
+        return new SubagentLivePickerController(
+            $harness->tui(),
+            $harness->screen(),
+            $state,
+            $this->createStub(AgentSessionClient::class),
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             new SessionEventsExportService(),
         );
-        $picker->setRuntimeRefs($harness->tui(), $harness->screen(), $state);
-
-        return $picker;
     }
 
     private function invokeDismissSelected(
@@ -707,15 +712,16 @@ final class SubagentLivePickerControllerTest extends TestCase
 
     private function exportPicker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
     {
-        $picker = new SubagentLivePickerController(
+        return new SubagentLivePickerController(
+            $harness->tui(),
+            $harness->screen(),
+            $state,
+            $this->createStub(AgentSessionClient::class),
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->childEventsPathResolver(),
             new SessionEventsExportService(),
         );
-        $picker->setRuntimeRefs($harness->tui(), $harness->screen(), $state);
-
-        return $picker;
     }
 
     private function childEventsPathResolver(): ChildAgentEventsPathResolverInterface

@@ -116,9 +116,12 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $events = $this->canonicalFixtureLines($runId);
         file_put_contents($this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl', implode('', $events));
 
+        // The initializer must replay through its own session-scoped applier
+        // (fresh projector), independent of the direct-apply applier below.
+        $initializerApplier = $this->buildApplier();
         $initializer = $this->buildInitializer();
         $resumeState = new TuiSessionState($runId, true);
-        $resumeBlocks = $initializer->buildInitialTranscript($resumeState);
+        $resumeBlocks = $initializer->buildInitialTranscript($resumeState, $initializerApplier);
 
         $applierState = new TuiSessionState($runId, true);
         $applier = $this->buildApplier();
@@ -250,7 +253,6 @@ final class TuiRuntimeEventApplierTest extends TestCase
             eventStore: $eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer()),
             historyProvider: new \Ineersa\CodingAgent\Session\SessionHistoryProvider($eventStore, new \Ineersa\CodingAgent\Session\History\HistoryProjector()),
             sessionTranscriptProvider: new \Ineersa\CodingAgent\Session\SessionTranscriptProvider(
                 eventStore: $eventStore,

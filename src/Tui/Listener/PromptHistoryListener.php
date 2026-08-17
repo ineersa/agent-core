@@ -23,11 +23,12 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  *  - Uses the editor widget's own {@see Keybindings::matches()} so the
  *    same terminal escape sequences that the editor itself recognizes
  *    for cursor_up / cursor_down are used, avoiding raw-escape fragility.
- *  - History is served from a session-scoped {@see PromptHistory} prompt
- *    list, seeded from {@see TuiSessionState::$transcript} once on
- *    {@see register()} (UserMessage blocks) and grown via {@see SubmitListener}
- *    on each real submit. PromptHistory holds a single integer navigation
- *    cursor into its prompt list — no per-keypress transcript scan.
+ *  - History is served from the per-session {@see PromptHistory} prompt
+ *    list in the context's session service scope, seeded once per session
+ *    from {@see TuiSessionState::$transcript} (UserMessage blocks) during
+ *    composition and grown via {@see SubmitListener} on each real submit.
+ *    PromptHistory holds a single integer navigation cursor into its
+ *    prompt list — no per-keypress transcript scan.
  *  - Down past the newest prompt clears the editor and exits navigation
  *    (shell-like behaviour).
  *  - Any non-Up/Down input exits history navigation mode immediately
@@ -37,21 +38,13 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  */
 final class PromptHistoryListener implements TuiListenerRegistrar
 {
-    public function __construct(
-        private readonly PromptHistory $history,
-    ) {
-    }
-
     public function register(TuiRuntimeContext $context): void
     {
         $state = $context->state;
         $editor = $context->screen->editorWidget();
         $screen = $context->screen;
 
-        // Runs once per session iteration (start/resume/switch) via register(), before $tui->run() — not per render tick or per submit.
-        $this->history->seedFrom($state->transcript);
-
-        $history = $this->history;
+        $history = $context->sessionServices->promptHistory;
 
         $editor->onInput(static function (string $data) use ($state, $editor, $screen, $history): bool {
             if ($state->subagentLiveView->active) {

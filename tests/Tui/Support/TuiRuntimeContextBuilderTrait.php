@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\Tui\Application\TuiSessionServices;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
@@ -34,6 +35,8 @@ use Ineersa\Tui\Runtime\TuiTickDispatcher;
  */
 trait TuiRuntimeContextBuilderTrait
 {
+    use TuiSessionServicesFactoryTrait;
+
     /**
      * Create a builder pre-loaded with sensible defaults.
      */
@@ -54,6 +57,7 @@ trait TuiRuntimeContextBuilderTrait
         $builder->ticks = new TuiTickDispatcher();
         $builder->lifecycle = new TuiSessionLifecycleDispatcher();
         $builder->historyProvider = $this->createStub(HistoryProviderInterface::class);
+        $builder->sessionServices = $this->createSessionServices();
 
         return $builder;
     }
@@ -92,6 +96,8 @@ final class TuiRuntimeContextBuilder
     /** @internal Set by TuiRuntimeContextBuilderTrait */
     public TuiSessionLifecycleDispatcher $lifecycle;
     public HistoryProviderInterface $historyProvider;
+    /** @internal Set by TuiRuntimeContextBuilderTrait */
+    public TuiSessionServices $sessionServices;
 
     private ?object $tui = null;
     private ?object $state = null;
@@ -160,6 +166,13 @@ final class TuiRuntimeContextBuilder
         return $this;
     }
 
+    public function withSessionServices(TuiSessionServices $sessionServices): self
+    {
+        $this->sessionServices = $sessionServices;
+
+        return $this;
+    }
+
     public function build(): TuiRuntimeContext
     {
         return new TuiRuntimeContext(
@@ -172,6 +185,7 @@ final class TuiRuntimeContextBuilder
             switch: $this->switchService,
             lifecycle: $this->lifecycle,
             historyProvider: $this->historyProvider ?? $this->createStub(HistoryProviderInterface::class),
+            sessionServices: $this->sessionServices,
         );
     }
 }

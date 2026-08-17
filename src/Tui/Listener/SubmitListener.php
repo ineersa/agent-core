@@ -17,12 +17,9 @@ use Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO;
 use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
 use Ineersa\Tui\Command\StatusUpdate;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
-use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\ImagePaste\PastedImagePlaceholderFormatter;
 use Ineersa\Tui\ImagePaste\PastedImageSubmissionService;
-use Ineersa\Tui\Question\QuestionController;
-use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
@@ -50,38 +47,32 @@ final class SubmitListener implements TuiListenerRegistrar
 {
     public function __construct(
         private readonly HatfieldSessionStore $sessionStore,
-        private readonly SubmissionRouter $submissionRouter,
         private readonly TranscriptBlockFactory $blockFactory,
-        private readonly QuestionCoordinator $coordinator,
-        private readonly QuestionController $questionController,
         private readonly SubagentLiveInputPolicy $subagentLiveInputPolicy,
         private readonly LoggerInterface $logger,
-        private readonly PromptHistory $history,
         private readonly PastedImageSubmissionService $pastedImageSubmissionService,
     ) {
     }
 
     public function register(TuiRuntimeContext $context): void
     {
+        $services = $context->sessionServices;
         $sessionStore = $this->sessionStore;
-        $router = $this->submissionRouter;
+        $router = $services->submissionRouter;
         $blockFactory = $this->blockFactory;
         $client = $context->client;
         $state = $context->state;
         $screen = $context->screen;
         $tui = $context->tui;
 
-        $questionCoordinator = $this->coordinator;
-        $questionController = $this->questionController;
+        $questionCoordinator = $services->questionCoordinator;
+        $questionController = $services->questionController;
 
         $logger = $this->logger;
         $subagentLiveInputPolicy = $this->subagentLiveInputPolicy;
         $lifecycle = $context->lifecycle;
-        $history = $this->history;
+        $history = $services->promptHistory;
         $pastedImageSubmissionService = $this->pastedImageSubmissionService;
-
-        // Wire the question controller with TUI runtime references
-        $questionController->setRuntimeRefs($screen);
 
         $context->tui->addListener(static function (SubmitEvent $event) use (
             $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,

@@ -561,14 +561,18 @@ class CancelListenerTest extends TestCase
             ->method('cancel');
 
         // Create a QuestionController with awaitingFreeForm=true
-        $qc = new QuestionController(new QuestionCoordinator());
+        $tui = new Tui();
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $promptEditor = new PromptEditor();
+        $screen = new ChatScreen($theme, 'test-session', $promptEditor);
+        $qc = new QuestionController(new QuestionCoordinator(), $screen);
         $qcRef = new \ReflectionClass($qc);
         $awaitProp = $qcRef->getProperty('awaitingFreeForm');
         $awaitProp->setValue($qc, true);
         $this->assertTrue($qc->isAwaitingFreeForm());
 
         // Pass the pre-configured controller to dispatchCancelEvent
-        $this->dispatchCancelEvent(captureErrorEnv: '1', questionController: $qc);
+        $this->dispatchCancelEvent(captureErrorEnv: '1', questionController: $qc, screen: $screen);
 
         // After dispatch, restoreFromFreeForm() should have reset the flag
         // (regardless of whether it could re-open — no screen in this path)
@@ -604,11 +608,12 @@ class CancelListenerTest extends TestCase
         ?string $captureErrorEnv = '1',
         ?QuestionController $questionController = null,
         ?QuestionCoordinator $questionCoordinator = null,
+        ?ChatScreen $screen = null,
     ): ChatScreen {
         $tui = new Tui();
         $theme = new DefaultTheme(new ThemePalette('test'));
         $promptEditor = new PromptEditor();
-        $screen = new ChatScreen($theme, 'test-session', $promptEditor);
+        $screen ??= new ChatScreen($theme, 'test-session', $promptEditor);
 
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),
@@ -620,13 +625,6 @@ class CancelListenerTest extends TestCase
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
-        $context = $this->buildTuiContext()
-            ->withTui($tui)
-            ->withClient($this->client)
-            ->withState($this->state)
-            ->withScreen($screen)
-            ->build();
-
         $eventDispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
         $eventDispatcher->addSubscriber(new RuntimeExceptionPolicySubscriber(
             new RuntimeErrorCaptureConfig(captureErrors: '0' !== $captureErrorEnv),
@@ -635,14 +633,24 @@ class CancelListenerTest extends TestCase
         $boundary = new RuntimeExceptionBoundary($eventDispatcher);
 
         $questionCoordinator ??= new QuestionCoordinator();
-        $questionController ??= new QuestionController($questionCoordinator);
+        $questionController ??= new QuestionController($questionCoordinator, $screen);
 
-        $listener = new CancelListener(
-            $this->logger,
-            $boundary,
-            $questionController,
-            $questionCoordinator,
+        $services = $this->createSessionServices(
+            tui: $tui,
+            state: $this->state,
+            screen: $screen,
+            questionCoordinator: $questionCoordinator,
+            questionController: $questionController,
         );
+        $context = $this->buildTuiContext()
+            ->withTui($tui)
+            ->withClient($this->client)
+            ->withState($this->state)
+            ->withScreen($screen)
+            ->withSessionServices($services)
+            ->build();
+
+        $listener = new CancelListener($this->logger, $boundary);
         $listener->register($context);
 
         // Extract and invoke the CancelEvent handler

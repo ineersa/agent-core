@@ -621,37 +621,37 @@ final class TickPollListenerTest extends TestCase
         );
         $this->assertTrue($coordinator->actionRequired());
 
+        $tui = new Tui();
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $promptEditor = new PromptEditor();
+        $state = new TuiSessionState('run-guard');
+        $state->activity = RunActivityStateEnum::Running;
+        $screen = new ChatScreen($theme, 'run-guard', $promptEditor);
+
         $ctrlRef = new \ReflectionClass(QuestionController::class);
-        $controller = $ctrlRef->newInstanceWithoutConstructor();
+        $controller = new QuestionController($coordinator, $screen);
         $awaitProp = $ctrlRef->getProperty('awaitingFreeForm');
         $awaitProp->setValue($controller, true);
         $this->assertTrue($controller->isAwaitingFreeForm(), 'Precondition: awaitingFreeForm must be true');
 
-        // Inject dependencies into TickPollListener via reflection
-        $listenerRef = new \ReflectionClass(TickPollListener::class);
-        $listener = $listenerRef->newInstanceWithoutConstructor();
-        $listenerRef->getProperty('subagentLivePickerController')->setValue($listener, $this->closedSubagentLivePicker());
-        $listenerRef->getProperty('poller')->setValue($listener, $poller);
-        $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
-        $listenerRef->getProperty('questionCoordinator')->setValue($listener, $coordinator);
-        $listenerRef->getProperty('questionController')->setValue($listener, $controller);
-        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
-
-        // Build TuiRuntimeContext with a real ChatScreen and Running activity
-        $state = new TuiSessionState('run-guard');
-        $state->activity = RunActivityStateEnum::Running;
-
-        $tui = new Tui();
-        $theme = new DefaultTheme(new ThemePalette('test'));
-        $promptEditor = new PromptEditor();
-        $screen = new ChatScreen($theme, 'run-guard', $promptEditor);
-
+        $services = $this->createSessionServices(
+            tui: $tui,
+            state: $state,
+            screen: $screen,
+            parentPoller: $poller,
+            childPoller: $this->createIsolatedSubagentLiveChildPoller(),
+            questionCoordinator: $coordinator,
+            questionController: $controller,
+            subagentLivePicker: $this->closedSubagentLivePicker(),
+        );
         $context = $this->buildTuiContext()
             ->withTui($tui)
             ->withState($state)
             ->withScreen($screen)
+            ->withSessionServices($services)
             ->build();
 
+        $listener = new TickPollListener(new RuntimeQuestionEventHandler());
         $listener->register($context);
 
         // Retrieve the tick handler from TuiTickDispatcher
@@ -697,24 +697,9 @@ final class TickPollListenerTest extends TestCase
         );
         $this->assertTrue($coordinator->actionRequired());
 
-        // Block the guard (so open() does not throw on the skeleton) by
+        // Block the guard (so open() does not rebuild the overlay) by
         // setting awaitingFreeForm=true. The self-heal is independent of
         // the guard and triggers on !isActive() && actionRequired().
-        $ctrlRef = new \ReflectionClass(QuestionController::class);
-        $controller = $ctrlRef->newInstanceWithoutConstructor();
-        $awaitProp = $ctrlRef->getProperty('awaitingFreeForm');
-        $awaitProp->setValue($controller, true);
-
-        // Inject dependencies into TickPollListener via reflection
-        $listenerRef = new \ReflectionClass(TickPollListener::class);
-        $listener = $listenerRef->newInstanceWithoutConstructor();
-        $listenerRef->getProperty('subagentLivePickerController')->setValue($listener, $this->closedSubagentLivePicker());
-        $listenerRef->getProperty('poller')->setValue($listener, $poller);
-        $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
-        $listenerRef->getProperty('questionCoordinator')->setValue($listener, $coordinator);
-        $listenerRef->getProperty('questionController')->setValue($listener, $controller);
-        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
-
         // Use default Idle activity (isActive()=false) — the self-heal condition
         // !isActive() will be true.
         $state = new TuiSessionState('run-orphan');
@@ -724,12 +709,29 @@ final class TickPollListenerTest extends TestCase
         $promptEditor = new PromptEditor();
         $screen = new ChatScreen($theme, 'run-orphan', $promptEditor);
 
+        $ctrlRef = new \ReflectionClass(QuestionController::class);
+        $controller = new QuestionController($coordinator, $screen);
+        $awaitProp = $ctrlRef->getProperty('awaitingFreeForm');
+        $awaitProp->setValue($controller, true);
+
+        $services = $this->createSessionServices(
+            tui: $tui,
+            state: $state,
+            screen: $screen,
+            parentPoller: $poller,
+            childPoller: $this->createIsolatedSubagentLiveChildPoller(),
+            questionCoordinator: $coordinator,
+            questionController: $controller,
+            subagentLivePicker: $this->closedSubagentLivePicker(),
+        );
         $context = $this->buildTuiContext()
             ->withTui($tui)
             ->withState($state)
             ->withScreen($screen)
+            ->withSessionServices($services)
             ->build();
 
+        $listener = new TickPollListener(new RuntimeQuestionEventHandler());
         $listener->register($context);
 
         // Retrieve the tick handler from TuiTickDispatcher
@@ -793,17 +795,6 @@ final class TickPollListenerTest extends TestCase
             ),
         );
 
-        $questionController = new QuestionController($coordinator);
-
-        $listenerRef = new \ReflectionClass(TickPollListener::class);
-        $listener = $listenerRef->newInstanceWithoutConstructor();
-        $listenerRef->getProperty('subagentLivePickerController')->setValue($listener, $this->closedSubagentLivePicker());
-        $listenerRef->getProperty('poller')->setValue($listener, $poller);
-        $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
-        $listenerRef->getProperty('questionCoordinator')->setValue($listener, $coordinator);
-        $listenerRef->getProperty('questionController')->setValue($listener, $questionController);
-        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
-
         $state = new TuiSessionState($parentRunId);
         $state->handle = new RunHandle($parentRunId);
         $state->activity = RunActivityStateEnum::WaitingHuman;
@@ -816,12 +807,26 @@ final class TickPollListenerTest extends TestCase
         $screen->setWorkingMessage('Working...');
         $screen->setStatus('action', '\u{26A0} Question pending');
 
+        $questionController = new QuestionController($coordinator, $screen);
+
+        $services = $this->createSessionServices(
+            tui: $tui,
+            state: $state,
+            screen: $screen,
+            parentPoller: $poller,
+            childPoller: $this->createIsolatedSubagentLiveChildPoller(),
+            questionCoordinator: $coordinator,
+            questionController: $questionController,
+            subagentLivePicker: $this->closedSubagentLivePicker(),
+        );
         $context = $this->buildTuiContext()
             ->withTui($tui)
             ->withState($state)
             ->withScreen($screen)
+            ->withSessionServices($services)
             ->build();
 
+        $listener = new TickPollListener(new RuntimeQuestionEventHandler());
         $listener->register($context);
 
         $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
@@ -859,7 +864,7 @@ final class TickPollListenerTest extends TestCase
     ): void {
         $runId = 'tick-busy-hint';
         $poller = $this->createNoOpPoller();
-        $listener = $this->createTickPollListener($poller);
+        $listener = $this->createTickPollListener();
 
         $state = new TuiSessionState($runId);
         $state->activity = $activity;
@@ -867,7 +872,7 @@ final class TickPollListenerTest extends TestCase
             $state->handle = new RunHandle($runId);
         }
 
-        $handler = $this->registerTickHandler($listener, $state);
+        $handler = $this->registerTickHandler($listener, $state, poller: $poller);
         $tickEvent = new \Symfony\Component\Tui\Event\TickEvent();
 
         $this->assertSame($expected, $handler($tickEvent));
@@ -879,14 +884,14 @@ final class TickPollListenerTest extends TestCase
     {
         $runId = 'tick-busy-live-child';
         $poller = $this->createNoOpPoller();
-        $listener = $this->createTickPollListener($poller);
+        $listener = $this->createTickPollListener();
 
         $state = new TuiSessionState($runId);
         $state->activity = RunActivityStateEnum::Idle;
         $state->subagentLiveView->active = true;
         $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
 
-        $handler = $this->registerTickHandler($listener, $state);
+        $handler = $this->registerTickHandler($listener, $state, poller: $poller);
         $tickEvent = new \Symfony\Component\Tui\Event\TickEvent();
 
         $this->assertTrue($handler($tickEvent));
@@ -896,14 +901,14 @@ final class TickPollListenerTest extends TestCase
     {
         $runId = 'tick-busy-live-idle';
         $poller = $this->createNoOpPoller();
-        $listener = $this->createTickPollListener($poller);
+        $listener = $this->createTickPollListener();
 
         $state = new TuiSessionState($runId);
         $state->activity = RunActivityStateEnum::Idle;
         $state->subagentLiveView->active = true;
         $state->subagentLiveView->childActivity = RunActivityStateEnum::Idle;
 
-        $handler = $this->registerTickHandler($listener, $state);
+        $handler = $this->registerTickHandler($listener, $state, poller: $poller);
         $tickEvent = new \Symfony\Component\Tui\Event\TickEvent();
 
         $this->assertNull($handler($tickEvent));
@@ -922,34 +927,43 @@ final class TickPollListenerTest extends TestCase
         );
     }
 
-    private function createTickPollListener(RuntimeEventPoller $poller): TickPollListener
+    private function createTickPollListener(): TickPollListener
     {
-        $listenerRef = new \ReflectionClass(TickPollListener::class);
-        $listener = $listenerRef->newInstanceWithoutConstructor();
-        $listenerRef->getProperty('subagentLivePickerController')->setValue($listener, $this->closedSubagentLivePicker());
-        $listenerRef->getProperty('poller')->setValue($listener, $poller);
-        $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
-        $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
-        $listenerRef->getProperty('questionController')->setValue($listener, new QuestionController(new QuestionCoordinator()));
-        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
-
-        return $listener;
+        return new TickPollListener(new RuntimeQuestionEventHandler());
     }
 
     /**
      * @return callable(\Symfony\Component\Tui\Event\TickEvent): ?bool
      */
-    private function registerTickHandler(TickPollListener $listener, TuiSessionState $state): callable
-    {
+    private function registerTickHandler(
+        TickPollListener $listener,
+        TuiSessionState $state,
+        ?RuntimeEventPoller $poller = null,
+        ?SubagentLiveChildViewPoller $childPoller = null,
+        ?QuestionCoordinator $coordinator = null,
+        ?QuestionController $questionController = null,
+        ?ChatScreen $screen = null,
+    ): callable {
         $tui = new Tui();
         $theme = new DefaultTheme(new ThemePalette('test'));
         $promptEditor = new PromptEditor();
-        $screen = new ChatScreen($theme, $state->sessionId, $promptEditor);
+        $screen ??= new ChatScreen($theme, $state->sessionId, $promptEditor);
 
+        $services = $this->createSessionServices(
+            tui: $tui,
+            state: $state,
+            screen: $screen,
+            parentPoller: $poller ?? $this->createNoOpPoller(),
+            childPoller: $childPoller ?? $this->createIsolatedSubagentLiveChildPoller(),
+            questionCoordinator: $coordinator,
+            questionController: $questionController,
+            subagentLivePicker: $this->closedSubagentLivePicker(),
+        );
         $context = $this->buildTuiContext()
             ->withTui($tui)
             ->withState($state)
             ->withScreen($screen)
+            ->withSessionServices($services)
             ->build();
 
         $this->contextTicks = $context->ticks;
