@@ -81,10 +81,10 @@ final class AgentsConfigTest extends TestCase
     {
         yield 'explicit null section' => [null, 'Invalid value for agents: expected mapping, got null'];
         yield 'sequential list section' => [['a', 'b'], 'Invalid value for agents: expected mapping, got list'];
-        yield 'unknown key' => [['bogus' => 1], 'Invalid key for agents'];
+        yield 'unknown key' => [['bogus' => 1], 'Invalid key for agents: "bogus" is not supported'];
         yield 'associative paths' => [['paths' => ['a' => 'x.md']], 'Invalid value for agents.paths: expected list of strings, got associative array'];
         yield 'extensions explicit null' => [['extensions' => null], 'Invalid value for agents.extensions: expected mapping, got null'];
-        yield 'extensions unknown key' => [['extensions' => ['bogus' => 1]], 'Invalid key for agents.extensions'];
+        yield 'extensions unknown key' => [['extensions' => ['bogus' => 1]], 'Invalid key for agents.extensions: "bogus" is not supported'];
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('malformedRawCases')]
@@ -289,7 +289,7 @@ final class AgentsConfigTest extends TestCase
     public function testFromRawRejectsUnusedAgentsExtensionsEnabled(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('agents.extensions');
+        $this->expectExceptionMessage('use frontmatter extensions or always_on');
 
         AgentsConfig::fromRaw([
             'extensions' => [

@@ -69,7 +69,7 @@ final readonly class AgentsConfig
             'extensions',
         ]);
         if ([] !== $unknown) {
-            throw new \InvalidArgumentException(\sprintf('Invalid key for agents: "%s" is not supported.', array_key_first($unknown)));
+            throw new \InvalidArgumentException(\sprintf('Invalid key for agents: "%s" is not supported.', reset($unknown)));
         }
 
         $enabled = true;

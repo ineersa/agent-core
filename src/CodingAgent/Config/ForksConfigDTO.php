@@ -41,7 +41,7 @@ final readonly class ForksConfigDTO
 
         $unknown = array_diff(array_keys($raw), ['model', 'thinking_level', 'extensions']);
         if ([] !== $unknown) {
-            throw new \InvalidArgumentException(\sprintf('Invalid key for forks: "%s" is not supported.', array_key_first($unknown)));
+            throw new \InvalidArgumentException(\sprintf('Invalid key for forks: "%s" is not supported.', reset($unknown)));
         }
 
         return new self(

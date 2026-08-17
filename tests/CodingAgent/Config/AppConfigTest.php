@@ -367,15 +367,15 @@ class AppConfigTest extends TestCase
         yield 'agents wrong type' => [['agents' => 5], 'Invalid value for agents: expected mapping, got int'];
         yield 'agents sequential list' => [['agents' => ['a', 'b']], 'Invalid value for agents: expected mapping, got list'];
         yield 'agents explicit null' => [['agents' => null], 'Invalid value for agents: expected mapping, got null'];
-        yield 'agents unknown key' => [['agents' => ['bogus' => 1]], 'Invalid key for agents'];
+        yield 'agents unknown key' => [['agents' => ['bogus' => 1]], 'Invalid key for agents: "bogus" is not supported'];
         yield 'agents.paths non-string entry' => [['agents' => ['paths' => ['ok', 5]]], 'Invalid value for agents.paths[1]'];
         yield 'agents.paths associative map' => [['agents' => ['paths' => ['a' => 'x.md']]], 'Invalid value for agents.paths: expected list of strings, got associative array'];
-        yield 'agents.extensions unknown key' => [['agents' => ['extensions' => ['bogus' => 1]]], 'Invalid key for agents.extensions'];
+        yield 'agents.extensions unknown key' => [['agents' => ['extensions' => ['bogus' => 1]]], 'Invalid key for agents.extensions: "bogus" is not supported'];
         yield 'agents.extensions explicit null' => [['agents' => ['extensions' => null]], 'Invalid value for agents.extensions: expected mapping, got null'];
         yield 'forks wrong type' => [['forks' => 5], 'Invalid value for forks: expected mapping, got int'];
         yield 'forks sequential list' => [['forks' => ['a', 'b']], 'Invalid value for forks: expected mapping, got list'];
         yield 'forks explicit null' => [['forks' => null], 'Invalid value for forks: expected mapping, got null'];
-        yield 'forks unknown key' => [['forks' => ['bogus' => 1]], 'Invalid key for forks'];
+        yield 'forks unknown key' => [['forks' => ['bogus' => 1]], 'Invalid key for forks: "bogus" is not supported'];
         yield 'forks.model wrong type' => [['forks' => ['model' => 5]], 'Invalid value for forks.model'];
     }
 

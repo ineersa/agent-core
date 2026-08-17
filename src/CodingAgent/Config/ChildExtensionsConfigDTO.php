@@ -46,7 +46,7 @@ final readonly class ChildExtensionsConfigDTO
         }
         $unknown = array_diff(array_keys($raw), $allowed);
         if ([] !== $unknown) {
-            throw new \InvalidArgumentException(\sprintf('Invalid key for %s: "%s" is not supported.', $path, array_key_first($unknown)));
+            throw new \InvalidArgumentException(\sprintf('Invalid key for %s: "%s" is not supported.', $path, reset($unknown)));
         }
 
         $alwaysOn = self::parseClassList($raw, 'always_on', $path.'.always_on');
