@@ -675,9 +675,9 @@ final class ChatScreen
      *
      * Must be called AFTER listener registrars have run so any handler an
      * internal extension context registered during setup is captured.
-     * Handlers added later are not picked up — the extension-facing
-     * contract has no input registration today, so there is no consumer
-     * of late registration.
+     * Handlers added later are not picked up — the public ExtensionApi
+     * has no input registration today, so there is no consumer of late
+     * registration.
      */
     public function registerSlotInputListeners(): void
     {

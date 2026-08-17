@@ -34,6 +34,6 @@ final class GitBranchDetector
 
         $branch = trim($process->getOutput());
 
-        return '' !== $branch ? $branch : '';
+        return $branch;
     }
 }
