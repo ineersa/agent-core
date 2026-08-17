@@ -9,6 +9,7 @@ use Ineersa\Tui\Completion\CompletionProvider;
 use Ineersa\Tui\Completion\CompletionState;
 use Ineersa\Tui\Completion\CompletionSuggestion;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Symfony\Component\Tui\Event\InputEvent;
 
@@ -24,8 +25,10 @@ use Symfony\Component\Tui\Event\InputEvent;
  * accepts the suggestion, then submits the now-completed text
  * through the normal SubmitListener path.
  *
- * Input routing (priority 90, below CtrlCInputInterceptor 100 /
- * ModelControlListener 95, above slot handlers 50):
+ * Input routing (priority {@see InputPriority::COMPLETION_SUBAGENT}, below
+ * CtrlCInputInterceptor {@see InputPriority::GLOBAL_INTERRUPT} /
+ * ModelControlListener {@see InputPriority::MODEL_CONTROL}, above slot
+ * handlers {@see InputPriority::EXTENSION_DEFAULT}):
  *  - Tab: open when closed; accept selected when open (single action)
  *  - Enter: accept selected + let event propagate for editor submit
  *  - Escape: close completion without clearing editor
@@ -33,11 +36,13 @@ use Symfony\Component\Tui\Event\InputEvent;
  *  - Printing keys: live completion open/refine/close (never stolen)
  *
  * Completion is not implemented as a slot input handler because
- * slot handlers run at priority 50, always return void, and cannot
- * stop propagation.  Completion needs priority 90 and the ability to
+ * slot handlers live at extension tier ({@see InputPriority::EXTENSION_DEFAULT})
+ * while completion needs the higher native tier and the ability to
  * consume Tab/Escape/Up/Down before the focused EditorWidget or
- * SubmitListener sees them. SelectListWidget owns selection arithmetic
- * and wrapping; this listener only intercepts and forwards.
+ * SubmitListener sees them. Slot handlers are themselves native
+ * InputEvent listeners since the seam upgrade and may stop propagation.
+ * SelectListWidget owns selection arithmetic and wrapping; this listener
+ * only intercepts and forwards.
  *
  * Does NOT use {@see EditorWidget::onInput()} — that single-slot
  * callback belongs to {@see PromptHistoryListener}.
@@ -79,7 +84,7 @@ final class CompletionListener implements TuiListenerRegistrar
                     }
                 }
             },
-            priority: 105,
+            priority: InputPriority::COMPLETION_PREFLIGHT,
         );
 
         // ── Priority 90: completion input routing ───────────────────
@@ -206,7 +211,7 @@ final class CompletionListener implements TuiListenerRegistrar
                     $screen->requestRender();
                 }
             },
-            priority: 90,
+            priority: InputPriority::COMPLETION_SUBAGENT,
         );
     }
 

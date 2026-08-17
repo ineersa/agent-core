@@ -7,12 +7,14 @@ namespace Ineersa\Tui\Tests\Layout;
 use Ineersa\Tui\Footer\FooterBarWidget;
 use Ineersa\Tui\Footer\FooterDataProvider;
 use Ineersa\Tui\Header\HeaderWidget;
+use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Layout\TuiSlotRegistry;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 use Ineersa\Tui\Widget\WidgetPlacementEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Event\InputEvent;
 
 #[CoversClass(TuiSlotRegistry::class)]
 final class TuiSlotRegistryTest extends TestCase
@@ -137,16 +139,18 @@ final class TuiSlotRegistryTest extends TestCase
 
     public function testInputHandlers(): void
     {
-        $h1 = static function (string $data): void {};
-        $h2 = static function (string $data): void {};
+        $h1 = static function (InputEvent $event): void {};
+        $h2 = static function (InputEvent $event): void {};
 
-        $this->registry->addInputHandler($h1);
+        $this->registry->addInputHandler($h1, 90);
         $this->registry->addInputHandler($h2);
 
         $handlers = $this->registry->getInputHandlers();
         $this->assertCount(2, $handlers);
-        $this->assertSame($h1, $handlers[0]);
-        $this->assertSame($h2, $handlers[1]);
+        $this->assertSame($h1, $handlers[0]['handler']);
+        $this->assertSame(90, $handlers[0]['priority']);
+        $this->assertSame($h2, $handlers[1]['handler']);
+        $this->assertSame(InputPriority::EXTENSION_DEFAULT, $handlers[1]['priority']);
     }
 
     private function createDummyWidget(): TuiWidget

@@ -132,6 +132,22 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
             // /new → controlled same-process rebuild into a fresh lazy draft.
             $this->tmux->sendKey($pane, 'C-u');
             $this->tmux->sendLiteral($pane, '/new');
+
+            // Wait for the live completion overlay to show the /new row: it
+            // proves input routing and the completion listener are ready, so
+            // Enter below follows the documented "accept + submit" path
+            // instead of racing render readiness under parallel gate load.
+            $this->tmux->waitForCallback(
+                $pane,
+                static function (string $cap): bool {
+                    return str_contains($cap, 'Completions')
+                        && str_contains($cap, '/new');
+                },
+                timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+                message: 'Typing "/new" must open the Completions overlay showing /new',
+                history: 2000,
+            );
+
             $this->tmux->sendKey($pane, 'Enter');
 
             // Positive fresh-session marker: the rebuild is complete once the

@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Utility\GitBranchDetector;
 
 /**
  * Initialises TuiSessionState fields needed by the footer.
@@ -65,7 +66,7 @@ final readonly class FooterStateInitializer
 
         $cwd = getcwd();
         $state->cwd = false !== $cwd ? self::shortCwd($cwd) : '';
-        $state->branch = self::detectGitBranch();
+        $state->branch = GitBranchDetector::detect();
     }
 
     /**
@@ -90,42 +91,6 @@ final readonly class FooterStateInitializer
     }
 
     // ── Helpers ──
-
-    public static function detectGitBranch(): string
-    {
-        $descriptors = [
-            ['pipe', 'r'],
-            ['pipe', 'w'],
-            ['pipe', 'w'],
-        ];
-
-        $process = @proc_open(
-            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
-            $descriptors,
-            $pipes,
-        );
-
-        if (!\is_resource($process)) {
-            return '';
-        }
-
-        try {
-            $stdout = stream_get_contents($pipes[1]);
-        } finally {
-            fclose($pipes[0]);
-            fclose($pipes[1]);
-            fclose($pipes[2]);
-            $exitCode = proc_close($process);
-        }
-
-        if (0 !== $exitCode) {
-            return '';
-        }
-
-        $branch = trim((string) $stdout);
-
-        return '' !== $branch ? $branch : '';
-    }
 
     public static function shortModelName(string $model): string
     {

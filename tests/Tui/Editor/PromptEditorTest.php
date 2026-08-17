@@ -346,4 +346,36 @@ final class PromptEditorTest extends TestCase
         // "abc" + "X" + "def"
         $this->assertSame('abcXdef', $this->editor->getText());
     }
+
+    #[Test]
+    public function acceptCompletionUsesByteOffsetsWithNonAsciiPrefix(): void
+    {
+        // Replacement offsets are BYTE offsets into the raw editor text.
+        // "grüße " is 8 bytes but only 6 code points — slicing by
+        // grapheme/codepoint index would cut into the middle of the
+        // multibyte run and leave a corrupted suffix.
+        $this->editor->typeText('grüße /he');
+
+        $this->editor->acceptCompletion(
+            replacementStart: 8, // byte offset of "/he" after "grüße "
+            replacementLength: 3,
+            insertText: '/help',
+        );
+
+        $this->assertSame('grüße /help', $this->editor->getText());
+    }
+
+    #[Test]
+    public function replaceTextPreservesMultilineContent(): void
+    {
+        // EditorWidget::handleInput() rejects control characters, so a
+        // character-input insertion would silently drop the newline.
+        $this->editor->replaceText("line1\nline2");
+
+        $this->assertSame("line1\nline2", $this->editor->getText());
+
+        // Cursor must be at the end: further typing appends after line2.
+        $this->editor->getWidget()->handleInput('!');
+        $this->assertSame("line1\nline2!", $this->editor->getText());
+    }
 }

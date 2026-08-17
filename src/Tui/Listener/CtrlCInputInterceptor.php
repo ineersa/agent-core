@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Symfony\Component\Tui\Event\InputEvent;
 
 /**
  * Intercepts Ctrl+D (quit) and Ctrl+C (cancel / double-press quit).
  *
- * Registered at priority 100 so it runs before other input handlers.
+ * Registered at priority {@see InputPriority::GLOBAL_INTERRUPT} so it runs before other input handlers.
  *
  * Ctrl+D → immediate quit
  * Ctrl+C (with editor text) → clear editor
@@ -74,7 +75,7 @@ final class CtrlCInputInterceptor implements TuiListenerRegistrar
                     $screen->setStatus('ctrl_c', null);
                 }
             },
-            priority: 100,
+            priority: InputPriority::GLOBAL_INTERRUPT,
         );
     }
 }

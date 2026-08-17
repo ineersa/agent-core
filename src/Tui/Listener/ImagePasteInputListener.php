@@ -9,6 +9,7 @@ use Ineersa\Tui\ImagePaste\ClipboardImageReadOutcomeEnum;
 use Ineersa\Tui\ImagePaste\PastedImagePendingDTO;
 use Ineersa\Tui\ImagePaste\PastedImagePlaceholderFormatter;
 use Ineersa\Tui\ImagePaste\PastedImageValidationService;
+use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
@@ -246,7 +247,7 @@ final class ImagePasteInputListener implements TuiListenerRegistrar
                     'image_index' => $index,
                 ]);
             },
-            priority: 96,
+            priority: InputPriority::IMAGE_PASTE,
         );
     }
 

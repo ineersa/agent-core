@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Symfony\Component\Tui\Event\InputEvent;
@@ -50,7 +51,7 @@ final class SubagentLiveToggleInputListener implements TuiListenerRegistrar
 
                 $picker->open();
             },
-            priority: 90,
+            priority: InputPriority::COMPLETION_SUBAGENT,
         );
     }
 }

@@ -278,8 +278,8 @@ final readonly class InteractiveMode
             // Install single Symfony tick callback that multiplexes to all registered handlers
             $tui->onTick(static fn (TickEvent $event): ?bool => $ticks->dispatch($event));
 
-            // Also register input handlers from the slot registry
-            $this->registerSlotInputHandlers($tui, $screen);
+            // Also register slot input handlers as native InputEvent listeners
+            $screen->registerSlotInputListeners();
 
             // ── Dispatch session lifecycle start event ──
             // Must happen AFTER listener registrars have run so that
@@ -320,12 +320,11 @@ final readonly class InteractiveMode
                 //
                 // The old TUI's ScreenWriter performed its last render inside
                 // the just-exited event loop.  Terminal::stop() has restored
-                // cooked mode but does NOT reposition the cursor.  A direct
-                // ANSI escape sequence is the simplest correct approach:
+                // cooked mode but does NOT reposition the cursor.  Route the
+                // transition feedback through the native terminal API:
                 //
-                //   \x1b[2J — clear visible screen
-                //   \x1b[3J — clear scrollback buffer
-                //   \x1b[H  — home cursor
+                //   clearScreen() — \x1b[2J + \x1b[H (visible clear + home)
+                //   write("\x1b[3J") — scrollback-only clear (no native API)
                 //
                 // These sequences are processed by the terminal emulator
                 // regardless of terminal mode; they are NOT wrapped in
@@ -345,8 +344,8 @@ final readonly class InteractiveMode
                 // write because $switchTarget is consumed AFTER the picker
                 // callback runs.  The picker-open flicker fix (b50cb2540) is
                 // preserved unchanged.
-                fwrite(\STDOUT, "\x1b[2J\x1b[3J\x1b[H");
-                fflush(\STDOUT);
+                $tui->getTerminal()->clearScreen();
+                $tui->getTerminal()->write("\x1b[3J");
 
                 $needsTerminalClear = true;
                 // Record the session id we're leaving so the next
@@ -372,8 +371,7 @@ final readonly class InteractiveMode
                 // the TUI content, rather than at the previous cursor
                 // position.  This eliminates the "cursor jumps to bottom"
                 // symptom the user reported.
-                fwrite(\STDOUT, "\r\n");
-                fflush(\STDOUT);
+                $tui->getTerminal()->write("\r\n");
                 break; // Normal exit — no pending switch
             }
         }
@@ -486,27 +484,5 @@ final readonly class InteractiveMode
                 $screen->setTranscriptBlocks($state->transcript);
             }
         }
-    }
-
-    /**
-     * Register input handlers from the slot registry as a TUI InputEvent listener.
-     *
-     * The handler list is read at event time, so late registrations from extensions work.
-     */
-    private function registerSlotInputHandlers(Tui $tui, ChatScreen $screen): void
-    {
-        $registry = $screen->registry();
-
-        $tui->addListener(static function (\Symfony\Component\Tui\Event\InputEvent $event) use ($registry): void {
-            $handlers = $registry->getInputHandlers();
-            if ([] === $handlers) {
-                return;
-            }
-
-            $data = $event->getData();
-            foreach ($handlers as $handler) {
-                $handler($data);
-            }
-        }, priority: 50);
     }
 }

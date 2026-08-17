@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Extension;
 
 use Ineersa\Tui\Footer\FooterSegmentProvider;
+use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Widget\TuiWidget;
 use Ineersa\Tui\Widget\WidgetPlacementEnum;
 
@@ -83,9 +84,15 @@ interface TuiExtensionContext
     public function setFooterProvider(string $key, ?FooterSegmentProvider $provider): void;
 
     /**
-     * Register a raw terminal input handler.
+     * Register a native terminal input listener.
      *
-     * @param callable(string $data): void $handler
+     * The handler is a Symfony TUI InputEvent listener (first parameter
+     * type-hinted with the event class); it may call stopPropagation() to
+     * consume the input. The host registers it on the Tui event dispatcher
+     * with the given priority, so slot handlers interleave with the other
+     * native input listeners. Equal priorities keep registration order.
+     *
+     * @param callable $handler Symfony TUI InputEvent listener
      */
-    public function onTerminalInput(callable $handler): void;
+    public function onTerminalInput(callable $handler, int $priority = InputPriority::EXTENSION_DEFAULT): void;
 }

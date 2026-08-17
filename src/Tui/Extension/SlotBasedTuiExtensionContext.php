@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Extension;
 
 use Ineersa\Tui\Footer\FooterDataProvider;
 use Ineersa\Tui\Footer\FooterSegmentProvider;
+use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Layout\TuiSlotRegistry;
 use Ineersa\Tui\Widget\TuiWidget;
 use Ineersa\Tui\Widget\WidgetPlacementEnum;
@@ -88,8 +89,13 @@ final class SlotBasedTuiExtensionContext implements TuiExtensionContext
         $this->footerDataProvider?->setProvider($key, $provider);
     }
 
-    public function onTerminalInput(callable $handler): void
+    /**
+     * Register a native terminal input listener.
+     *
+     * @param callable $handler Symfony TUI InputEvent listener (may stop propagation)
+     */
+    public function onTerminalInput(callable $handler, int $priority = InputPriority::EXTENSION_DEFAULT): void
     {
-        $this->registry->addInputHandler($handler);
+        $this->registry->addInputHandler($handler, $priority);
     }
 }

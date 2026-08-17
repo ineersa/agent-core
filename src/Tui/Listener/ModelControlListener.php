@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandCatalog;
+use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\InputEvent;
@@ -141,7 +142,7 @@ final class ModelControlListener implements TuiListenerRegistrar, SlashCommandCa
                 );
                 $state->request = $carrier->withModel($nextRef->toString());
             }
-        }, priority: 95);
+        }, priority: InputPriority::MODEL_CONTROL);
 
         // ── Register Shift+Tab — cycle reasoning levels ──
         $tui->addListener(static function (InputEvent $event) use (
@@ -174,6 +175,6 @@ final class ModelControlListener implements TuiListenerRegistrar, SlashCommandCa
 
             // Apply editor border colour matching the new reasoning level.
             $screen->applyEditorBorderColor($nextLevel);
-        }, priority: 95);
+        }, priority: InputPriority::MODEL_CONTROL);
     }
 }
