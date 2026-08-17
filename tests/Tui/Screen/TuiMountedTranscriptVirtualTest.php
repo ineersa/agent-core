@@ -418,6 +418,50 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertSame([], $patch->removals);
     }
 
+    #[Test]
+    public function testWrongKindOnStableKeyRecreatesSemanticWidget(): void
+    {
+        // Thesis: re-binding an existing stable key to a different visual kind must not
+        // apply() the wrong kind onto the old widget (semantic apply() rejects it); the
+        // mounted adapter must re-create the widget for the new kind and bind the node.
+        // Key collision: a plain block id shaped like an exchange key maps to the same
+        // stable key as a tool call carrying that tool_call_id.
+        $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
+        $transcript = new TranscriptMountedWidget(theme: $theme);
+
+        $user = new TranscriptBlock(
+            id: 'exchange:race-1',
+            kind: TranscriptBlockKindEnum::UserMessage,
+            runId: self::SESSION_ID,
+            seq: 1,
+            text: 'prompt',
+        );
+        $transcript->setBlocks([$user]);
+        $before = $transcript->all();
+        $this->assertCount(1, $before);
+        $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $before[0]);
+
+        $toolCall = new TranscriptBlock(
+            id: 'tool-race-1',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: self::SESSION_ID,
+            seq: 2,
+            text: 'read',
+            meta: [
+                'tool_name' => 'read',
+                'tool_call_id' => 'race-1',
+                'arguments' => ['path' => './README.md'],
+            ],
+        );
+        $transcript->setBlocks([$toolCall]);
+
+        $after = $transcript->all();
+        $this->assertCount(1, $after, 'Wrong-kind replacement must keep one mounted child');
+        $this->assertNotSame($before[0], $after[0], 'Wrong-kind stable key must re-create the widget, not reuse the old one');
+        $this->assertInstanceOf(ToolExchangeTranscriptWidget::class, $after[0], 'Stable key re-bound to tool exchange must mount a tool-exchange widget');
+        $this->assertSame(TranscriptVisualNode::KIND_TOOL_EXCHANGE, $after[0]->node()?->kind, 'Re-created widget must receive its node data via the semantic apply contract');
+    }
+
     /**
      * @return list<MarkdownWidget>
      */

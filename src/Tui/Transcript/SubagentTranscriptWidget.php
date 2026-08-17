@@ -11,7 +11,7 @@ use Symfony\Component\Tui\Widget\ContainerWidget;
 /**
  * Semantic mounted node for structured subagent progress/result cards.
  */
-final class SubagentTranscriptWidget extends ContainerWidget
+final class SubagentTranscriptWidget extends ContainerWidget implements MutableTranscriptWidget
 {
     private ?TranscriptVisualNode $node = null;
 
@@ -21,6 +21,11 @@ final class SubagentTranscriptWidget extends ContainerWidget
         private readonly TranscriptBlockWidgetFactory $factory,
         private readonly TuiTheme $theme,
     ) {
+    }
+
+    public function canBind(TranscriptVisualNode $node): bool
+    {
+        return TranscriptVisualNode::KIND_SUBAGENT === $node->kind;
     }
 
     public function node(): ?TranscriptVisualNode

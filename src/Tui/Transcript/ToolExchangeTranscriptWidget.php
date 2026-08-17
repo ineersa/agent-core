@@ -14,7 +14,7 @@ use Symfony\Component\Tui\Widget\ContainerWidget;
  * Stable key is {@code exchange:<tool_call_id>} from pending call through result.
  * Owns source dependencies; rebuilds the native card subtree when sources change.
  */
-final class ToolExchangeTranscriptWidget extends ContainerWidget
+final class ToolExchangeTranscriptWidget extends ContainerWidget implements MutableTranscriptWidget
 {
     private ?TranscriptVisualNode $node = null;
 
@@ -24,6 +24,11 @@ final class ToolExchangeTranscriptWidget extends ContainerWidget
         private readonly TranscriptBlockWidgetFactory $factory,
         private readonly TuiTheme $theme,
     ) {
+    }
+
+    public function canBind(TranscriptVisualNode $node): bool
+    {
+        return TranscriptVisualNode::KIND_TOOL_EXCHANGE === $node->kind;
     }
 
     public function node(): ?TranscriptVisualNode
