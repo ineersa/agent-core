@@ -586,6 +586,90 @@ agents:
 #                     max_tokens: 128000
 #                     cost: { input: 0.75, output: 4.50 }
 
+#         grok-cli:
+#             type: grok
+#             enabled: false
+#             base_url: 'https://cli-chat-proxy.grok.com'
+#             api: openai-responses
+#             # Grok CLI credentials are created via OAuth PKCE. Run `bin/console auth:grok`
+#             # to authenticate; the access/refresh tokens are stored in
+#             # ~/.hatfield/auth.json under key 'grok-cli'. Do not set api_key here.
+#             # Spoofed grok-pager client headers are required by cli-chat-proxy (HTTP 426 without them).
+#             completions_path: /v1/responses
+#             supports_completions: true
+#             supports_embeddings: false
+#             supports_thinking_levels: true
+#             compatibility:
+#                 supports_developer_role: false
+#             models:
+#                 grok-composer-2.5-fast:
+#                     name: Composer 2.5 Fast (Grok CLI)
+#                     reasoning: false
+#                     thinking_level_map: { off: none, minimal: null, low: null, medium: null, high: null, xhigh: null }
+#                     tool_calling: true
+#                     input: [text, image]
+#                     context_window: 200000
+#                     max_tokens: 30000
+#                     cost: { input: 3.00, output: 15.00, cache_read: 0.50, cache_write: 0 }
+#                 grok-build:
+#                     name: Grok Build
+#                     reasoning: true
+#                     tool_calling: true
+#                     input: [text, image]
+#                     context_window: 500000
+#                     max_tokens: 30000
+#                     cost: { input: 1.00, output: 2.00, cache_read: 0.20, cache_write: 0.20 }
+#                 grok-4.3:
+#                     name: Grok 4.3
+#                     reasoning: true
+#                     tool_calling: true
+#                     input: [text, image]
+#                     context_window: 1000000
+#                     max_tokens: 30000
+#                     cost: { input: 1.25, output: 2.50, cache_read: 0.20, cache_write: 0 }
+#                 grok-4.5:
+#                     name: Grok 4.5
+#                     reasoning: true
+#                     tool_calling: true
+#                     input: [text, image]
+#                     context_window: 500000
+#                     max_tokens: 30000
+#                     cost: { input: 2.00, output: 6.00, cache_read: 0.50, cache_write: 0 }
+#                 grok-4.6:
+#                     name: Grok 4.6
+#                     reasoning: true
+#                     tool_calling: true
+#                     input: [text, image]
+#                     context_window: 500000
+#                     max_tokens: 30000
+#                     cost: { input: 2.00, output: 6.00, cache_read: 0.50, cache_write: 0 }
+#                 grok-4.20-0309-reasoning:
+#                     name: Grok 4.20 Reasoning
+#                     reasoning: true
+#                     tool_calling: true
+#                     input: [text, image]
+#                     context_window: 2000000
+#                     max_tokens: 30000
+#                     cost: { input: 1.25, output: 2.50, cache_read: 0.20, cache_write: 0 }
+#                 grok-4.20-0309-non-reasoning:
+#                     name: Grok 4.20 Non-Reasoning
+#                     reasoning: false
+#                     thinking_level_map: { off: none, minimal: null, low: null, medium: null, high: null, xhigh: null }
+#                     tool_calling: true
+#                     input: [text, image]
+#                     context_window: 2000000
+#                     max_tokens: 30000
+#                     cost: { input: 1.25, output: 2.50, cache_read: 0.20, cache_write: 0 }
+#                 grok-4.20-multi-agent-0309:
+#                     name: Grok 4.20 Multi-Agent
+#                     reasoning: true
+#                     tool_calling: true
+#                     input: [text, image]
+#                     context_window: 2000000
+#                     max_tokens: 30000
+#                     cost: { input: 1.25, output: 2.50, cache_read: 0.20, cache_write: 0 }
+#
+
 forks:
     model: null
     thinking_level: null

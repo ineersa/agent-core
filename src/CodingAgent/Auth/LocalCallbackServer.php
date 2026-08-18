@@ -7,8 +7,9 @@ namespace Ineersa\CodingAgent\Auth;
 /**
  * Minimal local TCP HTTP server for the OAuth PKCE callback.
  *
- * Binds to 127.0.0.1:<port> and waits for a GET /auth/callback
+ * Binds to 127.0.0.1:<port> and waits for a GET callback
  * request with query parameters ?code=...&state=...
+ * (default path /auth/callback; providers may pass a different path).
  *
  * On success it returns the authorization code; on timeout or error
  * it returns null so the caller can fall back to manual paste input.
@@ -19,7 +20,7 @@ namespace Ineersa\CodingAgent\Auth;
  */
 final class LocalCallbackServer
 {
-    private const string CALLBACK_PATH = '/auth/callback';
+    private const string DEFAULT_CALLBACK_PATH = '/auth/callback';
 
     /**
      * Wait for the OAuth callback on a local TCP socket.
@@ -32,6 +33,7 @@ final class LocalCallbackServer
      * @param float         $timeoutSeconds Seconds to wait before returning null (pass 0 for no timeout)
      * @param int           $port           Local TCP port
      * @param callable|null $afterListen    Invoked after bind succeeds, before accept blocks
+     * @param string        $callbackPath   Path the IdP redirects to (Codex: /auth/callback, xAI Grok: /callback)
      *
      * @return array{code: string}|null The authorization code, or null on timeout/error
      */
@@ -40,6 +42,7 @@ final class LocalCallbackServer
         float $timeoutSeconds = 300.0,
         int $port = CodexOAuthConfig::DEFAULT_PORT,
         ?callable $afterListen = null,
+        string $callbackPath = self::DEFAULT_CALLBACK_PATH,
     ): ?array {
         $errno = 0;
         $errstr = '';
@@ -97,7 +100,7 @@ final class LocalCallbackServer
             $path = substr($pathAndQuery, 0, $queryStart);
             $query = substr($pathAndQuery, $queryStart + 1);
 
-            if (self::CALLBACK_PATH !== $path) {
+            if ($callbackPath !== $path) {
                 $this->sendResponse($conn, 404, self::errorHtml('Not found.'));
 
                 return null;

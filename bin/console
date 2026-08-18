@@ -150,6 +150,7 @@ $createApplication = static function (Kernel $kernel) use ($isPhar): Application
         'agent' => true,
         'agents:init' => true,
         'auth:codex' => true,
+        'auth:grok' => true,
         'completion:file-index:refresh' => true,
         'log:clear' => true,
         'log:files' => true,
