@@ -93,7 +93,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             $messages = $state->messages;
             $toolCallInfoMap = $this->buildToolCallInfoMap($state);
             $pendingToolCalls = $state->pendingToolCalls;
-            $resolvedCount = 0;
+            $projectedToolMessageCount = 0;
 
             // Suspension is not a finished tool result — never preserve its null body.
             $preserveIncoming = !$message->isHumanInputSuspension()
@@ -102,13 +102,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
             if ($preserveIncoming) {
                 $pendingToolCalls[$message->toolCallId] = true;
-                ++$resolvedCount;
-                $this->appendCommittedToolResultEvents(
-                    eventSpecs: $eventSpecs,
-                    messages: $messages,
-                    result: $message,
-                    toolExecutionEndExtras: $this->cancellationToolExecutionEndExtras(),
-                );
             } else {
                 $eventSpecs[] = [
                     'type' => RunEventTypeEnum::StaleResultIgnored->value,
@@ -122,61 +115,97 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 ];
             }
 
-            $unresolvedIds = array_keys(array_filter(
-                $pendingToolCalls,
-                static fn (mixed $completed): bool => false === $completed,
-            ));
+            // Cancellation can land after some results were accepted while the batch was
+            // still incomplete. Those ids are pendingToolCalls===true with durable
+            // result_received + execution_end, but their tool messages were deferred until
+            // batch completion and are therefore absent from RunState->messages. Terminalizing
+            // without projecting them leaves the assistant tool_calls unmatched and every
+            // later follow-up fails MalformedToolCallSequenceException::missingToolResults.
+            // Project every durable-but-unprojected result (and synthesize cancelled results
+            // for still-false ids) in order_index order before tool_batch_committed / agent_end.
+            $batchIds = array_keys($pendingToolCalls);
+            usort($batchIds, static function (string $a, string $b) use ($toolCallInfoMap): int {
+                $orderA = isset($toolCallInfoMap[$a]['order_index']) && \is_int($toolCallInfoMap[$a]['order_index']) ? $toolCallInfoMap[$a]['order_index'] : 0;
+                $orderB = isset($toolCallInfoMap[$b]['order_index']) && \is_int($toolCallInfoMap[$b]['order_index']) ? $toolCallInfoMap[$b]['order_index'] : 0;
 
-            if ([] !== $unresolvedIds) {
-                usort($unresolvedIds, static function (string $a, string $b) use ($toolCallInfoMap): int {
-                    $orderA = isset($toolCallInfoMap[$a]['order_index']) && \is_int($toolCallInfoMap[$a]['order_index']) ? $toolCallInfoMap[$a]['order_index'] : 0;
-                    $orderB = isset($toolCallInfoMap[$b]['order_index']) && \is_int($toolCallInfoMap[$b]['order_index']) ? $toolCallInfoMap[$b]['order_index'] : 0;
+                return $orderA <=> $orderB;
+            });
 
-                    return $orderA <=> $orderB;
-                });
+            $collectorStepId = $state->activeStepId ?? $message->stepId();
+            $syntheticStepId = $state->activeStepId ?? \sprintf('synthetic-cancel-%d', hrtime(true));
 
-                $stepId = $state->activeStepId ?? \sprintf('synthetic-cancel-%d', hrtime(true));
+            foreach ($batchIds as $tcId) {
+                $info = $toolCallInfoMap[$tcId] ?? null;
+                $toolName = \is_string($info['name'] ?? null) ? $info['name'] : 'unknown';
+                $orderIndex = \is_int($info['order_index'] ?? null) ? $info['order_index'] : 0;
+                $alreadyTrue = true === ($pendingToolCalls[$tcId] ?? null);
 
-                foreach ($unresolvedIds as $tcId) {
-                    $info = $toolCallInfoMap[$tcId] ?? null;
-                    $toolName = \is_string($info['name'] ?? null) ? $info['name'] : 'unknown';
-                    $orderIndex = \is_int($info['order_index'] ?? null) ? $info['order_index'] : 0;
-                    $cancelMessage = self::SYNTHETIC_USER_CANCEL_MESSAGE;
+                if ($alreadyTrue) {
+                    $stored = $preserveIncoming && $tcId === $message->toolCallId
+                        ? $message
+                        : $this->toolBatchCollector->getStoredResult($runId, $state->turnNo, $collectorStepId, $tcId);
 
-                    $syntheticResult = new ToolCallResult(
-                        runId: $runId,
-                        turnNo: $state->turnNo,
-                        stepId: $stepId,
-                        attempt: 1,
-                        idempotencyKey: hash('sha256', \sprintf('cancel-%s-%s', $runId, $tcId)),
-                        toolCallId: $tcId,
-                        orderIndex: $orderIndex,
-                        result: [
-                            'tool_name' => $toolName,
-                            'content' => [['type' => 'text', 'text' => $cancelMessage]],
-                        ],
-                        isError: true,
-                        error: [
-                            'type' => 'cancelled',
-                            'message' => $cancelMessage,
-                        ],
-                    );
+                    if ($this->stateContainsToolMessageForId($messages, $tcId)) {
+                        // Already projected into messages — do not duplicate.
+                        continue;
+                    }
 
-                    $this->appendCommittedToolResultEvents(
-                        eventSpecs: $eventSpecs,
-                        messages: $messages,
-                        result: $syntheticResult,
-                        toolExecutionEndExtras: $this->cancellationToolExecutionEndExtras(),
-                    );
-                    ++$resolvedCount;
+                    if ($preserveIncoming && $tcId === $message->toolCallId) {
+                        // Incoming result has not been durably ended yet — full commit group.
+                        $this->appendCommittedToolResultEvents(
+                            eventSpecs: $eventSpecs,
+                            messages: $messages,
+                            result: $message,
+                            toolExecutionEndExtras: $this->cancellationToolExecutionEndExtras(),
+                        );
+                    } else {
+                        // Result was accepted while Running (incomplete batch): ends already
+                        // durable in prior events; project only the deferred tool message.
+                        // Never re-emit result_received / execution_end for these ids.
+                        // ponytail: collector store miss degrades message text to synthetic cancel;
+                        // durable ToolExecutionEnd still carries the real result and the repair path rebuilds from it — rebuild here only if store loss proves real.
+                        $resultToProject = $stored ?? $this->syntheticCancelledToolResult(
+                            runId: $runId,
+                            turnNo: $state->turnNo,
+                            stepId: $syntheticStepId,
+                            toolCallId: $tcId,
+                            toolName: $toolName,
+                            orderIndex: $orderIndex,
+                        );
+                        $this->appendToolMessageEvents(
+                            eventSpecs: $eventSpecs,
+                            messages: $messages,
+                            result: $resultToProject,
+                        );
+                    }
+                    ++$projectedToolMessageCount;
+
+                    continue;
                 }
+
+                $syntheticResult = $this->syntheticCancelledToolResult(
+                    runId: $runId,
+                    turnNo: $state->turnNo,
+                    stepId: $syntheticStepId,
+                    toolCallId: $tcId,
+                    toolName: $toolName,
+                    orderIndex: $orderIndex,
+                );
+
+                $this->appendCommittedToolResultEvents(
+                    eventSpecs: $eventSpecs,
+                    messages: $messages,
+                    result: $syntheticResult,
+                    toolExecutionEndExtras: $this->cancellationToolExecutionEndExtras(),
+                );
+                ++$projectedToolMessageCount;
             }
 
-            if ($resolvedCount > 0) {
+            if ($projectedToolMessageCount > 0) {
                 $eventSpecs[] = [
                     'type' => RunEventTypeEnum::ToolBatchCommitted->value,
                     'payload' => [
-                        'count' => $resolvedCount,
+                        'count' => $projectedToolMessageCount,
                         'turn_no' => $state->turnNo,
                         'step_id' => $message->stepId(),
                     ],
@@ -548,6 +577,24 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             'payload' => $toolExecutionEndPayload,
         ];
 
+        $this->appendToolMessageEvents(
+            eventSpecs: $eventSpecs,
+            messages: $messages,
+            result: $result,
+        );
+    }
+
+    /**
+     * Project a deferred tool message without re-emitting durable result/end events.
+     *
+     * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
+     * @param list<AgentMessage>                                       $messages
+     */
+    private function appendToolMessageEvents(
+        array &$eventSpecs,
+        array &$messages,
+        ToolCallResult $result,
+    ): void {
         $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $result->result['details'] ?? null);
         $toolMsg = $this->messageNormalizer->toolMessage($result, $notifications);
         $messages[] = $toolMsg;
@@ -568,6 +615,50 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 'message' => $toolMsgArray,
             ],
         ];
+    }
+
+    /**
+     * @param list<AgentMessage> $messages
+     */
+    private function stateContainsToolMessageForId(array $messages, string $toolCallId): bool
+    {
+        foreach ($messages as $message) {
+            if ('tool' === $message->role && $message->toolCallId === $toolCallId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function syntheticCancelledToolResult(
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        string $toolCallId,
+        string $toolName,
+        int $orderIndex,
+    ): ToolCallResult {
+        $cancelMessage = self::SYNTHETIC_USER_CANCEL_MESSAGE;
+
+        return new ToolCallResult(
+            runId: $runId,
+            turnNo: $turnNo,
+            stepId: $stepId,
+            attempt: 1,
+            idempotencyKey: hash('sha256', \sprintf('cancel-%s-%s', $runId, $toolCallId)),
+            toolCallId: $toolCallId,
+            orderIndex: $orderIndex,
+            result: [
+                'tool_name' => $toolName,
+                'content' => [['type' => 'text', 'text' => $cancelMessage]],
+            ],
+            isError: true,
+            error: [
+                'type' => 'cancelled',
+                'message' => $cancelMessage,
+            ],
+        );
     }
 
     /**

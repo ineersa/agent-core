@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
@@ -829,8 +830,43 @@ final class ToolCallResultHandlerTest extends TestCase
 
     public function testCancellingWithPartialCompleteClosesAll(): void
     {
+        $collector = new ToolBatchCollector();
+        $collector->registerExpectedBatch(
+            runId: 'run-cancel-partial',
+            turnNo: 1,
+            stepId: 'turn-step-1',
+            toolCalls: [
+                new ExecuteToolCall(
+                    runId: 'run-cancel-partial',
+                    turnNo: 1,
+                    stepId: 'turn-step-1',
+                    attempt: 1,
+                    idempotencyKey: 'exec-tc-done',
+                    toolCallId: 'tc-done',
+                    toolName: 'bash',
+                    args: [],
+                    orderIndex: 0,
+                    mode: 'parallel',
+                    maxParallelism: 2,
+                ),
+                new ExecuteToolCall(
+                    runId: 'run-cancel-partial',
+                    turnNo: 1,
+                    stepId: 'turn-step-1',
+                    attempt: 1,
+                    idempotencyKey: 'exec-tc-pending',
+                    toolCallId: 'tc-pending',
+                    toolName: 'read',
+                    args: ['path' => './f.txt'],
+                    orderIndex: 1,
+                    mode: 'parallel',
+                    maxParallelism: 2,
+                ),
+            ],
+        );
+
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
+            toolBatchCollector: $collector,
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -848,33 +884,241 @@ final class ToolCallResultHandlerTest extends TestCase
             ],
         );
 
-        $state = RunStateBuilder::running('run-cancel-partial')
-            ->withStatus(RunStatus::Cancelling)
+        // Exact race window: A accepted while Running (received+end, no projection),
+        // then cancel transition, then a Cancelling-path result for A (stale) or B.
+        $runningState = RunStateBuilder::running('run-cancel-partial')
             ->withVersion(3)
             ->withTurnNo(1)
             ->withLastSeq(4)
-            ->withPendingToolCalls(['tc-done' => true, 'tc-pending' => false])
+            ->withPendingToolCalls(['tc-done' => false, 'tc-pending' => false])
             ->withActiveStepId('turn-step-1')
             ->withMessages([$assistantMsg])
             ->build();
 
-        $message = ToolCallResultBuilder::success('run-cancel-partial')
+        $doneResult = ToolCallResultBuilder::success('run-cancel-partial')
             ->withTurnNo(1)
             ->withStepId('turn-step-1')
-            ->withIdempotencyKey('tool-result-arriving')
+            ->withIdempotencyKey('tool-result-done')
             ->withToolCallId('tc-done')
             ->withOrderIndex(0)
             ->withResult(['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => 'done']]])
             ->build();
 
-        $result = $handler->handle($message, $state);
+        $partial = $handler->handle($doneResult, $runningState);
+        $this->assertNotNull($partial->nextState);
+        $this->assertSame(RunStatus::Running, $partial->nextState->status);
+        $this->assertTrue($partial->nextState->pendingToolCalls['tc-done']);
+        $this->assertFalse($partial->nextState->pendingToolCalls['tc-pending']);
+        $this->assertCount(1, $partial->nextState->messages, 'Incomplete batch must defer tool message projection');
 
-        $this->assertCount(2, $result->nextState->messages);
-        $this->assertSame('tool', $result->nextState->messages[1]->role);
-        $this->assertSame('tc-pending', $result->nextState->messages[1]->toolCallId);
+        $cancellingState = $partial->nextState->with([
+            'status' => RunStatus::Cancelling,
+            'version' => $partial->nextState->version + 1,
+        ]);
 
+        // Cancelling branch entry: stale redelivery of A's result (already true).
+        $staleA = ToolCallResultBuilder::success('run-cancel-partial')
+            ->withTurnNo(1)
+            ->withStepId('turn-step-1')
+            ->withIdempotencyKey('tool-result-done-redeliver')
+            ->withToolCallId('tc-done')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => 'done']]])
+            ->build();
+
+        $result = $handler->handle($staleA, $cancellingState);
+
+        $this->assertNotNull($result->nextState);
         $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
         $this->assertSame([], $result->nextState->pendingToolCalls);
+        $this->assertCount(3, $result->nextState->messages);
+        $this->assertSame('tool', $result->nextState->messages[1]->role);
+        $this->assertSame('tc-done', $result->nextState->messages[1]->toolCallId);
+        $this->assertSame('tool', $result->nextState->messages[2]->role);
+        $this->assertSame('tc-pending', $result->nextState->messages[2]->toolCallId);
+
+        $types = array_map(static fn ($e) => $e->type, $result->events);
+        $this->assertContains(RunEventTypeEnum::ToolBatchCommitted->value, $types);
+        $batchCommitted = null;
+        foreach ($result->events as $event) {
+            if (RunEventTypeEnum::ToolBatchCommitted->value === $event->type) {
+                $batchCommitted = $event;
+            }
+        }
+        $this->assertNotNull($batchCommitted);
+        $this->assertSame(2, $batchCommitted->payload['count'] ?? null);
+
+        $agentEnds = array_values(array_filter(
+            $result->events,
+            static fn ($e) => RunEventTypeEnum::AgentEnd->value === $e->type,
+        ));
+        $this->assertCount(1, $agentEnds);
+        $this->assertSame('cancelled', $agentEnds[0]->payload['reason'] ?? null);
+
+        // Exactly one tool message per id; no duplicate result/end for A beyond the Running commit.
+        $toolMsgEnds = 0;
+        foreach ($result->events as $event) {
+            if (RunEventTypeEnum::MessageEnd->value === $event->type
+                && 'tool' === ($event->payload['message_role'] ?? null)) {
+                ++$toolMsgEnds;
+            }
+        }
+        $this->assertSame(2, $toolMsgEnds);
+
+        $validator = new AgentMessageToolCallSequenceValidator();
+        $validator->validate($result->nextState->messages);
+        $validator->validate(array_merge(
+            $result->nextState->messages,
+            [new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'continue']])],
+        ));
+    }
+
+    public function testCancellingPreserveIncomingProjectsDeferredSiblingMessageOnly(): void
+    {
+        $collector = new ToolBatchCollector();
+        $collector->registerExpectedBatch(
+            runId: 'run-cancel-preserve',
+            turnNo: 1,
+            stepId: 'turn-step-1',
+            toolCalls: [
+                new ExecuteToolCall(
+                    runId: 'run-cancel-preserve',
+                    turnNo: 1,
+                    stepId: 'turn-step-1',
+                    attempt: 1,
+                    idempotencyKey: 'exec-tc-done',
+                    toolCallId: 'tc-done',
+                    toolName: 'bash',
+                    args: [],
+                    orderIndex: 0,
+                    mode: 'parallel',
+                    maxParallelism: 2,
+                ),
+                new ExecuteToolCall(
+                    runId: 'run-cancel-preserve',
+                    turnNo: 1,
+                    stepId: 'turn-step-1',
+                    attempt: 1,
+                    idempotencyKey: 'exec-tc-pending',
+                    toolCallId: 'tc-pending',
+                    toolName: 'bash',
+                    args: [],
+                    orderIndex: 1,
+                    mode: 'parallel',
+                    maxParallelism: 2,
+                ),
+            ],
+        );
+
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+
+        $assistantMsg = new AgentMessage(
+            role: 'assistant',
+            content: [['type' => 'text', 'text' => 'Running tools']],
+            metadata: [
+                'tool_calls' => [
+                    ['id' => 'tc-done', 'name' => 'bash', 'arguments' => [], 'order_index' => 0],
+                    ['id' => 'tc-pending', 'name' => 'bash', 'arguments' => [], 'order_index' => 1],
+                ],
+            ],
+        );
+
+        $runningState = RunStateBuilder::running('run-cancel-preserve')
+            ->withVersion(3)
+            ->withTurnNo(1)
+            ->withLastSeq(4)
+            ->withPendingToolCalls(['tc-done' => false, 'tc-pending' => false])
+            ->withActiveStepId('turn-step-1')
+            ->withMessages([$assistantMsg])
+            ->build();
+
+        $doneResult = ToolCallResultBuilder::success('run-cancel-preserve')
+            ->withTurnNo(1)
+            ->withStepId('turn-step-1')
+            ->withIdempotencyKey('tool-result-done')
+            ->withToolCallId('tc-done')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => 'done']]])
+            ->build();
+
+        $partial = $handler->handle($doneResult, $runningState);
+        $this->assertNotNull($partial->nextState);
+        $this->assertTrue($partial->nextState->pendingToolCalls['tc-done']);
+        $this->assertFalse($partial->nextState->pendingToolCalls['tc-pending']);
+        $this->assertCount(1, $partial->nextState->messages);
+
+        $cancellingState = $partial->nextState->with([
+            'status' => RunStatus::Cancelling,
+            'version' => $partial->nextState->version + 1,
+        ]);
+
+        // Exact observed entry: B's fresh cancelled result while Cancelling (preserveIncoming).
+        $cancelledB = ToolCallResultBuilder::error('run-cancel-preserve', 'Tool execution cancelled by user.')
+            ->withTurnNo(1)
+            ->withStepId('turn-step-1')
+            ->withIdempotencyKey('tool-result-pending-cancel')
+            ->withToolCallId('tc-pending')
+            ->withOrderIndex(1)
+            ->withResult([
+                'tool_name' => 'bash',
+                'content' => [['type' => 'text', 'text' => 'Tool execution cancelled by user.']],
+            ])
+            ->withError(['type' => 'cancelled', 'message' => 'Tool execution cancelled by user.'])
+            ->build();
+
+        $result = $handler->handle($cancelledB, $cancellingState);
+
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertSame([], $result->nextState->pendingToolCalls);
+        $this->assertCount(3, $result->nextState->messages);
+        $this->assertSame('tc-done', $result->nextState->messages[1]->toolCallId);
+        $this->assertSame('tc-pending', $result->nextState->messages[2]->toolCallId);
+
+        $batchCommitted = null;
+        $aResultReceived = 0;
+        $bResultReceived = 0;
+        $bExecutionEnds = 0;
+        foreach ($result->events as $event) {
+            if (RunEventTypeEnum::ToolBatchCommitted->value === $event->type) {
+                $batchCommitted = $event;
+            }
+            if (RunEventTypeEnum::ToolCallResultReceived->value === $event->type) {
+                if ('tc-done' === ($event->payload['tool_call_id'] ?? null)) {
+                    ++$aResultReceived;
+                }
+                if ('tc-pending' === ($event->payload['tool_call_id'] ?? null)) {
+                    ++$bResultReceived;
+                }
+            }
+            if (RunEventTypeEnum::ToolExecutionEnd->value === $event->type
+                && 'tc-pending' === ($event->payload['tool_call_id'] ?? null)) {
+                ++$bExecutionEnds;
+                $this->assertTrue($event->payload['cancelled'] ?? false);
+            }
+        }
+
+        $this->assertNotNull($batchCommitted);
+        $this->assertSame(2, $batchCommitted->payload['count'] ?? null);
+        $this->assertSame(0, $aResultReceived, 'A must not re-emit result_received on Cancelling entry');
+        $this->assertSame(1, $bResultReceived, 'B preserveIncoming emits one full result_received');
+        $this->assertSame(1, $bExecutionEnds);
+
+        $agentEnds = array_values(array_filter(
+            $result->events,
+            static fn ($e) => RunEventTypeEnum::AgentEnd->value === $e->type,
+        ));
+        $this->assertCount(1, $agentEnds);
+        $this->assertSame('cancelled', $agentEnds[0]->payload['reason'] ?? null);
+
+        $validator = new AgentMessageToolCallSequenceValidator();
+        $validator->validate($result->nextState->messages);
     }
 
     public function testCancellingSyntheticMessagesPassValidator(): void
