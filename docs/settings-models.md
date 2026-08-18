@@ -28,7 +28,7 @@ Common fields:
 
 | Field | Meaning |
 |---|---|
-| `type` | Provider bridge type (for example `generic`, Codex-specific types) |
+| `type` | Provider bridge type (for example `generic`, `codex`, `grok`) |
 | `enabled` | Whether the provider is active |
 | `base_url` | API base URL |
 | `api` | Wire API family (for example `openai-completions`) |
@@ -37,6 +37,11 @@ Common fields:
 | `supports_completions` / `supports_embeddings` | Capability flags |
 | `compatibility` | Transport quirks (thinking format, required fields) |
 | `models` | Map of model id → model metadata |
+
+OAuth providers:
+
+- `type: codex` stores tokens under `~/.hatfield/auth.json` key `openai-codex` via `bin/console auth:codex`.
+- `type: grok` (Grok CLI / cli-chat-proxy) stores tokens under key `grok-cli` via `bin/console auth:grok`. Do not set `api_key`.
 
 Model metadata typically includes display `name`, `context_window`, `max_tokens`,
 `input` modalities, `tool_calling`, `reasoning`, optional `thinking_level_map`, and `cost`.
