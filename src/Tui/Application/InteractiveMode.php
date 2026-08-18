@@ -31,6 +31,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Tui\Event\TickEvent;
 use Symfony\Component\Tui\Input\Keybindings;
+use Symfony\Component\Tui\Terminal\TerminalInterface;
 use Symfony\Component\Tui\Tui;
 
 /**
@@ -321,7 +322,10 @@ final readonly class InteractiveMode
             // return the dedicated exit code so bin/console's outer bootstrap
             // loop rebuilds kernel + container and relaunches this session.
             // The terminal was already restored by Tui::run()'s finally.
+            // Clear the visible screen + scrollback here (same as /resume)
+            // so the user sees a blank terminal before the fresh boot redraws.
             if (null !== $reloadIntent) {
+                $this->clearScreenForNextSession($tui->getTerminal());
                 ProcessReloadState::set($reloadIntent);
                 $client->shutdown();
 
@@ -330,42 +334,16 @@ final readonly class InteractiveMode
 
             // ── After event loop exits: check for pending switch ──
             if (null !== $switchTarget) {
-                // ── Terminal transition feedback ──
-                //
-                // Write an immediate clear+home sequence to STDOUT before the
-                // new TUI starts.  This provides instant visual feedback (the
-                // screen blanks) and homes the cursor so it does not appear to
-                // jump to whatever position the old TUI left it at
-                // (typically the editor/picker area near the bottom).
-                //
-                // The old TUI's ScreenWriter performed its last render inside
-                // the just-exited event loop.  Terminal::stop() has restored
-                // cooked mode but does NOT reposition the cursor.  Route the
-                // transition feedback through the native terminal API:
-                //
-                //   clearScreen() — \x1b[2J + \x1b[H (visible clear + home)
-                //   write("\x1b[3J") — scrollback-only clear (no native API)
-                //
-                // These sequences are processed by the terminal emulator
-                // regardless of terminal mode; they are NOT wrapped in
-                // DECSET 2026 synchronised-output markers because tmux does
-                // not universally support them and would render them as
-                // visible characters.
-                //
-                // The new TUI's first render (see $needsTerminalClear below)
-                // also performs fullRender(clear=true) via ScreenWriter, but
-                // that happens inside the new event loop and provides no
-                // perceptible gap between the clear and the content draw.
-                // The direct write here provides the gap the user perceived
-                // as "screen blanked for ~0.5s" before our changes.
+                // Clear before the next same-process session iteration so the
+                // user sees a blank screen while the next TUI boots. See
+                // clearScreenForNextSession() for the escape-sequence rationale.
                 //
                 // This does NOT affect picker-open rendering (triggered via
                 // PickerOverlay::mount()) — that code path never reaches this
                 // write because $switchTarget is consumed AFTER the picker
                 // callback runs.  The picker-open flicker fix (b50cb2540) is
                 // preserved unchanged.
-                $tui->getTerminal()->clearScreen();
-                $tui->getTerminal()->write("\x1b[3J");
+                $this->clearScreenForNextSession($tui->getTerminal());
 
                 $needsTerminalClear = true;
                 // Record the session id we're leaving so the next
@@ -397,6 +375,33 @@ final readonly class InteractiveMode
         }
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * Blank the visible screen + scrollback before the next TUI starts.
+     *
+     * Used by both /resume (same-process switch) and /reload (outer-loop
+     * rebuild) after Tui::run()'s finally has restored cooked mode. Instant
+     * visual feedback: screen blanks and the cursor homes, instead of sitting
+     * wherever the old TUI left it (typically the editor near the bottom).
+     *
+     *   clearScreen() — \x1b[2J + \x1b[H (visible clear + home)
+     *   write("\x1b[3J") — scrollback-only clear (no native API)
+     *
+     * These sequences are processed by the terminal emulator regardless of
+     * terminal mode; they are NOT wrapped in DECSET 2026 synchronised-output
+     * markers because tmux does not universally support them and would render
+     * them as visible characters.
+     *
+     * For /resume the next TUI's first render also performs
+     * fullRender(clear=true) via ScreenWriter, but that happens inside the
+     * new event loop and provides no perceptible gap. The direct write here
+     * provides the gap the user perceived as "screen blanked for ~0.5s".
+     */
+    private function clearScreenForNextSession(TerminalInterface $terminal): void
+    {
+        $terminal->clearScreen();
+        $terminal->write("\x1b[3J");
     }
 
     /**
