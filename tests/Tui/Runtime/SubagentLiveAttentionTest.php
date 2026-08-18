@@ -182,7 +182,7 @@ final class SubagentLiveAttentionTest extends TestCase
 
     private function statusText(ChatScreen $screen, string $key): ?string
     {
-        $entries = $screen->registry()->getStatusEntries();
+        $entries = $screen->statusEntries();
 
         return $entries[$key] ?? null;
     }

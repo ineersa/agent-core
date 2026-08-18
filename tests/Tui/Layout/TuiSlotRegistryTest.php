@@ -20,37 +20,6 @@ final class TuiSlotRegistryTest extends TestCase
         $this->registry = new TuiSlotRegistry();
     }
 
-    public function testDefaultState(): void
-    {
-        $this->assertSame([], $this->registry->getStatusEntries());
-        $this->assertTrue($this->registry->isWorkingVisible());
-        $this->assertSame('', $this->registry->getWorkingMessage());
-    }
-
-    public function testStatusEntries(): void
-    {
-        $this->registry->setStatus('key1', 'value1');
-        $this->registry->setStatus('key2', 'value2');
-
-        $this->assertSame(['key1' => 'value1', 'key2' => 'value2'], $this->registry->getStatusEntries());
-
-        $this->registry->setStatus('key1', null);
-        $this->assertSame(['key2' => 'value2'], $this->registry->getStatusEntries());
-    }
-
-    public function testWorkingState(): void
-    {
-        $this->registry->setWorkingMessage('Loading...');
-        $this->assertSame('Loading...', $this->registry->getWorkingMessage());
-        $this->assertTrue($this->registry->isWorkingVisible());
-
-        $this->registry->setWorkingVisible(false);
-        $this->assertFalse($this->registry->isWorkingVisible());
-
-        $this->registry->setWorkingMessage(null);
-        $this->assertSame('', $this->registry->getWorkingMessage());
-    }
-
     public function testInputHandlers(): void
     {
         $h1 = static function (InputEvent $event): void {};

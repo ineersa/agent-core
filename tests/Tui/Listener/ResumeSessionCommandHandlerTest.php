@@ -45,7 +45,7 @@ final class ResumeSessionCommandHandlerTest extends TestCase
         // instead of mounting an overlay (real behavior, constructor-valid
         // controller).
         $this->assertFalse($pickerController->isOpen());
-        $this->assertSame('No sessions found', $screen->registry()->getStatusEntries()['session'] ?? null);
+        $this->assertSame('No sessions found', $screen->statusEntries()['session'] ?? null);
     }
 
     #[Test]

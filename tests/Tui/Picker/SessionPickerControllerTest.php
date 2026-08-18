@@ -209,7 +209,7 @@ final class SessionPickerControllerTest extends TestCase
         $controller->openForRenameCommand();
 
         $this->assertFalse($controller->isOpen());
-        $this->assertSame('No sessions found', $screen->registry()->getStatusEntries()['session'] ?? null);
+        $this->assertSame('No sessions found', $screen->statusEntries()['session'] ?? null);
     }
 
     private function createTheme(): DefaultTheme
