@@ -7,20 +7,14 @@ namespace Ineersa\Tui\Layout;
 /**
  * Central registry for replaceable TUI slots.
  *
- * Stores:
- *   - Status text entries keyed by section name.
- *   - Working message text and visibility flag.
- *   - Terminal input handler entries (priority + native InputEvent listener).
- *
- * Header/footer/editor/extension-widget replacement slots were removed when
- * ChatScreen migrated to directly mounted native Symfony widgets; status,
- * working, and input-handler paths remain (input behavior owned by TUI-04).
+ * Stores terminal input handler entries (priority + native InputEvent
+ * listener). Status entries and working-message state were moved into
+ * ChatScreen (sole owner/writer) when the chrome migrated to directly
+ * mounted native widgets; the registry no longer holds state that must
+ * paint.
  */
 final class TuiSlotRegistry
 {
-    /** @var array<string, string> */
-    private array $statusEntries = [];
-
     /**
      * Native TUI InputEvent listeners registered by the host.
      *
@@ -31,50 +25,6 @@ final class TuiSlotRegistry
      * @var list<array{priority: int, handler: callable}>
      */
     private array $inputHandlers = [];
-
-    private string $workingMessage = '';
-    private bool $workingVisible = true;
-
-    /* ───────── Status entries ───────── */
-
-    public function setStatus(string $key, ?string $text): void
-    {
-        if (null === $text) {
-            unset($this->statusEntries[$key]);
-        } else {
-            $this->statusEntries[$key] = $text;
-        }
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    public function getStatusEntries(): array
-    {
-        return $this->statusEntries;
-    }
-
-    /* ───────── Working state ───────── */
-
-    public function setWorkingMessage(?string $message): void
-    {
-        $this->workingMessage = $message ?? '';
-    }
-
-    public function getWorkingMessage(): string
-    {
-        return $this->workingMessage;
-    }
-
-    public function setWorkingVisible(bool $visible): void
-    {
-        $this->workingVisible = $visible;
-    }
-
-    public function isWorkingVisible(): bool
-    {
-        return $this->workingVisible;
-    }
 
     /* ───────── Input handlers ───────── */
 

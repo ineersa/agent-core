@@ -107,7 +107,7 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $child = $h->state->subagentLiveCatalog->findByArtifactId(self::ARTIFACT);
         $this->assertNotNull($child);
         $this->assertNotSame(SubagentLiveStatusEnum::Cancelled, $child->status);
-        $working = $h->screen->registry()->getWorkingMessage();
+        $working = $h->screen->workingMessage();
         $this->assertStringContainsString('Cancelling child', $working);
         $this->assertStringContainsString(self::ARTIFACT, $working);
 

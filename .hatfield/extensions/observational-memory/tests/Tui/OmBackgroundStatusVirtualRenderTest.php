@@ -78,7 +78,7 @@ final class OmBackgroundStatusVirtualRenderTest extends IsolatedKernelTestCase
             $this->assertStringContainsString('om-background', $text);
             $this->assertSame(
                 self::ACTIVITY,
-                $screen->registry()->getStatusEntries()[OmBackgroundStatusPoller::STATUS_KEY] ?? null,
+                $screen->statusEntries()[OmBackgroundStatusPoller::STATUS_KEY] ?? null,
             );
             $this->assertFooterDoesNotContain($text, self::ACTIVITY);
             $this->assertStringContainsString('Working...', $text);
@@ -93,7 +93,7 @@ final class OmBackgroundStatusVirtualRenderTest extends IsolatedKernelTestCase
             $this->assertStringNotContainsString(self::ACTIVITY, $cleared);
             $this->assertArrayNotHasKey(
                 OmBackgroundStatusPoller::STATUS_KEY,
-                $screen->registry()->getStatusEntries(),
+                $screen->statusEntries(),
             );
             $this->assertStringContainsString('Working...', $cleared, 'working status remains independent');
         } finally {

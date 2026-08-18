@@ -8,7 +8,7 @@ namespace Ineersa\Tui\Runtime;
  * Authoritative TUI-level activity state for the current agent run.
  *
  * This replaces the previous heuristic of checking
- * $screen->registry()->getWorkingMessage() !== '' to decide whether
+ * $screen->workingMessage() !== '' to decide whether
  * user messages should be routed as follow_up (idle) or steer (active).
  *
  * Transitions are maintained by SubmitListener (on send/start/cancel) and

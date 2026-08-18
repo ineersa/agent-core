@@ -40,7 +40,9 @@ use Symfony\Component\Tui\Widget\LoaderWidget;
  * Production screen bridge between the TUI layout/widget system and Symfony TUI.
  *
  * ChatScreen owns:
- *  - TuiSlotRegistry and SlotBasedTuiExtensionContext (status/working/input slot model)
+ *  - TuiSlotRegistry (input handlers only) and SlotBasedTuiExtensionContext
+ *  - Status entries + working message/visibility state (sole owner/writer; syncs the
+ *    native StatusPanelWidget/LoaderWidget directly)
  *  - Directly mounted native Symfony widgets for the chrome regions: header,
  *    loaded resources, transcript, pending, working loader, status panel,
  *    compact header, prompt editor, footer.
@@ -87,6 +89,12 @@ final class ChatScreen
     private readonly TuiSlotRegistry $registry;
     private readonly SlotBasedTuiExtensionContext $extensionContext;
 
+    /* ── Status/working state (sole owner/writer; synced to native widgets) ── */
+    /** @var array<string, string> */
+    private array $statusEntries = [];
+    private string $workingMessage = '';
+    private bool $workingVisible = true;
+
     /* ── Overlay management ── */
     private ?Tui $tui = null;
 
@@ -113,13 +121,13 @@ final class ChatScreen
         $this->statusPanelWidget = new StatusPanelWidget($theme);
         $this->footerDataProvider = new FooterDataProvider();
         // Route extension status/working-slot mutations through ChatScreen so the
-        // native widgets stay in sync with the registry.
+        // native widgets stay in sync (ChatScreen is the sole owner/writer).
         $this->extensionContext = new SlotBasedTuiExtensionContext(
             $this->registry,
             $this->footerDataProvider,
+            $this->setStatus(...),
             $this->setWorkingMessage(...),
             $this->setWorkingVisible(...),
-            $this->setStatus(...),
         );
         $this->footerDataProvider->setProvider('_default', $this->createDefaultFooterProvider());
         $this->footerWidget = new FooterBarWidget($theme, $this->footerDataProvider);
@@ -343,28 +351,27 @@ final class ChatScreen
     public function setWorkingMessage(?string $message): void
     {
         $normalized = $message ?? '';
-        if ($normalized === $this->registry->getWorkingMessage()) {
+        if ($normalized === $this->workingMessage) {
             return;
         }
 
-        $this->registry->setWorkingMessage($message);
+        $this->workingMessage = $normalized;
         $this->syncWorkingSlot();
     }
 
     public function setWorkingVisible(bool $visible): void
     {
-        if ($visible === $this->registry->isWorkingVisible()) {
+        if ($visible === $this->workingVisible) {
             return;
         }
 
-        $this->registry->setWorkingVisible($visible);
+        $this->workingVisible = $visible;
         $this->syncWorkingSlot();
     }
 
     public function setStatus(string $key, ?string $text): void
     {
-        $entries = $this->registry->getStatusEntries();
-        $current = $entries[$key] ?? null;
+        $current = $this->statusEntries[$key] ?? null;
         if ($text === $current) {
             return;
         }
@@ -372,8 +379,12 @@ final class ChatScreen
         // Panel-only: keyed statuses never fan out into the footer bar.
         // Footer content comes from explicit FooterSegmentProvider APIs.
         // Push the full entry map so the native StatusPanelWidget repaints.
-        $this->registry->setStatus($key, $text);
-        $this->statusPanelWidget->setEntries($this->registry->getStatusEntries());
+        if (null === $text) {
+            unset($this->statusEntries[$key]);
+        } else {
+            $this->statusEntries[$key] = $text;
+        }
+        $this->statusPanelWidget->setEntries($this->statusEntries);
     }
 
     /**
@@ -444,15 +455,13 @@ final class ChatScreen
      *
      * Status entries, pending messages, and snapshots change via ChatScreen
      * mutators and already invalidate their targeted widgets. This method
-     * is a safety net for external state changes, so it also re-pushes the
-     * registry status entries into the native status panel.
+     * is a safety net for external state changes.
      */
     public function refresh(): void
     {
         // Transcript is a mounted Symfony subtree; children invalidate themselves.
         $this->pendingWidget->invalidate();
         $this->workingWidget->invalidate();
-        $this->statusPanelWidget->setEntries($this->registry->getStatusEntries());
         $this->compactHeaderWidget->invalidate();
         $this->footerWidget->invalidate();
         // Invalidate the editor widget so broad screen refreshes (startup,
@@ -562,9 +571,22 @@ final class ChatScreen
 
     /* ────────── Slot access ────────── */
 
-    public function registry(): TuiSlotRegistry
+    /**
+     * Current status-panel entries (keyed by section name).
+     *
+     * @return array<string, string>
+     */
+    public function statusEntries(): array
     {
-        return $this->registry;
+        return $this->statusEntries;
+    }
+
+    /**
+     * Current working message ('' when idle).
+     */
+    public function workingMessage(): string
+    {
+        return $this->workingMessage;
     }
 
     /**
@@ -618,7 +640,7 @@ final class ChatScreen
     }
 
     /**
-     * Drive the single working-slot LoaderWidget from registry state.
+     * Drive the single working-slot LoaderWidget from screen state.
      *
      * Visible + non-empty message → circle spinner + message (started).
      * Visible + empty message → finished indicator "●" + "idle".
@@ -629,8 +651,8 @@ final class ChatScreen
      */
     private function syncWorkingSlot(): void
     {
-        $visible = $this->registry->isWorkingVisible();
-        $message = $this->registry->getWorkingMessage();
+        $visible = $this->workingVisible;
+        $message = $this->workingMessage;
 
         if (!$visible) {
             $this->workingWidget->setFinishedIndicator(' ');

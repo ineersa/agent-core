@@ -989,23 +989,19 @@ final class TickPollListenerTest extends TestCase
     /** @return array<string, string> */
     private function statusEntries(ChatScreen $screen): array
     {
-        return $screen->registry()->getStatusEntries();
+        return $screen->statusEntries();
     }
 
     private function workingMessage(ChatScreen $screen): string
     {
-        $ref = new \ReflectionClass(ChatScreen::class);
-        $registry = $ref->getProperty('registry');
-
-        return $registry->getValue($screen)->getWorkingMessage();
+        return $screen->workingMessage();
     }
 
     private function isWorkingVisible(ChatScreen $screen): bool
     {
         $ref = new \ReflectionClass(ChatScreen::class);
-        $registry = $ref->getProperty('registry');
 
-        return $registry->getValue($screen)->isWorkingVisible();
+        return $ref->getProperty('workingVisible')->getValue($screen);
     }
 
     private function closedSubagentLivePicker(): \Ineersa\Tui\Picker\SubagentLivePickerController

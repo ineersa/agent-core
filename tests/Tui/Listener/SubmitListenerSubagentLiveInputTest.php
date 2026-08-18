@@ -222,11 +222,7 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
 
     private function liveWorkingMessage(ChatScreen $screen): string
     {
-        $ref = new \ReflectionClass(ChatScreen::class);
-        $prop = $ref->getProperty('registry');
-        $registry = $prop->getValue($screen);
-
-        return $registry->getWorkingMessage();
+        return $screen->workingMessage();
     }
 
     private function dispatchSubmit(string $text): ChatScreen

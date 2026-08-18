@@ -798,10 +798,7 @@ final class SubagentLivePickerControllerTest extends TestCase
 
     private function workingMessage(ChatScreen $screen): string
     {
-        $ref = new \ReflectionClass($screen);
-        $registry = $ref->getProperty('registry');
-
-        return $registry->getValue($screen)->getWorkingMessage();
+        return $screen->workingMessage();
     }
 
     /**
@@ -809,9 +806,6 @@ final class SubagentLivePickerControllerTest extends TestCase
      */
     private function statusEntries(ChatScreen $screen): array
     {
-        $ref = new \ReflectionClass($screen);
-        $registry = $ref->getProperty('registry');
-
-        return $registry->getValue($screen)->getStatusEntries();
+        return $screen->statusEntries();
     }
 }

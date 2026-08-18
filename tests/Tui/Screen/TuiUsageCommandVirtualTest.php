@@ -162,7 +162,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
 
             public function probe(): ProviderQuotaReportDTO
             {
-                $this->workingDuringProbe = $this->screen->registry()->getWorkingMessage();
+                $this->workingDuringProbe = $this->screen->workingMessage();
 
                 return new ProviderQuotaReportDTO([]);
             }
@@ -180,7 +180,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $result = (new SubmissionRouter(new CommandParser(), $context->sessionServices->commandRegistry))->route('/usage');
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertSame('Checking provider usage...', $workingDuringProbe);
-        $this->assertSame('', $screen->registry()->getWorkingMessage());
+        $this->assertSame('', $screen->workingMessage());
     }
 
     #[Test]

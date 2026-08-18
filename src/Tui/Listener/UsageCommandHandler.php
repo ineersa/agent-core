@@ -96,7 +96,7 @@ final class UsageCommandHandler implements SlashCommandHandler
     {
         // Clear only our exact message so a concurrent agent run's working
         // status is not clobbered when /usage finishes mid-run.
-        if ('Checking provider usage...' === $this->screen->registry()->getWorkingMessage()) {
+        if ('Checking provider usage...' === $this->screen->workingMessage()) {
             $this->screen->setWorkingMessage('');
         }
     }

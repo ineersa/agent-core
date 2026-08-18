@@ -172,7 +172,7 @@ class QuestionControllerTest extends TestCase
         $controller = new QuestionController($this->coordinator, $screen);
         $controller->open($request);
 
-        $entries = $screen->registry()->getStatusEntries();
+        $entries = $screen->statusEntries();
         $this->assertArrayNotHasKey('action', $entries);
         $this->assertTrue($controller->isOpen());
     }

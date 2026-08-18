@@ -104,10 +104,7 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
 
     private function workingMessage(ChatScreen $screen): string
     {
-        $ref = new \ReflectionClass($screen);
-        $registry = $ref->getProperty('registry');
-
-        return $registry->getValue($screen)->getWorkingMessage();
+        return $screen->workingMessage();
     }
 
     private function pickerReportingOpen(TuiSessionState $state, ChatScreen $screen): SubagentLivePickerController
