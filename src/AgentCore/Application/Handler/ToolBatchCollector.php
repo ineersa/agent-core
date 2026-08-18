@@ -93,6 +93,25 @@ final class ToolBatchCollector
     }
 
     /**
+     * Read a previously collected result without mutating batch state.
+     *
+     * Used by cancellation terminalization to project durable-but-unprojected
+     * results (accepted while the batch was still incomplete) before synthesizing
+     * cancelled siblings and emitting tool_batch_committed / agent_end.
+     */
+    public function getStoredResult(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ToolCallResult
+    {
+        $batch = $this->loadBatch($runId, $turnNo, $stepId);
+        if (null === $batch) {
+            return null;
+        }
+
+        $stored = $batch->results[$toolCallId] ?? null;
+
+        return $stored instanceof ToolCallResult ? $stored : null;
+    }
+
+    /**
      * Move an in-flight call into awaiting_human_input without creating a tool result.
      *
      * Duplicate same question_id is idempotent. Conflicting question_id fails.
