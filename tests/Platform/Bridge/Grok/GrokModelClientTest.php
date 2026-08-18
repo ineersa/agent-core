@@ -42,7 +42,7 @@ final class GrokModelClientTest extends TestCase
                 $body = json_decode($options['body'], true);
                 self::assertSame('run-abc', $body['prompt_cache_key']);
                 self::assertSame('grok-composer-2.5-fast', $body['model']);
-                self::assertSame(['reasoning.encrypted_content'], $body['include']);
+                self::assertArrayNotHasKey('include', $body, 'include must not be set when reasoning is absent');
                 self::assertArrayNotHasKey('run_id', $body);
                 self::assertArrayNotHasKey('tools_ref', $body);
                 self::assertArrayNotHasKey('turn_no', $body);
@@ -99,6 +99,67 @@ final class GrokModelClientTest extends TestCase
                     ['type' => 'reasoning', 'status' => 'completed', 'content' => [['type' => 'reasoning_text', 'text' => 't']]],
                 ],
             ],
+        );
+    }
+
+    public function testItAddsEncryptedReasoningIncludeWhenReasoningRequested(): void
+    {
+        $httpClient = new MockHttpClient([
+            static function (string $method, string $url, array $options): HttpResponse {
+                $body = json_decode($options['body'], true);
+                self::assertSame(['effort' => 'high'], $body['reasoning']);
+                self::assertSame(['reasoning.encrypted_content'], $body['include']);
+
+                return new MockResponse();
+            },
+        ]);
+
+        $client = new GrokModelClient($httpClient, 'https://cli-chat-proxy.grok.com', 'tok');
+        $client->request(
+            new ResponsesModel('grok-build'),
+            ['input' => [['role' => 'user', 'content' => 'hi']]],
+            ['reasoning' => ['effort' => 'high']],
+        );
+    }
+
+    public function testItPreservesCallerSuppliedIncludeWhenReasoningRequested(): void
+    {
+        $httpClient = new MockHttpClient([
+            static function (string $method, string $url, array $options): HttpResponse {
+                $body = json_decode($options['body'], true);
+                self::assertSame(['file_search_call.results'], $body['include']);
+
+                return new MockResponse();
+            },
+        ]);
+
+        $client = new GrokModelClient($httpClient, 'https://cli-chat-proxy.grok.com', 'tok');
+        $client->request(
+            new ResponsesModel('grok-build'),
+            ['input' => [['role' => 'user', 'content' => 'hi']]],
+            [
+                'reasoning' => ['effort' => 'medium'],
+                'include' => ['file_search_call.results'],
+            ],
+        );
+    }
+
+    public function testItOmitsIncludeWhenReasoningAbsent(): void
+    {
+        $httpClient = new MockHttpClient([
+            static function (string $method, string $url, array $options): HttpResponse {
+                $body = json_decode($options['body'], true);
+                self::assertArrayNotHasKey('reasoning', $body);
+                self::assertArrayNotHasKey('include', $body);
+
+                return new MockResponse();
+            },
+        ]);
+
+        $client = new GrokModelClient($httpClient, 'https://cli-chat-proxy.grok.com', 'tok');
+        $client->request(
+            new ResponsesModel('grok-composer-2.5-fast'),
+            ['input' => [['role' => 'user', 'content' => 'hi']]],
         );
     }
 

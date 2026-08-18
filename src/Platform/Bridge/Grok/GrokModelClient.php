@@ -166,7 +166,11 @@ class GrokModelClient extends ModelClient
      */
     private function sanitizeWireBody(array $body): array
     {
-        $body['include'] = ['reasoning.encrypted_content'];
+        // Match pi-grok-cli + Codex: only request encrypted reasoning when the
+        // caller asked for reasoning, and never overwrite a caller-supplied include.
+        if (isset($body['reasoning'])) {
+            $body['include'] ??= ['reasoning.encrypted_content'];
+        }
 
         if (isset($body['input']) && \is_array($body['input'])) {
             $sanitized = [];

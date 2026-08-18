@@ -18,8 +18,14 @@ use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
  */
 class GrokTokenRefresher
 {
+    /**
+     * @param \GuzzleHttp\ClientInterface|null $httpClient Optional Guzzle client
+     *                                                     for tests (MockHandler).
+     *                                                     Production leaves null.
+     */
     public function __construct(
         private int $port = GrokOAuthConfig::DEFAULT_PORT,
+        private readonly ?\GuzzleHttp\ClientInterface $httpClient = null,
     ) {
     }
 
@@ -32,7 +38,12 @@ class GrokTokenRefresher
      */
     public function refresh(string $refreshToken): GrokAuthRecord
     {
-        $provider = new CodexOAuthProvider(GrokOAuthConfig::providerOptions($this->port));
+        $collaborators = [];
+        if (null !== $this->httpClient) {
+            $collaborators['httpClient'] = $this->httpClient;
+        }
+
+        $provider = new CodexOAuthProvider(GrokOAuthConfig::providerOptions($this->port), $collaborators);
 
         try {
             $token = $provider->getAccessToken('refresh_token', [
