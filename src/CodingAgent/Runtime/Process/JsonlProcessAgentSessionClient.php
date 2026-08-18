@@ -140,6 +140,19 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->stopProcess();
     }
 
+    /**
+     * Synchronously stop the controller subprocess and its consumer tree.
+     *
+     * Used by the /reload path before the process re-bootstraps: the
+     * SIGTERM → grace → SIGKILL sequence in {@see stopProcess()} releases
+     * the session resources (queue leases, locks) before a fresh controller
+     * is spawned for the same session.
+     */
+    public function shutdown(): void
+    {
+        $this->stopProcess();
+    }
+
     public function start(StartRunRequest $request): RunHandle
     {
         // New run — clear stale state from any previous run or crash.

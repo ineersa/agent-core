@@ -9,7 +9,7 @@ use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 /**
- * Registers /new, /resume, and /rename slash commands in the TUI.
+ * Registers /new, /resume, /rename, and /reload slash commands in the TUI.
  *
  * Command metadata is registered once per process via
  * {@see registerCatalog()}; each session iteration binds fresh handlers
@@ -38,6 +38,12 @@ final class SessionCommandRegistrar implements TuiListenerRegistrar, SlashComman
             usage: '/rename [session id] [new name]',
             acceptsArguments: true,
         ));
+        $catalog->registerMetadata(new CommandMetadata(
+            name: 'reload',
+            description: 'Reload settings and restart the session',
+            usage: '/reload',
+            acceptsArguments: false,
+        ));
     }
 
     public function register(TuiRuntimeContext $context): void
@@ -59,6 +65,14 @@ final class SessionCommandRegistrar implements TuiListenerRegistrar, SlashComman
         $registry->bind('rename', new RenameSessionCommandHandler(
             $context->sessionStore,
             $pickerController,
+        ));
+
+        // ── Bind /reload slash command ──
+        $registry->bind('reload', new ReloadCommandHandler(
+            $context->switch,
+            $context->state,
+            $context->screen,
+            $context->sessionServices->questionCoordinator,
         ));
     }
 }

@@ -17,6 +17,9 @@ enum TuiSessionLifecycleEndReasonEnum: string
     /** The user switched to another session (/resume or /new). */
     case Switch = 'switch';
 
+    /** The user requested a full-process settings reload (/reload). */
+    case Reload = 'reload';
+
     /** The user quit the application (Ctrl+C, SIGTERM, /quit). */
     case Quit = 'quit';
 }
