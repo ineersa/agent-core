@@ -1168,14 +1168,14 @@ function hatfield_phar_session_copies_dir(): string
  * canonical artifact would swap phar:// file reads under the live process and
  * corrupt the session. Sessions exec a content-addressed copy instead, so the
  * canonical artifact has no long-lived holder: it is rebuilt freely, and
- * concurrent sessions are isolated by construction (no path is ever rewritten
- * after creation, so no live process can observe a replaced binary).
+ * concurrent sessions are isolated by construction (no intact dest is ever
+ * rewritten, so no live process can observe a replaced binary).
  *
  * The copy is content-addressed: one immutable copy per distinct build under
- * sessions/<sha256-16>/hatfield.phar, reused across launches. The dest is only
- * ever created or replaced atomically (hash-verified reuse, or temp+rename
- * that replaces an absent/corrupt dest). Copies accumulate per build and are
- * swept by `castor clean:cleanup` (removes the whole var/tmp/phar tree).
+ * sessions/<sha256-16>/hatfield.phar, reused across launches. An absent or
+ * corrupt dest is re-copied in place (plain copy, no temp+rename). Copies
+ * accumulate per build and are swept by `castor clean:cleanup` (removes the
+ * whole var/tmp/phar tree).
  *
  * @param string      $pharPath    canonical artifact to copy from
  * @param string|null $sessionsDir override root for session copy dirs (tests)
@@ -1185,10 +1185,6 @@ function hatfield_phar_session_copies_dir(): string
 function phar_materialize_session_copy(string $pharPath, ?string $sessionsDir = null): string
 {
     $sessionsDir = $sessionsDir ?? hatfield_phar_session_copies_dir();
-    if (!is_dir($sessionsDir) && !mkdir($sessionsDir, 0755, true) && !is_dir($sessionsDir)) {
-        throw new \RuntimeException('Unable to create PHAR session copies directory: '.$sessionsDir);
-    }
-
     $hash = hash_file('sha256', $pharPath);
     if (false === $hash) {
         throw new \RuntimeException('Unable to hash PHAR artifact: '.$pharPath);
@@ -1204,13 +1200,10 @@ function phar_materialize_session_copy(string $pharPath, ?string $sessionsDir = 
         throw new \RuntimeException('Unable to create PHAR session copy directory: '.$dir);
     }
 
-    $tmp = $dir.'/.hatfield.phar.tmp-'.bin2hex(random_bytes(4));
-    if (!copy($pharPath, $tmp)) {
-        throw new \RuntimeException("Failed to copy PHAR artifact {$pharPath} -> {$tmp}");
-    }
-    if (!rename($tmp, $dest)) {
-        @unlink($tmp);
-        throw new \RuntimeException("Failed to finalize PHAR session copy {$tmp} -> {$dest}");
+    // Direct copy, no atomic temp+rename: concurrent same-build materialize is a
+    // declared non-scenario; a torn dest self-heals via the hash check next launch.
+    if (!copy($pharPath, $dest)) {
+        throw new \RuntimeException("Failed to copy PHAR artifact {$pharPath} -> {$dest}");
     }
 
     return $dest;

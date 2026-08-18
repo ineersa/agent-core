@@ -55,7 +55,7 @@ final class PharSessionCopyTest extends TestCase
                 $inner[] = $entry->getFilename();
             }
             sort($inner);
-            $this->assertSame(['hatfield.phar'], $inner, 'atomic copy: no temp leftovers');
+            $this->assertSame(['hatfield.phar'], $inner, 'direct copy: no temp leftovers');
         } finally {
             TestDirectoryIsolation::removeDirectory($work);
         }
@@ -101,7 +101,7 @@ final class PharSessionCopyTest extends TestCase
             $copy = \CastorTasks\phar_materialize_session_copy($artifact, $sessionsDir);
 
             // Corrupt the dest: next materialize must detect the hash mismatch,
-            // re-copy atomically to the same path, and restore correct bytes.
+            // re-copy in place to the same path, and restore correct bytes.
             file_put_contents($copy, 'corrupted');
             $repaired = \CastorTasks\phar_materialize_session_copy($artifact, $sessionsDir);
 
