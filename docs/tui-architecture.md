@@ -21,7 +21,7 @@ Terminal UI for Hatfield interactive sessions (`src/Tui`).
 | Type | Role |
 |---|---|
 | Chrome widgets (header, status, pending, loaded resources, compact header, footer) | Native Symfony TUI `AbstractWidget`s mounted directly by `ChatScreen` |
-| `TuiSlotRegistry` | Internal mutable UI state: status entries, working message/visibility, native input handlers |
+| `TuiSlotRegistry` | Native terminal input-handler registration (priority + listener) consumed by `ChatScreen` mount |
 | `TuiExtensionContext` / `SlotBasedTuiExtensionContext` | Internal extension seam: status, working state, footer providers, terminal input — no direct widget mutation |
 | `FooterDataProvider` / `FooterSegmentProvider` / `FooterBarWidget` | Footer composition |
 | `ThemeRegistry` / YAML themes under `config/themes/` | Theming |
