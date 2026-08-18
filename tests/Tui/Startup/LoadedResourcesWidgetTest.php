@@ -12,9 +12,11 @@ use Ineersa\Tui\Startup\LoadedResourcesWidget;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Widget\TuiRenderContext;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Ansi\AnsiUtils;
+use Symfony\Component\Tui\Render\Renderer;
+use Symfony\Component\Tui\Widget\ContainerWidget;
 
 final class LoadedResourcesWidgetTest extends TestCase
 {
@@ -35,9 +37,9 @@ final class LoadedResourcesWidgetTest extends TestCase
             ),
         ]);
 
-        $widget = new LoadedResourcesWidget();
+        $widget = new LoadedResourcesWidget($this->theme());
         $widget->setSummary($summary);
-        $lines = $widget->render($this->context());
+        $lines = $this->renderWidget($widget, 120);
 
         $joined = implode("\n", $lines);
         $this->assertStringContainsString('[Skills]', $joined);
@@ -67,9 +69,9 @@ final class LoadedResourcesWidgetTest extends TestCase
             ),
         ]);
 
-        $widget = new LoadedResourcesWidget();
+        $widget = new LoadedResourcesWidget($this->theme());
         $widget->setSummary($summary);
-        $lines = $widget->render($this->context());
+        $lines = $this->renderWidget($widget, 120);
         $joined = implode("\n", $lines);
 
         $this->assertStringContainsString('review: name collision (won /global/review.md, ignored /project/review.md)', $joined);
@@ -94,9 +96,9 @@ final class LoadedResourcesWidgetTest extends TestCase
             ),
         ]);
 
-        $widget = new LoadedResourcesWidget();
+        $widget = new LoadedResourcesWidget($this->theme());
         $widget->setSummary($summary);
-        $lines = $widget->render($this->context());
+        $lines = $this->renderWidget($widget, 120);
         $joined = implode("\n", $lines);
 
         $this->assertStringContainsString('BadExt: Failed to load extension', $joined);
@@ -115,17 +117,52 @@ final class LoadedResourcesWidgetTest extends TestCase
             ),
         ]);
 
-        $widget = new LoadedResourcesWidget();
+        $widget = new LoadedResourcesWidget($this->theme());
         $widget->setSummary($summary);
         $widget->setExpanded(true);
-        $lines = $widget->render($this->context());
+        $lines = $this->renderWidget($widget, 120);
 
         $joined = implode("\n", $lines);
         $this->assertStringContainsString('fix-bug — /prompts/fix-bug.md', $joined);
         $this->assertStringContainsString('ctrl+r to collapse', $joined);
     }
 
-    private function context(): TuiRenderContext
+    #[Test]
+    public function everyRowFitsNarrowWidthAndLongCompactListsWrap(): void
+    {
+        $summary = new LoadedResourcesSummaryDTO([
+            new LoadedResourceSectionDTO(
+                key: 'skills',
+                label: 'Skills',
+                items: [
+                    new LoadedResourceItemDTO('very-long-skill-name-one', '/a/SKILL.md'),
+                    new LoadedResourceItemDTO('very-long-skill-name-two', '/b/SKILL.md'),
+                    new LoadedResourceItemDTO('very-long-skill-name-three', '/c/SKILL.md'),
+                ],
+                conflicts: [
+                    new LoadedResourceConflictDTO('gamma', '/win/SKILL.md', '/lose/SKILL.md'),
+                ],
+            ),
+        ]);
+
+        $widget = new LoadedResourcesWidget($this->theme());
+        $widget->setSummary($summary);
+        $widget->setExpanded(true);
+
+        foreach ([30, 50, 80, 120] as $width) {
+            $lines = $this->renderWidget($widget, $width);
+            $this->assertGreaterThan(0, \count($lines), "width {$width} must render rows");
+            foreach ($lines as $i => $line) {
+                $this->assertLessThanOrEqual(
+                    $width,
+                    AnsiUtils::visibleWidth($line),
+                    "row {$i} visible width exceeds {$width} at narrow width",
+                );
+            }
+        }
+    }
+
+    private function theme(): DefaultTheme
     {
         $palette = new ThemePalette('test', [
             ThemeColorEnum::MarkdownHeading->value => '33',
@@ -134,6 +171,15 @@ final class LoadedResourcesWidgetTest extends TestCase
             ThemeColorEnum::Warning->value => '33;1',
         ]);
 
-        return new TuiRenderContext(120, new DefaultTheme($palette));
+        return new DefaultTheme($palette);
+    }
+
+    /** @return string[] */
+    private function renderWidget(LoadedResourcesWidget $widget, int $width): array
+    {
+        $root = new ContainerWidget();
+        $root->add($widget);
+
+        return (new Renderer())->render($root, $width, 40);
     }
 }

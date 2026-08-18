@@ -9,25 +9,34 @@ use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceItemDTO;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceSectionDTO;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
 use Ineersa\Tui\Theme\ThemeColorEnum;
-use Ineersa\Tui\Widget\TuiRenderContext;
-use Ineersa\Tui\Widget\TuiWidget;
+use Ineersa\Tui\Theme\TuiTheme;
+use Symfony\Component\Tui\Ansi\TextWrapper;
+use Symfony\Component\Tui\Render\RenderContext;
+use Symfony\Component\Tui\Widget\AbstractWidget;
 
 /**
  * Pi-style loaded-resources block for TUI startup (display-only).
  */
-final class LoadedResourcesWidget implements TuiWidget
+final class LoadedResourcesWidget extends AbstractWidget
 {
     private ?LoadedResourcesSummaryDTO $summary = null;
     private bool $expanded = false;
 
+    public function __construct(
+        private readonly TuiTheme $theme,
+    ) {
+    }
+
     public function setSummary(?LoadedResourcesSummaryDTO $summary): void
     {
         $this->summary = $summary;
+        $this->invalidate();
     }
 
     public function setExpanded(bool $expanded): void
     {
         $this->expanded = $expanded;
+        $this->invalidate();
     }
 
     public function isExpanded(): bool
@@ -38,6 +47,7 @@ final class LoadedResourcesWidget implements TuiWidget
     public function toggleExpanded(): void
     {
         $this->expanded = !$this->expanded;
+        $this->invalidate();
     }
 
     public function hasContent(): bool
@@ -45,8 +55,8 @@ final class LoadedResourcesWidget implements TuiWidget
         return null !== $this->summary && [] !== $this->summary->nonEmptySections();
     }
 
-    /** @return list<string> */
-    public function render(TuiRenderContext $context): array
+    /** @return string[] */
+    public function render(RenderContext $context): array
     {
         if (null === $this->summary) {
             return [];
@@ -60,23 +70,25 @@ final class LoadedResourcesWidget implements TuiWidget
         $lines = [];
 
         foreach ($sections as $section) {
-            $lines = array_merge($lines, $this->renderSection($section, $context));
+            $lines = array_merge($lines, $this->renderSection($section));
         }
 
         $hint = $this->expanded
             ? 'Press ctrl+r to collapse source paths'
             : 'Press ctrl+r to expand source paths';
-        $lines[] = $context->theme->muted('  '.$hint);
+        $lines[] = $this->theme->muted('  '.$hint);
 
-        return $lines;
+        // Same wrap primitive the LiveTextWidget adapter used: long compact
+        // lists reflow on narrow terminals instead of overflowing.
+        return TextWrapper::wrapTextWithAnsi(implode("\n", $lines), $context->getColumns());
     }
 
     /**
      * @return list<string>
      */
-    private function renderSection(LoadedResourceSectionDTO $section, TuiRenderContext $context): array
+    private function renderSection(LoadedResourceSectionDTO $section): array
     {
-        $theme = $context->theme;
+        $theme = $this->theme;
         $lines = [];
         $header = $theme->color(ThemeColorEnum::MarkdownHeading, '['.$section->label.']');
         $compact = $this->formatCompactList($section->items);

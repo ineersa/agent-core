@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Footer;
 
 use Ineersa\Tui\Theme\ThemeColorEnum;
-use Ineersa\Tui\Widget\TuiRenderContext;
-use Ineersa\Tui\Widget\TuiWidget;
+use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
+use Symfony\Component\Tui\Render\RenderContext;
+use Symfony\Component\Tui\Widget\AbstractWidget;
 
 /**
  * Default footer bar widget.
@@ -21,27 +22,33 @@ use Symfony\Component\Tui\Ansi\AnsiUtils;
  * multi-colored token/cost blocks stay visually grouped.
  *
  * Truncation delegates to Symfony TUI's {@see AnsiUtils} for accurate
- * visible-width computation and ANSI-preserving truncation.
+ * visible-width computation and ANSI-preserving truncation. Every
+ * returned line is truncated to the renderer column width, so the
+ * widget never overflows the terminal at any width.
  *
  * Keyed status panel rows are intentionally not rendered here; they live
  * only in the status panel via ChatScreen::setStatus().
  */
-final class FooterBarWidget implements TuiWidget
+final class FooterBarWidget extends AbstractWidget
 {
     private const int GROUP_SEPARATOR_GAP = 5;
 
     public function __construct(
+        private readonly TuiTheme $theme,
         private readonly FooterDataProvider $dataProvider,
     ) {
     }
 
-    /** @return list<string> */
-    public function render(TuiRenderContext $context): array
+    /** @return string[] */
+    public function render(RenderContext $context): array
     {
         $segments = $this->dataProvider->getSegments();
 
         if ([] === $segments) {
-            return [$context->theme->color(ThemeColorEnum::Footer, '  ◆ agent-core  |  type /help for commands')];
+            return [AnsiUtils::truncateToWidth(
+                $this->theme->color(ThemeColorEnum::Footer, '  ◆ agent-core  |  type /help for commands'),
+                $context->getColumns(),
+            )];
         }
 
         // ── Build segment structs with ANSI text and separator prefix ──
@@ -54,14 +61,14 @@ final class FooterBarWidget implements TuiWidget
         foreach ($segments as $segment) {
             $text = $segment->text;
             if (null !== $segment->color) {
-                $text = $context->theme->color($segment->color, $text);
+                $text = $this->theme->color($segment->color, $text);
             }
 
             $separator = '';
             if (null !== $prevPriority) {
                 $gap = $segment->priority - $prevPriority;
                 if ($gap >= self::GROUP_SEPARATOR_GAP) {
-                    $separator = $context->theme->color(ThemeColorEnum::Dim, '  |  ');
+                    $separator = $this->theme->color(ThemeColorEnum::Dim, '  |  ');
                 } else {
                     $separator = ' ';
                 }
@@ -72,7 +79,7 @@ final class FooterBarWidget implements TuiWidget
         }
 
         // ── Distribute segments across lines ──
-        $available = max(10, $context->terminalWidth - 2);
+        $available = max(10, $context->getColumns() - 2);
 
         $lines = [];   // list of list of structs
         $currentLine = [];
@@ -122,7 +129,11 @@ final class FooterBarWidget implements TuiWidget
             if (AnsiUtils::visibleWidth($lineContent) > $available) {
                 $lineContent = AnsiUtils::truncateToWidth($lineContent, $available);
             }
-            $output[] = \sprintf('  %s', $lineContent);
+            // Outer width guarantee: the packing budget max(10, columns - 2)
+            // can exceed the real column count at pathological widths, so the
+            // final line is truncated to the renderer width (the same contract
+            // the old LiveTextWidget(truncate: true) bridge enforced).
+            $output[] = AnsiUtils::truncateToWidth(\sprintf('  %s', $lineContent), $context->getColumns());
         }
 
         return $output;

@@ -4,20 +4,20 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Status;
 
-use Ineersa\Tui\Widget\TuiRenderContext;
-use Ineersa\Tui\Widget\TuiWidget;
+use Ineersa\Tui\Theme\TuiTheme;
+use Symfony\Component\Tui\Ansi\TextWrapper;
+use Symfony\Component\Tui\Render\RenderContext;
+use Symfony\Component\Tui\Widget\AbstractWidget;
 
 /**
  * Status panel widget that renders keyed status entries.
  *
- * Designed to be driven by setStatus() data from TuiExtensionContext.
  * Each entry renders as a line with a left-aligned label and text value.
- *
- * This is typically rendered by ChatScreen status rendering using
- * data from the slot registry rather than as a standalone widget.
- * This class provides the same rendering logic for standalone use.
+ * Entries are pushed through {@see setEntries()} (ChatScreen::setStatus is
+ * the production mutator) and the widget invalidates its render cache on
+ * every mutation so the next tick repaints.
  */
-final class StatusPanelWidget implements TuiWidget
+final class StatusPanelWidget extends AbstractWidget
 {
     /** @var array<string, string> */
     private array $entries = [];
@@ -25,8 +25,10 @@ final class StatusPanelWidget implements TuiWidget
     /**
      * @param array<string, string> $entries
      */
-    public function __construct(array $entries = [])
-    {
+    public function __construct(
+        private readonly TuiTheme $theme,
+        array $entries = [],
+    ) {
         $this->entries = $entries;
     }
 
@@ -38,6 +40,7 @@ final class StatusPanelWidget implements TuiWidget
     public function setEntries(array $entries): void
     {
         $this->entries = $entries;
+        $this->invalidate();
     }
 
     /**
@@ -48,8 +51,8 @@ final class StatusPanelWidget implements TuiWidget
         return $this->entries;
     }
 
-    /** @return list<string> */
-    public function render(TuiRenderContext $context): array
+    /** @return string[] */
+    public function render(RenderContext $context): array
     {
         if ([] === $this->entries) {
             return [];
@@ -57,9 +60,10 @@ final class StatusPanelWidget implements TuiWidget
 
         $lines = [];
         foreach ($this->entries as $key => $text) {
-            $lines[] = $context->theme->muted(\sprintf('  %-12s %s', $key, $text));
+            $lines[] = $this->theme->muted(\sprintf('  %-12s %s', $key, $text));
         }
 
-        return $lines;
+        // Long status text wraps like the old LiveTextWidget adapter did.
+        return TextWrapper::wrapTextWithAnsi(implode("\n", $lines), $context->getColumns());
     }
 }

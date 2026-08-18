@@ -23,6 +23,15 @@ use Symfony\Component\Tui\Widget\AbstractWidget;
  *
  * Blank lines are preserved (produce empty-string array entries), which
  * makes this widget suitable for top-margin / spacer rows.
+ *
+ * ## Bounded KEEP (tui-05)
+ *
+ * The former line-array bridge (TuiWidget/TuiRenderContext) was deleted and
+ * all chrome regions migrated to directly mounted native widgets. This
+ * widget survives ONLY for the blank top margin and the three responsive
+ * separator rows in {@see \Ineersa\Tui\Screen\ChatScreen}: Symfony
+ * {@see TextWidget} drops whitespace-only text, and no native
+ * scrollback/separator primitive is exact for those rows.
  */
 final class LiveTextWidget extends AbstractWidget
 {

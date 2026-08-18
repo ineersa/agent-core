@@ -389,7 +389,6 @@ parameters:
       - TuiStatus
       - TuiEditor
       - TuiFooter
-      - TuiWidget
       - TuiTheme
       - TuiQuestion
       # Per-session composition: fresh command registry (TuiCommand),
@@ -457,12 +456,12 @@ parameters:
       - TuiStatus
       - TuiEditor
       - TuiFooter
+      - TuiCompactHeader
       - TuiWidget
       - TuiTheme
       - SymfonyTui
 
     TuiLayout:
-      - TuiWidget
       - TuiTheme
       - TuiHeader
       - TuiTranscript
@@ -474,7 +473,6 @@ parameters:
       - AppExtensionApi
       - AppRuntimeContract
       - TuiLayout
-      - TuiWidget
       - TuiFooter
       - TuiTheme
       - TuiCommand
@@ -482,22 +480,21 @@ parameters:
       - TuiPicker
 
     TuiHeader:
-      - TuiWidget
       - TuiTheme
+      - SymfonyTui
 
     TuiTranscript:
       # Typed subagent_progress DTOs live under Runtime/Contract (serializer boundary).
       - AppRuntimeContract
       - AppRuntimeProjection
-      - TuiWidget
       - TuiTheme
       - TuiFooter
       - SymfonyTui
       - SymfonyYaml
 
     TuiStatus:
-      - TuiWidget
       - TuiTheme
+      - SymfonyTui
 
     TuiExport:
       - TuiCommand
@@ -526,18 +523,17 @@ parameters:
       - SymfonyTui
 
     TuiEditor:
-      - TuiWidget
       - TuiTheme
       - SymfonyTui
 
     TuiFooter:
-      - TuiWidget
       - TuiTheme
+      - SymfonyTui
 
     TuiStartup:
       - AppRuntimeContract
       - TuiTheme
-      - TuiWidget
+      - SymfonyTui
 
     TuiCompactHeader:
       - AppRuntimeContract
@@ -546,7 +542,7 @@ parameters:
       - AppMcpCatalog
       - AppMcpConfig
       - TuiTheme
-      - TuiWidget
+      - SymfonyTui
 
     TuiWidget:
       - TuiTheme
@@ -673,7 +669,6 @@ parameters:
       - TuiEditor
       - TuiFooter
       - TuiLayout
-      - TuiWidget
       - TuiTheme
       - SymfonyConsole
       - SymfonyLock
