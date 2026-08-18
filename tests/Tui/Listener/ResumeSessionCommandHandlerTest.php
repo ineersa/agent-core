@@ -190,6 +190,10 @@ final class ResumeSessionCommandHandlerTest extends TestCase
                 // No-op: this test does not exercise history selection.
             }
 
+            public function requestReload(string $sessionId): void
+            {
+            }
+
             public function hasPendingSwitch(): bool
             {
                 return false;

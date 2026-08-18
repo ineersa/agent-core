@@ -144,6 +144,13 @@ final class CompactSpySessionClient implements AgentSessionClient
         return [];
     }
 
+    /**
+     * No-op shutdown: this spy owns no runtime to tear down.
+     */
+    public function shutdown(): void
+    {
+    }
+
     public function cancel(string $runId): void
     {
         throw new \RuntimeException('Unexpected cancel()');
