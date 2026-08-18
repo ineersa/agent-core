@@ -131,6 +131,20 @@ final class McpToolCatalogBuilderTest extends TestCase
         ])));
     }
 
+    public function testComputeConfigHashPropagatesJsonException(): void
+    {
+        $config = new McpConfigDTO([
+            'broken' => new McpServerDefinitionDTO(
+                name: 'broken',
+                command: 'cmd',
+                env: ['K' => "\xB1\x31"],
+            ),
+        ]);
+
+        $this->expectException(\JsonException::class);
+        $this->builder->computeConfigHash($config);
+    }
+
     /**
      * @param list<array<string, mixed>> $tools
      *

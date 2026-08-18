@@ -34,7 +34,7 @@ final class McpToolCatalogBuilder
     public function build(
         McpConfigDTO $config,
         string $runId,
-        ?string $configHash,
+        string $configHash,
         array $discoveryResults,
         int $generation = 1,
     ): McpToolCatalogDTO {
@@ -89,48 +89,46 @@ final class McpToolCatalogBuilder
      * in the catalog.  The hash itself is a one-way digest — it reveals
      * no secrets even if stored in plain text.
      */
-    public function computeConfigHash(McpConfigDTO $config): ?string
+    public function computeConfigHash(McpConfigDTO $config): string
     {
-        try {
-            $serversHash = [];
+        $serversHash = [];
 
-            foreach ($config->servers as $name => $server) {
-                $fields = [
-                    'name' => $server->name,
-                    'enabled' => $server->enabled,
-                    'transport' => $server->transportType?->value,
-                    'command' => $server->command,
-                    'args' => $server->args,
-                    'cwd' => $server->cwd,
-                    'url' => $server->url,
-                    'timeoutMs' => $server->timeoutMs,
-                    'startupTimeoutMs' => $server->startupTimeoutMs,
-                    'excludeTools' => $server->excludeTools,
-                    // Include keys only (not values) for change detection
-                    // on env/headers — values are hashed separately.
-                    'envKeys' => array_keys($server->env),
-                    'envValuesHash' => [] !== $server->env
-                        ? hash('sha256', json_encode($server->env, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES))
-                        : null,
-                    'headerKeys' => array_keys($server->headers),
-                    'headerValuesHash' => [] !== $server->headers
-                        ? hash('sha256', json_encode($server->headers, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES))
-                        : null,
-                ];
+        foreach ($config->servers as $name => $server) {
+            $fields = [
+                'name' => $server->name,
+                'enabled' => $server->enabled,
+                'transport' => $server->transportType?->value,
+                'command' => $server->command,
+                'args' => $server->args,
+                'cwd' => $server->cwd,
+                'url' => $server->url,
+                'timeoutMs' => $server->timeoutMs,
+                'startupTimeoutMs' => $server->startupTimeoutMs,
+                'excludeTools' => $server->excludeTools,
+                // Include keys only (not values) for change detection
+                // on env/headers — values are hashed separately.
+                'envKeys' => array_keys($server->env),
+                'envValuesHash' => [] !== $server->env
+                    ? hash('sha256', json_encode($server->env, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES))
+                    : null,
+                'headerKeys' => array_keys($server->headers),
+                'headerValuesHash' => [] !== $server->headers
+                    ? hash('sha256', json_encode($server->headers, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES))
+                    : null,
+            ];
 
-                $serversHash[$name] = hash(
-                    'sha256',
-                    json_encode($fields, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES),
-                );
-            }
-
-            // Sort by key for deterministic hash
-            ksort($serversHash);
-
-            return hash('sha256', json_encode($serversHash, \JSON_THROW_ON_ERROR));
-        } catch (\Throwable) {
-            return null;
+            $serversHash[$name] = hash(
+                'sha256',
+                json_encode($fields, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES),
+            );
         }
+
+        // Sort by key for deterministic hash
+        ksort($serversHash);
+
+        // Failures (e.g. JsonException on malformed UTF-8) propagate to
+        // McpInitializeSessionHandler, which logs once and writes an empty catalog.
+        return hash('sha256', json_encode($serversHash, \JSON_THROW_ON_ERROR));
     }
 
     /**
