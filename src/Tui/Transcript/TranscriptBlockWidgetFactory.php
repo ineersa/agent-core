@@ -14,10 +14,10 @@ use Symfony\Component\Tui\Widget\TextWidget;
  * Orchestrates transcript block routing for the transcript widget tree.
  *
  * Structured subagent results are delegated to {@see SubagentResultRenderer};
- * tool pairing/suppression and shared result facts to
- * {@see TranscriptToolPresentationPolicy}; tool-call/result/exchange rendering to
- * {@see TranscriptToolRenderer}; remaining kinds (markdown/thinking, question,
- * system, flat fallback) to {@see TranscriptBlockRenderer}.
+ * tool pairing/suppression to {@see TranscriptToolPresentationPolicy} and result-body
+ * presentation facts to {@see TranscriptToolResultFacts}; tool-call/result/exchange
+ * rendering to {@see TranscriptToolRenderer}; remaining kinds (markdown/thinking,
+ * question, system, flat fallback) to {@see TranscriptBlockRenderer}.
  */
 final readonly class TranscriptBlockWidgetFactory
 {
@@ -26,6 +26,8 @@ final readonly class TranscriptBlockWidgetFactory
     private readonly TranscriptToolRenderer $toolRenderer;
 
     private readonly TranscriptBlockRenderer $blockRenderer;
+
+    private readonly TranscriptToolResultFacts $toolResultFacts;
 
     public function __construct(
         private readonly SubagentResultRenderer $subagentRenderer = new SubagentResultRenderer(),
@@ -37,7 +39,8 @@ final readonly class TranscriptBlockWidgetFactory
         private readonly ToolArgumentColoredFormatter $toolArgumentColoredFormatter = new ToolArgumentColoredFormatter(),
         private readonly ViewImageTranscriptFormatter $viewImageFormatter = new ViewImageTranscriptFormatter(),
     ) {
-        $this->toolPresentationPolicy = new TranscriptToolPresentationPolicy($this->subagentRenderer);
+        $this->toolResultFacts = new TranscriptToolResultFacts();
+        $this->toolPresentationPolicy = new TranscriptToolPresentationPolicy($this->subagentRenderer, $this->toolResultFacts);
         $this->toolRenderer = new TranscriptToolRenderer(
             $this->displayConfig,
             $this->displayState,
@@ -46,14 +49,9 @@ final readonly class TranscriptBlockWidgetFactory
             $this->linePreviewService,
             $this->toolArgumentColoredFormatter,
             $this->viewImageFormatter,
-            $this->toolPresentationPolicy,
+            $this->toolResultFacts,
         );
         $this->blockRenderer = new TranscriptBlockRenderer($this->displayConfig);
-    }
-
-    public function displayConfig(): TranscriptDisplayConfig
-    {
-        return $this->displayConfig;
     }
 
     public function displayState(): TranscriptDisplayState
