@@ -16,9 +16,9 @@ use Symfony\Component\Tui\Widget\TextWidget;
  *
  * Owns ToolCall/ToolResult single-block cards and the ToolCall+ToolResult exchange
  * cards (generic, view_image, skill read, edit, write), including argument/header
- * formatting, preview truncation, and result body/color selection. Shared
- * "full render"/body-text presentation facts and pairing/suppression stay in
- * {@see TranscriptToolPresentationPolicy}. Structured subagent tool results are
+ * formatting, preview truncation, and result body/color selection. Result-body
+ * presentation facts live in {@see TranscriptToolResultFacts}; pairing/suppression
+ * stays in {@see TranscriptToolPresentationPolicy}. Structured subagent tool results are
  * handled by the factory's exchange entry before delegation, see
  * {@see TranscriptBlockWidgetFactory::buildToolExchangeWidget()}.
  */
@@ -32,7 +32,7 @@ final readonly class TranscriptToolRenderer
         private readonly TranscriptLinePreviewService $linePreviewService,
         private readonly ToolArgumentColoredFormatter $toolArgumentColoredFormatter,
         private readonly ViewImageTranscriptFormatter $viewImageFormatter,
-        private readonly TranscriptToolPresentationPolicy $toolPresentationPolicy,
+        private readonly TranscriptToolResultFacts $toolResultFacts,
     ) {
     }
 
@@ -90,7 +90,7 @@ final readonly class TranscriptToolRenderer
         $header = $this->toolResultHeaderLabel($block);
         $lines = [\sprintf('%s %s', TranscriptGlyphs::GLYPH_TOOL, $header)];
 
-        $body = $this->toolPresentationPolicy->toolResultBodyText($block);
+        $body = $this->toolResultFacts->toolResultBodyText($block);
         if ('' !== $body) {
             $bodyLines = explode("\n", $body);
             $preview = $this->applyToolResultPreview($bodyLines, $block);
@@ -107,7 +107,7 @@ final readonly class TranscriptToolRenderer
             $lines[0] .= $suffix;
         }
 
-        $color = $this->toolPresentationPolicy->toolResultIsFullRender($block) && $this->toolPresentationPolicy->metaIsTruthy($block->meta['is_error'] ?? false)
+        $color = $this->toolResultFacts->toolResultIsFullRender($block) && $this->toolResultFacts->metaIsTruthy($block->meta['is_error'] ?? false)
             ? ThemeColorEnum::Error
             : ThemeColorEnum::ToolOutput;
 
@@ -172,7 +172,7 @@ final readonly class TranscriptToolRenderer
         array $arguments,
     ): TextWidget {
         $headerLine = $this->skillReadHeaderLabel($callBlock, $arguments);
-        $fullRender = $this->toolPresentationPolicy->toolResultIsFullRender($resultBlock);
+        $fullRender = $this->toolResultFacts->toolResultIsFullRender($resultBlock);
         $expanded = $this->displayState->previewableBlocksExpanded;
 
         // Collapsed successful skill reads hide args/result; keep only the compact header + expand hint.
@@ -318,7 +318,7 @@ final readonly class TranscriptToolRenderer
      */
     private function applyToolResultPreview(array $bodyLines, TranscriptBlock $block): array
     {
-        return $this->applyLinePreview($bodyLines, $this->toolPresentationPolicy->toolResultIsFullRender($block));
+        return $this->applyLinePreview($bodyLines, $this->toolResultFacts->toolResultIsFullRender($block));
     }
 
     /**
@@ -524,7 +524,7 @@ final readonly class TranscriptToolRenderer
             $result = $resultBlock->meta['result'] ?? null;
             $bodyLines = $this->viewImageFormatter->formatToolResultLines($result);
             if ([] === $bodyLines && \is_string($result) && '' !== $result) {
-                if ($this->toolPresentationPolicy->toolResultIsFullRender($resultBlock)) {
+                if ($this->toolResultFacts->toolResultIsFullRender($resultBlock)) {
                     return [$result];
                 }
 
@@ -534,7 +534,7 @@ final readonly class TranscriptToolRenderer
             return $bodyLines;
         }
 
-        $body = $this->toolPresentationPolicy->toolResultBodyText($resultBlock);
+        $body = $this->toolResultFacts->toolResultBodyText($resultBlock);
         if ('' === $body) {
             return [];
         }
@@ -552,7 +552,7 @@ final readonly class TranscriptToolRenderer
 
     private function toolExchangeBodyColor(TranscriptBlock $resultBlock): ThemeColorEnum
     {
-        if ($this->toolPresentationPolicy->toolResultIsFullRender($resultBlock) && $this->toolPresentationPolicy->metaIsTruthy($resultBlock->meta['is_error'] ?? false)) {
+        if ($this->toolResultFacts->toolResultIsFullRender($resultBlock) && $this->toolResultFacts->metaIsTruthy($resultBlock->meta['is_error'] ?? false)) {
             return ThemeColorEnum::Error;
         }
 
@@ -580,7 +580,7 @@ final readonly class TranscriptToolRenderer
         $result = $block->meta['result'] ?? null;
         $bodyLines = $this->viewImageFormatter->formatToolResultLines($result);
         if ([] === $bodyLines && \is_string($result) && '' !== $result) {
-            if ($this->toolPresentationPolicy->toolResultIsFullRender($block)) {
+            if ($this->toolResultFacts->toolResultIsFullRender($block)) {
                 $bodyLines = [$result];
             } else {
                 $bodyLines = ['(image metadata)'];
@@ -590,7 +590,7 @@ final readonly class TranscriptToolRenderer
             $lines[] = '    '.$bodyLine;
         }
 
-        $color = $this->toolPresentationPolicy->toolResultIsFullRender($block) && $this->toolPresentationPolicy->metaIsTruthy($block->meta['is_error'] ?? false)
+        $color = $this->toolResultFacts->toolResultIsFullRender($block) && $this->toolResultFacts->metaIsTruthy($block->meta['is_error'] ?? false)
             ? ThemeColorEnum::Error
             : ThemeColorEnum::ToolOutput;
 
