@@ -20,6 +20,8 @@ use Symfony\AI\Platform\FinishReason\FinishReasonCase;
 use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\Stream\Delta\MetadataDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
+use Symfony\AI\Platform\Result\Stream\Delta\ThinkingComplete;
+use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallStart;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolInputDelta;
@@ -339,6 +341,46 @@ final class DurableResultConverterTest extends TestCase
 
         $texts = array_map(static fn (TextDelta $td): string => $td->getText(), array_values($textDeltas));
         $this->assertSame(['Hello', ' World'], $texts);
+    }
+
+    // ── Leading role chunk with explicit empty content ────────────────────────
+
+    #[Test]
+    public function roleChunkWithEmptyContentDoesNotEmitTextDeltaBeforeThinking(): void
+    {
+        $deltas = $this->collectStream($this->streamResult([
+            // vLLM emits an explicit empty `content` on the assistant role chunk.
+            $this->chunk(['choices' => [[
+                'delta' => ['role' => 'assistant', 'content' => ''],
+            ]]]),
+            $this->chunk(['choices' => [[
+                'delta' => ['reasoning' => 'thinking...'],
+            ]]]),
+            $this->chunk(['choices' => [[
+                'delta' => ['content' => 'Hello'],
+            ]]]),
+            $this->chunk(['choices' => [[
+                'delta' => ['content' => ' world'],
+            ]]]),
+            $this->chunk(['choices' => [['finish_reason' => 'stop']]]),
+        ]));
+
+        // No empty TextDelta anywhere: the role chunk must not start the text stream.
+        foreach ($deltas as $delta) {
+            if ($delta instanceof TextDelta) {
+                $this->assertNotSame('', $delta->getText());
+            }
+        }
+
+        // Thinking arrives before any text, matching canonical/replay order.
+        $this->assertInstanceOf(ThinkingDelta::class, $deltas[0]);
+        $this->assertInstanceOf(ThinkingComplete::class, $deltas[1]);
+
+        $texts = array_map(
+            static fn (TextDelta $td): string => $td->getText(),
+            array_values(array_filter($deltas, static fn ($d) => $d instanceof TextDelta)),
+        );
+        $this->assertSame(['Hello', ' world'], $texts);
     }
 
     // ── Empty-argument ToolCallComplete suppressed ─────────────────────────────

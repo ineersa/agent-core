@@ -213,7 +213,11 @@ final class DurableResultConverter extends ResultConverter
                     $reasoning = '';
                 }
 
-                if (!isset($data['choices'][0]['delta']['content'])) {
+                // Skip empty content: vLLM (and some OpenAI-compatible proxies) send an
+                // explicit empty `content` on the role chunk; yielding an empty
+                // TextDelta would start the text stream before thinking deltas,
+                // desyncing live transcript order from canonical/replay order.
+                if ('' === ($data['choices'][0]['delta']['content'] ?? '')) {
                     ++$chunkOrdinal;
                     continue;
                 }
