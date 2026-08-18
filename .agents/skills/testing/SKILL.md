@@ -158,9 +158,10 @@ Hatfield agent session:
   llm-real) spawn their controllers with explicit per-process DSNs
   (`ControllerE2eTestCase`) and are unaffected.
 - **PHAR rule:** `run:agent*` sessions launch from a session-owned copy under
-  `var/tmp/phar/sessions/<timestamp>-<pid>-<rand>/hatfield.phar`
-  (`phar_materialize_session_copy()` in `.castor/helpers.php`; stale copies
-  GC'd at launch, 24 h age, copies still in use are preserved). The canonical
+  `var/tmp/phar/sessions/<content-hash>/hatfield.phar`
+  (`phar_materialize_session_copy()` in `.castor/helpers.php`; one immutable
+  copy per distinct build — content-addressed, reused across launches; stale
+  copies GC'd at launch, 24 h age, copies still in use are preserved). The canonical
   artifact (`var/tmp/phar/hatfield.phar`) therefore has no long-lived holder:
   `phar:ensure` / `castor check` rebuild it freely even while a session is
   live, so the TUI artifact lane always boots a fresh PHAR, and concurrent

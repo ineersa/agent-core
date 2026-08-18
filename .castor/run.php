@@ -27,11 +27,13 @@ require_once __DIR__.'/shared.php';
  * run:agent* launch from a session-owned COPY of the built PHAR (not
  * bin/console) so smoke/dev sessions exercise the actual shipped artifact
  * and surface packaging bugs (box.json exclusions, missing stubs,
- * autoloader differences). Sessions exec their own copy under
- * var/tmp/phar/sessions/ so the canonical artifact has no long-lived
- * holder: castor test/check rebuild the canonical file freely even while a
- * session is live, and concurrent sessions are isolated by construction.
- * Stale copies are GC'd at launch (24 h age; in-use copies preserved).
+ * autoloader differences). Sessions exec a content-addressed copy under
+ * var/tmp/phar/sessions/<sha256-16>/hatfield.phar (one immutable copy per
+ * distinct build, reused across launches) so the canonical artifact has no
+ * long-lived holder: castor test/check rebuild the canonical file freely
+ * even while a session is live, and concurrent sessions are isolated by
+ * construction. Stale copies are GC'd at launch (24 h age; in-use copies
+ * preserved).
  * CastorTasks\phar_ensure() rebuilds the PHAR when source is newer than the last build.
  *
  * @param string $extraArgs Extra args appended after `agent` (e.g. '--model=...').

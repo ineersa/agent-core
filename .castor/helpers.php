@@ -1294,12 +1294,16 @@ function hatfield_phar_session_copies_dir(): string
  * WHY: run:agent sessions exec the artifact for their whole lifetime. If a
  * session ran the canonical file directly, castor test/check rebuilds of the
  * canonical artifact would swap phar:// file reads under the live process and
- * corrupt the session. With a per-session copy the canonical artifact has no
- * long-lived holder: it is rebuilt freely, and concurrent sessions are
- * isolated by construction (each execs its own copy, never rebuilt).
+ * corrupt the session. Sessions exec a content-addressed copy instead, so the
+ * canonical artifact has no long-lived holder: it is rebuilt freely, and
+ * concurrent sessions are isolated by construction (no path is ever rewritten
+ * after creation, so no live process can observe a replaced binary).
  *
- * The copy is atomic: written to a temp name in the target directory, then
- * renamed, so a crash can never leave a truncated artifact at $dest.
+ * The copy is content-addressed: one immutable copy per distinct build under
+ * sessions/<sha256-16>/hatfield.phar, reused across launches. The dest is only
+ * ever created or replaced atomically (hash-verified reuse, or temp+rename
+ * that replaces an absent/corrupt dest). GC may delete an old-but-still-useful
+ * copy once no session holds it; harmless, it is re-copied on the next launch.
  *
  * @param string      $pharPath    canonical artifact to copy from
  * @param string|null $sessionsDir override root for session copy dirs (tests)
@@ -1313,12 +1317,21 @@ function phar_materialize_session_copy(string $pharPath, ?string $sessionsDir = 
         throw new \RuntimeException('Unable to create PHAR session copies directory: '.$sessionsDir);
     }
 
-    $dir = $sessionsDir.'/'.date('Ymd-His').'-'.(string) getmypid().'-'.bin2hex(random_bytes(2));
-    if (!mkdir($dir, 0755, true) && !is_dir($dir)) {
+    $hash = hash_file('sha256', $pharPath);
+    if (false === $hash) {
+        throw new \RuntimeException('Unable to hash PHAR artifact: '.$pharPath);
+    }
+
+    $dir = $sessionsDir.'/'.substr($hash, 0, 16);
+    $dest = $dir.'/hatfield.phar';
+    if (is_file($dest) && hash_file('sha256', $dest) === $hash) {
+        return $dest;
+    }
+
+    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
         throw new \RuntimeException('Unable to create PHAR session copy directory: '.$dir);
     }
 
-    $dest = $dir.'/hatfield.phar';
     $tmp = $dir.'/.hatfield.phar.tmp-'.bin2hex(random_bytes(4));
     if (!copy($pharPath, $tmp)) {
         throw new \RuntimeException("Failed to copy PHAR artifact {$pharPath} -> {$tmp}");
