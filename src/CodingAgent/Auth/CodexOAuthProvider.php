@@ -8,21 +8,28 @@ use League\OAuth2\Client\Provider\GenericProvider;
 use Psr\Http\Message\RequestInterface;
 
 /**
- * Custom OAuth provider for the OpenAI Codex PKCE flow.
+ * Shared OAuth provider for public PKCE clients: OpenAI Codex and xAI Grok.
  *
  * Extends league/oauth2-client GenericProvider with two compatibility fixes
- * required by OpenAI's Hydra OAuth server:
+ * that are generic to public OAuth clients (no client secret). Both OpenAI's
+ * Hydra (Codex) and xAI's auth.x.ai (Grok CLI) reject the same league defaults:
  *
  * 1. The default 'approval_prompt' parameter injected by the league library
- *    is stripped from the authorization URL — Hydra rejects unrecognized
- *    parameters for this client registration.
+ *    is stripped from the authorization URL — neither IdP accepts this
+ *    Google/Facebook-style extension for these client registrations.
  *
- * 2. OpenID Connect Codex is a public OAuth client (no client secret). The
- *    league library sends an empty 'client_secret' in the token request body
- *    by default, which Hydra rejects. This provider filters it out when empty.
+ * 2. Public OAuth clients have no client secret. The league library sends an
+ *    empty 'client_secret' in the token request body by default, which both
+ *    IdPs reject. This provider filters it out when empty.
+ *
+ * Used by {@see CodexOAuthService}/{@see CodexTokenRefresher} against
+ * auth.openai.com and by {@see GrokOAuthService}/{@see GrokTokenRefresher}
+ * against auth.x.ai — do not fork for Grok; the fixes are provider-agnostic.
  *
  * @see https://auth.openai.com/oauth/authorize
  * @see https://auth.openai.com/oauth/token
+ * @see https://auth.x.ai/oauth2/authorize
+ * @see https://auth.x.ai/oauth2/token
  */
 final class CodexOAuthProvider extends GenericProvider
 {

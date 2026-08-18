@@ -160,6 +160,10 @@ services:
     arguments:
       $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'
 
+  Ineersa\CodingAgent\Auth\GrokAuthStorage:
+    arguments:
+      $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'
+
 
   Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache:
     shared: true
