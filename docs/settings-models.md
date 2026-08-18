@@ -8,6 +8,12 @@ description: AI providers, model selection, reasoning levels, HTTP and retry set
 Model configuration lives under the top-level `ai:` section in Hatfield settings.
 Secrets (API keys) belong in `~/.hatfield/settings.yaml` using `env:VAR` syntax, not plain text in project files when avoidable.
 
+Known providers (`zai`, `deepseek`, `openai-codex`, `grok-cli`) ship as a curated
+catalog in `config/ai-catalog.yaml` (authoritative for which models exist).
+`bin/console providers:update` refreshes volatile metadata from models.dev into
+`~/.hatfield/cache/models-dev.json` (bundled fallback: `config/models-dev.snapshot.json`).
+Connection settings are never taken from models.dev.
+
 Core settings overview: [settings.md](settings.md).
 
 ## Selection keys
@@ -23,6 +29,11 @@ Every selectable model must be listed under its provider. Unknown model names ar
 ## Provider entries (`ai.providers`)
 
 Each provider key is a logical account/name (for example `deepseek`, `openai-codex`, `openai-codex-work`).
+
+For catalog providers, settings may stay sparse — scalars such as `enabled` / `api_key` /
+`base_url` override the catalog; an explicit `models:` map replaces the catalog models
+wholesale. Unknown provider ids (custom llama.cpp, RunPod, …) remain full definitions
+in settings and pass through unchanged.
 
 Common fields:
 

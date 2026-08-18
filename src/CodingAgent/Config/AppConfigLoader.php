@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Ineersa\CodingAgent\Config\Ai\AiCatalogMerge;
+use Ineersa\CodingAgent\Config\Ai\ModelsDevCache;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Yaml\Yaml;
 
@@ -11,11 +13,18 @@ use Symfony\Component\Yaml\Yaml;
  * Loads and overlays Hatfield settings layers from YAML files.
  *
  * Precedence order (last wins):
- *   built-in defaults  <  user settings (~/.hatfield/settings.yaml)
+ *   AI catalog (config/ai-catalog.yaml + models.dev metadata refresh)
+ *   <  built-in defaults (config/hatfield.defaults.yaml)
+ *   <  user settings (~/.hatfield/settings.yaml)
  *   <  project settings (<cwd>/.hatfield/settings.yaml)
+ *
+ * Catalog providers are complete curated entries; models.dev never gates
+ * presence. For known providers, settings stay sparse overlays (scalars win;
+ * an explicit `models:` map replaces catalog models wholesale).
  *
  * Each {@see load()} call rereads YAML from disk. Missing user/project files
  * contribute an empty overlay; load never creates ~/.hatfield/settings.yaml.
+ * Network I/O never happens here — models.dev cache/snapshot are local files.
  *
  * Overlay semantics (implemented in {@see overlayConfig}):
  *  - Associative arrays: recursive deep overlay — keys present in the higher-
@@ -75,6 +84,9 @@ final class AppConfigLoader
 
     public function __construct(
         private readonly SettingsPathResolver $pathResolver,
+        private readonly ?string $aiCatalogPath = null,
+        private readonly ?string $modelsDevSnapshotPath = null,
+        private readonly AiCatalogMerge $aiCatalogMerge = new AiCatalogMerge(),
     ) {
     }
 
@@ -84,8 +96,12 @@ final class AppConfigLoader
             throw new \InvalidArgumentException(\sprintf('%s::load() requires a non-empty $cwd. Pass %s from the container or an explicit absolute path.', self::class, '%app.cwd%'));
         }
 
-        // Layer 1: Built-in defaults (shipped with the app)
-        $defaultsRaw = $this->loadYamlFile($defaultsPath);
+        // Layer 0+1: curated AI catalog (models.dev metadata refresh, no network) under built-in defaults.
+        // Fold catalog into defaultsRaw so SettingsValueResolver provenance still attributes catalog keys
+        // to the Defaults layer without expanding SettingsLayerEnum.
+        $catalogRaw = $this->loadCatalogLayer();
+        $defaultsFileRaw = $this->loadYamlFile($defaultsPath);
+        $defaultsRaw = [] !== $catalogRaw ? $this->overlayConfig($catalogRaw, $defaultsFileRaw) : $defaultsFileRaw;
 
         // Layer 2: User settings (~/.hatfield/settings.yaml), sparse overrides only
         $userSettingsPath = $this->pathResolver->getHomeDir().'/.hatfield/settings.yaml';
@@ -131,7 +147,11 @@ final class AppConfigLoader
     {
         foreach ($over as $key => $value) {
             if (\is_array($value) && isset($base[$key]) && \is_array($base[$key])) {
-                if ($this->isAssoc($value) && $this->isAssoc($base[$key])) {
+                // Provider `models:` maps replace wholesale (pin/trim). Do not deep-merge
+                // individual model ids — that would leave unwanted catalog models behind.
+                if ('models' === $key && $this->isAssoc($value) && $this->isAssoc($base[$key])) {
+                    $base[$key] = $value;
+                } elseif ($this->isAssoc($value) && $this->isAssoc($base[$key])) {
                     $base[$key] = $this->overlayConfig($base[$key], $value);
                 } else {
                     $base[$key] = $value;
@@ -142,6 +162,26 @@ final class AppConfigLoader
         }
 
         return $base;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function loadCatalogLayer(): array
+    {
+        if (null === $this->aiCatalogPath || '' === $this->aiCatalogPath) {
+            return [];
+        }
+
+        $cache = null;
+        if (null !== $this->modelsDevSnapshotPath && '' !== $this->modelsDevSnapshotPath) {
+            $cache = new ModelsDevCache(
+                homeDir: $this->pathResolver->getHomeDir(),
+                snapshotPath: $this->modelsDevSnapshotPath,
+            );
+        }
+
+        return $this->aiCatalogMerge->buildLayer($this->aiCatalogPath, $cache);
     }
 
     /**
