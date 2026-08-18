@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\ImageProcessing;
 
 use Ineersa\CodingAgent\Config\ImageToolConfig;
+use Psr\Log\LoggerInterface;
 
 /**
  * Process images for provider-safe delivery: resize oversized images,
@@ -26,6 +27,7 @@ final class ImageAttachmentProcessor
 
     public function __construct(
         private readonly ImageToolConfig $config,
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -219,7 +221,14 @@ final class ImageAttachmentProcessor
             }
 
             return $result;
-        } catch (\Throwable) {
+        } catch (\Throwable $exception) {
+            $this->logger?->warning('Image processing failed — falling back to original file.', [
+                'component' => 'image_attachment_processor',
+                'event_type' => 'image.process_failed',
+                'file' => $filePath,
+                'error_class' => $exception::class,
+            ]);
+
             return self::original($filePath, $mediaType, $width, $height, $fileSize);
         }
     }
@@ -459,6 +468,8 @@ final class ImageAttachmentProcessor
      */
     private function applyExifOrientationWithGd(\GdImage $gd, string $filePath): ?\GdImage
     {
+        $orientation = 1;
+
         try {
             $exif = @exif_read_data($filePath);
             $orientation = isset($exif['Orientation']) && \is_int($exif['Orientation']) ? $exif['Orientation'] : 1;
@@ -473,7 +484,15 @@ final class ImageAttachmentProcessor
                 8 => $this->gdRotate($gd, 90),
                 default => $gd,
             };
-        } catch (\Throwable) {
+        } catch (\Throwable $exception) {
+            $this->logger?->warning('EXIF orientation apply failed — returning un-oriented image.', [
+                'component' => 'image_attachment_processor',
+                'event_type' => 'image.exif_orientation_failed',
+                'file' => $filePath,
+                'orientation' => $orientation,
+                'error_class' => $exception::class,
+            ]);
+
             return $gd;
         }
     }

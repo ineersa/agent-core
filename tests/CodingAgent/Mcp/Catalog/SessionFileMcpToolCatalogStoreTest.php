@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Mcp\Catalog;
 
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
@@ -44,6 +45,24 @@ class SessionFileMcpToolCatalogStoreTest extends TestCase
     {
         $catalog = $this->store->read('no-catalog-run');
         $this->assertNull($catalog, 'Read should return null when catalog does not exist');
+    }
+
+    public function testReadLogsWarningAndReturnsNullOnCorruptJson(): void
+    {
+        $runId = 'corrupt-run';
+        $dir = $this->projectDir.'/.hatfield/sessions/'.$runId;
+        $this->assertTrue(mkdir($dir, 0o755, true) || is_dir($dir));
+        file_put_contents($dir.'/mcp-tools.json', '{not-json');
+
+        $logger = new TestLogger();
+        $store = new SessionFileMcpToolCatalogStore($this->projectDir, $logger);
+
+        $this->assertNull($store->read($runId));
+        $this->assertCount(1, $logger->records);
+        $this->assertSame('warning', $logger->records[0]['level']);
+        $this->assertSame('mcp.catalog.read_decode_failed', $logger->records[0]['context']['event_type']);
+        $this->assertSame($runId, $logger->records[0]['context']['run_id']);
+        $this->assertSame($dir.'/mcp-tools.json', $logger->records[0]['context']['path']);
     }
 
     public function testRoundTripWithConnectedAndFailedServers(): void

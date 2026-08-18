@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http;
 
+use Psr\Log\LoggerInterface;
+
 /**
  * Retry policy for LLM HTTP provider requests.
  *
@@ -54,6 +56,7 @@ final class LlmHttpRetryPolicy
         ?int $maxRetries = null,
         ?int $baseDelayMs = null,
         ?int $maxDelayMs = null,
+        private readonly ?LoggerInterface $logger = null,
     ) {
         $this->timeout = self::validatePositive($timeout, 'timeout') ?? self::DEFAULT_TIMEOUT;
         $this->maxDuration = self::validatePositive($maxDuration, 'maxDuration') ?? self::DEFAULT_MAX_DURATION;
@@ -148,8 +151,14 @@ final class LlmHttpRetryPolicy
             $diff = (int) ($date->format('U') - $now->format('U'));
 
             return $diff > 0 ? $diff * 1000 : 0;
-        } catch (\Exception) {
-            // Not a valid date
+        } catch (\Exception $exception) {
+            // Unparseable Retry-After is a server quirk; fall back to exponential backoff.
+            $this->logger?->warning('Unparseable Retry-After header — falling back to exponential backoff.', [
+                'component' => 'llm_http_retry',
+                'event_type' => 'llm.retry_after_unparseable',
+                'retry_after' => $trimmed,
+                'error_class' => $exception::class,
+            ]);
         }
 
         return null;

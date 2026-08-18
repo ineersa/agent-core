@@ -21,6 +21,7 @@ use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -42,6 +43,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         private int $maxPendingCommands = 100,
         private ?MessageBusInterface $commandBus = null,
         private ?ToolBatchCollector $toolBatchCollector = null,
+        private ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -819,7 +821,17 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
         try {
             PendingHumanInputRequestDTO::assertToolCallContinuationRef($ref);
-        } catch (\InvalidArgumentException) {
+        } catch (\InvalidArgumentException $exception) {
+            $this->logger?->warning('Tool-call continuation ref is malformed — ignoring resume.', [
+                'component' => 'apply_command_handler',
+                'event_type' => 'apply.tool_call_continuation_ref_invalid',
+                'run_id' => $runId,
+                'question_id' => $activeRequest->questionId,
+                'continuation_ref' => $ref,
+                'error_class' => $exception::class,
+                'error_message' => $exception->getMessage(),
+            ]);
+
             return null;
         }
 

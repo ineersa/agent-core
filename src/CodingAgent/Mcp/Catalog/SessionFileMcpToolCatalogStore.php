@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Mcp\Catalog;
 
 use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use Ineersa\CodingAgent\Utility\AtomicFileWriterException;
+use Psr\Log\LoggerInterface;
 
 /**
  * Session-file implementation of the MCP tool catalog store.
@@ -24,6 +25,7 @@ final class SessionFileMcpToolCatalogStore implements McpToolCatalogStoreInterfa
      */
     public function __construct(
         private readonly string $projectCwd,
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -59,7 +61,16 @@ final class SessionFileMcpToolCatalogStore implements McpToolCatalogStoreInterfa
 
         try {
             $data = json_decode($content, true, 512, \JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
+        } catch (\JsonException $exception) {
+            $this->logger?->warning('MCP catalog JSON decode failed — treating as missing catalog.', [
+                'component' => 'mcp',
+                'event_type' => 'mcp.catalog.read_decode_failed',
+                'run_id' => $runId,
+                'path' => $path,
+                'error_class' => $exception::class,
+                'error_message' => $exception->getMessage(),
+            ]);
+
             return null;
         }
 

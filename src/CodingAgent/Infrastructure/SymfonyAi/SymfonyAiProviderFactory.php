@@ -103,6 +103,7 @@ class SymfonyAiProviderFactory
             maxRetries: $http?->maxRetries,
             baseDelayMs: $http?->baseDelayMs,
             maxDelayMs: $http?->maxDelayMs,
+            logger: $this->logger,
         );
         $baseClient = HttpClient::create($policy->httpClientOptions());
 
@@ -165,6 +166,7 @@ class SymfonyAiProviderFactory
             ));
             $resultConverters[] = new DurableResultConverter(
                 onStreamEvent: $this->buildCaptureListener($provider->id),
+                logger: $this->logger,
             );
         }
 
