@@ -23,6 +23,11 @@ final class PharInUseGuardTest extends TestCase
         $dir = TestDirectoryIsolation::createOsTempDir('phar-in-use-guard');
         $pharPath = $dir.'/standin.phar';
         file_put_contents($pharPath, 'fake phar payload');
+        $this->assertSame(
+            realpath($pharPath),
+            $pharPath,
+            'spawned child argv must carry the absolute resolved path for token-exact matching',
+        );
 
         $children = [];
         try {
@@ -67,6 +72,71 @@ final class PharInUseGuardTest extends TestCase
         }
     }
 
+    /**
+     * Regression: the root-relative needle form (var/tmp/phar/hatfield.phar)
+     * is a SUBSTRING of every sibling worktree's absolute artifact path. With
+     * token-exact matching the sibling path must never be reported as in-use
+     * for this worktree.
+     */
+    public function testSiblingWorktreeArtifactPathIsNotMatched(): void
+    {
+        self::requireHelpers();
+
+        $root = ProjectDir::get();
+        $thisPhar = $root.'/var/tmp/phar/hatfield.phar';
+        $needles = array_values(array_unique(array_filter([
+            realpath($thisPhar) ?: $thisPhar,
+            $thisPhar,
+        ])));
+
+        // A live session in a sibling worktree execs ITS absolute artifact
+        // path, which contains this worktree's root-relative form only as a
+        // substring — never as an equal argv token.
+        $siblingSession = "/usr/bin/php\0/home/ineersa/projects/agent-core-worktrees/some-other-task/var/tmp/phar/hatfield.phar\0agent\0--controller";
+        $this->assertFalse(\CastorTasks\phar_cmdline_uses_artifact($siblingSession, $needles));
+
+        // A token that merely embeds the path (shell snippet, grep pattern,
+        // editor buffer) must not match either.
+        $embedded = "/bin/sh\0-c\0echo see {$thisPhar} in a script\0";
+        $this->assertFalse(\CastorTasks\phar_cmdline_uses_artifact($embedded, $needles));
+
+        // Positive control: an argv token exactly equal to the artifact path.
+        $ownSession = "/usr/bin/php\0".$thisPhar."\0agent\0--controller";
+        $this->assertTrue(\CastorTasks\phar_cmdline_uses_artifact($ownSession, $needles));
+    }
+
+    /**
+     * End-to-end /proc-level regression: a spawned child referencing a
+     * sibling-worktree-shaped absolute artifact path must not show up in
+     * phar_in_use_pids() for this worktree's artifact.
+     */
+    public function testSiblingWorktreeSessionDoesNotBlockThisWorktree(): void
+    {
+        self::requireHelpers();
+
+        $root = ProjectDir::get();
+        $thisPhar = $root.'/var/tmp/phar/hatfield.phar';
+        $siblingPhar = '/home/ineersa/projects/agent-core-worktrees/some-other-task/var/tmp/phar/hatfield.phar';
+
+        $child = null;
+        try {
+            $child = self::spawnChildReferencing($siblingPhar);
+            usleep(300_000); // let /proc settle; the child lives ~3 s
+            $status = proc_get_status($child);
+            $this->assertTrue($status['running'], 'precondition: sibling-referencing child must be alive while asserting');
+            $this->assertSame(
+                [],
+                \CastorTasks\phar_in_use_pids($thisPhar),
+                'a sibling worktree session must not block this worktree rebuild',
+            );
+        } finally {
+            if (\is_resource($child)) {
+                proc_terminate($child);
+                proc_close($child);
+            }
+        }
+    }
+
     private static function requireHelpers(): void
     {
         $root = ProjectDir::get();
@@ -80,6 +150,10 @@ final class PharInUseGuardTest extends TestCase
         self::assertTrue(
             \function_exists('CastorTasks\phar_skip_rebuild_when_in_use'),
             'phar_skip_rebuild_when_in_use must load from .castor/helpers.php',
+        );
+        self::assertTrue(
+            \function_exists('CastorTasks\phar_cmdline_uses_artifact'),
+            'phar_cmdline_uses_artifact must load from .castor/helpers.php',
         );
     }
 

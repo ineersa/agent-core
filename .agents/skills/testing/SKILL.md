@@ -165,7 +165,9 @@ Hatfield agent session:
   `phar:ensure` with no live session. Explicit `castor phar:build` fails fast
   with guidance (stop the session, or build elsewhere via `HATFIELD_PHAR_PATH`).
 - **Remaining caveat:** prefer running QA gates in the task worktree rather than
-  competing with a live session in the same tree where possible.
+  competing with a live session in the same tree where possible. `castor phar:clean`
+  is NOT in-use-guarded — a manual clean can still remove an artifact a live
+  session is executing from.
 
 
 ## LLM Replay (deterministic, no live LLM)

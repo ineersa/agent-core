@@ -76,13 +76,6 @@ function datadog_trace_endpoint_available(): bool
 }
 
 /**
- * Environment prefix for Datadog APM opt-in/opt-out when launching PHP.
- *
- * ddtrace reads its settings before userland PHP boots, so these values must
- * be present in the shell environment that starts `php bin/console`.
- */
-
-/**
  * Doctrine transport DSN env vars exported by a live session controller
  * (JsonlProcessAgentSessionClient) into every bash command the session runs.
  *
@@ -180,6 +173,12 @@ function qa_check_run_env_command(): string
     return 'env '.implode(' ', $pairs).' '.substr($obs, 4);
 }
 
+/**
+ * Environment prefix for Datadog APM opt-in/opt-out when launching PHP.
+ *
+ * ddtrace reads its settings before userland PHP boots, so these values must
+ * be present in the shell environment that starts `php bin/console`.
+ */
 function datadog_env_command(bool $enabled): string
 {
     $vars = [
