@@ -340,6 +340,12 @@ const HATFIELD_PHAR_PATH_DEFAULT = 'var/tmp/phar/hatfield.phar';
 /** Default project-root-relative staging directory. */
 const HATFIELD_PHAR_STAGING_DIR_DEFAULT = 'var/tmp/phar-build/source';
 
+/** Default project-root-relative directory for session-owned PHAR copies. */
+const HATFIELD_PHAR_SESSION_COPIES_DIR_DEFAULT = 'var/tmp/phar/sessions';
+
+/** Default age (seconds) after which session-owned PHAR copies are GC'd. */
+const PHAR_SESSION_COPY_MAX_AGE_S = 86400; // 24 h
+
 /**
  * Resolve the PHAR output path.
  *
@@ -1269,6 +1275,101 @@ function phar_build_with_lock(string $root): void
     } finally {
         flock($lockHandle, \LOCK_UN);
         fclose($lockHandle);
+    }
+}
+
+// ─── Session-owned PHAR copies (run:agent) ────────────────────────────
+
+/**
+ * Directory holding session-owned PHAR copies (under the project root).
+ */
+function hatfield_phar_session_copies_dir(): string
+{
+    return project_root_dir().'/'.HATFIELD_PHAR_SESSION_COPIES_DIR_DEFAULT;
+}
+
+/**
+ * Materialize a byte-identical session-owned copy of the canonical artifact.
+ *
+ * WHY: run:agent sessions exec the artifact for their whole lifetime. If a
+ * session ran the canonical file directly, castor test/check rebuilds of the
+ * canonical artifact would swap phar:// file reads under the live process and
+ * corrupt the session. With a per-session copy the canonical artifact has no
+ * long-lived holder: it is rebuilt freely, and concurrent sessions are
+ * isolated by construction (each execs its own copy, never rebuilt).
+ *
+ * The copy is atomic: written to a temp name in the target directory, then
+ * renamed, so a crash can never leave a truncated artifact at $dest.
+ *
+ * @param string      $pharPath    canonical artifact to copy from
+ * @param string|null $sessionsDir override root for session copy dirs (tests)
+ *
+ * @return string absolute path of the session-owned copy
+ */
+function phar_materialize_session_copy(string $pharPath, ?string $sessionsDir = null): string
+{
+    $sessionsDir = $sessionsDir ?? hatfield_phar_session_copies_dir();
+    if (!is_dir($sessionsDir) && !mkdir($sessionsDir, 0755, true) && !is_dir($sessionsDir)) {
+        throw new \RuntimeException('Unable to create PHAR session copies directory: '.$sessionsDir);
+    }
+
+    $dir = $sessionsDir.'/'.date('Ymd-His').'-'.(string) getmypid().'-'.bin2hex(random_bytes(2));
+    if (!mkdir($dir, 0755, true) && !is_dir($dir)) {
+        throw new \RuntimeException('Unable to create PHAR session copy directory: '.$dir);
+    }
+
+    $dest = $dir.'/hatfield.phar';
+    $tmp = $dir.'/.hatfield.phar.tmp-'.bin2hex(random_bytes(4));
+    if (!copy($pharPath, $tmp)) {
+        throw new \RuntimeException("Failed to copy PHAR artifact {$pharPath} -> {$tmp}");
+    }
+    if (!rename($tmp, $dest)) {
+        @unlink($tmp);
+        throw new \RuntimeException("Failed to finalize PHAR session copy {$tmp} -> {$dest}");
+    }
+
+    return $dest;
+}
+
+/**
+ * Best-effort GC of session-owned PHAR copies.
+ *
+ * Piggybacks on run:agent launch (no daemon). Removes only copy dirs whose
+ * mtime is older than $maxAgeSeconds, and never a copy a live process is
+ * executing from (phar_in_use_pids() on the copy path — the same read-only
+ * scan the rebuild guard uses) nor the just-created copy (callers run GC
+ * before materializing, and a fresh dir mtime is always above the cutoff).
+ * Per-dir failures are surfaced as stderr diagnostics only — a stale dir that
+ * cannot be removed must never fail the launch.
+ *
+ * @param int         $maxAgeSeconds age cutoff; 24 h default
+ * @param string|null $sessionsDir   override root for session copy dirs (tests)
+ */
+function phar_gc_session_copies(int $maxAgeSeconds = PHAR_SESSION_COPY_MAX_AGE_S, ?string $sessionsDir = null): void
+{
+    $sessionsDir = $sessionsDir ?? hatfield_phar_session_copies_dir();
+    if (!is_dir($sessionsDir)) {
+        return;
+    }
+
+    $cutoff = time() - $maxAgeSeconds;
+    foreach ((array) glob($sessionsDir.'/*') as $entry) {
+        if (!is_dir($entry)) {
+            continue;
+        }
+        $mtime = @filemtime($entry);
+        if (false === $mtime || $mtime > $cutoff) {
+            continue;
+        }
+        if ([] !== phar_in_use_pids($entry.'/hatfield.phar')) {
+            continue;
+        }
+        try {
+            remove_path_checked($entry);
+        } catch (\Throwable $e) {
+            // Intentional local degradation: GC must never fail the launch.
+            fwrite(\STDERR, 'PHAR session copy GC warning: '.$e->getMessage()."\n");
+        }
     }
 }
 

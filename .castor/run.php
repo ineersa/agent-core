@@ -24,9 +24,14 @@ require_once __DIR__.'/shared.php';
 /**
  * Build the agent invocation string for the freshly-ensured PHAR.
  *
- * run:agent* launch from the built PHAR (not bin/console) so smoke/dev
- * sessions exercise the actual shipped artifact and surface packaging
- * bugs (box.json exclusions, missing stubs, autoloader differences).
+ * run:agent* launch from a session-owned COPY of the built PHAR (not
+ * bin/console) so smoke/dev sessions exercise the actual shipped artifact
+ * and surface packaging bugs (box.json exclusions, missing stubs,
+ * autoloader differences). Sessions exec their own copy under
+ * var/tmp/phar/sessions/ so the canonical artifact has no long-lived
+ * holder: castor test/check rebuild the canonical file freely even while a
+ * session is live, and concurrent sessions are isolated by construction.
+ * Stale copies are GC'd at launch (24 h age; in-use copies preserved).
  * CastorTasks\phar_ensure() rebuilds the PHAR when source is newer than the last build.
  *
  * @param string $extraArgs Extra args appended after `agent` (e.g. '--model=...').
@@ -34,9 +39,11 @@ require_once __DIR__.'/shared.php';
 function agent_phar_invocation(string $extraArgs = ''): string
 {
     $pharPath = \CastorTasks\phar_ensure();
+    \CastorTasks\phar_gc_session_copies();
+    $sessionCopy = \CastorTasks\phar_materialize_session_copy($pharPath);
     $tail = '' === $extraArgs ? '' : ' '.$extraArgs;
 
-    return sprintf('%s %s agent%s', \PHP_BINARY, escapeshellarg($pharPath), $tail);
+    return sprintf('%s %s agent%s', \PHP_BINARY, escapeshellarg($sessionCopy), $tail);
 }
 
 function agent_runtime_env_command(bool $datadogEnabled): string

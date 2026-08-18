@@ -157,13 +157,18 @@ Hatfield agent session:
   `InMemoryTransport` expectations). E2E lanes (controller-replay, test:tui,
   llm-real) spawn their controllers with explicit per-process DSNs
   (`ControllerE2eTestCase`) and are unaffected.
-- **PHAR rule:** `phar:ensure` / `phar:build` never replace an artifact a live
-  process is executing from — `phar_in_use_pids()` in `.castor/helpers.php`
-  scans current-user process cmdlines for the artifact path (read-only; never
-  signals). `phar:ensure` skips the rebuild with a clear operator message and
-  keeps the in-use file intact; the artifact may stay stale until the next
-  `phar:ensure` with no live session. Explicit `castor phar:build` fails fast
-  with guidance (stop the session, or build elsewhere via `HATFIELD_PHAR_PATH`).
+- **PHAR rule:** `run:agent*` sessions launch from a session-owned copy under
+  `var/tmp/phar/sessions/<timestamp>-<pid>-<rand>/hatfield.phar`
+  (`phar_materialize_session_copy()` in `.castor/helpers.php`; stale copies
+  GC'd at launch, 24 h age, copies still in use are preserved). The canonical
+  artifact (`var/tmp/phar/hatfield.phar`) therefore has no long-lived holder:
+  `phar:ensure` / `castor check` rebuild it freely even while a session is
+  live, so the TUI artifact lane always boots a fresh PHAR, and concurrent
+  run:agent sessions are isolated by construction. The in-use guard
+  (`phar_in_use_pids()` in `.castor/helpers.php`; read-only /proc scan, never
+  signals) remains as defense in depth: explicit `castor phar:build` fails
+  fast with guidance (stop the session, or build elsewhere via
+  `HATFIELD_PHAR_PATH`) if something still executes the canonical artifact.
 - **Remaining caveat:** prefer running QA gates in the task worktree rather than
   competing with a live session in the same tree where possible. `castor phar:clean`
   is NOT in-use-guarded — a manual clean can still remove an artifact a live
