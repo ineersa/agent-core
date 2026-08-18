@@ -44,7 +44,7 @@ final class RenameSessionCommandHandlerTest extends TestCase
         // instead of mounting an overlay (real behavior, constructor-valid
         // controller) and the switch service is never consulted.
         $this->assertFalse($pickerController->isOpen());
-        $this->assertSame('No sessions found', $screen->registry()->getStatusEntries()['session'] ?? null);
+        $this->assertSame('No sessions found', $screen->statusEntries()['session'] ?? null);
     }
 
     #[Test]

@@ -50,8 +50,7 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
         $screen->addFooterProvider(new FooterStateSegmentProvider($state));
 
         // Mirror ModelControlListener: panel-only reasoning entry (not footer status map).
-        $screen->registry()->setStatus('reasoning', 'minimal');
-        $screen->refresh();
+        $screen->setStatus('reasoning', 'minimal');
         $harness->render();
         $before = $harness->plainScreenText();
         $this->assertStringContainsString('reasoning', $before);
@@ -85,8 +84,7 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
 
         $harness = new VirtualTuiHarness(sessionId: $state->sessionId);
         $screen = $harness->screen();
-        $screen->registry()->setStatus('reasoning', 'high');
-        $screen->refresh();
+        $screen->setStatus('reasoning', 'high');
 
         $tui = $harness->tui();
         $this->registerSubmitListener($client, $state, $screen, $tui);
@@ -154,6 +152,6 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
     /** @return array<string, string> */
     private function statusEntries(ChatScreen $screen): array
     {
-        return $screen->registry()->getStatusEntries();
+        return $screen->statusEntries();
     }
 }

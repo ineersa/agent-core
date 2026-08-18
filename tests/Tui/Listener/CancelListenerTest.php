@@ -315,7 +315,7 @@ class CancelListenerTest extends TestCase
 
         $this->assertSame(RunActivityStateEnum::Cancelling, $this->state->subagentLiveView->childActivity);
         $this->assertSame(RunActivityStateEnum::Running, $this->state->activity, 'Parent activity must not transition when child ESC cancel succeeds');
-        $working = $screen->registry()->getWorkingMessage();
+        $working = $screen->workingMessage();
         $this->assertStringContainsString('Cancelling child scout', $working);
         $this->assertStringContainsString('agent_esc', $working);
         $this->assertStringNotContainsString('Child cancelled', $working);

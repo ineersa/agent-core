@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Extension;
 
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Extension\SlotBasedTuiExtensionContext;
+use Ineersa\Tui\Footer\FooterDataProvider;
 use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Layout\TuiSlotRegistry;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -22,37 +23,59 @@ final class SlotBasedTuiExtensionContextTest extends TestCase
     private TuiSlotRegistry $registry;
     private SlotBasedTuiExtensionContext $context;
 
+    /** @var list<array{0: string, 1: ?string}> */
+    private array $statusCalls = [];
+
+    /** @var list<?string> */
+    private array $workingMessageCalls = [];
+
+    /** @var list<bool> */
+    private array $workingVisibleCalls = [];
+
     protected function setUp(): void
     {
         $this->registry = new TuiSlotRegistry();
-        $this->context = new SlotBasedTuiExtensionContext($this->registry);
+        $this->statusCalls = [];
+        $this->workingMessageCalls = [];
+        $this->workingVisibleCalls = [];
+        $this->context = new SlotBasedTuiExtensionContext(
+            $this->registry,
+            new FooterDataProvider(),
+            function (string $key, ?string $text): void {
+                $this->statusCalls[] = [$key, $text];
+            },
+            function (?string $message): void {
+                $this->workingMessageCalls[] = $message;
+            },
+            function (bool $visible): void {
+                $this->workingVisibleCalls[] = $visible;
+            },
+        );
     }
 
-    public function testSetStatus(): void
+    public function testSetStatusRoutesThroughClosure(): void
     {
         $this->context->setStatus('key', 'value');
-        $this->assertSame(['key' => 'value'], $this->registry->getStatusEntries());
-
         $this->context->setStatus('key', null);
-        $this->assertSame([], $this->registry->getStatusEntries());
+
+        $this->assertSame([['key', 'value'], ['key', null]], $this->statusCalls);
+        $this->assertSame([], $this->registry->getInputHandlers(), 'status must not touch the registry');
     }
 
-    public function testSetWorkingMessage(): void
+    public function testSetWorkingMessageRoutesThroughClosure(): void
     {
         $this->context->setWorkingMessage('Busy');
-        $this->assertSame('Busy', $this->registry->getWorkingMessage());
-
         $this->context->setWorkingMessage(null);
-        $this->assertSame('', $this->registry->getWorkingMessage());
+
+        $this->assertSame(['Busy', null], $this->workingMessageCalls);
     }
 
-    public function testSetWorkingVisible(): void
+    public function testSetWorkingVisibleRoutesThroughClosure(): void
     {
         $this->context->setWorkingVisible(false);
-        $this->assertFalse($this->registry->isWorkingVisible());
-
         $this->context->setWorkingVisible(true);
-        $this->assertTrue($this->registry->isWorkingVisible());
+
+        $this->assertSame([false, true], $this->workingVisibleCalls);
     }
 
     public function testOnTerminalInput(): void
@@ -86,15 +109,15 @@ final class SlotBasedTuiExtensionContextTest extends TestCase
         $screen->extensionContext()->setStatus('session', 'No sessions found');
         $screen->extensionContext()->setStatus('history', 'Session has no user prompts yet');
 
-        // Registry state is kept in sync through the ChatScreen closure.
+        // Screen state is kept in sync through the ChatScreen closure.
         $this->assertSame(
             ['session' => 'No sessions found', 'history' => 'Session has no user prompts yet'],
-            $screen->registry()->getStatusEntries(),
+            $screen->statusEntries(),
         );
 
         // Removal through the same routed path.
         $screen->extensionContext()->setStatus('session', null);
-        $this->assertSame(['history' => 'Session has no user prompts yet'], $screen->registry()->getStatusEntries());
+        $this->assertSame(['history' => 'Session has no user prompts yet'], $screen->statusEntries());
     }
 
     public function testSlotHandlersInterleaveByNativePriorityAndCanStopPropagation(): void

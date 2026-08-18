@@ -10,65 +10,47 @@ use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Layout\TuiSlotRegistry;
 
 /**
- * Concrete implementation of TuiExtensionContext that delegates to a TuiSlotRegistry.
+ * Concrete implementation of TuiExtensionContext wired to the session's
+ * slot registry and ChatScreen-provided closures.
  *
- * Extensions receive an instance wired to the session's slot registry.
- * Status/working mutations can be routed through ChatScreen-provided
- * closures so the native widgets stay in sync (same pattern as the
- * working-slot closures).
+ * Status/working mutations are routed through ChatScreen-provided closures
+ * so the native widgets stay in sync; the registry is used only for
+ * terminal input handler registration (input handlers remain registry-owned).
  */
 final class SlotBasedTuiExtensionContext implements TuiExtensionContext
 {
     /**
-     * @param (\Closure(string, ?string): void)|null $onStatus         when set, owns registry + status-widget sync
-     * @param (\Closure(?string): void)|null         $onWorkingMessage when set, owns registry + widget sync
-     * @param (\Closure(bool): void)|null            $onWorkingVisible when set, owns registry + widget sync
+     * @param \Closure(string, ?string): void $onStatus         ChatScreen status sync (owns widget paint)
+     * @param \Closure(?string): void         $onWorkingMessage ChatScreen working-message sync (owns widget paint)
+     * @param \Closure(bool): void            $onWorkingVisible ChatScreen working-visibility sync (owns widget paint)
      */
     public function __construct(
         private readonly TuiSlotRegistry $registry,
-        private readonly ?FooterDataProvider $footerDataProvider = null,
-        private readonly ?\Closure $onWorkingMessage = null,
-        private readonly ?\Closure $onWorkingVisible = null,
-        private readonly ?\Closure $onStatus = null,
+        private readonly FooterDataProvider $footerDataProvider,
+        private readonly \Closure $onStatus,
+        private readonly \Closure $onWorkingMessage,
+        private readonly \Closure $onWorkingVisible,
     ) {
     }
 
     public function setStatus(string $key, ?string $text): void
     {
-        if (null !== $this->onStatus) {
-            ($this->onStatus)($key, $text);
-
-            return;
-        }
-
-        $this->registry->setStatus($key, $text);
+        ($this->onStatus)($key, $text);
     }
 
     public function setWorkingMessage(?string $message): void
     {
-        if (null !== $this->onWorkingMessage) {
-            ($this->onWorkingMessage)($message);
-
-            return;
-        }
-
-        $this->registry->setWorkingMessage($message);
+        ($this->onWorkingMessage)($message);
     }
 
     public function setWorkingVisible(bool $visible): void
     {
-        if (null !== $this->onWorkingVisible) {
-            ($this->onWorkingVisible)($visible);
-
-            return;
-        }
-
-        $this->registry->setWorkingVisible($visible);
+        ($this->onWorkingVisible)($visible);
     }
 
     public function setFooterProvider(string $key, ?FooterSegmentProvider $provider): void
     {
-        $this->footerDataProvider?->setProvider($key, $provider);
+        $this->footerDataProvider->setProvider($key, $provider);
     }
 
     /**

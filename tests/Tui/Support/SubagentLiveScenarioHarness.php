@@ -339,7 +339,7 @@ final class SubagentLiveScenarioHarness
 
     public function statusText(string $key): ?string
     {
-        $entries = $this->screen->registry()->getStatusEntries();
+        $entries = $this->screen->statusEntries();
 
         return $entries[$key] ?? null;
     }

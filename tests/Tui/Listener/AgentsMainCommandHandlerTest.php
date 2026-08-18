@@ -83,6 +83,6 @@ final class AgentsMainCommandHandlerTest extends TestCase
     /** @return array<string, string> */
     private function allStatusEntries(ChatScreen $screen): array
     {
-        return $screen->registry()->getStatusEntries();
+        return $screen->statusEntries();
     }
 }
