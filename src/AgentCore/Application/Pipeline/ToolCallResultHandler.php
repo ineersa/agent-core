@@ -162,6 +162,8 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                         // Result was accepted while Running (incomplete batch): ends already
                         // durable in prior events; project only the deferred tool message.
                         // Never re-emit result_received / execution_end for these ids.
+                        // ponytail: collector store miss degrades message text to synthetic cancel;
+                        // durable ToolExecutionEnd still carries the real result and the repair path rebuilds from it — rebuild here only if store loss proves real.
                         $resultToProject = $stored ?? $this->syntheticCancelledToolResult(
                             runId: $runId,
                             turnNo: $state->turnNo,
@@ -575,26 +577,11 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             'payload' => $toolExecutionEndPayload,
         ];
 
-        $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $result->result['details'] ?? null);
-        $toolMsg = $this->messageNormalizer->toolMessage($result, $notifications);
-        $messages[] = $toolMsg;
-        $toolMsgArray = $toolMsg->toArray();
-
-        $eventSpecs[] = [
-            'type' => RunEventTypeEnum::MessageStart->value,
-            'payload' => [
-                'message_role' => 'tool',
-                'tool_call_id' => $result->toolCallId,
-            ],
-        ];
-        $eventSpecs[] = [
-            'type' => RunEventTypeEnum::MessageEnd->value,
-            'payload' => [
-                'message_role' => 'tool',
-                'tool_call_id' => $result->toolCallId,
-                'message' => $toolMsgArray,
-            ],
-        ];
+        $this->appendToolMessageEvents(
+            eventSpecs: $eventSpecs,
+            messages: $messages,
+            result: $result,
+        );
     }
 
     /**

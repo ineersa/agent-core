@@ -32,6 +32,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private ReplayEventPreparer $replayEventPreparer,
         private EventFactory $eventFactory,
         private AgentMessageNormalizer $messageNormalizer,
+        private AgentMessageToolCallSequenceValidator $toolCallSequenceValidator,
         private RunLockManager $lockManager,
         private LoggerInterface $logger,
     ) {
@@ -238,7 +239,11 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             return $this->noRepairResult('No repairable corruption detected.');
         }
 
-        $missingIds = $this->unmatchedAssistantToolCallIds($replayed->messages);
+        $missingIds = $this->missingToolResultIds($replayed->messages);
+        if (null === $missingIds) {
+            // Append-only repair cannot reorder events, so unclosed-batch shapes are not repairable.
+            return $this->noRepairResult('No repairable corruption detected: append-only repair cannot reorder events for unclosed tool-call batches.');
+        }
         if ([] === $missingIds) {
             return $this->noRepairResult('No repairable corruption detected.');
         }
@@ -355,7 +360,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 
         if ($requireValidToolCallSequence) {
             try {
-                (new AgentMessageToolCallSequenceValidator())->validate($hypotheticalReplay->messages);
+                $this->toolCallSequenceValidator->validate($hypotheticalReplay->messages);
             } catch (MalformedToolCallSequenceException $exception) {
                 $this->logger->warning('session_repair.refused', [
                     'run_id' => $runId,
@@ -450,56 +455,25 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     }
 
     /**
+     * Detect missing_tool_results via the shared validator so repair detection cannot drift.
+     *
      * @param list<AgentMessage> $messages
      *
-     * @return list<string>
+     * @return list<string>|null Missing tool_call ids, empty list when clean, null when another
+     *                           violation type (e.g. unclosed_batch) makes append-only repair unsafe
      */
-    private function unmatchedAssistantToolCallIds(array $messages): array
+    private function missingToolResultIds(array $messages): ?array
     {
         try {
-            (new AgentMessageToolCallSequenceValidator())->validate($messages);
+            $this->toolCallSequenceValidator->validate($messages);
 
             return [];
-        } catch (MalformedToolCallSequenceException) {
-            // Fall through to explicit open-id extraction.
+        } catch (MalformedToolCallSequenceException $exception) {
+            // Append-only repair cannot reorder events, so unclosed-batch shapes are not repairable.
+            return 'missing_tool_results' === $exception->violationType
+                ? $exception->expectedIds
+                : null;
         }
-
-        $open = [];
-        $satisfied = [];
-        foreach ($messages as $message) {
-            if ('assistant' === $message->role) {
-                $ids = AgentMessageToolCallSequenceValidator::extractToolCallIds($message);
-                if ([] !== $ids) {
-                    $open = $ids;
-                    $satisfied = [];
-                }
-
-                continue;
-            }
-
-            if ('tool' !== $message->role) {
-                $open = [];
-                $satisfied = [];
-
-                continue;
-            }
-
-            $toolCallId = $message->toolCallId;
-            if (null === $toolCallId || '' === $toolCallId) {
-                continue;
-            }
-            $satisfied[$toolCallId] = true;
-            $found = array_search($toolCallId, $open, true);
-            if (false !== $found) {
-                unset($open[$found]);
-                $open = array_values($open);
-            }
-        }
-
-        return array_values(array_filter(
-            $open,
-            static fn (string $id): bool => !isset($satisfied[$id]),
-        ));
     }
 
     /**
