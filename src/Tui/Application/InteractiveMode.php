@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Application;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\ProcessReloadState;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\SlashCommandCatalog;
@@ -296,10 +297,13 @@ final readonly class InteractiveMode
             $tui->run();
 
             // ── Determine exit reason and dispatch session ended ──
+            $reloadIntent = $services->switch->consumePendingReload();
             $switchTarget = $services->switch->consumePendingSwitch();
-            $endReason = (null !== $switchTarget)
-                ? TuiSessionLifecycleEndReasonEnum::Switch
-                : TuiSessionLifecycleEndReasonEnum::Quit;
+            $endReason = (null !== $reloadIntent)
+                ? TuiSessionLifecycleEndReasonEnum::Reload
+                : ((null !== $switchTarget)
+                    ? TuiSessionLifecycleEndReasonEnum::Switch
+                    : TuiSessionLifecycleEndReasonEnum::Quit);
             $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
                 type: TuiSessionLifecycleEventTypeEnum::SessionEnded,
                 sessionId: $state->sessionId,
@@ -307,6 +311,22 @@ final readonly class InteractiveMode
                 resuming: $state->resuming,
                 endReason: $endReason,
             ));
+
+            // ── Full-process settings reload (/reload) ──
+            //
+            // Not a same-process session switch: hand the typed intent to the
+            // process-global relay (it must survive container recreation),
+            // shut the session client down synchronously (controller +
+            // consumers stopped before a fresh controller is spawned), and
+            // return the dedicated exit code so bin/console's outer bootstrap
+            // loop rebuilds kernel + container and relaunches this session.
+            // The terminal was already restored by Tui::run()'s finally.
+            if (null !== $reloadIntent) {
+                ProcessReloadState::set($reloadIntent);
+                $client->shutdown();
+
+                return ProcessReloadState::EXIT_CODE;
+            }
 
             // ── After event loop exits: check for pending switch ──
             if (null !== $switchTarget) {

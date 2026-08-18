@@ -313,6 +313,17 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     }
 
     /**
+     * No-op: the in-process transport owns no subprocess tree to tear down.
+     *
+     * The /reload guards guarantee the run is idle/terminal before reload,
+     * so no runner work is in flight; dropping the old container's service
+     * references releases everything else via destructors.
+     */
+    public function shutdown(): void
+    {
+    }
+
+    /**
      * Handle an answer_tool_question command by writing the answer
      * to the ToolQuestionStore. The blocked tool worker polls the store
      * and will pick up the answer.
