@@ -48,7 +48,7 @@ final class GrokModelClientTest extends TestCase
                 self::assertArrayNotHasKey('turn_no', $body);
                 self::assertArrayNotHasKey('provider_cache_key', $body);
 
-                return new MockResponse();
+                return self::sseResponse();
             },
         ]);
 
@@ -67,7 +67,7 @@ final class GrokModelClientTest extends TestCase
                 self::assertSame('https://cli-chat-proxy.grok.com/v1/responses', $url);
                 self::assertStringNotContainsString('/v1/v1/', $url);
 
-                return new MockResponse();
+                return self::sseResponse();
             },
         ]);
 
@@ -85,7 +85,7 @@ final class GrokModelClientTest extends TestCase
                 self::assertSame('reasoning', $body['input'][1]['type']);
                 self::assertArrayNotHasKey('status', $body['input'][1]);
 
-                return new MockResponse();
+                return self::sseResponse();
             },
         ]);
 
@@ -110,7 +110,7 @@ final class GrokModelClientTest extends TestCase
                 self::assertSame(['effort' => 'high'], $body['reasoning']);
                 self::assertSame(['reasoning.encrypted_content'], $body['include']);
 
-                return new MockResponse();
+                return self::sseResponse();
             },
         ]);
 
@@ -129,7 +129,7 @@ final class GrokModelClientTest extends TestCase
                 $body = json_decode($options['body'], true);
                 self::assertSame(['file_search_call.results'], $body['include']);
 
-                return new MockResponse();
+                return self::sseResponse();
             },
         ]);
 
@@ -152,7 +152,7 @@ final class GrokModelClientTest extends TestCase
                 self::assertArrayNotHasKey('reasoning', $body);
                 self::assertArrayNotHasKey('include', $body);
 
-                return new MockResponse();
+                return self::sseResponse();
             },
         ]);
 
@@ -184,7 +184,7 @@ final class GrokModelClientTest extends TestCase
                 self::assertSame('Authorization: Bearer new-token', $options['normalized_headers']['authorization'][0]);
                 self::assertSame('x-grok-client-version: 0.2.91', $options['normalized_headers']['x-grok-client-version'][0]);
 
-                return new MockResponse('', ['http_code' => 200]);
+                return self::sseResponse();
             },
         ]);
 
@@ -235,5 +235,47 @@ final class GrokModelClientTest extends TestCase
 
         $this->assertSame(401, $result->getObject()->getStatusCode());
         $this->assertSame(1, $requestCount);
+    }
+
+    public function testRequestStreamPathConsumesSseViaRawSseStream(): void
+    {
+        // Regression: bare CurlResponse/MockResponse + vendor RawSseStream TypeErrors
+        // (AsyncDecoratorTrait::stream requires AsyncResponse). Wrapping request()
+        // through EventSourceHttpClient is what makes getDataStream() work.
+        $sseBody = "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\"}}\n\n"
+            ."data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\"}}\n\n";
+
+        $httpClient = new MockHttpClient([
+            static function () use ($sseBody): HttpResponse {
+                return self::sseResponse($sseBody);
+            },
+        ]);
+
+        $client = new GrokModelClient($httpClient, 'https://cli-chat-proxy.grok.com', 'tok');
+        $result = $client->request(
+            new ResponsesModel('grok-composer-2.5-fast'),
+            ['input' => [['role' => 'user', 'content' => 'hi']]],
+            ['run_id' => 'stream-run'],
+        );
+
+        $events = iterator_to_array($result->getDataStream());
+
+        $this->assertNotEmpty($events);
+        $this->assertSame('response.created', $events[0]['type']);
+        $this->assertSame('resp_1', $events[0]['response']['id']);
+    }
+
+    /**
+     * EventSourceHttpClient requires text/event-stream Content-Type on 200
+     * responses when Accept is text/event-stream (Grok request headers).
+     *
+     * @param array<string, mixed> $info
+     */
+    private static function sseResponse(string $body = '', array $info = []): MockResponse
+    {
+        $info['http_code'] ??= 200;
+        $info['response_headers'] ??= ['Content-Type' => 'text/event-stream'];
+
+        return new MockResponse($body, $info);
     }
 }

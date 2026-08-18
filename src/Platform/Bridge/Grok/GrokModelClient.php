@@ -14,6 +14,7 @@ use Symfony\AI\Platform\JsonBodyEncodingTrait;
 use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\StructuredOutput\PlatformSubscriber;
+use Symfony\Component\HttpClient\EventSourceHttpClient;
 use Symfony\Component\Uid\UuidV7;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
@@ -57,12 +58,16 @@ class GrokModelClient extends ModelClient
         ?LoggerInterface $logger = null,
         private readonly ?\Closure $accessTokenRefresher = null,
     ) {
-        // Parent still needs a client for its private fields; we keep a bare
-        // HttpClient for request() so mock/proxy responses without
-        // text/event-stream Content-Type still work (CodexModelClient pattern).
-        // Stream framing is handled by createStreamParser()/RawSseStream.
+        // Parent wraps its own EventSourceHttpClient for private fields.
+        // Our request() path must also return AsyncResponse: vendor
+        // RawSseStream does (new EventSourceHttpClient())->stream($response),
+        // and AsyncDecoratorTrait only accepts AsyncResponse. A bare
+        // CurlResponse/MockResponse TypeErrors. CodexSseStream is the only
+        // parser that frames a bare client response itself.
         parent::__construct($httpClient, $baseUrl, $apiKey, $path);
-        $this->httpClient = $httpClient;
+        $this->httpClient = $httpClient instanceof EventSourceHttpClient
+            ? $httpClient
+            : new EventSourceHttpClient($httpClient);
         $this->baseUrl = rtrim($baseUrl, '/');
         $this->logger = $logger ?? new NullLogger();
     }
