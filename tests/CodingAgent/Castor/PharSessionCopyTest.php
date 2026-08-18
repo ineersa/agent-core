@@ -9,15 +9,13 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Thesis: phar_materialize_session_copy() creates byte-identical,
- * content-addressed session copies of the canonical artifact under
- * var/tmp/phar/sessions/<sha256-16>/, reusing one immutable copy per
- * distinct build (never rewriting a path a live process execs). Copies
- * accumulate per build and are swept by `castor clean:cleanup`.
+ * Thesis: phar_materialize_session_copy() creates one fixed session copy at
+ * var/tmp/phar/sessions/hatfield.phar — same build reused untouched, new build
+ * overwrites in place (serialized launches). Swept by `castor clean:cleanup`.
  */
 final class PharSessionCopyTest extends TestCase
 {
-    public function testMaterializeReusesSingleContentAddressedCopy(): void
+    public function testMaterializeReusesFixedPathWithoutRewrite(): void
     {
         self::requireHelpers();
 
@@ -31,11 +29,8 @@ final class PharSessionCopyTest extends TestCase
             $copy = \CastorTasks\phar_materialize_session_copy($artifact, $sessionsDir);
             $copyAgain = \CastorTasks\phar_materialize_session_copy($artifact, $sessionsDir);
 
-            // Same build -> same content-addressed path; second call reuses it.
-            $this->assertSame($copy, $copyAgain, 'same build must reuse the same session copy path');
-
-            $hashPrefix = substr((string) hash_file('sha256', $artifact), 0, 16);
-            $this->assertSame($sessionsDir.'/'.$hashPrefix.'/hatfield.phar', $copy);
+            $this->assertSame($sessionsDir.'/hatfield.phar', $copy);
+            $this->assertSame($copy, $copyAgain, 'same build must reuse the fixed session copy path');
             $this->assertFileExists($copy);
             $this->assertSame(
                 hash_file('sha256', $artifact),
@@ -43,25 +38,18 @@ final class PharSessionCopyTest extends TestCase
                 'session copy must be byte-identical to the canonical artifact',
             );
 
-            // Exactly one content-addressed dir, containing exactly the artifact.
-            $dirs = [];
+            $entries = [];
             foreach (new \FilesystemIterator($sessionsDir) as $entry) {
-                $dirs[] = $entry->getFilename();
+                $entries[] = $entry->getFilename();
             }
-            $this->assertSame([$hashPrefix], $dirs);
-
-            $inner = [];
-            foreach (new \FilesystemIterator(\dirname($copy)) as $entry) {
-                $inner[] = $entry->getFilename();
-            }
-            sort($inner);
-            $this->assertSame(['hatfield.phar'], $inner, 'direct copy: no temp leftovers');
+            sort($entries);
+            $this->assertSame(['hatfield.phar'], $entries, 'sessions dir holds exactly one fixed copy');
         } finally {
             TestDirectoryIsolation::removeDirectory($work);
         }
     }
 
-    public function testDifferentBuildMaterializesDifferentCopyDir(): void
+    public function testDifferentBuildOverwritesFixedPathInPlace(): void
     {
         self::requireHelpers();
 
@@ -76,12 +64,10 @@ final class PharSessionCopyTest extends TestCase
             file_put_contents($artifact, 'payload v2');
             $second = \CastorTasks\phar_materialize_session_copy($artifact, $sessionsDir);
 
-            // Different build -> different content-addressed dir; both kept.
-            $this->assertNotSame($first, $second);
-            $this->assertNotSame(\dirname($first), \dirname($second));
-            $this->assertFileExists($first);
-            $this->assertFileExists($second);
+            $this->assertSame($first, $second, 'new build must overwrite the same fixed path');
+            $this->assertSame($sessionsDir.'/hatfield.phar', $second);
             $this->assertSame('payload v2', file_get_contents($second));
+            $this->assertSame('payload v2', file_get_contents($artifact), 'source artifact must remain untouched');
         } finally {
             TestDirectoryIsolation::removeDirectory($work);
         }

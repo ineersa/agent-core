@@ -1072,7 +1072,7 @@ const PHAR_BUILD_LOCK_TIMEOUT_S = 60;
  *
  * If the PHAR is missing or stale relative to the complete packaged-input set,
  * triggers a rebuild. Failures propagate (no swallow). run:agent sessions exec
- * content-addressed copies, so the canonical artifact has no long-lived holder
+ * a fixed session copy, so the canonical artifact has no long-lived holder
  * and is rebuilt freely.
  *
  * @return string absolute path to the existing or freshly built PHAR
@@ -1166,42 +1166,43 @@ function hatfield_phar_session_copies_dir(): string
  * WHY: run:agent sessions exec the artifact for their whole lifetime. If a
  * session ran the canonical file directly, castor test/check rebuilds of the
  * canonical artifact would swap phar:// file reads under the live process and
- * corrupt the session. Sessions exec a content-addressed copy instead, so the
- * canonical artifact has no long-lived holder: it is rebuilt freely, and
- * concurrent sessions are isolated by construction (no intact dest is ever
- * rewritten, so no live process can observe a replaced binary).
+ * corrupt the session. Sessions exec one fixed copy at
+ * var/tmp/phar/sessions/hatfield.phar instead, so the canonical artifact has
+ * no long-lived holder and is rebuilt freely.
  *
- * The copy is content-addressed: one immutable copy per distinct build under
- * sessions/<sha256-16>/hatfield.phar, reused across launches. An absent or
- * corrupt dest is re-copied in place (plain copy, no temp+rename). Copies
- * accumulate per build and are swept by `castor clean:cleanup` (removes the
- * whole var/tmp/phar tree).
+ * Same build → reuse without rewriting the file a live session may exec from.
+ * New build → overwrite the fixed path in place. Safe only because launches
+ * are serialized (single session at a time); an old session alive across a
+ * rebuild would observe its binary replaced mid-execution. Absent/corrupt
+ * dest is re-copied the same way. Swept by `castor clean:cleanup` (removes
+ * the whole var/tmp/phar tree).
  *
  * @param string      $pharPath    canonical artifact to copy from
- * @param string|null $sessionsDir override root for session copy dirs (tests)
+ * @param string|null $sessionsDir override root for session copies (tests)
  *
  * @return string absolute path of the session-owned copy
  */
 function phar_materialize_session_copy(string $pharPath, ?string $sessionsDir = null): string
 {
     $sessionsDir = $sessionsDir ?? hatfield_phar_session_copies_dir();
+    $dest = $sessionsDir.'/hatfield.phar';
     $hash = hash_file('sha256', $pharPath);
     if (false === $hash) {
         throw new \RuntimeException('Unable to hash PHAR artifact: '.$pharPath);
     }
 
-    $dir = $sessionsDir.'/'.substr($hash, 0, 16);
-    $dest = $dir.'/hatfield.phar';
+    // Same build → reuse without rewriting the file a live session may exec from.
     if (is_file($dest) && hash_file('sha256', $dest) === $hash) {
         return $dest;
     }
 
-    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-        throw new \RuntimeException('Unable to create PHAR session copy directory: '.$dir);
+    if (!is_dir($sessionsDir) && !mkdir($sessionsDir, 0755, true) && !is_dir($sessionsDir)) {
+        throw new \RuntimeException('Unable to create PHAR session copies directory: '.$sessionsDir);
     }
 
-    // Direct copy, no atomic temp+rename: concurrent same-build materialize is a
-    // declared non-scenario; a torn dest self-heals via the hash check next launch.
+    // Fixed path, in-place overwrite on new build: safe only because launches are
+    // serialized (single session at a time) — an old session alive across a rebuild
+    // would observe its binary replaced mid-execution.
     if (!copy($pharPath, $dest)) {
         throw new \RuntimeException("Failed to copy PHAR artifact {$pharPath} -> {$dest}");
     }
