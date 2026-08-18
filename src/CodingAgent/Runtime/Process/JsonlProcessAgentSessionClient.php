@@ -442,6 +442,24 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->writeCommandWithRetry($cmd);
     }
 
+    public function refreshMcpCatalog(string $runId): void
+    {
+        if ('' === $runId) {
+            throw new \InvalidArgumentException('refreshMcpCatalog requires a non-empty runId.');
+        }
+
+        $this->activeRunId = $runId;
+        $this->ensureProcessRunning();
+
+        $cmd = new RuntimeCommand(
+            id: uniqid('cmd_', true),
+            type: 'mcp_refresh',
+            runId: $runId,
+        );
+
+        $this->writeCommandWithRetry($cmd);
+    }
+
     public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
     {
         $this->activeRunId = $sessionId;

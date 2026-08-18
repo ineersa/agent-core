@@ -54,6 +54,10 @@ final class RecordingAgentSessionClient implements AgentSessionClient
     {
     }
 
+    public function refreshMcpCatalog(string $runId): void
+    {
+    }
+
     public function cancel(string $runId): void
     {
         $this->ops[] = ['op' => 'cancel', 'runId' => $runId, 'command' => null];

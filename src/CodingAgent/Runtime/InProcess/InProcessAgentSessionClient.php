@@ -324,6 +324,24 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     }
 
     /**
+     * In-process mode buffers MCP refresh on the in-memory mcp transport; there is
+     * no mcp consumer in the TUI process, so reconnect may never land and /mcp
+     * reconnect polling then times out honestly. Prefer process/controller mode.
+     */
+    public function refreshMcpCatalog(string $runId): void
+    {
+        if ('' === $runId) {
+            throw new \InvalidArgumentException('refreshMcpCatalog requires a non-empty runId.');
+        }
+
+        if (null === $this->mcpDispatcher) {
+            throw new \RuntimeException('MCP lifecycle dispatcher is not configured; cannot refresh MCP catalog.');
+        }
+
+        $this->mcpDispatcher->dispatchRefresh($runId);
+    }
+
+    /**
      * Handle an answer_tool_question command by writing the answer
      * to the ToolQuestionStore. The blocked tool worker polls the store
      * and will pick up the answer.
