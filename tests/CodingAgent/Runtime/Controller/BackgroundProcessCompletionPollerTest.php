@@ -93,6 +93,10 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             {
             }
 
+            public function refreshMcpCatalog(string $runId): void
+            {
+            }
+
             public function cancel(string $runId): void
             {
             }

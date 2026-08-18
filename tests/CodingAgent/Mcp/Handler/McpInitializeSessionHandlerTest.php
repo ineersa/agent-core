@@ -491,6 +491,123 @@ class McpInitializeSessionHandlerTest extends TestCase
         ));
         $this->assertCount(1, $partialLogs);
     }
+
+    public function testRefreshCatalogDisconnectsBeforeDiscoverAndBumpsGeneration(): void
+    {
+        $mcpConfig = [
+            'mcpServers' => [
+                'server-a' => [
+                    'url' => 'http://127.0.0.1:19123/mcp',
+                    'timeoutMs' => 5000,
+                ],
+            ],
+        ];
+        file_put_contents(
+            $this->projectDir.'/.hatfield/mcp.json',
+            json_encode($mcpConfig, \JSON_PRETTY_PRINT),
+        );
+
+        $this->catalogStore->write('test-run-order', McpToolCatalogDTO::empty('test-run-order', 3));
+
+        $callOrder = [];
+        $manager = $this->createMock(McpConnectionManagerInterface::class);
+        $manager->expects($this->once())
+            ->method('disconnectAll')
+            ->with('test-run-order')
+            ->willReturnCallback(static function () use (&$callOrder): void {
+                $callOrder[] = 'disconnectAll';
+            });
+        $manager->expects($this->once())
+            ->method('discover')
+            ->with('test-run-order', $this->callback(static fn ($cb): bool => null !== $cb))
+            ->willReturnCallback(static function (string $runId, ?callable $onServerDiscovered = null) use (&$callOrder): array {
+                $callOrder[] = 'discover';
+                $results = [
+                    'server-a' => [
+                        'status' => 'connected',
+                        'transport' => 'http',
+                        'tools' => [
+                            ['name' => 'tool', 'description' => 'A tool', 'inputSchema' => []],
+                        ],
+                    ],
+                ];
+                if (null !== $onServerDiscovered) {
+                    $onServerDiscovered($results);
+                }
+
+                return $results;
+            });
+
+        $handler = new McpInitializeSessionHandler(
+            TestMcpConfigLoaderFactory::create(
+                new SettingsPathResolver($this->projectDir, $this->projectDir),
+                $this->projectDir,
+            ),
+            $manager,
+            $this->catalogStore,
+            $this->logger,
+            new McpToolCatalogBuilder($this->logger),
+        );
+
+        $handler->onRefreshCatalog(new McpRefreshCatalogCommand(
+            runId: 'test-run-order',
+            correlationId: 'corr-order',
+        ));
+
+        $this->assertSame(['disconnectAll', 'discover'], $callOrder);
+        $this->assertGreaterThanOrEqual(2, \count($this->catalogStore->writeLog));
+        $partial = $this->catalogStore->writeLog[\count($this->catalogStore->writeLog) - 2]['catalog'];
+        $final = $this->catalogStore->writeLog[\count($this->catalogStore->writeLog) - 1]['catalog'];
+        $this->assertSame(4, $partial->generation, 'Partial write must bump prev+1');
+        $this->assertSame(4, $final->generation, 'Final write must keep the same bumped generation');
+        $this->assertCount(1, $final->servers);
+    }
+
+    public function testRefreshCatalogFailureWritesEmptyCatalogWithBumpedGeneration(): void
+    {
+        $this->catalogStore->write('test-run-fail-gen', McpToolCatalogDTO::empty('test-run-fail-gen', 5));
+        file_put_contents($this->projectDir.'/.hatfield/mcp.json', '{broken');
+
+        $manager = $this->createMock(McpConnectionManagerInterface::class);
+        $manager->expects($this->once())->method('disconnectAll')->with('test-run-fail-gen');
+        $manager->expects($this->never())->method('discover');
+
+        $handler = new McpInitializeSessionHandler(
+            TestMcpConfigLoaderFactory::create(
+                new SettingsPathResolver($this->projectDir, $this->projectDir),
+                $this->projectDir,
+            ),
+            $manager,
+            $this->catalogStore,
+            $this->logger,
+            new McpToolCatalogBuilder($this->logger),
+        );
+
+        $handler->onRefreshCatalog(new McpRefreshCatalogCommand(
+            runId: 'test-run-fail-gen',
+            correlationId: 'corr-fail-gen',
+        ));
+
+        $this->assertNotNull($this->catalogStore->lastCatalog);
+        $this->assertCount(0, $this->catalogStore->lastCatalog->servers);
+        $this->assertSame(6, $this->catalogStore->lastCatalog->generation);
+    }
+
+    public function testInitializeBumpsGenerationFromExistingCatalog(): void
+    {
+        $this->catalogStore->write('test-run-init-gen', McpToolCatalogDTO::empty('test-run-init-gen', 7));
+
+        $command = new McpInitializeSessionCommand(
+            runId: 'test-run-init-gen',
+            reason: 'start_run',
+            correlationId: 'corr-init-gen',
+        );
+
+        ($this->handler)($command);
+
+        $this->assertNotNull($this->catalogStore->lastCatalog);
+        $this->assertSame(8, $this->catalogStore->lastCatalog->generation);
+    }
 }
 
 /**
