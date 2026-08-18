@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Export;
 
 use Ineersa\Tui\Command\TranscriptMessage;
+use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Tool\Tool;
 
@@ -12,6 +13,7 @@ final class SessionEventsExportService
 {
     public function __construct(
         private readonly ?ToolboxInterface $toolbox = null,
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -1367,7 +1369,7 @@ CSS;
     {
         $events = [];
 
-        foreach (explode("\n", $content) as $line) {
+        foreach (explode("\n", $content) as $lineIndex => $line) {
             $trimmed = trim($line);
             if ('' === $trimmed) {
                 continue;
@@ -1375,8 +1377,15 @@ CSS;
 
             try {
                 $event = json_decode($trimmed, true, 512, \JSON_THROW_ON_ERROR);
-            } catch (\JsonException) {
-                // Skip unparseable lines.
+            } catch (\JsonException $exception) {
+                $this->logger?->warning('Session export skipped unparseable events.jsonl line.', [
+                    'component' => 'session_export',
+                    'event_type' => 'session_export.event_line_unparseable',
+                    'line_offset' => $lineIndex,
+                    'error_class' => $exception::class,
+                    'error_message' => $exception->getMessage(),
+                ]);
+
                 continue;
             }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Platform\Bridge\Generic;
 
+use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\Generic\Completions\CompletionsConversionTrait;
 use Symfony\AI\Platform\Bridge\Generic\Completions\FinishReasonMapper;
 use Symfony\AI\Platform\Bridge\Generic\Completions\ResultConverter;
@@ -77,6 +78,7 @@ final class DurableResultConverter extends ResultConverter
      */
     public function __construct(
         private readonly ?\Closure $onStreamEvent = null,
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -439,7 +441,14 @@ final class DurableResultConverter extends ResultConverter
             if ('' !== $block['partialJson']) {
                 try {
                     $arguments = json_decode($block['partialJson'], true, flags: \JSON_THROW_ON_ERROR);
-                } catch (\JsonException) {
+                } catch (\JsonException $exception) {
+                    $this->logger?->warning('Durable stream tool-call JSON decode failed — using empty arguments.', [
+                        'component' => 'platform.durable_result_converter',
+                        'event_type' => 'durable.tool_call_args_decode_failed',
+                        'tool_call_id' => $block['id'],
+                        'tool_name' => $block['name'],
+                        'error_class' => $exception::class,
+                    ]);
                     $arguments = [];
                 }
             } else {

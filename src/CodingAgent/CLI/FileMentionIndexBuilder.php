@@ -545,7 +545,15 @@ final class FileMentionIndexBuilder
 
         try {
             $process->run();
-        } catch (\Throwable) {
+        } catch (\Throwable $exception) {
+            $this->logger->warning('File mention index: git worktree probe failed — assuming not inside a worktree.', [
+                'component' => 'file_mention_index',
+                'event_type' => 'file_mention_index.git_worktree_probe_failed',
+                'cwd' => $this->cwd,
+                'error_class' => $exception::class,
+                'error_message' => $exception->getMessage(),
+            ]);
+
             return false;
         }
 
@@ -576,7 +584,15 @@ final class FileMentionIndexBuilder
 
         try {
             $process->run();
-        } catch (\Throwable) {
+        } catch (\Throwable $exception) {
+            $this->logger->warning('File mention index: git check-ignore probe failed — assuming CWD is not VCS-ignored.', [
+                'component' => 'file_mention_index',
+                'event_type' => 'file_mention_index.git_check_ignore_failed',
+                'cwd' => $this->cwd,
+                'error_class' => $exception::class,
+                'error_message' => $exception->getMessage(),
+            ]);
+
             return false;
         }
 

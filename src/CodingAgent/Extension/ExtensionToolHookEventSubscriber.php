@@ -436,7 +436,17 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
                     content: $content,
                     details: $currentDetails,
                 ));
-            } catch (\Throwable) {
+            } catch (\Throwable $exception) {
+                $this->logger?->error('extension.tool_result_hook_failed', [
+                    'component' => 'extension.tool_hook_subscriber',
+                    'event_type' => 'extension.tool_result_hook_failed',
+                    'tool_name' => $toolCall->getName(),
+                    'tool_call_id' => $toolCall->getId(),
+                    'run_id' => $this->contextAccessor?->current()?->runId() ?? '',
+                    'hook_class' => $hook::class,
+                    'error_type' => $exception::class,
+                ]);
+
                 continue;
             }
 
