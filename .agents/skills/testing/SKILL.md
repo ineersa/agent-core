@@ -140,6 +140,33 @@ Replay infrastructure is **not** removed when using the proxy; both coexist.
 - **Last resort only:** `castor clean:cleanup:workers` after you have recorded the leak (PIDs, command lines, which test/lane) and started root-cause work. Never signal root-owned workers or processes with `HATFIELD_SESSION_ID` in `/proc/<pid>/environ` (active Hatfield session workers).
 - Prefer validating task branches in an isolated task worktree when possible.
 
+### Running QA from within a Hatfield session
+
+`castor check` / `castor test` / static lanes are safe to run from inside a live
+Hatfield agent session:
+
+- **Env contract:** the session controller subprocess exports the six doctrine
+  transport DSNs (`HATFIELD_RUN_CONTROL_TRANSPORT_DSN`, `HATFIELD_LLM_TRANSPORT_DSN`,
+  `HATFIELD_TOOL_TRANSPORT_DSN`, `HATFIELD_AGENT_TRANSPORT_DSN`,
+  `HATFIELD_MCP_TRANSPORT_DSN`, `HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN`) into
+  every bash command the session runs. All QA lanes strip them via
+  `qa_unset_session_transport_dsn_env_flags()` in `.castor/env.php` (woven into
+  the `env` invocation of `qa_observability_env_command()`), so unit lanes always
+  resolve the documented in-memory transports (`config/packages/test/messenger.yaml`
+  fallback — an explicitly-set Doctrine DSN would otherwise win and break
+  `InMemoryTransport` expectations). E2E lanes (controller-replay, test:tui,
+  llm-real) spawn their controllers with explicit per-process DSNs
+  (`ControllerE2eTestCase`) and are unaffected.
+- **PHAR rule:** `phar:ensure` / `phar:build` never replace an artifact a live
+  process is executing from — `phar_in_use_pids()` in `.castor/helpers.php`
+  scans current-user process cmdlines for the artifact path (read-only; never
+  signals). `phar:ensure` skips the rebuild with a clear operator message and
+  keeps the in-use file intact; the artifact may stay stale until the next
+  `phar:ensure` with no live session. Explicit `castor phar:build` fails fast
+  with guidance (stop the session, or build elsewhere via `HATFIELD_PHAR_PATH`).
+- **Remaining caveat:** prefer running QA gates in the task worktree rather than
+  competing with a live session in the same tree where possible.
+
 
 ## LLM Replay (deterministic, no live LLM)
 
