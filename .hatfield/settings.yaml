@@ -168,8 +168,8 @@ extensions:
         safe_guard:
             allow_write_outside_cwd: [/home/ineersa/projects/agent-core-worktrees, /tmp]
 forks:
-    model: deepseek/deepseek-v4-flash
-    thinking_level: xhigh
+    model: grok-cli/grok-composer-2.5-fast
+    thinking_level: null
     extensions:
         enabled:
             - Ineersa\HatfieldExt\CastorLlmMode\CastorLlmModeExtension
