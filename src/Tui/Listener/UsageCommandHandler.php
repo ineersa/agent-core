@@ -49,7 +49,7 @@ final class UsageCommandHandler implements SlashCommandHandler
                     implode("\n", [
                         '## Provider usage / quota status',
                         '',
-                        'Provider probes failed: '.$this->sanitizeError($e),
+                        'Provider probes failed: '.ThrowableMessage::sanitize($e),
                         '',
                         ...$this->formatSessionLines(),
                     ]),
@@ -156,10 +156,5 @@ final class UsageCommandHandler implements SlashCommandHandler
         }
 
         return $lines;
-    }
-
-    private function sanitizeError(\Throwable $e): string
-    {
-        return ThrowableMessage::sanitize($e);
     }
 }

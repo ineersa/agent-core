@@ -94,11 +94,11 @@ final class McpCommandHandler implements SlashCommandHandler
                     'session_id' => $sessionId,
                     'run_id' => $sessionId,
                     'exception_class' => $e::class,
-                    'error_message' => $this->sanitizeError($e),
+                    'error_message' => ThrowableMessage::sanitize($e),
                 ]);
 
                 return new TranscriptMessage(
-                    'MCP reconnect failed to dispatch: '.$this->sanitizeError($e),
+                    'MCP reconnect failed to dispatch: '.ThrowableMessage::sanitize($e),
                     'system',
                     'error',
                 );
@@ -210,10 +210,5 @@ final class McpCommandHandler implements SlashCommandHandler
         if (self::WORKING_MESSAGE === $this->screen->workingMessage()) {
             $this->screen->setWorkingMessage('');
         }
-    }
-
-    private function sanitizeError(\Throwable $e): string
-    {
-        return ThrowableMessage::sanitize($e);
     }
 }
