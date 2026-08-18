@@ -4,28 +4,29 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Auth;
 
-use Ineersa\CodingAgent\Utility\AtomicFileWriter;
-use Ineersa\CodingAgent\Utility\AtomicFileWriterException;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 
 /**
- * File-backed credential storage for Grok CLI OAuth tokens.
+ * Grok-keyed wrapper over {@see AuthCredentialFileStore}.
  *
- * Stores credentials at ~/.hatfield/auth.json with mode 0600 under key
- * {@see GrokOAuthConfig::PROVIDER_KEY}. Shares the file with Codex entries.
- *
- * When a {@see GrokTokenRefresher} is configured, expired credentials are
- * auto-refreshed under the file lock before being returned.
+ * Public API unchanged. File I/O and the single file-scoped lock live in
+ * the shared store; this class only owns Grok record typing + auto-refresh.
  */
 final class GrokAuthStorage
 {
+    private readonly AuthCredentialFileStore $store;
+
     public function __construct(
-        private readonly string $homeDir,
-        private readonly LockFactory $lockFactory,
+        string $homeDir,
+        LockFactory $lockFactory,
         private readonly ?GrokTokenRefresher $tokenRefresher = null,
         private readonly ?LoggerInterface $logger = null,
     ) {
+        $this->store = new AuthCredentialFileStore(
+            $homeDir.'/'.GrokOAuthConfig::AUTH_FILE,
+            $lockFactory,
+        );
     }
 
     /**
@@ -37,13 +38,10 @@ final class GrokAuthStorage
      */
     public function loadCredentials(string $providerKey = GrokOAuthConfig::PROVIDER_KEY): ?GrokAuthRecord
     {
-        $lock = $this->lockFactory->createLock('grok-auth-'.$providerKey);
-        $lock->acquire(true);
+        return $this->store->withLock(function () use ($providerKey): ?GrokAuthRecord {
+            $entry = $this->store->get($providerKey);
 
-        try {
-            $entry = $this->readFromFile()[$providerKey] ?? null;
-
-            if (null === $entry || !\is_array($entry)) {
+            if (null === $entry) {
                 return null;
             }
 
@@ -52,10 +50,7 @@ final class GrokAuthStorage
             if ($record->isExpired() && null !== $this->tokenRefresher) {
                 try {
                     $fresh = $this->tokenRefresher->refresh($record->refresh);
-
-                    $data = $this->readFromFile();
-                    $data[$providerKey] = $fresh->toArray();
-                    $this->writeToFile($data);
+                    $this->store->set($providerKey, $fresh->toArray());
 
                     return $fresh;
                 } catch (\Throwable $e) {
@@ -74,9 +69,7 @@ final class GrokAuthStorage
             }
 
             return $record;
-        } finally {
-            $lock->release();
-        }
+        });
     }
 
     /**
@@ -84,9 +77,9 @@ final class GrokAuthStorage
      */
     public function loadCredentialsRaw(string $providerKey = GrokOAuthConfig::PROVIDER_KEY): ?GrokAuthRecord
     {
-        $entry = $this->readFromFile()[$providerKey] ?? null;
+        $entry = $this->store->get($providerKey);
 
-        if (null === $entry || !\is_array($entry)) {
+        if (null === $entry) {
             return null;
         }
 
@@ -95,75 +88,15 @@ final class GrokAuthStorage
 
     public function saveCredentials(string $providerKey, GrokAuthRecord $record): void
     {
-        $lock = $this->lockFactory->createLock('grok-auth-'.$providerKey);
-        $lock->acquire(true);
-
-        try {
-            $data = $this->readFromFile();
-            $data[$providerKey] = $record->toArray();
-            $this->writeToFile($data);
-        } finally {
-            $lock->release();
-        }
+        $this->store->withLock(function () use ($providerKey, $record): void {
+            $this->store->set($providerKey, $record->toArray());
+        });
     }
 
     public function removeCredentials(string $providerKey): void
     {
-        $lock = $this->lockFactory->createLock('grok-auth-'.$providerKey);
-        $lock->acquire(true);
-
-        try {
-            $data = $this->readFromFile();
-            unset($data[$providerKey]);
-            $this->writeToFile($data);
-        } finally {
-            $lock->release();
-        }
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function readFromFile(): array
-    {
-        $path = $this->authJsonPath();
-
-        if (!@is_readable($path)) {
-            return [];
-        }
-
-        $content = @file_get_contents($path);
-        if (false === $content || '' === trim($content)) {
-            return [];
-        }
-
-        try {
-            $data = json_decode($content, true, 8, \JSON_THROW_ON_ERROR);
-        } catch (\JsonException $e) {
-            throw new \RuntimeException(\sprintf('Corrupt auth.json at %s: %s', $path, $e->getMessage()), previous: $e);
-        }
-
-        return \is_array($data) ? $data : [];
-    }
-
-    /**
-     * @param array<string, mixed> $data
-     */
-    private function writeToFile(array $data): void
-    {
-        $path = $this->authJsonPath();
-
-        $json = json_encode($data, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR);
-
-        try {
-            AtomicFileWriter::write($path, $json, fileMode: 0600, directoryMode: 0700);
-        } catch (AtomicFileWriterException $exception) {
-            throw new \RuntimeException('rename' === $exception->stage ? \sprintf('Cannot rename auth credentials to %s', $path) : \sprintf('Cannot write auth credentials to %s', $path), previous: $exception);
-        }
-    }
-
-    private function authJsonPath(): string
-    {
-        return $this->homeDir.'/'.GrokOAuthConfig::AUTH_FILE;
+        $this->store->withLock(function () use ($providerKey): void {
+            $this->store->remove($providerKey);
+        });
     }
 }
