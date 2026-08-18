@@ -10,9 +10,9 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Relaunch argv reconstruction for /reload: one-shot prompt input is
- * dropped in every Symfony form, stale --resume is replaced by the current
- * session id, and the persistent launch policy is preserved untouched.
+ * Relaunch argv reconstruction for /reload: one-shot --prompt is dropped,
+ * stale --resume is replaced by the current session id, and the persistent
+ * launch policy is preserved untouched.
  */
 #[CoversClass(ReloadArgvBuilder::class)]
 final class ReloadArgvBuilderTest extends TestCase
@@ -48,25 +48,6 @@ final class ReloadArgvBuilderTest extends TestCase
         $this->assertSame(
             ['php', 'bin/console', 'agent', '--resume=7'],
             ReloadArgvBuilder::build(['php', 'bin/console', 'agent', '--prompt', 'hello'], '7'),
-        );
-        $this->assertSame(
-            ['php', 'bin/console', 'agent', '--resume=7'],
-            ReloadArgvBuilder::build(['php', 'bin/console', 'agent', '-phello'], '7'),
-        );
-        $this->assertSame(
-            ['php', 'bin/console', 'agent', '--resume=7'],
-            ReloadArgvBuilder::build(['php', 'bin/console', 'agent', '-p', 'hello'], '7'),
-        );
-    }
-
-    #[Test]
-    public function testPromptValueThatLooksLikeAnOptionIsNotConsumedAsValue(): void
-    {
-        // Symfony never binds an option-looking token as a trailing value; the
-        // builder mirrors that and keeps the following token in place.
-        $this->assertSame(
-            ['php', 'bin/console', 'agent', '--model=x', '--resume=7'],
-            ReloadArgvBuilder::build(['php', 'bin/console', 'agent', '--prompt', '--model=x'], '7'),
         );
     }
 

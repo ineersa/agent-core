@@ -9,11 +9,13 @@ namespace Ineersa\CodingAgent\CLI;
  *
  * The original invocation argv is the already-normalized launch policy;
  * reload only adjusts what must change for the fresh boot:
- *  - one-shot input (--prompt / -p) is dropped so the prompt does not
+ *  - one-shot input (--prompt) is dropped so the prompt does not
  *    execute twice,
  *  - a stale --resume is replaced with the current session id,
  *  - everything else (model, reasoning, transport, tools, skills, cwd)
  *    is preserved deliberately.
+ *
+ * AgentCommand's --prompt Option has no shortcut; -p never reaches here.
  */
 final class ReloadArgvBuilder
 {
@@ -35,15 +37,16 @@ final class ReloadArgvBuilder
         for ($i = 1; $i < $count; ++$i) {
             $arg = $originalArgv[$i];
 
-            // Drop one-shot prompt input in all Symfony forms.
-            if ('--prompt' === $arg || '-p' === $arg) {
-                // Consume the trailing value unless it looks like an option.
-                if ($i + 1 < $count && !str_starts_with($originalArgv[$i + 1], '-')) {
+            // Drop one-shot --prompt (space or = form). Symfony already
+            // required a value at first parse, so the next token is always
+            // the prompt when using the space form.
+            if ('--prompt' === $arg) {
+                if ($i + 1 < $count) {
                     ++$i;
                 }
                 continue;
             }
-            if (str_starts_with($arg, '--prompt=') || str_starts_with($arg, '-p')) {
+            if (str_starts_with($arg, '--prompt=')) {
                 continue;
             }
 
