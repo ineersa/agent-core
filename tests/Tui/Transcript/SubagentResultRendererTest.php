@@ -14,7 +14,6 @@ use Ineersa\Tui\Transcript\SubagentResultRenderer;
 use Ineersa\Tui\Transcript\TranscriptBlockWidgetFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
-use Ineersa\Tui\Widget\TuiRenderContext;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Render\Renderer;
 use Symfony\Component\Tui\Widget\ContainerWidget;
@@ -391,28 +390,25 @@ final class SubagentResultRendererTest extends TestCase
             displayConfig: $displayConfig,
             displayState: $displayState,
         );
-        $context = $this->context($width);
+        $theme = $this->theme();
         $root = new ContainerWidget();
-        $root->add($factory->buildWidget($block, $context->theme));
+        $root->add($factory->buildWidget($block, $theme));
 
-        return (new Renderer())->render($root, max($context->terminalWidth, 1), 24);
+        return (new Renderer())->render($root, max($width, 1), 24);
     }
 
-    private function context(int $width = 120): TuiRenderContext
+    private function theme(): DefaultTheme
     {
-        return new TuiRenderContext(
-            terminalWidth: $width,
-            theme: new DefaultTheme(new ThemePalette('test', [
-                'accent' => 'cyan',
-                'success' => 'green',
-                'warning' => 'yellow',
-                'error' => 'red',
-                'muted' => '#888',
-                'border_accent' => 'bright_cyan',
-                'border_muted' => '#666',
-                'tool_output' => 'white',
-                'tool_title' => 'bright_white',
-            ])),
-        );
+        return new DefaultTheme(new ThemePalette('test', [
+            'accent' => 'cyan',
+            'success' => 'green',
+            'warning' => 'yellow',
+            'error' => 'red',
+            'muted' => '#888',
+            'border_accent' => 'bright_cyan',
+            'border_muted' => '#666',
+            'tool_output' => 'white',
+            'tool_title' => 'bright_white',
+        ]));
     }
 }

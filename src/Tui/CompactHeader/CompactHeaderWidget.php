@@ -6,14 +6,18 @@ namespace Ineersa\Tui\CompactHeader;
 
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
-use Ineersa\Tui\Widget\TuiRenderContext;
-use Ineersa\Tui\Widget\TuiWidget;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
+use Symfony\Component\Tui\Render\RenderContext;
+use Symfony\Component\Tui\Widget\AbstractWidget;
 
 /**
  * Pi-style permanent capability bar (prompts, skills, agents, mcp) above the editor merge.
+ *
+ * Keeps its semantic atomic packing/truncation algorithms ({@see wrapLabel()})
+ * because Symfony {@see TextWrapper} word-wraps and is NOT equivalent to the
+ * ANSI-aware column flow layout used here.
  */
-final class CompactHeaderWidget implements TuiWidget
+final class CompactHeaderWidget extends AbstractWidget
 {
     private const LABEL_WIDTH = 9;
 
@@ -21,20 +25,26 @@ final class CompactHeaderWidget implements TuiWidget
 
     private ?CompactHeaderSnapshot $snapshot = null;
 
+    public function __construct(
+        private readonly TuiTheme $theme,
+    ) {
+    }
+
     public function setSnapshot(?CompactHeaderSnapshot $snapshot): void
     {
         $this->snapshot = $snapshot;
+        $this->invalidate();
     }
 
-    /** @return list<string> */
-    public function render(TuiRenderContext $context): array
+    /** @return string[] */
+    public function render(RenderContext $context): array
     {
         if (null === $this->snapshot || $this->snapshot->isEmpty()) {
             return [];
         }
 
-        $theme = $context->theme;
-        $width = $context->terminalWidth;
+        $theme = $this->theme;
+        $width = $context->getColumns();
         $lines = [];
 
         if ([] !== $this->snapshot->prompts) {

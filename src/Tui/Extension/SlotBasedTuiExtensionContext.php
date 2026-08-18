@@ -8,57 +8,39 @@ use Ineersa\Tui\Footer\FooterDataProvider;
 use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Layout\TuiSlotRegistry;
-use Ineersa\Tui\Widget\TuiWidget;
-use Ineersa\Tui\Widget\WidgetPlacementEnum;
 
 /**
  * Concrete implementation of TuiExtensionContext that delegates to a TuiSlotRegistry.
  *
  * Extensions receive an instance wired to the session's slot registry.
+ * Status/working mutations can be routed through ChatScreen-provided
+ * closures so the native widgets stay in sync (same pattern as the
+ * working-slot closures).
  */
 final class SlotBasedTuiExtensionContext implements TuiExtensionContext
 {
     /**
-     * @param (\Closure(?string): void)|null $onWorkingMessage when set, owns registry + widget sync
-     * @param (\Closure(bool): void)|null    $onWorkingVisible when set, owns registry + widget sync
+     * @param (\Closure(string, ?string): void)|null $onStatus         when set, owns registry + status-widget sync
+     * @param (\Closure(?string): void)|null         $onWorkingMessage when set, owns registry + widget sync
+     * @param (\Closure(bool): void)|null            $onWorkingVisible when set, owns registry + widget sync
      */
     public function __construct(
         private readonly TuiSlotRegistry $registry,
         private readonly ?FooterDataProvider $footerDataProvider = null,
         private readonly ?\Closure $onWorkingMessage = null,
         private readonly ?\Closure $onWorkingVisible = null,
+        private readonly ?\Closure $onStatus = null,
     ) {
-    }
-
-    public function setHeader(?TuiWidget $widget): void
-    {
-        $this->registry->setHeader($widget);
-    }
-
-    public function setFooter(?TuiWidget $widget): void
-    {
-        $this->registry->setFooter($widget);
-    }
-
-    public function setEditorComponent(?TuiWidget $widget): void
-    {
-        $this->registry->setEditorComponent($widget);
-    }
-
-    /**
-     * @param int $order @see \Ineersa\Tui\Layout\TuiSlotRegistry::ORDER_DEFAULT
-     */
-    public function setWidget(string $key, ?TuiWidget $content, WidgetPlacementEnum $placement = WidgetPlacementEnum::AboveEditor, int $order = 0): void
-    {
-        if (null === $content) {
-            $this->registry->removeWidget($key);
-        } else {
-            $this->registry->setWidget($key, $content, $placement, $order);
-        }
     }
 
     public function setStatus(string $key, ?string $text): void
     {
+        if (null !== $this->onStatus) {
+            ($this->onStatus)($key, $text);
+
+            return;
+        }
+
         $this->registry->setStatus($key, $text);
     }
 

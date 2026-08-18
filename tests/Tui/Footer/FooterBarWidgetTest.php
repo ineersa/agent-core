@@ -10,9 +10,11 @@ use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Widget\TuiRenderContext;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Ansi\AnsiUtils;
+use Symfony\Component\Tui\Render\Renderer;
+use Symfony\Component\Tui\Widget\ContainerWidget;
 
 #[CoversClass(FooterDataProvider::class)]
 #[CoversClass(FooterBarWidget::class)]
@@ -22,10 +24,9 @@ final class FooterBarWidgetTest extends TestCase
     public function testEmptyFooterShowsDefaultText(): void
     {
         $provider = new FooterDataProvider();
-        $widget = new FooterBarWidget($provider);
-        $context = $this->context(80);
+        $widget = new FooterBarWidget($this->theme(), $provider);
 
-        $lines = $widget->render($context);
+        $lines = $this->renderWidget($widget, 80);
 
         $this->assertCount(1, $lines);
         $this->assertStringContainsString('type /help for commands', $lines[0]);
@@ -42,10 +43,9 @@ final class FooterBarWidgetTest extends TestCase
             }
         });
 
-        $widget = new FooterBarWidget($provider);
-        $context = $this->context(80);
+        $widget = new FooterBarWidget($this->theme(), $provider);
 
-        $lines = $widget->render($context);
+        $lines = $this->renderWidget($widget, 80);
 
         $this->assertCount(1, $lines);
         $this->assertStringContainsString('◆ test', $lines[0]);
@@ -65,10 +65,9 @@ final class FooterBarWidgetTest extends TestCase
             }
         });
 
-        $widget = new FooterBarWidget($provider);
-        $context = $this->context(80);
+        $widget = new FooterBarWidget($this->theme(), $provider);
 
-        $lines = $widget->render($context);
+        $lines = $this->renderWidget($widget, 80);
 
         $this->assertCount(1, $lines);
         // priority gap 10 => "  |  " separator
@@ -93,10 +92,9 @@ final class FooterBarWidgetTest extends TestCase
             }
         });
 
-        $widget = new FooterBarWidget($provider);
-        $context = $this->context(80);
+        $widget = new FooterBarWidget($this->theme(), $provider);
 
-        $lines = $widget->render($context);
+        $lines = $this->renderWidget($widget, 80);
 
         // priority gap 1 => space separator
         $this->assertStringContainsString('A B', $lines[0]);
@@ -116,21 +114,96 @@ final class FooterBarWidgetTest extends TestCase
         });
 
         // Narrow terminal (40 is enough to trigger truncation test without being too small)
-        $context = $this->context(40);
-        $widget = new FooterBarWidget($provider);
-        $lines = $widget->render($context);
+        $widget = new FooterBarWidget($this->theme(), $provider);
+        $lines = $this->renderWidget($widget, 40);
 
         $this->assertCount(1, $lines);
         $this->assertStringStartsWith('  ', $lines[0]);
-        $this->assertLessThanOrEqual(40, mb_strlen($lines[0]));
+        $this->assertLessThanOrEqual(40, AnsiUtils::visibleWidth($lines[0]));
     }
 
-    private function context(int $width): TuiRenderContext
+    public function testSegmentsWrapAcrossLinesAndEveryRowFitsWidth(): void
+    {
+        $provider = new FooterDataProvider();
+        $provider->addProvider(new class implements FooterSegmentProvider {
+            /** @return list<FooterSegment> */
+            public function getSegments(): array
+            {
+                return [
+                    new FooterSegment(text: 'model: test/model', priority: 100),
+                    new FooterSegment(text: 'tokens: 1234', priority: 101),
+                    new FooterSegment(text: 'elapsed: 00:01', priority: 102),
+                    new FooterSegment(text: 'cwd: /some/very/long/project/path', priority: 110),
+                    new FooterSegment(text: 'branch: some-very-long-feature-branch', priority: 111),
+                ];
+            }
+        });
+
+        $widget = new FooterBarWidget($this->theme(), $provider);
+
+        foreach ([30, 50, 80, 120] as $width) {
+            $lines = $this->renderWidget($widget, $width);
+            $this->assertGreaterThan(0, \count($lines), "width {$width} must render rows");
+            foreach ($lines as $i => $line) {
+                $this->assertLessThanOrEqual(
+                    $width,
+                    AnsiUtils::visibleWidth($line),
+                    "row {$i} visible width exceeds {$width}",
+                );
+            }
+        }
+    }
+
+    public function testRendersAtPathologicalNarrowWidthsWithoutOverflow(): void
+    {
+        $provider = new FooterDataProvider();
+        $provider->addProvider(new class implements FooterSegmentProvider {
+            /** @return list<FooterSegment> */
+            public function getSegments(): array
+            {
+                return [
+                    new FooterSegment(text: 'model: test/model', priority: 100),
+                    new FooterSegment(text: 'tokens: 1234', priority: 101),
+                    new FooterSegment(text: 'branch: some-very-long-feature-branch', priority: 111),
+                ];
+            }
+        });
+
+        $widget = new FooterBarWidget($this->theme(), $provider);
+
+        // The packing budget is max(10, columns - 2), so widths <= 11 can
+        // emit 12-column lines; the outer truncation must still guarantee
+        // every row fits the real column count (and the Symfony Renderer
+        // must not throw RenderException on overflow).
+        foreach ([4, 6, 8, 11, 12, 20] as $width) {
+            $lines = $this->renderWidget($widget, $width);
+            $this->assertGreaterThan(0, \count($lines), "width {$width} must render rows");
+            foreach ($lines as $i => $line) {
+                $this->assertLessThanOrEqual($width, AnsiUtils::visibleWidth($line), "row {$i} visible width exceeds {$width}");
+            }
+        }
+
+        // The empty-provider default footer line must also fit the terminal.
+        $empty = new FooterBarWidget($this->theme(), new FooterDataProvider());
+        foreach ([8, 11, 20, 40] as $width) {
+            $lines = $this->renderWidget($empty, $width);
+            $this->assertCount(1, $lines, "width {$width} must render the default footer");
+            $this->assertLessThanOrEqual($width, AnsiUtils::visibleWidth($lines[0]), "default footer exceeds {$width}");
+        }
+    }
+
+    private function theme(): DefaultTheme
     {
         // Empty palette matches the previous constructor default theme.
-        return new TuiRenderContext(
-            terminalWidth: $width,
-            theme: new DefaultTheme(new ThemePalette('test', [])),
-        );
+        return new DefaultTheme(new ThemePalette('test', []));
+    }
+
+    /** @return string[] */
+    private function renderWidget(FooterBarWidget $widget, int $width): array
+    {
+        $root = new ContainerWidget();
+        $root->add($widget);
+
+        return (new Renderer())->render($root, $width, 40);
     }
 }

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
-use Ineersa\Tui\Widget\TuiRenderContext;
-use Ineersa\Tui\Widget\TuiWidget;
+use Ineersa\Tui\Theme\TuiTheme;
+use Symfony\Component\Tui\Ansi\TextWrapper;
+use Symfony\Component\Tui\Render\RenderContext;
+use Symfony\Component\Tui\Widget\AbstractWidget;
 
 /**
  * Pending messages widget.
@@ -13,25 +15,33 @@ use Ineersa\Tui\Widget\TuiWidget;
  * Shows messages queued during compaction or processing.
  * For v1, renders nothing unless entries are explicitly set.
  */
-final class PendingMessagesWidget implements TuiWidget
+final class PendingMessagesWidget extends AbstractWidget
 {
     /** @var list<string> */
     private array $messages = [];
+
+    public function __construct(
+        private readonly TuiTheme $theme,
+    ) {
+    }
 
     /** @param list<string> $messages */
     public function setMessages(array $messages): void
     {
         $this->messages = $messages;
+        $this->invalidate();
     }
 
     public function addMessage(string $message): void
     {
         $this->messages[] = $message;
+        $this->invalidate();
     }
 
     public function clear(): void
     {
         $this->messages = [];
+        $this->invalidate();
     }
 
     /** @return list<string> */
@@ -40,8 +50,8 @@ final class PendingMessagesWidget implements TuiWidget
         return $this->messages;
     }
 
-    /** @return list<string> */
-    public function render(TuiRenderContext $context): array
+    /** @return string[] */
+    public function render(RenderContext $context): array
     {
         if ([] === $this->messages) {
             return [];
@@ -49,9 +59,9 @@ final class PendingMessagesWidget implements TuiWidget
 
         $lines = [];
         foreach ($this->messages as $msg) {
-            $lines[] = $context->theme->muted(\sprintf('  ⏳ %s', $msg));
+            $lines[] = $this->theme->muted(\sprintf('  ⏳ %s', $msg));
         }
 
-        return $lines;
+        return TextWrapper::wrapTextWithAnsi(implode("\n", $lines), $context->getColumns());
     }
 }

@@ -100,6 +100,7 @@ final class TuiJourneyE2eTest extends TestCase
             $this->journeyPhaseSlashCompletion($pane);
             $this->journeyPhase4ShellPrefixOutput($pane);
             $this->journeyPhase9InlineShellOnCompletedRun($pane);
+            $this->journeyPhase10ChromeStructureAfterAssistantOutput($pane);
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
@@ -444,6 +445,68 @@ final class TuiJourneyE2eTest extends TestCase
         $this->saveAnsiSnapshot($pane, 'journey-inline-shell');
     }
 
+    /**
+     * Phase 10: migrated chrome structure/order after replay-backed assistant
+     * output (tui-05).
+     *
+     * After the phase-9 follow-up assistant block the terminal must show the
+     * directly mounted native chrome in display order: header logo →
+     * transcript/assistant → working/status row → compact header (the journey
+     * project ships one skill, so CompactHeaderRegistrar's first-tick snapshot
+     * renders a real skills row) → footer. Separator rows (bounded
+     * LiveTextWidget KEEP) must still span the full width.
+     */
+    private function journeyPhase10ChromeStructureAfterAssistantOutput(TmuxPane $pane): void
+    {
+        $capture = $this->tmux->waitForCallback(
+            $pane,
+            static fn (string $cap): bool => str_contains($cap, '● idle')
+                && str_contains($cap, '◇'),
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+            message: 'Chrome proof requires an idle terminal with the assistant block visible',
+            history: 2000,
+        );
+
+        $this->assertStringContainsString('█', $capture, 'Native header logo missing after assistant output');
+        $this->assertStringContainsString('◇', $capture, 'Assistant block missing');
+        $this->assertStringContainsString('● idle', $capture, 'Native working/status row missing');
+        $this->assertStringContainsString('◆', $capture, 'Native footer missing');
+
+        // Compact header: the directly mounted CompactHeaderWidget must show
+        // the journey skill. strrpos targets the compact-header occurrence
+        // (the loaded-resources startup block may list the same skill above
+        // the transcript).
+        $this->assertStringContainsString('skills', $capture, 'Compact header skills row missing');
+        $this->assertStringContainsString('journey-skill', $capture, 'Compact header skill entry missing');
+
+        $logoPos = strpos($capture, '█');
+        $assistantPos = strpos($capture, '◇');
+        $statusPos = strpos($capture, '● idle');
+        $skillPos = strrpos($capture, 'journey-skill');
+        $footerPos = strpos($capture, '◆');
+
+        $this->assertNotFalse($logoPos, 'Header logo position missing');
+        $this->assertNotFalse($assistantPos, 'Assistant block position missing');
+        $this->assertNotFalse($statusPos, 'Status row position missing');
+        $this->assertNotFalse($skillPos, 'Compact header skill position missing');
+        $this->assertNotFalse($footerPos, 'Footer position missing');
+        $this->assertLessThan($assistantPos, $logoPos, 'Header logo must render above the assistant block');
+        $this->assertLessThan($statusPos, $assistantPos, 'Assistant block must render above the status row');
+        $this->assertLessThan($skillPos, $statusPos, 'Status row must render above the compact header');
+        $this->assertLessThan($footerPos, $skillPos, 'Compact header must render above the footer');
+
+        // Separator rows (bounded LiveTextWidget KEEP) still span the width.
+        // (The `u` modifier is required: PCRE treats {10,} after a multibyte
+        // literal byte-wise without it.)
+        $this->assertMatchesRegularExpression(
+            '/─{10,}/u',
+            $capture,
+            'Full-width separator rows must remain in the chrome',
+        );
+
+        $this->saveAnsiSnapshot($pane, 'journey-chrome-order');
+    }
+
     // ── Helpers ───────────────────────────────────────────────────
 
     private function agentCommand(): string
@@ -494,6 +557,15 @@ final class TuiJourneyE2eTest extends TestCase
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e');
         @mkdir($dir.'/.hatfield', 0o777, true);
+
+        // Ship one skill so the real compact header (CompactHeaderRegistrar →
+        // directly mounted CompactHeaderWidget) renders a skills row during
+        // the journey (phase 10 chrome structure/order proof).
+        @mkdir($dir.'/.agents/skills/journey-skill', 0o777, true);
+        file_put_contents(
+            $dir.'/.agents/skills/journey-skill/SKILL.md',
+            "---\nname: journey-skill\ndescription: journey chrome proof skill\n---\n",
+        );
 
         $settings = [
             'ai' => [

@@ -6,52 +6,23 @@ namespace Ineersa\Tui\Extension;
 
 use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Layout\InputPriority;
-use Ineersa\Tui\Widget\TuiWidget;
-use Ineersa\Tui\Widget\WidgetPlacementEnum;
 
 /**
- * Extension UI context — the sole contract between extension code and the TUI.
+ * Extension UI context — the sole contract between internal extension code and the TUI.
  *
  * Inspired by pi-mono's ExtensionUIContext pattern. Extensions receive an
- * implementation of this interface and use it to register custom slots
- * (header, footer, editor, widgets), status text, and input handlers.
+ * implementation of this interface and use it to register status text,
+ * working state, footer segments, and native input handlers.
  *
  * Extensions must NOT mutate widgets directly. All interactions go through
  * these slot-based methods.
+ *
+ * Widget-replacement methods (header/footer/editor/above-editor widgets)
+ * were removed when ChatScreen migrated to directly mounted native widgets;
+ * the public ExtensionApi never exposed them.
  */
 interface TuiExtensionContext
 {
-    /**
-     * Replace the header widget entirely.
-     *
-     * @param TuiWidget|null $widget New header, or null to restore the default
-     */
-    public function setHeader(?TuiWidget $widget): void;
-
-    /**
-     * Replace the footer bar widget entirely.
-     *
-     * @param TuiWidget|null $widget New footer, or null to restore the default
-     */
-    public function setFooter(?TuiWidget $widget): void;
-
-    /**
-     * Replace the prompt editor component.
-     *
-     * @param TuiWidget|null $widget New editor, or null to restore the default
-     */
-    public function setEditorComponent(?TuiWidget $widget): void;
-
-    /**
-     * Add or remove an extension widget.
-     *
-     * @param string              $key       Unique identifier for this widget
-     * @param TuiWidget|null      $content   Widget to add, or null to remove
-     * @param WidgetPlacementEnum $placement Where the widget should appear
-     * @param int                 $order     Render order within the placement (lower = top of block, higher = editor-adjacent; equal orders keep insertion order). @see \Ineersa\Tui\Layout\TuiSlotRegistry::ORDER_DEFAULT
-     */
-    public function setWidget(string $key, ?TuiWidget $content, WidgetPlacementEnum $placement = WidgetPlacementEnum::AboveEditor, int $order = 0): void;
-
     /**
      * Set or remove a keyed status-panel entry (panel-only; not the footer).
      *
@@ -76,7 +47,7 @@ interface TuiExtensionContext
      * Register or remove a footer segment provider under a key.
      *
      * Providers added through this API coexist with the default footer
-     * segments. To replace the entire footer widget, use setFooter().
+     * segments.
      *
      * @param string                     $key      Unique key for this provider
      * @param FooterSegmentProvider|null $provider Provider to add, or null to remove
