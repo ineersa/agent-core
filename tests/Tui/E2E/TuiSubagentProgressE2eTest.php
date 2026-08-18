@@ -21,7 +21,6 @@ final class TuiSubagentProgressE2eTest extends TestCase
 {
     private TmuxHarness $tmux;
     private string $testProjectDir;
-    private string $snapshotDir;
 
     protected function setUp(): void
     {
@@ -31,8 +30,7 @@ final class TuiSubagentProgressE2eTest extends TestCase
 
         $this->tmux = new TmuxHarness();
         $this->testProjectDir = $this->createIsolatedProjectDir();
-        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @mkdir($this->snapshotDir, 0o777, true);
+        $this->tmux->setSnapshotDir($this->testProjectDir);
     }
 
     protected function tearDown(): void
@@ -89,10 +87,10 @@ final class TuiSubagentProgressE2eTest extends TestCase
             $turnOneCount = substr_count($capture, 'turn 1');
             $this->assertLessThanOrEqual(1, $turnOneCount, 'Coalesced progress must not repeat stale turn 1 spam');
 
-            $this->saveAnsiSnapshot($pane, 'subagent-progress-resume');
+            $this->tmux->saveAnsiSnapshot($pane, 'subagent-progress-resume');
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'subagent-progress-resume-FAILURE');
+            $this->tmux->saveAnsiSnapshot($pane, 'subagent-progress-resume-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
@@ -196,19 +194,8 @@ final class TuiSubagentProgressE2eTest extends TestCase
                 ],
             ],
         ];
-        $yaml = \Symfony\Component\Yaml\Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-        @mkdir($dir.'/home/.hatfield', 0o777, true);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;
-    }
-
-    private function saveAnsiSnapshot(TmuxPane $pane, string $name): void
-    {
-        $path = $this->snapshotDir.'/'.$name.'.ansi';
-        $ansi = $this->tmux->captureAnsi($pane);
-        $ts = date('Ymd-His');
-        file_put_contents(\sprintf('%s/%s-%s.ansi', $this->snapshotDir, $name, $ts), $ansi);
     }
 }

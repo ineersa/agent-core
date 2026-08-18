@@ -66,6 +66,8 @@ final class TmuxHarness
     /** @var list<non-empty-string> */
     private array $sessionNames = [];
 
+    private ?string $snapshotDir = null;
+
     public function __construct()
     {
         $this->root = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
@@ -233,6 +235,29 @@ final class TmuxHarness
             self::TMUX_CMD_TIMEOUT,
             throwOnTimeout: false,
         );
+    }
+
+    /**
+     * Point ANSI smoke artifacts at `<testProjectDir>/.hatfield/tmp/tui/smoke`.
+     */
+    public function setSnapshotDir(string $testProjectDir): void
+    {
+        $this->snapshotDir = rtrim($testProjectDir, '/').'/.hatfield/tmp/tui/smoke';
+        @mkdir($this->snapshotDir, 0o777, true);
+    }
+
+    /**
+     * Capture ANSI pane content into `<snapshotDir>/<tag>-<Ymd-His>.ansi`.
+     */
+    public function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
+    {
+        if (null === $this->snapshotDir) {
+            throw new \RuntimeException('TmuxHarness::setSnapshotDir() must be called before saveAnsiSnapshot().');
+        }
+
+        $ansi = $this->captureAnsi($pane);
+        $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, date('Ymd-His'));
+        file_put_contents($path, $ansi);
     }
 
     // ── send keys ──────────────────────────────────────────

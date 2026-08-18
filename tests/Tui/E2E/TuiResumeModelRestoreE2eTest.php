@@ -34,7 +34,6 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
 {
     private TmuxHarness $tmux;
     private string $testProjectDir;
-    private string $snapshotDir;
     private string $dbPath;
     private string $transportDbPath;
     private string $sessionId = '';
@@ -47,8 +46,7 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
 
         $this->tmux = new TmuxHarness();
         $this->testProjectDir = $this->createIsolatedProjectDir();
-        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @mkdir($this->snapshotDir, 0o777, true);
+        $this->tmux->setSnapshotDir($this->testProjectDir);
 
         // Shared DB paths so both TUI launches use the same databases.
         $paths = TuiE2eDatabaseEnv::allocatePaths('tui-model-resume');
@@ -116,7 +114,7 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
                 // Non-fatal: may already be done.
             }
 
-            $this->saveAnsiSnapshot($pane1, 'model-resume-step1-session-created');
+            $this->tmux->saveAnsiSnapshot($pane1, 'model-resume-step1-session-created');
 
             // ── Phase 2: Exit the TUI ──
             $this->tmux->sendKey($pane1, 'C-d');
@@ -191,12 +189,12 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
                 $this->assertStringContainsString('● idle', $resumedPane,
                     'Idle status must be visible after resume');
 
-                $this->saveAnsiSnapshot($pane2, 'model-resume-step2-resumed');
+                $this->tmux->saveAnsiSnapshot($pane2, 'model-resume-step2-resumed');
 
                 // Clean exit.
                 $this->tmux->sendKey($pane2, 'C-d');
             } catch (\Throwable $e) {
-                $this->saveAnsiSnapshot($pane2, 'model-resume-FAILURE');
+                $this->tmux->saveAnsiSnapshot($pane2, 'model-resume-FAILURE');
                 try {
                     $this->tmux->sendKey($pane2, 'C-d');
                 } catch (\Throwable) {
@@ -204,7 +202,7 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
                 throw $e;
             }
         } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane1, 'model-resume-FAILURE');
+            $this->tmux->saveAnsiSnapshot($pane1, 'model-resume-FAILURE');
             try {
                 $this->tmux->sendKey($pane1, 'C-d');
             } catch (\Throwable) {
@@ -359,12 +357,7 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
             ],
         ];
 
-        $yaml = \Symfony\Component\Yaml\Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-
-        // Also write for the HOME dir.
-        @mkdir($dir.'/home/.hatfield', 0o777, true);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;
     }
@@ -407,13 +400,5 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
         proc_close($process);
 
         return ($stdout ?: '').($stderr ?: '');
-    }
-
-    private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
-    {
-        $ansi = $this->tmux->captureAnsi($pane);
-        $ts = date('Ymd-His');
-        $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        file_put_contents($path, $ansi);
     }
 }

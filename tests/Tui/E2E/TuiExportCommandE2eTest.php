@@ -8,7 +8,6 @@ use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Replay-backed TmuxHarness proof that the real TUI `/export` path surfaces
@@ -31,8 +30,6 @@ final class TuiExportCommandE2eTest extends TestCase
 
     private string $testProjectDir;
 
-    private string $snapshotDir;
-
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
@@ -42,8 +39,7 @@ final class TuiExportCommandE2eTest extends TestCase
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
-        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        TestDirectoryIsolation::ensureDirectory($this->snapshotDir, 0o777);
+        $this->tmux->setSnapshotDir($this->testProjectDir);
     }
 
     protected function tearDown(): void
@@ -100,7 +96,7 @@ final class TuiExportCommandE2eTest extends TestCase
                 12.0,
                 'Real /export slash route must report the HTML path',
             );
-            $this->saveAnsiSnapshot($pane, 'export-available-tools-after-slash');
+            $this->tmux->saveAnsiSnapshot($pane, 'export-available-tools-after-slash');
 
             $htmlPath = $this->testProjectDir.'/hatfield-session-'.$sessionId.'.html';
             $this->assertFileExists($htmlPath, 'Actual TUI /export must write hatfield-session-<id>.html');
@@ -130,7 +126,7 @@ final class TuiExportCommandE2eTest extends TestCase
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'export-available-tools-FAILURE');
+            $this->tmux->saveAnsiSnapshot($pane, 'export-available-tools-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
@@ -239,9 +235,7 @@ final class TuiExportCommandE2eTest extends TestCase
                 ],
             ],
         ];
-        $yaml = Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;
     }
@@ -272,16 +266,5 @@ final class TuiExportCommandE2eTest extends TestCase
         }
 
         return $latest;
-    }
-
-    private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
-    {
-        try {
-            $ansi = $this->tmux->captureAnsi($pane);
-            $path = $this->snapshotDir.'/'.date('Ymd-His-u').'-'.$tag.'.ansi';
-            file_put_contents($path, $ansi);
-        } catch (\Throwable) {
-            // Snapshot capture is best-effort diagnostics only.
-        }
     }
 }
