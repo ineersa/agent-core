@@ -6,15 +6,15 @@ namespace Ineersa\Tui\Transcript;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
-use Symfony\Component\Yaml\Yaml;
 
 /**
- * Tool-exchange pairing/suppression policy and shared tool-result presentation facts.
+ * Tool-exchange pairing/suppression policy.
  *
- * Owns which ToolResult pairs with a ToolCall, which tool cards are suppressed
+ * Owns which ToolResult pairs with a ToolCall and which tool cards are suppressed
  * (ask_human HITL, standalone results consumed by an exchange, empty assistant
- * placeholder before a Question), and the shared "full render"/body-text facts
- * used by both candidate scoring and rendering. Rendering itself stays in
+ * placeholder before a Question). Result-body presentation facts (full-render,
+ * body text, meta truthiness) live in {@see TranscriptToolResultFacts} and are
+ * consumed here only for candidate scoring. Rendering stays in
  * {@see TranscriptBlockWidgetFactory}; projection ownership of indexes, stable
  * keys, and full reprojection stays in {@see TranscriptVisualProjector}.
  */
@@ -22,6 +22,7 @@ final readonly class TranscriptToolPresentationPolicy
 {
     public function __construct(
         private readonly SubagentResultRenderer $subagentRenderer,
+        private readonly TranscriptToolResultFacts $toolResultFacts,
     ) {
     }
 
@@ -140,48 +141,6 @@ final readonly class TranscriptToolPresentationPolicy
     }
 
     /**
-     * Error, cancelled, and timed_out tool results bypass preview so diagnostics are not hidden.
-     *
-     * Projection currently sets is_error for cancelled/timed_out as well; color still keys off is_error when full.
-     */
-    public function toolResultIsFullRender(TranscriptBlock $block): bool
-    {
-        return $this->metaIsTruthy($block->meta['is_error'] ?? false)
-            || $this->metaIsTruthy($block->meta['cancelled'] ?? false)
-            || $this->metaIsTruthy($block->meta['timed_out'] ?? false);
-    }
-
-    public function toolResultBodyText(TranscriptBlock $block): string
-    {
-        $result = $block->meta['result'] ?? null;
-        if (\is_string($result) && '' !== $result) {
-            return $this->compactSuccessfulEditWriteResultBody($block, $result);
-        }
-        if (\is_scalar($result) && '' !== (string) $result) {
-            return (string) $result;
-        }
-        if (\is_array($result) || \is_object($result)) {
-            return trim(Yaml::dump($result, 4, 2, Yaml::DUMP_MULTI_LINE_LITERAL_BLOCK));
-        }
-
-        $text = $block->text;
-        $toolName = $block->meta['tool_name'] ?? null;
-        if (\is_string($toolName) && '' !== $toolName && $text === $toolName) {
-            return '';
-        }
-        if ('Tool result' === $text) {
-            return '';
-        }
-
-        return $text;
-    }
-
-    public function metaIsTruthy(mixed $value): bool
-    {
-        return true === $value || 1 === $value || '1' === $value;
-    }
-
-    /**
      * @param list<TranscriptBlock> $candidates
      * @param array<string, true>   $consumedToolResultIds
      */
@@ -216,11 +175,11 @@ final readonly class TranscriptToolPresentationPolicy
     {
         $score = 0;
 
-        if ($this->toolResultIsFullRender($resultBlock)) {
+        if ($this->toolResultFacts->toolResultIsFullRender($resultBlock)) {
             $score += 1000;
         }
 
-        $body = $this->toolResultBodyText($resultBlock);
+        $body = $this->toolResultFacts->toolResultBodyText($resultBlock);
         if ('' !== trim($body)) {
             $score += 500 + min(\strlen($body), 200);
         }
@@ -259,7 +218,7 @@ final readonly class TranscriptToolPresentationPolicy
 
         if (TranscriptBlockKindEnum::ToolResult === $block->kind
             && $this->isAskHumanToolName($block->meta['tool_name'] ?? null)
-            && !$this->toolResultIsFullRender($block)) {
+            && !$this->toolResultFacts->toolResultIsFullRender($block)) {
             return true;
         }
 
@@ -269,26 +228,5 @@ final readonly class TranscriptToolPresentationPolicy
     private function isAskHumanToolName(mixed $toolName): bool
     {
         return \is_string($toolName) && 'ask_human' === $toolName;
-    }
-
-    private function compactSuccessfulEditWriteResultBody(TranscriptBlock $block, string $result): string
-    {
-        if ($this->toolResultIsFullRender($block)) {
-            return $result;
-        }
-
-        $toolName = $block->meta['tool_name'] ?? null;
-        if (!\is_string($toolName) || 'edit' !== $toolName) {
-            // write (and other) successful tool results are already compact status lines.
-            return $result;
-        }
-
-        $marker = 'Updated file context:';
-        $pos = strpos($result, $marker);
-        if (false !== $pos) {
-            return rtrim(substr($result, 0, $pos));
-        }
-
-        return $result;
     }
 }
