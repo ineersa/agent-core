@@ -432,6 +432,43 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $this->assertSame(['path' => './ok.txt'], $seen->arguments);
     }
 
+    public function testResultHookFailureIsLoggedAndSkipped(): void
+    {
+        $hook = new class implements ToolResultHookInterface {
+            public function onToolResult(ToolResultContextDTO $context): ToolResultDecisionDTO
+            {
+                throw new \RuntimeException('hook boom');
+            }
+        };
+
+        $registry = new ExtensionHookRegistry();
+        $registry->addToolResultHook($hook);
+        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $subscriber = new ExtensionToolHookEventSubscriber($registry, '/tmp', logger: $logger);
+
+        $toolCall = new ToolCall('call-hook-fail', 'read', ['path' => './x.txt']);
+        $result = new ToolResult($toolCall, 'ok');
+
+        $subscriber->onToolCallSucceeded(new ToolCallSucceeded(
+            tool: new class {
+            },
+            definition: new Tool(
+                reference: new ExecutionReference(self::class),
+                name: 'read',
+                description: 'test',
+                parameters: null,
+            ),
+            arguments: ['arguments' => $toolCall->getArguments()],
+            result: $result,
+        ));
+
+        $this->assertCount(1, $logger->records);
+        $this->assertSame('error', $logger->records[0]['level']);
+        $this->assertSame('extension.tool_result_hook_failed', $logger->records[0]['context']['event_type']);
+        $this->assertSame('call-hook-fail', $logger->records[0]['context']['tool_call_id']);
+        $this->assertSame('RuntimeException', $logger->records[0]['context']['error_type']);
+    }
+
     private function requested(ToolCall $toolCall): ToolCallRequested
     {
         return new ToolCallRequested(

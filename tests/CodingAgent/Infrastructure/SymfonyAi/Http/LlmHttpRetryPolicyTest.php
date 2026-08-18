@@ -236,6 +236,18 @@ final class LlmHttpRetryPolicyTest extends TestCase
         $this->assertNull($policy->parseRetryAfterMs(['content-type' => ['application/json']]));
     }
 
+    public function testParseRetryAfterMsLogsWarningOnUnparseableDate(): void
+    {
+        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $policy = new LlmHttpRetryPolicy(logger: $logger);
+
+        $this->assertNull($policy->parseRetryAfterMs(['retry-after' => ['not-a-valid-http-date']]));
+        $this->assertCount(1, $logger->records);
+        $this->assertSame('warning', $logger->records[0]['level']);
+        $this->assertSame('llm.retry_after_unparseable', $logger->records[0]['context']['event_type']);
+        $this->assertSame('not-a-valid-http-date', $logger->records[0]['context']['retry_after']);
+    }
+
     // ── calculateDelayMs ──────────────────────────────────────────────────
 
     public function testCalculateDelayMsUsesRetryAfterWhenGiven(): void

@@ -865,7 +865,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $toolCalls[] = new ToolCall(
                 $toolCallId,
                 $toolCall['name'],
-                $this->parseArguments($toolCall['partial_json']),
+                $this->parseArguments($toolCall['partial_json'], (string) $toolCallId),
             );
         }
 
@@ -918,7 +918,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     /**
      * @return array<string, mixed>
      */
-    private function parseArguments(string $json): array
+    private function parseArguments(string $json, string $toolCallId = ''): array
     {
         if ('' === $json) {
             return [];
@@ -926,7 +926,14 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         try {
             $decoded = json_decode($json, true, flags: \JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
+        } catch (\JsonException $exception) {
+            $this->logger->warning('LLM tool-call arguments JSON decode failed — using empty arguments.', [
+                'component' => 'llm_platform_adapter',
+                'event_type' => 'llm.tool_call_args_decode_failed',
+                'tool_call_id' => $toolCallId,
+                'error_class' => $exception::class,
+            ]);
+
             return [];
         }
 
