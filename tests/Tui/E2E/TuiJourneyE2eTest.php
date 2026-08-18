@@ -37,7 +37,6 @@ final class TuiJourneyE2eTest extends TestCase
     private TmuxHarness $tmux;
     private string $projectRoot;
     private string $testProjectDir;
-    private string $snapshotDir;
 
     protected function setUp(): void
     {
@@ -48,8 +47,7 @@ final class TuiJourneyE2eTest extends TestCase
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
-        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @mkdir($this->snapshotDir, 0o777, true);
+        $this->tmux->setSnapshotDir($this->testProjectDir);
     }
 
     protected function tearDown(): void
@@ -104,7 +102,7 @@ final class TuiJourneyE2eTest extends TestCase
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'journey-FAILURE');
+            $this->tmux->saveAnsiSnapshot($pane, 'journey-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
@@ -176,7 +174,7 @@ final class TuiJourneyE2eTest extends TestCase
             '/hotkeys table must show border chrome',
         );
 
-        $this->saveAnsiSnapshot($pane, 'journey-hotkeys');
+        $this->tmux->saveAnsiSnapshot($pane, 'journey-hotkeys');
 
         // Clear any residual editor text so later shell phases start clean.
         $this->tmux->sendKey($pane, 'C-u');
@@ -211,7 +209,7 @@ final class TuiJourneyE2eTest extends TestCase
             history: 2000,
         );
 
-        $this->saveAnsiSnapshot($pane, 'journey-slash-completion-open');
+        $this->tmux->saveAnsiSnapshot($pane, 'journey-slash-completion-open');
 
         // First Tab accepts the selected /help suggestion and closes the overlay.
         $this->tmux->sendKey($pane, 'Tab');
@@ -253,7 +251,7 @@ final class TuiJourneyE2eTest extends TestCase
             history: 2000,
         );
 
-        $this->saveAnsiSnapshot($pane, 'journey-slash-completion-cursor-at-end');
+        $this->tmux->saveAnsiSnapshot($pane, 'journey-slash-completion-cursor-at-end');
 
         // Clear editor so later shell phases start clean.
         $this->tmux->sendKey($pane, 'C-u');
@@ -330,7 +328,7 @@ final class TuiJourneyE2eTest extends TestCase
         );
         $this->assertStringContainsString('bash', $ansi);
         $this->assertStringContainsString('ls -1', $ansi);
-        $this->saveAnsiSnapshot($pane, 'journey-direct-shell-card');
+        $this->tmux->saveAnsiSnapshot($pane, 'journey-direct-shell-card');
 
         // Ordering assertion: the standalone shell's canonical events
         // must end with AgentEnd (tool_exec_start → tool_exec_end → agent_end).
@@ -442,7 +440,7 @@ final class TuiJourneyE2eTest extends TestCase
             // Non-fatal timeout; working indicator may race with cleanup.
         }
 
-        $this->saveAnsiSnapshot($pane, 'journey-inline-shell');
+        $this->tmux->saveAnsiSnapshot($pane, 'journey-inline-shell');
     }
 
     /**
@@ -504,7 +502,7 @@ final class TuiJourneyE2eTest extends TestCase
             'Full-width separator rows must remain in the chrome',
         );
 
-        $this->saveAnsiSnapshot($pane, 'journey-chrome-order');
+        $this->tmux->saveAnsiSnapshot($pane, 'journey-chrome-order');
     }
 
     // ── Helpers ───────────────────────────────────────────────────
@@ -567,80 +565,11 @@ final class TuiJourneyE2eTest extends TestCase
             "---\nname: journey-skill\ndescription: journey chrome proof skill\n---\n",
         );
 
-        $settings = [
-            'ai' => [
-                'default_model' => 'llama_cpp_test/test',
-                'default_reasoning' => 'off',
-                'providers' => [
-                    'llama_cpp_test' => [
-                        'type' => 'generic',
-                        'enabled' => true,
-                        'base_url' => 'http://192.168.2.38:9052/v1',
-                        'api' => 'openai-completions',
-                        'api_key' => 'dummy',
-                        'completions_path' => '/chat/completions',
-                        'supports_completions' => true,
-                        'supports_embeddings' => false,
-                        'supports_thinking_levels' => true,
-                        'models' => [
-                            'test' => [
-                                'name' => 'test',
-                                'context_window' => 32768,
-                                'max_tokens' => 32768,
-                                'input' => ['text', 'image'],
-                                'tool_calling' => true,
-                                'reasoning' => true,
-                                'thinking_level_map' => [
-                                    'off' => '0',
-                                    'minimal' => '0',
-                                    'low' => '0',
-                                    'medium' => '0',
-                                    'high' => '0',
-                                    'xhigh' => '0',
-                                ],
-                                'cost' => ['input' => 0, 'output' => 0],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-            'extensions' => [
-                'enabled' => [
-                    'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
-                ],
-                'settings' => [
-                    'safe_guard' => [
-                        'tool_names' => [
-                            'bash' => 'bash',
-                            'write' => 'write',
-                            'edit' => 'edit',
-                            'read' => 'read',
-                        ],
-                        'allow_command_patterns' => ['^ls\b', '^printf\b', '^echo\b'],
-                        'allow_write_outside_cwd' => [],
-                        'protected_read_patterns' => [],
-                        'dangerous_command_patterns' => [],
-                    ],
-                ],
-            ],
-        ];
+        $settings = TuiE2eDatabaseEnv::replayBaseSettings();
 
-        $yaml = \Symfony\Component\Yaml\Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-
-        // Also write for the HOME dir.
-        @mkdir($dir.'/home/.hatfield', 0o777, true);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;
-    }
-
-    private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
-    {
-        $ansi = $this->tmux->captureAnsi($pane);
-        $ts = date('Ymd-His');
-        $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        file_put_contents($path, $ansi);
     }
 
     /**

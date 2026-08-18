@@ -6,7 +6,6 @@ namespace Ineersa\Tui\Tests\E2E;
 
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Shared isolated project + leak detection for bash background TUI E2E tests.
@@ -233,10 +232,7 @@ trait BashBackgroundE2eTestSupport
             ],
         ];
 
-        $yaml = Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-        @mkdir($dir.'/home/.hatfield', 0o777, true);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
         file_put_contents($dir.'/home/test.txt', 'Hello from bash background E2E test');
 
         return $dir;

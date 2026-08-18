@@ -34,7 +34,6 @@ final class TuiRepairCommandE2eTest extends TestCase
     private TmuxHarness $tmux;
     private string $projectRoot;
     private string $testProjectDir;
-    private string $snapshotDir;
     private string $dbPath;
     private string $transportDbPath;
     private string $appDbAbsolutePath;
@@ -50,8 +49,7 @@ final class TuiRepairCommandE2eTest extends TestCase
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
-        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @mkdir($this->snapshotDir, 0o777, true);
+        $this->tmux->setSnapshotDir($this->testProjectDir);
 
         $paths = TuiE2eDatabaseEnv::allocateIsolatedPaths(
             $this->projectRoot,
@@ -111,10 +109,10 @@ final class TuiRepairCommandE2eTest extends TestCase
             );
 
             $this->assertAgentEndCancelledAppended();
-            $this->saveAnsiSnapshot($pane, 'repair-command-success');
+            $this->tmux->saveAnsiSnapshot($pane, 'repair-command-success');
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'repair-command-FAILURE');
+            $this->tmux->saveAnsiSnapshot($pane, 'repair-command-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
@@ -238,50 +236,11 @@ final class TuiRepairCommandE2eTest extends TestCase
         TestDirectoryIsolation::createHatfieldTree($dir, withSessions: true);
         @mkdir($dir.'/home/.hatfield', 0o777, true);
 
-        $settings = [
-            'ai' => [
-                'default_model' => 'llama_cpp_test/test',
-                'default_reasoning' => 'off',
-                'providers' => [
-                    'llama_cpp_test' => [
-                        'type' => 'generic',
-                        'enabled' => true,
-                        'base_url' => 'http://192.168.2.38:9052/v1',
-                        'api' => 'openai-completions',
-                        'api_key' => 'dummy',
-                        'completions_path' => '/chat/completions',
-                        'supports_completions' => true,
-                        'supports_embeddings' => false,
-                        'supports_thinking_levels' => true,
-                        'models' => [
-                            'test' => [
-                                'name' => 'test',
-                                'context_window' => 32768,
-                                'max_tokens' => 32768,
-                                'input' => ['text', 'image'],
-                                'tool_calling' => true,
-                                'reasoning' => true,
-                                'thinking_level_map' => [
-                                    'off' => '0', 'minimal' => '0', 'low' => '0', 'medium' => '0', 'high' => '0', 'xhigh' => '0',
-                                ],
-                                'cost' => ['input' => 0, 'output' => 0],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-        ];
-        $yaml = \Symfony\Component\Yaml\Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        $settings = TuiE2eDatabaseEnv::replayBaseSettings();
+        unset($settings['extensions']);
+
+        TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;
-    }
-
-    private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
-    {
-        $ansi = $this->tmux->captureAnsi($pane);
-        $ts = date('Ymd-His');
-        file_put_contents(\sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts), $ansi);
     }
 }

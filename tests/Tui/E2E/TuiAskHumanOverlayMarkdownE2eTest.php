@@ -8,7 +8,6 @@ use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Replay-backed tmux proof: active ask_human text overlay renders markdown prompt
@@ -19,7 +18,6 @@ final class TuiAskHumanOverlayMarkdownE2eTest extends TestCase
 {
     private TmuxHarness $tmux;
     private string $testProjectDir;
-    private string $snapshotDir;
 
     protected function setUp(): void
     {
@@ -29,8 +27,7 @@ final class TuiAskHumanOverlayMarkdownE2eTest extends TestCase
 
         $this->tmux = new TmuxHarness();
         $this->testProjectDir = $this->createIsolatedProjectDir();
-        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @mkdir($this->snapshotDir, 0o777, true);
+        $this->tmux->setSnapshotDir($this->testProjectDir);
     }
 
     protected function tearDown(): void
@@ -71,7 +68,7 @@ final class TuiAskHumanOverlayMarkdownE2eTest extends TestCase
                 history: 3000,
             );
 
-            $this->saveAnsiSnapshot($pane, 'ask-human-overlay-markdown');
+            $this->tmux->saveAnsiSnapshot($pane, 'ask-human-overlay-markdown');
 
             $this->assertStringContainsString('Human input required', $capture);
             $this->assertStringContainsString('Overlay proof', $capture);
@@ -94,9 +91,9 @@ final class TuiAskHumanOverlayMarkdownE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'Enter');
 
             $this->tmux->waitForCaptureContains($pane, 'Thanks for the answer', 20.0);
-            $this->saveAnsiSnapshot($pane, 'ask-human-overlay-answered');
+            $this->tmux->saveAnsiSnapshot($pane, 'ask-human-overlay-answered');
         } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'ask-human-overlay-FAILURE');
+            $this->tmux->saveAnsiSnapshot($pane, 'ask-human-overlay-FAILURE');
             throw $e;
         }
     }
@@ -177,19 +174,8 @@ final class TuiAskHumanOverlayMarkdownE2eTest extends TestCase
             ],
         ];
 
-        $yaml = Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-        @mkdir($dir.'/home/.hatfield', 0o777, true);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;
-    }
-
-    private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
-    {
-        $ansi = $this->tmux->captureAnsi($pane);
-        $ts = date('Ymd-His');
-        $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        file_put_contents($path, $ansi);
     }
 }
