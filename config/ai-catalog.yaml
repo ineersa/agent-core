@@ -1,6 +1,6 @@
-# Curated AI provider catalog (authoritative for model presence).
-# Merged as the lowest settings layer by AppConfigLoader, then refreshed
-# with volatile model metadata from models.dev (cache → snapshot fallback).
+# Curated AI provider catalog (authoritative for model presence; entries are complete).
+# Merged as the lowest settings layer by AppConfigLoader. Optional metadata overlay
+# comes from ~/.hatfield/cache/models-dev.json (written by bin/console providers:update).
 # Connection settings (base_url/api/paths/auth) are NEVER taken from models.dev.
 #
 # Known-provider settings in ~/.hatfield or project .hatfield stay sparse:
