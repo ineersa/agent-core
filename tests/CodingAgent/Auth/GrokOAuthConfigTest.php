@@ -22,8 +22,8 @@ final class GrokOAuthConfigTest extends TestCase
 
     public function testRedirectUriUsesCallbackPath(): void
     {
-        $this->assertSame('http://localhost:56122/callback', GrokOAuthConfig::redirectUriForPort());
-        $this->assertSame('http://localhost:9999/callback', GrokOAuthConfig::redirectUriForPort(9999));
+        $this->assertSame('http://127.0.0.1:56122/callback', GrokOAuthConfig::redirectUriForPort());
+        $this->assertSame('http://127.0.0.1:9999/callback', GrokOAuthConfig::redirectUriForPort(9999));
     }
 
     public function testProviderOptions(): void
@@ -32,7 +32,7 @@ final class GrokOAuthConfigTest extends TestCase
 
         $this->assertSame(GrokOAuthConfig::CLIENT_ID, $opts['clientId']);
         $this->assertSame('', $opts['clientSecret']);
-        $this->assertSame('http://localhost:56122/callback', $opts['redirectUri']);
+        $this->assertSame('http://127.0.0.1:56122/callback', $opts['redirectUri']);
         $this->assertSame(GrokOAuthConfig::AUTHORIZE_URL, $opts['urlAuthorize']);
         $this->assertSame(GrokOAuthConfig::TOKEN_URL, $opts['urlAccessToken']);
         $this->assertSame('S256', $opts['pkceMethod']);

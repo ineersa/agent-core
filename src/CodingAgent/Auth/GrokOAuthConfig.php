@@ -54,7 +54,7 @@ final class GrokOAuthConfig
      */
     public static function redirectUriForPort(int $port = self::DEFAULT_PORT): string
     {
-        return \sprintf('http://localhost:%d%s', $port, self::CALLBACK_PATH);
+        return \sprintf('http://127.0.0.1:%d%s', $port, self::CALLBACK_PATH);
     }
 
     /**
