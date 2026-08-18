@@ -409,7 +409,7 @@ agents:
 #
 # Known-provider catalogs (connection settings, quirks, full model lists) live in
 # config/ai-catalog.yaml and merge as the lowest settings layer. Refresh volatile
-# model metadata with `bin/console providers:update` (models.dev cache/snapshot).
+# model metadata with `bin/console providers:update` (~/.hatfield/cache/models-dev.json).
 # Interactive enablement: `bin/console providers:setup` (see providers-setup-command).
 #
 # User/project settings stay sparse overlays for known providers, for example:

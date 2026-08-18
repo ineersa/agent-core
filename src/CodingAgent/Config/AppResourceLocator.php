@@ -43,14 +43,6 @@ final readonly class AppResourceLocator
     }
 
     /**
-     * Absolute path to the bundled models.dev filtered snapshot JSON.
-     */
-    public function getModelsDevSnapshotPath(): string
-    {
-        return $this->appRoot.'/config/models-dev.snapshot.json';
-    }
-
-    /**
      * Absolute path to the built-in themes directory.
      */
     public function getBuiltinThemesPath(): string

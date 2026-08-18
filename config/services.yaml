@@ -77,8 +77,6 @@ services:
 
   Ineersa\CodingAgent\:
     resource: '%kernel.project_dir%/src/CodingAgent/**/*.php'
-    exclude:
-      - '%kernel.project_dir%/src/CodingAgent/Config/Ai/ModelsDevCache.php'
 
   Ineersa\AgentCore\:
     resource: '%kernel.project_dir%/src/AgentCore/**/*.php'
@@ -130,10 +128,10 @@ services:
     arguments:
       $appRoot: '%kernel.project_dir%'
 
-  Ineersa\CodingAgent\Config\AppConfigLoader:
+  Ineersa\CodingAgent\Config\Ai\AiCatalog:
     arguments:
-      $aiCatalogPath: '@=service("Ineersa\\CodingAgent\\Config\\AppResourceLocator").getAiCatalogPath()'
-      $modelsDevSnapshotPath: '@=service("Ineersa\\CodingAgent\\Config\\AppResourceLocator").getModelsDevSnapshotPath()'
+      $catalogPath: '@=service("Ineersa\\CodingAgent\\Config\\AppResourceLocator").getAiCatalogPath()'
+      $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'
 
   # Provenance path queries need THROW_ON_INVALID_INDEX so isReadable()
   # distinguishes missing keys from explicit null. FrameworkBundle's shared

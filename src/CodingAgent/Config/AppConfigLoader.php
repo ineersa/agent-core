@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
-use Ineersa\CodingAgent\Config\Ai\AiCatalogMerge;
-use Ineersa\CodingAgent\Config\Ai\ModelsDevCache;
+use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Yaml\Yaml;
 
@@ -13,7 +12,7 @@ use Symfony\Component\Yaml\Yaml;
  * Loads and overlays Hatfield settings layers from YAML files.
  *
  * Precedence order (last wins):
- *   AI catalog (config/ai-catalog.yaml + models.dev metadata refresh)
+ *   AI catalog (config/ai-catalog.yaml + optional models.dev metadata cache)
  *   <  built-in defaults (config/hatfield.defaults.yaml)
  *   <  user settings (~/.hatfield/settings.yaml)
  *   <  project settings (<cwd>/.hatfield/settings.yaml)
@@ -24,7 +23,7 @@ use Symfony\Component\Yaml\Yaml;
  *
  * Each {@see load()} call rereads YAML from disk. Missing user/project files
  * contribute an empty overlay; load never creates ~/.hatfield/settings.yaml.
- * Network I/O never happens here — models.dev cache/snapshot are local files.
+ * Network I/O never happens here — models.dev cache is a local file only.
  *
  * Overlay semantics (implemented in {@see overlayConfig}):
  *  - Associative arrays: recursive deep overlay — keys present in the higher-
@@ -84,9 +83,7 @@ final class AppConfigLoader
 
     public function __construct(
         private readonly SettingsPathResolver $pathResolver,
-        private readonly ?string $aiCatalogPath = null,
-        private readonly ?string $modelsDevSnapshotPath = null,
-        private readonly AiCatalogMerge $aiCatalogMerge = new AiCatalogMerge(),
+        private readonly ?AiCatalog $aiCatalog = null,
     ) {
     }
 
@@ -96,10 +93,10 @@ final class AppConfigLoader
             throw new \InvalidArgumentException(\sprintf('%s::load() requires a non-empty $cwd. Pass %s from the container or an explicit absolute path.', self::class, '%app.cwd%'));
         }
 
-        // Layer 0+1: curated AI catalog (models.dev metadata refresh, no network) under built-in defaults.
+        // Layer 0+1: curated AI catalog (optional local models.dev metadata) under built-in defaults.
         // Fold catalog into defaultsRaw so SettingsValueResolver provenance still attributes catalog keys
         // to the Defaults layer without expanding SettingsLayerEnum.
-        $catalogRaw = $this->loadCatalogLayer();
+        $catalogRaw = $this->aiCatalog?->loadProviders() ?? [];
         $defaultsFileRaw = $this->loadYamlFile($defaultsPath);
         $defaultsRaw = [] !== $catalogRaw ? $this->overlayConfig($catalogRaw, $defaultsFileRaw) : $defaultsFileRaw;
 
@@ -162,26 +159,6 @@ final class AppConfigLoader
         }
 
         return $base;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function loadCatalogLayer(): array
-    {
-        if (null === $this->aiCatalogPath || '' === $this->aiCatalogPath) {
-            return [];
-        }
-
-        $cache = null;
-        if (null !== $this->modelsDevSnapshotPath && '' !== $this->modelsDevSnapshotPath) {
-            $cache = new ModelsDevCache(
-                homeDir: $this->pathResolver->getHomeDir(),
-                snapshotPath: $this->modelsDevSnapshotPath,
-            );
-        }
-
-        return $this->aiCatalogMerge->buildLayer($this->aiCatalogPath, $cache);
     }
 
     /**

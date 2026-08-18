@@ -4,29 +4,26 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config\Ai;
 
-use Ineersa\CodingAgent\Config\Ai\AiCatalogMerge;
+use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
-use Ineersa\CodingAgent\Config\Ai\ModelsDevCache;
+use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
-final class AiCatalogMergeTest extends TestCase
+final class AiCatalogTest extends TestCase
 {
     private string $tmpDir;
     private string $homeDir;
     private string $catalogPath;
-    private string $snapshotPath;
 
     protected function setUp(): void
     {
-        $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('ai_catalog_merge');
+        $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('ai_catalog');
         $this->homeDir = $this->tmpDir.'/home';
         TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield/cache');
-
         $this->catalogPath = $this->tmpDir.'/ai-catalog.yaml';
-        $this->snapshotPath = $this->tmpDir.'/models-dev.snapshot.json';
 
         file_put_contents($this->catalogPath, <<<'YAML'
 providers:
@@ -38,6 +35,7 @@ providers:
         base_url: https://api.z.ai/api/coding/paas/v4
         api: openai-completions
         completions_path: /chat/completions
+        auth_command: null
         models:
             glm-5.3:
                 name: GLM 5.3
@@ -63,19 +61,6 @@ providers:
                 reasoning: true
                 cost: { input: 0.14, output: 0.28 }
 YAML);
-
-        file_put_contents($this->snapshotPath, json_encode([
-            'zai' => [
-                'api' => 'https://should-not-leak.example',
-                'models' => [
-                    'glm-5.3' => [
-                        'limit' => ['context' => 2000000, 'output' => 64000],
-                        'cost' => ['input' => 1.1, 'output' => 2.2],
-                    ],
-                    'glm-future' => ['limit' => ['context' => 1]],
-                ],
-            ],
-        ], \JSON_THROW_ON_ERROR));
     }
 
     protected function tearDown(): void
@@ -83,29 +68,74 @@ YAML);
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
-    public function testYamlModelsResolveWhenCacheAndSnapshotAbsent(): void
+    public function testYamlModelsResolveWhenCacheAbsent(): void
     {
-        $merge = new AiCatalogMerge();
-        $layer = $merge->buildLayer($this->catalogPath, new ModelsDevCache($this->homeDir, $this->tmpDir.'/missing-snapshot.json'));
-        $ai = AiConfig::fromArray($layer['ai']);
+        $ai = AiConfig::fromArray($this->catalog()->loadProviders()['ai']);
 
         $this->assertArrayHasKey('glm-5.3', $ai->providers['zai']->models);
         $this->assertSame(1000000, $ai->providers['zai']->models['glm-5.3']->contextWindow);
         $this->assertSame('https://api.z.ai/api/coding/paas/v4', $ai->providers['zai']->baseUrl);
+        $this->assertArrayHasKey('deepseek-v4-flash', $ai->providers['deepseek']->models);
     }
 
-    public function testSnapshotRefreshesMetadataOnlyForYamlIds(): void
+    public function testCorruptCacheFallsBackToYamlOnly(): void
     {
-        $merge = new AiCatalogMerge();
-        $layer = $merge->buildLayer($this->catalogPath, new ModelsDevCache($this->homeDir, $this->snapshotPath));
-        $ai = AiConfig::fromArray($layer['ai']);
+        file_put_contents($this->homeDir.'/.hatfield/cache/models-dev.json', '{not-json');
 
-        $this->assertSame(2000000, $ai->providers['zai']->models['glm-5.3']->contextWindow);
-        $this->assertSame(64000, $ai->providers['zai']->models['glm-5.3']->maxTokens);
-        $this->assertSame(1.1, $ai->providers['zai']->models['glm-5.3']->cost?->input);
-        $this->assertSame(['minimal' => 'enabled'], $ai->providers['zai']->models['glm-5.3']->thinkingLevelMap);
-        $this->assertArrayNotHasKey('glm-future', $ai->providers['zai']->models);
+        $ai = AiConfig::fromArray($this->catalog()->loadProviders()['ai']);
+        $this->assertSame(1000000, $ai->providers['zai']->models['glm-5.3']->contextWindow);
         $this->assertSame('https://api.z.ai/api/coding/paas/v4', $ai->providers['zai']->baseUrl);
+    }
+
+    public function testCacheRefreshesAllowlistedMetadataOnly(): void
+    {
+        file_put_contents($this->homeDir.'/.hatfield/cache/models-dev.json', json_encode([
+            'zai' => [
+                'api' => 'https://should-not-leak.example',
+                'models' => [
+                    'glm-5.3' => [
+                        'limit' => ['context' => 2000000, 'output' => 64000],
+                        'modalities' => ['input' => ['text', 'audio', 'image']],
+                        'reasoning' => true,
+                        'tool_call' => true,
+                        'cost' => ['input' => 1.1, 'output' => 2.2],
+                        'api' => 'https://attacker.example/model',
+                        'base_url' => 'https://attacker.example',
+                    ],
+                    'glm-future' => ['limit' => ['context' => 1]],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $layer = $this->catalog()->loadProviders();
+        $provider = AiProviderConfig::fromArray($layer['ai']['providers']['zai'], 'zai');
+
+        $this->assertSame('https://api.z.ai/api/coding/paas/v4', $provider->baseUrl);
+        $this->assertSame('openai-completions', $provider->api);
+        $this->assertSame('/chat/completions', $provider->completionsPath);
+        $this->assertSame(['glm-5.3'], array_keys($provider->models));
+        $this->assertSame(2000000, $provider->models['glm-5.3']->contextWindow);
+        $this->assertSame(64000, $provider->models['glm-5.3']->maxTokens);
+        $this->assertSame(['text', 'image'], $provider->models['glm-5.3']->input);
+        $this->assertSame(1.1, $provider->models['glm-5.3']->cost?->input);
+        $this->assertSame(['minimal' => 'enabled'], $provider->models['glm-5.3']->thinkingLevelMap);
+        $this->assertSame(['glm-future'], $this->catalog()->discoveryHints(json_decode(
+            (string) file_get_contents($this->homeDir.'/.hatfield/cache/models-dev.json'),
+            true,
+            512,
+            \JSON_THROW_ON_ERROR,
+        ))['zai']);
+    }
+
+    public function testFilterUpstreamProvidersKeepsMappedIdsOnly(): void
+    {
+        $filtered = $this->catalog()->filterUpstreamProviders([
+            'zai' => ['models' => []],
+            'anthropic' => ['models' => []],
+            'xai' => ['models' => []],
+        ]);
+
+        $this->assertSame(['zai', 'xai'], array_keys($filtered));
     }
 
     public function testLoaderMergePrecedenceScalarWinWholesaleModelsUnknownPassthrough(): void
@@ -152,8 +182,7 @@ YAML);
 
         $loader = new AppConfigLoader(
             new SettingsPathResolver(appRoot: '/app', homeDir: $this->homeDir),
-            aiCatalogPath: $this->catalogPath,
-            modelsDevSnapshotPath: $this->snapshotPath,
+            aiCatalog: $this->catalog(),
         );
         $effective = $loader->load($defaultsPath, $cwd)->effective;
         $ai = AiConfig::fromArray($effective['ai']);
@@ -161,11 +190,9 @@ YAML);
         $this->assertTrue($ai->providers['zai']->enabled);
         $this->assertSame('env:ZAI_API_KEY', $ai->providers['zai']->apiKey);
         $this->assertSame('https://project-override.example', $ai->providers['zai']->baseUrl);
-        // Wholesale models replace from user layer (project did not set models).
         $this->assertSame(['glm-5.3'], array_keys($ai->providers['zai']->models));
         $this->assertSame('Pinned GLM', $ai->providers['zai']->models['glm-5.3']->name);
         $this->assertSame(111, $ai->providers['zai']->models['glm-5.3']->contextWindow);
-        // Catalog deepseek remains (no user override) — enabled false from catalog.
         $this->assertArrayHasKey('deepseek', $ai->providers);
         $this->assertFalse($ai->providers['deepseek']->enabled);
         $this->assertArrayHasKey('custom-runpod', $ai->providers);
@@ -173,23 +200,8 @@ YAML);
         $this->assertSame(['my-model'], array_keys($ai->providers['custom-runpod']->models));
     }
 
-    public function testCachePreferredOverSnapshot(): void
+    private function catalog(): AiCatalog
     {
-        $cachePath = $this->homeDir.'/.hatfield/cache/models-dev.json';
-        file_put_contents($cachePath, json_encode([
-            'zai' => [
-                'models' => [
-                    'glm-5.3' => [
-                        'limit' => ['context' => 333333, 'output' => 4444],
-                    ],
-                ],
-            ],
-        ], \JSON_THROW_ON_ERROR));
-
-        $merge = new AiCatalogMerge();
-        $layer = $merge->buildLayer($this->catalogPath, new ModelsDevCache($this->homeDir, $this->snapshotPath));
-        $ai = AiConfig::fromArray($layer['ai']);
-        $this->assertSame(333333, $ai->providers['zai']->models['glm-5.3']->contextWindow);
-        $this->assertSame(4444, $ai->providers['zai']->models['glm-5.3']->maxTokens);
+        return new AiCatalog($this->catalogPath, $this->homeDir);
     }
 }

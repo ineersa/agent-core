@@ -12,8 +12,8 @@ in home or project settings. Hatfield does **not** copy defaults into your home 
 
 Later sources win via structured overlay (`AppConfigLoader`):
 
-1. Curated AI catalog (`config/ai-catalog.yaml`) with local models.dev metadata refresh
-   (`~/.hatfield/cache/models-dev.json` → `config/models-dev.snapshot.json` fallback)
+1. Curated AI catalog (`config/ai-catalog.yaml`) with optional local models.dev metadata
+   (`~/.hatfield/cache/models-dev.json` from `providers:update`)
 2. Built-in defaults shipped with the install (`config/hatfield.defaults.yaml`)
 3. `~/.hatfield/settings.yaml`
 4. `<project>/.hatfield/settings.yaml`

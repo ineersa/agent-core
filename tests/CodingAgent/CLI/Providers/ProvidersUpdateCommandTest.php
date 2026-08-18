@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\CLI\Providers;
 
 use Ineersa\CodingAgent\CLI\Providers\ProvidersUpdateCommand;
-use Ineersa\CodingAgent\Config\AppResourceLocator;
-use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Command\Command;
@@ -20,17 +19,16 @@ final class ProvidersUpdateCommandTest extends TestCase
 {
     private string $tmpDir;
     private string $homeDir;
-    private string $appRoot;
+    private string $catalogPath;
 
     protected function setUp(): void
     {
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('providers_update');
         $this->homeDir = $this->tmpDir.'/home';
-        $this->appRoot = $this->tmpDir.'/app';
         TestDirectoryIsolation::ensureDirectory($this->homeDir);
-        TestDirectoryIsolation::ensureDirectory($this->appRoot.'/config');
+        $this->catalogPath = $this->tmpDir.'/ai-catalog.yaml';
 
-        file_put_contents($this->appRoot.'/config/ai-catalog.yaml', <<<'YAML'
+        file_put_contents($this->catalogPath, <<<'YAML'
 providers:
     zai:
         type: generic
@@ -42,7 +40,6 @@ providers:
                 context_window: 1000000
                 max_tokens: 131072
 YAML);
-        file_put_contents($this->appRoot.'/config/models-dev.snapshot.json', "{}\n");
     }
 
     protected function tearDown(): void
@@ -50,7 +47,7 @@ YAML);
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
-    public function testWritesFilteredCacheAndEtagOn200(): void
+    public function testWritesFilteredCacheOn200(): void
     {
         $payload = json_encode([
             'zai' => [
@@ -63,19 +60,15 @@ YAML);
             'anthropic' => ['models' => []],
         ], \JSON_THROW_ON_ERROR);
 
-        $client = new MockHttpClient(static function (string $method, string $url, array $options) use ($payload): MockResponse {
+        $output = new BufferedOutput();
+        $client = new MockHttpClient(static function (string $method, string $url) use ($payload): MockResponse {
             self::assertSame('GET', $method);
             self::assertStringContainsString('models.dev/api.json', $url);
-            self::assertArrayNotHasKey('if-none-match', array_change_key_case($options['headers'] ?? [], \CASE_LOWER));
 
-            return new MockResponse($payload, [
-                'http_code' => 200,
-                'response_headers' => ['etag' => '"abc123"'],
-            ]);
+            return new MockResponse($payload, ['http_code' => 200]);
         });
 
-        $exit = $this->runCommand($client);
-        $this->assertSame(Command::SUCCESS, $exit);
+        $this->assertSame(Command::SUCCESS, $this->runCommand($client, $output));
 
         $cachePath = $this->homeDir.'/.hatfield/cache/models-dev.json';
         $this->assertFileExists($cachePath);
@@ -83,27 +76,8 @@ YAML);
         $decoded = json_decode((string) file_get_contents($cachePath), true, 512, \JSON_THROW_ON_ERROR);
         $this->assertSame(['zai'], array_keys($decoded));
         $this->assertArrayHasKey('glm-future', $decoded['zai']['models']);
-        $this->assertSame('"abc123"', trim((string) file_get_contents($this->homeDir.'/.hatfield/cache/models-dev.etag')));
-    }
-
-    public function test304KeepsExistingCache(): void
-    {
-        TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield/cache');
-        $cachePath = $this->homeDir.'/.hatfield/cache/models-dev.json';
-        $etagPath = $this->homeDir.'/.hatfield/cache/models-dev.etag';
-        file_put_contents($cachePath, "{\"zai\":{\"models\":{}}}\n");
-        file_put_contents($etagPath, "\"old\"\n");
-        $before = (string) file_get_contents($cachePath);
-
-        $client = new MockHttpClient(static function (string $method, string $url, array $options): MockResponse {
-            $headers = array_change_key_case($options['headers'] ?? [], \CASE_LOWER);
-            self::assertSame('"old"', $headers['if-none-match'] ?? null);
-
-            return new MockResponse('', ['http_code' => 304]);
-        });
-
-        $this->assertSame(Command::SUCCESS, $this->runCommand($client));
-        $this->assertSame($before, (string) file_get_contents($cachePath));
+        $this->assertStringContainsString('glm-future', $output->fetch());
+        $this->assertFileDoesNotExist($this->homeDir.'/.hatfield/cache/models-dev.etag');
     }
 
     public function testNetworkErrorKeepsExistingAndExitsZero(): void
@@ -120,33 +94,29 @@ YAML);
         $this->assertSame("{\"kept\":true}\n", (string) file_get_contents($cachePath));
     }
 
-    public function testRefreshSnapshotWritesRepoFile(): void
+    public function testHttpErrorKeepsExistingAndExitsZero(): void
     {
-        $payload = json_encode([
-            'deepseek' => ['models' => ['deepseek-v4-flash' => []]],
-            'other' => ['models' => []],
-        ], \JSON_THROW_ON_ERROR);
+        TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield/cache');
+        $cachePath = $this->homeDir.'/.hatfield/cache/models-dev.json';
+        file_put_contents($cachePath, "{\"kept\":true}\n");
+
         $client = new MockHttpClient([
-            new MockResponse($payload, ['http_code' => 200, 'response_headers' => ['etag' => '"snap"']]),
+            new MockResponse('nope', ['http_code' => 503]),
         ]);
 
-        $this->assertSame(Command::SUCCESS, $this->runCommand($client, refreshSnapshot: true));
-        $snapshot = $this->appRoot.'/config/models-dev.snapshot.json';
-        $decoded = json_decode((string) file_get_contents($snapshot), true, 512, \JSON_THROW_ON_ERROR);
-        $this->assertSame(['deepseek'], array_keys($decoded));
-        $this->assertFileDoesNotExist($this->homeDir.'/.hatfield/cache/models-dev.etag');
+        $this->assertSame(Command::SUCCESS, $this->runCommand($client));
+        $this->assertSame("{\"kept\":true}\n", (string) file_get_contents($cachePath));
     }
 
-    private function runCommand(MockHttpClient $client, bool $refreshSnapshot = false): int
+    private function runCommand(MockHttpClient $client, ?BufferedOutput $output = null): int
     {
         $command = new ProvidersUpdateCommand(
             httpClient: $client,
-            pathResolver: new SettingsPathResolver(appRoot: $this->appRoot, homeDir: $this->homeDir),
-            resources: new AppResourceLocator($this->appRoot),
+            aiCatalog: new AiCatalog($this->catalogPath, $this->homeDir),
         );
 
-        $io = new SymfonyStyle(new ArrayInput([]), new BufferedOutput());
+        $io = new SymfonyStyle(new ArrayInput([]), $output ?? new BufferedOutput());
 
-        return $command($io, refreshSnapshot: $refreshSnapshot);
+        return $command($io);
     }
 }
