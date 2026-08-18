@@ -12,6 +12,7 @@ use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Utility\ThrowableMessage;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Tui;
 
@@ -159,13 +160,6 @@ final class UsageCommandHandler implements SlashCommandHandler
 
     private function sanitizeError(\Throwable $e): string
     {
-        $trimmed = trim($e->getMessage());
-        if ('' === $trimmed) {
-            return $e::class;
-        }
-        $firstLine = explode("\n", $trimmed, 2)[0];
-        $bounded = mb_strlen($firstLine) > 200 ? mb_substr($firstLine, 0, 200).'…' : $firstLine;
-
-        return $e::class.': '.$bounded;
+        return ThrowableMessage::sanitize($e);
     }
 }

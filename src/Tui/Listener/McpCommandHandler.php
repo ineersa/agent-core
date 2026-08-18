@@ -14,6 +14,7 @@ use Ineersa\Tui\CompactHeader\McpStatusSnapshot;
 use Ineersa\Tui\CompactHeader\McpStatusSnapshotProvider;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Utility\ThrowableMessage;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Tui;
 
@@ -108,7 +109,15 @@ final class McpCommandHandler implements SlashCommandHandler
                 usleep(self::POLL_INTERVAL_US);
                 $after = $this->statusProvider->build($sessionId);
                 if ($after->generation !== $beforeGeneration || $after->generatedAt !== $beforeGeneratedAt) {
-                    return new TranscriptMessage($this->renderList($after), 'system', 'markdown');
+                    $text = $this->renderList($after);
+                    foreach ($after->servers as $server) {
+                        if ('not_initialized' === $server->status) {
+                            $text .= "\n\n_Discovery may still be in progress — check `/mcp` again shortly._";
+                            break;
+                        }
+                    }
+
+                    return new TranscriptMessage($text, 'system', 'markdown');
                 }
             }
 
@@ -152,6 +161,22 @@ final class McpCommandHandler implements SlashCommandHandler
 
         $lines[] = '`/mcp reconnect` to reconnect all servers.';
 
+        // Empty catalog after a failed discovery/refresh still maps every configured
+        // server to not_initialized — surface that so it does not look like never-init.
+        if ($snapshot->generation > 0) {
+            $allNotInitialized = true;
+            foreach ($snapshot->servers as $server) {
+                if ('not_initialized' !== $server->status) {
+                    $allNotInitialized = false;
+                    break;
+                }
+            }
+            if ($allNotInitialized) {
+                $lines[] = '';
+                $lines[] = '> ⚠ **MCP catalog invalidated (failed discovery) — see controller logs; try `/mcp reconnect`.**';
+            }
+        }
+
         return implode("\n", $lines);
     }
 
@@ -189,13 +214,6 @@ final class McpCommandHandler implements SlashCommandHandler
 
     private function sanitizeError(\Throwable $e): string
     {
-        $trimmed = trim($e->getMessage());
-        if ('' === $trimmed) {
-            return $e::class;
-        }
-        $firstLine = explode("\n", $trimmed, 2)[0];
-        $bounded = mb_strlen($firstLine) > 200 ? mb_substr($firstLine, 0, 200).'…' : $firstLine;
-
-        return $e::class.': '.$bounded;
+        return ThrowableMessage::sanitize($e);
     }
 }

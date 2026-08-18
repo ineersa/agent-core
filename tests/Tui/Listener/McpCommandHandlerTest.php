@@ -224,6 +224,98 @@ final class McpCommandHandlerTest extends TestCase
         $this->assertStringNotContainsString('stale', $result->text);
     }
 
+    #[Test]
+    public function testReconnectPartialCatalogKeepsCaveatForPendingServers(): void
+    {
+        $this->writeMcpJson([
+            'server-a' => ['url' => 'https://example.test/a'],
+            'server-b' => ['url' => 'https://example.test/b'],
+        ]);
+        $store = new SessionFileMcpToolCatalogStore($this->projectRoot);
+        $store->write('sess-1', new McpToolCatalogDTO(
+            schemaVersion: 1,
+            runId: 'sess-1',
+            generatedAt: '2026-08-18T00:00:00Z',
+            generation: 1,
+            servers: [],
+        ));
+
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())
+            ->method('refreshMcpCatalog')
+            ->with('sess-1')
+            ->willReturnCallback(static function () use ($store): void {
+                // Partial refresh: generation bumps, only server-a discovered yet.
+                $store->write('sess-1', new McpToolCatalogDTO(
+                    schemaVersion: 1,
+                    runId: 'sess-1',
+                    generatedAt: '2026-08-18T00:00:10Z',
+                    generation: 2,
+                    servers: [
+                        'server-a' => new McpServerCatalogEntryDTO(
+                            serverName: 'server-a',
+                            transport: 'http',
+                            status: McpServerCatalogStatusEnum::CONNECTED,
+                            tools: [
+                                new McpToolDefinitionDTO('server-a_tool', 'server-a', 'tool', 'A', []),
+                            ],
+                        ),
+                    ],
+                ));
+            });
+
+        $handler = $this->createHandler(
+            provider: $this->provider($store),
+            client: $client,
+            state: new TuiSessionState('sess-1', true),
+        );
+
+        $result = $handler->handle(new SlashCommand('mcp', 'reconnect', '/mcp reconnect'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('### `server-a`', $result->text);
+        $this->assertStringContainsString('✅ Connected', $result->text);
+        $this->assertStringContainsString('### `server-b`', $result->text);
+        $this->assertStringContainsString('not initialized', $result->text);
+        $this->assertStringContainsString(
+            'Discovery may still be in progress — check `/mcp` again shortly.',
+            $result->text,
+        );
+        $this->assertStringNotContainsString('MCP catalog invalidated', $result->text);
+    }
+
+    #[Test]
+    public function testListShowsInvalidatedCatalogWarningWhenAllServersMissing(): void
+    {
+        $this->writeMcpJson([
+            'browser' => ['url' => 'https://example.test/browser'],
+        ]);
+        $store = new SessionFileMcpToolCatalogStore($this->projectRoot);
+        $store->write('sess-1', new McpToolCatalogDTO(
+            schemaVersion: 1,
+            runId: 'sess-1',
+            generatedAt: '2026-08-18T00:00:00Z',
+            generation: 2,
+            servers: [],
+        ));
+
+        $handler = $this->createHandler(
+            provider: $this->provider($store),
+            client: $this->createStub(AgentSessionClient::class),
+            state: new TuiSessionState('sess-1', true),
+        );
+
+        $result = $handler->handle(new SlashCommand('mcp', '', '/mcp'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('### `browser`', $result->text);
+        $this->assertStringContainsString('not initialized', $result->text);
+        $this->assertStringContainsString(
+            'MCP catalog invalidated (failed discovery)',
+            $result->text,
+        );
+    }
+
     /**
      * @param array<string, array<string, mixed>> $servers
      */

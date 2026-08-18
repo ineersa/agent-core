@@ -323,6 +323,11 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     {
     }
 
+    /**
+     * In-process mode buffers MCP refresh on the in-memory mcp transport; there is
+     * no mcp consumer in the TUI process, so reconnect may never land and /mcp
+     * reconnect polling then times out honestly. Prefer process/controller mode.
+     */
     public function refreshMcpCatalog(string $runId): void
     {
         if ('' === $runId) {
