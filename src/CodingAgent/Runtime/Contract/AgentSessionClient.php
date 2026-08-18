@@ -78,4 +78,12 @@ interface AgentSessionClient
      * (e.g. /reload). Idempotent; safe to call when nothing is running.
      */
     public function shutdown(): void;
+
+    /**
+     * Dispatch MCP reconnect/rediscovery for the session's mcp worker.
+     *
+     * Safe to call while the run is idle; the mcp consumer drops existing
+     * clients, rediscovers configured servers, and rewrites mcp-tools.json.
+     */
+    public function refreshMcpCatalog(string $runId): void;
 }

@@ -323,6 +323,19 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     {
     }
 
+    public function refreshMcpCatalog(string $runId): void
+    {
+        if ('' === $runId) {
+            throw new \InvalidArgumentException('refreshMcpCatalog requires a non-empty runId.');
+        }
+
+        if (null === $this->mcpDispatcher) {
+            throw new \RuntimeException('MCP lifecycle dispatcher is not configured; cannot refresh MCP catalog.');
+        }
+
+        $this->mcpDispatcher->dispatchRefresh($runId);
+    }
+
     /**
      * Handle an answer_tool_question command by writing the answer
      * to the ToolQuestionStore. The blocked tool worker polls the store

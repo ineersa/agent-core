@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Mcp;
 
 use Ineersa\CodingAgent\Mcp\Message\McpInitializeSessionCommand;
+use Ineersa\CodingAgent\Mcp\Message\McpRefreshCatalogCommand;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -59,5 +60,21 @@ final readonly class McpSessionLifecycleDispatcher
                 'error_message' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Dispatch an MCP catalog refresh (reconnect-all) for the given session.
+     *
+     * Unlike initialize, refresh failures are propagated so the TUI can report
+     * that reconnect was not accepted by the bus.
+     */
+    public function dispatchRefresh(string $runId): void
+    {
+        $correlationId = bin2hex(random_bytes(12));
+
+        $this->commandBus->dispatch(new McpRefreshCatalogCommand(
+            runId: $runId,
+            correlationId: $correlationId,
+        ));
     }
 }

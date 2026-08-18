@@ -107,11 +107,16 @@ Child denylist `agents.subagent_excluded_tools` still removes named tools after 
 
 Workers perform **best-effort graceful disconnect** on worker stop (`McpWorkerShutdownSubscriber` / connection manager disconnect). STDIO child processes are signaled on shutdown; some grandchildren may still escape if servers spawn unmanaged trees — treat MCP servers as untrusted process boundaries.
 
+## Slash commands
+
+- `/mcp` — list configured MCP servers with connection status and discovered Hatfield tool names (from the session `mcp-tools.json` catalog).
+- `/mcp reconnect` — drop existing MCP clients for this session, rediscover all configured servers, and rewrite the catalog. Rejected while a run is active; slow servers may still be connecting after the command returns — check `/mcp` again shortly.
+
 ## Operations tips
 
 - Keep server lists small; each server adds process/network surface.
 - Prefer project config for repo-specific servers and user config for personal defaults.
-- After changing MCP JSON, start a new session so connections and tool catalogs refresh cleanly.
+- After changing MCP JSON, run `/mcp reconnect` (or start a new session / `/reload`) so connections and tool catalogs refresh cleanly.
 
 ## Related
 

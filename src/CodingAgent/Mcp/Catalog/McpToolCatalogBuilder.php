@@ -29,9 +29,15 @@ final class McpToolCatalogBuilder
      * and cross-catalog duplicate detection.
      *
      * @param array<string, array{status: 'connected'|'failed', transport: string, tools: list<array>, errorMessage?: string}> $discoveryResults
+     * @param int                                                                                                              $generation       Monotonic catalog generation (defaults to 1 for initialize)
      */
-    public function build(McpConfigDTO $config, string $runId, ?string $configHash, array $discoveryResults): McpToolCatalogDTO
-    {
+    public function build(
+        McpConfigDTO $config,
+        string $runId,
+        ?string $configHash,
+        array $discoveryResults,
+        int $generation = 1,
+    ): McpToolCatalogDTO {
         $servers = [];
         $globalSeenNames = [];
 
@@ -66,7 +72,7 @@ final class McpToolCatalogBuilder
             schemaVersion: 1,
             runId: $runId,
             generatedAt: (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z'),
-            generation: 1,
+            generation: max(1, $generation),
             configHash: $configHash,
             servers: $servers,
         );

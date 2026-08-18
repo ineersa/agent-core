@@ -161,13 +161,27 @@ final class McpInitializeSessionHandler
         ];
 
         try {
+            // Drop every broker-owned client for this run first so removed
+            // servers do not linger and rediscovery starts from a clean slate.
+            // discover() also disconnects per-server before reconnect; this
+            // covers servers no longer present in mcp.json.
+            $this->connectionManager->disconnectAll($message->runId);
+
             $config = $this->configLoader->load();
             $enabledCount = \count($config->servers);
             $configHash = $this->catalogBuilder->computeConfigHash($config);
+            $previous = $this->catalogStore->read($message->runId);
+            $nextGeneration = (null !== $previous ? $previous->generation : 0) + 1;
 
             if ($enabledCount > 0) {
-                $onServerDiscovered = function (array $cumulativeResults) use ($config, $message, $configHash): void {
-                    $partialCatalog = $this->catalogBuilder->build($config, $message->runId, $configHash, $cumulativeResults);
+                $onServerDiscovered = function (array $cumulativeResults) use ($config, $message, $configHash, $nextGeneration): void {
+                    $partialCatalog = $this->catalogBuilder->build(
+                        $config,
+                        $message->runId,
+                        $configHash,
+                        $cumulativeResults,
+                        $nextGeneration,
+                    );
                     $this->catalogStore->write($message->runId, $partialCatalog);
 
                     $this->logger->debug('MCP partial catalog written', [
@@ -178,13 +192,20 @@ final class McpInitializeSessionHandler
                         'session_id' => $message->runId,
                         'server_count' => \count($partialCatalog->servers),
                         'tool_count' => $this->countTools($partialCatalog),
+                        'generation' => $partialCatalog->generation,
                     ]);
                 };
 
                 $discoveryResults = $this->connectionManager->discover($message->runId, $onServerDiscovered);
-                $catalog = $this->catalogBuilder->build($config, $message->runId, $configHash, $discoveryResults);
+                $catalog = $this->catalogBuilder->build(
+                    $config,
+                    $message->runId,
+                    $configHash,
+                    $discoveryResults,
+                    $nextGeneration,
+                );
             } else {
-                $catalog = McpToolCatalogDTO::empty($message->runId, 1, $configHash);
+                $catalog = McpToolCatalogDTO::empty($message->runId, $nextGeneration, $configHash);
             }
 
             $this->catalogStore->write($message->runId, $catalog);
@@ -199,7 +220,10 @@ final class McpInitializeSessionHandler
             // Refresh failure — invalidate stale tools by writing an empty
             // catalog so readers never see previously-discovered tools that
             // may no longer be valid (config changed, server unreachable).
-            $this->writeEmptyCatalogDiagnostic($message->runId);
+            // Bump generation so TUI pollers (/mcp reconnect) observe the write.
+            $previous = $this->catalogStore->read($message->runId);
+            $failedGeneration = (null !== $previous ? $previous->generation : 0) + 1;
+            $this->writeEmptyCatalogDiagnostic($message->runId, $failedGeneration);
 
             $this->logger->warning('MCP catalog refresh failed — catalog invalidated', [
                 ...$logContext,
@@ -247,12 +271,12 @@ final class McpInitializeSessionHandler
      * log the inner failure diagnostically so operators are aware that
      * stale tools may be visible to readers.
      */
-    private function writeEmptyCatalogDiagnostic(string $runId): void
+    private function writeEmptyCatalogDiagnostic(string $runId, int $generation = 1): void
     {
         try {
             $this->catalogStore->write(
                 $runId,
-                McpToolCatalogDTO::empty($runId, 1),
+                McpToolCatalogDTO::empty($runId, max(1, $generation)),
             );
         } catch (\Throwable $inner) {
             $this->logger->warning('MCP catalog invalidation write also failed — stale tools may persist', [

@@ -111,6 +111,10 @@ final class AttachSpySessionClient implements AgentSessionClient
     {
     }
 
+    public function refreshMcpCatalog(string $runId): void
+    {
+    }
+
     public function cancel(string $runId): void
     {
         throw new \RuntimeException('Unexpected cancel()');

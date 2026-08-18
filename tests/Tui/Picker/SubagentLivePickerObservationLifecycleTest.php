@@ -243,6 +243,10 @@ final class ObservingSpyClient implements AgentSessionClient
     {
     }
 
+    public function refreshMcpCatalog(string $runId): void
+    {
+    }
+
     public function cancel(string $runId): void
     {
     }
