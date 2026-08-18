@@ -76,11 +76,38 @@ function datadog_trace_endpoint_available(): bool
 }
 
 /**
- * Environment prefix for Datadog APM opt-in/opt-out when launching PHP.
+ * Doctrine transport DSN env vars exported by a live session controller
+ * (JsonlProcessAgentSessionClient) into every bash command the session runs.
  *
- * ddtrace reads its settings before userland PHP boots, so these values must
- * be present in the shell environment that starts `php bin/console`.
+ * QA lanes must not inherit them: config/packages/test/messenger.yaml falls
+ * back to the in-memory:// transport only when the var is UNSET, so a
+ * poisoned env would build a DoctrineTransport where unit tests expect
+ * InMemoryTransport. E2E lanes (controller-replay, test:tui, llm-real) set
+ * their own DSNs explicitly at subprocess spawn time, so stripping these
+ * vars from the shell prefix does not affect them.
  */
+const QA_SESSION_TRANSPORT_DSN_VARS = [
+    'HATFIELD_RUN_CONTROL_TRANSPORT_DSN',
+    'HATFIELD_LLM_TRANSPORT_DSN',
+    'HATFIELD_TOOL_TRANSPORT_DSN',
+    'HATFIELD_AGENT_TRANSPORT_DSN',
+    'HATFIELD_MCP_TRANSPORT_DSN',
+    'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN',
+];
+
+/**
+ * `env -u VAR` fragments unsetting the session transport DSN vars.
+ *
+ * Kept as its own helper so tests can assert the exact flags and the weave
+ * point stays a single choke point in qa_observability_env_command().
+ */
+function qa_unset_session_transport_dsn_env_flags(): string
+{
+    return implode(' ', array_map(
+        static fn (string $var): string => '-u '.$var,
+        QA_SESSION_TRANSPORT_DSN_VARS,
+    ));
+}
 
 /**
  * Environment prefix for Castor QA/test PHP child processes.
@@ -88,11 +115,19 @@ function datadog_trace_endpoint_available(): bool
  * Disables optional APM/log injection so PHPUnit assertions on PSR-3 message
  * strings stay deterministic when a host loads tracing extensions. Harmless
  * when no extension is present.
+ *
+ * Also unsets the session transport DSNs (see QA_SESSION_TRANSPORT_DSN_VARS)
+ * so unit lanes always resolve the documented in-memory transports even when
+ * QA runs from inside a live Hatfield session.
  */
 function qa_observability_env_command(): string
 {
     $base = datadog_env_command(false);
     $home = qa_test_home_shell_prefix();
+
+    // `$base` starts with `env ` — splice the -u flags right after it so the
+    // unset happens inside the same env invocation that sets DD_TRACE_*.
+    $base = 'env '.qa_unset_session_transport_dsn_env_flags().' '.substr($base, 4);
 
     return $home.' '.$base.' DD_LOGS_INJECTION=0 DD_TRACE_APPEND_TRACE_IDS_TO_LOGS=false';
 }
@@ -138,6 +173,12 @@ function qa_check_run_env_command(): string
     return 'env '.implode(' ', $pairs).' '.substr($obs, 4);
 }
 
+/**
+ * Environment prefix for Datadog APM opt-in/opt-out when launching PHP.
+ *
+ * ddtrace reads its settings before userland PHP boots, so these values must
+ * be present in the shell environment that starts `php bin/console`.
+ */
 function datadog_env_command(bool $enabled): string
 {
     $vars = [

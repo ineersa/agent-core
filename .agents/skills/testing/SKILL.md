@@ -140,6 +140,35 @@ Replay infrastructure is **not** removed when using the proxy; both coexist.
 - **Last resort only:** `castor clean:cleanup:workers` after you have recorded the leak (PIDs, command lines, which test/lane) and started root-cause work. Never signal root-owned workers or processes with `HATFIELD_SESSION_ID` in `/proc/<pid>/environ` (active Hatfield session workers).
 - Prefer validating task branches in an isolated task worktree when possible.
 
+### Running QA from within a Hatfield session
+
+`castor check` / `castor test` / static lanes are safe to run from inside a live
+Hatfield agent session:
+
+- **Env contract:** the session controller subprocess exports the six doctrine
+  transport DSNs (`HATFIELD_RUN_CONTROL_TRANSPORT_DSN`, `HATFIELD_LLM_TRANSPORT_DSN`,
+  `HATFIELD_TOOL_TRANSPORT_DSN`, `HATFIELD_AGENT_TRANSPORT_DSN`,
+  `HATFIELD_MCP_TRANSPORT_DSN`, `HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN`) into
+  every bash command the session runs. All QA lanes strip them via
+  `qa_unset_session_transport_dsn_env_flags()` in `.castor/env.php` (woven into
+  the `env` invocation of `qa_observability_env_command()`), so unit lanes always
+  resolve the documented in-memory transports (`config/packages/test/messenger.yaml`
+  fallback — an explicitly-set Doctrine DSN would otherwise win and break
+  `InMemoryTransport` expectations). E2E lanes (controller-replay, test:tui,
+  llm-real) spawn their controllers with explicit per-process DSNs
+  (`ControllerE2eTestCase`) and are unaffected.
+- **PHAR rule:** `run:agent*` sessions launch from one fixed copy at
+  `var/tmp/phar/sessions/hatfield.phar` (`phar_materialize_session_copy()` in
+  `.castor/helpers.php`). Same build is reused untouched; a new build
+  overwrites the fixed path in place (safe under serialized launches — single
+  session at a time). The canonical artifact (`var/tmp/phar/hatfield.phar`)
+  therefore has no long-lived holder: `phar:ensure` / `castor check` rebuild it
+  freely with plain stale-implies-rebuild semantics (no in-use scan) even while
+  a session is live, so the TUI artifact lane always boots a fresh PHAR.
+  `castor clean:cleanup` removes the whole `var/tmp/phar` tree (canonical,
+  staging, session copy) when you choose. `castor phar:clean` removes the
+  canonical artifact + staging + lock but leaves the session copy.
+
 
 ## LLM Replay (deterministic, no live LLM)
 

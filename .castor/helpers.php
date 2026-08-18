@@ -340,6 +340,9 @@ const HATFIELD_PHAR_PATH_DEFAULT = 'var/tmp/phar/hatfield.phar';
 /** Default project-root-relative staging directory. */
 const HATFIELD_PHAR_STAGING_DIR_DEFAULT = 'var/tmp/phar-build/source';
 
+/** Default project-root-relative directory for session-owned PHAR copies. */
+const HATFIELD_PHAR_SESSION_COPIES_DIR_DEFAULT = 'var/tmp/phar/sessions';
+
 /**
  * Resolve the PHAR output path.
  *
@@ -1068,7 +1071,9 @@ const PHAR_BUILD_LOCK_TIMEOUT_S = 60;
  * Ensure the PHAR exists and is fresh.
  *
  * If the PHAR is missing or stale relative to the complete packaged-input set,
- * triggers a rebuild. Failures propagate (no swallow).
+ * triggers a rebuild. Failures propagate (no swallow). run:agent sessions exec
+ * a fixed session copy, so the canonical artifact has no long-lived holder
+ * and is rebuilt freely.
  *
  * @return string absolute path to the existing or freshly built PHAR
  */
@@ -1143,6 +1148,66 @@ function phar_build_with_lock(string $root): void
         flock($lockHandle, \LOCK_UN);
         fclose($lockHandle);
     }
+}
+
+// ─── Session-owned PHAR copies (run:agent) ────────────────────────────
+
+/**
+ * Directory holding session-owned PHAR copies (under the project root).
+ */
+function hatfield_phar_session_copies_dir(): string
+{
+    return project_root_dir().'/'.HATFIELD_PHAR_SESSION_COPIES_DIR_DEFAULT;
+}
+
+/**
+ * Materialize a byte-identical session-owned copy of the canonical artifact.
+ *
+ * WHY: run:agent sessions exec the artifact for their whole lifetime. If a
+ * session ran the canonical file directly, castor test/check rebuilds of the
+ * canonical artifact would swap phar:// file reads under the live process and
+ * corrupt the session. Sessions exec one fixed copy at
+ * var/tmp/phar/sessions/hatfield.phar instead, so the canonical artifact has
+ * no long-lived holder and is rebuilt freely.
+ *
+ * Same build → reuse without rewriting the file a live session may exec from.
+ * New build → overwrite the fixed path in place. Safe only because launches
+ * are serialized (single session at a time); an old session alive across a
+ * rebuild would observe its binary replaced mid-execution. Absent/corrupt
+ * dest is re-copied the same way. Swept by `castor clean:cleanup` (removes
+ * the whole var/tmp/phar tree).
+ *
+ * @param string      $pharPath    canonical artifact to copy from
+ * @param string|null $sessionsDir override root for session copies (tests)
+ *
+ * @return string absolute path of the session-owned copy
+ */
+function phar_materialize_session_copy(string $pharPath, ?string $sessionsDir = null): string
+{
+    $sessionsDir = $sessionsDir ?? hatfield_phar_session_copies_dir();
+    $dest = $sessionsDir.'/hatfield.phar';
+    $hash = hash_file('sha256', $pharPath);
+    if (false === $hash) {
+        throw new \RuntimeException('Unable to hash PHAR artifact: '.$pharPath);
+    }
+
+    // Same build → reuse without rewriting the file a live session may exec from.
+    if (is_file($dest) && hash_file('sha256', $dest) === $hash) {
+        return $dest;
+    }
+
+    if (!is_dir($sessionsDir) && !mkdir($sessionsDir, 0755, true) && !is_dir($sessionsDir)) {
+        throw new \RuntimeException('Unable to create PHAR session copies directory: '.$sessionsDir);
+    }
+
+    // Fixed path, in-place overwrite on new build: safe only because launches are
+    // serialized (single session at a time) — an old session alive across a rebuild
+    // would observe its binary replaced mid-execution.
+    if (!copy($pharPath, $dest)) {
+        throw new \RuntimeException("Failed to copy PHAR artifact {$pharPath} -> {$dest}");
+    }
+
+    return $dest;
 }
 
 // ─── Full QA gate (castor check) cross-worktree lock ───────────────────
