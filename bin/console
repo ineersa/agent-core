@@ -134,6 +134,7 @@ $visibleCommands = [
     'agent' => true,
     'agents:init' => true,
     'auth:codex' => true,
+    'auth:grok' => true,
     'completion:file-index:refresh' => true,
     'log:clear' => true,
     'log:files' => true,
