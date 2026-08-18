@@ -94,30 +94,34 @@ final class TuiToolExchangeCardE2eTest extends TestCase
             );
 
             $fullCapture = $this->tmux->capturePlainWithHistory($pane, 3000);
+            // Soft-wrap can split phrases across lines when the absolute checkout path
+            // is long (temp dirs live under <checkout>/var/tmp/). Collapse whitespace
+            // so phrase assertions are path-length-independent.
+            $normalized = preg_replace('/\s+/', ' ', $fullCapture) ?? $fullCapture;
 
             // Exchange card header/args from the tool_call half.
             $this->assertStringContainsString(
                 'path:',
-                $fullCapture,
+                $normalized,
                 'Tool exchange card must render YAML arguments (path key)',
             );
             $this->assertStringContainsString(
                 'target.txt',
-                $fullCapture,
+                $normalized,
                 'Tool exchange card must render the edit target path',
             );
 
             // Compacted result body (EditFileTool success stats) must be visible.
             $this->assertStringContainsString(
                 '1 addition, 1 deletion',
-                $fullCapture,
+                $normalized,
                 'Tool exchange card must render the compacted edit success body',
             );
 
             // The raw result's trailing file context must NOT leak into the card.
             $this->assertStringNotContainsString(
                 'Updated file context:',
-                $fullCapture,
+                $normalized,
                 'Compacted edit result body must not leak the "Updated file context:" marker '
                 .'(result-body facts moved to TranscriptToolResultFacts)',
             );
