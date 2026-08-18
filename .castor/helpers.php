@@ -1109,10 +1109,10 @@ function phar_in_use_pids(string $pharPath): array
     // root-relative form: it would be a substring of every sibling worktree's
     // absolute artifact path and falsely block this worktree's rebuilds.
     $resolved = realpath($pharPath);
-    $needles = array_values(array_unique(array_filter([
-        false !== $resolved ? $resolved : $pharPath,
-        $pharPath,
-    ], static fn (string $path): bool => '' !== $path)));
+    // Neither candidate can be '' (hatfield_phar_path()/realpath never yield
+    // ''), so the filter was dead ceremony; array_unique handles the case
+    // where $resolved === $pharPath.
+    $needles = array_unique([false !== $resolved ? $resolved : $pharPath, $pharPath]);
 
     $ownPid = (int) getmypid();
     $euid = posix_geteuid();

@@ -84,10 +84,8 @@ final class PharInUseGuardTest extends TestCase
 
         $root = ProjectDir::get();
         $thisPhar = $root.'/var/tmp/phar/hatfield.phar';
-        $needles = array_values(array_unique(array_filter([
-            realpath($thisPhar) ?: $thisPhar,
-            $thisPhar,
-        ])));
+        $resolved = realpath($thisPhar);
+        $needles = array_unique([false !== $resolved ? $resolved : $thisPhar, $thisPhar]);
 
         // A live session in a sibling worktree execs ITS absolute artifact
         // path, which contains this worktree's root-relative form only as a
