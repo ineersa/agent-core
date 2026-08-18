@@ -8,7 +8,6 @@ use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Minimal tmux proof for /reload: a full-process settings reload that keeps
@@ -41,7 +40,6 @@ final class TuiReloadSettingsE2eTest extends TestCase
 
     private TmuxHarness $tmux;
     private string $testProjectDir;
-    private string $snapshotDir;
     private string $settingsPath;
     private string $homeSettingsPath;
 
@@ -53,8 +51,7 @@ final class TuiReloadSettingsE2eTest extends TestCase
 
         $this->tmux = new TmuxHarness();
         $this->testProjectDir = $this->createIsolatedProjectDir();
-        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @mkdir($this->snapshotDir, 0o777, true);
+        $this->tmux->setSnapshotDir($this->testProjectDir);
         $this->settingsPath = $this->testProjectDir.'/.hatfield/settings.yaml';
         $this->homeSettingsPath = $this->testProjectDir.'/home/.hatfield/settings.yaml';
     }
@@ -152,7 +149,7 @@ final class TuiReloadSettingsE2eTest extends TestCase
                 'No controller overlap may occur during reload (session-owner lock conflict)',
             );
 
-            $this->saveAnsiSnapshot($pane, 'reload-settings');
+            $this->tmux->saveAnsiSnapshot($pane, 'reload-settings');
 
             // ── Exchange 2: same read, now NOT capped (fresh container, cap 20000) ──
             // The re-rendered transcript already contains one ◇ / session id /
@@ -178,7 +175,7 @@ final class TuiReloadSettingsE2eTest extends TestCase
             $afterCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
             $afterNoticeCount = mb_substr_count($afterCapture, self::CAP_NOTICE_MARKER);
             $this->assertSame($baselineNoticeCount, $afterNoticeCount, 'New setting proof: no NEW cap notice may appear after reload raised the cap');
-            $this->saveAnsiSnapshot($pane, 'reload-settings-after-second-read');
+            $this->tmux->saveAnsiSnapshot($pane, 'reload-settings-after-second-read');
 
             // ── Clean exit: controller must shut down gracefully ──
             $this->tmux->sendKey($pane, 'C-d');
@@ -188,7 +185,7 @@ final class TuiReloadSettingsE2eTest extends TestCase
                 'Clean C-d exit must shut the second controller down gracefully (no leaked subprocess)',
             );
         } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'reload-settings-FAILURE');
+            $this->tmux->saveAnsiSnapshot($pane, 'reload-settings-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
@@ -357,38 +354,9 @@ final class TuiReloadSettingsE2eTest extends TestCase
 
     private function writeSettingsInto(string $root, int $outputCap): void
     {
+        $settings = TuiE2eDatabaseEnv::replayBaseSettings();
         $settings = [
-            'ai' => [
-                'default_model' => 'llama_cpp_test/test',
-                'default_reasoning' => 'off',
-                'providers' => [
-                    'llama_cpp_test' => [
-                        'type' => 'generic',
-                        'enabled' => true,
-                        'base_url' => 'http://192.168.2.38:9052/v1',
-                        'api' => 'openai-completions',
-                        'api_key' => 'dummy',
-                        'completions_path' => '/chat/completions',
-                        'supports_completions' => true,
-                        'supports_embeddings' => false,
-                        'supports_thinking_levels' => true,
-                        'models' => [
-                            'test' => [
-                                'name' => 'test',
-                                'context_window' => 32768,
-                                'max_tokens' => 32768,
-                                'input' => ['text', 'image'],
-                                'tool_calling' => true,
-                                'reasoning' => true,
-                                'thinking_level_map' => [
-                                    'off' => '0', 'minimal' => '0', 'low' => '0', 'medium' => '0', 'high' => '0', 'xhigh' => '0',
-                                ],
-                                'cost' => ['input' => 0, 'output' => 0],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
+            'ai' => $settings['ai'],
             'tools' => [
                 'output_cap' => [
                     'path' => '.hatfield/tmp/output-cap',
@@ -396,30 +364,9 @@ final class TuiReloadSettingsE2eTest extends TestCase
                     'doc_cap' => $outputCap,
                 ],
             ],
-            'extensions' => [
-                'enabled' => ['Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension'],
-                'settings' => [
-                    'safe_guard' => [
-                        'tool_names' => ['bash' => 'bash', 'write' => 'write', 'edit' => 'edit', 'read' => 'read'],
-                        'allow_command_patterns' => ['^ls\b', '^printf\b', '^echo\b'],
-                        'allow_write_outside_cwd' => [],
-                        'protected_read_patterns' => [],
-                        'dangerous_command_patterns' => [],
-                    ],
-                ],
-            ],
+            'extensions' => $settings['extensions'],
         ];
 
-        $yaml = Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
-        file_put_contents($root.'/.hatfield/settings.yaml', $yaml);
-        @mkdir($root.'/home/.hatfield', 0o777, true);
-        file_put_contents($root.'/home/.hatfield/settings.yaml', $yaml);
-    }
-
-    private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
-    {
-        $ansi = $this->tmux->captureAnsi($pane);
-        $ts = date('Ymd-His');
-        file_put_contents(\sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts), $ansi);
+        TuiE2eDatabaseEnv::writeReplaySettings($root, $settings);
     }
 }

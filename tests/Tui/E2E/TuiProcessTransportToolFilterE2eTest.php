@@ -8,7 +8,6 @@ use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Replay-backed TmuxHarness proof that default process transport propagates
@@ -33,8 +32,6 @@ final class TuiProcessTransportToolFilterE2eTest extends TestCase
 
     private string $testProjectDir;
 
-    private string $snapshotDir;
-
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
@@ -44,8 +41,7 @@ final class TuiProcessTransportToolFilterE2eTest extends TestCase
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
-        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        TestDirectoryIsolation::ensureDirectory($this->snapshotDir, 0o777);
+        $this->tmux->setSnapshotDir($this->testProjectDir);
     }
 
     protected function tearDown(): void
@@ -109,10 +105,10 @@ final class TuiProcessTransportToolFilterE2eTest extends TestCase
             $this->assertNotContains('write', $payload['available_tools']);
             $this->assertNotContains('edit', $payload['available_tools']);
 
-            $this->saveAnsiSnapshot($pane, 'tool-filter-available-tools-ok');
+            $this->tmux->saveAnsiSnapshot($pane, 'tool-filter-available-tools-ok');
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'tool-filter-available-tools-FAILURE');
+            $this->tmux->saveAnsiSnapshot($pane, 'tool-filter-available-tools-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
@@ -222,9 +218,7 @@ final class TuiProcessTransportToolFilterE2eTest extends TestCase
                 ],
             ],
         ];
-        $yaml = Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;
     }
@@ -255,16 +249,5 @@ final class TuiProcessTransportToolFilterE2eTest extends TestCase
         }
 
         return $latest;
-    }
-
-    private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
-    {
-        try {
-            $ansi = $this->tmux->captureAnsi($pane);
-            $path = $this->snapshotDir.'/'.date('Ymd-His-u').'-'.$tag.'.ansi';
-            file_put_contents($path, $ansi);
-        } catch (\Throwable) {
-            // Snapshot capture is best-effort diagnostics only.
-        }
     }
 }

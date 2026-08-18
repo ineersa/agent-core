@@ -168,10 +168,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             cwd: $this->testProjectDir,
         );
 
-        $snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        if (!is_dir($snapshotDir) && !mkdir($snapshotDir, 0o777, true) && !is_dir($snapshotDir)) {
-            throw new \RuntimeException('Failed to create snapshot dir: '.$snapshotDir);
-        }
+        $this->tmux->setSnapshotDir($this->testProjectDir);
 
         $ids = ['agent_e2e_fork_nl', 'agent_e2e_scout_nl'];
 
@@ -196,7 +193,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, 'Agents live', 10.0, 'Agents live picker must open during delayed stream');
             $this->tmux->waitForCaptureContains($pane, 'agent_e2e_scout_nl', 10.0, 'Picker must list scout child');
 
-            $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-stream-open');
+            $this->tmux->saveAnsiSnapshot($pane, 'agents-live-stream-open');
             $this->assertPickerRowCount($pane, $ids, 2);
             $this->assertPickerRowsAreSinglePhysicalLine($pane, $ids);
 
@@ -223,7 +220,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
                 $earlyCap,
                 'Final marker must not already be present when first marker arrives (proves incremental stream)',
             );
-            $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-stream-early-marker');
+            $this->tmux->saveAnsiSnapshot($pane, 'agents-live-stream-early-marker');
 
             $this->assertPickerRowCount($pane, $ids, 2);
             $this->assertPickerRowsAreSinglePhysicalLine($pane, $ids);
@@ -242,7 +239,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             );
             $this->assertPickerRowCount($pane, $ids, 2);
             $this->assertPickerRowsAreSinglePhysicalLine($pane, $ids);
-            $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-stream-after-down');
+            $this->tmux->saveAnsiSnapshot($pane, 'agents-live-stream-after-down');
 
             $this->tmux->waitForHistoryContains($pane, 'STREAM_MARK_FINAL', 12.0, 2500);
             $this->assertStringContainsString(
@@ -250,7 +247,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
                 $this->tmux->capturePlain($pane),
                 'Final stream marker must arrive while agents-live picker remains open',
             );
-            $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-stream-final-marker');
+            $this->tmux->saveAnsiSnapshot($pane, 'agents-live-stream-final-marker');
 
             $this->tmux->sendKey($pane, 'Escape');
             $this->tmux->waitForCallback(
@@ -287,7 +284,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
             try {
-                $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-stream-failure');
+                $this->tmux->saveAnsiSnapshot($pane, 'agents-live-stream-failure');
             } catch (\Throwable) {
             }
             try {
@@ -312,10 +309,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             cwd: $this->testProjectDir,
         );
 
-        $snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        if (!is_dir($snapshotDir) && !mkdir($snapshotDir, 0o777, true) && !is_dir($snapshotDir)) {
-            throw new \RuntimeException('Failed to create snapshot dir: '.$snapshotDir);
-        }
+        $this->tmux->setSnapshotDir($this->testProjectDir);
 
         try {
             $sessionId = $this->createSessionAndWaitForAssistant($pane);
@@ -336,7 +330,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, 'agent_e2e_charlie_pick', 10.0, 'Picker must list charlie child');
 
             $ids = ['agent_e2e_alpha_pick', 'agent_e2e_bravo_pick', 'agent_e2e_charlie_pick'];
-            $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-picker-before-down');
+            $this->tmux->saveAnsiSnapshot($pane, 'agents-live-picker-before-down');
 
             $initial = $this->waitForPickerRowStyles($pane, $ids, static function (array $rows): bool {
                 return $rows['agent_e2e_alpha_pick']['native']
@@ -357,7 +351,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
                     && !$rows['agent_e2e_charlie_pick']['native']
                     && 1 === self::countNativePickerRows($rows);
             }, 'After Down, exactly one native highlight must move to row 2');
-            $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-picker-after-down');
+            $this->tmux->saveAnsiSnapshot($pane, 'agents-live-picker-after-down');
 
             $this->assertFalse($afterDown['agent_e2e_alpha_pick']['accent'], 'Row 1 must lose any Accent/style after Down');
             $this->assertFalse($afterDown['agent_e2e_bravo_pick']['accent']);
@@ -372,7 +366,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
             try {
-                $this->saveAnsiSnapshot($pane, $snapshotDir, 'agents-live-picker-failure');
+                $this->tmux->saveAnsiSnapshot($pane, 'agents-live-picker-failure');
             } catch (\Throwable) {
             }
             try {
@@ -525,13 +519,6 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $pickerRowCount,
             'Agents-live picker region must show exactly '.$expected.' unique child rows (no duplicates)',
         );
-    }
-
-    private function saveAnsiSnapshot(TmuxPane $pane, string $snapshotDir, string $tag): void
-    {
-        $ansi = $this->tmux->captureAnsi($pane);
-        $path = \sprintf('%s/%s-%s.ansi', $snapshotDir, $tag, (new \DateTimeImmutable())->format('Ymd-His-u'));
-        file_put_contents($path, $ansi);
     }
 
     /**
@@ -721,9 +708,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
                 ],
             ],
         ]];
-        $yaml = \Symfony\Component\Yaml\Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;
     }

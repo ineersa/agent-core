@@ -20,7 +20,6 @@ final class TuiImagePasteE2eTest extends TestCase
     private string $projectRoot;
     private string $testProjectDir;
     private string $fakeBinDir;
-    private string $snapshotDir;
 
     protected function setUp(): void
     {
@@ -33,8 +32,7 @@ final class TuiImagePasteE2eTest extends TestCase
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->fakeBinDir = $this->testProjectDir.'/fake-bin';
         $this->installFakeWlPaste();
-        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @mkdir($this->snapshotDir, 0o777, true);
+        $this->tmux->setSnapshotDir($this->testProjectDir);
     }
 
     protected function tearDown(): void
@@ -107,10 +105,10 @@ final class TuiImagePasteE2eTest extends TestCase
             $attachment = $this->testProjectDir.'/.hatfield/sessions/'.$sessionId.'/attachments/pasted-image-1.png';
             $this->assertFileExists($attachment);
 
-            $this->saveAnsiSnapshot($pane, 'image-paste-slow');
+            $this->tmux->saveAnsiSnapshot($pane, 'image-paste-slow');
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'image-paste-slow-FAILURE');
+            $this->tmux->saveAnsiSnapshot($pane, 'image-paste-slow-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable $shutdownFailure) {
@@ -170,10 +168,10 @@ final class TuiImagePasteE2eTest extends TestCase
             $attachment = $this->testProjectDir.'/.hatfield/sessions/'.$sessionId.'/attachments/pasted-image-1.png';
             $this->assertFileExists($attachment);
 
-            $this->saveAnsiSnapshot($pane, 'image-paste');
+            $this->tmux->saveAnsiSnapshot($pane, 'image-paste');
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'image-paste-FAILURE');
+            $this->tmux->saveAnsiSnapshot($pane, 'image-paste-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable $shutdownFailure) {
@@ -224,69 +222,10 @@ final class TuiImagePasteE2eTest extends TestCase
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-paste');
         TestDirectoryIsolation::createHatfieldTree($dir, withSessions: true, permissions: 0o777);
 
-        $settings = [
-            'ai' => [
-                'default_model' => 'llama_cpp_test/test',
-                'default_reasoning' => 'off',
-                'providers' => [
-                    'llama_cpp_test' => [
-                        'type' => 'generic',
-                        'enabled' => true,
-                        'base_url' => 'http://192.168.2.38:9052/v1',
-                        'api' => 'openai-completions',
-                        'api_key' => 'dummy',
-                        'completions_path' => '/chat/completions',
-                        'supports_completions' => true,
-                        'supports_embeddings' => false,
-                        'supports_thinking_levels' => true,
-                        'models' => [
-                            'test' => [
-                                'name' => 'test',
-                                'context_window' => 32768,
-                                'max_tokens' => 32768,
-                                'input' => ['text', 'image'],
-                                'tool_calling' => true,
-                                'reasoning' => true,
-                                'thinking_level_map' => [
-                                    'off' => '0',
-                                    'minimal' => '0',
-                                    'low' => '0',
-                                    'medium' => '0',
-                                    'high' => '0',
-                                    'xhigh' => '0',
-                                ],
-                                'cost' => ['input' => 0, 'output' => 0],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-            'extensions' => [
-                'enabled' => [
-                    'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
-                ],
-                'settings' => [
-                    'safe_guard' => [
-                        'tool_names' => [
-                            'bash' => 'bash',
-                            'write' => 'write',
-                            'edit' => 'edit',
-                            'read' => 'read',
-                        ],
-                        'allow_command_patterns' => ['^ls\b', '^printf\b', '^echo\b'],
-                        'allow_write_outside_cwd' => [],
-                        'protected_read_patterns' => [],
-                        'dangerous_command_patterns' => [],
-                    ],
-                ],
-            ],
-        ];
-
-        $yaml = \Symfony\Component\Yaml\Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        $settings = TuiE2eDatabaseEnv::replayBaseSettings();
 
         TestDirectoryIsolation::createHatfieldTree($dir.'/home', withSessions: true, permissions: 0o777);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;
     }
@@ -304,12 +243,5 @@ final class TuiImagePasteE2eTest extends TestCase
         }
 
         return $dirs[0];
-    }
-
-    private function saveAnsiSnapshot(TmuxPane $pane, string $label): void
-    {
-        $ansi = $this->tmux->captureAnsi($pane, 2000);
-        $path = $this->snapshotDir.'/'.$label.'.ansi';
-        file_put_contents($path, $ansi);
     }
 }

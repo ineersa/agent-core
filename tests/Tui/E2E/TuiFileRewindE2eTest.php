@@ -24,7 +24,6 @@ final class TuiFileRewindE2eTest extends TestCase
     private TmuxHarness $tmux;
     private string $projectRoot;
     private string $testProjectDir;
-    private string $snapshotDir;
 
     protected function setUp(): void
     {
@@ -35,8 +34,7 @@ final class TuiFileRewindE2eTest extends TestCase
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
-        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @mkdir($this->snapshotDir, 0o777, true);
+        $this->tmux->setSnapshotDir($this->testProjectDir);
     }
 
     protected function tearDown(): void
@@ -96,7 +94,7 @@ final class TuiFileRewindE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'Escape');
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'file-rewind-FAILURE');
+            $this->tmux->saveAnsiSnapshot($pane, 'file-rewind-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
@@ -164,11 +162,11 @@ final class TuiFileRewindE2eTest extends TestCase
             $this->assertSame(1, substr_count($treeCapture, 'Session history — Enter to edit prompt'), 'History picker should show a single header (no stacked overlay regression)');
             $this->assertStringContainsString('Session history', $treeCapture, 'History picker should open for conversation-only selection');
 
-            $this->saveAnsiSnapshot($pane, 'file-rewind-edit-tool');
+            $this->tmux->saveAnsiSnapshot($pane, 'file-rewind-edit-tool');
             $this->tmux->sendKey($pane, 'Escape');
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'file-rewind-edit-tool-FAILURE');
+            $this->tmux->saveAnsiSnapshot($pane, 'file-rewind-edit-tool-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
@@ -462,18 +460,8 @@ final class TuiFileRewindE2eTest extends TestCase
             ],
         ];
 
-        $yaml = \Symfony\Component\Yaml\Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-        @mkdir($dir.'/home/.hatfield', 0o777, true);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;
-    }
-
-    private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
-    {
-        $ansi = $this->tmux->captureAnsi($pane);
-        $ts = date('Ymd-His');
-        file_put_contents(\sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts), $ansi);
     }
 }

@@ -8,7 +8,6 @@ use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Minimal tmux proof for status-row stability and transient reasoning notice.
@@ -38,8 +37,6 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
 
     private string $testProjectDir;
 
-    private string $snapshotDir;
-
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
@@ -49,8 +46,7 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
-        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @mkdir($this->snapshotDir, 0o777, true);
+        $this->tmux->setSnapshotDir($this->testProjectDir);
     }
 
     protected function tearDown(): void
@@ -102,7 +98,7 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
             $this->assertSame($baselineSeparatorIndex + 1, $noticeSeparatorIndex,
                 'Footer separator must move down exactly one line when status panel gains the reasoning row');
 
-            $this->saveAnsiSnapshot($pane, 'status-reasoning-after-shift-tab');
+            $this->tmux->saveAnsiSnapshot($pane, 'status-reasoning-after-shift-tab');
 
             $this->tmux->sendKey($pane, 'C-u');
             $this->tmux->sendLiteral($pane, self::REPLAY_PROMPT);
@@ -118,7 +114,7 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
             );
 
             $this->assertStringContainsString('◆', $afterSubmit);
-            $this->saveAnsiSnapshot($pane, 'status-reasoning-after-submit');
+            $this->tmux->saveAnsiSnapshot($pane, 'status-reasoning-after-submit');
 
             $this->tmux->waitForCallback(
                 $pane,
@@ -140,10 +136,10 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
             $this->assertDoesNotMatchRegularExpression('/\s{2}reasoning\s+\S+/', $idleCapture, 'Transient reasoning panel line must stay cleared after turn');
             $this->assertTrue($this->captureShowsIdleWithoutActiveWorking($idleCapture), 'Live status row must show idle after replay turn');
 
-            $this->saveAnsiSnapshot($pane, 'status-reasoning-idle-baseline');
+            $this->tmux->saveAnsiSnapshot($pane, 'status-reasoning-idle-baseline');
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'status-reasoning-FAILURE');
+            $this->tmux->saveAnsiSnapshot($pane, 'status-reasoning-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
@@ -179,61 +175,9 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-status-reasoning');
         @mkdir($dir.'/.hatfield', 0o777, true);
 
-        $settings = [
-            'ai' => [
-                'default_model' => 'llama_cpp_test/test',
-                'default_reasoning' => 'off',
-                'providers' => [
-                    'llama_cpp_test' => [
-                        'type' => 'generic',
-                        'enabled' => true,
-                        'base_url' => 'http://192.168.2.38:9052/v1',
-                        'api' => 'openai-completions',
-                        'api_key' => 'dummy',
-                        'completions_path' => '/chat/completions',
-                        'supports_completions' => true,
-                        'supports_embeddings' => false,
-                        'supports_thinking_levels' => true,
-                        'models' => [
-                            'test' => [
-                                'name' => 'test',
-                                'context_window' => 32768,
-                                'max_tokens' => 32768,
-                                'input' => ['text', 'image'],
-                                'tool_calling' => true,
-                                'reasoning' => true,
-                                'thinking_level_map' => [
-                                    'off' => '0',
-                                    'minimal' => '0',
-                                    'low' => '0',
-                                    'medium' => '0',
-                                    'high' => '0',
-                                    'xhigh' => '0',
-                                ],
-                                'cost' => ['input' => 0, 'output' => 0],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-            'extensions' => [
-                'enabled' => ['Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension'],
-                'settings' => [
-                    'safe_guard' => [
-                        'tool_names' => ['bash' => 'bash', 'write' => 'write', 'edit' => 'edit', 'read' => 'read'],
-                        'allow_command_patterns' => ['^ls\b', '^printf\b', '^echo\b'],
-                        'allow_write_outside_cwd' => [],
-                        'protected_read_patterns' => [],
-                        'dangerous_command_patterns' => [],
-                    ],
-                ],
-            ],
-        ];
+        $settings = TuiE2eDatabaseEnv::replayBaseSettings();
 
-        $yaml = Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-        @mkdir($dir.'/home/.hatfield', 0o777, true);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;
     }
@@ -297,12 +241,5 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
         }
 
         return false;
-    }
-
-    private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
-    {
-        $ansi = $this->tmux->captureAnsi($pane);
-        $ts = date('Ymd-His');
-        file_put_contents(\sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts), $ansi);
     }
 }

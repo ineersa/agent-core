@@ -9,7 +9,6 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Mandatory TmuxHarness product validation for rich transcript rendering:
@@ -26,7 +25,6 @@ final class TuiRichTranscriptProductValidationE2eTest extends TestCase
     private TmuxHarness $tmux;
     private string $projectRoot;
     private string $testProjectDir;
-    private string $snapshotDir;
 
     protected function setUp(): void
     {
@@ -37,8 +35,7 @@ final class TuiRichTranscriptProductValidationE2eTest extends TestCase
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
-        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        TestDirectoryIsolation::ensureDirectory($this->snapshotDir, 0o777);
+        $this->tmux->setSnapshotDir($this->testProjectDir);
     }
 
     protected function tearDown(): void
@@ -122,10 +119,10 @@ final class TuiRichTranscriptProductValidationE2eTest extends TestCase
             $this->assertStringNotContainsString('```', $fullCapture);
             $this->assertStringContainsString('session ', $fullCapture, 'Footer session chrome expected');
 
-            $this->saveAnsiSnapshot($pane, 'rich-transcript-product-validation');
+            $this->tmux->saveAnsiSnapshot($pane, 'rich-transcript-product-validation');
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'rich-transcript-product-validation-FAILURE');
+            $this->tmux->saveAnsiSnapshot($pane, 'rich-transcript-product-validation-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
@@ -210,18 +207,8 @@ final class TuiRichTranscriptProductValidationE2eTest extends TestCase
             ],
         ];
 
-        $yaml = Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 8, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;
-    }
-
-    private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
-    {
-        $ansi = $this->tmux->captureAnsi($pane);
-        $ts = date('Ymd-His');
-        $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        file_put_contents($path, $ansi);
     }
 }

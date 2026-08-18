@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
+use Symfony\Component\Yaml\Yaml;
+
 /**
  * Isolated SQLite paths for TUI E2E subprocesses (app state + Messenger transport).
  *
@@ -178,6 +180,89 @@ final class TuiE2eDatabaseEnv
         $settings['runtime'] = $runtime;
 
         return $settings;
+    }
+
+    /**
+     * Canonical replay settings used by the dominant TUI E2E scaffolds.
+     *
+     * Tests apply shallow per-key overrides / plain array edits on top.
+     * Key insertion order matters: Yaml::dump preserves it for byte-stable fixtures.
+     *
+     * @return array<string, mixed>
+     */
+    public static function replayBaseSettings(): array
+    {
+        return [
+            'ai' => [
+                'default_model' => 'llama_cpp_test/test',
+                'default_reasoning' => 'off',
+                'providers' => [
+                    'llama_cpp_test' => [
+                        'type' => 'generic',
+                        'enabled' => true,
+                        'base_url' => 'http://192.168.2.38:9052/v1',
+                        'api' => 'openai-completions',
+                        'api_key' => 'dummy',
+                        'completions_path' => '/chat/completions',
+                        'supports_completions' => true,
+                        'supports_embeddings' => false,
+                        'supports_thinking_levels' => true,
+                        'models' => [
+                            'test' => [
+                                'name' => 'test',
+                                'context_window' => 32768,
+                                'max_tokens' => 32768,
+                                'input' => ['text', 'image'],
+                                'tool_calling' => true,
+                                'reasoning' => true,
+                                'thinking_level_map' => [
+                                    'off' => '0',
+                                    'minimal' => '0',
+                                    'low' => '0',
+                                    'medium' => '0',
+                                    'high' => '0',
+                                    'xhigh' => '0',
+                                ],
+                                'cost' => ['input' => 0, 'output' => 0],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'extensions' => [
+                'enabled' => [
+                    'Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension',
+                ],
+                'settings' => [
+                    'safe_guard' => [
+                        'tool_names' => [
+                            'bash' => 'bash',
+                            'write' => 'write',
+                            'edit' => 'edit',
+                            'read' => 'read',
+                        ],
+                        'allow_command_patterns' => ['^ls\b', '^printf\b', '^echo\b'],
+                        'allow_write_outside_cwd' => [],
+                        'protected_read_patterns' => [],
+                        'dangerous_command_patterns' => [],
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * Dump replay settings and write both project + HOME copies.
+     *
+     * @param array<string, mixed> $settings
+     */
+    public static function writeReplaySettings(string $testProjectDir, array $settings): void
+    {
+        $yaml = Yaml::dump(self::withSingleLlmWorkerForReplay($settings), 6, 4);
+        file_put_contents($testProjectDir.'/.hatfield/settings.yaml', $yaml);
+
+        @mkdir($testProjectDir.'/home/.hatfield', 0o777, true);
+        file_put_contents($testProjectDir.'/home/.hatfield/settings.yaml', $yaml);
     }
 
     /**

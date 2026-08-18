@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -49,5 +50,35 @@ final class TuiE2eDatabaseEnvTest extends TestCase
         $doctrineResolved = $kernelRoot.'/var/test/'.$envPath;
         $this->assertStringEndsWith('/.hatfield/tmp/test-db/'.$basename, $doctrineResolved);
         $this->assertStringContainsString('/var/test/../tmp/', $doctrineResolved);
+    }
+
+    public function testReplayBaseSettingsReturnsCanonicalDefaultModelAndProvider(): void
+    {
+        $settings = TuiE2eDatabaseEnv::replayBaseSettings();
+
+        $this->assertSame('llama_cpp_test/test', $settings['ai']['default_model']);
+        $this->assertArrayHasKey('llama_cpp_test', $settings['ai']['providers']);
+    }
+
+    public function testWriteReplaySettingsWritesBothFilesWithSingleLlmWorker(): void
+    {
+        $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-settings');
+        TestDirectoryIsolation::createHatfieldTree($dir);
+
+        try {
+            TuiE2eDatabaseEnv::writeReplaySettings($dir, TuiE2eDatabaseEnv::replayBaseSettings());
+
+            $project = $dir.'/.hatfield/settings.yaml';
+            $home = $dir.'/home/.hatfield/settings.yaml';
+            $this->assertFileExists($project);
+            $this->assertFileExists($home);
+
+            $yaml = file_get_contents($project);
+            $this->assertIsString($yaml);
+            $this->assertStringContainsString('llm_worker_count: 1', $yaml);
+            $this->assertSame($yaml, file_get_contents($home));
+        } finally {
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
     }
 }
