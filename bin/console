@@ -4,6 +4,8 @@
 declare(strict_types=1);
 
 use Ineersa\CodingAgent\Kernel;
+use Ineersa\CodingAgent\CLI\ReloadArgvBuilder;
+use Ineersa\CodingAgent\Runtime\Contract\ProcessReloadState;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\Console\Input\InputOption;
@@ -105,51 +107,108 @@ if (!$isPhar) {
 // Default APP_ENV to 'prod' because the PHAR is a distribution artefact.
 // Callers (e.g. Castor tasks, tests, development) may override APP_ENV
 // and APP_DEBUG via the process environment before launching the PHAR.
-$kernel = new Kernel($_SERVER['APP_ENV'] ?? 'prod', (bool) ($_SERVER['APP_DEBUG'] ?? false));
-$application = new Application($kernel);
-$application->setName('Hatfield');
-$buildIdentity = \Ineersa\CodingAgent\Build\ApplicationBuildIdentity::resolve(
-    $isPhar ? null : \dirname(__DIR__),
-);
-$application->setVersion($buildIdentity->displayVersion());
-// Castor-style default task: plain `hatfield` / `bin/console` runs agent.
-// One-arg form only — single-command mode would break exact named dispatch
-// used by controller relaunch (`agent --controller`) and ConsumerSupervisor
-// (`messenger:consume`). Framework/internal commands stay registered so QA
-// and runtime can still invoke them by name; hide them from list/help only.
-$application->setDefaultCommand('agent');
-// FrameworkBundle materializes the global InputDefinition in its constructor
-// while defaultCommand is still "list". InputOption has no description setter,
-// so replace the baked-in --help option after agent becomes the default.
-$definition = $application->getDefinition();
-$options = $definition->getOptions();
-$options['help'] = new InputOption(
-    'help',
-    'h',
-    InputOption::VALUE_NONE,
-    'Display help for the given command. When no command is given display help for the agent command',
-);
-$definition->setOptions($options);
-$visibleCommands = [
-    'agent' => true,
-    'agents:init' => true,
-    'auth:codex' => true,
-    'auth:grok' => true,
-    'completion:file-index:refresh' => true,
-    'log:clear' => true,
-    'log:files' => true,
-    'log:search' => true,
-    'log:tail' => true,
-    'session:cache:inspect' => true,
-    'help' => true,
-    'list' => true,
-    'completion' => true,
-];
-foreach ($application->all() as $command) {
-    $name = $command->getName();
-    if (null === $name || isset($visibleCommands[$name]) || $command->isHidden()) {
-        continue;
+//
+// Relaunch argv for /reload is rebuilt from this snapshot: the argv as it
+// stands after the early --cwd block, i.e. the original invocation with any
+// relative --cwd absolutized. The raw pre-block argv would re-validate a
+// relative --cwd against the already-changed CWD on the second boot.
+$relaunchArgvBase = $_SERVER['argv'] ?? [];
+
+// Application construction (name, version, default command, option and
+// visibility tweaks) is identical for the initial boot and every /reload
+// re-bootstrap, so it lives in one closure.
+$createApplication = static function (Kernel $kernel) use ($isPhar): Application {
+    $application = new Application($kernel);
+    $application->setName('Hatfield');
+    $buildIdentity = \Ineersa\CodingAgent\Build\ApplicationBuildIdentity::resolve(
+        $isPhar ? null : \dirname(__DIR__),
+    );
+    $application->setVersion($buildIdentity->displayVersion());
+    // The /reload outer bootstrap loop needs Application::run() to RETURN the
+    // exit code instead of exiting the process (autoExit default). The loop
+    // below mirrors the old semantics with an explicit final exit().
+    $application->setAutoExit(false);
+    // Castor-style default task: plain `hatfield` / `bin/console` runs agent.
+    // One-arg form only — single-command mode would break exact named dispatch
+    // used by controller relaunch (`agent --controller`) and ConsumerSupervisor
+    // (`messenger:consume`). Framework/internal commands stay registered so QA
+    // and runtime can still invoke them by name; hide them from list/help only.
+    $application->setDefaultCommand('agent');
+    // FrameworkBundle materializes the global InputDefinition in its constructor
+    // while defaultCommand is still "list". InputOption has no description setter,
+    // so replace the baked-in --help option after agent becomes the default.
+    $definition = $application->getDefinition();
+    $options = $definition->getOptions();
+    $options['help'] = new InputOption(
+        'help',
+        'h',
+        InputOption::VALUE_NONE,
+        'Display help for the given command. When no command is given display help for the agent command',
+    );
+    $definition->setOptions($options);
+    $visibleCommands = [
+        'agent' => true,
+        'agents:init' => true,
+        'auth:codex' => true,
+        'auth:grok' => true,
+        'completion:file-index:refresh' => true,
+        'log:clear' => true,
+        'log:files' => true,
+        'log:search' => true,
+        'log:tail' => true,
+        'session:cache:inspect' => true,
+        'help' => true,
+        'list' => true,
+        'completion' => true,
+    ];
+    foreach ($application->all() as $command) {
+        $name = $command->getName();
+        if (null === $name || isset($visibleCommands[$name]) || $command->isHidden()) {
+            continue;
+        }
+        $command->setHidden(true);
     }
-    $command->setHidden(true);
+
+    return $application;
+};
+
+$kernel = new Kernel($_SERVER['APP_ENV'] ?? 'prod', (bool) ($_SERVER['APP_DEBUG'] ?? false));
+$application = $createApplication($kernel);
+$exitCode = $application->run(new ArgvInput());
+
+// ── Outer /reload bootstrap loop ────────────────────────────────────────
+// A /reload returns the dedicated exit code after synchronously shutting
+// down the session client and old kernel/container; rebuild a fresh Kernel
+// + Console Application in this same process (same PID, same terminal)
+// and resume the same session via --resume.
+while (ProcessReloadState::EXIT_CODE === $exitCode) {
+    $reloadIntent = ProcessReloadState::consume();
+    if (null === $reloadIntent) {
+        // No intent relayed (e.g. exit code collision from another command) —
+        // treat as a normal exit rather than looping.
+        break;
+    }
+
+    // Synchronously release the old container: kernel shutdown resets
+    // services (DB/PDO handles, Monolog streams); unset + GC collects
+    // the DI graph's reference cycles.
+    $kernel->shutdown();
+    unset($kernel, $application);
+    gc_collect_cycles();
+
+    try {
+        $relaunchArgv = ReloadArgvBuilder::build($relaunchArgvBase, $reloadIntent->sessionId);
+        $kernel = new Kernel($_SERVER['APP_ENV'] ?? 'prod', (bool) ($_SERVER['APP_DEBUG'] ?? false));
+        $application = $createApplication($kernel);
+        $exitCode = $application->run(new ArgvInput($relaunchArgv));
+    } catch (\Throwable $e) {
+        // A fresh boot can fail when the user edited settings mid-session
+        // (e.g. broken YAML). Report it clearly — never pretend the reload
+        // succeeded by silently falling back to the old session.
+        \fwrite(STDERR, \sprintf("Reload failed: %s\n", $e->getMessage()));
+        exit(1);
+    }
 }
-$application->run(new ArgvInput());
+
+// Preserve pre-reload semantics: the process exits with the last run's code.
+exit($exitCode);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Application;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\ProcessReloadIntentDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -262,6 +263,68 @@ final class SessionSwitchServiceTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Cannot select history');
         $service->selectHistoryTurn(1);
+    }
+
+    // ── requestReload / consumePendingReload ────────────────────────────────
+
+    public function testConsumePendingReloadReturnsNullWhenNothingPending(): void
+    {
+        $service = $this->createService();
+
+        $this->assertNull($service->consumePendingReload());
+    }
+
+    public function testRequestReloadStopsTuiAndCarriesSessionId(): void
+    {
+        $service = $this->createService();
+
+        $service->requestReload('42');
+
+        $intent = $service->consumePendingReload();
+        $this->assertNotNull($intent);
+        $this->assertInstanceOf(ProcessReloadIntentDTO::class, $intent);
+        $this->assertSame('42', $intent->sessionId);
+
+        // A reload is NOT a session switch — no switch target, no pending flag.
+        $this->assertNull($service->consumePendingSwitch());
+        $this->assertFalse($service->hasPendingSwitch());
+        $this->assertNull($service->consumePendingReload());
+    }
+
+    public function testRequestReloadNeverCancelsCurrentRun(): void
+    {
+        // Reload is guarded to idle/terminal by ReloadCommandHandler; even if
+        // a handle/activity is present, requestReload must not cancel — the
+        // teardown happens via shutdown() on the reload path instead.
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->never())->method('cancel');
+
+        $state = new TuiSessionState('old', false);
+        $state->handle = new RunHandle('old-run-id', 'running');
+        $state->activity = RunActivityStateEnum::Running;
+
+        $service = $this->createService($state, $client);
+
+        $service->requestReload('42');
+
+        $intent = $service->consumePendingReload();
+        $this->assertNotNull($intent);
+        $this->assertSame('42', $intent->sessionId);
+    }
+
+    public function testReloadWinsOverStaleSwitch(): void
+    {
+        // InteractiveMode consumes the reload intent BEFORE the switch target;
+        // a stale switch left over in the same iteration must not win.
+        $service = $this->createService();
+
+        $service->requestResume('42');
+        $service->requestReload('43');
+
+        $intent = $service->consumePendingReload();
+        $this->assertNotNull($intent);
+        $this->assertSame('43', $intent->sessionId);
+        $this->assertTrue($service->hasPendingSwitch());
     }
 
     private function createService(

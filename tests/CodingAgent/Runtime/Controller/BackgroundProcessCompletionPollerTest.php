@@ -86,6 +86,13 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
                 return [];
             }
 
+            /**
+             * No-op shutdown: this spy owns no runtime to tear down.
+             */
+            public function shutdown(): void
+            {
+            }
+
             public function cancel(string $runId): void
             {
             }

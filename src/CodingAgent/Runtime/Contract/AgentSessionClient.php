@@ -71,4 +71,11 @@ interface AgentSessionClient
      *                                        passed to the summarization model
      */
     public function compact(string $runId, ?string $customInstructions = null): void;
+
+    /**
+     * Synchronously shut down the session client's runtime (controller
+     * subprocess, consumers, held locks) before the process re-bootstraps
+     * (e.g. /reload). Idempotent; safe to call when nothing is running.
+     */
+    public function shutdown(): void;
 }

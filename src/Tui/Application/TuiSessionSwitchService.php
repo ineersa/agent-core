@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Application;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\ProcessReloadIntentDTO;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
@@ -35,6 +36,7 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
     private ?string $pendingResumeSessionId = null;
     private ?StartRunRequest $pendingDraftRequest = null;
     private bool $isPendingDraft = false;
+    private ?ProcessReloadIntentDTO $pendingReload = null;
 
     public function __construct(
         private readonly Tui $tui,
@@ -75,6 +77,35 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
         $this->pendingDraftRequest = $request;
         $this->isPendingDraft = true;
         $this->tui->stop();
+    }
+
+    /**
+     * Request a full-process settings reload for the current session.
+     *
+     * Stores the typed reload intent (current persisted session ID) and
+     * stops the TUI event loop. Does NOT cancel the current run — the
+     * /reload handler guarantees the run is idle/terminal before this is
+     * called (unlike requestResume/requestNewDraft, which may cancel an
+     * active run as part of a switch).
+     */
+    public function requestReload(string $sessionId): void
+    {
+        $this->pendingReload = new ProcessReloadIntentDTO($sessionId);
+        $this->tui->stop();
+    }
+
+    /**
+     * Consume and return the pending reload intent, if any.
+     *
+     * Called by InteractiveMode right after the event loop exits, BEFORE
+     * consumePendingSwitch(), so a reload always wins over a stale switch.
+     */
+    public function consumePendingReload(): ?ProcessReloadIntentDTO
+    {
+        $pending = $this->pendingReload;
+        $this->pendingReload = null;
+
+        return $pending;
     }
 
     /**

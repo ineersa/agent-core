@@ -31,6 +31,16 @@ interface TuiSessionSwitchServiceInterface
     public function requestNewDraft(?StartRunRequest $request = null): void;
 
     /**
+     * Request a full-process settings reload (/reload) for the current session.
+     *
+     * Unlike requestResume/requestNewDraft this is NOT a same-process session
+     * switch: the caller must have verified the run is idle/terminal and no
+     * transient input state would be lost. The TUI event loop is stopped and
+     * InteractiveMode hands the intent to the outer bin/console bootstrap loop.
+     */
+    public function requestReload(string $sessionId): void;
+
+    /**
      * Select a user-prompt turn in linear history (linear history selection).
      *
      * Cancels the current run, then dispatches a select_history_turn command
