@@ -160,20 +160,15 @@ Hatfield agent session:
 - **PHAR rule:** `run:agent*` sessions launch from a session-owned copy under
   `var/tmp/phar/sessions/<content-hash>/hatfield.phar`
   (`phar_materialize_session_copy()` in `.castor/helpers.php`; one immutable
-  copy per distinct build — content-addressed, reused across launches; stale
-  copies GC'd at launch, 24 h age, copies still in use are preserved). The canonical
-  artifact (`var/tmp/phar/hatfield.phar`) therefore has no long-lived holder:
-  `phar:ensure` / `castor check` rebuild it freely even while a session is
+  copy per distinct build — content-addressed, reused across launches). The
+  canonical artifact (`var/tmp/phar/hatfield.phar`) therefore has no long-lived
+  holder: `phar:ensure` / `castor check` rebuild it freely with plain
+  stale-implies-rebuild semantics (no in-use scan) even while a session is
   live, so the TUI artifact lane always boots a fresh PHAR, and concurrent
-  run:agent sessions are isolated by construction. The in-use guard
-  (`phar_in_use_pids()` in `.castor/helpers.php`; read-only /proc scan, never
-  signals) remains as defense in depth: explicit `castor phar:build` fails
-  fast with guidance (stop the session, or build elsewhere via
-  `HATFIELD_PHAR_PATH`) if something still executes the canonical artifact.
-- **Remaining caveat:** prefer running QA gates in the task worktree rather than
-  competing with a live session in the same tree where possible. `castor phar:clean`
-  is NOT in-use-guarded — a manual clean can still remove an artifact a live
-  session is executing from.
+  run:agent sessions are isolated by construction. Session copies accumulate
+  per build; `castor clean:cleanup` removes the whole `var/tmp/phar` tree
+  (canonical, staging, session copies) when you choose. `castor phar:clean`
+  removes the canonical artifact + staging + lock but leaves session copies.
 
 
 ## LLM Replay (deterministic, no live LLM)

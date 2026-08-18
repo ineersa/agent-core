@@ -343,9 +343,6 @@ const HATFIELD_PHAR_STAGING_DIR_DEFAULT = 'var/tmp/phar-build/source';
 /** Default project-root-relative directory for session-owned PHAR copies. */
 const HATFIELD_PHAR_SESSION_COPIES_DIR_DEFAULT = 'var/tmp/phar/sessions';
 
-/** Default age (seconds) after which session-owned PHAR copies are GC'd. */
-const PHAR_SESSION_COPY_MAX_AGE_S = 86400; // 24 h
-
 /**
  * Resolve the PHAR output path.
  *
@@ -1071,126 +1068,12 @@ const PHAR_BUILD_LOCK = 'var/tmp/phar-build.lock';
 const PHAR_BUILD_LOCK_TIMEOUT_S = 60;
 
 /**
- * True when any argv token of the (NUL-separated) cmdline equals one of
- * $needles exactly.
- *
- * Token-exact matching (never substring): a sibling worktree's absolute
- * artifact path merely CONTAINS this worktree's root-relative form as a
- * substring, and editor/grep/cp cmdlines may embed the path inside a larger
- * token — neither is a process actually executing the artifact.
- *
- * @param array<int, string> $needles artifact path forms to match exactly
- */
-function phar_cmdline_uses_artifact(string $cmdline, array $needles): bool
-{
-    foreach (explode("\0", $cmdline) as $token) {
-        if ('' !== $token && \in_array($token, $needles, true)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-/**
- * PIDs (current user only) whose command line references $pharPath, mapped
- * pid => full cmdline.
- *
- * WHY: a live Hatfield session may execute from the PHAR artifact (controller
- * + messenger:consume children). Rebuilding the artifact in place swaps
- * phar:// file reads under the running process and corrupts the session
- * (split-brain class loading). This scan is read-only /proc inspection; it
- * never signals anything.
- *
- * Detection is Linux-gated on /proc; where /proc is unavailable the scan
- * degrades to "not in use" and the rebuild proceeds (same behavior as before
- * this guard).
- *
- * @return array<int, string> pid => cmdline
- */
-function phar_in_use_pids(string $pharPath): array
-{
-    // Sessions exec the absolute artifact path, so match argv tokens exactly
-    // against the resolved path and the caller-provided path. Deliberately no
-    // root-relative form: it would be a substring of every sibling worktree's
-    // absolute artifact path and falsely block this worktree's rebuilds.
-    $resolved = realpath($pharPath);
-    // Neither candidate can be '' (hatfield_phar_path()/realpath never yield
-    // ''), so the filter was dead ceremony; array_unique handles the case
-    // where $resolved === $pharPath.
-    $needles = array_unique([false !== $resolved ? $resolved : $pharPath, $pharPath]);
-
-    $ownPid = (int) getmypid();
-    $euid = posix_geteuid();
-    $inUse = [];
-
-    // Scan /proc directly rather than `ps -eo args`: procps truncates long
-    // cmdlines to the terminal/pipe width, which would miss the artifact path
-    // in deep process trees (observed in the bwrap sandbox of this host).
-    // /proc/<pid>/cmdline is always the full NUL-separated argv.
-    foreach ((array) glob('/proc/[0-9]*') as $procDir) {
-        $pid = (int) basename($procDir);
-        if ($pid <= 1 || $pid === $ownPid) {
-            continue;
-        }
-        // Current-user only — never treat root-owned processes as rebuild
-        // blockers we could reason about, and never signal them.
-        $stat = @stat($procDir);
-        if (false === $stat || ($stat['uid'] ?? -1) !== $euid) {
-            continue;
-        }
-        $cmdline = @file_get_contents($procDir.'/cmdline');
-        if (false === $cmdline || '' === $cmdline) {
-            continue;
-        }
-        if (phar_cmdline_uses_artifact($cmdline, $needles)) {
-            $inUse[$pid] = trim((string) preg_replace('/\0+/', ' ', $cmdline));
-        }
-    }
-
-    return $inUse;
-}
-
-/**
- * True when $pharPath is in use by a live process and the rebuild must be
- * skipped to protect it. Emits a clear operator message naming the PIDs
- * unless $silent (callers that fail hard right after print their own message).
- *
- * When the artifact is in use but missing on disk, throws instead — building
- * under a live process is never acceptable and silence would hide the
- * inconsistency. The throw is unaffected by $silent.
- */
-function phar_skip_rebuild_when_in_use(string $pharPath, bool $silent = false): bool
-{
-    $inUse = phar_in_use_pids($pharPath);
-    if ([] === $inUse) {
-        return false;
-    }
-
-    $pids = implode(', ', array_keys($inUse));
-    if (!is_file($pharPath)) {
-        throw new \RuntimeException(\sprintf('PHAR artifact %s is in use by live process(es) (PID %s) but is missing on disk. Rebuilding would corrupt the running session — stop the session first, or build to a different path with HATFIELD_PHAR_PATH.', $pharPath, $pids));
-    }
-
-    if (!$silent) {
-        echo \sprintf(
-            "PHAR rebuild skipped: artifact %s is in use by live process(es) (PID %s). Keeping the in-use artifact intact to protect the running session; it may stay stale until the next phar:ensure with no live session.\n",
-            $pharPath,
-            $pids,
-        );
-    }
-
-    return true;
-}
-
-/**
  * Ensure the PHAR exists and is fresh.
  *
  * If the PHAR is missing or stale relative to the complete packaged-input set,
- * triggers a rebuild. Failures propagate (no swallow). When a live process is
- * executing from the artifact, the rebuild is skipped and the existing
- * (possibly stale) artifact is returned so callers like the TUI lane still get
- * a bootable file.
+ * triggers a rebuild. Failures propagate (no swallow). run:agent sessions exec
+ * content-addressed copies, so the canonical artifact has no long-lived holder
+ * and is rebuilt freely.
  *
  * @return string absolute path to the existing or freshly built PHAR
  */
@@ -1203,11 +1086,6 @@ function phar_ensure(): string
     }
 
     if (!phar_is_stale($root, $pharPath)) {
-        return $pharPath;
-    }
-
-    // Never swap the artifact under a live process; return it as-is instead.
-    if (phar_skip_rebuild_when_in_use($pharPath)) {
         return $pharPath;
     }
 
@@ -1265,12 +1143,6 @@ function phar_build_with_lock(string $root): void
             return;
         }
 
-        // Same in-use protection as phar_ensure(): skip (keep the existing
-        // artifact) instead of rebuilding under a live process.
-        if (phar_skip_rebuild_when_in_use($pharPath)) {
-            return;
-        }
-
         phar_build();
     } finally {
         flock($lockHandle, \LOCK_UN);
@@ -1302,8 +1174,8 @@ function hatfield_phar_session_copies_dir(): string
  * The copy is content-addressed: one immutable copy per distinct build under
  * sessions/<sha256-16>/hatfield.phar, reused across launches. The dest is only
  * ever created or replaced atomically (hash-verified reuse, or temp+rename
- * that replaces an absent/corrupt dest). GC may delete an old-but-still-useful
- * copy once no session holds it; harmless, it is re-copied on the next launch.
+ * that replaces an absent/corrupt dest). Copies accumulate per build and are
+ * swept by `castor clean:cleanup` (removes the whole var/tmp/phar tree).
  *
  * @param string      $pharPath    canonical artifact to copy from
  * @param string|null $sessionsDir override root for session copy dirs (tests)
@@ -1342,48 +1214,6 @@ function phar_materialize_session_copy(string $pharPath, ?string $sessionsDir = 
     }
 
     return $dest;
-}
-
-/**
- * Best-effort GC of session-owned PHAR copies.
- *
- * Piggybacks on run:agent launch (no daemon). Removes only copy dirs whose
- * mtime is older than $maxAgeSeconds, and never a copy a live process is
- * executing from (phar_in_use_pids() on the copy path — the same read-only
- * scan the rebuild guard uses) nor the just-created copy (callers run GC
- * before materializing, and a fresh dir mtime is always above the cutoff).
- * Per-dir failures are surfaced as stderr diagnostics only — a stale dir that
- * cannot be removed must never fail the launch.
- *
- * @param int         $maxAgeSeconds age cutoff; 24 h default
- * @param string|null $sessionsDir   override root for session copy dirs (tests)
- */
-function phar_gc_session_copies(int $maxAgeSeconds = PHAR_SESSION_COPY_MAX_AGE_S, ?string $sessionsDir = null): void
-{
-    $sessionsDir = $sessionsDir ?? hatfield_phar_session_copies_dir();
-    if (!is_dir($sessionsDir)) {
-        return;
-    }
-
-    $cutoff = time() - $maxAgeSeconds;
-    foreach ((array) glob($sessionsDir.'/*') as $entry) {
-        if (!is_dir($entry)) {
-            continue;
-        }
-        $mtime = @filemtime($entry);
-        if (false === $mtime || $mtime > $cutoff) {
-            continue;
-        }
-        if ([] !== phar_in_use_pids($entry.'/hatfield.phar')) {
-            continue;
-        }
-        try {
-            remove_path_checked($entry);
-        } catch (\Throwable $e) {
-            // Intentional local degradation: GC must never fail the launch.
-            fwrite(\STDERR, 'PHAR session copy GC warning: '.$e->getMessage()."\n");
-        }
-    }
 }
 
 // ─── Full QA gate (castor check) cross-worktree lock ───────────────────
@@ -1754,13 +1584,6 @@ function phar_build(): string
     $root = realpath(__DIR__.'/..');
     if (false === $root) {
         throw new \RuntimeException('Unable to resolve project root for PHAR build.');
-    }
-
-    // Hard guard: explicit builds must never swap the artifact under a live
-    // process (session controller + messenger consumers execute from it).
-    // Silent skip so the throw below is the single operator-facing message.
-    if (phar_skip_rebuild_when_in_use($pharPath, true)) {
-        throw new \RuntimeException(\sprintf('PHAR rebuild refused: artifact %s is in use by live process(es). Rebuilding would corrupt the running session — stop the session or build to a different path with HATFIELD_PHAR_PATH.', $pharPath));
     }
 
     $explicitPharPath = getenv('HATFIELD_PHAR_PATH');

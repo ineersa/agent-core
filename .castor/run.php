@@ -32,8 +32,8 @@ require_once __DIR__.'/shared.php';
  * distinct build, reused across launches) so the canonical artifact has no
  * long-lived holder: castor test/check rebuild the canonical file freely
  * even while a session is live, and concurrent sessions are isolated by
- * construction. Stale copies are GC'd at launch (24 h age; in-use copies
- * preserved).
+ * construction. Copies accumulate per build; `castor clean:cleanup` sweeps the
+ * whole var/tmp/phar tree when you choose — no runtime GC by design.
  * CastorTasks\phar_ensure() rebuilds the PHAR when source is newer than the last build.
  *
  * @param string $extraArgs Extra args appended after `agent` (e.g. '--model=...').
@@ -41,7 +41,6 @@ require_once __DIR__.'/shared.php';
 function agent_phar_invocation(string $extraArgs = ''): string
 {
     $pharPath = \CastorTasks\phar_ensure();
-    \CastorTasks\phar_gc_session_copies();
     $sessionCopy = \CastorTasks\phar_materialize_session_copy($pharPath);
     $tail = '' === $extraArgs ? '' : ' '.$extraArgs;
 
