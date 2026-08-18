@@ -19,7 +19,7 @@
         "reserveTokens": 16384
     },
     "pi-fork": {
-        "defaultModel": "deepseek/deepseek-v4-flash",
+        "defaultModel": "grok-cli/grok-composer-2.5-fast",
         "defaultThinking": "xhigh"
     },
     "taskWorkflow": {
