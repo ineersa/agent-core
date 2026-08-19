@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\LoadedResources;
 
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiscovery;
+use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -130,6 +131,83 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
         $this->assertSame('review', $prompts->conflicts[0]->name);
         $this->assertSame($globalFile, $prompts->conflicts[0]->winnerPath);
         $this->assertSame($projectFile, $prompts->conflicts[0]->loserPath);
+    }
+
+    #[Test]
+    public function testAiCatalogSkewAddsWarningConflictSection(): void
+    {
+        $home = $this->tmpDir.'/home';
+        mkdir($home.'/.hatfield', 0777, true);
+        $catalogPath = $this->tmpDir.'/ai-catalog.yaml';
+        file_put_contents($catalogPath, "version: 2\nproviders: {}\n");
+        file_put_contents($home.'/.hatfield/ai-catalog.yaml', "version: 1\nproviders: {}\n");
+
+        $builder = new LoadedResourcesSummaryBuilder(
+            agentsContextDiscovery: new AgentsContextDiscovery(
+                pathResolver: new SettingsPathResolver($this->tmpDir),
+                appConfig: $this->appConfig($this->tmpDir),
+            ),
+            skillDiscovery: $this->emptySkillDiscovery($this->tmpDir),
+            promptTemplateLoader: $this->emptyPromptLoader(),
+            agentDefinitionDiscovery: $this->disabledAgentDiscovery(),
+            themeLoadedResourcesProvider: $this->emptyThemeRegistry(),
+            extensionManager: $this->emptyExtensionManager(),
+            aiCatalog: new AiCatalog($catalogPath, $home),
+        );
+
+        $summary = $builder->build();
+        $section = $this->sectionByKey($summary, 'ai-catalog');
+
+        $this->assertSame('AI Catalog', $section->label);
+        $this->assertSame([], $section->items);
+        $this->assertCount(1, $section->conflicts);
+        $this->assertSame('AI Catalog', $section->conflicts[0]->name);
+        $this->assertSame('', $section->conflicts[0]->winnerPath);
+        $this->assertSame('update available — run `hatfield providers:update`', $section->conflicts[0]->message);
+        $this->assertContains($section, $summary->nonEmptySections());
+    }
+
+    #[Test]
+    public function testAiCatalogAbsentWhenNoSkewOrNullCatalog(): void
+    {
+        $withoutCatalog = new LoadedResourcesSummaryBuilder(
+            agentsContextDiscovery: new AgentsContextDiscovery(
+                pathResolver: new SettingsPathResolver($this->tmpDir),
+                appConfig: $this->appConfig($this->tmpDir),
+            ),
+            skillDiscovery: $this->emptySkillDiscovery($this->tmpDir),
+            promptTemplateLoader: $this->emptyPromptLoader(),
+            agentDefinitionDiscovery: $this->disabledAgentDiscovery(),
+            themeLoadedResourcesProvider: $this->emptyThemeRegistry(),
+            extensionManager: $this->emptyExtensionManager(),
+        );
+
+        foreach ($withoutCatalog->build()->sections as $section) {
+            $this->assertNotSame('ai-catalog', $section->key);
+        }
+
+        $home = $this->tmpDir.'/home-equal';
+        mkdir($home.'/.hatfield', 0777, true);
+        $catalogPath = $this->tmpDir.'/ai-catalog-equal.yaml';
+        file_put_contents($catalogPath, "version: 1\nproviders: {}\n");
+        file_put_contents($home.'/.hatfield/ai-catalog.yaml', "version: 1\nproviders: {}\n");
+
+        $equal = new LoadedResourcesSummaryBuilder(
+            agentsContextDiscovery: new AgentsContextDiscovery(
+                pathResolver: new SettingsPathResolver($this->tmpDir),
+                appConfig: $this->appConfig($this->tmpDir),
+            ),
+            skillDiscovery: $this->emptySkillDiscovery($this->tmpDir),
+            promptTemplateLoader: $this->emptyPromptLoader(),
+            agentDefinitionDiscovery: $this->disabledAgentDiscovery(),
+            themeLoadedResourcesProvider: $this->emptyThemeRegistry(),
+            extensionManager: $this->emptyExtensionManager(),
+            aiCatalog: new AiCatalog($catalogPath, $home),
+        );
+
+        foreach ($equal->build()->sections as $section) {
+            $this->assertNotSame('ai-catalog', $section->key);
+        }
     }
 
     #[Test]
