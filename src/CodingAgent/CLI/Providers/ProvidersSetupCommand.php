@@ -65,8 +65,10 @@ final class ProvidersSetupCommand
 
         /** @var list<array{id: string, models: list<string>, authCommand: ?string}> $configured */
         $configured = [];
-        /** @var array<string, bool> $enabledThisRun */
+        /** @var array<string, bool> $enabledThisRun true=enabled this run, false=disabled this run */
         $enabledThisRun = [];
+        /** @var list<string> $disabledThisRun */
+        $disabledThisRun = [];
 
         while (true) {
             $choice = $this->askProviderChoice($io, $catalog, $enabledThisRun);
@@ -86,6 +88,42 @@ final class ProvidersSetupCommand
                     continue;
                 }
 
+                $currentlyEnabled = $enabledThisRun[$choice] ?? $this->isProviderEnabled($choice);
+                if ($currentlyEnabled) {
+                    $action = $io->choice(
+                        \sprintf('Provider "%s" is enabled. What do you want to do?', $choice),
+                        [
+                            'configure' => 'Reconfigure (keep enabled)',
+                            'disable' => 'Disable',
+                            'cancel' => 'Cancel',
+                        ],
+                        'configure',
+                    );
+                    if ('cancel' === $action) {
+                        $io->writeln('Cancelled.');
+                        if (!$io->confirm('Add another provider?', true)) {
+                            break;
+                        }
+                        continue;
+                    }
+                    if ('disable' === $action) {
+                        $this->disableProvider($io, $choice, $layer, $cwd);
+                        $enabledThisRun[$choice] = false;
+                        $disabledThisRun[] = $choice;
+                        // Drop any earlier enable from this same run so default-model / auth hints skip it.
+                        $configured = array_values(array_filter(
+                            $configured,
+                            static fn (array $row): bool => $row['id'] !== $choice,
+                        ));
+                        $this->warnIfDefaultModelPointsAtProvider($io, $choice);
+                        if (!$io->confirm('Add another provider?', true)) {
+                            break;
+                        }
+                        continue;
+                    }
+                    // 'configure' falls through to re-run enable flow
+                }
+
                 $result = $this->configureCatalogProvider($io, $choice, $provider, $layer, $cwd);
                 if (null !== $result) {
                     $configured[] = $result;
@@ -99,19 +137,26 @@ final class ProvidersSetupCommand
             }
         }
 
-        if ([] === $configured) {
+        if ([] === $configured && [] === $disabledThisRun) {
             $io->writeln('No providers configured.');
 
             return Command::SUCCESS;
         }
 
-        $this->maybeSetDefaultModel($io, $configured, $layer, $cwd);
+        if ([] !== $configured) {
+            $this->maybeSetDefaultModel($io, $configured, $layer, $cwd);
+        }
 
         $io->section('Done');
-        $io->listing(array_map(
-            static fn (array $row): string => \sprintf('%s (%d model(s))', $row['id'], \count($row['models'])),
-            $configured,
-        ));
+        if ([] !== $configured) {
+            $io->listing(array_map(
+                static fn (array $row): string => \sprintf('%s (%d model(s))', $row['id'], \count($row['models'])),
+                $configured,
+            ));
+        }
+        if ([] !== $disabledThisRun) {
+            $io->writeln('Disabled: <comment>'.implode(', ', array_unique($disabledThisRun)).'</comment>');
+        }
         $io->writeln(\sprintf('Settings written: <comment>%s</comment>', $settingsPath));
 
         $pendingAuth = [];
@@ -173,8 +218,7 @@ final class ProvidersSetupCommand
                 'apikey' => '',
                 default => '' !== $kind ? ' ('.$kind.')' : '',
             };
-            $enabled = $enabledThisRun[$id] ?? $this->isProviderEnabled($id);
-            $badge = $enabled ? ' [enabled]' : '';
+            $badge = $this->providerBadge($id, $enabledThisRun);
             $choices[$id] = $label.$suffix.$badge;
         }
         $choices['custom'] = 'Custom OpenAI-compatible (llama.cpp, RunPod, LM Studio, …)';
@@ -190,6 +234,49 @@ final class ProvidersSetupCommand
         $provider = $this->appConfig->ai?->providers[$id] ?? null;
 
         return null !== $provider && $provider->enabled;
+    }
+
+    /**
+     * @param array<string, bool> $enabledThisRun
+     */
+    private function providerBadge(string $id, array $enabledThisRun): string
+    {
+        if (\array_key_exists($id, $enabledThisRun)) {
+            return $enabledThisRun[$id] ? ' [enabled]' : ' [disabled]';
+        }
+
+        return $this->isProviderEnabled($id) ? ' [enabled]' : '';
+    }
+
+    private function disableProvider(
+        SymfonyStyle $io,
+        string $id,
+        SettingsLayerEnum $layer,
+        string $cwd,
+    ): void {
+        $this->settingsWriter->set($layer, $cwd, 'ai.providers.'.$id, [
+            'enabled' => false,
+        ]);
+        $io->success(\sprintf('Provider "%s" disabled.', $id));
+    }
+
+    private function warnIfDefaultModelPointsAtProvider(SymfonyStyle $io, string $providerId): void
+    {
+        $defaultModel = $this->appConfig->ai?->defaultModel;
+        if (null === $defaultModel || '' === $defaultModel) {
+            return;
+        }
+
+        $prefix = $providerId.'/';
+        if (!str_starts_with($defaultModel, $prefix)) {
+            return;
+        }
+
+        $io->warning(\sprintf(
+            'ai.default_model "%s" points at disabled provider "%s" and is now unavailable. Re-run setup to pick another default model.',
+            $defaultModel,
+            $providerId,
+        ));
     }
 
     /**
@@ -217,9 +304,7 @@ final class ProvidersSetupCommand
                 'enabled' => true,
             ]);
 
-            if (null !== $authCommand) {
-                $io->note(\sprintf('After setup finishes, run `hatfield %s` to log in.', $authCommand));
-            }
+            // Auth hint is emitted once at the end from $configured — skip if later disabled same run.
 
             return ['id' => $id, 'models' => $models, 'authCommand' => $authCommand];
         }

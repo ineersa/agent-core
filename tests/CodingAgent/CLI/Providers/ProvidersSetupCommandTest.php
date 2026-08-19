@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Tests\CLI\Providers;
 
 use Ineersa\CodingAgent\CLI\Providers\ProvidersSetupCommand;
 use Ineersa\CodingAgent\Config\Ai\AiCatalog;
+use Ineersa\CodingAgent\Config\Ai\AiConfig;
+use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
@@ -284,7 +286,90 @@ YAML);
         }
     }
 
-    private function createCommand(): ProvidersSetupCommand
+    #[Test]
+    public function disableFlowWritesEnabledFalseWithoutModels(): void
+    {
+        $tester = new CommandTester($this->createCommand(
+            ai: new AiConfig(
+                providers: [
+                    'grok-cli' => new AiProviderConfig(id: 'grok-cli', type: 'grok', enabled: true),
+                ],
+            ),
+        ));
+        $tester->setInputs([
+            'grok-cli',
+            'disable',
+            'no', // add another
+        ]);
+
+        $this->assertSame(Command::SUCCESS, $tester->execute([]), $tester->getDisplay());
+
+        $display = $tester->getDisplay();
+        $this->assertStringContainsString('Provider "grok-cli" disabled', $display);
+        $this->assertStringNotContainsString('`hatfield auth:grok`', $display);
+
+        $settings = $this->parseUserSettings();
+        $provider = $settings['ai']['providers']['grok-cli'] ?? null;
+        $this->assertSame(['enabled' => false], $provider);
+        $this->assertArrayNotHasKey('models', $provider);
+    }
+
+    #[Test]
+    public function enableThenDisableSameRunDropsAuthHintAndDefaultChoices(): void
+    {
+        $tester = new CommandTester($this->createCommand());
+        $tester->setInputs([
+            'grok-cli',      // enable oauth
+            'yes',           // add another
+            'grok-cli',      // pick again (now [enabled] this run)
+            'disable',
+            'yes',           // add another → picker shows [disabled]
+            'done',
+        ]);
+
+        $this->assertSame(Command::SUCCESS, $tester->execute([]), $tester->getDisplay());
+
+        $display = $tester->getDisplay();
+        $this->assertStringContainsString('Provider "grok-cli" enabled', $display);
+        $this->assertStringContainsString('Provider "grok-cli" disabled', $display);
+        $this->assertStringContainsString('[disabled]', $display);
+        $this->assertStringNotContainsString('`hatfield auth:grok`', $display);
+        $this->assertStringNotContainsString('Set default model?', $display);
+
+        $settings = $this->parseUserSettings();
+        $this->assertSame(['enabled' => false], $settings['ai']['providers']['grok-cli'] ?? null);
+    }
+
+    #[Test]
+    public function disablingDefaultModelProviderWarnsWithoutRewriting(): void
+    {
+        $tester = new CommandTester($this->createCommand(
+            ai: new AiConfig(
+                defaultModel: 'zai/glm-5.3',
+                providers: [
+                    'zai' => new AiProviderConfig(id: 'zai', enabled: true),
+                ],
+            ),
+        ));
+        $tester->setInputs([
+            'zai',
+            'disable',
+            'no',
+        ]);
+
+        $this->assertSame(Command::SUCCESS, $tester->execute([]), $tester->getDisplay());
+
+        $display = $tester->getDisplay();
+        $this->assertStringContainsString('ai.default_model "zai/glm-5.3"', $display);
+        $this->assertStringContainsString('now unavailable', $display);
+        $this->assertStringContainsString('Re-run setup', $display);
+
+        $settings = $this->parseUserSettings();
+        $this->assertSame(['enabled' => false], $settings['ai']['providers']['zai'] ?? null);
+        $this->assertArrayNotHasKey('default_model', $settings['ai'] ?? []);
+    }
+
+    private function createCommand(?AiConfig $ai = null): ProvidersSetupCommand
     {
         $pathResolver = new SettingsPathResolver($this->projectDir, $this->homeDir);
         $writer = new SettingsOverrideWriter(
@@ -297,6 +382,7 @@ YAML);
             tui: new TuiConfig(theme: 'default'),
             logging: new LoggingConfig(logDir: $this->tmpDir.'/logs'),
             cwd: $this->projectDir,
+            ai: $ai,
         );
 
         return new ProvidersSetupCommand($catalog, $writer, $appConfig);
