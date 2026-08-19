@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\LoadedResources;
 
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiscovery;
+use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceConflictDTO;
@@ -28,19 +29,50 @@ final readonly class LoadedResourcesSummaryBuilder implements LoadedResourcesSum
         private AgentDefinitionDiscovery $agentDefinitionDiscovery,
         private ThemeLoadedResourcesProviderInterface $themeLoadedResourcesProvider,
         private ExtensionManager $extensionManager,
+        private ?AiCatalog $aiCatalog = null,
     ) {
     }
 
     public function build(): LoadedResourcesSummaryDTO
     {
-        return new LoadedResourcesSummaryDTO([
+        $sections = [
             $this->buildContextSection(),
             $this->buildSkillsSection(),
             $this->buildPromptsSection(),
             $this->buildThemesSection(),
             $this->buildAgentsSection(),
             $this->buildExtensionsSection(),
-        ]);
+        ];
+
+        $catalogSection = $this->buildAiCatalogSection();
+        if (null !== $catalogSection) {
+            $sections[] = $catalogSection;
+        }
+
+        return new LoadedResourcesSummaryDTO($sections);
+    }
+
+    private function buildAiCatalogSection(): ?LoadedResourceSectionDTO
+    {
+        if (true !== $this->aiCatalog?->isBundledNewerThanUser()) {
+            return null;
+        }
+
+        // Message-only conflict branch in LoadedResourcesWidget::formatConflict
+        // (empty winnerPath + message) → "⚠ AI Catalog: update available — …"
+        return new LoadedResourceSectionDTO(
+            key: 'ai-catalog',
+            label: 'AI Catalog',
+            items: [],
+            conflicts: [
+                new LoadedResourceConflictDTO(
+                    name: 'AI Catalog',
+                    winnerPath: '',
+                    loserPath: '',
+                    message: 'update available — run bin/console providers:update',
+                ),
+            ],
+        );
     }
 
     private function buildContextSection(): LoadedResourceSectionDTO

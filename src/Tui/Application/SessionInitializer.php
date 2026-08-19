@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Application;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
@@ -43,7 +42,6 @@ final readonly class SessionInitializer
         private LoggerInterface $logger,
         private HistoryProviderInterface $historyProvider,
         private SessionTranscriptProviderInterface $sessionTranscriptProvider,
-        private ?AiCatalog $aiCatalog = null,
     ) {
     }
 
@@ -129,24 +127,11 @@ final readonly class SessionInitializer
         // For draft sessions (sessionId === ''), use a placeholder runId.
         $runId = '' !== $state->sessionId ? $state->sessionId : '(new draft)';
 
-        $blocks = [$this->blockFactory->system(
+        return [$this->blockFactory->system(
             runId: $runId,
             text: 'Welcome to Hatfield. Type a message below to start.',
             seq: 1,
         )];
-
-        // Visible once per fresh session start when the bundled catalog is newer
-        // than the user's copy. Resume paths skip this — no second notice on attach.
-        if (true === $this->aiCatalog?->isBundledNewerThanUser()) {
-            $blocks[] = $this->blockFactory->system(
-                runId: $runId,
-                text: 'AI catalog update available — run bin/console providers:update',
-                seq: 2,
-                style: 'warning',
-            );
-        }
-
-        return $blocks;
     }
 
     /**
