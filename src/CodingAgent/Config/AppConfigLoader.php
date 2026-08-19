@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Yaml\Yaml;
 
@@ -11,16 +12,26 @@ use Symfony\Component\Yaml\Yaml;
  * Loads and overlays Hatfield settings layers from YAML files.
  *
  * Precedence order (last wins):
- *   built-in defaults  <  user settings (~/.hatfield/settings.yaml)
+ *   AI catalog (~/.hatfield/ai-catalog.yaml, bootstrapped from config/ai-catalog.yaml)
+ *   <  built-in defaults (config/hatfield.defaults.yaml)
+ *   <  user settings (~/.hatfield/settings.yaml)
  *   <  project settings (<cwd>/.hatfield/settings.yaml)
+ *
+ * Catalog providers are complete curated entries; models.dev never gates
+ * presence. For known providers, settings stay sparse overlays (scalars win;
+ * an explicit `models:` map replaces catalog models wholesale).
  *
  * Each {@see load()} call rereads YAML from disk. Missing user/project files
  * contribute an empty overlay; load never creates ~/.hatfield/settings.yaml.
+ * Network I/O never happens here — providers:update writes the user catalog.
  *
  * Overlay semantics (implemented in {@see overlayConfig}):
  *  - Associative arrays: recursive deep overlay — keys present in the higher-
  *    priority layer override matching keys in the lower layer; keys only in the
  *    lower layer survive untouched.
+ *  - Under {@code ai.providers.<id>}, an assoc {@code models:} map replaces the
+ *    catalog models wholesale (pin/trim). Elsewhere {@code models} deep-merges
+ *    like any other assoc map.
  *  - Indexed/sequential list arrays: higher-priority entire list replaces the
  *    lower-priority list. Lists never append or index-merge.
  *  - Scalar values (string, int, float, bool): higher-priority value wins;
@@ -75,6 +86,7 @@ final class AppConfigLoader
 
     public function __construct(
         private readonly SettingsPathResolver $pathResolver,
+        private readonly ?AiCatalog $aiCatalog = null,
     ) {
     }
 
@@ -84,8 +96,12 @@ final class AppConfigLoader
             throw new \InvalidArgumentException(\sprintf('%s::load() requires a non-empty $cwd. Pass %s from the container or an explicit absolute path.', self::class, '%app.cwd%'));
         }
 
-        // Layer 1: Built-in defaults (shipped with the app)
-        $defaultsRaw = $this->loadYamlFile($defaultsPath);
+        // Layer 0+1: curated AI catalog (user copy / bundled default) under built-in defaults.
+        // Fold catalog into defaultsRaw so SettingsValueResolver provenance still attributes catalog keys
+        // to the Defaults layer without expanding SettingsLayerEnum.
+        $catalogRaw = $this->aiCatalog?->loadProviders() ?? [];
+        $defaultsFileRaw = $this->loadYamlFile($defaultsPath);
+        $defaultsRaw = [] !== $catalogRaw ? $this->overlayConfig($catalogRaw, $defaultsFileRaw) : $defaultsFileRaw;
 
         // Layer 2: User settings (~/.hatfield/settings.yaml), sparse overrides only
         $userSettingsPath = $this->pathResolver->getHomeDir().'/.hatfield/settings.yaml';
@@ -118,21 +134,36 @@ final class AppConfigLoader
      *
      * Rules (per key):
      *  1. Both sides are associative arrays → recurse (deep overlay).
-     *  2. Either side is a list (sequential array) → higher-priority list
+     *  2. Under ai.providers.<id>, assoc models: replaces wholesale (pin/trim);
+     *     elsewhere models deep-merges like any other assoc map.
+     *  3. Either side is a list (sequential array) → higher-priority list
      *     replaces the lower-priority list entirely. Lists never append.
-     *  3. One or both sides are scalar/null → higher-priority value wins.
+     *  4. One or both sides are scalar/null → higher-priority value wins.
      *
      * @param array<string, mixed> $base Lower-priority layer (defaults)
      * @param array<string, mixed> $over Higher-priority layer (user or project)
+     * @param list<string>         $path Path segments from the settings root to this node
      *
      * @return array<string, mixed>
      */
-    public function overlayConfig(array $base, array $over): array
+    public function overlayConfig(array $base, array $over, array $path = []): array
     {
         foreach ($over as $key => $value) {
+            $keyString = (string) $key;
+            $childPath = [...$path, $keyString];
+
             if (\is_array($value) && isset($base[$key]) && \is_array($base[$key])) {
-                if ($this->isAssoc($value) && $this->isAssoc($base[$key])) {
-                    $base[$key] = $this->overlayConfig($base[$key], $value);
+                // Only under ai.providers.<id>, models: maps replace wholesale (pin/trim).
+                // Elsewhere models deep-merges like any other assoc map.
+                if (
+                    'models' === $keyString
+                    && $this->isAssoc($value)
+                    && $this->isAssoc($base[$key])
+                    && $this->isAiProviderModelsPath($path)
+                ) {
+                    $base[$key] = $value;
+                } elseif ($this->isAssoc($value) && $this->isAssoc($base[$key])) {
+                    $base[$key] = $this->overlayConfig($base[$key], $value, $childPath);
                 } else {
                     $base[$key] = $value;
                 }
@@ -142,6 +173,20 @@ final class AppConfigLoader
         }
 
         return $base;
+    }
+
+    /**
+     * True when $path is exactly ['ai', 'providers', '<id>'] — the parent of a
+     * provider models map. Wholesale replace applies only at that depth.
+     *
+     * @param list<string> $path
+     */
+    private function isAiProviderModelsPath(array $path): bool
+    {
+        return 3 === \count($path)
+            && 'ai' === $path[0]
+            && 'providers' === $path[1]
+            && '' !== $path[2];
     }
 
     /**

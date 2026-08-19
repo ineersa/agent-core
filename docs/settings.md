@@ -12,20 +12,28 @@ in home or project settings. Hatfield does **not** copy defaults into your home 
 
 Later sources win via structured overlay (`AppConfigLoader`):
 
-1. Built-in defaults shipped with the install (`config/hatfield.defaults.yaml`)
-2. `~/.hatfield/settings.yaml`
-3. `<project>/.hatfield/settings.yaml`
+1. AI catalog (`~/.hatfield/ai-catalog.yaml`, bootstrapped from bundled `config/ai-catalog.yaml`)
+2. Built-in defaults shipped with the install (`config/hatfield.defaults.yaml`)
+3. `~/.hatfield/settings.yaml`
+4. `<project>/.hatfield/settings.yaml`
 
 Merge rules:
 
 - **Associative maps** deep-merge (higher layer overrides matching keys; untouched lower keys survive).
+- **Provider `models:` maps** replace wholesale (pin/trim); they do not deep-merge individual model ids.
 - **Lists** (sequential arrays) are replaced entirely by the higher layer — no append/index-merge.
 - **Scalars** (and `null`) in a higher layer replace the lower value.
+
+Known providers in user/project settings are **sparse overlays** (for example
+`{ enabled: true, api_key: env:ZAI_API_KEY }`). Full model lists and connection
+defaults come from the AI catalog. See [ai-catalog.md](ai-catalog.md) for the
+precedence diagram, `hatfield providers:update`, and version-skew warning.
 
 Use only keys you intend to change. Full snapshots of defaults are unnecessary.
 
 Related focused references:
 
+- AI catalog → [ai-catalog.md](ai-catalog.md)
 - Models and providers → [settings-models.md](settings-models.md)
 - Agents, prompts, skills, extensions → [settings-agents.md](settings-agents.md)
 - Sessions → [session-storage.md](session-storage.md)
@@ -37,6 +45,7 @@ Related focused references:
 
 | Path | Role |
 |---|---|
+| `~/.hatfield/ai-catalog.yaml` | User AI catalog (see [ai-catalog.md](ai-catalog.md)) |
 | `~/.hatfield/settings.yaml` | User overrides |
 | `<cwd>/.hatfield/settings.yaml` | Project overrides |
 | `<cwd>/.hatfield/sessions/` | Session storage (ignored by git) |

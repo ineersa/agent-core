@@ -91,8 +91,11 @@ final class LoadedResourcesWidget extends AbstractWidget
         $theme = $this->theme;
         $lines = [];
         $header = $theme->color(ThemeColorEnum::MarkdownHeading, '['.$section->label.']');
-        $compact = $this->formatCompactList($section->items);
-        $lines[] = $header.'  '.$theme->muted($compact);
+        if ([] === $section->items) {
+            $lines[] = $header;
+        } else {
+            $lines[] = $header.'  '.$theme->muted($this->formatCompactList($section->items));
+        }
 
         if ($this->expanded) {
             foreach ($section->items as $item) {

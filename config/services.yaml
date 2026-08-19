@@ -128,6 +128,11 @@ services:
     arguments:
       $appRoot: '%kernel.project_dir%'
 
+  Ineersa\CodingAgent\Config\Ai\AiCatalog:
+    arguments:
+      $catalogPath: '@=service("Ineersa\\CodingAgent\\Config\\AppResourceLocator").getAiCatalogPath()'
+      $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'
+
   # Provenance path queries need THROW_ON_INVALID_INDEX so isReadable()
   # distinguishes missing keys from explicit null. FrameworkBundle's shared
   # @property_accessor is non-strict by default and would report missing array

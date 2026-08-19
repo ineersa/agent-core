@@ -35,6 +35,14 @@ final readonly class AppResourceLocator
     }
 
     /**
+     * Absolute path to the curated AI provider catalog YAML.
+     */
+    public function getAiCatalogPath(): string
+    {
+        return $this->appRoot.'/config/ai-catalog.yaml';
+    }
+
+    /**
      * Absolute path to the built-in themes directory.
      */
     public function getBuiltinThemesPath(): string
