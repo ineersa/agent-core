@@ -180,7 +180,7 @@ final class AiCatalog
         }
 
         $this->logger?->warning(\sprintf(
-            'AI catalog default version %d is newer than your copy (%d). Run bin/console providers:update to refresh %s.',
+            'AI catalog default version %d is newer than your copy (%d). Run `hatfield providers:update` to refresh %s.',
             $bundled['version'],
             $user['version'],
             $this->userCatalogPath(),

@@ -163,7 +163,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
         $this->assertCount(1, $section->conflicts);
         $this->assertSame('AI Catalog', $section->conflicts[0]->name);
         $this->assertSame('', $section->conflicts[0]->winnerPath);
-        $this->assertSame('update available — run bin/console providers:update', $section->conflicts[0]->message);
+        $this->assertSame('update available — run `hatfield providers:update`', $section->conflicts[0]->message);
         $this->assertContains($section, $summary->nonEmptySections());
     }
 

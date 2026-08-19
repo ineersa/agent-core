@@ -409,7 +409,7 @@ agents:
 #
 # Known-provider catalogs (connection settings, quirks, full model lists) ship in
 # config/ai-catalog.yaml (bundled default). First load copies that file to
-# ~/.hatfield/ai-catalog.yaml; runtime reads the user copy. `bin/console providers:update`
+# ~/.hatfield/ai-catalog.yaml; runtime reads the user copy. `hatfield providers:update`
 # rebases the user catalog onto the bundled default and syncs models.dev metadata.
 # Interactive enablement: `bin/console providers:setup` (see providers-setup-command).
 #

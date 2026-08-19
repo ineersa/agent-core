@@ -69,7 +69,7 @@ final readonly class LoadedResourcesSummaryBuilder implements LoadedResourcesSum
                     name: 'AI Catalog',
                     winnerPath: '',
                     loserPath: '',
-                    message: 'update available — run bin/console providers:update',
+                    message: 'update available — run `hatfield providers:update`',
                 ),
             ],
         );

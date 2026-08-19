@@ -122,7 +122,7 @@ YAML);
             static fn (array $r): bool => 'warning' === $r['level'],
         ));
         $this->assertNotEmpty($warnings);
-        $this->assertStringContainsString('providers:update', (string) $warnings[0]['message']);
+        $this->assertStringContainsString('`hatfield providers:update`', (string) $warnings[0]['message']);
         $this->assertStringContainsString('version 2', (string) $warnings[0]['message']);
     }
 

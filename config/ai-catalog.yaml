@@ -5,7 +5,7 @@
 #
 # Known-provider settings in ~/.hatfield or project .hatfield stay sparse:
 #   ai.providers.zai: { enabled: true, api_key: env:ZAI_API_KEY }
-# Refresh: bin/console providers:update
+# Refresh: hatfield providers:update
 # Interactive setup: bin/console providers:setup (see providers-setup-command task)
 
 version: 1

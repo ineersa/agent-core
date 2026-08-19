@@ -26,7 +26,7 @@ Merge rules:
 
 Known providers in user/project settings are **sparse overlays** (for example
 `{ enabled: true, api_key: env:ZAI_API_KEY }`). Full model lists and connection
-defaults come from the AI catalog. `bin/console providers:update` rebases the user
+defaults come from the AI catalog. `hatfield providers:update` rebases the user
 catalog onto the bundled default and syncs model metadata from models.dev — agent
 runtime never fetches models.dev. If a newer Hatfield release ships a higher catalog
 `version`, startup logs a warning suggesting `providers:update`.
