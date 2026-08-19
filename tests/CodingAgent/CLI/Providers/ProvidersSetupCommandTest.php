@@ -151,7 +151,12 @@ YAML);
         $this->assertArrayNotHasKey('models', $settings['ai']['providers']['zai']);
         $this->assertArrayNotHasKey('base_url', $settings['ai']['providers']['zai']);
         $this->assertSame('zai/glm-5.3', $settings['ai']['default_model'] ?? null);
-        $this->assertStringContainsString('Provider "zai" enabled', $tester->getDisplay());
+        $display = preg_replace('/\s+/', ' ', $tester->getDisplay()) ?? '';
+        $this->assertStringContainsString('Z.ai (GLM) enabled', $display);
+        $this->assertStringContainsString('(Everything else is preconfigured.)', $display);
+        $this->assertStringContainsString('Saved to', $display);
+        $this->assertStringNotContainsString('layer', $display);
+        $this->assertStringNotContainsString('Catalog connection', $display);
     }
 
     #[Test]
@@ -189,9 +194,11 @@ YAML);
 
         $this->assertSame(Command::SUCCESS, $tester->execute([]), $tester->getDisplay());
 
-        $display = $tester->getDisplay();
-        $this->assertStringContainsString('`hatfield auth:grok`', $display);
+        $display = preg_replace('/\s+/', ' ', $tester->getDisplay()) ?? '';
+        $this->assertStringContainsString('Grok / xAI enabled', $display);
+        $this->assertStringContainsString('To finish: run `hatfield auth:grok` and log in.', $display);
         $this->assertStringNotContainsString('Authenticate with xAI', $display);
+        $this->assertStringNotContainsString('layer', $display);
 
         $settings = $this->parseUserSettings();
         $provider = $settings['ai']['providers']['grok-cli'] ?? null;
@@ -340,13 +347,15 @@ YAML);
         $tester->setInputs([
             'grok-cli',
             'disable',
+            'yes', // confirm disable
             'no', // add another
         ]);
 
         $this->assertSame(Command::SUCCESS, $tester->execute([]), $tester->getDisplay());
 
-        $display = $tester->getDisplay();
-        $this->assertStringContainsString('Provider "grok-cli" disabled', $display);
+        $display = preg_replace('/\s+/', ' ', $tester->getDisplay()) ?? '';
+        $this->assertStringContainsString('Disable Grok / xAI? (Its saved key will be removed.)', $display);
+        $this->assertStringContainsString('Grok / xAI disabled', $display);
         $this->assertStringNotContainsString('`hatfield auth:grok`', $display);
 
         $settings = $this->parseUserSettings();
@@ -364,18 +373,19 @@ YAML);
             'yes',           // add another
             'grok-cli',      // pick again (now [enabled] this run)
             'disable',
+            'yes',           // confirm disable
             'yes',           // add another → picker shows [disabled]
             'done',
         ]);
 
         $this->assertSame(Command::SUCCESS, $tester->execute([]), $tester->getDisplay());
 
-        $display = $tester->getDisplay();
-        $this->assertStringContainsString('Provider "grok-cli" enabled', $display);
-        $this->assertStringContainsString('Provider "grok-cli" disabled', $display);
+        $display = preg_replace('/\s+/', ' ', $tester->getDisplay()) ?? '';
+        $this->assertStringContainsString('Grok / xAI enabled', $display);
+        $this->assertStringContainsString('Grok / xAI disabled', $display);
         $this->assertStringContainsString('[disabled]', $display);
         $this->assertStringNotContainsString('`hatfield auth:grok`', $display);
-        $this->assertStringNotContainsString('Set default model?', $display);
+        $this->assertStringNotContainsString('Set as your default model?', $display);
 
         $settings = $this->parseUserSettings();
         $this->assertSame(['enabled' => false], $settings['ai']['providers']['grok-cli'] ?? null);
@@ -395,15 +405,15 @@ YAML);
         $tester->setInputs([
             'zai',
             'disable',
+            'yes', // confirm disable
             'no',
         ]);
 
         $this->assertSame(Command::SUCCESS, $tester->execute([]), $tester->getDisplay());
 
-        $display = $tester->getDisplay();
-        $this->assertStringContainsString('ai.default_model "zai/glm-5.3"', $display);
-        $this->assertStringContainsString('now unavailable', $display);
-        $this->assertStringContainsString('Re-run setup', $display);
+        $display = preg_replace('/\s+/', ' ', $tester->getDisplay()) ?? '';
+        $this->assertStringContainsString('Your default model "zai/glm-5.3" is now unavailable', $display);
+        $this->assertStringContainsString('Run setup again to pick another', $display);
 
         $settings = $this->parseUserSettings();
         $this->assertSame(['enabled' => false], $settings['ai']['providers']['zai'] ?? null);

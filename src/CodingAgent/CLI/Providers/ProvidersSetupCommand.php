@@ -20,13 +20,21 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * optional {@see api_key}). Never writes {@see models} for those — catalog
  * inheritance must stay intact. Custom providers write a full definition.
  */
-#[AsCommand(name: 'providers:setup', description: 'Interactive setup for AI providers (catalog presets + custom OpenAI-compatible)')]
+#[AsCommand(name: 'providers:setup', description: 'Interactive setup for AI providers')]
 final class ProvidersSetupCommand
 {
     private const ENV_VAR_PATTERN = '/^[A-Z][A-Z0-9_]*$/';
 
     /** @var list<string> */
     private const THINKING_LEVEL_KEYS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+
+    /** Friendly picker labels for known provider ids. */
+    private const DISPLAY_NAMES = [
+        'zai' => 'Z.ai (GLM)',
+        'deepseek' => 'DeepSeek',
+        'openai-codex' => 'OpenAI Codex',
+        'grok-cli' => 'Grok / xAI',
+    ];
 
     public function __construct(
         private readonly AiCatalog $aiCatalog,
@@ -51,16 +59,15 @@ final class ProvidersSetupCommand
 
         $catalog = $this->loadCatalogProviders();
         if ([] === $catalog) {
-            $io->error('No AI catalog providers found. Ensure config/ai-catalog.yaml is present.');
+            $io->error('No AI providers found. Ensure Hatfield is installed correctly.');
 
             return Command::FAILURE;
         }
 
         $io->title('AI Provider Setup');
         $io->text([
-            'Hatfield ships with no providers enabled.',
-            'Pick a provider to configure. Catalog connection settings and models stay inherited — only enable/key overrides are written for known providers.',
-            \sprintf('Writing to <info>%s</info> layer: <comment>%s</comment>', $layer->value, $settingsPath),
+            'Hatfield needs at least one AI provider to run.',
+            "Pick one — you'll be asked for what it needs (a key or a login).",
         ]);
 
         /** @var list<array{id: string, models: list<string>, authCommand: ?string}> $configured */
@@ -69,9 +76,12 @@ final class ProvidersSetupCommand
         $enabledThisRun = [];
         /** @var list<string> $disabledThisRun */
         $disabledThisRun = [];
+        $wroteSomething = false;
+        $showHints = true;
 
         while (true) {
-            $choice = $this->askProviderChoice($io, $catalog, $enabledThisRun);
+            $choice = $this->askProviderChoice($io, $catalog, $enabledThisRun, $showHints);
+            $showHints = false;
             if ('done' === $choice) {
                 break;
             }
@@ -80,20 +90,22 @@ final class ProvidersSetupCommand
                 $result = $this->configureCustom($io, $layer, $cwd, $catalog);
                 $configured[] = $result;
                 $enabledThisRun[$result['id']] = true;
-                $io->success(\sprintf('Custom provider "%s" written.', $result['id']));
+                $wroteSomething = true;
+                $io->success(\sprintf('%s added.', $result['id']));
             } else {
                 $provider = $catalog[$choice] ?? null;
                 if (!\is_array($provider)) {
-                    $io->warning(\sprintf('Unknown catalog provider "%s".', $choice));
+                    $io->warning(\sprintf('Unknown provider "%s".', $choice));
                     continue;
                 }
 
+                $displayName = $this->displayName($choice, $provider);
                 $currentlyEnabled = $enabledThisRun[$choice] ?? $this->isProviderEnabled($choice);
                 if ($currentlyEnabled) {
                     $action = $io->choice(
-                        \sprintf('Provider "%s" is enabled. What do you want to do?', $choice),
+                        \sprintf('%s is already enabled. What do you want to do?', $displayName),
                         [
-                            'configure' => 'Reconfigure (keep enabled)',
+                            'configure' => 'Reconfigure',
                             'disable' => 'Disable',
                             'cancel' => 'Cancel',
                         ],
@@ -101,22 +113,33 @@ final class ProvidersSetupCommand
                     );
                     if ('cancel' === $action) {
                         $io->writeln('Cancelled.');
-                        if (!$io->confirm('Add another provider?', true)) {
+                        if (!$io->confirm('Add another?', false)) {
                             break;
                         }
                         continue;
                     }
                     if ('disable' === $action) {
-                        $this->disableProvider($io, $choice, $layer, $cwd);
+                        if (!$io->confirm(
+                            \sprintf('Disable %s? (Its saved key will be removed.)', $displayName),
+                            false,
+                        )) {
+                            $io->writeln('Cancelled.');
+                            if (!$io->confirm('Add another?', false)) {
+                                break;
+                            }
+                            continue;
+                        }
+                        $this->disableProvider($io, $choice, $displayName, $layer, $cwd);
                         $enabledThisRun[$choice] = false;
                         $disabledThisRun[] = $choice;
+                        $wroteSomething = true;
                         // Drop any earlier enable from this same run so default-model / auth hints skip it.
                         $configured = array_values(array_filter(
                             $configured,
                             static fn (array $row): bool => $row['id'] !== $choice,
                         ));
                         $this->warnIfDefaultModelPointsAtProvider($io, $choice);
-                        if (!$io->confirm('Add another provider?', true)) {
+                        if (!$io->confirm('Add another?', false)) {
                             break;
                         }
                         continue;
@@ -124,21 +147,28 @@ final class ProvidersSetupCommand
                     // 'configure' falls through to re-run enable flow
                 }
 
-                $result = $this->configureCatalogProvider($io, $choice, $provider, $layer, $cwd);
+                $result = $this->configureCatalogProvider($io, $choice, $provider, $displayName, $layer, $cwd);
                 if (null !== $result) {
                     $configured[] = $result;
                     $enabledThisRun[$choice] = true;
-                    $io->success(\sprintf('Provider "%s" enabled.', $choice));
+                    $wroteSomething = true;
+                    $kind = \is_string($provider['kind'] ?? null) ? $provider['kind'] : 'apikey';
+                    if ('oauth' === $kind) {
+                        $io->success(\sprintf('%s enabled.', $displayName));
+                    } else {
+                        $io->success(\sprintf('%s enabled.', $displayName));
+                        $io->writeln('(Everything else is preconfigured.)');
+                    }
                 }
             }
 
-            if (!$io->confirm('Add another provider?', true)) {
+            if (!$io->confirm('Add another?', false)) {
                 break;
             }
         }
 
         if ([] === $configured && [] === $disabledThisRun) {
-            $io->writeln('No providers configured.');
+            $io->writeln('Nothing changed.');
 
             return Command::SUCCESS;
         }
@@ -147,17 +177,9 @@ final class ProvidersSetupCommand
             $this->maybeSetDefaultModel($io, $configured, $layer, $cwd);
         }
 
-        $io->section('Done');
-        if ([] !== $configured) {
-            $io->listing(array_map(
-                static fn (array $row): string => \sprintf('%s (%d model(s))', $row['id'], \count($row['models'])),
-                $configured,
-            ));
+        if ($wroteSomething) {
+            $io->writeln(\sprintf('Saved to <comment>%s</comment>', $settingsPath));
         }
-        if ([] !== $disabledThisRun) {
-            $io->writeln('Disabled: <comment>'.implode(', ', array_unique($disabledThisRun)).'</comment>');
-        }
-        $io->writeln(\sprintf('Settings written: <comment>%s</comment>', $settingsPath));
 
         $pendingAuth = [];
         foreach ($configured as $row) {
@@ -166,9 +188,8 @@ final class ProvidersSetupCommand
             }
         }
         if ([] !== $pendingAuth) {
-            $io->warning('OAuth providers need a login before first use:');
             foreach (array_unique($pendingAuth) as $authCommand) {
-                $io->writeln(\sprintf('  Next step: run <info>`hatfield %s`</info>', $authCommand));
+                $io->writeln(\sprintf('To finish: run <info>`hatfield %s`</info> and log in.', $authCommand));
             }
         }
 
@@ -205,28 +226,63 @@ final class ProvidersSetupCommand
      * @param array<string, array<string, mixed>> $catalog
      * @param array<string, bool>                 $enabledThisRun
      */
-    private function askProviderChoice(SymfonyStyle $io, array $catalog, array $enabledThisRun): string
+    private function askProviderChoice(SymfonyStyle $io, array $catalog, array $enabledThisRun, bool $showHints): string
     {
+        if ($showHints) {
+            $io->writeln('');
+            $rows = [];
+            foreach ($catalog as $id => $provider) {
+                $rows[] = [$this->displayName($id, $provider), $this->needHint($provider)];
+            }
+            $rows[] = ['Other server', 'any OpenAI-compatible endpoint (llama.cpp, LM Studio, …)'];
+            $io->table([], $rows);
+        }
+
         $choices = [];
         foreach ($catalog as $id => $provider) {
-            $label = \is_string($provider['label'] ?? null) && '' !== $provider['label']
-                ? $provider['label']
-                : $id;
-            $kind = \is_string($provider['kind'] ?? null) ? $provider['kind'] : '';
-            $suffix = match ($kind) {
-                'oauth' => ' (OAuth)',
-                'apikey' => '',
-                default => '' !== $kind ? ' ('.$kind.')' : '',
-            };
+            $label = $this->displayName($id, $provider);
+            $need = $this->needHint($provider);
             $badge = $this->providerBadge($id, $enabledThisRun);
-            $choices[$id] = $label.$suffix.$badge;
+            $choices[$id] = $label.' — '.$need.$badge;
         }
-        $choices['custom'] = 'Custom OpenAI-compatible (llama.cpp, RunPod, LM Studio, …)';
+        $choices['custom'] = 'Other server — any OpenAI-compatible endpoint (llama.cpp, LM Studio, …)';
         $choices['done'] = 'Done';
 
-        $picked = $io->choice('Provider to set up', $choices, 'done');
+        $picked = $io->choice('Which provider?', $choices, 'done');
 
         return \is_string($picked) ? $picked : 'done';
+    }
+
+    /**
+     * @param array<string, mixed> $provider
+     */
+    private function displayName(string $id, array $provider = []): string
+    {
+        if (isset(self::DISPLAY_NAMES[$id])) {
+            return self::DISPLAY_NAMES[$id];
+        }
+
+        $label = $provider['label'] ?? null;
+
+        return \is_string($label) && '' !== $label ? $label : $id;
+    }
+
+    /**
+     * @param array<string, mixed> $provider
+     */
+    private function needHint(array $provider): string
+    {
+        $kind = \is_string($provider['kind'] ?? null) ? $provider['kind'] : '';
+
+        return match ($kind) {
+            'oauth' => match ($provider['auth_command'] ?? null) {
+                'auth:codex' => 'log in with your ChatGPT account',
+                'auth:grok' => 'log in with your xAI account',
+                default => 'log in with your account',
+            },
+            'apikey' => 'needs an API key',
+            default => 'needs setup',
+        };
     }
 
     private function isProviderEnabled(string $id): bool
@@ -251,13 +307,14 @@ final class ProvidersSetupCommand
     private function disableProvider(
         SymfonyStyle $io,
         string $id,
+        string $displayName,
         SettingsLayerEnum $layer,
         string $cwd,
     ): void {
         $this->settingsWriter->set($layer, $cwd, 'ai.providers.'.$id, [
             'enabled' => false,
         ]);
-        $io->success(\sprintf('Provider "%s" disabled.', $id));
+        $io->success(\sprintf('%s disabled.', $displayName));
     }
 
     private function warnIfDefaultModelPointsAtProvider(SymfonyStyle $io, string $providerId): void
@@ -273,9 +330,8 @@ final class ProvidersSetupCommand
         }
 
         $io->warning(\sprintf(
-            'ai.default_model "%s" points at disabled provider "%s" and is now unavailable. Re-run setup to pick another default model.',
+            'Your default model "%s" is now unavailable. Run setup again to pick another.',
             $defaultModel,
-            $providerId,
         ));
     }
 
@@ -288,6 +344,7 @@ final class ProvidersSetupCommand
         SymfonyStyle $io,
         string $id,
         array $provider,
+        string $displayName,
         SettingsLayerEnum $layer,
         string $cwd,
     ): ?array {
@@ -296,8 +353,6 @@ final class ProvidersSetupCommand
             ? $provider['auth_command']
             : null;
         $models = $this->modelIdsFromProvider($provider);
-
-        $io->section(\sprintf('Configure %s', $id));
 
         if ('oauth' === $kind) {
             $this->settingsWriter->set($layer, $cwd, 'ai.providers.'.$id, [
@@ -328,16 +383,16 @@ final class ProvidersSetupCommand
     {
         $suggestedEnv = strtoupper(str_replace('-', '_', $providerId)).'_API_KEY';
         $where = $io->choice(
-            'Where is your API key?',
+            'API key: read from an environment variable, or paste it now?',
             [
-                'env' => \sprintf('Environment variable (recommended; e.g. %s)', $suggestedEnv),
-                'raw' => 'Paste raw key into settings',
+                'env' => 'environment variable',
+                'raw' => 'paste',
             ],
             'env',
         );
 
         if ('raw' === $where) {
-            $raw = trim((string) $io->ask('Paste API key', null, static function (?string $value): string {
+            $raw = trim((string) $io->askHidden('Paste your API key', static function (?string $value): string {
                 $value = trim((string) $value);
                 if ('' === $value) {
                     throw new \InvalidArgumentException('API key cannot be empty.');
@@ -350,7 +405,7 @@ final class ProvidersSetupCommand
         }
 
         $envName = trim((string) $io->ask(
-            'Environment variable name',
+            'Variable name',
             $suggestedEnv,
             static function (mixed $value) use ($suggestedEnv): string {
                 $value = trim(\is_string($value) ? $value : $suggestedEnv);
@@ -372,8 +427,6 @@ final class ProvidersSetupCommand
      */
     private function configureCustom(SymfonyStyle $io, SettingsLayerEnum $layer, string $cwd, array $catalog): array
     {
-        $io->section('Custom OpenAI-compatible provider');
-
         $id = trim((string) $io->ask('Provider id (slug)', 'local', static function (?string $value) use ($catalog): string {
             $value = strtolower(trim((string) $value));
             if (1 !== preg_match('/^[a-z][a-z0-9_-]*$/', $value)) {
@@ -386,10 +439,10 @@ final class ProvidersSetupCommand
             return $value;
         }));
 
-        $baseUrl = trim((string) $io->ask('Base URL', 'http://127.0.0.1:8080', static function (?string $value): string {
+        $baseUrl = trim((string) $io->ask('Server URL (e.g. http://localhost:8080)', 'http://127.0.0.1:8080', static function (?string $value): string {
             $value = trim((string) $value);
             if ('' === $value) {
-                throw new \InvalidArgumentException('Base URL is required.');
+                throw new \InvalidArgumentException('Server URL is required.');
             }
 
             return rtrim($value, '/');
@@ -407,9 +460,9 @@ final class ProvidersSetupCommand
         $apiKey = $includeKey ? $this->askApiKey($io, $id) : null;
 
         $models = [];
-        $io->writeln('Add at least one model (Enter accepts defaults).');
+        $io->writeln('Add at least one model (Enter keeps the default).');
         do {
-            $modelId = trim((string) $io->ask('Model id', 'default', static function (?string $value): string {
+            $modelId = trim((string) $io->ask('Model id (e.g. llama-3.3-70b)', 'default', static function (?string $value): string {
                 $value = trim((string) $value);
                 if ('' === $value) {
                     throw new \InvalidArgumentException('Model id is required.');
@@ -503,7 +556,7 @@ final class ProvidersSetupCommand
         SettingsLayerEnum $layer,
         string $cwd,
     ): void {
-        if (!$io->confirm('Set default model?', true)) {
+        if (!$io->confirm('Set as your default model?', true)) {
             return;
         }
 
