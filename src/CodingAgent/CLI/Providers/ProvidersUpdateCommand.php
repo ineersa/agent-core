@@ -11,8 +11,9 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
- * Rebase ~/.hatfield/ai-catalog.yaml onto the bundled default, then sync
- * allowlisted model metadata from models.dev. Soft-fails offline (exit 0).
+ * Rebase ~/.hatfield/ai-catalog.yaml onto the bundled default, then refresh
+ * allowlisted metadata for models already in the catalog. New upstream ids are
+ * printed as availability hints — never auto-added. Soft-fails offline (exit 0).
  * Sole product network I/O for models.dev. Connection fields never come from upstream.
  */
 #[AsCommand(name: 'providers:update', description: 'Refresh the user AI catalog from the bundled default and models.dev')]
@@ -93,17 +94,24 @@ final class ProvidersUpdateCommand
             $stats = $this->sync($catalog, $decoded);
             $this->aiCatalog->writeUserCatalog($catalog);
 
+            $availableCount = 0;
+            foreach ($stats['available_ids'] as $ids) {
+                $availableCount += \count($ids);
+            }
+
             $io->success(\sprintf(
-                'Updated %s (version %d): +%d models, %d metadata refreshes.',
+                'Updated %s (version %d): %d metadata refreshes, %d new models available upstream (not added).',
                 $userPath,
                 $catalog['version'],
-                $stats['added'],
                 $stats['updated'],
+                $availableCount,
             ));
-            if ([] !== $stats['added_ids']) {
-                foreach ($stats['added_ids'] as $providerId => $ids) {
-                    $io->writeln(\sprintf('  %s added: %s', $providerId, implode(', ', $ids)));
+            if ([] !== $stats['available_ids']) {
+                $parts = [];
+                foreach ($stats['available_ids'] as $providerId => $ids) {
+                    $parts[] = \sprintf('%s: %s', $providerId, implode(', ', $ids));
                 }
+                $io->writeln('  available upstream (not added): '.implode('; ', $parts));
             }
         } catch (\Throwable $e) {
             $io->warning(\sprintf('providers:update failed (%s); left %s untouched.', $e->getMessage(), $userPath));
@@ -163,18 +171,18 @@ final class ProvidersUpdateCommand
     }
 
     /**
-     * Apply models.dev metadata. Whitelist only — never connection fields.
+     * Apply models.dev metadata to existing catalog models only. Whitelist only
+     * — never connection fields, never auto-add new ids.
      *
      * @param array{version: int, providers: array<string, mixed>} $catalog
      * @param array<string, mixed>                                 $upstream
      *
-     * @return array{added: int, updated: int, added_ids: array<string, list<string>>}
+     * @return array{updated: int, available_ids: array<string, list<string>>}
      */
     private function sync(array &$catalog, array $upstream): array
     {
-        $added = 0;
         $updated = 0;
-        $addedIds = [];
+        $availableIds = [];
 
         foreach ($catalog['providers'] as $hatfieldId => &$provider) {
             if (!\is_string($hatfieldId) || !\is_array($provider)) {
@@ -223,24 +231,14 @@ final class ProvidersUpdateCommand
                     continue;
                 }
 
-                $entry = $meta;
-                $entry['name'] = \is_string($upstreamModel['name'] ?? null)
-                    ? $upstreamModel['name']
-                    : $modelId;
-                $entry['thinking_level_map'] = $this->defaultThinkingLevelMap(
-                    (bool) ($meta['reasoning'] ?? false),
-                    $models,
-                );
-                $models[$modelId] = $entry;
-                ++$added;
-                $addedIds[$hatfieldId][] = $modelId;
+                $availableIds[$hatfieldId][] = $modelId;
             }
 
             $provider['models'] = $models;
         }
         unset($provider);
 
-        return ['added' => $added, 'updated' => $updated, 'added_ids' => $addedIds];
+        return ['updated' => $updated, 'available_ids' => $availableIds];
     }
 
     /**
@@ -298,38 +296,5 @@ final class ProvidersUpdateCommand
         }
 
         return $out;
-    }
-
-    /**
-     * Copy thinking_level_map convention from an existing same-provider model
-     * with matching reasoning flag; fall back to grok-composer-style nulls.
-     *
-     * @param array<string, mixed> $existingModels
-     *
-     * @return array<string, mixed>
-     */
-    private function defaultThinkingLevelMap(bool $reasoning, array $existingModels): array
-    {
-        foreach ($existingModels as $model) {
-            if (!\is_array($model)) {
-                continue;
-            }
-            if ((bool) ($model['reasoning'] ?? false) !== $reasoning) {
-                continue;
-            }
-            $map = $model['thinking_level_map'] ?? null;
-            if (\is_array($map) && [] !== $map) {
-                return $map;
-            }
-        }
-
-        return [
-            'off' => 'none',
-            'minimal' => null,
-            'low' => null,
-            'medium' => null,
-            'high' => null,
-            'xhigh' => null,
-        ];
     }
 }

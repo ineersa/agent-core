@@ -92,7 +92,7 @@ YAML);
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
-    public function testRebaseAndSyncAddsAndUpdatesPreservingConnectionAndUserModels(): void
+    public function testRebaseAndSyncUpdatesMetadataWithoutAddingNewUpstreamIds(): void
     {
         $before = (string) file_get_contents($this->userCatalogPath);
 
@@ -130,7 +130,9 @@ YAML);
             return new MockResponse($payload, ['http_code' => 200]);
         });
 
-        $this->assertSame(Command::SUCCESS, $this->runCommand($client));
+        $output = new BufferedOutput();
+        $this->assertSame(Command::SUCCESS, $this->runCommand($client, $output));
+        $display = $output->fetch();
 
         $after = Yaml::parseFile($this->userCatalogPath);
         $this->assertIsArray($after);
@@ -145,7 +147,7 @@ YAML);
         $this->assertSame('Z.ai', $zai['label']);
         $this->assertArrayNotHasKey('https://attacker.example', $zai);
 
-        $this->assertArrayHasKey('user-only-model', $zai['models']);
+        $this->assertSame(['glm-5.3', 'user-only-model'], array_keys($zai['models']));
         $this->assertSame(8192, $zai['models']['user-only-model']['context_window']);
 
         $this->assertSame(2000000, $zai['models']['glm-5.3']['context_window']);
@@ -154,11 +156,13 @@ YAML);
         $this->assertSame(1.1, $zai['models']['glm-5.3']['cost']['input']);
         $this->assertSame(['minimal' => 'enabled'], $zai['models']['glm-5.3']['thinking_level_map']);
 
-        $this->assertArrayHasKey('glm-future', $zai['models']);
-        $this->assertSame(500000, $zai['models']['glm-future']['context_window']);
-        $this->assertSame(['minimal' => 'enabled'], $zai['models']['glm-future']['thinking_level_map']);
-        $this->assertArrayNotHasKey('api', $zai['models']['glm-future']);
-        $this->assertArrayNotHasKey('base_url', $zai['models']['glm-future']);
+        $this->assertArrayNotHasKey('glm-future', $zai['models']);
+        $this->assertArrayNotHasKey('api', $zai['models']['glm-5.3']);
+        $this->assertArrayNotHasKey('base_url', $zai['models']['glm-5.3']);
+
+        $this->assertStringContainsString('1 metadata refreshes, 1 new models available upstream (not added)', $display);
+        $this->assertStringContainsString('available upstream (not added): zai: glm-future', $display);
+        $this->assertStringNotContainsString('added:', $display);
     }
 
     public function testNetworkErrorLeavesUserCatalogUntouched(): void
