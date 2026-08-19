@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Application;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -31,6 +32,7 @@ use Ineersa\CodingAgent\Session\SessionHistoryProvider;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Session\SessionTranscriptProvider;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
@@ -126,6 +128,39 @@ final class SessionInitializerTest extends TestCase
         $this->assertCount(1, $blocks);
         $this->assertSame(TranscriptBlockKindEnum::System, $blocks[0]->kind);
         $this->assertStringContainsString('Welcome to Hatfield', $blocks[0]->text);
+    }
+
+    public function testFreshSessionAppendsCatalogUpdateNoticeWhenBundledIsNewer(): void
+    {
+        $tmp = TestDirectoryIsolation::createProjectTempDir('session-init-catalog');
+        try {
+            $home = $tmp.'/home';
+            TestDirectoryIsolation::ensureDirectory($home.'/.hatfield');
+            $catalogPath = $tmp.'/ai-catalog.yaml';
+            file_put_contents($catalogPath, "version: 2\nproviders: {}\n");
+            file_put_contents($home.'/.hatfield/ai-catalog.yaml', "version: 1\nproviders: {}\n");
+
+            $sessionInit = $this->createSessionInitWithCatalog(new AiCatalog($catalogPath, $home));
+
+            $state = new TuiSessionState('test-catalog-skew', false);
+            $blocks = $sessionInit->buildInitialTranscript($state, $this->eventApplier);
+
+            $this->assertCount(2, $blocks);
+            $this->assertStringContainsString('Welcome to Hatfield', $blocks[0]->text);
+            $this->assertStringContainsString('providers:update', $blocks[1]->text);
+            $this->assertSame('warning', $blocks[1]->meta['style'] ?? null);
+
+            $resumeState = new TuiSessionState('test-catalog-skew', true);
+            $sessionDir = $this->projectDir.'/.hatfield/sessions/test-catalog-skew';
+            mkdir($sessionDir, 0777, true);
+            file_put_contents($sessionDir.'/events.jsonl', '');
+            $resumeBlocks = $sessionInit->buildInitialTranscript($resumeState, $this->eventApplier);
+            foreach ($resumeBlocks as $block) {
+                $this->assertStringNotContainsString('providers:update', $block->text);
+            }
+        } finally {
+            TestDirectoryIsolation::removeDirectory($tmp);
+        }
     }
 
     public function testReplayFromEmptyEventsReturnsFallback(): void
@@ -670,6 +705,36 @@ final class SessionInitializerTest extends TestCase
             historyProvider: $historyProvider,
             sessionTranscriptProvider: $sessionTranscriptProvider
         ), $eventApplier];
+    }
+
+    private function createSessionInitWithCatalog(AiCatalog $aiCatalog): SessionInitializer
+    {
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+        );
+        $hatfieldSessionStore = new HatfieldSessionStore(
+            appConfig: $appConfig,
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+        );
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
+        $transcriptProjector = $this->buildRealTranscriptProjector();
+
+        return new SessionInitializer(
+            sessionStore: $hatfieldSessionStore,
+            eventStore: $this->eventStore,
+            blockFactory: new TranscriptBlockFactory(),
+            logger: new NullLogger(),
+            historyProvider: new SessionHistoryProvider($this->eventStore, new HistoryProjector()),
+            sessionTranscriptProvider: new SessionTranscriptProvider(
+                eventStore: $this->eventStore,
+                replayFilter: new HistoryReplayFilter(new HistoryProjector()),
+                eventMapper: $mapper,
+                transcriptProjector: $transcriptProjector,
+            ),
+            aiCatalog: $aiCatalog,
+        );
     }
 
     /**

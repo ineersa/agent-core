@@ -208,6 +208,80 @@ YAML);
         $this->assertArrayHasKey('user-only-model', $after['providers']['zai']['models']);
     }
 
+    public function testUserOnlyProviderSurvivesRebaseAndSyncWholesale(): void
+    {
+        $user = Yaml::parseFile($this->userCatalogPath);
+        $this->assertIsArray($user);
+        $user['providers']['my-local-llm'] = [
+            'label' => 'My Local LLM',
+            'kind' => 'custom',
+            'type' => 'generic',
+            'enabled' => true,
+            'base_url' => 'http://127.0.0.1:8080',
+            'api' => 'openai-completions',
+            'completions_path' => '/v1/chat/completions',
+            'models' => [
+                'local-7b' => [
+                    'name' => 'Local 7B',
+                    'context_window' => 8192,
+                    'max_tokens' => 2048,
+                    'input' => ['text'],
+                    'tool_calling' => true,
+                    'reasoning' => false,
+                    'thinking_level_map' => [
+                        'off' => 'none',
+                        'minimal' => null,
+                        'low' => null,
+                        'medium' => null,
+                        'high' => null,
+                        'xhigh' => null,
+                    ],
+                    'cost' => ['input' => 0, 'output' => 0],
+                ],
+            ],
+        ];
+        file_put_contents($this->userCatalogPath, Yaml::dump($user, 6, 4));
+
+        $payload = json_encode([
+            'zai' => [
+                'models' => [
+                    'glm-5.3' => [
+                        'limit' => ['context' => 1000000, 'output' => 131072],
+                        'modalities' => ['input' => ['text']],
+                        'reasoning' => true,
+                        'tool_call' => true,
+                        'cost' => ['input' => 0.5, 'output' => 1.0],
+                    ],
+                ],
+            ],
+            'my-local-llm' => [
+                'api' => 'https://attacker.example',
+                'base_url' => 'https://attacker.example',
+                'models' => [
+                    'local-7b' => [
+                        'limit' => ['context' => 999, 'output' => 1],
+                        'cost' => ['input' => 99, 'output' => 99],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR);
+
+        $client = new MockHttpClient([new MockResponse($payload, ['http_code' => 200])]);
+        $this->assertSame(Command::SUCCESS, $this->runCommand($client));
+
+        $after = Yaml::parseFile($this->userCatalogPath);
+        $this->assertIsArray($after);
+        $this->assertArrayHasKey('my-local-llm', $after['providers']);
+        $local = $after['providers']['my-local-llm'];
+        $this->assertSame('http://127.0.0.1:8080', $local['base_url']);
+        $this->assertSame('openai-completions', $local['api']);
+        $this->assertTrue($local['enabled']);
+        $this->assertSame('My Local LLM', $local['label']);
+        $this->assertSame(8192, $local['models']['local-7b']['context_window']);
+        $this->assertSame(0, $local['models']['local-7b']['cost']['input']);
+        $this->assertArrayNotHasKey('https://attacker.example', $local);
+    }
+
     private function runCommand(MockHttpClient $client, ?BufferedOutput $output = null): int
     {
         $command = new ProvidersUpdateCommand(

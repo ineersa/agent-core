@@ -156,6 +156,38 @@ YAML);
         $this->assertSame([], $warnings);
     }
 
+    public function testIsBundledNewerThanUserQuery(): void
+    {
+        TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield');
+        file_put_contents($this->homeDir.'/.hatfield/ai-catalog.yaml', <<<'YAML'
+version: 1
+providers:
+    zai:
+        type: generic
+        enabled: false
+        base_url: https://api.z.ai/api/coding/paas/v4
+        api: openai-completions
+        models:
+            glm-5.3:
+                name: GLM 5.3
+                context_window: 1000000
+                max_tokens: 131072
+                input: [text]
+                tool_calling: true
+                reasoning: true
+YAML);
+
+        $catalog = $this->catalog();
+        $this->assertTrue($catalog->isBundledNewerThanUser());
+
+        file_put_contents($this->homeDir.'/.hatfield/ai-catalog.yaml', str_replace(
+            'version: 1',
+            'version: 2',
+            (string) file_get_contents($this->homeDir.'/.hatfield/ai-catalog.yaml'),
+        ));
+        $this->assertFalse($catalog->isBundledNewerThanUser());
+    }
+
     public function testLoaderMergePrecedenceScalarWinWholesaleModelsUnknownPassthrough(): void
     {
         $defaultsPath = $this->tmpDir.'/defaults.yaml';

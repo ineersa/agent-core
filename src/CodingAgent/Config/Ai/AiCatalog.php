@@ -86,9 +86,19 @@ final class AiCatalog
         return rtrim($this->homeDir, '/').'/'.self::USER_CATALOG_RELATIVE_PATH;
     }
 
-    public function bundledCatalogPath(): string
+    /**
+     * True when the bundled default version is newer than the readable user copy.
+     * Does not bootstrap or mutate files — callers decide when to ensure/copy.
+     */
+    public function isBundledNewerThanUser(): bool
     {
-        return $this->catalogPath;
+        $user = $this->readCatalogFile($this->userCatalogPath());
+        $bundled = $this->readCatalogFile($this->catalogPath);
+        if (null === $bundled || null === $user) {
+            return false;
+        }
+
+        return $bundled['version'] > $user['version'];
     }
 
     /**
@@ -165,11 +175,7 @@ final class AiCatalog
      */
     private function warnIfBundledNewer(?array $bundled, ?array $user): void
     {
-        if (null === $bundled || null === $user) {
-            return;
-        }
-
-        if ($bundled['version'] <= $user['version']) {
+        if (null === $bundled || null === $user || $bundled['version'] <= $user['version']) {
             return;
         }
 
