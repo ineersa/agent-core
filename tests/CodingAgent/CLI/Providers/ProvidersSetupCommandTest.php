@@ -103,7 +103,7 @@ providers:
                 reasoning: true
                 cost: { input: 1, output: 6 }
     grok-cli:
-        label: 'Grok CLI (xAI)'
+        label: 'Grok / xAI'
         kind: oauth
         type: grok
         enabled: false
@@ -277,7 +277,7 @@ YAML);
 
         $display = preg_replace('/\s+/', ' ', $tester->getDisplay()) ?? '';
         $this->assertStringContainsString(
-            '"zai" is a known catalog provider — configure it directly from the provider list instead of Custom.',
+            '"zai" is built into Hatfield — choose it from the list above instead.',
             $display,
         );
 
@@ -354,7 +354,7 @@ YAML);
         $this->assertSame(Command::SUCCESS, $tester->execute([]), $tester->getDisplay());
 
         $display = preg_replace('/\s+/', ' ', $tester->getDisplay()) ?? '';
-        $this->assertStringContainsString('Disable Grok / xAI? (Its saved key will be removed.)', $display);
+        $this->assertStringContainsString('Disable Grok / xAI? This clears its settings entry.', $display);
         $this->assertStringContainsString('Grok / xAI disabled', $display);
         $this->assertStringNotContainsString('`hatfield auth:grok`', $display);
 

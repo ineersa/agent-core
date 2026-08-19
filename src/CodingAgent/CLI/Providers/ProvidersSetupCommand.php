@@ -28,14 +28,6 @@ final class ProvidersSetupCommand
     /** @var list<string> */
     private const THINKING_LEVEL_KEYS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 
-    /** Friendly picker labels for known provider ids. */
-    private const DISPLAY_NAMES = [
-        'zai' => 'Z.ai (GLM)',
-        'deepseek' => 'DeepSeek',
-        'openai-codex' => 'OpenAI Codex',
-        'grok-cli' => 'Grok / xAI',
-    ];
-
     public function __construct(
         private readonly AiCatalog $aiCatalog,
         private readonly SettingsOverrideWriter $settingsWriter,
@@ -120,7 +112,7 @@ final class ProvidersSetupCommand
                     }
                     if ('disable' === $action) {
                         if (!$io->confirm(
-                            \sprintf('Disable %s? (Its saved key will be removed.)', $displayName),
+                            \sprintf('Disable %s? This clears its settings entry.', $displayName),
                             false,
                         )) {
                             $io->writeln('Cancelled.');
@@ -256,12 +248,8 @@ final class ProvidersSetupCommand
     /**
      * @param array<string, mixed> $provider
      */
-    private function displayName(string $id, array $provider = []): string
+    private function displayName(string $id, array $provider): string
     {
-        if (isset(self::DISPLAY_NAMES[$id])) {
-            return self::DISPLAY_NAMES[$id];
-        }
-
         $label = $provider['label'] ?? null;
 
         return \is_string($label) && '' !== $label ? $label : $id;
@@ -433,7 +421,7 @@ final class ProvidersSetupCommand
                 throw new \InvalidArgumentException('Provider id must match ^[a-z][a-z0-9_-]*$.');
             }
             if (isset($catalog[$value])) {
-                throw new \InvalidArgumentException(\sprintf('"%s" is a known catalog provider — configure it directly from the provider list instead of Custom.', $value));
+                throw new \InvalidArgumentException(\sprintf('"%s" is built into Hatfield — choose it from the list above instead.', $value));
             }
 
             return $value;
@@ -515,8 +503,8 @@ final class ProvidersSetupCommand
             ];
         } while ($io->confirm('Add another model?', false));
 
-        $supportsDeveloperRole = $io->confirm('supports_developer_role?', false);
-        $thinkingFormat = trim((string) $io->ask('thinking_format (empty = omit)', ''));
+        $supportsDeveloperRole = $io->confirm('Allow developer-role messages?', false);
+        $thinkingFormat = trim((string) $io->ask('Reasoning format label (blank = none)', ''));
 
         $definition = [
             'type' => 'generic',
