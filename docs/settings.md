@@ -12,8 +12,7 @@ in home or project settings. Hatfield does **not** copy defaults into your home 
 
 Later sources win via structured overlay (`AppConfigLoader`):
 
-1. Curated AI catalog (`config/ai-catalog.yaml`) with optional local models.dev metadata
-   (`~/.hatfield/cache/models-dev.json` from `providers:update`)
+1. AI catalog (`~/.hatfield/ai-catalog.yaml`, bootstrapped from bundled `config/ai-catalog.yaml`)
 2. Built-in defaults shipped with the install (`config/hatfield.defaults.yaml`)
 3. `~/.hatfield/settings.yaml`
 4. `<project>/.hatfield/settings.yaml`
@@ -27,8 +26,10 @@ Merge rules:
 
 Known providers in user/project settings are **sparse overlays** (for example
 `{ enabled: true, api_key: env:ZAI_API_KEY }`). Full model lists and connection
-defaults come from `config/ai-catalog.yaml`. Refresh costs/context/limits with
-`bin/console providers:update` — agent runtime never fetches models.dev.
+defaults come from the AI catalog. `bin/console providers:update` rebases the user
+catalog onto the bundled default and syncs model metadata from models.dev — agent
+runtime never fetches models.dev. If a newer Hatfield release ships a higher catalog
+`version`, startup logs a warning suggesting `providers:update`.
 
 Use only keys you intend to change. Full snapshots of defaults are unnecessary.
 

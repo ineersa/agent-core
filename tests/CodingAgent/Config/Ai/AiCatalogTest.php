@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config\Ai;
 
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
-use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -22,10 +22,11 @@ final class AiCatalogTest extends TestCase
     {
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('ai_catalog');
         $this->homeDir = $this->tmpDir.'/home';
-        TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield/cache');
+        TestDirectoryIsolation::ensureDirectory($this->homeDir);
         $this->catalogPath = $this->tmpDir.'/ai-catalog.yaml';
 
         file_put_contents($this->catalogPath, <<<'YAML'
+version: 2
 providers:
     zai:
         label: 'Z.ai'
@@ -68,74 +69,91 @@ YAML);
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
-    public function testYamlModelsResolveWhenCacheAbsent(): void
+    public function testBootstrapCopiesBundledCatalogToUserPath(): void
     {
+        $userPath = $this->homeDir.'/.hatfield/ai-catalog.yaml';
+        $this->assertFileDoesNotExist($userPath);
+
         $ai = AiConfig::fromArray($this->catalog()->loadProviders()['ai']);
 
+        $this->assertFileExists($userPath);
+        $this->assertSame('0600', substr(\sprintf('%o', fileperms($userPath)), -4));
         $this->assertArrayHasKey('glm-5.3', $ai->providers['zai']->models);
         $this->assertSame(1000000, $ai->providers['zai']->models['glm-5.3']->contextWindow);
         $this->assertSame('https://api.z.ai/api/coding/paas/v4', $ai->providers['zai']->baseUrl);
-        $this->assertArrayHasKey('deepseek-v4-flash', $ai->providers['deepseek']->models);
     }
 
-    public function testCorruptCacheFallsBackToYamlOnly(): void
+    public function testCorruptUserCopyFallsBackToBundled(): void
     {
-        file_put_contents($this->homeDir.'/.hatfield/cache/models-dev.json', '{not-json');
+        TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield');
+        file_put_contents($this->homeDir.'/.hatfield/ai-catalog.yaml', '{not: yaml: [');
 
         $ai = AiConfig::fromArray($this->catalog()->loadProviders()['ai']);
         $this->assertSame(1000000, $ai->providers['zai']->models['glm-5.3']->contextWindow);
         $this->assertSame('https://api.z.ai/api/coding/paas/v4', $ai->providers['zai']->baseUrl);
     }
 
-    public function testCacheRefreshesAllowlistedMetadataOnly(): void
+    public function testBundledNewerThanUserLogsWarning(): void
     {
-        file_put_contents($this->homeDir.'/.hatfield/cache/models-dev.json', json_encode([
-            'zai' => [
-                'api' => 'https://should-not-leak.example',
-                'models' => [
-                    'glm-5.3' => [
-                        'limit' => ['context' => 2000000, 'output' => 64000],
-                        'modalities' => ['input' => ['text', 'audio', 'image']],
-                        'reasoning' => true,
-                        'tool_call' => true,
-                        'cost' => ['input' => 1.1, 'output' => 2.2],
-                        'api' => 'https://attacker.example/model',
-                        'base_url' => 'https://attacker.example',
-                    ],
-                    'glm-future' => ['limit' => ['context' => 1]],
-                ],
-            ],
-        ], \JSON_THROW_ON_ERROR));
+        TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield');
+        file_put_contents($this->homeDir.'/.hatfield/ai-catalog.yaml', <<<'YAML'
+version: 1
+providers:
+    zai:
+        type: generic
+        enabled: false
+        base_url: https://api.z.ai/api/coding/paas/v4
+        api: openai-completions
+        models:
+            glm-5.3:
+                name: GLM 5.3
+                context_window: 1000000
+                max_tokens: 131072
+                input: [text]
+                tool_calling: true
+                reasoning: true
+YAML);
 
-        $layer = $this->catalog()->loadProviders();
-        $provider = AiProviderConfig::fromArray($layer['ai']['providers']['zai'], 'zai');
+        $logger = new TestLogger();
+        $this->catalog($logger)->loadProviders();
 
-        $this->assertSame('https://api.z.ai/api/coding/paas/v4', $provider->baseUrl);
-        $this->assertSame('openai-completions', $provider->api);
-        $this->assertSame('/chat/completions', $provider->completionsPath);
-        $this->assertSame(['glm-5.3'], array_keys($provider->models));
-        $this->assertSame(2000000, $provider->models['glm-5.3']->contextWindow);
-        $this->assertSame(64000, $provider->models['glm-5.3']->maxTokens);
-        $this->assertSame(['text', 'image'], $provider->models['glm-5.3']->input);
-        $this->assertSame(1.1, $provider->models['glm-5.3']->cost?->input);
-        $this->assertSame(['minimal' => 'enabled'], $provider->models['glm-5.3']->thinkingLevelMap);
-        $this->assertSame(['glm-future'], $this->catalog()->discoveryHints(json_decode(
-            (string) file_get_contents($this->homeDir.'/.hatfield/cache/models-dev.json'),
-            true,
-            512,
-            \JSON_THROW_ON_ERROR,
-        ))['zai']);
+        $warnings = array_values(array_filter(
+            $logger->records,
+            static fn (array $r): bool => 'warning' === $r['level'],
+        ));
+        $this->assertNotEmpty($warnings);
+        $this->assertStringContainsString('providers:update', (string) $warnings[0]['message']);
+        $this->assertStringContainsString('version 2', (string) $warnings[0]['message']);
     }
 
-    public function testFilterUpstreamProvidersKeepsMappedIdsOnly(): void
+    public function testSameOrNewerUserVersionIsSilent(): void
     {
-        $filtered = $this->catalog()->filterUpstreamProviders([
-            'zai' => ['models' => []],
-            'anthropic' => ['models' => []],
-            'xai' => ['models' => []],
-        ]);
+        TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield');
+        file_put_contents($this->homeDir.'/.hatfield/ai-catalog.yaml', <<<'YAML'
+version: 2
+providers:
+    zai:
+        type: generic
+        enabled: false
+        base_url: https://api.z.ai/api/coding/paas/v4
+        api: openai-completions
+        models:
+            glm-5.3:
+                name: GLM 5.3
+                context_window: 1000000
+                max_tokens: 131072
+                input: [text]
+                tool_calling: true
+                reasoning: true
+YAML);
 
-        $this->assertSame(['zai', 'xai'], array_keys($filtered));
+        $logger = new TestLogger();
+        $this->catalog($logger)->loadProviders();
+        $warnings = array_values(array_filter(
+            $logger->records,
+            static fn (array $r): bool => 'warning' === $r['level'],
+        ));
+        $this->assertSame([], $warnings);
     }
 
     public function testLoaderMergePrecedenceScalarWinWholesaleModelsUnknownPassthrough(): void
@@ -145,6 +163,7 @@ YAML);
 
         $cwd = $this->tmpDir.'/project';
         TestDirectoryIsolation::ensureDirectory($cwd.'/.hatfield');
+        TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield');
 
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', <<<'YAML'
 ai:
@@ -200,8 +219,8 @@ YAML);
         $this->assertSame(['my-model'], array_keys($ai->providers['custom-runpod']->models));
     }
 
-    private function catalog(): AiCatalog
+    private function catalog(?TestLogger $logger = null): AiCatalog
     {
-        return new AiCatalog($this->catalogPath, $this->homeDir);
+        return new AiCatalog($this->catalogPath, $this->homeDir, $logger);
     }
 }

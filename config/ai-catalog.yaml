@@ -1,12 +1,14 @@
-# Curated AI provider catalog (authoritative for model presence; entries are complete).
-# Merged as the lowest settings layer by AppConfigLoader. Optional metadata overlay
-# comes from ~/.hatfield/cache/models-dev.json (written by bin/console providers:update).
+# Bundled AI provider catalog (authoritative for model presence; entries are complete).
+# Copied to ~/.hatfield/ai-catalog.yaml on first run. providers:update rebases that
+# user copy onto this default and syncs model metadata from models.dev.
 # Connection settings (base_url/api/paths/auth) are NEVER taken from models.dev.
 #
 # Known-provider settings in ~/.hatfield or project .hatfield stay sparse:
 #   ai.providers.zai: { enabled: true, api_key: env:ZAI_API_KEY }
-# Refresh metadata: bin/console providers:update
+# Refresh: bin/console providers:update
 # Interactive setup: bin/console providers:setup (see providers-setup-command task)
+
+version: 1
 
 providers:
     deepseek:

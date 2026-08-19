@@ -12,7 +12,7 @@ use Symfony\Component\Yaml\Yaml;
  * Loads and overlays Hatfield settings layers from YAML files.
  *
  * Precedence order (last wins):
- *   AI catalog (config/ai-catalog.yaml + optional models.dev metadata cache)
+ *   AI catalog (~/.hatfield/ai-catalog.yaml, bootstrapped from config/ai-catalog.yaml)
  *   <  built-in defaults (config/hatfield.defaults.yaml)
  *   <  user settings (~/.hatfield/settings.yaml)
  *   <  project settings (<cwd>/.hatfield/settings.yaml)
@@ -23,7 +23,7 @@ use Symfony\Component\Yaml\Yaml;
  *
  * Each {@see load()} call rereads YAML from disk. Missing user/project files
  * contribute an empty overlay; load never creates ~/.hatfield/settings.yaml.
- * Network I/O never happens here — models.dev cache is a local file only.
+ * Network I/O never happens here — providers:update writes the user catalog.
  *
  * Overlay semantics (implemented in {@see overlayConfig}):
  *  - Associative arrays: recursive deep overlay — keys present in the higher-
@@ -93,7 +93,7 @@ final class AppConfigLoader
             throw new \InvalidArgumentException(\sprintf('%s::load() requires a non-empty $cwd. Pass %s from the container or an explicit absolute path.', self::class, '%app.cwd%'));
         }
 
-        // Layer 0+1: curated AI catalog (optional local models.dev metadata) under built-in defaults.
+        // Layer 0+1: curated AI catalog (user copy / bundled default) under built-in defaults.
         // Fold catalog into defaultsRaw so SettingsValueResolver provenance still attributes catalog keys
         // to the Defaults layer without expanding SettingsLayerEnum.
         $catalogRaw = $this->aiCatalog?->loadProviders() ?? [];

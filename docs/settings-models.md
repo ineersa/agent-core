@@ -8,11 +8,12 @@ description: AI providers, model selection, reasoning levels, HTTP and retry set
 Model configuration lives under the top-level `ai:` section in Hatfield settings.
 Secrets (API keys) belong in `~/.hatfield/settings.yaml` using `env:VAR` syntax, not plain text in project files when avoidable.
 
-Known providers (`zai`, `deepseek`, `openai-codex`, `grok-cli`) ship in
-`config/ai-catalog.yaml` — that file is the source of provider/model defaults.
-Settings `models:` overrides the catalog list wholesale. `bin/console providers:update`
-refreshes cost/context metadata from models.dev into `~/.hatfield/cache/models-dev.json`.
-Connection settings never come from models.dev.
+Known providers (`zai`, `deepseek`, `openai-codex`, `grok-cli`) ship as the bundled
+`config/ai-catalog.yaml` and are copied to `~/.hatfield/ai-catalog.yaml` on first run.
+That user catalog is the source of provider/model defaults. Settings `models:` overrides
+the catalog list wholesale. `bin/console providers:update` rebases the user catalog onto
+the bundled default and syncs cost/context/limits (and new upstream model ids) from
+models.dev into the user catalog. Connection settings never come from models.dev.
 
 Core settings overview: [settings.md](settings.md).
 

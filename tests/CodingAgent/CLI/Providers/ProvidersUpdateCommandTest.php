@@ -14,31 +14,76 @@ use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\Yaml\Yaml;
 
 final class ProvidersUpdateCommandTest extends TestCase
 {
     private string $tmpDir;
     private string $homeDir;
     private string $catalogPath;
+    private string $userCatalogPath;
 
     protected function setUp(): void
     {
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('providers_update');
         $this->homeDir = $this->tmpDir.'/home';
-        TestDirectoryIsolation::ensureDirectory($this->homeDir);
+        TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield');
         $this->catalogPath = $this->tmpDir.'/ai-catalog.yaml';
+        $this->userCatalogPath = $this->homeDir.'/.hatfield/ai-catalog.yaml';
 
         file_put_contents($this->catalogPath, <<<'YAML'
+version: 3
 providers:
     zai:
+        label: 'Z.ai'
+        kind: apikey
         type: generic
+        enabled: false
         base_url: https://api.z.ai/api/coding/paas/v4
         api: openai-completions
+        completions_path: /chat/completions
         models:
             glm-5.3:
                 name: GLM 5.3
                 context_window: 1000000
                 max_tokens: 131072
+                input: [text]
+                tool_calling: true
+                reasoning: true
+                thinking_level_map: { minimal: enabled }
+                cost: { input: 0.5, output: 1.0 }
+YAML);
+
+        file_put_contents($this->userCatalogPath, <<<'YAML'
+version: 1
+providers:
+    zai:
+        label: 'Old Z.ai'
+        kind: apikey
+        type: generic
+        enabled: true
+        base_url: https://user-should-lose.example
+        api: openai-completions
+        completions_path: /old
+        models:
+            glm-5.3:
+                name: Old GLM
+                context_window: 1000000
+                max_tokens: 131072
+                input: [text]
+                tool_calling: true
+                reasoning: true
+                thinking_level_map: { minimal: enabled }
+                cost: { input: 0.5, output: 1.0 }
+            user-only-model:
+                name: User Only
+                context_window: 8192
+                max_tokens: 2048
+                input: [text]
+                tool_calling: true
+                reasoning: false
+                thinking_level_map: { off: none, minimal: null, low: null, medium: null, high: null, xhigh: null }
+                cost: { input: 0, output: 0 }
 YAML);
     }
 
@@ -47,20 +92,37 @@ YAML);
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
-    public function testWritesFilteredCacheOn200(): void
+    public function testRebaseAndSyncAddsAndUpdatesPreservingConnectionAndUserModels(): void
     {
+        $before = (string) file_get_contents($this->userCatalogPath);
+
         $payload = json_encode([
             'zai' => [
-                'api' => 'https://should-stay-in-cache-object-but-not-applied',
+                'api' => 'https://attacker.example',
+                'base_url' => 'https://attacker.example',
                 'models' => [
-                    'glm-5.3' => ['limit' => ['context' => 1]],
-                    'glm-future' => ['limit' => ['context' => 2]],
+                    'glm-5.3' => [
+                        'limit' => ['context' => 2000000, 'output' => 64000],
+                        'modalities' => ['input' => ['text', 'audio', 'image']],
+                        'reasoning' => true,
+                        'tool_call' => true,
+                        'cost' => ['input' => 1.1, 'output' => 2.2],
+                        'api' => 'https://attacker.example/model',
+                        'base_url' => 'https://attacker.example',
+                    ],
+                    'glm-future' => [
+                        'name' => 'GLM Future',
+                        'limit' => ['context' => 500000, 'output' => 32000],
+                        'modalities' => ['input' => ['text']],
+                        'reasoning' => true,
+                        'tool_call' => true,
+                        'cost' => ['input' => 3.0, 'output' => 4.0],
+                    ],
                 ],
             ],
             'anthropic' => ['models' => []],
         ], \JSON_THROW_ON_ERROR);
 
-        $output = new BufferedOutput();
         $client = new MockHttpClient(static function (string $method, string $url) use ($payload): MockResponse {
             self::assertSame('GET', $method);
             self::assertStringContainsString('models.dev/api.json', $url);
@@ -68,44 +130,82 @@ YAML);
             return new MockResponse($payload, ['http_code' => 200]);
         });
 
-        $this->assertSame(Command::SUCCESS, $this->runCommand($client, $output));
+        $this->assertSame(Command::SUCCESS, $this->runCommand($client));
 
-        $cachePath = $this->homeDir.'/.hatfield/cache/models-dev.json';
-        $this->assertFileExists($cachePath);
-        $this->assertSame('0600', substr(\sprintf('%o', fileperms($cachePath)), -4));
-        $decoded = json_decode((string) file_get_contents($cachePath), true, 512, \JSON_THROW_ON_ERROR);
-        $this->assertSame(['zai'], array_keys($decoded));
-        $this->assertArrayHasKey('glm-future', $decoded['zai']['models']);
-        $this->assertStringContainsString('glm-future', $output->fetch());
-        $this->assertFileDoesNotExist($this->homeDir.'/.hatfield/cache/models-dev.etag');
+        $after = Yaml::parseFile($this->userCatalogPath);
+        $this->assertIsArray($after);
+        $this->assertSame(3, $after['version']);
+        $this->assertNotSame($before, (string) file_get_contents($this->userCatalogPath));
+
+        $zai = $after['providers']['zai'];
+        $this->assertSame('https://api.z.ai/api/coding/paas/v4', $zai['base_url']);
+        $this->assertSame('openai-completions', $zai['api']);
+        $this->assertSame('/chat/completions', $zai['completions_path']);
+        $this->assertFalse($zai['enabled']);
+        $this->assertSame('Z.ai', $zai['label']);
+        $this->assertArrayNotHasKey('https://attacker.example', $zai);
+
+        $this->assertArrayHasKey('user-only-model', $zai['models']);
+        $this->assertSame(8192, $zai['models']['user-only-model']['context_window']);
+
+        $this->assertSame(2000000, $zai['models']['glm-5.3']['context_window']);
+        $this->assertSame(64000, $zai['models']['glm-5.3']['max_tokens']);
+        $this->assertSame(['text', 'image'], $zai['models']['glm-5.3']['input']);
+        $this->assertSame(1.1, $zai['models']['glm-5.3']['cost']['input']);
+        $this->assertSame(['minimal' => 'enabled'], $zai['models']['glm-5.3']['thinking_level_map']);
+
+        $this->assertArrayHasKey('glm-future', $zai['models']);
+        $this->assertSame(500000, $zai['models']['glm-future']['context_window']);
+        $this->assertSame(['minimal' => 'enabled'], $zai['models']['glm-future']['thinking_level_map']);
+        $this->assertArrayNotHasKey('api', $zai['models']['glm-future']);
+        $this->assertArrayNotHasKey('base_url', $zai['models']['glm-future']);
     }
 
-    public function testNetworkErrorKeepsExistingAndExitsZero(): void
+    public function testNetworkErrorLeavesUserCatalogUntouched(): void
     {
-        TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield/cache');
-        $cachePath = $this->homeDir.'/.hatfield/cache/models-dev.json';
-        file_put_contents($cachePath, "{\"kept\":true}\n");
-
+        $before = (string) file_get_contents($this->userCatalogPath);
         $client = new MockHttpClient([
             new MockResponse('', ['error' => 'network down', 'http_code' => 0]),
         ]);
 
         $this->assertSame(Command::SUCCESS, $this->runCommand($client));
-        $this->assertSame("{\"kept\":true}\n", (string) file_get_contents($cachePath));
+        $this->assertSame($before, (string) file_get_contents($this->userCatalogPath));
     }
 
-    public function testHttpErrorKeepsExistingAndExitsZero(): void
+    public function testHttpErrorLeavesUserCatalogUntouched(): void
     {
-        TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield/cache');
-        $cachePath = $this->homeDir.'/.hatfield/cache/models-dev.json';
-        file_put_contents($cachePath, "{\"kept\":true}\n");
-
+        $before = (string) file_get_contents($this->userCatalogPath);
         $client = new MockHttpClient([
             new MockResponse('nope', ['http_code' => 503]),
         ]);
 
         $this->assertSame(Command::SUCCESS, $this->runCommand($client));
-        $this->assertSame("{\"kept\":true}\n", (string) file_get_contents($cachePath));
+        $this->assertSame($before, (string) file_get_contents($this->userCatalogPath));
+    }
+
+    public function testUnchangedUpstreamStillRebasesVersionAndConnectionFields(): void
+    {
+        $payload = json_encode([
+            'zai' => [
+                'models' => [
+                    'glm-5.3' => [
+                        'limit' => ['context' => 1000000, 'output' => 131072],
+                        'modalities' => ['input' => ['text']],
+                        'reasoning' => true,
+                        'tool_call' => true,
+                        'cost' => ['input' => 0.5, 'output' => 1.0],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR);
+
+        $client = new MockHttpClient([new MockResponse($payload, ['http_code' => 200])]);
+        $this->assertSame(Command::SUCCESS, $this->runCommand($client));
+
+        $after = Yaml::parseFile($this->userCatalogPath);
+        $this->assertSame(3, $after['version']);
+        $this->assertSame('https://api.z.ai/api/coding/paas/v4', $after['providers']['zai']['base_url']);
+        $this->assertArrayHasKey('user-only-model', $after['providers']['zai']['models']);
     }
 
     private function runCommand(MockHttpClient $client, ?BufferedOutput $output = null): int

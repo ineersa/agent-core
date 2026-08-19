@@ -4,256 +4,180 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config\Ai;
 
+use Ineersa\CodingAgent\Utility\AtomicFileWriter;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Curated AI provider catalog + optional models.dev metadata overlay.
+ * Bundled AI provider catalog + user copy under ~/.hatfield/ai-catalog.yaml.
  *
- * YAML ({@see config/ai-catalog.yaml}) is authoritative for which models exist.
- * ~/.hatfield/cache/models-dev.json (written by providers:update) may refresh
- * allowlisted model metadata only. Connection settings never come from models.dev.
+ * Bundled config/ai-catalog.yaml is frozen in the install. First load copies it
+ * to the user path. Runtime parses the user copy (bundled fallback if missing/
+ * corrupt). models.dev never touches this class — providers:update writes the
+ * user catalog.
  */
 final class AiCatalog
 {
-    /**
-     * Hatfield provider id → models.dev provider id.
-     *
-     * @var array<string, string>
-     */
-    public const PROVIDER_ID_MAP = [
-        'zai' => 'zai',
-        'deepseek' => 'deepseek',
-        'openai-codex' => 'openai',
-        'grok-cli' => 'xai',
-    ];
-
-    public const CACHE_RELATIVE_PATH = '.hatfield/cache/models-dev.json';
+    public const USER_CATALOG_RELATIVE_PATH = '.hatfield/ai-catalog.yaml';
 
     public function __construct(
         private readonly string $catalogPath,
         private readonly string $homeDir,
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
     /**
-     * Settings-shaped layer: `{ ai: { providers: { ... } } }`, or [] when catalog absent.
+     * Settings-shaped layer: `{ ai: { providers: { ... } } }`, or [] when neither
+     * user nor bundled catalog is readable.
      *
      * @return array<string, mixed>
      */
     public function loadProviders(): array
     {
-        $providers = $this->parseYamlProviders();
-        if ([] === $providers) {
+        $this->ensureUserCatalog();
+
+        $user = $this->readCatalogFile($this->userCatalogPath());
+        $bundled = $this->readCatalogFile($this->catalogPath);
+
+        $source = null !== $user ? $user : $bundled;
+        if (null === $source) {
             return [];
         }
 
+        $this->warnIfBundledNewer($bundled, $user);
+
+        $shaped = [];
+        foreach ($source['providers'] as $id => $provider) {
+            if (!\is_string($id) || !\is_array($provider)) {
+                continue;
+            }
+            unset($provider['label'], $provider['kind'], $provider['auth_command']);
+            $shaped[$id] = $provider;
+        }
+
+        return ['ai' => ['providers' => $shaped]];
+    }
+
+    /**
+     * Copy bundled default to ~/.hatfield/ai-catalog.yaml when the user copy is absent.
+     */
+    public function ensureUserCatalog(): void
+    {
+        $userPath = $this->userCatalogPath();
+        if (is_readable($userPath)) {
+            return;
+        }
+
+        if (!is_readable($this->catalogPath)) {
+            return;
+        }
+
+        $contents = file_get_contents($this->catalogPath);
+        if (false === $contents || '' === trim($contents)) {
+            return;
+        }
+
+        AtomicFileWriter::write($userPath, $contents, fileMode: 0o600, directoryMode: 0o700);
+    }
+
+    public function userCatalogPath(): string
+    {
+        return rtrim($this->homeDir, '/').'/'.self::USER_CATALOG_RELATIVE_PATH;
+    }
+
+    public function bundledCatalogPath(): string
+    {
+        return $this->catalogPath;
+    }
+
+    /**
+     * @return array{version: int, providers: array<string, mixed>}|null
+     */
+    public function readBundledCatalog(): ?array
+    {
+        return $this->readCatalogFile($this->catalogPath);
+    }
+
+    /**
+     * @return array{version: int, providers: array<string, mixed>}|null
+     */
+    public function readUserCatalog(): ?array
+    {
+        return $this->readCatalogFile($this->userCatalogPath());
+    }
+
+    /**
+     * @param array{version: int, providers: array<string, mixed>} $catalog
+     */
+    public function writeUserCatalog(array $catalog): void
+    {
+        $yaml = Yaml::dump([
+            'version' => $catalog['version'],
+            'providers' => $catalog['providers'],
+        ], 6, 4);
+
+        AtomicFileWriter::write($this->userCatalogPath(), $yaml, fileMode: 0o600, directoryMode: 0o700);
+    }
+
+    /**
+     * @return array{version: int, providers: array<string, mixed>}|null
+     */
+    private function readCatalogFile(string $path): ?array
+    {
+        if (!is_readable($path)) {
+            return null;
+        }
+        $content = file_get_contents($path);
+        if (false === $content || '' === trim($content)) {
+            return null;
+        }
+
+        try {
+            $data = Yaml::parse($content);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (!\is_array($data)) {
+            return null;
+        }
+
+        $providers = $data['providers'] ?? null;
+        if (!\is_array($providers)) {
+            return null;
+        }
+
+        $version = $data['version'] ?? 0;
+        if (!is_numeric($version)) {
+            $version = 0;
+        }
+
         return [
-            'ai' => [
-                'providers' => $this->applyMetadata($providers, $this->readCache())['providers'],
-            ],
+            'version' => (int) $version,
+            'providers' => $providers,
         ];
     }
 
     /**
-     * Keep only mapped upstream provider objects for the on-disk cache.
-     * Apply-time allowlist still strips connection fields.
-     *
-     * @param array<string, mixed> $raw
-     *
-     * @return array<string, mixed>
+     * @param array{version: int, providers: array<string, mixed>}|null $bundled
+     * @param array{version: int, providers: array<string, mixed>}|null $user
      */
-    public function filterUpstreamProviders(array $raw): array
+    private function warnIfBundledNewer(?array $bundled, ?array $user): void
     {
-        $out = [];
-        foreach (array_values(self::PROVIDER_ID_MAP) as $id) {
-            if (isset($raw[$id]) && \is_array($raw[$id])) {
-                $out[$id] = $raw[$id];
-            }
+        if (null === $bundled || null === $user) {
+            return;
         }
 
-        return $out;
-    }
-
-    /**
-     * Upstream model ids present in filtered models.dev data but absent from yaml.
-     *
-     * @param array<string, mixed> $upstreamFiltered
-     *
-     * @return array<string, list<string>>
-     */
-    public function discoveryHints(array $upstreamFiltered): array
-    {
-        return $this->applyMetadata($this->parseYamlProviders(), $upstreamFiltered)['discovery'];
-    }
-
-    public function cachePath(): string
-    {
-        return rtrim($this->homeDir, '/').'/'.self::CACHE_RELATIVE_PATH;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function parseYamlProviders(): array
-    {
-        if (!is_readable($this->catalogPath)) {
-            return [];
-        }
-        $content = file_get_contents($this->catalogPath);
-        if (false === $content || '' === trim($content)) {
-            return [];
-        }
-        $data = Yaml::parse($content);
-        if (!\is_array($data)) {
-            return [];
-        }
-        $providers = $data['providers'] ?? null;
-
-        return \is_array($providers) ? $providers : [];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function readCache(): array
-    {
-        $path = $this->cachePath();
-        if (!is_readable($path)) {
-            return [];
-        }
-        $raw = file_get_contents($path);
-        if (false === $raw || '' === trim($raw)) {
-            return [];
-        }
-        try {
-            $decoded = json_decode($raw, true, 512, \JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
-            return [];
+        if ($bundled['version'] <= $user['version']) {
+            return;
         }
 
-        return \is_array($decoded) ? $decoded : [];
-    }
-
-    /**
-     * Overlay allowlisted metadata onto yaml model entries; never adds/removes models.
-     *
-     * @param array<string, mixed> $catalogProviders
-     * @param array<string, mixed> $upstreamFiltered
-     *
-     * @return array{providers: array<string, mixed>, discovery: array<string, list<string>>}
-     */
-    private function applyMetadata(array $catalogProviders, array $upstreamFiltered): array
-    {
-        $discovery = [];
-        $out = [];
-
-        foreach ($catalogProviders as $hatfieldId => $provider) {
-            if (!\is_string($hatfieldId) || !\is_array($provider)) {
-                continue;
-            }
-
-            $upstreamId = self::PROVIDER_ID_MAP[$hatfieldId] ?? null;
-            $upstream = null !== $upstreamId && isset($upstreamFiltered[$upstreamId]) && \is_array($upstreamFiltered[$upstreamId])
-                ? $upstreamFiltered[$upstreamId]
-                : null;
-            $upstreamModels = \is_array($upstream['models'] ?? null) ? $upstream['models'] : [];
-            $catalogModels = \is_array($provider['models'] ?? null) ? $provider['models'] : [];
-
-            if ([] !== $upstreamModels) {
-                $missing = [];
-                foreach (array_keys($upstreamModels) as $upstreamModelId) {
-                    if (\is_string($upstreamModelId) && '' !== $upstreamModelId && !\array_key_exists($upstreamModelId, $catalogModels)) {
-                        $missing[] = $upstreamModelId;
-                    }
-                }
-                if ([] !== $missing) {
-                    sort($missing);
-                    $discovery[$hatfieldId] = $missing;
-                }
-            }
-
-            $refreshedModels = [];
-            foreach ($catalogModels as $modelId => $modelData) {
-                if (!\is_string($modelId) || !\is_array($modelData)) {
-                    continue;
-                }
-                $upstreamModel = $upstreamModels[$modelId] ?? null;
-                if (\is_array($upstreamModel)) {
-                    $meta = $this->extractModelMetadata($upstreamModel);
-                    foreach ($meta as $key => $value) {
-                        if ('cost' === $key && \is_array($value) && isset($modelData['cost']) && \is_array($modelData['cost'])) {
-                            $modelData['cost'] = array_merge($modelData['cost'], $value);
-                        } else {
-                            $modelData[$key] = $value;
-                        }
-                    }
-                }
-                $refreshedModels[$modelId] = $modelData;
-            }
-
-            $provider['models'] = $refreshedModels;
-            unset($provider['label'], $provider['kind'], $provider['auth_command']);
-            $out[$hatfieldId] = $provider;
-        }
-
-        return ['providers' => $out, 'discovery' => $discovery];
-    }
-
-    /**
-     * Map one models.dev model object to Hatfield fields (allowlist only).
-     * SECURITY: never copies api/base_url/paths/auth.
-     *
-     * @param array<string, mixed> $upstreamModel
-     *
-     * @return array<string, mixed>
-     */
-    private function extractModelMetadata(array $upstreamModel): array
-    {
-        $out = [];
-
-        $limit = $upstreamModel['limit'] ?? null;
-        if (\is_array($limit)) {
-            if (isset($limit['context']) && is_numeric($limit['context'])) {
-                $out['context_window'] = (int) $limit['context'];
-            }
-            if (isset($limit['output']) && is_numeric($limit['output'])) {
-                $out['max_tokens'] = (int) $limit['output'];
-            }
-        }
-
-        $modalities = $upstreamModel['modalities'] ?? null;
-        if (\is_array($modalities) && isset($modalities['input']) && \is_array($modalities['input'])) {
-            $input = [];
-            foreach ($modalities['input'] as $modality) {
-                if (\is_string($modality) && ('text' === $modality || 'image' === $modality)) {
-                    $input[] = $modality;
-                }
-            }
-            if ([] !== $input) {
-                $out['input'] = array_values(array_unique($input));
-            }
-        }
-
-        if (\array_key_exists('reasoning', $upstreamModel)) {
-            $out['reasoning'] = (bool) $upstreamModel['reasoning'];
-        }
-        if (\array_key_exists('tool_call', $upstreamModel)) {
-            $out['tool_calling'] = (bool) $upstreamModel['tool_call'];
-        }
-
-        $cost = $upstreamModel['cost'] ?? null;
-        if (\is_array($cost)) {
-            $mapped = [];
-            foreach (['input', 'output', 'cache_read', 'cache_write'] as $field) {
-                if (isset($cost[$field]) && is_numeric($cost[$field])) {
-                    $mapped[$field] = (float) $cost[$field];
-                }
-            }
-            if ([] !== $mapped) {
-                $out['cost'] = $mapped;
-            }
-        }
-
-        return $out;
+        $this->logger?->warning(\sprintf(
+            'AI catalog default version %d is newer than your copy (%d). Run bin/console providers:update to refresh %s.',
+            $bundled['version'],
+            $user['version'],
+            $this->userCatalogPath(),
+        ));
     }
 }
