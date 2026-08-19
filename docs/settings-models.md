@@ -11,9 +11,8 @@ Secrets (API keys) belong in `~/.hatfield/settings.yaml` using `env:VAR` syntax,
 Known providers (`zai`, `deepseek`, `openai-codex`, `grok-cli`) ship as the bundled
 `config/ai-catalog.yaml` and are copied to `~/.hatfield/ai-catalog.yaml` on first run.
 That user catalog is the source of provider/model defaults. Settings `models:` overrides
-the catalog list wholesale. `hatfield providers:update` rebases the user catalog onto
-the bundled default and syncs cost/context/limits (and new upstream model ids) from
-models.dev into the user catalog. Connection settings never come from models.dev.
+the catalog list wholesale. Full catalog behavior (rebase, deltas-only sync, version
+skew, hand-adding models): [ai-catalog.md](ai-catalog.md).
 
 Core settings overview: [settings.md](settings.md).
 

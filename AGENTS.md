@@ -136,6 +136,7 @@ Phases: `task-explain` → `task-start` → `task-to-pr` → `task-done` (with `
 
 - `docs/agents.md` — agent definitions, discovery, catalog, settings
 - `docs/settings.md` — Hatfield settings (see also settings-models, settings-agents)
+- `docs/ai-catalog.md` — AI provider catalog, providers:update, settings overlay
 - `docs/compaction.md` — compaction, `/compact`, events, hooks
 - `docs/session-storage.md` — sessions, replay, locking, resume/fork
 - `docs/tui-architecture.md` — layout, widgets, slots, themes

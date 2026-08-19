@@ -26,15 +26,14 @@ Merge rules:
 
 Known providers in user/project settings are **sparse overlays** (for example
 `{ enabled: true, api_key: env:ZAI_API_KEY }`). Full model lists and connection
-defaults come from the AI catalog. `hatfield providers:update` rebases the user
-catalog onto the bundled default and syncs model metadata from models.dev — agent
-runtime never fetches models.dev. If a newer Hatfield release ships a higher catalog
-`version`, startup logs a warning suggesting `providers:update`.
+defaults come from the AI catalog. See [ai-catalog.md](ai-catalog.md) for the
+precedence diagram, `hatfield providers:update`, and version-skew warning.
 
 Use only keys you intend to change. Full snapshots of defaults are unnecessary.
 
 Related focused references:
 
+- AI catalog → [ai-catalog.md](ai-catalog.md)
 - Models and providers → [settings-models.md](settings-models.md)
 - Agents, prompts, skills, extensions → [settings-agents.md](settings-agents.md)
 - Sessions → [session-storage.md](session-storage.md)
@@ -46,6 +45,7 @@ Related focused references:
 
 | Path | Role |
 |---|---|
+| `~/.hatfield/ai-catalog.yaml` | User AI catalog (see [ai-catalog.md](ai-catalog.md)) |
 | `~/.hatfield/settings.yaml` | User overrides |
 | `<cwd>/.hatfield/settings.yaml` | Project overrides |
 | `<cwd>/.hatfield/sessions/` | Session storage (ignored by git) |
