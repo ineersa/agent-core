@@ -57,10 +57,7 @@ final class ProvidersSetupCommand
         }
 
         $io->title('AI Provider Setup');
-        $io->text([
-            'Hatfield needs at least one AI provider to run.',
-            "Pick one — you'll be asked for what it needs (a key or a login).",
-        ]);
+        $io->text('Hatfield needs at least one AI provider to run.');
 
         /** @var list<array{id: string, models: list<string>, authCommand: ?string}> $configured */
         $configured = [];
@@ -69,11 +66,9 @@ final class ProvidersSetupCommand
         /** @var list<string> $disabledThisRun */
         $disabledThisRun = [];
         $wroteSomething = false;
-        $showHints = true;
 
         while (true) {
-            $choice = $this->askProviderChoice($io, $catalog, $enabledThisRun, $showHints);
-            $showHints = false;
+            $choice = $this->askProviderChoice($io, $catalog, $enabledThisRun);
             if ('done' === $choice) {
                 break;
             }
@@ -218,31 +213,89 @@ final class ProvidersSetupCommand
      * @param array<string, array<string, mixed>> $catalog
      * @param array<string, bool>                 $enabledThisRun
      */
-    private function askProviderChoice(SymfonyStyle $io, array $catalog, array $enabledThisRun, bool $showHints): string
+    private function askProviderChoice(SymfonyStyle $io, array $catalog, array $enabledThisRun): string
     {
-        if ($showHints) {
-            $io->writeln('');
-            $rows = [];
-            foreach ($catalog as $id => $provider) {
-                $rows[] = [$this->displayName($id, $provider), $this->needHint($provider)];
-            }
-            $rows[] = ['Other server', 'any OpenAI-compatible endpoint (llama.cpp, LM Studio, …)'];
-            $io->table([], $rows);
-        }
+        $this->renderStatusTable($io, $catalog, $enabledThisRun);
 
         $choices = [];
         foreach ($catalog as $id => $provider) {
-            $label = $this->displayName($id, $provider);
-            $need = $this->needHint($provider);
-            $badge = $this->providerBadge($id, $enabledThisRun);
-            $choices[$id] = $label.' — '.$need.$badge;
+            $choices[$id] = $this->displayName($id, $provider).$this->providerBadge($id, $enabledThisRun);
         }
-        $choices['custom'] = 'Other server — any OpenAI-compatible endpoint (llama.cpp, LM Studio, …)';
+        $choices['custom'] = 'Other server';
         $choices['done'] = 'Done';
 
         $picked = $io->choice('Which provider?', $choices, 'done');
 
         return \is_string($picked) ? $picked : 'done';
+    }
+
+    /**
+     * Live dashboard of catalog providers (+ any custom ones already configured).
+     * Rendered every picker loop so enable/disable updates are visible immediately.
+     *
+     * @param array<string, array<string, mixed>> $catalog
+     * @param array<string, bool>                 $enabledThisRun
+     */
+    private function renderStatusTable(SymfonyStyle $io, array $catalog, array $enabledThisRun): void
+    {
+        $io->writeln('');
+        $rows = [];
+        foreach ($catalog as $id => $provider) {
+            $rows[] = [
+                $this->displayName($id, $provider),
+                $this->needHint($provider),
+                $this->providerStatusLabel($id, $enabledThisRun),
+            ];
+        }
+
+        foreach ($this->customProviderIds($catalog, $enabledThisRun) as $id) {
+            $rows[] = [
+                $id,
+                'any OpenAI-compatible endpoint (llama.cpp, LM Studio, …)',
+                '✓ enabled',
+            ];
+        }
+
+        $io->table(['Provider', 'What it needs', 'Status'], $rows);
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $catalog
+     * @param array<string, bool>                 $enabledThisRun
+     *
+     * @return list<string>
+     */
+    private function customProviderIds(array $catalog, array $enabledThisRun): array
+    {
+        $ids = [];
+        foreach ($enabledThisRun as $id => $enabled) {
+            if ($enabled && !isset($catalog[$id])) {
+                $ids[$id] = true;
+            }
+        }
+
+        $configuredProviders = $this->appConfig->ai?->providers;
+        if (\is_array($configuredProviders)) {
+            foreach ($configuredProviders as $id => $provider) {
+                if (!isset($catalog[$id]) && $provider->enabled && !isset($enabledThisRun[$id])) {
+                    $ids[$id] = true;
+                }
+            }
+        }
+
+        return array_keys($ids);
+    }
+
+    /**
+     * @param array<string, bool> $enabledThisRun
+     */
+    private function providerStatusLabel(string $id, array $enabledThisRun): string
+    {
+        $enabled = \array_key_exists($id, $enabledThisRun)
+            ? $enabledThisRun[$id]
+            : $this->isProviderEnabled($id);
+
+        return $enabled ? '✓ enabled' : 'not set up';
     }
 
     /**
@@ -286,10 +339,10 @@ final class ProvidersSetupCommand
     private function providerBadge(string $id, array $enabledThisRun): string
     {
         if (\array_key_exists($id, $enabledThisRun)) {
-            return $enabledThisRun[$id] ? ' [enabled]' : ' [disabled]';
+            return $enabledThisRun[$id] ? ' (enabled)' : ' (disabled)';
         }
 
-        return $this->isProviderEnabled($id) ? ' [enabled]' : '';
+        return $this->isProviderEnabled($id) ? ' (enabled)' : '';
     }
 
     private function disableProvider(

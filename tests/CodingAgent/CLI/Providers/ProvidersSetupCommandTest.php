@@ -151,12 +151,16 @@ YAML);
         $this->assertArrayNotHasKey('models', $settings['ai']['providers']['zai']);
         $this->assertArrayNotHasKey('base_url', $settings['ai']['providers']['zai']);
         $this->assertSame('zai/glm-5.3', $settings['ai']['default_model'] ?? null);
-        $display = preg_replace('/\s+/', ' ', $tester->getDisplay()) ?? '';
+        $rawDisplay = $tester->getDisplay();
+        $display = preg_replace('/\s+/', ' ', $rawDisplay) ?? '';
         $this->assertStringContainsString('Z.ai (GLM) enabled', $display);
         $this->assertStringContainsString('(Everything else is preconfigured.)', $display);
         $this->assertStringContainsString('Saved to', $display);
         $this->assertStringNotContainsString('layer', $display);
         $this->assertStringNotContainsString('Catalog connection', $display);
+        $this->assertStringNotContainsString('Pick one', $display);
+        $this->assertStringNotContainsString('needs an API key —', $display);
+        $this->assertPickerDashboard($rawDisplay, expectedEnabled: []);
     }
 
     #[Test]
@@ -194,11 +198,13 @@ YAML);
 
         $this->assertSame(Command::SUCCESS, $tester->execute([]), $tester->getDisplay());
 
-        $display = preg_replace('/\s+/', ' ', $tester->getDisplay()) ?? '';
+        $rawDisplay = $tester->getDisplay();
+        $display = preg_replace('/\s+/', ' ', $rawDisplay) ?? '';
         $this->assertStringContainsString('Grok / xAI enabled', $display);
         $this->assertStringContainsString('To finish: run `hatfield auth:grok` and log in.', $display);
         $this->assertStringNotContainsString('Authenticate with xAI', $display);
         $this->assertStringNotContainsString('layer', $display);
+        $this->assertPickerDashboard($rawDisplay, expectedEnabled: []);
 
         $settings = $this->parseUserSettings();
         $provider = $settings['ai']['providers']['grok-cli'] ?? null;
@@ -327,6 +333,15 @@ YAML);
 
         $this->assertSame(Command::SUCCESS, $tester->execute([]), $tester->getDisplay());
 
+        $rawDisplay = $tester->getDisplay();
+        $this->assertPickerDashboard($rawDisplay, expectedEnabled: []);
+        // Status table re-renders after enabling zai so the second picker shows live status.
+        $this->assertGreaterThanOrEqual(2, substr_count($rawDisplay, 'What it needs'));
+        $this->assertMatchesRegularExpression(
+            '/Z\.ai \(GLM\).*✓ enabled/s',
+            $rawDisplay,
+        );
+
         $settings = $this->parseUserSettings();
         foreach (['zai', 'grok-cli'] as $id) {
             $this->assertArrayHasKey($id, $settings['ai']['providers']);
@@ -353,10 +368,13 @@ YAML);
 
         $this->assertSame(Command::SUCCESS, $tester->execute([]), $tester->getDisplay());
 
-        $display = preg_replace('/\s+/', ' ', $tester->getDisplay()) ?? '';
+        $rawDisplay = $tester->getDisplay();
+        $display = preg_replace('/\s+/', ' ', $rawDisplay) ?? '';
         $this->assertStringContainsString('Disable Grok / xAI? This clears its settings entry.', $display);
         $this->assertStringContainsString('Grok / xAI disabled', $display);
         $this->assertStringNotContainsString('`hatfield auth:grok`', $display);
+        $this->assertStringContainsString('Grok / xAI (enabled)', $display);
+        $this->assertPickerDashboard($rawDisplay, expectedEnabled: ['Grok / xAI']);
 
         $settings = $this->parseUserSettings();
         $provider = $settings['ai']['providers']['grok-cli'] ?? null;
@@ -371,21 +389,23 @@ YAML);
         $tester->setInputs([
             'grok-cli',      // enable oauth
             'yes',           // add another
-            'grok-cli',      // pick again (now [enabled] this run)
+            'grok-cli',      // pick again (now (enabled) this run)
             'disable',
             'yes',           // confirm disable
-            'yes',           // add another → picker shows [disabled]
+            'yes',           // add another → picker shows (disabled)
             'done',
         ]);
 
         $this->assertSame(Command::SUCCESS, $tester->execute([]), $tester->getDisplay());
 
-        $display = preg_replace('/\s+/', ' ', $tester->getDisplay()) ?? '';
+        $rawDisplay = $tester->getDisplay();
+        $display = preg_replace('/\s+/', ' ', $rawDisplay) ?? '';
         $this->assertStringContainsString('Grok / xAI enabled', $display);
         $this->assertStringContainsString('Grok / xAI disabled', $display);
-        $this->assertStringContainsString('[disabled]', $display);
+        $this->assertStringContainsString('(disabled)', $display);
         $this->assertStringNotContainsString('`hatfield auth:grok`', $display);
         $this->assertStringNotContainsString('Set as your default model?', $display);
+        $this->assertGreaterThanOrEqual(3, substr_count($rawDisplay, 'What it needs'));
 
         $settings = $this->parseUserSettings();
         $this->assertSame(['enabled' => false], $settings['ai']['providers']['grok-cli'] ?? null);
@@ -418,6 +438,34 @@ YAML);
         $settings = $this->parseUserSettings();
         $this->assertSame(['enabled' => false], $settings['ai']['providers']['zai'] ?? null);
         $this->assertArrayNotHasKey('default_model', $settings['ai'] ?? []);
+    }
+
+    /**
+     * @param list<string> $expectedEnabled display names that should show ✓ enabled
+     */
+    private function assertPickerDashboard(string $rawDisplay, array $expectedEnabled): void
+    {
+        $this->assertStringContainsString('Provider', $rawDisplay);
+        $this->assertStringContainsString('What it needs', $rawDisplay);
+        $this->assertStringContainsString('Status', $rawDisplay);
+        $this->assertStringContainsString('needs an API key', $rawDisplay);
+        $this->assertStringContainsString('log in with your ChatGPT account', $rawDisplay);
+        $this->assertStringContainsString('log in with your xAI account', $rawDisplay);
+        $this->assertStringContainsString('not set up', $rawDisplay);
+
+        foreach ($expectedEnabled as $name) {
+            $this->assertMatchesRegularExpression(
+                '/'.preg_quote($name, '/').'.*✓ enabled/s',
+                $rawDisplay,
+            );
+        }
+
+        // Choice labels stay short — no duplicated need-hint suffixes.
+        $collapsed = preg_replace('/\s+/', ' ', $rawDisplay) ?? '';
+        $this->assertStringNotContainsString('DeepSeek — needs an API key', $collapsed);
+        $this->assertStringNotContainsString('Other server — any OpenAI-compatible', $collapsed);
+        $this->assertStringContainsString('Other server', $collapsed);
+        $this->assertStringContainsString('Done', $collapsed);
     }
 
     private function createCommand(?AiConfig $ai = null): ProvidersSetupCommand
