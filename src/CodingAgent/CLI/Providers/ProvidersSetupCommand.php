@@ -77,7 +77,7 @@ final class ProvidersSetupCommand
             }
 
             if ('custom' === $choice) {
-                $result = $this->configureCustom($io, $layer, $cwd);
+                $result = $this->configureCustom($io, $layer, $cwd, $catalog);
                 $configured[] = $result;
                 $enabledThisRun[$result['id']] = true;
                 $io->success(\sprintf('Custom provider "%s" written.', $result['id']));
@@ -366,16 +366,21 @@ final class ProvidersSetupCommand
     }
 
     /**
+     * @param array<string, array<string, mixed>> $catalog
+     *
      * @return array{id: string, models: list<string>, authCommand: null}
      */
-    private function configureCustom(SymfonyStyle $io, SettingsLayerEnum $layer, string $cwd): array
+    private function configureCustom(SymfonyStyle $io, SettingsLayerEnum $layer, string $cwd, array $catalog): array
     {
         $io->section('Custom OpenAI-compatible provider');
 
-        $id = trim((string) $io->ask('Provider id (slug)', 'local', static function (?string $value): string {
+        $id = trim((string) $io->ask('Provider id (slug)', 'local', static function (?string $value) use ($catalog): string {
             $value = strtolower(trim((string) $value));
             if (1 !== preg_match('/^[a-z][a-z0-9_-]*$/', $value)) {
                 throw new \InvalidArgumentException('Provider id must match ^[a-z][a-z0-9_-]*$.');
+            }
+            if (isset($catalog[$value])) {
+                throw new \InvalidArgumentException(\sprintf('"%s" is a known catalog provider — configure it directly from the provider list instead of Custom.', $value));
             }
 
             return $value;

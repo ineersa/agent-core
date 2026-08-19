@@ -243,6 +243,47 @@ YAML);
     }
 
     #[Test]
+    public function customIdCollidingWithCatalogIsRejectedThenReasked(): void
+    {
+        $tester = new CommandTester($this->createCommand());
+        $tester->setInputs([
+            'custom',
+            'zai',           // colliding catalog id — rejected + re-asked
+            'my-llm',        // valid non-colliding id
+            'http://127.0.0.1:9000',
+            '/v1/chat/completions',
+            'no',            // no api key
+            'chat',          // model id
+            'Chat',          // display name
+            '8192',          // context
+            '2048',          // max tokens
+            'text',          // modalities
+            'no',            // reasoning
+            'no',            // another model
+            'no',            // supports_developer_role
+            '',              // thinking_format empty
+            'no',            // add another provider
+            'no',            // default model
+        ]);
+
+        $this->assertSame(Command::SUCCESS, $tester->execute([]), $tester->getDisplay());
+
+        $display = preg_replace('/\s+/', ' ', $tester->getDisplay()) ?? '';
+        $this->assertStringContainsString(
+            '"zai" is a known catalog provider — configure it directly from the provider list instead of Custom.',
+            $display,
+        );
+
+        $settings = $this->parseUserSettings();
+        $this->assertArrayNotHasKey('zai', $settings['ai']['providers'] ?? []);
+        $provider = $settings['ai']['providers']['my-llm'] ?? null;
+        $this->assertIsArray($provider);
+        $this->assertTrue($provider['enabled']);
+        $this->assertSame('http://127.0.0.1:9000', $provider['base_url']);
+        $this->assertArrayHasKey('chat', $provider['models']);
+    }
+
+    #[Test]
     public function projectFlagWritesProjectLayer(): void
     {
         $tester = new CommandTester($this->createCommand());
