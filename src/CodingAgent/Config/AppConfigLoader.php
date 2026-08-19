@@ -29,6 +29,9 @@ use Symfony\Component\Yaml\Yaml;
  *  - Associative arrays: recursive deep overlay — keys present in the higher-
  *    priority layer override matching keys in the lower layer; keys only in the
  *    lower layer survive untouched.
+ *  - Under {@code ai.providers.<id>}, an assoc {@code models:} map replaces the
+ *    catalog models wholesale (pin/trim). Elsewhere {@code models} deep-merges
+ *    like any other assoc map.
  *  - Indexed/sequential list arrays: higher-priority entire list replaces the
  *    lower-priority list. Lists never append or index-merge.
  *  - Scalar values (string, int, float, bool): higher-priority value wins;
@@ -131,25 +134,36 @@ final class AppConfigLoader
      *
      * Rules (per key):
      *  1. Both sides are associative arrays → recurse (deep overlay).
-     *  2. Either side is a list (sequential array) → higher-priority list
+     *  2. Under ai.providers.<id>, assoc models: replaces wholesale (pin/trim);
+     *     elsewhere models deep-merges like any other assoc map.
+     *  3. Either side is a list (sequential array) → higher-priority list
      *     replaces the lower-priority list entirely. Lists never append.
-     *  3. One or both sides are scalar/null → higher-priority value wins.
+     *  4. One or both sides are scalar/null → higher-priority value wins.
      *
      * @param array<string, mixed> $base Lower-priority layer (defaults)
      * @param array<string, mixed> $over Higher-priority layer (user or project)
+     * @param list<string>         $path Path segments from the settings root to this node
      *
      * @return array<string, mixed>
      */
-    public function overlayConfig(array $base, array $over): array
+    public function overlayConfig(array $base, array $over, array $path = []): array
     {
         foreach ($over as $key => $value) {
+            $keyString = (string) $key;
+            $childPath = [...$path, $keyString];
+
             if (\is_array($value) && isset($base[$key]) && \is_array($base[$key])) {
-                // Provider `models:` maps replace wholesale (pin/trim). Do not deep-merge
-                // individual model ids — that would leave unwanted catalog models behind.
-                if ('models' === $key && $this->isAssoc($value) && $this->isAssoc($base[$key])) {
+                // Only under ai.providers.<id>, models: maps replace wholesale (pin/trim).
+                // Elsewhere models deep-merges like any other assoc map.
+                if (
+                    'models' === $keyString
+                    && $this->isAssoc($value)
+                    && $this->isAssoc($base[$key])
+                    && $this->isAiProviderModelsPath($path)
+                ) {
                     $base[$key] = $value;
                 } elseif ($this->isAssoc($value) && $this->isAssoc($base[$key])) {
-                    $base[$key] = $this->overlayConfig($base[$key], $value);
+                    $base[$key] = $this->overlayConfig($base[$key], $value, $childPath);
                 } else {
                     $base[$key] = $value;
                 }
@@ -159,6 +173,20 @@ final class AppConfigLoader
         }
 
         return $base;
+    }
+
+    /**
+     * True when $path is exactly ['ai', 'providers', '<id>'] — the parent of a
+     * provider models map. Wholesale replace applies only at that depth.
+     *
+     * @param list<string> $path
+     */
+    private function isAiProviderModelsPath(array $path): bool
+    {
+        return 3 === \count($path)
+            && 'ai' === $path[0]
+            && 'providers' === $path[1]
+            && '' !== $path[2];
     }
 
     /**

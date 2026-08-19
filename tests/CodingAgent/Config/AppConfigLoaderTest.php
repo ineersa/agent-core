@@ -374,6 +374,71 @@ YAML
         $this->assertSame('value', $result['key']['nested']);
     }
 
+    public function testOverlayConfigAiProviderModelsWholesaleReplace(): void
+    {
+        $base = [
+            'ai' => [
+                'providers' => [
+                    'zai' => [
+                        'enabled' => false,
+                        'models' => [
+                            'glm-5.3' => ['name' => 'Catalog', 'context_window' => 1000],
+                            'glm-old' => ['name' => 'Old', 'context_window' => 500],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $over = [
+            'ai' => [
+                'providers' => [
+                    'zai' => [
+                        'enabled' => true,
+                        'models' => [
+                            'glm-5.3' => ['name' => 'Pinned', 'context_window' => 111],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $result = $this->loader->overlayConfig($base, $over);
+
+        $this->assertTrue($result['ai']['providers']['zai']['enabled']);
+        $this->assertSame(['glm-5.3'], array_keys($result['ai']['providers']['zai']['models']));
+        $this->assertSame('Pinned', $result['ai']['providers']['zai']['models']['glm-5.3']['name']);
+        $this->assertSame(111, $result['ai']['providers']['zai']['models']['glm-5.3']['context_window']);
+    }
+
+    public function testOverlayConfigModelsOutsideAiProvidersDeepMerges(): void
+    {
+        $base = [
+            'extensions' => [
+                'models' => [
+                    'keep' => ['enabled' => true, 'weight' => 1],
+                    'shared' => ['enabled' => false, 'weight' => 2],
+                ],
+            ],
+        ];
+        $over = [
+            'extensions' => [
+                'models' => [
+                    'shared' => ['enabled' => true],
+                    'new' => ['enabled' => true, 'weight' => 3],
+                ],
+            ],
+        ];
+
+        $result = $this->loader->overlayConfig($base, $over);
+
+        $this->assertTrue($result['extensions']['models']['keep']['enabled']);
+        $this->assertSame(1, $result['extensions']['models']['keep']['weight']);
+        $this->assertTrue($result['extensions']['models']['shared']['enabled']);
+        $this->assertSame(2, $result['extensions']['models']['shared']['weight']);
+        $this->assertTrue($result['extensions']['models']['new']['enabled']);
+        $this->assertSame(3, $result['extensions']['models']['new']['weight']);
+    }
+
     // ── Integration-style tests via load() ─────────────────────────────────
 
     public function testDeepNestedMergePreservesUnchangedDeepKeys(): void

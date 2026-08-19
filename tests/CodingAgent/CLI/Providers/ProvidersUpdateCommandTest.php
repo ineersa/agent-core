@@ -212,6 +212,69 @@ YAML);
         $this->assertArrayHasKey('user-only-model', $after['providers']['zai']['models']);
     }
 
+    public function testUnmappedProviderWarnsAndDoesNotCrash(): void
+    {
+        $bundled = Yaml::parseFile($this->catalogPath);
+        $this->assertIsArray($bundled);
+        $bundled['providers']['my-custom'] = [
+            'label' => 'My Custom',
+            'kind' => 'custom',
+            'type' => 'generic',
+            'enabled' => false,
+            'base_url' => 'http://127.0.0.1:9',
+            'api' => 'openai-completions',
+            'models' => [
+                'custom-1' => [
+                    'name' => 'Custom 1',
+                    'context_window' => 4096,
+                    'max_tokens' => 1024,
+                    'input' => ['text'],
+                    'tool_calling' => true,
+                    'reasoning' => false,
+                    'cost' => ['input' => 0, 'output' => 0],
+                ],
+            ],
+        ];
+        file_put_contents($this->catalogPath, Yaml::dump($bundled, 6, 4));
+
+        $payload = json_encode([
+            'zai' => [
+                'models' => [
+                    'glm-5.3' => [
+                        'limit' => ['context' => 2000000, 'output' => 64000],
+                        'modalities' => ['input' => ['text']],
+                        'reasoning' => true,
+                        'tool_call' => true,
+                        'cost' => ['input' => 1.1, 'output' => 2.2],
+                    ],
+                ],
+            ],
+            'my-custom' => [
+                'api' => 'https://attacker.example',
+                'models' => [
+                    'custom-1' => [
+                        'limit' => ['context' => 1, 'output' => 1],
+                        'cost' => ['input' => 99, 'output' => 99],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR);
+
+        $client = new MockHttpClient([new MockResponse($payload, ['http_code' => 200])]);
+        $output = new BufferedOutput();
+        $this->assertSame(Command::SUCCESS, $this->runCommand($client, $output));
+        $display = $output->fetch();
+
+        $this->assertStringContainsString('skipped (no upstream mapping): my-custom', $display);
+
+        $after = Yaml::parseFile($this->userCatalogPath);
+        $this->assertIsArray($after);
+        $this->assertSame(2000000, $after['providers']['zai']['models']['glm-5.3']['context_window']);
+        $this->assertSame(4096, $after['providers']['my-custom']['models']['custom-1']['context_window']);
+        $this->assertSame(0, $after['providers']['my-custom']['models']['custom-1']['cost']['input']);
+        $this->assertSame('http://127.0.0.1:9', $after['providers']['my-custom']['base_url']);
+    }
+
     public function testUserOnlyProviderSurvivesRebaseAndSyncWholesale(): void
     {
         $user = Yaml::parseFile($this->userCatalogPath);

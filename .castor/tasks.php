@@ -242,6 +242,12 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
                 30,
             ),
         ],
+        'catalog:version-check' => [
+            'cmd' => timeout_check_command(
+                qa_check_run_env_command().' '.escapeshellarg($castorBin).' catalog:version-check',
+                15,
+            ),
+        ],
     ];
 
     // DB schema must be ready before the test / controller-replay / TUI

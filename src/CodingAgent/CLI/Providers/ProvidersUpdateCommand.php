@@ -113,6 +113,9 @@ final class ProvidersUpdateCommand
                 }
                 $io->writeln('  available upstream (not added): '.implode('; ', $parts));
             }
+            foreach ($stats['unmapped'] as $providerId) {
+                $io->warning(\sprintf('skipped (no upstream mapping): %s', $providerId));
+            }
         } catch (\Throwable $e) {
             $io->warning(\sprintf('providers:update failed (%s); left %s untouched.', $e->getMessage(), $userPath));
         }
@@ -177,12 +180,13 @@ final class ProvidersUpdateCommand
      * @param array{version: int, providers: array<string, mixed>} $catalog
      * @param array<string, mixed>                                 $upstream
      *
-     * @return array{updated: int, available_ids: array<string, list<string>>}
+     * @return array{updated: int, available_ids: array<string, list<string>>, unmapped: list<string>}
      */
     private function sync(array &$catalog, array $upstream): array
     {
         $updated = 0;
         $availableIds = [];
+        $unmapped = [];
 
         foreach ($catalog['providers'] as $hatfieldId => &$provider) {
             if (!\is_string($hatfieldId) || !\is_array($provider)) {
@@ -191,6 +195,7 @@ final class ProvidersUpdateCommand
 
             $upstreamId = self::PROVIDER_ID_MAP[$hatfieldId] ?? null;
             if (null === $upstreamId) {
+                $unmapped[] = $hatfieldId;
                 continue;
             }
             $upstreamProvider = $upstream[$upstreamId] ?? null;
@@ -238,7 +243,7 @@ final class ProvidersUpdateCommand
         }
         unset($provider);
 
-        return ['updated' => $updated, 'available_ids' => $availableIds];
+        return ['updated' => $updated, 'available_ids' => $availableIds, 'unmapped' => $unmapped];
     }
 
     /**
