@@ -11,6 +11,7 @@ use Ineersa\Tui\Setup\SetupScreen;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
@@ -32,8 +33,10 @@ final class ProvidersSetupCommand
         SymfonyStyle $io,
         #[Option(description: 'Write to project .hatfield/settings.yaml instead of ~/.hatfield/settings.yaml')]
         bool $project = false,
+        ?InputInterface $input = null,
     ): int {
-        if (!$this->isInteractiveTerminal()) {
+        // CommandTester / --no-interaction set isInteractive=false; bare pipes fail isatty.
+        if ((null !== $input && !$input->isInteractive()) || !$this->isInteractiveTerminal()) {
             $io->error('providers:setup needs an interactive terminal.');
 
             return Command::FAILURE;

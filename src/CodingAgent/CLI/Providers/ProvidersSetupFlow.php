@@ -282,30 +282,6 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
         return $map;
     }
 
-    public function suggestedEnvVar(string $providerId): string
-    {
-        return strtoupper(str_replace('-', '_', $providerId)).'_API_KEY';
-    }
-
-    public function displayLabel(string $id): string
-    {
-        if (isset($this->catalog[$id])) {
-            return $this->displayName($id, $this->catalog[$id]);
-        }
-
-        return $id;
-    }
-
-    public function catalogKind(string $id): string
-    {
-        $provider = $this->catalog[$id] ?? null;
-        if (!\is_array($provider)) {
-            return 'custom';
-        }
-
-        return \is_string($provider['kind'] ?? null) ? $provider['kind'] : 'apikey';
-    }
-
     /**
      * @return array<string, array<string, mixed>>
      */

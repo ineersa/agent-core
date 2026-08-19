@@ -173,8 +173,8 @@ final class SetupScreen
             self::PHASE_PICKER => $this->pickerItems(),
             self::PHASE_ACTION => $this->actionItems(),
             self::PHASE_CONFIRM => $this->confirmItems(),
-            self::PHASE_CHOICE => $this->choiceItems(),
             self::PHASE_SUMMARY => $this->summaryItems(),
+            // PHASE_CHOICE items are built at showList call sites; no rebuild helper.
             default => [],
         };
     }
@@ -187,7 +187,7 @@ final class SetupScreen
             self::PHASE_ACTION => $this->handleActionSelect($value),
             self::PHASE_CONFIRM => $this->handleConfirmSelect($value),
             self::PHASE_CHOICE => $this->handleChoiceSelect($value),
-            self::PHASE_SUMMARY => $this->handleSummarySelect($value),
+            // SUMMARY exits via tui->stop() before input; no select handler.
             default => null,
         };
         $this->refreshError();
@@ -263,12 +263,12 @@ final class SetupScreen
 
     private function handleConfirmSelect(string $value): void
     {
-        if ('no' === $value || null === $this->activeProviderId) {
-            $this->showPicker();
-
-            return;
-        }
         if ('disable' === $this->pendingConfirm) {
+            if ('no' === $value || null === $this->activeProviderId) {
+                $this->showPicker();
+
+                return;
+            }
             $id = $this->activeProviderId;
             $this->flow->disable($id);
             $warning = $this->flow->defaultModelWarningFor($id);
@@ -298,7 +298,10 @@ final class SetupScreen
             } else {
                 $this->finishSuccess();
             }
+
+            return;
         }
+        $this->showPicker();
     }
 
     private function handleChoiceSelect(string $value): void
@@ -313,11 +316,6 @@ final class SetupScreen
             'default_model' => $this->handleDefaultModel($value),
             default => $this->showPicker(),
         };
-    }
-
-    private function handleSummarySelect(string $value): void
-    {
-        $this->finishSuccess();
     }
 
     private function startEnable(string $id): void
@@ -350,14 +348,13 @@ final class SetupScreen
 
             return;
         }
-        $suggested = strtoupper(str_replace('-', '_', $id)).'_API_KEY';
-        $this->beginInput('api_env_name', 'Variable name', $suggested);
+        $this->beginInput('api_env_name', 'Variable name', $this->suggestedEnvVar($id));
     }
 
     private function finishApiEnv(string $value): void
     {
         $id = (string) ($this->formState['id'] ?? '');
-        $apiKey = $this->flow->formatEnvApiKey('' !== $value ? $value : strtoupper(str_replace('-', '_', $id)).'_API_KEY');
+        $apiKey = $this->flow->formatEnvApiKey('' !== $value ? $value : $this->suggestedEnvVar($id));
         if (($this->formState['afterKey'] ?? null) === 'custom_model') {
             $this->resumeAfterCustomKey($apiKey);
 
@@ -403,7 +400,7 @@ final class SetupScreen
 
     private function advanceCustomId(string $value): void
     {
-        $id = strtolower('' !== $value ? $value : 'local');
+        $id = strtolower(trim('' !== $value ? $value : 'local'));
         $this->flow->validateCustomId($id);
         $this->formState['id'] = $id;
         $this->beginInput('custom_url', 'Server URL (e.g. http://localhost:8080)', 'http://127.0.0.1:8080');
@@ -656,7 +653,7 @@ final class SetupScreen
         foreach ($this->flow->pendingAuthCommands() as $authCommand) {
             $lines[] = \sprintf('To finish: run `hatfield %s` and log in.', $authCommand);
         }
-        if ([] === $lines && !$this->flow->wroteSomething()) {
+        if ([] === $lines) {
             $lines[] = 'Nothing changed.';
         }
 
@@ -743,15 +740,6 @@ final class SetupScreen
     }
 
     /**
-     * @return list<array{value: string, label: string, description?: string}>
-     */
-    private function choiceItems(): array
-    {
-        // Rebuilt on each showList call; used only by visibleItems() helper.
-        return [];
-    }
-
-    /**
      * @return list<array{value: string, label: string}>
      */
     private function summaryItems(): array
@@ -817,5 +805,10 @@ final class SetupScreen
         }
 
         return 'apikey';
+    }
+
+    private function suggestedEnvVar(string $providerId): string
+    {
+        return strtoupper(str_replace('-', '_', $providerId)).'_API_KEY';
     }
 }

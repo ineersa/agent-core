@@ -105,6 +105,59 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertSame([], $flow->savedCustoms);
     }
 
+    #[Test]
+    public function oauthEnableSummaryContainsAuthHintAndSavedTo(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('grok-cli');
+        $screen->selectValue('no'); // Add another? → default-model confirm
+        $this->assertSame('confirm', $screen->phase());
+        $screen->selectValue('no'); // skip default model → summary
+
+        $this->assertSame('summary', $screen->phase());
+        $this->assertTrue($screen->finished());
+        $collapsed = str_replace(["\n", ' '], '', $this->plain($terminal));
+        $this->assertStringContainsString(str_replace(' ', '', 'To finish: run `hatfield auth:grok`'), $collapsed);
+        $this->assertStringContainsString(str_replace(' ', '', 'Saved to'), $collapsed);
+    }
+
+    #[Test]
+    public function enableThenDisableSameRunSummaryHasSavedToButNoAuthHint(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('grok-cli');
+        $screen->selectValue('yes'); // Add another?
+        $screen->selectValue('grok-cli');
+        $screen->selectValue('disable');
+        $screen->selectValue('yes'); // confirm disable
+        $screen->selectValue('no'); // Add another? → summary
+
+        $this->assertSame('summary', $screen->phase());
+        $collapsed = str_replace(["\n", ' '], '', $this->plain($terminal));
+        $this->assertStringContainsString(str_replace(' ', '', 'Saved to'), $collapsed);
+        $this->assertStringNotContainsString(str_replace(' ', '', 'To finish'), $collapsed);
+        $this->assertSame([], $flow->pendingAuthCommands());
+    }
+
+    #[Test]
+    public function nothingChangedSummaryWhenDoneImmediately(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('done');
+
+        $this->assertSame('summary', $screen->phase());
+        $this->assertTrue($screen->finished());
+        $collapsed = str_replace(["\n", ' '], '', $this->plain($terminal));
+        $this->assertStringContainsString(str_replace(' ', '', 'Nothing changed.'), $collapsed);
+        $this->assertStringNotContainsString(str_replace(' ', '', 'Saved to'), $collapsed);
+    }
+
     /**
      * @return array{0: SetupScreen, 1: VirtualTerminal}
      */
