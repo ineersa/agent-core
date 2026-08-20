@@ -244,6 +244,11 @@ final class SetupScreen
 
             return;
         }
+        if ('default_model' === $value) {
+            $this->showDefaultModelPicker();
+
+            return;
+        }
         if ('custom' === $value) {
             if ([] !== $this->flow->customProviderRows()) {
                 $this->showServersSubmenu();
@@ -381,16 +386,6 @@ final class SetupScreen
             $this->pendingConfirm = null;
             if ('yes' === $value) {
                 $this->showPicker();
-            } else {
-                $this->showSummaryOrExit();
-            }
-
-            return;
-        }
-        if ('set_default' === $this->pendingConfirm) {
-            $this->pendingConfirm = null;
-            if ('yes' === $value) {
-                $this->showDefaultModelPicker();
             } else {
                 $this->finishSuccess();
             }
@@ -754,30 +749,16 @@ final class SetupScreen
         $this->pendingConfirm = 'add_another';
         $this->phase = self::PHASE_CONFIRM;
         $this->formKind = '';
-        $this->hintWidget->setText($message."\n\nAdd another?");
-        $this->showList($this->confirmItems());
+        $this->hintWidget->setText($message."\n\nContinue?");
+        $this->showList($this->continueItems());
     }
 
     private function showSummaryOrExit(): void
     {
-        if (!$this->flow->wroteSomething() && [] === $this->flow->configuredModelRefs() && [] === $this->flow->pendingAuthCommands()) {
+        // Done / exit path — default model is a main-menu option, never auto-asked.
+        if (!$this->flow->wroteSomething() && [] === $this->flow->pendingAuthCommands()) {
             $this->hintWidget->setText('Nothing changed.');
-            $this->finishSuccess();
-
-            return;
         }
-
-        $refs = $this->flow->configuredModelRefs();
-        if ([] !== $refs) {
-            $this->pendingConfirm = 'set_default';
-            $this->phase = self::PHASE_CONFIRM;
-            $this->formKind = '';
-            $this->hintWidget->setText('Set as your default model?');
-            $this->showList($this->confirmItems());
-
-            return;
-        }
-
         $this->finishSuccess();
     }
 
@@ -785,16 +766,21 @@ final class SetupScreen
     {
         $refs = $this->flow->configuredModelRefs();
         if ([] === $refs) {
-            $this->finishSuccess();
+            $this->showPicker();
 
             return;
         }
         $this->formKind = 'default_model';
         $this->phase = self::PHASE_CHOICE;
-        $this->hintWidget->setText('Default model');
+        $current = $this->flow->currentDefaultModel();
+        $this->hintWidget->setText('Choose the model new chats start with.');
         $items = [];
         foreach ($refs as $ref) {
-            $items[] = ['value' => $ref, 'label' => $ref];
+            $item = ['value' => $ref, 'label' => $ref];
+            if ($ref === $current) {
+                $item['description'] = '(current)';
+            }
+            $items[] = $item;
         }
         $this->showList($items);
     }
@@ -802,7 +788,7 @@ final class SetupScreen
     private function handleDefaultModel(string $value): void
     {
         $this->flow->setDefaultModel($value);
-        $this->finishSuccess();
+        $this->showPicker();
     }
 
     private function finishSuccess(): void
@@ -900,6 +886,17 @@ final class SetupScreen
             'label' => 'Other server',
             'description' => 'any OpenAI-compatible endpoint',
         ];
+        $refs = $this->flow->configuredModelRefs();
+        if ([] !== $refs) {
+            $current = $this->flow->currentDefaultModel();
+            $items[] = [
+                'value' => 'default_model',
+                'label' => 'Set default model',
+                'description' => null !== $current && '' !== $current
+                    ? 'current: '.$current
+                    : 'choose the model new chats start with',
+            ];
+        }
         $items[] = [
             'value' => 'done',
             'label' => 'Done',
@@ -967,6 +964,17 @@ final class SetupScreen
         return [
             ['value' => 'yes', 'label' => 'Yes'],
             ['value' => 'no', 'label' => 'No'],
+        ];
+    }
+
+    /**
+     * @return list<array{value: string, label: string}>
+     */
+    private function continueItems(): array
+    {
+        return [
+            ['value' => 'yes', 'label' => 'Continue'],
+            ['value' => 'no', 'label' => 'Exit'],
         ];
     }
 

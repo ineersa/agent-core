@@ -334,6 +334,24 @@ YAML);
     }
 
     #[Test]
+    public function currentDefaultModelPrefersThisRunOverAppConfig(): void
+    {
+        $flow = $this->createFlow(
+            ai: new AiConfig(
+                defaultModel: 'zai/glm-5.3',
+                providers: [
+                    'zai' => new AiProviderConfig(id: 'zai', enabled: true),
+                ],
+            ),
+        );
+        $this->assertSame('zai/glm-5.3', $flow->currentDefaultModel());
+
+        $flow->setDefaultModel('deepseek/deepseek-v4-pro');
+        $this->assertSame('deepseek/deepseek-v4-pro', $flow->currentDefaultModel());
+        $this->assertSame('deepseek/deepseek-v4-pro', $this->parseUserSettings()['ai']['default_model'] ?? null);
+    }
+
+    #[Test]
     public function formatEnvApiKeyRejectsInvalidNames(): void
     {
         $flow = $this->createFlow();

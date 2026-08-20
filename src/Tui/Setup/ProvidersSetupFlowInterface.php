@@ -87,6 +87,9 @@ interface ProvidersSetupFlowInterface
 
     public function setDefaultModel(string $ref): void;
 
+    /** Current ai.default_model, including any value set earlier this run. */
+    public function currentDefaultModel(): ?string;
+
     /**
      * @return list<string> auth command names still pending (e.g. auth:grok)
      */

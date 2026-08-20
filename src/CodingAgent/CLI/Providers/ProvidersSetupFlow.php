@@ -50,6 +50,8 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
 
     private bool $wroteSomething = false;
 
+    private ?string $defaultModelThisRun = null;
+
     public function __construct(
         private readonly AiCatalog $aiCatalog,
         private readonly SettingsOverrideWriter $settingsWriter,
@@ -318,7 +320,19 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
     public function setDefaultModel(string $ref): void
     {
         $this->settingsWriter->set($this->layer, $this->cwd, 'ai.default_model', $ref);
+        $this->defaultModelThisRun = $ref;
         $this->wroteSomething = true;
+    }
+
+    public function currentDefaultModel(): ?string
+    {
+        if (null !== $this->defaultModelThisRun && '' !== $this->defaultModelThisRun) {
+            return $this->defaultModelThisRun;
+        }
+
+        $current = $this->appConfig->ai?->defaultModel;
+
+        return null !== $current && '' !== $current ? $current : null;
     }
 
     public function pendingAuthCommands(): array

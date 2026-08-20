@@ -180,7 +180,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $screen->selectValue('grok-cli'); // confirm Enable?
         $this->assertSame('confirm', $screen->phase());
         $screen->selectValue('yes'); // confirm → enable
-        // After enable → Add another? → Yes to return.
+        // After enable → Continue? → Continue to return.
         $screen->selectValue('yes');
 
         $text = $this->plain($terminal);
@@ -359,15 +359,19 @@ final class SetupScreenVirtualRenderTest extends TestCase
 
         $screen->selectValue('grok-cli');
         $screen->selectValue('yes'); // Enable?
-        $screen->selectValue('no'); // Add another? → default-model confirm
-        $this->assertSame('confirm', $screen->phase());
-        $screen->selectValue('no'); // skip default model → summary
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('Continue?', $text);
+        $this->assertStringContainsString('Continue', $text);
+        $this->assertStringContainsString('Exit', $text);
+        $this->assertStringNotContainsString('Add another?', $text);
+        $screen->selectValue('no'); // Exit → summary directly (no default-model ask)
 
         $this->assertSame('summary', $screen->phase());
         $this->assertTrue($screen->finished());
         $collapsed = str_replace(["\n", ' '], '', $this->plain($terminal));
         $this->assertStringContainsString(str_replace(' ', '', 'To finish: run `hatfield auth:grok`'), $collapsed);
         $this->assertStringContainsString(str_replace(' ', '', 'Saved to'), $collapsed);
+        $this->assertStringNotContainsString(str_replace(' ', '', 'Set as your default model?'), $collapsed);
     }
 
     #[Test]
@@ -382,7 +386,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $screen->selectValue('grok-cli');
         $screen->selectValue('disable');
         $screen->selectValue('yes'); // confirm disable
-        $screen->selectValue('no'); // Add another? → summary
+        $screen->selectValue('no'); // Exit → summary
 
         $this->assertSame('summary', $screen->phase());
         $collapsed = str_replace(["\n", ' '], '', $this->plain($terminal));
@@ -564,6 +568,69 @@ final class SetupScreenVirtualRenderTest extends TestCase
     }
 
     #[Test]
+    public function setDefaultModelRowAbsentWhenNoConfiguredModels(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal] = $this->mount($flow);
+
+        $text = $this->plain($terminal);
+        $this->assertSame('picker', $screen->phase());
+        $this->assertStringNotContainsString('Set default model', $text);
+        $this->assertSame([], $flow->configuredModelRefs());
+    }
+
+    #[Test]
+    public function setDefaultModelRowShowsCurrentAndReturnsToPicker(): void
+    {
+        $flow = new FakeProvidersSetupFlow(defaultModel: 'zai/glm-5.3');
+        [$screen, $terminal] = $this->mount($flow);
+
+        // Enable an API-key provider so configuredModelRefs becomes non-empty.
+        $screen->selectValue('zai');
+        $screen->selectValue('env');
+        $screen->submitInput('ZAI_API_KEY');
+        $screen->selectValue('yes'); // Continue → picker
+
+        $text = $this->plain($terminal);
+        $this->assertSame('picker', $screen->phase());
+        $this->assertStringContainsString('Set default model', $text);
+        $this->assertStringContainsString('current: zai/glm-5.3', $text);
+        $this->assertStringContainsString('Done', $text);
+
+        $screen->selectValue('default_model');
+        $this->assertSame('choice', $screen->phase());
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('Choose the model new chats start with.', $text);
+        $this->assertStringContainsString('zai/glm-5.3', $text);
+        $this->assertStringContainsString('(current)', $text);
+
+        $screen->selectValue('zai/glm-5.3');
+        $this->assertSame('picker', $screen->phase());
+        $this->assertFalse($screen->finished());
+        $this->assertSame('zai/glm-5.3', $flow->currentDefaultModel());
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('Set default model', $text);
+        $this->assertStringContainsString('current: zai/glm-5.3', $text);
+    }
+
+    #[Test]
+    public function continueNoExitsStraightToSummaryWithoutDefaultModelAsk(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('grok-cli');
+        $screen->selectValue('yes'); // Enable?
+        $screen->selectValue('no'); // Exit
+
+        $this->assertSame('summary', $screen->phase());
+        $this->assertTrue($screen->finished());
+        $text = $this->plain($terminal);
+        $this->assertStringNotContainsString('Set as your default model?', $text);
+        $this->assertStringNotContainsString('Add another?', $text);
+    }
+
+    #[Test]
     public function nothingChangedSummaryWhenDoneImmediately(): void
     {
         $flow = new FakeProvidersSetupFlow();
@@ -636,13 +703,16 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
 
     private bool $wrote = false;
 
+    private ?string $defaultModel = null;
+
     /**
      * @param array<string, bool>                                                                                                                                                                                                  $enabled
      * @param array<string, array{id?: string, baseUrl?: string, completionsPath?: string, apiKey?: ?string, models?: array<string, array<string, mixed>>, supportsDeveloperRole?: bool, thinkingFormat?: string, enabled?: bool}> $customs
      */
-    public function __construct(array $enabled = [], array $customs = [])
+    public function __construct(array $enabled = [], array $customs = [], ?string $defaultModel = null)
     {
         $this->enabled = $enabled;
+        $this->defaultModel = $defaultModel;
         $this->customs = [];
         foreach ($customs as $id => $def) {
             $this->customs[$id] = [
@@ -797,7 +867,13 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
 
     public function setDefaultModel(string $ref): void
     {
+        $this->defaultModel = $ref;
         $this->wrote = true;
+    }
+
+    public function currentDefaultModel(): ?string
+    {
+        return null !== $this->defaultModel && '' !== $this->defaultModel ? $this->defaultModel : null;
     }
 
     public function pendingAuthCommands(): array
