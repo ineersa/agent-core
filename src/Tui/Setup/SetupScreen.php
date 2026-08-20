@@ -81,12 +81,8 @@ final class SetupScreen
         // Footer stays chrome; applyPhaseLayout re-adds it last so list/input never sink below it.
         $tui->add($this->footerWidget);
 
-        // Listeners live on the widget and are wiped by AbstractWidget::detach()
-        // whenever applyPhaseLayout() removes+re-adds. Wire once here; re-wire
-        // after each real detach in applyPhaseLayout().
-        $this->wireListListeners();
-        $this->wireInputListeners();
-
+        // Listeners are wired in applyPhaseLayout() after each add — remove()
+        // → detach() wipes them, so mount never pre-wires.
         $this->showPicker();
     }
 
@@ -786,25 +782,21 @@ final class SetupScreen
     private function applyPhaseLayout(): void
     {
         // ContainerWidget::remove → WidgetTree::detach → AbstractWidget::detach()
-        // clears $listeners. Re-wire after add only when listeners are gone — covers
-        // (a) this remove() just detached the widget, and (b) a prior phase left it
-        // detached (e.g. list wiped on enter-input, then re-added on leave-input).
-        // Skipping when listeners remain avoids double-registration on first mount.
+        // clears $listeners. Always remove both first, then wire unconditionally
+        // after the add that mounts the active widget — at add() time the widget
+        // was either just detached (listeners wiped) or never attached (never
+        // wired, since wiring only happens here).
         $this->tui->remove($this->listWidget);
         $this->tui->remove($this->inputWidget);
         $this->tui->remove($this->footerWidget);
         if (self::PHASE_INPUT === $this->phase) {
             $this->tui->add($this->inputWidget);
-            if (!$this->inputWidget->hasListeners(SubmitEvent::class)) {
-                $this->wireInputListeners();
-            }
+            $this->wireInputListeners();
         } else {
             $this->inputWidget->setPrompt('');
             $this->inputWidget->setValue('');
             $this->tui->add($this->listWidget);
-            if (!$this->listWidget->hasListeners(SelectEvent::class)) {
-                $this->wireListListeners();
-            }
+            $this->wireListListeners();
         }
         // Always re-add last so the keybind line stays at the bottom.
         $this->tui->add($this->footerWidget);

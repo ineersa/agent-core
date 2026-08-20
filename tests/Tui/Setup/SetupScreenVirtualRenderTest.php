@@ -110,13 +110,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         // applyPhaseLayout removes+re-adds input between custom steps. Drivers
         // bypass widgets; this uses the real Tui::handleInput path.
         $flow = new FakeProvidersSetupFlow();
-        $terminal = new VirtualTerminal(columns: 120, rows: 40);
-        $tui = new Tui(terminal: $terminal);
-        $screen = new SetupScreen($flow);
-        $screen->mount($tui);
-        $tui->start();
-        $tui->requestRender(force: true);
-        $tui->processRender();
+        [$screen, $terminal, $tui] = $this->mount($flow, columns: 120);
 
         $screen->selectValue('custom');
         $screen->submitInput('runpod'); // now at custom_url (second input attach)
@@ -346,9 +340,9 @@ final class SetupScreenVirtualRenderTest extends TestCase
     /**
      * @return array{0: SetupScreen, 1: VirtualTerminal, 2: Tui}
      */
-    private function mount(FakeProvidersSetupFlow $flow): array
+    private function mount(FakeProvidersSetupFlow $flow, int $columns = 100): array
     {
-        $terminal = new VirtualTerminal(columns: 100, rows: 40);
+        $terminal = new VirtualTerminal(columns: $columns, rows: 40);
         $tui = new Tui(terminal: $terminal);
         $screen = new SetupScreen($flow);
         $screen->mount($tui);
