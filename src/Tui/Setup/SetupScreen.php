@@ -103,11 +103,6 @@ final class SetupScreen
         return $this->exitCode;
     }
 
-    public function flow(): ProvidersSetupFlowInterface
-    {
-        return $this->flow;
-    }
-
     public function phase(): string
     {
         return $this->phase;
@@ -138,45 +133,9 @@ final class SetupScreen
         $this->tui->processRender();
     }
 
-    public function tui(): Tui
-    {
-        return $this->tui;
-    }
-
-    public function listWidget(): SelectListWidget
-    {
-        return $this->listWidget;
-    }
-
-    public function hintText(): string
-    {
-        return $this->hintWidget->getText();
-    }
-
     public function errorText(): string
     {
         return $this->errorWidget->getText();
-    }
-
-    public function titleText(): string
-    {
-        return $this->titleWidget->getText();
-    }
-
-    /**
-     * @return list<array{value: string, label: string, description?: string}>
-     */
-    public function visibleItems(): array
-    {
-        // SelectListWidget has no public getter for items — rebuild from phase.
-        return match ($this->phase) {
-            self::PHASE_PICKER => $this->pickerItems(),
-            self::PHASE_ACTION => $this->actionItems(),
-            self::PHASE_CONFIRM => $this->confirmItems(),
-            self::PHASE_SUMMARY => $this->summaryItems(),
-            // PHASE_CHOICE items are built at showList call sites; no rebuild helper.
-            default => [],
-        };
     }
 
     private function onListSelect(string $value): void
@@ -737,14 +696,6 @@ final class SetupScreen
             ['value' => 'yes', 'label' => 'Yes'],
             ['value' => 'no', 'label' => 'No'],
         ];
-    }
-
-    /**
-     * @return list<array{value: string, label: string}>
-     */
-    private function summaryItems(): array
-    {
-        return [['value' => 'ok', 'label' => 'Done']];
     }
 
     /**
