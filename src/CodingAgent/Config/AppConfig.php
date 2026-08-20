@@ -167,8 +167,9 @@ final class AppConfig
      * Parse ai config, reject malformed default_model format, and fall back
      * to the first available model when the configured default is unavailable.
      *
-     * Mutates $data['ai']['default_model'] on fallback so AiConfig/catalog and
-     * every downstream consumer see one effective default. Returns the stale
+     * Does not mutate $data — AppConfig::$raw must stay faithful to disk so
+     * SettingsShowCommandHandler's restart-required check stays accurate.
+     * Builds the effective AiConfig/catalog from a copy. Returns the stale
      * configured ref for the TUI startup warning; null when no fallback ran.
      *
      * Zero-provider boots no longer throw here — AgentCommand's enabled-provider
@@ -178,7 +179,7 @@ final class AppConfig
      *
      * @return array{0: ?AiConfig, 1: ?HatfieldModelCatalog, 2: ?string}
      */
-    private static function resolveAiDefaultModel(array &$data): array
+    private static function resolveAiDefaultModel(array $data): array
     {
         $ai = AiConfig::optionalFromArray($data);
         if (null === $ai) {
@@ -206,12 +207,9 @@ final class AppConfig
             return [$ai, $catalog, $defaultModel];
         }
 
-        if (!isset($data['ai']) || !\is_array($data['ai'])) {
-            $data['ai'] = [];
-        }
-        $data['ai']['default_model'] = $fallback->toString();
-        $ai = AiConfig::optionalFromArray($data);
-        $catalog = null !== $ai ? new HatfieldModelCatalog($ai) : null;
+        // optionalFromArray already proved $data['ai'] is an array.
+        $ai = AiConfig::fromArray(['default_model' => $fallback->toString()] + $data['ai']);
+        $catalog = new HatfieldModelCatalog($ai);
 
         return [$ai, $catalog, $defaultModel];
     }

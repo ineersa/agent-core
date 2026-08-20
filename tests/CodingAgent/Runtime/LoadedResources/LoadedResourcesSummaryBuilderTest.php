@@ -207,17 +207,18 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
     #[Test]
     public function testStaleDefaultModelAbsentWhenNull(): void
     {
+        $appConfig = $this->appConfig($this->tmpDir);
         $builder = new LoadedResourcesSummaryBuilder(
             agentsContextDiscovery: new AgentsContextDiscovery(
                 pathResolver: new SettingsPathResolver($this->tmpDir),
-                appConfig: $this->appConfig($this->tmpDir),
+                appConfig: $appConfig,
             ),
             skillDiscovery: $this->emptySkillDiscovery($this->tmpDir),
             promptTemplateLoader: $this->emptyPromptLoader(),
             agentDefinitionDiscovery: $this->disabledAgentDiscovery(),
             themeLoadedResourcesProvider: $this->emptyThemeRegistry(),
             extensionManager: $this->emptyExtensionManager(),
-            appConfig: $this->appConfig($this->tmpDir),
+            appConfig: $appConfig,
         );
 
         foreach ($builder->build()->sections as $section) {

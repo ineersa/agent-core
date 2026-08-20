@@ -184,6 +184,9 @@ class AppConfigTest extends TestCase
 
         $this->assertSame('openai/gpt-5', $config->staleDefaultModel);
         $this->assertSame('deepseek/deepseek-v4-pro', $config->ai?->defaultModel);
+        // $raw must stay faithful to disk — mutating it would permanently trip
+        // SettingsShowCommandHandler's "Restart required: disk settings differ".
+        $this->assertSame('openai/gpt-5', $config->raw['ai']['default_model'] ?? null);
         $this->assertNotNull($config->catalog);
         $this->assertTrue($config->catalog->isAvailable('deepseek/deepseek-v4-pro'));
     }

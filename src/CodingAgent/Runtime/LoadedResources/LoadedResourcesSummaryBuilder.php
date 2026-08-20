@@ -91,11 +91,10 @@ final readonly class LoadedResourcesSummaryBuilder implements LoadedResourcesSum
 
         // appConfig is non-null here: staleDefaultModel can only be set when it is.
         $effective = $this->appConfig->ai?->defaultModel;
-        $message = null !== $effective && '' !== $effective
-            ? \sprintf('unavailable — using %s', $effective)
-            : 'unavailable';
+        $message = \sprintf('unavailable — using %s', $effective);
 
-        // Message-only conflict branch → "⚠ Default model <stale>: unavailable — using <effective>"
+        // Message-only conflict branch → "⚠ <stale>: unavailable — using <effective>"
+        // ('Default model' is the section label, not part of the ⚠ line.)
         return new LoadedResourceSectionDTO(
             key: 'default-model',
             label: 'Default model',
