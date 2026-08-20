@@ -361,7 +361,6 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $screen->selectValue('yes'); // Enable?
         $text = $this->plain($terminal);
         $this->assertStringContainsString('Continue?', $text);
-        $this->assertStringContainsString('Continue', $text);
         $this->assertStringContainsString('Exit', $text);
         $this->assertStringNotContainsString('Add another?', $text);
         $screen->selectValue('no'); // Exit → summary directly (no default-model ask)
@@ -382,7 +381,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
 
         $screen->selectValue('grok-cli');
         $screen->selectValue('yes'); // Enable?
-        $screen->selectValue('yes'); // Add another?
+        $screen->selectValue('yes'); // Continue?
         $screen->selectValue('grok-cli');
         $screen->selectValue('disable');
         $screen->selectValue('yes'); // confirm disable

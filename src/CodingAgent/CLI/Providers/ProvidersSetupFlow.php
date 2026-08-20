@@ -374,8 +374,8 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
 
     public function defaultModelWarningFor(string $providerId): ?string
     {
-        $defaultModel = $this->appConfig->ai?->defaultModel;
-        if (null === $defaultModel || '' === $defaultModel) {
+        $defaultModel = $this->currentDefaultModel();
+        if (null === $defaultModel) {
             return null;
         }
 
@@ -549,23 +549,13 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
         }
 
         foreach ($providers as $id => $provider) {
-            if (!\is_string($id) || '' === $id || !$provider->enabled) {
-                continue;
-            }
-
-            $models = [];
-            foreach ($provider->models as $modelId => $_) {
-                if (\is_string($modelId) && '' !== $modelId) {
-                    $models[] = $modelId;
-                }
-            }
-            if ([] === $models) {
+            if (!\is_string($id) || '' === $id || !$provider->enabled || [] === $provider->models) {
                 continue;
             }
 
             $this->configured[] = [
                 'id' => $id,
-                'models' => $models,
+                'models' => array_keys($provider->models),
                 'authCommand' => null,
             ];
         }

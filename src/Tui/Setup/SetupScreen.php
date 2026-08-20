@@ -240,7 +240,7 @@ final class SetupScreen
     private function handlePickerSelect(string $value): void
     {
         if ('done' === $value) {
-            $this->showSummaryOrExit();
+            $this->finishSuccess();
 
             return;
         }
@@ -314,7 +314,7 @@ final class SetupScreen
         if ('enable' === $value) {
             $id = $this->activeProviderId;
             $this->flow->enableCustom($id);
-            $this->askAddAnother(\sprintf('%s enabled.', $this->labelFor($id)));
+            $this->askContinue(\sprintf('%s enabled.', $this->labelFor($id)));
 
             return;
         }
@@ -364,7 +364,7 @@ final class SetupScreen
             if (null !== $warning) {
                 $this->error = $warning;
             }
-            $this->askAddAnother(\sprintf('%s disabled.', $this->labelFor($id)));
+            $this->askContinue(\sprintf('%s disabled.', $this->labelFor($id)));
 
             return;
         }
@@ -378,7 +378,7 @@ final class SetupScreen
             $this->flow->removeCustom($id);
             $this->pendingConfirm = null;
             $this->activeProviderId = null;
-            $this->askAddAnother(\sprintf('%s removed.', $id));
+            $this->askContinue(\sprintf('%s removed.', $id));
 
             return;
         }
@@ -415,7 +415,7 @@ final class SetupScreen
         $kind = $this->catalogKind($id);
         if ('oauth' === $kind) {
             $this->flow->enableOauth($id);
-            $this->askAddAnother(\sprintf('%s enabled.', $this->labelFor($id)));
+            $this->askContinue(\sprintf('%s enabled.', $this->labelFor($id)));
 
             return;
         }
@@ -452,7 +452,7 @@ final class SetupScreen
             return;
         }
         $this->flow->enableApiKey($id, $apiKey);
-        $this->askAddAnother(\sprintf('%s enabled.', $this->labelFor($id))."\n(Everything else is preconfigured.)");
+        $this->askContinue(\sprintf('%s enabled.', $this->labelFor($id))."\n(Everything else is preconfigured.)");
     }
 
     private function finishApiRaw(string $value): void
@@ -477,7 +477,7 @@ final class SetupScreen
             return;
         }
         $this->flow->enableApiKey($id, $raw);
-        $this->askAddAnother(\sprintf('%s enabled.', $this->labelFor($id))."\n(Everything else is preconfigured.)");
+        $this->askContinue(\sprintf('%s enabled.', $this->labelFor($id))."\n(Everything else is preconfigured.)");
     }
 
     private function startCustom(): void
@@ -741,41 +741,29 @@ final class SetupScreen
             $value,
         );
         $verb = true === ($this->formState['editing'] ?? false) ? 'updated' : 'added';
-        $this->askAddAnother(\sprintf('%s %s.', $id, $verb));
+        $this->askContinue(\sprintf('%s %s.', $id, $verb));
     }
 
-    private function askAddAnother(string $message): void
+    private function askContinue(string $message): void
     {
         $this->pendingConfirm = 'add_another';
         $this->phase = self::PHASE_CONFIRM;
         $this->formKind = '';
         $this->hintWidget->setText($message."\n\nContinue?");
-        $this->showList($this->continueItems());
-    }
-
-    private function showSummaryOrExit(): void
-    {
-        // Done / exit path — default model is a main-menu option, never auto-asked.
-        if (!$this->flow->wroteSomething() && [] === $this->flow->pendingAuthCommands()) {
-            $this->hintWidget->setText('Nothing changed.');
-        }
-        $this->finishSuccess();
+        $this->showList([
+            ['value' => 'yes', 'label' => 'Continue'],
+            ['value' => 'no', 'label' => 'Exit'],
+        ]);
     }
 
     private function showDefaultModelPicker(): void
     {
-        $refs = $this->flow->configuredModelRefs();
-        if ([] === $refs) {
-            $this->showPicker();
-
-            return;
-        }
         $this->formKind = 'default_model';
         $this->phase = self::PHASE_CHOICE;
         $current = $this->flow->currentDefaultModel();
         $this->hintWidget->setText('Choose the model new chats start with.');
         $items = [];
-        foreach ($refs as $ref) {
+        foreach ($this->flow->configuredModelRefs() as $ref) {
             $item = ['value' => $ref, 'label' => $ref];
             if ($ref === $current) {
                 $item['description'] = '(current)';
@@ -892,7 +880,7 @@ final class SetupScreen
             $items[] = [
                 'value' => 'default_model',
                 'label' => 'Set default model',
-                'description' => null !== $current && '' !== $current
+                'description' => null !== $current
                     ? 'current: '.$current
                     : 'choose the model new chats start with',
             ];
@@ -964,17 +952,6 @@ final class SetupScreen
         return [
             ['value' => 'yes', 'label' => 'Yes'],
             ['value' => 'no', 'label' => 'No'],
-        ];
-    }
-
-    /**
-     * @return list<array{value: string, label: string}>
-     */
-    private function continueItems(): array
-    {
-        return [
-            ['value' => 'yes', 'label' => 'Continue'],
-            ['value' => 'no', 'label' => 'Exit'],
         ];
     }
 

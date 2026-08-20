@@ -423,6 +423,68 @@ YAML);
     }
 
     #[Test]
+    public function reEnablingSeededProviderDoesNotDuplicateConfiguredRefs(): void
+    {
+        $flow = $this->createFlow(
+            ai: new AiConfig(
+                providers: [
+                    'deepseek' => new AiProviderConfig(
+                        id: 'deepseek',
+                        enabled: true,
+                        models: [
+                            'deepseek-v4-pro' => new AiModelDefinition(id: 'deepseek-v4-pro'),
+                            'deepseek-v4-flash' => new AiModelDefinition(id: 'deepseek-v4-flash'),
+                        ],
+                    ),
+                ],
+            ),
+        );
+
+        $this->assertSame(['deepseek/deepseek-v4-pro', 'deepseek/deepseek-v4-flash'], $flow->configuredModelRefs());
+
+        // Reconfigure path: markEnabled replaces the seeded row (catalog models may differ).
+        $flow->enableApiKey('deepseek', 'sk-reconfigure');
+        $refs = $flow->configuredModelRefs();
+        $this->assertSame($refs, array_values(array_unique($refs)));
+        $this->assertNotSame([], $refs);
+
+        $flow->enableApiKey('deepseek', 'sk-reconfigure-again');
+        $this->assertSame($refs, $flow->configuredModelRefs());
+    }
+
+    #[Test]
+    public function defaultModelWarningUsesThisRunDefaultNotStaleAppConfig(): void
+    {
+        $flow = $this->createFlow(
+            ai: new AiConfig(
+                defaultModel: 'zai/glm-5.3',
+                providers: [
+                    'zai' => new AiProviderConfig(
+                        id: 'zai',
+                        enabled: true,
+                        models: [
+                            'glm-5.3' => new AiModelDefinition(id: 'glm-5.3'),
+                        ],
+                    ),
+                    'deepseek' => new AiProviderConfig(
+                        id: 'deepseek',
+                        enabled: true,
+                        models: [
+                            'deepseek-v4-pro' => new AiModelDefinition(id: 'deepseek-v4-pro'),
+                        ],
+                    ),
+                ],
+            ),
+        );
+
+        $flow->setDefaultModel('deepseek/deepseek-v4-pro');
+        $this->assertNull($flow->defaultModelWarningFor('zai'));
+        $warning = $flow->defaultModelWarningFor('deepseek');
+        $this->assertNotNull($warning);
+        $this->assertStringContainsString('deepseek/deepseek-v4-pro', $warning);
+    }
+
+    #[Test]
     public function formatEnvApiKeyRejectsInvalidNames(): void
     {
         $flow = $this->createFlow();

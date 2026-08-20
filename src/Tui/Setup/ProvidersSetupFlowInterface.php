@@ -96,7 +96,7 @@ interface ProvidersSetupFlowInterface
     public function pendingAuthCommands(): array;
 
     /**
-     * @return list<string> provider/model refs configured this run
+     * @return list<string> provider/model refs configured this run or seeded from settings
      */
     public function configuredModelRefs(): array;
 
