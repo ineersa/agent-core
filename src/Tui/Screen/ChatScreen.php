@@ -640,6 +640,14 @@ final class ChatScreen
     }
 
     /**
+     * Current session id shown in the footer (empty for draft sessions).
+     */
+    public function sessionId(): string
+    {
+        return $this->sessionId;
+    }
+
+    /**
      * Drive the single working-slot LoaderWidget from screen state.
      *
      * Visible + non-empty message → circle spinner + message (started).

@@ -8,6 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
+use Symfony\Component\Filesystem\Filesystem;
 
 use function Symfony\Component\String\u;
 
@@ -200,6 +201,28 @@ final class HatfieldSessionStore
     public function exists(string $sessionId): bool
     {
         return null !== $this->fetchEntityOrNull($sessionId);
+    }
+
+    /**
+     * Delete a session's DB row and remove its filesystem directory tree.
+     *
+     * Only pure-digit session IDs are accepted (same rule as {@see exists()}).
+     * Missing sessions throw so callers do not silently ignore stale picker rows.
+     *
+     * @throws \RuntimeException when the session id is invalid or not found
+     */
+    public function deleteSession(string $sessionId): void
+    {
+        $entity = $this->fetchEntityOrNull($sessionId);
+        if (null === $entity) {
+            throw new \RuntimeException(\sprintf('Session "%s" not found.', $sessionId));
+        }
+
+        $this->entityManager->remove($entity);
+        $this->entityManager->flush();
+
+        $sessionDir = $this->getSessionDir($sessionId);
+        (new Filesystem())->remove($sessionDir);
     }
 
     /**

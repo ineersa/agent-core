@@ -22,7 +22,8 @@ use Symfony\Component\Tui\Widget\TextWidget;
  *
  * Opens an interactive SelectListWidget when invoked without
  * arguments.  Supports two modes:
- *   - Resume mode (open()): Enter resumes the selected session.
+ *   - Resume mode (open()): Enter resumes the selected session;
+ *     d/D deletes after Yes/No confirm (active session blocked).
  *   - Rename mode (openForRenameCommand()): Enter inserts
  *     "/rename <id> " into the prompt editor; the user then
  *     types a new name and submits.
@@ -37,7 +38,18 @@ use Symfony\Component\Tui\Widget\TextWidget;
  */
 final class SessionPickerController
 {
+    private const string RESUME_HEADER = 'Resume session — arrows move, Enter resumes, d deletes, Esc cancels';
+    private const string CONFIRM_YES = 'yes';
+    private const string CONFIRM_NO = 'no';
+
     private ?PickerOverlay $overlay = null;
+    private ?TextWidget $headerWidget = null;
+
+    /** @var list<array{sessionId: string, displayTitle: string, name: string, ...}> */
+    private array $sessions = [];
+
+    private bool $confirmingDelete = false;
+    private ?string $pendingDeleteSessionId = null;
 
     public function __construct(
         private readonly Tui $tui,
@@ -58,14 +70,21 @@ final class SessionPickerController
      * a picker, and the method returns without switching.
      *
      * Enter resumes the selected session via applySelectEffect().
+     * d/D asks for Yes/No confirmation before deleting.
      *
      * @see openForRenameCommand() for the rename-mode variant
      */
     public function open(): void
     {
         $this->openWithOnSelect(
-            'Resume session — arrows move, Enter resumes, Esc cancels',
+            self::RESUME_HEADER,
             function (SelectEvent $event): void {
+                if ($this->confirmingDelete) {
+                    $this->handleConfirmSelect($event);
+
+                    return;
+                }
+
                 $item = $event->getItem();
                 $sessionId = $item['value'];
 
@@ -79,6 +98,7 @@ final class SessionPickerController
                 $this->closePicker(requestRender: false);
                 $this->applySelectEffect($sessionId);
             },
+            allowDelete: true,
         );
     }
 
@@ -106,6 +126,7 @@ final class SessionPickerController
 
                 $this->closePicker();
             },
+            allowDelete: false,
         );
     }
 
@@ -186,6 +207,10 @@ final class SessionPickerController
     {
         $this->overlay?->close($requestRender);
         $this->overlay = null;
+        $this->headerWidget = null;
+        $this->sessions = [];
+        $this->confirmingDelete = false;
+        $this->pendingDeleteSessionId = null;
     }
 
     /**
@@ -195,10 +220,11 @@ final class SessionPickerController
      * rename modes reuse the same overlay lifecycle, item-building,
      * navigation accent styling, and cancel handler.
      *
-     * @param string   $headerText Header widget text (muted style applied)
-     * @param callable $onSelect   Callback receiving SelectEvent; called on Enter
+     * @param string   $headerText  Header widget text (muted style applied)
+     * @param callable $onSelect    Callback receiving SelectEvent; called on Enter
+     * @param bool     $allowDelete Whether d/D may start an in-picker delete confirm
      */
-    private function openWithOnSelect(string $headerText, callable $onSelect): void
+    private function openWithOnSelect(string $headerText, callable $onSelect, bool $allowDelete): void
     {
         if ($this->overlay?->isOpen() ?? false) {
             return;
@@ -215,12 +241,16 @@ final class SessionPickerController
 
         $tui = $this->tui;
         $screen = $this->screen;
+        $this->sessions = $sessions;
+        $this->confirmingDelete = false;
+        $this->pendingDeleteSessionId = null;
 
         // ── Header ──
         $header = new TextWidget(
             text: $screen->theme()->muted($headerText),
             truncate: true,
         );
+        $this->headerWidget = $header;
 
         // ── Keybindings ──
         $kb = SelectListKeybindings::standard();
@@ -244,12 +274,17 @@ final class SessionPickerController
         // onSelectionChange fires only from cursor movement
         // (moveCursorUp/Down etc.), not from setItems() or
         // setSelectedIndex(), so there is no re-entrant loop.
+        $picker = $this;
         $listWidget->onSelectionChange(
-            static function (SelectionChangeEvent $event) use ($listWidget, $sessions, $theme): void {
+            static function (SelectionChangeEvent $event) use ($listWidget, $picker, $theme): void {
+                if ($picker->confirmingDelete) {
+                    return;
+                }
+
                 $selectedValue = $event->getItem()['value'];
                 $selectedIdx = -1;
 
-                foreach ($sessions as $i => $s) {
+                foreach ($picker->sessions as $i => $s) {
                     if ($s['sessionId'] === $selectedValue) {
                         $selectedIdx = $i;
 
@@ -257,7 +292,7 @@ final class SessionPickerController
                     }
                 }
 
-                $newItems = self::buildItemsStatic($sessions, $theme, selectedIndex: $selectedIdx);
+                $newItems = self::buildItemsStatic($picker->sessions, $theme, selectedIndex: $selectedIdx);
                 $listWidget->setItems($newItems);
                 $listWidget->setSelectedIndex(max(0, $selectedIdx));
             },
@@ -268,14 +303,144 @@ final class SessionPickerController
             $onSelect($event);
         });
 
-        // ── Escape / Ctrl+C → close without change ──
-        $picker = $this;
-        $listWidget->onCancel(static function (CancelEvent $event) use ($picker): void {
+        // ── Escape / Ctrl+C → cancel confirm or close without change ──
+        $listWidget->onCancel(static function (CancelEvent $event) use ($picker, $listWidget): void {
+            if ($picker->confirmingDelete) {
+                $picker->exitConfirmMode($listWidget);
+
+                return;
+            }
+
             $picker->closePicker();
         });
+
+        if ($allowDelete) {
+            $listWidget->onInput(static function (string $data) use ($picker, $listWidget): bool {
+                if ($picker->confirmingDelete) {
+                    return false;
+                }
+
+                if ('d' !== $data && 'D' !== $data) {
+                    return false;
+                }
+
+                $picker->beginDeleteConfirm($listWidget);
+
+                return true;
+            });
+        }
 
         // ── Mount via PickerOverlay ──
         $this->overlay = new PickerOverlay();
         $this->overlay->mount($tui, $screen, $listWidget, $header);
+    }
+
+    private function beginDeleteConfirm(SelectListWidget $listWidget): void
+    {
+        $selected = $listWidget->getSelectedItem();
+        if (null === $selected) {
+            return;
+        }
+
+        $sessionId = (string) $selected['value'];
+        $activeSessionId = $this->screen->sessionId();
+        if ('' !== $activeSessionId && $sessionId === $activeSessionId) {
+            $this->screen->setWorkingMessage('Cannot delete the current/active session');
+            $this->screen->requestRender(true);
+
+            return;
+        }
+
+        $title = 'Session';
+        foreach ($this->sessions as $session) {
+            if ($session['sessionId'] === $sessionId) {
+                $title = $session['displayTitle'] ?? $session['name'] ?? 'Session';
+
+                break;
+            }
+        }
+
+        $this->confirmingDelete = true;
+        $this->pendingDeleteSessionId = $sessionId;
+
+        $header = $this->headerWidget;
+        if (null !== $header) {
+            $header->setText($this->screen->theme()->muted(
+                \sprintf('Delete session #%s — %s?', $sessionId, $title),
+            ));
+        }
+
+        $listWidget->setItems([
+            ['value' => self::CONFIRM_YES, 'label' => "\u{2713} Yes"],
+            ['value' => self::CONFIRM_NO, 'label' => "\u{2717} No"],
+        ]);
+        $listWidget->setSelectedIndex(0);
+        $this->screen->requestRender(true);
+    }
+
+    private function handleConfirmSelect(SelectEvent $event): void
+    {
+        $listWidget = $this->overlay?->listWidget();
+        if (null === $listWidget) {
+            $this->exitConfirmMode(null);
+
+            return;
+        }
+
+        $choice = (string) $event->getItem()['value'];
+        if (self::CONFIRM_YES !== $choice) {
+            $this->exitConfirmMode($listWidget);
+
+            return;
+        }
+
+        $sessionId = $this->pendingDeleteSessionId;
+        if (null === $sessionId || '' === $sessionId) {
+            $this->exitConfirmMode($listWidget);
+
+            return;
+        }
+
+        $this->sessionStore->deleteSession($sessionId);
+        $this->sessions = $this->sessionStore->listSessions();
+        $this->confirmingDelete = false;
+        $this->pendingDeleteSessionId = null;
+
+        $header = $this->headerWidget;
+        if (null !== $header) {
+            $header->setText($this->screen->theme()->muted(self::RESUME_HEADER));
+        }
+
+        $theme = $this->screen->theme();
+        $listWidget->setItems(self::buildItemsStatic($this->sessions, $theme, selectedIndex: [] === $this->sessions ? -1 : 0));
+        if ([] !== $this->sessions) {
+            $listWidget->setSelectedIndex(0);
+        }
+
+        $this->screen->setWorkingMessage(\sprintf('Deleted session #%s', $sessionId));
+        $this->screen->requestRender(true);
+    }
+
+    private function exitConfirmMode(?SelectListWidget $listWidget): void
+    {
+        $this->confirmingDelete = false;
+        $this->pendingDeleteSessionId = null;
+
+        $header = $this->headerWidget;
+        if (null !== $header) {
+            $header->setText($this->screen->theme()->muted(self::RESUME_HEADER));
+        }
+
+        if (null === $listWidget) {
+            return;
+        }
+
+        $theme = $this->screen->theme();
+        $listWidget->setItems(self::buildItemsStatic($this->sessions, $theme, selectedIndex: [] === $this->sessions ? -1 : 0));
+        if ([] !== $this->sessions) {
+            $listWidget->setSelectedIndex(0);
+        }
+
+        $this->screen->requestRender(true);
     }
 }

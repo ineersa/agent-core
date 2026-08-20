@@ -67,6 +67,27 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->assertFalse($this->store->exists('nonexistent-session-id'));
     }
 
+    public function testDeleteSessionRemovesDbRowAndDirectory(): void
+    {
+        $sessionId = $this->store->createSession('delete-me');
+        $sessionPath = $this->store->resolveSessionsBasePath().'/'.$sessionId;
+        $this->assertTrue($this->store->exists($sessionId));
+        $this->assertDirectoryExists($sessionPath);
+
+        $this->store->deleteSession($sessionId);
+
+        $this->assertFalse($this->store->exists($sessionId));
+        $this->assertNull($this->store->findSession($sessionId));
+        $this->assertDirectoryDoesNotExist($sessionPath);
+    }
+
+    public function testDeleteSessionThrowsForMissingSession(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Session "999999999" not found.');
+        $this->store->deleteSession('999999999');
+    }
+
     public function testFindSessionReturnsNullForMissingSession(): void
     {
         $this->assertNull($this->store->findSession('nonexistent-session-id'));
