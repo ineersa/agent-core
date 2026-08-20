@@ -308,13 +308,51 @@ function qa_test_home_dir(): string
 }
 
 /**
+ * Invocation-scoped Symfony cache root for standalone Castor test/migrate.
+ *
+ * Avoids shared `.hatfield/cache/test` when HATFIELD_CACHE_DIR is unset.
+ * Reuses an already-set HATFIELD_CACHE_DIR (castor check run-scoped cache,
+ * ParaTest worker override, or explicit caller) without allocating a new one.
+ */
+function qa_standalone_test_cache_dir(): string
+{
+    $existing = getenv('HATFIELD_CACHE_DIR');
+    if (false !== $existing && '' !== trim((string) $existing)) {
+        return (string) $existing;
+    }
+
+    $projectRoot = project_root_dir();
+    $runId = getenv('HATFIELD_QA_RUN_ID');
+    if (false !== $runId && '' !== trim((string) $runId)) {
+        $segment = sanitize_qa_run_id_segment((string) $runId);
+        $resolved = '.hatfield/cache-'.$segment;
+    } else {
+        $resolved = '.hatfield/cache-test-pid-'.getmypid();
+    }
+
+    $path = $projectRoot.'/'.$resolved;
+    if (!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path)) {
+        throw new \RuntimeException(\sprintf('Unable to create standalone test cache directory "%s".', $path));
+    }
+
+    putenv('HATFIELD_CACHE_DIR='.$resolved);
+    $_ENV['HATFIELD_CACHE_DIR'] = $resolved;
+    $_SERVER['HATFIELD_CACHE_DIR'] = $resolved;
+
+    return $resolved;
+}
+
+/**
  * Shell prefix exporting isolated HOME for subprocesses that boot the test kernel.
  */
 function qa_test_home_shell_prefix(): string
 {
     $home = qa_test_home_dir();
+    $cache = qa_standalone_test_cache_dir();
 
-    return 'HOME='.escapeshellarg($home).' HATFIELD_QA_TEST_HOME='.escapeshellarg($home);
+    return 'HOME='.escapeshellarg($home)
+        .' HATFIELD_QA_TEST_HOME='.escapeshellarg($home)
+        .' HATFIELD_CACHE_DIR='.escapeshellarg($cache);
 }
 
 // ─── PHAR packaging constants ──────────────────────────────────────────
