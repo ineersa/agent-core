@@ -120,6 +120,15 @@ final class RuntimeEventPerRunCompactBuffer
         return $count;
     }
 
+    /**
+     * Drop every retained per-run tail. Used when the session client crosses a
+     * hard session boundary (/new, /resume attach after shutdown, /reload).
+     */
+    public function clear(): void
+    {
+        $this->tailByRunId = [];
+    }
+
     private function isProtectedControlEvent(RuntimeEvent $event): bool
     {
         return self::isProtectedControlEventStatic($event);

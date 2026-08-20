@@ -143,14 +143,16 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     /**
      * Synchronously stop the controller subprocess and its consumer tree.
      *
-     * Used by the /reload path before the process re-bootstraps: the
-     * SIGTERM → grace → SIGKILL sequence in {@see stopProcess()} releases
-     * the session resources (queue leases, locks) before a fresh controller
-     * is spawned for the same session.
+     * Used by /reload before process re-bootstrap and by InteractiveMode
+     * before /new drafts or /resume attach: the SIGTERM → grace → SIGKILL
+     * sequence in {@see stopProcess()} releases session resources (queue
+     * leases, locks), and {@see resetSessionBoundaryState()} drops client-
+     * local buffers so old fork/subagent progress cannot survive the boundary.
      */
     public function shutdown(): void
     {
         $this->stopProcess();
+        $this->resetSessionBoundaryState();
     }
 
     public function start(StartRunRequest $request): RunHandle
@@ -955,5 +957,30 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         @proc_close($this->process);
         $this->process = null;
+    }
+
+    /**
+     * Clear client-local state that must not cross a hard session boundary.
+     *
+     * Called from {@see shutdown()} after the owned controller/consumers stop.
+     * Does not spawn a replacement process — /new drafts stay sessionless until
+     * the first submit; /resume and start spawn after this reset.
+     */
+    private function resetSessionBoundaryState(): void
+    {
+        $this->compactEventBuffer->clear();
+        $this->observedChildRunIds = [];
+        $this->stdoutBuffer = '';
+        $this->stderrBuffer = '';
+        $this->activeRunId = null;
+        $this->primaryRunId = null;
+        $this->sessionId = null;
+        $this->processSessionId = null;
+        $this->autoResumed = false;
+        $this->runtimeReadyReceived = false;
+        $this->eventBufferWatermarkActive = false;
+        $this->eventBufferWatermarkLastLoggedAt = null;
+        $this->eventBufferCapacityActive = false;
+        $this->eventBufferCapacityLastLoggedAt = null;
     }
 }

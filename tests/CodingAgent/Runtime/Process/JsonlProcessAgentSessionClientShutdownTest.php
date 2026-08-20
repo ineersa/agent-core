@@ -10,14 +10,17 @@ use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * /reload teardown contract: shutdown() must synchronously stop a spawned
- * controller process and be safe/idempotent when nothing is running.
+ * Session-boundary teardown contract: shutdown() must synchronously stop a
+ * spawned controller process, clear client-local cross-run buffers, and stay
+ * safe/idempotent when nothing is running (/reload and /new|/resume switches).
  */
 final class JsonlProcessAgentSessionClientShutdownTest extends TestCase
 {
@@ -82,6 +85,42 @@ PHP);
         $client->shutdown();
 
         $this->addToAssertionCount(1);
+    }
+
+    #[Test]
+    public function testShutdownClearsBufferedCrossRunStateAndSessionIds(): void
+    {
+        $client = $this->createClient();
+        $client->start(new StartRunRequest(
+            prompt: 'hello',
+            runId: 'session-42',
+        ));
+
+        $ref = new \ReflectionClass($client);
+        $compact = $ref->getProperty('compactEventBuffer')->getValue($client);
+        $compact->ingest(new RuntimeEvent(
+            RuntimeEventTypeEnum::TurnStarted->value,
+            'session-42',
+            10,
+            ['marker' => 'OLD_FORK_RESULT_MARKER'],
+        ), true);
+        $ref->getProperty('observedChildRunIds')->setValue($client, ['child-fork' => true]);
+        $ref->getProperty('stdoutBuffer')->setValue($client, '{"type":"stale"}');
+        $ref->getProperty('stderrBuffer')->setValue($client, 'stale-stderr');
+
+        $this->assertGreaterThan(0, $compact->totalTailCount());
+
+        $client->shutdown();
+
+        $compactAfter = $ref->getProperty('compactEventBuffer')->getValue($client);
+        $this->assertSame(0, $compactAfter->totalTailCount());
+        $this->assertSame([], $ref->getProperty('observedChildRunIds')->getValue($client));
+        $this->assertSame('', $ref->getProperty('stdoutBuffer')->getValue($client));
+        $this->assertSame('', $ref->getProperty('stderrBuffer')->getValue($client));
+        $this->assertNull($ref->getProperty('sessionId')->getValue($client));
+        $this->assertNull($ref->getProperty('processSessionId')->getValue($client));
+        $this->assertNull($ref->getProperty('activeRunId')->getValue($client));
+        $this->assertNull($ref->getProperty('primaryRunId')->getValue($client));
     }
 
     private function createClient(): JsonlProcessAgentSessionClient
