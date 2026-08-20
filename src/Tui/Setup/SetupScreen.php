@@ -66,10 +66,10 @@ final class SetupScreen
         $this->inputWidget = new InputWidget();
     }
 
-    public function mount(Tui $tui): Tui
+    public function mount(Tui $tui): void
     {
         if ($this->mounted) {
-            return $tui;
+            return;
         }
         $this->mounted = true;
         $this->tui = $tui;
@@ -117,8 +117,6 @@ final class SetupScreen
         $this->inputWidget->onInput($quit);
 
         $this->showPicker();
-
-        return $tui;
     }
 
     public function run(?TerminalInterface $terminal = null): int

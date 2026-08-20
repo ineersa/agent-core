@@ -78,8 +78,6 @@ final class SetupScreenVirtualRenderTest extends TestCase
         [$screen, $terminal, $tui] = $this->mount($flow);
 
         $tui->handleInput("\x04");
-        $tui->requestRender(force: true);
-        $tui->processRender();
 
         $this->assertTrue($screen->finished());
         $this->assertSame('summary', $screen->phase());
@@ -97,8 +95,6 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringContainsString('Add your own server', $this->plain($terminal));
 
         $tui->handleInput("\x04");
-        $tui->requestRender(force: true);
-        $tui->processRender();
 
         $this->assertTrue($screen->finished());
         $this->assertSame('summary', $screen->phase());
@@ -166,7 +162,10 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $screen->submitInput('local-llm');
         $screen->submitInput('http://127.0.0.1:8080');
         $screen->submitInput('/v1/chat/completions');
-        $screen->selectValue('no'); // Set an API key?
+        $screen->selectValue('yes'); // Set an API key?
+        $this->assertStringContainsString('Step 4 of 13', $this->plain($terminal));
+        $screen->selectValue('env');
+        $screen->submitInput('LOCAL_API_KEY');
         $screen->submitInput('llama-3');
         $screen->submitInput('Llama 3');
         $screen->submitInput('128000');
