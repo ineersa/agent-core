@@ -361,9 +361,7 @@ final class SessionPickerController
             $this->sessions,
             static fn (array $session): bool => $session['sessionId'] === $sessionId,
         );
-        $title = \is_array($match)
-            ? ($match['displayTitle'] ?? $match['name'] ?? 'Session')
-            : 'Session';
+        $title = $match['displayTitle'] ?? $match['name'] ?? 'Session';
 
         $this->confirmingDelete = true;
         $this->pendingDeleteSessionId = $sessionId;

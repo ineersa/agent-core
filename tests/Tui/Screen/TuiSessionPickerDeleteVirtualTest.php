@@ -159,6 +159,50 @@ final class TuiSessionPickerDeleteVirtualTest extends IsolatedKernelTestCase
     }
 
     #[Test]
+    public function testConfirmYesWhenSessionAlreadyGoneShowsErrorAndKeepsPickerOpen(): void
+    {
+        $activeId = $this->store->createSession('Active keep');
+        $deleteId = $this->store->createSession('Already gone');
+
+        $switch = $this->createMock(TuiSessionSwitchServiceInterface::class);
+        $switch->expects($this->never())->method('requestResume');
+
+        $harness = new VirtualTuiHarness(sessionId: $activeId, columns: 140, rows: 40);
+        $picker = new SessionPickerController($harness->tui(), $harness->screen(), $this->store, $switch);
+        $picker->open();
+
+        $list = $this->listWidget($picker);
+        $harness->startInputLoop();
+        try {
+            $harness->tui()->setFocus($list);
+            $harness->render();
+            $this->selectSession($harness, $list, $deleteId);
+
+            $harness->sendInput('d');
+            $this->assertStringContainsString(
+                \sprintf('Delete session #%s — Already gone?', $deleteId),
+                $harness->plainScreenText(),
+            );
+
+            // Race: session disappears between confirm open and Yes.
+            $this->store->deleteSession($deleteId);
+
+            $harness->sendInput("\n"); // Enter on Yes
+            $this->assertTrue($picker->isOpen());
+            $this->assertFalse($this->store->exists($deleteId));
+            $this->assertSame(
+                'Session #'.$deleteId.' no longer exists',
+                $harness->screen()->statusEntries()['error'] ?? null,
+            );
+            $this->assertStringContainsString('d deletes', $harness->plainScreenText());
+            $this->assertStringContainsString('#'.$activeId.' — Active keep', $harness->plainScreenText());
+            $this->assertStringNotContainsString('#'.$deleteId.' — Already gone', $harness->plainScreenText());
+        } finally {
+            $harness->stopInputLoop();
+        }
+    }
+
+    #[Test]
     public function testDeletingOnlyListedSessionWithEmptyActiveIdKeepsPickerOpen(): void
     {
         $onlyId = $this->store->createSession('Only listed');
