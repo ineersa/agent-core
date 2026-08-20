@@ -33,8 +33,10 @@ use Symfony\Component\Tui\Widget\TextWidget;
  * Sessions are fetched fresh from HatfieldSessionStore on each
  * open so the picker always reflects the latest DB state.
  *
- * The controller is stateless between picker sessions — it creates
- * and destroys the SelectListWidget per invocation.
+ * While open, resume mode may hold picker-scoped confirm state
+ * ({@see $confirmingDelete}, {@see $pendingDeleteSessionId}) for the
+ * in-overlay Yes/No delete step. {@see closePicker()} clears that
+ * state together with the overlay widgets.
  */
 final class SessionPickerController
 {
@@ -80,7 +82,7 @@ final class SessionPickerController
             self::RESUME_HEADER,
             function (SelectEvent $event): void {
                 if ($this->confirmingDelete) {
-                    $this->handleConfirmSelect($event);
+                    $this->confirmDeleteSelection($event);
 
                     return;
                 }
@@ -196,7 +198,9 @@ final class SessionPickerController
      * Close the picker overlay.
      *
      * Delegates to PickerOverlay::close() which removes the container
-     * from the TUI and resets internal state.
+     * from the TUI and resets internal state. Also clears picker-scoped
+     * confirm flags and transient session/error status lines so they do
+     * not linger after the overlay closes.
      *
      * @param bool $requestRender Whether to schedule a TUI repaint.
      *                            Default true (Esc/cancel).  Pass false when the picker is
@@ -211,6 +215,8 @@ final class SessionPickerController
         $this->sessions = [];
         $this->confirmingDelete = false;
         $this->pendingDeleteSessionId = null;
+        $this->screen->setStatus('error', null);
+        $this->screen->setStatus('session', null);
     }
 
     /**
@@ -345,20 +351,19 @@ final class SessionPickerController
         $sessionId = (string) $selected['value'];
         $activeSessionId = $this->screen->sessionId();
         if ('' !== $activeSessionId && $sessionId === $activeSessionId) {
-            $this->screen->setWorkingMessage('Cannot delete the current/active session');
+            $this->screen->setStatus('error', 'Cannot delete the current/active session');
             $this->screen->requestRender(true);
 
             return;
         }
 
-        $title = 'Session';
-        foreach ($this->sessions as $session) {
-            if ($session['sessionId'] === $sessionId) {
-                $title = $session['displayTitle'] ?? $session['name'] ?? 'Session';
-
-                break;
-            }
-        }
+        $match = array_find(
+            $this->sessions,
+            static fn (array $session): bool => $session['sessionId'] === $sessionId,
+        );
+        $title = \is_array($match)
+            ? ($match['displayTitle'] ?? $match['name'] ?? 'Session')
+            : 'Session';
 
         $this->confirmingDelete = true;
         $this->pendingDeleteSessionId = $sessionId;
@@ -374,15 +379,15 @@ final class SessionPickerController
             ['value' => self::CONFIRM_YES, 'label' => "\u{2713} Yes"],
             ['value' => self::CONFIRM_NO, 'label' => "\u{2717} No"],
         ]);
-        $listWidget->setSelectedIndex(0);
         $this->screen->requestRender(true);
     }
 
-    private function handleConfirmSelect(SelectEvent $event): void
+    private function confirmDeleteSelection(SelectEvent $event): void
     {
         $listWidget = $this->overlay?->listWidget();
         if (null === $listWidget) {
-            $this->exitConfirmMode(null);
+            $this->confirmingDelete = false;
+            $this->pendingDeleteSessionId = null;
 
             return;
         }
@@ -401,46 +406,43 @@ final class SessionPickerController
             return;
         }
 
-        $this->sessionStore->deleteSession($sessionId);
-        $this->sessions = $this->sessionStore->listSessions();
-        $this->confirmingDelete = false;
-        $this->pendingDeleteSessionId = null;
+        try {
+            $this->sessionStore->deleteSession($sessionId);
+        } catch (\RuntimeException) {
+            $this->restoreSessionList($listWidget);
+            $this->screen->setStatus('error', \sprintf('Session #%s no longer exists', $sessionId));
+            $this->screen->requestRender(true);
 
-        $header = $this->headerWidget;
-        if (null !== $header) {
-            $header->setText($this->screen->theme()->muted(self::RESUME_HEADER));
-        }
-
-        $theme = $this->screen->theme();
-        $listWidget->setItems(self::buildItemsStatic($this->sessions, $theme, selectedIndex: [] === $this->sessions ? -1 : 0));
-        if ([] !== $this->sessions) {
-            $listWidget->setSelectedIndex(0);
-        }
-
-        $this->screen->setWorkingMessage(\sprintf('Deleted session #%s', $sessionId));
-        $this->screen->requestRender(true);
-    }
-
-    private function exitConfirmMode(?SelectListWidget $listWidget): void
-    {
-        $this->confirmingDelete = false;
-        $this->pendingDeleteSessionId = null;
-
-        $header = $this->headerWidget;
-        if (null !== $header) {
-            $header->setText($this->screen->theme()->muted(self::RESUME_HEADER));
-        }
-
-        if (null === $listWidget) {
             return;
         }
 
-        $theme = $this->screen->theme();
-        $listWidget->setItems(self::buildItemsStatic($this->sessions, $theme, selectedIndex: [] === $this->sessions ? -1 : 0));
-        if ([] !== $this->sessions) {
-            $listWidget->setSelectedIndex(0);
+        $this->restoreSessionList($listWidget);
+        $this->screen->setStatus('session', \sprintf('Deleted session #%s', $sessionId));
+        $this->screen->requestRender(true);
+    }
+
+    private function exitConfirmMode(SelectListWidget $listWidget): void
+    {
+        $this->restoreSessionList($listWidget);
+        $this->screen->requestRender(true);
+    }
+
+    private function restoreSessionList(SelectListWidget $listWidget): void
+    {
+        $this->confirmingDelete = false;
+        $this->pendingDeleteSessionId = null;
+        $this->sessions = $this->sessionStore->listSessions();
+
+        $header = $this->headerWidget;
+        if (null !== $header) {
+            $header->setText($this->screen->theme()->muted(self::RESUME_HEADER));
         }
 
-        $this->screen->requestRender(true);
+        $theme = $this->screen->theme();
+        $listWidget->setItems(self::buildItemsStatic(
+            $this->sessions,
+            $theme,
+            selectedIndex: [] === $this->sessions ? -1 : 0,
+        ));
     }
 }

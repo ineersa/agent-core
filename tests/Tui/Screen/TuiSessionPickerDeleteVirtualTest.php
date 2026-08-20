@@ -76,7 +76,10 @@ final class TuiSessionPickerDeleteVirtualTest extends IsolatedKernelTestCase
             $this->assertStringNotContainsString('#'.$deleteId.' — Delete target', $afterScreen);
             $this->assertStringContainsString('#'.$activeId.' — Active keep', $afterScreen);
             $this->assertStringContainsString('d deletes', $afterScreen);
-            $this->assertStringContainsString('Deleted session #'.$deleteId, $harness->screen()->workingMessage());
+            $this->assertSame(
+                'Deleted session #'.$deleteId,
+                $harness->screen()->statusEntries()['session'] ?? null,
+            );
         } finally {
             $harness->stopInputLoop();
         }
@@ -105,7 +108,10 @@ final class TuiSessionPickerDeleteVirtualTest extends IsolatedKernelTestCase
 
             $harness->sendInput('d');
             $screen = $harness->plainScreenText();
-            $this->assertStringContainsString('Cannot delete the current/active session', $harness->screen()->workingMessage());
+            $this->assertSame(
+                'Cannot delete the current/active session',
+                $harness->screen()->statusEntries()['error'] ?? null,
+            );
             $this->assertStringNotContainsString('Delete session #'.$activeId, $screen);
             $this->assertTrue($this->store->exists($activeId));
             $this->assertTrue($this->store->exists($otherId));
@@ -147,6 +153,51 @@ final class TuiSessionPickerDeleteVirtualTest extends IsolatedKernelTestCase
             $this->assertStringContainsString('d deletes', $after);
             $this->assertStringContainsString('#'.$deleteId.' — Maybe delete', $after);
             $this->assertStringNotContainsString('Delete session #'.$deleteId.' — Maybe delete?', $after);
+        } finally {
+            $harness->stopInputLoop();
+        }
+    }
+
+    #[Test]
+    public function testDeletingOnlyListedSessionWithEmptyActiveIdKeepsPickerOpen(): void
+    {
+        $onlyId = $this->store->createSession('Only listed');
+
+        $switch = $this->createMock(TuiSessionSwitchServiceInterface::class);
+        $switch->expects($this->never())->method('requestResume');
+
+        // Draft / empty active id is not in the list, so delete is allowed.
+        $harness = new VirtualTuiHarness(sessionId: '', columns: 140, rows: 40);
+        $picker = new SessionPickerController($harness->tui(), $harness->screen(), $this->store, $switch);
+        $picker->open();
+        $this->assertTrue($picker->isOpen());
+
+        $list = $this->listWidget($picker);
+        $harness->startInputLoop();
+        try {
+            $harness->tui()->setFocus($list);
+            $harness->render();
+
+            $harness->sendInput('d');
+            $this->assertStringContainsString(
+                \sprintf('Delete session #%s — Only listed?', $onlyId),
+                $harness->plainScreenText(),
+            );
+
+            $harness->sendInput("\n"); // Enter on Yes
+            $this->assertTrue($picker->isOpen(), 'Picker stays open after deleting last listed session');
+            $this->assertSame([], $this->store->listSessions());
+            $this->assertFalse($this->store->exists($onlyId));
+            $this->assertSame(
+                'Deleted session #'.$onlyId,
+                $harness->screen()->statusEntries()['session'] ?? null,
+            );
+
+            // Empty list: Enter and d must not crash or resume.
+            $harness->sendInput("\n");
+            $harness->sendInput('d');
+            $this->assertTrue($picker->isOpen());
+            $this->assertNull($list->getSelectedItem());
         } finally {
             $harness->stopInputLoop();
         }
