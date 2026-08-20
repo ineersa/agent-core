@@ -60,7 +60,10 @@ final class StatusPanelWidget extends AbstractWidget
 
         $lines = [];
         foreach ($this->entries as $key => $text) {
-            $lines[] = $this->theme->muted(\sprintf('  %-12s %s', $key, $text));
+            $line = \sprintf('  %-12s %s', $key, $text);
+            $lines[] = 'error' === $key
+                ? $this->theme->error($line)
+                : $this->theme->muted($line);
         }
 
         // Long status text wraps like the old LiveTextWidget adapter did.
