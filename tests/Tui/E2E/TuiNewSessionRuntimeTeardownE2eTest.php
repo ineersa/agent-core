@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\E2E;
 
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Replay-backed TmuxHarness proof: /new stops the previous controller/consumers
@@ -26,6 +27,7 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
     {
         $this->setUpBashBackgroundE2e('tui-new-teardown', 'tui-e2e-new-teardown');
         $this->tmux->setSnapshotDir($this->testProjectDir);
+        $this->raiseBackgroundPromptThresholdForInFlightNew();
     }
 
     protected function tearDown(): void
@@ -71,7 +73,7 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
             );
             $this->assertNotEmpty($oldSessionId, 'Old session id must be captured before /new');
             $this->assertTrue(
-                $this->waitForLogContains('controller.session_owner_lock_acquired', 8.0),
+                $this->waitForLogCount('controller.session_owner_lock_acquired', 1, 8.0),
                 'Old session controller must acquire the session-owner lock before /new',
             );
 
@@ -112,7 +114,7 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
             $this->assertStringNotContainsString(self::NEW_SESSION_SENTINEL, $draftPane);
 
             $this->assertTrue(
-                $this->waitForLogContains('Controller shutting down gracefully', 12.0),
+                $this->waitForLogCount('Controller shutting down gracefully', 1, 12.0),
                 'Old controller must shut down synchronously when switching to the /new draft',
             );
             $this->assertSame(
@@ -171,17 +173,21 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
         return $content;
     }
 
-    private function waitForLogContains(string $needle, float $timeout = 10.0): bool
+    /**
+     * Shared bash-background project settings use a 1s prompt threshold. Raise it
+     * locally so the in-flight sleep cannot open a ToolQuestion overlay that would
+     * steal typed `/new` as an answer.
+     */
+    private function raiseBackgroundPromptThresholdForInFlightNew(): void
     {
-        $deadline = microtime(true) + $timeout;
-        while (microtime(true) < $deadline) {
-            if (str_contains($this->readAgentLog(), $needle)) {
-                return true;
-            }
-            usleep(100_000);
+        $path = $this->testProjectDir.'/.hatfield/settings.yaml';
+        $settings = Yaml::parseFile($path);
+        if (!\is_array($settings)) {
+            $this->fail('Isolated bash-background settings.yaml must parse to an array');
         }
 
-        return str_contains($this->readAgentLog(), $needle);
+        $settings['tools']['bash']['background_prompt_threshold_seconds'] = 60;
+        TuiE2eDatabaseEnv::writeReplaySettings($this->testProjectDir, $settings);
     }
 
     private function waitForLogCount(string $needle, int $expected, float $timeout = 10.0): bool

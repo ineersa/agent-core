@@ -5,6 +5,9 @@
     "reasoning": "off",
     "recorded_at": "2026-08-20T00:00:00+00:00",
     "recording_source": "manual",
+    "replay_match": {
+        "last_user_contains": "NEW_SESSION_AFTER_NEW_OK"
+    },
     "input": {
         "messages": [
             {
