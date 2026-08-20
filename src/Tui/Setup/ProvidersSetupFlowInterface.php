@@ -13,7 +13,7 @@ namespace Ineersa\Tui\Setup;
 interface ProvidersSetupFlowInterface
 {
     /**
-     * Catalog (+ enabled custom) rows for the picker dashboard.
+     * Catalog rows for the main picker (customs live under the Other-server submenu).
      *
      * @return list<array{
      *     id: string,
@@ -27,13 +27,41 @@ interface ProvidersSetupFlowInterface
      */
     public function providerRows(): array;
 
+    /**
+     * Saved custom (non-catalog) providers for the Other-server submenu.
+     *
+     * @return list<array{id: string, url: string, enabled: bool}>
+     */
+    public function customProviderRows(): array;
+
+    /**
+     * Prefill payload for editing a custom provider, or null if unknown.
+     *
+     * @return array{
+     *     id: string,
+     *     baseUrl: string,
+     *     completionsPath: string,
+     *     apiKey: ?string,
+     *     models: array<string, array<string, mixed>>,
+     *     supportsDeveloperRole: bool,
+     *     thinkingFormat: string
+     * }|null
+     */
+    public function customDefinition(string $id): ?array;
+
     public function isEnabled(string $id): bool;
 
     public function enableOauth(string $id): void;
 
     public function enableApiKey(string $id, string $apiKey): void;
 
+    /** Sparse enabled:true for an existing custom provider. */
+    public function enableCustom(string $id): void;
+
     public function disable(string $id): void;
+
+    /** Delete ai.providers.<id> from the active settings layer. */
+    public function removeCustom(string $id): void;
 
     /**
      * @throws \InvalidArgumentException when id is invalid or collides with catalog

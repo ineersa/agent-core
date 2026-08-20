@@ -177,8 +177,10 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $flow = new FakeProvidersSetupFlow();
         [$screen, $terminal] = $this->mount($flow);
 
-        $screen->selectValue('grok-cli'); // enable oauth immediately
-        // After enable → Add another? → No → summary/exit. Choose Yes to return.
+        $screen->selectValue('grok-cli'); // confirm Enable?
+        $this->assertSame('confirm', $screen->phase());
+        $screen->selectValue('yes'); // confirm → enable
+        // After enable → Add another? → Yes to return.
         $screen->selectValue('yes');
 
         $text = $this->plain($terminal);
@@ -187,6 +189,49 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringNotContainsString('Grok / xAI (enabled)', $text);
         $this->assertStringContainsString('✓ enabled', $text);
         $this->assertSame(['auth:grok'], $flow->pendingAuthCommands());
+    }
+
+    #[Test]
+    public function oauthEnableConfirmNoWritesNothing(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('grok-cli');
+        $this->assertSame('confirm', $screen->phase());
+        $this->assertStringContainsString('Enable Grok / xAI?', $this->plain($terminal));
+        $screen->selectValue('no');
+
+        $this->assertSame('picker', $screen->phase());
+        $this->assertFalse($flow->isEnabled('grok-cli'));
+        $this->assertFalse($flow->wroteSomething());
+        $this->assertSame([], $flow->pendingAuthCommands());
+    }
+
+    #[Test]
+    public function oauthActionMenuOmitsReconfigure(): void
+    {
+        $flow = new FakeProvidersSetupFlow(enabled: ['grok-cli' => true]);
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('grok-cli');
+        $this->assertSame('action', $screen->phase());
+        $text = $this->plain($terminal);
+        $this->assertStringNotContainsString('Reconfigure', $text);
+        $this->assertStringContainsString('Disable', $text);
+        $this->assertStringContainsString('Cancel', $text);
+    }
+
+    #[Test]
+    public function apiKeyActionMenuKeepsReconfigure(): void
+    {
+        $flow = new FakeProvidersSetupFlow(enabled: ['zai' => true]);
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('zai');
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('Reconfigure', $text);
+        $this->assertStringContainsString('Disable', $text);
     }
 
     #[Test]
@@ -313,6 +358,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         [$screen, $terminal] = $this->mount($flow);
 
         $screen->selectValue('grok-cli');
+        $screen->selectValue('yes'); // Enable?
         $screen->selectValue('no'); // Add another? → default-model confirm
         $this->assertSame('confirm', $screen->phase());
         $screen->selectValue('no'); // skip default model → summary
@@ -331,6 +377,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         [$screen, $terminal] = $this->mount($flow);
 
         $screen->selectValue('grok-cli');
+        $screen->selectValue('yes'); // Enable?
         $screen->selectValue('yes'); // Add another?
         $screen->selectValue('grok-cli');
         $screen->selectValue('disable');
@@ -342,6 +389,178 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringContainsString(str_replace(' ', '', 'Saved to'), $collapsed);
         $this->assertStringNotContainsString(str_replace(' ', '', 'To finish'), $collapsed);
         $this->assertSame([], $flow->pendingAuthCommands());
+    }
+
+    #[Test]
+    public function mainPickerWithCustomsShowsOtherServerNotCustomIds(): void
+    {
+        $flow = new FakeProvidersSetupFlow(customs: [
+            'runpod' => [
+                'baseUrl' => 'https://abc.proxy.runpod.net',
+                'models' => ['m' => ['name' => 'm']],
+            ],
+        ]);
+        [$screen, $terminal] = $this->mount($flow);
+
+        $text = $this->plain($terminal);
+        $this->assertSame('picker', $screen->phase());
+        $this->assertStringContainsString('Other server', $text);
+        $this->assertStringContainsString('Z.ai (GLM)', $text);
+        // Customs live under the submenu, not the main picker.
+        $this->assertStringNotContainsString('runpod', $text);
+        $this->assertStringNotContainsString('https://abc.proxy.runpod.net', $text);
+    }
+
+    #[Test]
+    public function serversSubmenuShowsUrlAndStatusGlyphs(): void
+    {
+        $flow = new FakeProvidersSetupFlow(customs: [
+            'runpod' => [
+                'baseUrl' => 'https://abc.proxy.runpod.net',
+                'enabled' => true,
+                'models' => ['m' => ['name' => 'm']],
+            ],
+            'llama-local' => [
+                'baseUrl' => 'http://127.0.0.1:8080',
+                'enabled' => false,
+                'models' => ['m' => ['name' => 'm']],
+            ],
+        ]);
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('custom');
+        $this->assertSame('servers', $screen->phase());
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('Your servers', $text);
+        $this->assertStringContainsString('runpod', $text);
+        $this->assertStringContainsString('https://abc.proxy.runpod.net', $text);
+        $this->assertStringContainsString('llama-local', $text);
+        $this->assertStringContainsString('http://127.0.0.1:8080', $text);
+        $this->assertStringContainsString('✓ enabled', $text);
+        $this->assertStringContainsString('✗ disabled', $text);
+        $this->assertStringContainsString('Add a new server', $text);
+        $this->assertStringContainsString('Back', $text);
+    }
+
+    #[Test]
+    public function customServerActionMenuHasEditDisableRemove(): void
+    {
+        $flow = new FakeProvidersSetupFlow(customs: [
+            'runpod' => [
+                'baseUrl' => 'https://abc.proxy.runpod.net',
+                'enabled' => true,
+                'models' => ['m' => ['name' => 'm']],
+            ],
+        ]);
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('custom');
+        $screen->selectValue('runpod');
+        $this->assertSame('action', $screen->phase());
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('Edit', $text);
+        $this->assertStringContainsString('Disable', $text);
+        $this->assertStringContainsString('Remove', $text);
+        $this->assertStringNotContainsString('Reconfigure', $text);
+    }
+
+    #[Test]
+    public function removeCustomConfirmNoWritesNothingYesDeletes(): void
+    {
+        $flow = new FakeProvidersSetupFlow(customs: [
+            'runpod' => [
+                'baseUrl' => 'https://abc.proxy.runpod.net',
+                'enabled' => true,
+                'models' => ['m' => ['name' => 'm']],
+            ],
+        ]);
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('custom');
+        $screen->selectValue('runpod');
+        $screen->selectValue('remove');
+        $this->assertSame('confirm', $screen->phase());
+        $this->assertStringContainsString('Remove runpod? This deletes its settings entry.', $this->plain($terminal));
+
+        $screen->selectValue('no');
+        $this->assertSame('servers', $screen->phase());
+        $this->assertSame([], $flow->removedCustoms);
+        $this->assertNotEmpty($flow->customProviderRows());
+
+        $screen->selectValue('runpod');
+        $screen->selectValue('remove');
+        $screen->selectValue('yes');
+        $this->assertSame(['runpod'], $flow->removedCustoms);
+        $this->assertSame([], $flow->customProviderRows());
+    }
+
+    #[Test]
+    public function editCustomPrefillsSavedUrlAndPath(): void
+    {
+        $flow = new FakeProvidersSetupFlow(customs: [
+            'runpod' => [
+                'baseUrl' => 'https://abc.proxy.runpod.net',
+                'completionsPath' => '/v1/chat/completions',
+                'apiKey' => 'env:RUNPOD_API_KEY',
+                'enabled' => true,
+                'models' => [
+                    'llama' => [
+                        'name' => 'Llama',
+                        'context_window' => 128000,
+                        'max_tokens' => 8192,
+                        'input' => ['text'],
+                        'tool_calling' => true,
+                        'reasoning' => false,
+                        'thinking_level_map' => [],
+                        'cost' => ['input' => 0, 'output' => 0, 'cache_read' => 0, 'cache_write' => 0],
+                    ],
+                ],
+                'supportsDeveloperRole' => false,
+                'thinkingFormat' => '',
+            ],
+        ]);
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('custom');
+        $screen->selectValue('runpod');
+        $screen->selectValue('edit');
+
+        $this->assertSame('input', $screen->phase());
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('Edit your server', $text);
+        $this->assertStringContainsString('Step 2 of 13 — Server URL', $text);
+        $this->assertStringContainsString('https://abc.proxy.runpod.net', $text);
+
+        $screen->submitInput('https://abc.proxy.runpod.net');
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('Step 3 of 13 — Completions path', $text);
+        $this->assertStringContainsString('/v1/chat/completions', $text);
+    }
+
+    #[Test]
+    public function anotherModelChoiceUsesAddAndFinishLabels(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('custom');
+        $screen->submitInput('local-llm');
+        $screen->submitInput('http://127.0.0.1:8080');
+        $screen->submitInput('/v1/chat/completions');
+        $screen->selectValue('no'); // no API key
+        $screen->submitInput('llama-3');
+        $screen->submitInput('Llama 3');
+        $screen->submitInput('128000');
+        $screen->submitInput('8192');
+        $screen->selectValue('text');
+        $screen->selectValue('no'); // reasoning
+
+        $this->assertSame('choice', $screen->phase());
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('Add another model', $text);
+        $this->assertStringContainsString('Finish', $text);
+        $this->assertStringNotContainsString('→ Yes', $text);
+        $this->assertStringNotContainsString('→ No', $text);
     }
 
     #[Test]
@@ -394,8 +613,23 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
 {
     /** @var list<array<string, mixed>> */
     public array $savedCustoms = [];
+    /** @var list<string> */
+    public array $removedCustoms = [];
     /** @var array<string, bool> */
     private array $enabled;
+
+    /**
+     * @var array<string, array{
+     *     id: string,
+     *     baseUrl: string,
+     *     completionsPath: string,
+     *     apiKey: ?string,
+     *     models: array<string, array<string, mixed>>,
+     *     supportsDeveloperRole: bool,
+     *     thinkingFormat: string
+     * }>
+     */
+    private array $customs;
 
     /** @var list<array{id: string, models: list<string>, authCommand: ?string}> */
     private array $configured = [];
@@ -403,11 +637,29 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
     private bool $wrote = false;
 
     /**
-     * @param array<string, bool> $enabled
+     * @param array<string, bool>                                                                                                                                                                                                  $enabled
+     * @param array<string, array{id?: string, baseUrl?: string, completionsPath?: string, apiKey?: ?string, models?: array<string, array<string, mixed>>, supportsDeveloperRole?: bool, thinkingFormat?: string, enabled?: bool}> $customs
      */
-    public function __construct(array $enabled = [])
+    public function __construct(array $enabled = [], array $customs = [])
     {
         $this->enabled = $enabled;
+        $this->customs = [];
+        foreach ($customs as $id => $def) {
+            $this->customs[$id] = [
+                'id' => $def['id'] ?? $id,
+                'baseUrl' => $def['baseUrl'] ?? '',
+                'completionsPath' => $def['completionsPath'] ?? '/v1/chat/completions',
+                'apiKey' => $def['apiKey'] ?? null,
+                'models' => $def['models'] ?? [],
+                'supportsDeveloperRole' => $def['supportsDeveloperRole'] ?? false,
+                'thinkingFormat' => $def['thinkingFormat'] ?? '',
+            ];
+            if (\array_key_exists('enabled', $def)) {
+                $this->enabled[$id] = (bool) $def['enabled'];
+            } elseif (!\array_key_exists($id, $this->enabled)) {
+                $this->enabled[$id] = true;
+            }
+        }
     }
 
     public function providerRows(): array
@@ -427,6 +679,25 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
         }
 
         return $rows;
+    }
+
+    public function customProviderRows(): array
+    {
+        $rows = [];
+        foreach ($this->customs as $id => $def) {
+            $rows[] = [
+                'id' => $id,
+                'url' => $def['baseUrl'],
+                'enabled' => $this->isEnabled($id),
+            ];
+        }
+
+        return $rows;
+    }
+
+    public function customDefinition(string $id): ?array
+    {
+        return $this->customs[$id] ?? null;
     }
 
     public function isEnabled(string $id): bool
@@ -458,9 +729,30 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
         $this->configured[] = ['id' => $id, 'models' => ['glm-5.3'], 'authCommand' => null];
     }
 
+    public function enableCustom(string $id): void
+    {
+        if (!isset($this->customs[$id])) {
+            throw new \InvalidArgumentException(\sprintf('Unknown custom provider "%s".', $id));
+        }
+        $this->enabled[$id] = true;
+        $this->wrote = true;
+        $this->configured[] = ['id' => $id, 'models' => array_keys($this->customs[$id]['models']), 'authCommand' => null];
+    }
+
     public function disable(string $id): void
     {
         $this->enabled[$id] = false;
+        $this->wrote = true;
+        $this->configured = array_values(array_filter(
+            $this->configured,
+            static fn (array $row): bool => $row['id'] !== $id,
+        ));
+    }
+
+    public function removeCustom(string $id): void
+    {
+        unset($this->customs[$id], $this->enabled[$id]);
+        $this->removedCustoms[] = $id;
         $this->wrote = true;
         $this->configured = array_values(array_filter(
             $this->configured,
@@ -489,6 +781,15 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
     ): void {
         $this->validateCustomId($id);
         $this->savedCustoms[] = compact('id', 'baseUrl', 'completionsPath', 'apiKey', 'models', 'supportsDeveloperRole', 'thinkingFormat');
+        $this->customs[$id] = [
+            'id' => $id,
+            'baseUrl' => $baseUrl,
+            'completionsPath' => $completionsPath,
+            'apiKey' => $apiKey,
+            'models' => $models,
+            'supportsDeveloperRole' => $supportsDeveloperRole,
+            'thinkingFormat' => $thinkingFormat,
+        ];
         $this->enabled[$id] = true;
         $this->wrote = true;
         $this->configured[] = ['id' => $id, 'models' => array_keys($models), 'authCommand' => null];

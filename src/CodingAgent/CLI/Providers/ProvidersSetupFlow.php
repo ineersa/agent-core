@@ -27,6 +27,24 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
     /** @var array<string, bool> true=enabled this run, false=disabled this run */
     private array $enabledThisRun = [];
 
+    /**
+     * Custom definitions written this run (edit/prefill source of truth within session).
+     *
+     * @var array<string, array{
+     *     id: string,
+     *     baseUrl: string,
+     *     completionsPath: string,
+     *     apiKey: ?string,
+     *     models: array<string, array<string, mixed>>,
+     *     supportsDeveloperRole: bool,
+     *     thinkingFormat: string
+     * }>
+     */
+    private array $customDefinitionsThisRun = [];
+
+    /** @var array<string, true> ids removed this run (hide from submenu even if still in AppConfig) */
+    private array $removedCustomIds = [];
+
     /** @var list<array{id: string, models: list<string>, authCommand: ?string}> */
     private array $configured = [];
 
@@ -79,19 +97,76 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
             ];
         }
 
+        return $rows;
+    }
+
+    public function customProviderRows(): array
+    {
+        $rows = [];
         foreach ($this->customProviderIds() as $id) {
+            $definition = $this->customDefinition($id);
             $rows[] = [
                 'id' => $id,
-                'label' => $id,
-                'need' => 'any OpenAI-compatible endpoint (llama.cpp, LM Studio, …)',
-                'status' => '✓ enabled',
-                'kind' => 'custom',
-                'authCommand' => null,
-                'models' => [],
+                'url' => $definition['baseUrl'] ?? '',
+                'enabled' => $this->isEnabled($id),
             ];
         }
 
         return $rows;
+    }
+
+    public function customDefinition(string $id): ?array
+    {
+        if (isset($this->catalog[$id])) {
+            return null;
+        }
+
+        // Prefer this-run save so edit-after-add in the same session sees fresh values.
+        if (isset($this->customDefinitionsThisRun[$id])) {
+            return $this->customDefinitionsThisRun[$id];
+        }
+
+        $provider = $this->appConfig->ai?->providers[$id] ?? null;
+        if (null === $provider) {
+            return null;
+        }
+
+        $models = [];
+        foreach ($provider->models as $modelId => $model) {
+            if (!\is_string($modelId) || '' === $modelId) {
+                continue;
+            }
+            $cost = $model->cost;
+            $models[$modelId] = [
+                'name' => $model->name ?? $modelId,
+                'context_window' => $model->contextWindow ?? 128000,
+                'max_tokens' => $model->maxTokens ?? 8192,
+                'input' => $model->input,
+                'tool_calling' => $model->toolCalling,
+                'reasoning' => $model->reasoning,
+                'thinking_level_map' => $model->thinkingLevelMap,
+                'cost' => [
+                    'input' => null !== $cost ? $cost->input : 0,
+                    'output' => null !== $cost ? $cost->output : 0,
+                    'cache_read' => null !== $cost ? $cost->cacheRead : 0,
+                    'cache_write' => null !== $cost ? $cost->cacheWrite : 0,
+                ],
+            ];
+        }
+
+        $compatibility = $provider->compatibility;
+
+        return [
+            'id' => $id,
+            'baseUrl' => $provider->baseUrl,
+            'completionsPath' => $provider->completionsPath ?? '/v1/chat/completions',
+            'apiKey' => $provider->apiKey,
+            'models' => $models,
+            'supportsDeveloperRole' => null !== $compatibility && $compatibility->supportsDeveloperRole,
+            'thinkingFormat' => null !== $compatibility && null !== $compatibility->thinkingFormat
+                ? $compatibility->thinkingFormat
+                : '',
+        ];
     }
 
     public function isEnabled(string $id): bool
@@ -128,12 +203,60 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
         $this->markEnabled($id, $this->modelIdsFromProvider($provider), null);
     }
 
+    public function enableCustom(string $id): void
+    {
+        if (isset($this->catalog[$id])) {
+            throw new \InvalidArgumentException(\sprintf('"%s" is a built-in provider.', $id));
+        }
+        $definition = $this->customDefinition($id);
+        if (null === $definition) {
+            throw new \InvalidArgumentException(\sprintf('Unknown custom provider "%s".', $id));
+        }
+
+        // Full rewrite — sparse {enabled:true} would wipe base_url/models for customs.
+        $this->writeCustomDefinition($definition, enabled: true);
+        $this->markEnabled($id, array_keys($definition['models']), null);
+    }
+
     public function disable(string $id): void
     {
+        if (!isset($this->catalog[$id])) {
+            $definition = $this->customDefinition($id);
+            if (null !== $definition) {
+                // Preserve full custom definition; only flip enabled.
+                $this->writeCustomDefinition($definition, enabled: false);
+                $this->enabledThisRun[$id] = false;
+                $this->wroteSomething = true;
+                $this->configured = array_values(array_filter(
+                    $this->configured,
+                    static fn (array $row): bool => $row['id'] !== $id,
+                ));
+
+                return;
+            }
+        }
+
+        // Catalog providers: sparse overlay is correct (connection fields stay in catalog).
         $this->settingsWriter->set($this->layer, $this->cwd, 'ai.providers.'.$id, [
             'enabled' => false,
         ]);
         $this->enabledThisRun[$id] = false;
+        $this->wroteSomething = true;
+        $this->configured = array_values(array_filter(
+            $this->configured,
+            static fn (array $row): bool => $row['id'] !== $id,
+        ));
+    }
+
+    public function removeCustom(string $id): void
+    {
+        if (isset($this->catalog[$id])) {
+            throw new \InvalidArgumentException(\sprintf('"%s" is a built-in provider — disable it instead.', $id));
+        }
+
+        $this->settingsWriter->remove($this->layer, $this->cwd, 'ai.providers.'.$id);
+        unset($this->enabledThisRun[$id], $this->customDefinitionsThisRun[$id], $this->removedCustomIds[$id]);
+        $this->removedCustomIds[$id] = true;
         $this->wroteSomething = true;
         $this->configured = array_values(array_filter(
             $this->configured,
@@ -178,27 +301,16 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
             throw new \InvalidArgumentException('Add at least one model.');
         }
 
-        $definition = [
-            'type' => 'generic',
-            'enabled' => true,
-            'base_url' => $baseUrl,
-            'api' => 'openai-completions',
-            'completions_path' => $completionsPath,
-            'supports_completions' => true,
-            'supports_embeddings' => false,
+        $payload = [
+            'id' => $id,
+            'baseUrl' => $baseUrl,
+            'completionsPath' => $completionsPath,
+            'apiKey' => null !== $apiKey && '' !== $apiKey ? $apiKey : null,
             'models' => $models,
+            'supportsDeveloperRole' => $supportsDeveloperRole,
+            'thinkingFormat' => trim($thinkingFormat),
         ];
-        if (null !== $apiKey && '' !== $apiKey) {
-            $definition['api_key'] = $apiKey;
-        }
-
-        $compatibility = ['supports_developer_role' => $supportsDeveloperRole];
-        if ('' !== trim($thinkingFormat)) {
-            $compatibility['thinking_format'] = trim($thinkingFormat);
-        }
-        $definition['compatibility'] = $compatibility;
-
-        $this->settingsWriter->set($this->layer, $this->cwd, 'ai.providers.'.$id, $definition);
+        $this->writeCustomDefinition($payload, enabled: true);
         $this->markEnabled($id, array_keys($models), null);
     }
 
@@ -283,6 +395,45 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
     }
 
     /**
+     * @param array{
+     *     id: string,
+     *     baseUrl: string,
+     *     completionsPath: string,
+     *     apiKey: ?string,
+     *     models: array<string, array<string, mixed>>,
+     *     supportsDeveloperRole: bool,
+     *     thinkingFormat: string
+     * } $payload
+     */
+    private function writeCustomDefinition(array $payload, bool $enabled): void
+    {
+        $id = $payload['id'];
+        $definition = [
+            'type' => 'generic',
+            'enabled' => $enabled,
+            'base_url' => $payload['baseUrl'],
+            'api' => 'openai-completions',
+            'completions_path' => $payload['completionsPath'],
+            'supports_completions' => true,
+            'supports_embeddings' => false,
+            'models' => $payload['models'],
+        ];
+        if (null !== $payload['apiKey'] && '' !== $payload['apiKey']) {
+            $definition['api_key'] = $payload['apiKey'];
+        }
+
+        $compatibility = ['supports_developer_role' => $payload['supportsDeveloperRole']];
+        if ('' !== $payload['thinkingFormat']) {
+            $compatibility['thinking_format'] = $payload['thinkingFormat'];
+        }
+        $definition['compatibility'] = $compatibility;
+
+        $this->settingsWriter->set($this->layer, $this->cwd, 'ai.providers.'.$id, $definition);
+        unset($this->removedCustomIds[$id]);
+        $this->customDefinitionsThisRun[$id] = $payload;
+    }
+
+    /**
      * @return array<string, array<string, mixed>>
      */
     private function loadCatalogProviders(): array
@@ -311,25 +462,38 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
     /**
      * @return list<string>
      */
+    /**
+     * @return list<string>
+     */
     private function customProviderIds(): array
     {
         $ids = [];
-        foreach ($this->enabledThisRun as $id => $enabled) {
-            if ($enabled && !isset($this->catalog[$id])) {
+
+        foreach (array_keys($this->customDefinitionsThisRun) as $id) {
+            if (!isset($this->removedCustomIds[$id]) && !isset($this->catalog[$id])) {
+                $ids[$id] = true;
+            }
+        }
+
+        foreach ($this->enabledThisRun as $id => $_) {
+            if (!isset($this->catalog[$id]) && !isset($this->removedCustomIds[$id])) {
                 $ids[$id] = true;
             }
         }
 
         $configuredProviders = $this->appConfig->ai?->providers;
         if (\is_array($configuredProviders)) {
-            foreach ($configuredProviders as $id => $provider) {
-                if (!isset($this->catalog[$id]) && $provider->enabled && !isset($this->enabledThisRun[$id])) {
+            foreach ($configuredProviders as $id => $_) {
+                if (!isset($this->catalog[$id]) && !isset($this->removedCustomIds[$id])) {
                     $ids[$id] = true;
                 }
             }
         }
 
-        return array_keys($ids);
+        $list = array_keys($ids);
+        sort($list);
+
+        return $list;
     }
 
     private function providerStatusLabel(string $id): string

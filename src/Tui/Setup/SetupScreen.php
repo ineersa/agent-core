@@ -28,6 +28,7 @@ use Symfony\Component\Tui\Widget\TextWidget;
 final class SetupScreen
 {
     private const PHASE_PICKER = 'picker';
+    private const PHASE_SERVERS = 'servers';
     private const PHASE_ACTION = 'action';
     private const PHASE_CONFIRM = 'confirm';
     private const PHASE_CHOICE = 'choice';
@@ -54,6 +55,8 @@ final class SetupScreen
     /** @var array<string, mixed> */
     private array $formState = [];
     private ?string $pendingConfirm = null;
+    /** Where action-menu Cancel returns: picker or servers submenu. */
+    private string $actionReturn = self::PHASE_PICKER;
     private ?string $error = null;
     private bool $finished = false;
     private int $exitCode = 0;
@@ -156,9 +159,14 @@ final class SetupScreen
             $this->onListSelect($value);
         });
         $this->listWidget->onCancel(function (CancelEvent $_): void {
-            // Esc: exit from picker/summary; back to picker from every other list phase.
+            // Esc: exit from picker/summary; servers → picker; action/confirm → return phase.
             if (\in_array($this->phase, [self::PHASE_PICKER, self::PHASE_SUMMARY], true)) {
                 $this->finishSuccess();
+            } elseif (self::PHASE_SERVERS === $this->phase) {
+                $this->showPicker();
+            } elseif (\in_array($this->phase, [self::PHASE_ACTION, self::PHASE_CONFIRM], true)
+                && self::PHASE_SERVERS === $this->actionReturn) {
+                $this->showServersSubmenu();
             } else {
                 $this->showPicker();
             }
@@ -194,6 +202,7 @@ final class SetupScreen
         $this->error = null;
         match ($this->phase) {
             self::PHASE_PICKER => $this->handlePickerSelect($value),
+            self::PHASE_SERVERS => $this->handleServersSelect($value),
             self::PHASE_ACTION => $this->handleActionSelect($value),
             self::PHASE_CONFIRM => $this->handleConfirmSelect($value),
             self::PHASE_CHOICE => $this->handleChoiceSelect($value),
@@ -236,14 +245,27 @@ final class SetupScreen
             return;
         }
         if ('custom' === $value) {
-            $this->startCustom();
+            if ([] !== $this->flow->customProviderRows()) {
+                $this->showServersSubmenu();
+            } else {
+                $this->startCustom();
+            }
 
             return;
         }
 
         $this->activeProviderId = $value;
         if ($this->flow->isEnabled($value)) {
-            $this->showActionMenu();
+            $this->showActionMenu(self::PHASE_PICKER);
+
+            return;
+        }
+
+        if ('oauth' === $this->catalogKind($value)) {
+            $this->pendingConfirm = 'oauth_enable';
+            $this->phase = self::PHASE_CONFIRM;
+            $this->hintWidget->setText(\sprintf('Enable %s?', $this->labelFor($value)));
+            $this->showList($this->confirmItems());
 
             return;
         }
@@ -251,10 +273,27 @@ final class SetupScreen
         $this->startEnable($value);
     }
 
+    private function handleServersSelect(string $value): void
+    {
+        if ('back' === $value) {
+            $this->showPicker();
+
+            return;
+        }
+        if ('add' === $value) {
+            $this->startCustom();
+
+            return;
+        }
+
+        $this->activeProviderId = $value;
+        $this->showActionMenu(self::PHASE_SERVERS);
+    }
+
     private function handleActionSelect(string $value): void
     {
         if ('cancel' === $value || null === $this->activeProviderId) {
-            $this->showPicker();
+            $this->returnFromAction();
 
             return;
         }
@@ -267,15 +306,48 @@ final class SetupScreen
 
             return;
         }
-        // reconfigure
+        if ('enable' === $value) {
+            $id = $this->activeProviderId;
+            $this->flow->enableCustom($id);
+            $this->askAddAnother(\sprintf('%s enabled.', $this->labelFor($id)));
+
+            return;
+        }
+        if ('remove' === $value) {
+            $this->pendingConfirm = 'remove_custom';
+            $id = $this->activeProviderId;
+            $this->phase = self::PHASE_CONFIRM;
+            $this->hintWidget->setText(\sprintf('Remove %s? This deletes its settings entry.', $id));
+            $this->showList($this->confirmItems());
+
+            return;
+        }
+        if ('edit' === $value) {
+            $this->startCustomEdit($this->activeProviderId);
+
+            return;
+        }
+        // Reconfigure (API-key catalog providers only — oauth omits this option).
         $this->startEnable($this->activeProviderId);
     }
 
     private function handleConfirmSelect(string $value): void
     {
+        if ('oauth_enable' === $this->pendingConfirm) {
+            $id = $this->activeProviderId;
+            $this->pendingConfirm = null;
+            if ('no' === $value || null === $id) {
+                $this->showPicker();
+
+                return;
+            }
+            $this->startEnable($id);
+
+            return;
+        }
         if ('disable' === $this->pendingConfirm) {
             if ('no' === $value || null === $this->activeProviderId) {
-                $this->showPicker();
+                $this->returnFromAction();
 
                 return;
             }
@@ -288,6 +360,20 @@ final class SetupScreen
                 $this->error = $warning;
             }
             $this->askAddAnother(\sprintf('%s disabled.', $this->labelFor($id)));
+
+            return;
+        }
+        if ('remove_custom' === $this->pendingConfirm) {
+            if ('no' === $value || null === $this->activeProviderId) {
+                $this->returnFromAction();
+
+                return;
+            }
+            $id = $this->activeProviderId;
+            $this->flow->removeCustom($id);
+            $this->pendingConfirm = null;
+            $this->activeProviderId = null;
+            $this->askAddAnother(\sprintf('%s removed.', $id));
 
             return;
         }
@@ -408,6 +494,38 @@ final class SetupScreen
         $this->beginInput('custom_id', 'Provider id (slug)', 'local');
     }
 
+    /**
+     * Re-run the custom wizard prefilled from a saved definition.
+     * Skips the id step; keeps existing models (can only add more — remove+re-add to drop one).
+     */
+    private function startCustomEdit(string $id): void
+    {
+        $definition = $this->flow->customDefinition($id);
+        if (null === $definition) {
+            $this->error = \sprintf('Unknown server "%s".', $id);
+            $this->showServersSubmenu();
+
+            return;
+        }
+
+        $this->formState = [
+            'id' => $definition['id'],
+            'baseUrl' => $definition['baseUrl'],
+            'completionsPath' => $definition['completionsPath'],
+            'apiKey' => $definition['apiKey'],
+            // ponytail: edit keeps existing models; no per-model delete UI — remove+re-add to drop one.
+            'models' => $definition['models'],
+            'supportsDeveloperRole' => $definition['supportsDeveloperRole'],
+            'thinkingFormat' => $definition['thinkingFormat'],
+            'editing' => true,
+        ];
+        $this->beginInput(
+            'custom_url',
+            'Server URL (e.g. http://localhost:8080)',
+            '' !== $definition['baseUrl'] ? $definition['baseUrl'] : 'http://127.0.0.1:8080',
+        );
+    }
+
     private function advanceCustomId(string $value): void
     {
         $id = strtolower(trim('' !== $value ? $value : 'local'));
@@ -418,27 +536,62 @@ final class SetupScreen
 
     private function advanceCustomUrl(string $value): void
     {
-        $url = '' !== $value ? $value : 'http://127.0.0.1:8080';
+        $url = '' !== $value ? $value : (string) ($this->formState['baseUrl'] ?? 'http://127.0.0.1:8080');
         if ('' === trim($url)) {
             throw new \InvalidArgumentException('Server URL is required.');
         }
         $this->formState['baseUrl'] = rtrim(trim($url), '/');
-        $this->beginInput('custom_path', 'Completions path', '/v1/chat/completions');
+        $existingPath = $this->formState['completionsPath'] ?? null;
+        $pathDefault = \is_string($existingPath) && '' !== $existingPath
+            ? $existingPath
+            : '/v1/chat/completions';
+        $this->beginInput('custom_path', 'Completions path', $pathDefault);
     }
 
     private function advanceCustomPath(string $value): void
     {
-        $path = '' !== $value ? $value : '/v1/chat/completions';
+        $existingPath = $this->formState['completionsPath'] ?? null;
+        $path = '' !== $value
+            ? $value
+            : (\is_string($existingPath) && '' !== $existingPath ? $existingPath : '/v1/chat/completions');
         if (!str_starts_with($path, '/')) {
             $path = '/'.$path;
         }
         $this->formState['completionsPath'] = $path;
+
+        // Edit with a saved key: keep it and continue (user can still change via Remove+re-add).
+        $apiKey = $this->formState['apiKey'] ?? null;
+        if (true === ($this->formState['editing'] ?? false)
+            && \is_string($apiKey)
+            && '' !== $apiKey) {
+            $this->continueAfterCustomKeyOrModels();
+
+            return;
+        }
+
         $this->formKind = 'custom_want_key';
         $this->phase = self::PHASE_CHOICE;
         $this->showList([
             ['value' => 'yes', 'label' => 'Yes'],
             ['value' => 'no', 'label' => 'No'],
         ]);
+    }
+
+    /** After key decision (or kept key on edit): either add first model or ask to add another. */
+    private function continueAfterCustomKeyOrModels(): void
+    {
+        $models = $this->formState['models'] ?? [];
+        if (true === ($this->formState['editing'] ?? false) && \is_array($models) && [] !== $models) {
+            $this->formKind = 'custom_another_model';
+            $this->phase = self::PHASE_CHOICE;
+            $this->showList([
+                ['value' => 'yes', 'label' => 'Add another model'],
+                ['value' => 'no', 'label' => 'Finish'],
+            ]);
+
+            return;
+        }
+        $this->beginCustomModel();
     }
 
     private function handleCustomWantKey(string $value): void
@@ -458,14 +611,14 @@ final class SetupScreen
             return;
         }
         $this->formState['apiKey'] = null;
-        $this->beginCustomModel();
+        $this->continueAfterCustomKeyOrModels();
     }
 
     private function resumeAfterCustomKey(string $apiKey): void
     {
         $this->formState['apiKey'] = $apiKey;
         unset($this->formState['afterKey'], $this->formState['raw']);
-        $this->beginCustomModel();
+        $this->continueAfterCustomKeyOrModels();
     }
 
     private function beginCustomModel(): void
@@ -550,8 +703,8 @@ final class SetupScreen
         $this->formKind = 'custom_another_model';
         $this->phase = self::PHASE_CHOICE;
         $this->showList([
-            ['value' => 'yes', 'label' => 'Yes'],
-            ['value' => 'no', 'label' => 'No'],
+            ['value' => 'yes', 'label' => 'Add another model'],
+            ['value' => 'no', 'label' => 'Finish'],
         ]);
     }
 
@@ -573,7 +726,9 @@ final class SetupScreen
     private function handleCustomDeveloperRole(string $value): void
     {
         $this->formState['supportsDeveloperRole'] = 'yes' === $value;
-        $this->beginInput('custom_thinking_format', 'Reasoning format label (blank = none)', '');
+        $thinkingFormat = $this->formState['thinkingFormat'] ?? null;
+        $default = \is_string($thinkingFormat) ? $thinkingFormat : '';
+        $this->beginInput('custom_thinking_format', 'Reasoning format label (blank = none)', $default);
     }
 
     private function finishCustomThinkingFormat(string $value): void
@@ -590,7 +745,8 @@ final class SetupScreen
             (bool) ($this->formState['supportsDeveloperRole'] ?? false),
             $value,
         );
-        $this->askAddAnother(\sprintf('%s added.', $id));
+        $verb = true === ($this->formState['editing'] ?? false) ? 'updated' : 'added';
+        $this->askAddAnother(\sprintf('%s %s.', $id, $verb));
     }
 
     private function askAddAnother(string $message): void
@@ -683,16 +839,45 @@ final class SetupScreen
         $this->formState = [];
         $this->activeProviderId = null;
         $this->pendingConfirm = null;
+        $this->actionReturn = self::PHASE_PICKER;
         $this->hintWidget->setText('Hatfield needs at least one AI provider to run.');
         $this->showList($this->pickerItems());
     }
 
-    private function showActionMenu(): void
+    private function showServersSubmenu(): void
+    {
+        $this->phase = self::PHASE_SERVERS;
+        $this->formKind = '';
+        $this->formState = [];
+        $this->activeProviderId = null;
+        $this->pendingConfirm = null;
+        $this->actionReturn = self::PHASE_SERVERS;
+        $this->hintWidget->setText('Your servers — pick one to edit, or add a new one.');
+        $this->showList($this->serverItems());
+    }
+
+    private function showActionMenu(string $returnPhase = self::PHASE_PICKER): void
     {
         $id = (string) $this->activeProviderId;
+        $this->actionReturn = $returnPhase;
         $this->phase = self::PHASE_ACTION;
-        $this->hintWidget->setText(\sprintf('%s is already enabled. What do you want to do?', $this->labelFor($id)));
-        $this->showList($this->actionItems());
+        $enabled = $this->flow->isEnabled($id);
+        $this->hintWidget->setText(\sprintf(
+            '%s is %s. What do you want to do?',
+            $this->labelFor($id),
+            $enabled ? 'already enabled' : 'disabled',
+        ));
+        $this->showList($this->actionItems($id));
+    }
+
+    private function returnFromAction(): void
+    {
+        if (self::PHASE_SERVERS === $this->actionReturn) {
+            $this->showServersSubmenu();
+
+            return;
+        }
+        $this->showPicker();
     }
 
     /**
@@ -724,15 +909,54 @@ final class SetupScreen
     }
 
     /**
+     * @return list<array{value: string, label: string, description?: string}>
+     */
+    private function serverItems(): array
+    {
+        $items = [];
+        foreach ($this->flow->customProviderRows() as $row) {
+            $enabled = $row['enabled'];
+            $statusLabel = $enabled ? '✓ enabled' : '✗ disabled';
+            $url = '' !== $row['url'] ? $row['url'] : '(no URL)';
+            $items[] = [
+                'value' => $row['id'],
+                'label' => $row['id'],
+                'description' => $url.'  '.$this->colorStatus($statusLabel, $enabled),
+            ];
+        }
+        $items[] = ['value' => 'add', 'label' => 'Add a new server'];
+        $items[] = ['value' => 'back', 'label' => 'Back'];
+
+        return $items;
+    }
+
+    /**
      * @return list<array{value: string, label: string}>
      */
-    private function actionItems(): array
+    private function actionItems(string $id): array
     {
-        return [
-            ['value' => 'configure', 'label' => 'Reconfigure'],
-            ['value' => 'disable', 'label' => 'Disable'],
-            ['value' => 'cancel', 'label' => 'Cancel'],
-        ];
+        $kind = $this->catalogKind($id);
+        $items = [];
+
+        if ('custom' === $kind) {
+            $items[] = ['value' => 'edit', 'label' => 'Edit'];
+            $items[] = $this->flow->isEnabled($id)
+                ? ['value' => 'disable', 'label' => 'Disable']
+                : ['value' => 'enable', 'label' => 'Enable'];
+            $items[] = ['value' => 'remove', 'label' => 'Remove'];
+            $items[] = ['value' => 'cancel', 'label' => 'Cancel'];
+
+            return $items;
+        }
+
+        // OAuth: no Reconfigure (nothing to reconfigure beyond login).
+        if ('oauth' !== $kind) {
+            $items[] = ['value' => 'configure', 'label' => 'Reconfigure'];
+        }
+        $items[] = ['value' => 'disable', 'label' => 'Disable'];
+        $items[] = ['value' => 'cancel', 'label' => 'Cancel'];
+
+        return $items;
     }
 
     /**
@@ -826,7 +1050,9 @@ final class SetupScreen
     private function applyChrome(): void
     {
         if ($this->isCustomWizardKind($this->formKind)) {
-            $this->titleWidget->setText('Add your own server');
+            $this->titleWidget->setText(
+                true === ($this->formState['editing'] ?? false) ? 'Edit your server' : 'Add your own server'
+            );
             $this->stepWidget->setText(
                 (new Style(dim: true))->apply($this->customStepHeader($this->formKind))
             );
@@ -991,6 +1217,12 @@ final class SetupScreen
         foreach ($this->flow->providerRows() as $row) {
             if ($row['id'] === $id) {
                 return $row['kind'];
+            }
+        }
+
+        foreach ($this->flow->customProviderRows() as $row) {
+            if ($row['id'] === $id) {
+                return 'custom';
             }
         }
 

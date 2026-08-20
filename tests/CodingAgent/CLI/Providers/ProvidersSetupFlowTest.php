@@ -341,6 +341,125 @@ YAML);
         $flow->formatEnvApiKey('not-valid');
     }
 
+    #[Test]
+    public function customProvidersLiveInSubmenuNotMainPicker(): void
+    {
+        $flow = $this->createFlow();
+        $flow->saveCustom(
+            'local-llm',
+            'http://127.0.0.1:8080',
+            '/v1/chat/completions',
+            null,
+            [
+                'my-model' => [
+                    'name' => 'My Model',
+                    'context_window' => 8192,
+                    'max_tokens' => 2048,
+                    'input' => ['text'],
+                    'tool_calling' => true,
+                    'reasoning' => false,
+                    'thinking_level_map' => [],
+                    'cost' => ['input' => 0, 'output' => 0, 'cache_read' => 0, 'cache_write' => 0],
+                ],
+            ],
+            false,
+            '',
+        );
+
+        foreach ($flow->providerRows() as $row) {
+            $this->assertNotSame('local-llm', $row['id']);
+            $this->assertNotSame('custom', $row['kind']);
+        }
+
+        $customs = $flow->customProviderRows();
+        $this->assertCount(1, $customs);
+        $this->assertSame('local-llm', $customs[0]['id']);
+        $this->assertSame('http://127.0.0.1:8080', $customs[0]['url']);
+        $this->assertTrue($customs[0]['enabled']);
+
+        $definition = $flow->customDefinition('local-llm');
+        $this->assertNotNull($definition);
+        $this->assertSame('http://127.0.0.1:8080', $definition['baseUrl']);
+        $this->assertArrayHasKey('my-model', $definition['models']);
+    }
+
+    #[Test]
+    public function removeCustomDeletesSettingsEntryAndHidesFromSubmenu(): void
+    {
+        $flow = $this->createFlow();
+        $flow->saveCustom(
+            'local-llm',
+            'http://127.0.0.1:8080',
+            '/v1/chat/completions',
+            'env:LOCAL_KEY',
+            [
+                'my-model' => [
+                    'name' => 'My Model',
+                    'context_window' => 8192,
+                    'max_tokens' => 2048,
+                    'input' => ['text'],
+                    'tool_calling' => true,
+                    'reasoning' => false,
+                    'thinking_level_map' => [],
+                    'cost' => ['input' => 0, 'output' => 0, 'cache_read' => 0, 'cache_write' => 0],
+                ],
+            ],
+            false,
+            '',
+        );
+        $this->assertNotSame([], $flow->customProviderRows());
+
+        $flow->removeCustom('local-llm');
+
+        $this->assertSame([], $flow->customProviderRows());
+        $this->assertNull($flow->customDefinition('local-llm'));
+        $settings = $this->parseUserSettings();
+        $this->assertArrayNotHasKey('local-llm', $settings['ai']['providers'] ?? []);
+    }
+
+    #[Test]
+    public function disableCustomPreservesFullDefinition(): void
+    {
+        $flow = $this->createFlow();
+        $flow->saveCustom(
+            'local-llm',
+            'http://127.0.0.1:8080',
+            '/v1/chat/completions',
+            'env:LOCAL_KEY',
+            [
+                'my-model' => [
+                    'name' => 'My Model',
+                    'context_window' => 8192,
+                    'max_tokens' => 2048,
+                    'input' => ['text'],
+                    'tool_calling' => true,
+                    'reasoning' => false,
+                    'thinking_level_map' => [],
+                    'cost' => ['input' => 0, 'output' => 0, 'cache_read' => 0, 'cache_write' => 0],
+                ],
+            ],
+            true,
+            'reasoning_content',
+        );
+
+        $flow->disable('local-llm');
+
+        $settings = $this->parseUserSettings();
+        $provider = $settings['ai']['providers']['local-llm'] ?? null;
+        $this->assertIsArray($provider);
+        $this->assertFalse($provider['enabled']);
+        $this->assertSame('http://127.0.0.1:8080', $provider['base_url']);
+        $this->assertSame('env:LOCAL_KEY', $provider['api_key']);
+        $this->assertArrayHasKey('my-model', $provider['models']);
+        $this->assertTrue($provider['compatibility']['supports_developer_role']);
+        $this->assertSame('reasoning_content', $provider['compatibility']['thinking_format']);
+
+        $flow->enableCustom('local-llm');
+        $settings = $this->parseUserSettings();
+        $this->assertTrue($settings['ai']['providers']['local-llm']['enabled']);
+        $this->assertSame('http://127.0.0.1:8080', $settings['ai']['providers']['local-llm']['base_url']);
+    }
+
     private function createFlow(?AiConfig $ai = null, bool $project = false): ProvidersSetupFlow
     {
         $pathResolver = new SettingsPathResolver($this->projectDir, $this->homeDir);
