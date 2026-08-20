@@ -130,6 +130,11 @@ final class WorktreeManager
         }
 
         $vendorCopied = $this->copyTreeIfMissing($codeRoot.'/vendor', $worktree.'/vendor', $control);
+        if ($vendorCopied instanceof ExecResultDTO) {
+            $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
+
+            return $vendorCopied;
+        }
         if (null !== ($interrupt = $control?->interrupted('Interrupted while copying vendor.'))) {
             $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
 
@@ -137,6 +142,11 @@ final class WorktreeManager
         }
 
         $veraCopied = $this->copyTreeIfMissing($codeRoot.'/.vera', $worktree.'/.vera', $control);
+        if ($veraCopied instanceof ExecResultDTO) {
+            $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
+
+            return $veraCopied;
+        }
         if (null !== ($interrupt = $control?->interrupted('Interrupted while copying .vera.'))) {
             $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
 
@@ -508,13 +518,34 @@ final class WorktreeManager
         return rtrim($codeRoot, '/').'/'.ltrim($worktreeBase, '/');
     }
 
-    private function copyTreeIfMissing(string $source, string $dest, ?InvocationControl $control = null): bool
+    /**
+     * @return bool|ExecResultDTO true when copied, false when skipped/nonfatal failure,
+     *                            ExecResultDTO when cancelled/timed out (caller must cleanup)
+     */
+    private function copyTreeIfMissing(string $source, string $dest, ?InvocationControl $control = null): bool|ExecResultDTO
     {
         if (!is_dir($source) || is_dir($dest)) {
             return false;
         }
         try {
-            $this->recursiveCopy($source, $dest, $control);
+            if (!is_dir($dest)) {
+                mkdir($dest, 0o755, true);
+            }
+
+            $result = $this->exec->exec(
+                'cp',
+                ['-a', $source.'/.', $dest.'/'],
+                new ExecOptionsDTO(
+                    timeout: $control?->remainingTimeoutSeconds(),
+                    cancellationToken: $control?->cancellationToken,
+                ),
+            );
+            if ($result->cancelled || $result->timedOut) {
+                return $result;
+            }
+            if (0 !== $result->exitCode) {
+                return false;
+            }
 
             return true;
         } catch (\Throwable) {
@@ -552,30 +583,6 @@ final class WorktreeManager
             // Non-fatal: extensions vendor is a developer-convenience; the worker
             // can run composer install manually or fall back. Do not hard-fail here.
             return false;
-        }
-    }
-
-    private function recursiveCopy(string $source, string $dest, ?InvocationControl $control = null): void
-    {
-        if (!is_dir($dest)) {
-            mkdir($dest, 0o755, true);
-        }
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($source, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::SELF_FIRST
-        );
-        foreach ($iterator as $item) {
-            if (null !== $control && $control->isInterrupted()) {
-                throw new \RuntimeException('Copy interrupted.');
-            }
-            $target = $dest.\DIRECTORY_SEPARATOR.$iterator->getSubPathname();
-            if ($item->isDir()) {
-                if (!is_dir($target)) {
-                    mkdir($target, 0o755, true);
-                }
-            } elseif (!copy($item->getPathname(), $target)) {
-                throw new \RuntimeException('Copy failed: '.$item->getPathname());
-            }
         }
     }
 
