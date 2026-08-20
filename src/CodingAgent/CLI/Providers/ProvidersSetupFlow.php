@@ -223,7 +223,7 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
         if (!isset($this->catalog[$id])) {
             $definition = $this->customDefinition($id);
             if (null !== $definition) {
-                // Preserve full custom definition; only flip enabled.
+                // Preserve wizard-defined fields; hand-added extras like embeddingsPath are reset on rewrite.
                 $this->writeCustomDefinition($definition, enabled: false);
                 $this->enabledThisRun[$id] = false;
                 $this->wroteSomething = true;
@@ -255,7 +255,7 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
         }
 
         $this->settingsWriter->remove($this->layer, $this->cwd, 'ai.providers.'.$id);
-        unset($this->enabledThisRun[$id], $this->customDefinitionsThisRun[$id], $this->removedCustomIds[$id]);
+        unset($this->enabledThisRun[$id], $this->customDefinitionsThisRun[$id]);
         $this->removedCustomIds[$id] = true;
         $this->wroteSomething = true;
         $this->configured = array_values(array_filter(
@@ -284,6 +284,7 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
         bool $supportsDeveloperRole,
         string $thinkingFormat,
     ): void {
+        // ponytail: hand-edited ids that fail the regex make Edit loop at the last step; escape is Remove + re-add.
         $this->validateCustomId($id);
         $id = strtolower(trim($id));
         $baseUrl = rtrim(trim($baseUrl), '/');
@@ -462,21 +463,12 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
     /**
      * @return list<string>
      */
-    /**
-     * @return list<string>
-     */
     private function customProviderIds(): array
     {
         $ids = [];
 
         foreach (array_keys($this->customDefinitionsThisRun) as $id) {
             if (!isset($this->removedCustomIds[$id]) && !isset($this->catalog[$id])) {
-                $ids[$id] = true;
-            }
-        }
-
-        foreach ($this->enabledThisRun as $id => $_) {
-            if (!isset($this->catalog[$id]) && !isset($this->removedCustomIds[$id])) {
                 $ids[$id] = true;
             }
         }

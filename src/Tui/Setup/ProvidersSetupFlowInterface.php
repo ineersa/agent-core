@@ -55,7 +55,7 @@ interface ProvidersSetupFlowInterface
 
     public function enableApiKey(string $id, string $apiKey): void;
 
-    /** Sparse enabled:true for an existing custom provider. */
+    /** Re-enable a saved custom provider via full-definition rewrite (sparse {enabled:true} would wipe its config). */
     public function enableCustom(string $id): void;
 
     public function disable(string $id): void;
