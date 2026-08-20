@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Setup;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SubmitEvent;
+use Symfony\Component\Tui\Terminal\Terminal;
 use Symfony\Component\Tui\Terminal\TerminalInterface;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\InputWidget;
@@ -96,7 +97,7 @@ final class SetupScreen
 
     public function run(?TerminalInterface $terminal = null): int
     {
-        $this->tui = new Tui(terminal: $terminal);
+        $this->tui = new Tui(terminal: $terminal ?? new Terminal());
         $this->mount($this->tui);
         $this->tui->run();
 
