@@ -351,7 +351,7 @@ final class SessionPickerController
         $sessionId = (string) $selected['value'];
         $activeSessionId = $this->screen->sessionId();
         if ('' !== $activeSessionId && $sessionId === $activeSessionId) {
-            $this->screen->setStatus('error', 'Cannot delete the current/active session');
+            $this->screen->setStatus('error', $this->screen->theme()->error('Cannot delete the current/active session'));
             $this->screen->requestRender(true);
 
             return;
@@ -374,8 +374,8 @@ final class SessionPickerController
         }
 
         $listWidget->setItems([
-            ['value' => self::CONFIRM_YES, 'label' => "\u{2713} Yes"],
-            ['value' => self::CONFIRM_NO, 'label' => "\u{2717} No"],
+            ['value' => self::CONFIRM_YES, 'label' => $this->screen->theme()->color(ThemeColorEnum::Success, "\u{2713} Yes")],
+            ['value' => self::CONFIRM_NO, 'label' => $this->screen->theme()->color(ThemeColorEnum::Error, "\u{2717} No")],
         ]);
         $this->screen->requestRender(true);
     }
@@ -408,7 +408,10 @@ final class SessionPickerController
             $this->sessionStore->deleteSession($sessionId);
         } catch (\RuntimeException) {
             $this->restoreSessionList($listWidget);
-            $this->screen->setStatus('error', \sprintf('Session #%s no longer exists', $sessionId));
+            $this->screen->setStatus(
+                'error',
+                $this->screen->theme()->error(\sprintf('Session #%s no longer exists', $sessionId)),
+            );
             $this->screen->requestRender(true);
 
             return;

@@ -110,7 +110,7 @@ final class TuiSessionPickerDeleteVirtualTest extends IsolatedKernelTestCase
             $screen = $harness->plainScreenText();
             $this->assertSame(
                 'Cannot delete the current/active session',
-                $harness->screen()->statusEntries()['error'] ?? null,
+                $this->plainStatus($harness->screen()->statusEntries()['error'] ?? null),
             );
             $this->assertStringNotContainsString('Delete session #'.$activeId, $screen);
             $this->assertTrue($this->store->exists($activeId));
@@ -192,7 +192,7 @@ final class TuiSessionPickerDeleteVirtualTest extends IsolatedKernelTestCase
             $this->assertFalse($this->store->exists($deleteId));
             $this->assertSame(
                 'Session #'.$deleteId.' no longer exists',
-                $harness->screen()->statusEntries()['error'] ?? null,
+                $this->plainStatus($harness->screen()->statusEntries()['error'] ?? null),
             );
             $this->assertStringContainsString('d deletes', $harness->plainScreenText());
             $this->assertStringContainsString('#'.$activeId.' — Active keep', $harness->plainScreenText());
@@ -270,5 +270,14 @@ final class TuiSessionPickerDeleteVirtualTest extends IsolatedKernelTestCase
         }
 
         $this->fail('Failed to highlight session '.$sessionId);
+    }
+
+    private function plainStatus(?string $status): ?string
+    {
+        if (null === $status) {
+            return null;
+        }
+
+        return preg_replace('/\e\[[0-9;]*m/', '', $status);
     }
 }
