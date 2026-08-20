@@ -81,40 +81,11 @@ final class SetupScreen
         // Footer stays chrome; applyPhaseLayout re-adds it last so list/input never sink below it.
         $tui->add($this->footerWidget);
 
-        $this->listWidget->onSelect(function (SelectEvent $event): void {
-            $value = $event->getValue();
-            if ('' === $value) {
-                return;
-            }
-            $this->onListSelect($value);
-        });
-        $this->listWidget->onCancel(function (CancelEvent $_): void {
-            // Esc: exit from picker/summary; back to picker from every other list phase.
-            if (\in_array($this->phase, [self::PHASE_PICKER, self::PHASE_SUMMARY], true)) {
-                $this->finishSuccess();
-            } else {
-                $this->showPicker();
-            }
-        });
-        $this->inputWidget->onSubmit(function (SubmitEvent $_): void {
-            $this->onInputSubmit(trim($this->inputWidget->getValue()));
-        });
-        $this->inputWidget->onCancel(function (CancelEvent $_): void {
-            $this->showPicker();
-        });
-
-        $quit = function (string $data): bool {
-            // Ctrl+D is delete_char_forward on InputWidget by default — steal it before widget keybindings.
-            if ("\x04" === $data) {
-                $this->finishSuccess();
-
-                return true;
-            }
-
-            return false;
-        };
-        $this->listWidget->onInput($quit);
-        $this->inputWidget->onInput($quit);
+        // Listeners live on the widget and are wiped by AbstractWidget::detach()
+        // whenever applyPhaseLayout() removes+re-adds. Wire once here; re-wire
+        // after each real detach in applyPhaseLayout().
+        $this->wireListListeners();
+        $this->wireInputListeners();
 
         $this->showPicker();
     }
@@ -161,6 +132,49 @@ final class SetupScreen
     public function errorText(): string
     {
         return $this->errorWidget->getText();
+    }
+
+    private function wireListListeners(): void
+    {
+        $this->listWidget->onSelect(function (SelectEvent $event): void {
+            $value = $event->getValue();
+            if ('' === $value) {
+                return;
+            }
+            $this->onListSelect($value);
+        });
+        $this->listWidget->onCancel(function (CancelEvent $_): void {
+            // Esc: exit from picker/summary; back to picker from every other list phase.
+            if (\in_array($this->phase, [self::PHASE_PICKER, self::PHASE_SUMMARY], true)) {
+                $this->finishSuccess();
+            } else {
+                $this->showPicker();
+            }
+        });
+        $this->listWidget->onInput($this->quitOnCtrlD(...));
+    }
+
+    private function wireInputListeners(): void
+    {
+        $this->inputWidget->onSubmit(function (SubmitEvent $_): void {
+            $this->onInputSubmit(trim($this->inputWidget->getValue()));
+        });
+        $this->inputWidget->onCancel(function (CancelEvent $_): void {
+            $this->showPicker();
+        });
+        $this->inputWidget->onInput($this->quitOnCtrlD(...));
+    }
+
+    private function quitOnCtrlD(string $data): bool
+    {
+        // Ctrl+D is delete_char_forward on InputWidget by default — steal it before widget keybindings.
+        if ("\x04" === $data) {
+            $this->finishSuccess();
+
+            return true;
+        }
+
+        return false;
     }
 
     private function onListSelect(string $value): void
@@ -771,15 +785,26 @@ final class SetupScreen
 
     private function applyPhaseLayout(): void
     {
+        // ContainerWidget::remove → WidgetTree::detach → AbstractWidget::detach()
+        // clears $listeners. Re-wire after add only when listeners are gone — covers
+        // (a) this remove() just detached the widget, and (b) a prior phase left it
+        // detached (e.g. list wiped on enter-input, then re-added on leave-input).
+        // Skipping when listeners remain avoids double-registration on first mount.
         $this->tui->remove($this->listWidget);
         $this->tui->remove($this->inputWidget);
         $this->tui->remove($this->footerWidget);
         if (self::PHASE_INPUT === $this->phase) {
             $this->tui->add($this->inputWidget);
+            if (!$this->inputWidget->hasListeners(SubmitEvent::class)) {
+                $this->wireInputListeners();
+            }
         } else {
             $this->inputWidget->setPrompt('');
             $this->inputWidget->setValue('');
             $this->tui->add($this->listWidget);
+            if (!$this->listWidget->hasListeners(SelectEvent::class)) {
+                $this->wireListListeners();
+            }
         }
         // Always re-add last so the keybind line stays at the bottom.
         $this->tui->add($this->footerWidget);

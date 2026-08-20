@@ -104,6 +104,78 @@ final class SetupScreenVirtualRenderTest extends TestCase
     }
 
     #[Test]
+    public function realEnterAdvancesCustomUrlAfterPhaseRemount(): void
+    {
+        // Regression: AbstractWidget::detach() wipes onSubmit listeners when
+        // applyPhaseLayout removes+re-adds input between custom steps. Drivers
+        // bypass widgets; this uses the real Tui::handleInput path.
+        $flow = new FakeProvidersSetupFlow();
+        $terminal = new VirtualTerminal(columns: 120, rows: 40);
+        $tui = new Tui(terminal: $terminal);
+        $screen = new SetupScreen($flow);
+        $screen->mount($tui);
+        $tui->start();
+        $tui->requestRender(force: true);
+        $tui->processRender();
+
+        $screen->selectValue('custom');
+        $screen->submitInput('runpod'); // now at custom_url (second input attach)
+        $this->assertSame('input', $screen->phase());
+        $this->assertStringContainsString('Server URL', $this->plain($terminal));
+
+        // Clear the default URL first (ctrl+u = delete_to_line_start), then paste.
+        // Bracketed paste inserts at the cursor; without clearing it would append.
+        $tui->handleInput("\x15");
+        $tui->handleInput("\x1b[200~https://example.com/v1\x1b[201~");
+        $tui->processRender(); // handleInput only requestRender()s; virtual needs flush
+        $this->assertStringContainsString('https://example.com/v1', $this->plain($terminal));
+
+        $tui->handleInput("\r");
+
+        $this->assertSame('input', $screen->phase());
+        $this->assertStringContainsString('Completions path', $this->plain($terminal));
+        $this->assertStringContainsString('Step 3 of 13', $this->plain($terminal));
+    }
+
+    #[Test]
+    public function listEnterSurvivesDetachAndReattachRoundtrip(): void
+    {
+        // list → input (list detached/listeners wiped) → Esc back → list re-added;
+        // Enter must still fire onSelect after re-wire.
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal, $tui] = $this->mount($flow);
+
+        $screen->selectValue('custom');
+        $this->assertSame('input', $screen->phase());
+
+        $tui->handleInput("\x1b"); // Esc back to picker (list re-attached)
+        $this->assertSame('picker', $screen->phase());
+
+        $tui->handleInput("\r"); // first row = zai → api_where choice
+        $this->assertSame('choice', $screen->phase());
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('environment variable', $text);
+        $this->assertStringContainsString('Esc back · Ctrl+D quit', $text);
+    }
+
+    #[Test]
+    public function ctrlDQuitWorksAfterInputPhaseTransition(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal, $tui] = $this->mount($flow);
+
+        $screen->selectValue('custom');
+        $screen->submitInput('runpod'); // remounts input (listeners wiped then re-wired)
+        $this->assertSame('input', $screen->phase());
+
+        $tui->handleInput("\x04");
+
+        $this->assertTrue($screen->finished());
+        $this->assertSame('summary', $screen->phase());
+        $this->assertStringContainsString('AI Provider Setup', $this->plain($terminal));
+    }
+
+    #[Test]
     public function enablingOauthShowsEnabledBadgeOnNextPicker(): void
     {
         $flow = new FakeProvidersSetupFlow();
