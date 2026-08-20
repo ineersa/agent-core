@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\CLI\Providers;
 use Ineersa\CodingAgent\CLI\Providers\ProvidersSetupFlow;
 use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
+use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -349,6 +350,76 @@ YAML);
         $flow->setDefaultModel('deepseek/deepseek-v4-pro');
         $this->assertSame('deepseek/deepseek-v4-pro', $flow->currentDefaultModel());
         $this->assertSame('deepseek/deepseek-v4-pro', $this->parseUserSettings()['ai']['default_model'] ?? null);
+    }
+
+    #[Test]
+    public function seedsConfiguredModelRefsFromAlreadyEnabledAppConfigProviders(): void
+    {
+        $flow = $this->createFlow(
+            ai: new AiConfig(
+                providers: [
+                    'zai' => new AiProviderConfig(
+                        id: 'zai',
+                        enabled: true,
+                        models: [
+                            'glm-5.3' => new AiModelDefinition(id: 'glm-5.3'),
+                            'glm-5' => new AiModelDefinition(id: 'glm-5'),
+                        ],
+                    ),
+                ],
+            ),
+        );
+
+        $this->assertSame(['zai/glm-5.3', 'zai/glm-5'], $flow->configuredModelRefs());
+    }
+
+    #[Test]
+    public function seededConfiguredProvidersDoNotFabricateAuthHints(): void
+    {
+        $flow = $this->createFlow(
+            ai: new AiConfig(
+                providers: [
+                    'grok-cli' => new AiProviderConfig(
+                        id: 'grok-cli',
+                        type: 'grok',
+                        enabled: true,
+                        models: [
+                            'grok-composer-2.5-fast' => new AiModelDefinition(id: 'grok-composer-2.5-fast'),
+                        ],
+                    ),
+                ],
+            ),
+        );
+
+        $this->assertSame(['grok-cli/grok-composer-2.5-fast'], $flow->configuredModelRefs());
+        $this->assertSame([], $flow->pendingAuthCommands());
+    }
+
+    #[Test]
+    public function disablingSeededProviderWarnsWhenItOwnsDefaultModel(): void
+    {
+        $flow = $this->createFlow(
+            ai: new AiConfig(
+                defaultModel: 'zai/glm-5.3',
+                providers: [
+                    'zai' => new AiProviderConfig(
+                        id: 'zai',
+                        enabled: true,
+                        models: [
+                            'glm-5.3' => new AiModelDefinition(id: 'glm-5.3'),
+                        ],
+                    ),
+                ],
+            ),
+        );
+
+        $this->assertContains('zai/glm-5.3', $flow->configuredModelRefs());
+        $warning = $flow->defaultModelWarningFor('zai');
+        $this->assertNotNull($warning);
+        $this->assertStringContainsString('Your default model "zai/glm-5.3" is now unavailable', $warning);
+
+        $flow->disable('zai');
+        $this->assertSame([], $flow->configuredModelRefs());
     }
 
     #[Test]

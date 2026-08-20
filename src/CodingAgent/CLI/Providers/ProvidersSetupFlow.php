@@ -60,6 +60,7 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
         private readonly string $cwd,
     ) {
         $this->catalog = $this->loadCatalogProviders();
+        $this->seedConfiguredFromAppConfig();
     }
 
     public static function for(
@@ -533,6 +534,41 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
             'apikey' => 'needs an API key',
             default => 'needs setup',
         };
+    }
+
+    /**
+     * Seed $configured from AppConfig so "Set default model" and disable warnings
+     * work when the user opens setup with providers already enabled in settings.
+     * authCommand stays null — pendingAuthCommands() must remain this-run-only.
+     */
+    private function seedConfiguredFromAppConfig(): void
+    {
+        $providers = $this->appConfig->ai?->providers;
+        if (!\is_array($providers)) {
+            return;
+        }
+
+        foreach ($providers as $id => $provider) {
+            if (!\is_string($id) || '' === $id || !$provider->enabled) {
+                continue;
+            }
+
+            $models = [];
+            foreach ($provider->models as $modelId => $_) {
+                if (\is_string($modelId) && '' !== $modelId) {
+                    $models[] = $modelId;
+                }
+            }
+            if ([] === $models) {
+                continue;
+            }
+
+            $this->configured[] = [
+                'id' => $id,
+                'models' => $models,
+                'authCommand' => null,
+            ];
+        }
     }
 
     /**
