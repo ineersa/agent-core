@@ -61,6 +61,12 @@ final class AppConfig
          * never from ambient getcwd(). Set during DI factory construction.
          */
         public string $cwd = '',
+        /**
+         * Configured ai.default_model that was unavailable at boot.
+         * When set, {@see $ai} already carries the first-available fallback.
+         * Null when the configured default was missing, empty, or available.
+         */
+        public ?string $staleDefaultModel = null,
     ) {
     }
 
@@ -83,11 +89,7 @@ final class AppConfig
         ValidatorInterface $validator,
     ): self {
         $data = $loader->load($resources->getDefaultsPath(), $cwd)->effective;
-        $ai = AiConfig::optionalFromArray($data);
-
-        $catalog = null !== $ai ? new HatfieldModelCatalog($ai) : null;
-
-        self::validateDefaultModel($ai, $catalog);
+        [$ai, $catalog, $staleDefaultModel] = self::resolveAiDefaultModel($data);
 
         return new self(
             tui: $denormalizer->denormalize(
@@ -132,6 +134,7 @@ final class AppConfig
             raw: $data,
             catalog: $catalog,
             cwd: $cwd,
+            staleDefaultModel: $staleDefaultModel,
         );
     }
 
@@ -161,23 +164,31 @@ final class AppConfig
     }
 
     /**
-     * Validate that ai.default_model (if set) references a configured,
-     * enabled provider/model.
+     * Parse ai config, reject malformed default_model format, and fall back
+     * to the first available model when the configured default is unavailable.
      *
-     * Fails loudly at boot time with actionable error messages so
-     * misconfiguration is caught before the first LLM call.
+     * Mutates $data['ai']['default_model'] on fallback so AiConfig/catalog and
+     * every downstream consumer see one effective default. Returns the stale
+     * configured ref for the TUI startup warning; null when no fallback ran.
+     *
+     * Zero-provider boots no longer throw here — AgentCommand's enabled-provider
+     * gate owns that failure with the providers:setup hint.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return array{0: ?AiConfig, 1: ?HatfieldModelCatalog, 2: ?string}
      */
-    private static function validateDefaultModel(
-        ?AiConfig $ai,
-        ?HatfieldModelCatalog $catalog,
-    ): void {
+    private static function resolveAiDefaultModel(array &$data): array
+    {
+        $ai = AiConfig::optionalFromArray($data);
         if (null === $ai) {
-            return;
+            return [null, null, null];
         }
 
+        $catalog = new HatfieldModelCatalog($ai);
         $defaultModel = $ai->defaultModel;
         if (null === $defaultModel || '' === $defaultModel) {
-            return;
+            return [$ai, $catalog, null];
         }
 
         $ref = AiModelReference::tryParse($defaultModel);
@@ -185,19 +196,23 @@ final class AppConfig
             throw new \RuntimeException(\sprintf('Configured ai.default_model "%s" is invalid. Expected format: provider/model.', $defaultModel));
         }
 
-        if (null === $catalog || !$catalog->isAvailable($ref)) {
-            $available = null !== $catalog ? $catalog->allModels() : [];
-
-            if ([] === $available) {
-                throw new \RuntimeException(\sprintf('Configured ai.default_model "%s" references an unavailable provider/model. No enabled providers or models are configured under ai.providers. Configure at least one provider/model in ~/.hatfield/settings.yaml or project .hatfield/settings.yaml, or remove ai.default_model.', $defaultModel));
-            }
-
-            $modelStrings = array_map(
-                static fn (AiModelReference $m): string => $m->toString(),
-                $available,
-            );
-
-            throw new \RuntimeException(\sprintf('Configured ai.default_model "%s" is not available. Available models: %s. Correct ai.default_model or remove it to use the first available model.', $defaultModel, implode(', ', $modelStrings)));
+        if ($catalog->isAvailable($ref)) {
+            return [$ai, $catalog, null];
         }
+
+        $fallback = $catalog->firstAvailableModel();
+        if (null === $fallback) {
+            // Keep the configured (unavailable) default; AgentCommand gate fires.
+            return [$ai, $catalog, $defaultModel];
+        }
+
+        if (!isset($data['ai']) || !\is_array($data['ai'])) {
+            $data['ai'] = [];
+        }
+        $data['ai']['default_model'] = $fallback->toString();
+        $ai = AiConfig::optionalFromArray($data);
+        $catalog = null !== $ai ? new HatfieldModelCatalog($ai) : null;
+
+        return [$ai, $catalog, $defaultModel];
     }
 }

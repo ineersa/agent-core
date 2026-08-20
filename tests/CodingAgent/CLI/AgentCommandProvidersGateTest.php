@@ -96,8 +96,46 @@ final class AgentCommandProvidersGateTest extends TestCase
         );
     }
 
-    private function createCommand(bool $enabled): AgentCommand
+    #[Test]
+    public function zeroEnabledProvidersWithStaleDefaultModelStillFailsWithSetupHint(): void
     {
+        $command = $this->createCommand(
+            enabled: false,
+            defaultModel: 'openai/gpt-5',
+            staleDefaultModel: 'openai/gpt-5',
+        );
+        $output = new BufferedOutput();
+
+        $status = $command(
+            headless: false,
+            controller: false,
+            transport: 'process',
+            prompt: '',
+            resume: '',
+            model: '',
+            reasoning: '',
+            cwd: '',
+            noSkills: false,
+            skillsPath: [],
+            skills: [],
+            tools: '',
+            toolsExcluded: '',
+            promptTemplate: [],
+            noPromptTemplates: false,
+            output: $output,
+        );
+
+        $this->assertSame(Command::FAILURE, $status);
+        $printed = $output->fetch();
+        $this->assertStringContainsString('No AI providers configured', $printed);
+        $this->assertStringContainsString('providers:setup', $printed);
+    }
+
+    private function createCommand(
+        bool $enabled,
+        ?string $defaultModel = null,
+        ?string $staleDefaultModel = null,
+    ): AgentCommand {
         $provider = new AiProviderConfig(
             id: 'zai',
             enabled: $enabled,
@@ -110,8 +148,12 @@ final class AgentCommandProvidersGateTest extends TestCase
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),
             logging: new LoggingConfig(logDir: '/tmp'),
-            ai: new AiConfig(providers: ['zai' => $provider]),
+            ai: new AiConfig(
+                defaultModel: $defaultModel,
+                providers: ['zai' => $provider],
+            ),
             cwd: '/tmp',
+            staleDefaultModel: $staleDefaultModel,
         );
 
         return new AgentCommand(

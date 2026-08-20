@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\LoadedResources;
 
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiscovery;
 use Ineersa\CodingAgent\Config\Ai\AiCatalog;
+use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceConflictDTO;
@@ -30,6 +31,7 @@ final readonly class LoadedResourcesSummaryBuilder implements LoadedResourcesSum
         private ThemeLoadedResourcesProviderInterface $themeLoadedResourcesProvider,
         private ExtensionManager $extensionManager,
         private ?AiCatalog $aiCatalog = null,
+        private ?AppConfig $appConfig = null,
     ) {
     }
 
@@ -47,6 +49,11 @@ final readonly class LoadedResourcesSummaryBuilder implements LoadedResourcesSum
         $catalogSection = $this->buildAiCatalogSection();
         if (null !== $catalogSection) {
             $sections[] = $catalogSection;
+        }
+
+        $defaultModelSection = $this->buildDefaultModelSection();
+        if (null !== $defaultModelSection) {
+            $sections[] = $defaultModelSection;
         }
 
         return new LoadedResourcesSummaryDTO($sections);
@@ -70,6 +77,35 @@ final readonly class LoadedResourcesSummaryBuilder implements LoadedResourcesSum
                     winnerPath: '',
                     loserPath: '',
                     message: 'update available — run `hatfield providers:update`',
+                ),
+            ],
+        );
+    }
+
+    private function buildDefaultModelSection(): ?LoadedResourceSectionDTO
+    {
+        $stale = $this->appConfig?->staleDefaultModel;
+        if (null === $stale || '' === $stale) {
+            return null;
+        }
+
+        // appConfig is non-null here: staleDefaultModel can only be set when it is.
+        $effective = $this->appConfig->ai?->defaultModel;
+        $message = null !== $effective && '' !== $effective
+            ? \sprintf('unavailable — using %s', $effective)
+            : 'unavailable';
+
+        // Message-only conflict branch → "⚠ Default model <stale>: unavailable — using <effective>"
+        return new LoadedResourceSectionDTO(
+            key: 'default-model',
+            label: 'Default model',
+            items: [],
+            conflicts: [
+                new LoadedResourceConflictDTO(
+                    name: $stale,
+                    winnerPath: '',
+                    loserPath: '',
+                    message: $message,
                 ),
             ],
         );
