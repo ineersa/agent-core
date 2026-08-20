@@ -43,6 +43,8 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringNotContainsString('not set up', $text);
         $this->assertSame('picker', $screen->phase());
         $this->assertStringContainsString('↑/↓ select · Enter confirm · Esc exit · Ctrl+D quit', $text);
+        $this->assertStringContainsString('┌', $text); // bordered panel
+        $this->assertStringContainsString('│', $text);
     }
 
     #[Test]
@@ -212,10 +214,29 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $text = $this->plain($terminal);
         $this->assertStringContainsString('Add your own server', $text);
         $this->assertStringContainsString('Step 1 of 13 — Provider id', $text);
-        $this->assertStringContainsString('Provider id (slug)', $text);
+        $this->assertStringContainsString('A short name to identify this provider in menus and settings.', $text);
+        $this->assertStringContainsString('Example: runpod', $text);
         $this->assertStringNotContainsString('Other server', $text);
         $this->assertStringNotContainsString('Done', $text);
         $this->assertSame('input', $screen->phase());
+    }
+
+    #[Test]
+    public function customUrlStepShowsHelpAndExampleInsidePanel(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('custom');
+        $screen->submitInput('runpod');
+
+        $text = $this->plain($terminal);
+        $this->assertSame('input', $screen->phase());
+        $this->assertStringContainsString('Step 2 of 13 — Server URL', $text);
+        $this->assertStringContainsString('The address of the API server Hatfield will talk to.', $text);
+        $this->assertStringContainsString('Example: https://abc-123.proxy.runpod.net', $text);
+        $this->assertStringContainsString('┌', $text);
+        $this->assertStringContainsString('│', $text);
     }
 
     #[Test]
@@ -244,7 +265,8 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertSame('input', $screen->phase());
         $text = $this->plain($terminal);
         $this->assertStringContainsString('Step 13 of 13 — Reasoning format', $text);
-        $this->assertStringContainsString('Reasoning format label (blank = none)', $text);
+        $this->assertStringContainsString('Label the server uses to return thinking output, if any.', $text);
+        $this->assertStringContainsString('Example: (blank for none)', $text);
     }
 
     #[Test]

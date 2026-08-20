@@ -7,11 +7,14 @@ namespace Ineersa\Tui\Setup;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SubmitEvent;
+use Symfony\Component\Tui\Style\Border;
 use Symfony\Component\Tui\Style\Color;
+use Symfony\Component\Tui\Style\Padding;
 use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Terminal\Terminal;
 use Symfony\Component\Tui\Terminal\TerminalInterface;
 use Symfony\Component\Tui\Tui;
+use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\InputWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -36,6 +39,7 @@ final class SetupScreen
 
     private Tui $tui;
     private TextWidget $titleWidget;
+    private ContainerWidget $panelWidget;
     private TextWidget $stepWidget;
     private TextWidget $hintWidget;
     private TextWidget $errorWidget;
@@ -58,12 +62,26 @@ final class SetupScreen
         private readonly ProvidersSetupFlowInterface $flow,
     ) {
         $this->titleWidget = new TextWidget('AI Provider Setup');
+        $this->titleWidget->setStyle(new Style(bold: true, color: Color::named('cyan')));
+
+        $this->panelWidget = new ContainerWidget();
+        $this->panelWidget->setStyle(new Style(
+            border: Border::all(1),
+            padding: Padding::xy(2, 1),
+            gap: 1,
+        ));
+
         $this->stepWidget = new TextWidget('');
         $this->hintWidget = new TextWidget('Hatfield needs at least one AI provider to run.');
         $this->errorWidget = new TextWidget('');
         $this->footerWidget = new TextWidget('');
         $this->listWidget = new SelectListWidget([], maxVisible: 12);
         $this->inputWidget = new InputWidget();
+
+        // Static panel chrome — list/input are mounted by applyPhaseLayout().
+        $this->panelWidget->add($this->stepWidget);
+        $this->panelWidget->add($this->hintWidget);
+        $this->panelWidget->add($this->errorWidget);
     }
 
     public function mount(Tui $tui): void
@@ -75,10 +93,8 @@ final class SetupScreen
         $this->tui = $tui;
 
         $tui->add($this->titleWidget);
-        $tui->add($this->stepWidget);
-        $tui->add($this->hintWidget);
-        $tui->add($this->errorWidget);
-        // Footer stays chrome; applyPhaseLayout re-adds it last so list/input never sink below it.
+        $tui->add($this->panelWidget);
+        // Footer stays root chrome below the panel.
         $tui->add($this->footerWidget);
 
         // Listeners are wired in applyPhaseLayout() after each add — remove()
@@ -758,7 +774,10 @@ final class SetupScreen
         $this->formKind = $kind;
         $this->phase = self::PHASE_INPUT;
         $this->applyChrome();
-        $this->hintWidget->setText($prompt);
+        // Custom wizard help/example come from applyChrome(); other inputs keep $prompt.
+        if (!$this->isCustomWizardKind($kind)) {
+            $this->hintWidget->setText($prompt);
+        }
         $this->inputWidget->setPrompt('> ');
         $this->inputWidget->setValue($default);
         $this->refreshError();
@@ -786,20 +805,18 @@ final class SetupScreen
         // after the add that mounts the active widget — at add() time the widget
         // was either just detached (listeners wiped) or never attached (never
         // wired, since wiring only happens here).
-        $this->tui->remove($this->listWidget);
-        $this->tui->remove($this->inputWidget);
-        $this->tui->remove($this->footerWidget);
+        $this->panelWidget->remove($this->listWidget);
+        $this->panelWidget->remove($this->inputWidget);
         if (self::PHASE_INPUT === $this->phase) {
-            $this->tui->add($this->inputWidget);
+            $this->panelWidget->add($this->inputWidget);
             $this->wireInputListeners();
         } else {
             $this->inputWidget->setPrompt('');
             $this->inputWidget->setValue('');
-            $this->tui->add($this->listWidget);
+            $this->panelWidget->add($this->listWidget);
             $this->wireListListeners();
         }
-        // Always re-add last so the keybind line stays at the bottom.
-        $this->tui->add($this->footerWidget);
+        // Footer stays root chrome below the panel (already mounted in mount()).
     }
 
     private function refreshFooter(): void
@@ -817,12 +834,106 @@ final class SetupScreen
     {
         if ($this->isCustomWizardKind($this->formKind)) {
             $this->titleWidget->setText('Add your own server');
-            $this->stepWidget->setText($this->customStepHeader($this->formKind));
+            $this->titleWidget->setStyle(new Style(bold: true, color: Color::named('cyan')));
+            $this->stepWidget->setText(
+                (new Style(dim: true))->apply($this->customStepHeader($this->formKind))
+            );
+            $this->hintWidget->setText($this->formatStepHelp($this->formKind));
 
             return;
         }
         $this->titleWidget->setText('AI Provider Setup');
+        $this->titleWidget->setStyle(new Style(bold: true, color: Color::named('cyan')));
         $this->stepWidget->setText('');
+    }
+
+    private function formatStepHelp(string $kind): string
+    {
+        [$help, $example] = $this->customStepHelp($kind);
+        $lines = [$help];
+        if ('' !== $example) {
+            $lines[] = (new Style(dim: true))->apply('Example: '.$example);
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * @return array{0: string, 1: string} help text + optional example (empty = none)
+     */
+    private function customStepHelp(string $kind): array
+    {
+        return match ($kind) {
+            'custom_id' => [
+                'A short name to identify this provider in menus and settings.',
+                'runpod',
+            ],
+            'custom_url' => [
+                'The address of the API server Hatfield will talk to.',
+                'https://abc-123.proxy.runpod.net',
+            ],
+            'custom_path' => [
+                'Where the server accepts chat requests. Nearly all OpenAI-compatible servers use /v1/chat/completions — keep the default unless yours differs.',
+                '/v1/chat/completions',
+            ],
+            'custom_want_key' => [
+                'Whether the server requires an API key to authenticate.',
+                '',
+            ],
+            'api_where' => [
+                'How Hatfield should get the key: read it from an environment variable (recommended — stays out of files), or you type it in now.',
+                'OPENAI_API_KEY',
+            ],
+            'api_env_name' => [
+                'Name of the environment variable holding the API key.',
+                'RUNPOD_API_KEY',
+            ],
+            'api_raw_key' => [
+                'The API key for this server. It will be stored in your settings file.',
+                '(leave blank if none)',
+            ],
+            'api_raw_confirm' => [
+                'Type the same API key again to confirm.',
+                '',
+            ],
+            'custom_model_id' => [
+                'The model\'s id exactly as the server expects it in requests.',
+                'llama-3.3-70b',
+            ],
+            'custom_model_name' => [
+                'A friendly name shown in the model picker. Defaults to the id.',
+                'Llama 3.3 70B',
+            ],
+            'custom_context' => [
+                'How much text (tokens) the model can read at once. Bigger = longer conversations it can see. Check your model\'s docs; 128000 is a safe default.',
+                '128000',
+            ],
+            'custom_max_tokens' => [
+                'The most text the model can produce in one reply.',
+                '8192',
+            ],
+            'custom_modalities' => [
+                'What kinds of input the model accepts: text only, or text and images.',
+                '',
+            ],
+            'custom_reasoning' => [
+                'Whether this model shows its thinking before answering.',
+                '',
+            ],
+            'custom_another_model' => [
+                'Add another model now, or finish this provider.',
+                '',
+            ],
+            'custom_developer_role' => [
+                'Whether the server accepts \'developer\' role messages. Some clones only accept \'system\' — pick No then.',
+                'No, if unsure',
+            ],
+            'custom_thinking_format' => [
+                'Label the server uses to return thinking output, if any. Leave blank if it doesn\'t.',
+                '(blank for none)',
+            ],
+            default => ['', ''],
+        };
     }
 
     private function isCustomWizardKind(string $kind): bool
