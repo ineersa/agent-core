@@ -38,7 +38,9 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringContainsString('needs an API key', $text);
         $this->assertStringContainsString('log in with your ChatGPT account', $text);
         $this->assertStringContainsString('log in with your xAI account', $text);
-        $this->assertStringContainsString('not set up', $text);
+        $this->assertStringContainsString('✗ disabled', $text);
+        $this->assertStringNotContainsString('(enabled)', $text);
+        $this->assertStringNotContainsString('not set up', $text);
         $this->assertSame('picker', $screen->phase());
     }
 
@@ -54,7 +56,8 @@ final class SetupScreenVirtualRenderTest extends TestCase
 
         $text = $this->plain($terminal);
         $this->assertTrue($flow->isEnabled('grok-cli'));
-        $this->assertStringContainsString('Grok / xAI (enabled)', $text);
+        $this->assertStringContainsString('Grok / xAI', $text);
+        $this->assertStringNotContainsString('Grok / xAI (enabled)', $text);
         $this->assertStringContainsString('✓ enabled', $text);
         $this->assertSame(['auth:grok'], $flow->pendingAuthCommands());
     }
@@ -82,8 +85,30 @@ final class SetupScreenVirtualRenderTest extends TestCase
 
         $screen->selectValue('custom');
         $text = $this->plain($terminal);
+        $this->assertStringContainsString('Add your own server', $text);
+        $this->assertStringContainsString('Step 1 of 13 — Provider id', $text);
         $this->assertStringContainsString('Provider id (slug)', $text);
+        $this->assertStringNotContainsString('Other server', $text);
+        $this->assertStringNotContainsString('Done', $text);
         $this->assertSame('input', $screen->phase());
+    }
+
+    #[Test]
+    public function inputPhaseHidesProviderList(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('deepseek');
+        $this->assertSame('choice', $screen->phase()); // api where
+        $screen->selectValue('env');
+        $this->assertSame('input', $screen->phase());
+
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('Variable name', $text);
+        $this->assertStringNotContainsString('Other server', $text);
+        $this->assertStringNotContainsString('Z.ai (GLM)', $text);
+        $this->assertStringNotContainsString('Done', $text);
     }
 
     #[Test]

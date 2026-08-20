@@ -7,6 +7,8 @@ namespace Ineersa\Tui\Setup;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SubmitEvent;
+use Symfony\Component\Tui\Style\Color;
+use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Terminal\Terminal;
 use Symfony\Component\Tui\Terminal\TerminalInterface;
 use Symfony\Component\Tui\Tui;
@@ -29,8 +31,12 @@ final class SetupScreen
     private const PHASE_INPUT = 'input';
     private const PHASE_SUMMARY = 'summary';
 
+    /** Custom-wizard step count (id→thinking format, with API-key branch collapsed). */
+    private const CUSTOM_STEP_TOTAL = 13;
+
     private Tui $tui;
     private TextWidget $titleWidget;
+    private TextWidget $stepWidget;
     private TextWidget $hintWidget;
     private TextWidget $errorWidget;
     private SelectListWidget $listWidget;
@@ -51,6 +57,7 @@ final class SetupScreen
         private readonly ProvidersSetupFlowInterface $flow,
     ) {
         $this->titleWidget = new TextWidget('AI Provider Setup');
+        $this->stepWidget = new TextWidget('');
         $this->hintWidget = new TextWidget('Hatfield needs at least one AI provider to run.');
         $this->errorWidget = new TextWidget('');
         $this->listWidget = new SelectListWidget([], maxVisible: 12);
@@ -66,10 +73,9 @@ final class SetupScreen
         $this->tui = $tui;
 
         $tui->add($this->titleWidget);
+        $tui->add($this->stepWidget);
         $tui->add($this->hintWidget);
         $tui->add($this->errorWidget);
-        $tui->add($this->listWidget);
-        $tui->add($this->inputWidget);
 
         $this->listWidget->onSelect(function (SelectEvent $event): void {
             $value = $event->getValue();
@@ -554,6 +560,9 @@ final class SetupScreen
     {
         $this->pendingConfirm = 'add_another';
         $this->phase = self::PHASE_CONFIRM;
+        $this->formKind = '';
+        $this->titleWidget->setText('AI Provider Setup');
+        $this->stepWidget->setText('');
         $this->hintWidget->setText($message."\n\nAdd another?");
         $this->showList($this->confirmItems());
     }
@@ -571,6 +580,9 @@ final class SetupScreen
         if ([] !== $refs) {
             $this->pendingConfirm = 'set_default';
             $this->phase = self::PHASE_CONFIRM;
+            $this->formKind = '';
+            $this->titleWidget->setText('AI Provider Setup');
+            $this->stepWidget->setText('');
             $this->hintWidget->setText('Set as your default model?');
             $this->showList($this->confirmItems());
 
@@ -590,6 +602,8 @@ final class SetupScreen
         }
         $this->formKind = 'default_model';
         $this->phase = self::PHASE_CHOICE;
+        $this->titleWidget->setText('AI Provider Setup');
+        $this->stepWidget->setText('');
         $this->hintWidget->setText('Default model');
         $items = [];
         foreach ($refs as $ref) {
@@ -618,6 +632,8 @@ final class SetupScreen
         }
 
         $this->phase = self::PHASE_SUMMARY;
+        $this->titleWidget->setText('AI Provider Setup');
+        $this->stepWidget->setText('');
         $this->hintWidget->setText(implode("\n", $lines));
         $this->showList([
             ['value' => 'ok', 'label' => 'Done'],
@@ -638,6 +654,7 @@ final class SetupScreen
         $this->activeProviderId = null;
         $this->pendingConfirm = null;
         $this->titleWidget->setText('AI Provider Setup');
+        $this->stepWidget->setText('');
         $this->hintWidget->setText('Hatfield needs at least one AI provider to run.');
         $this->showList($this->pickerItems());
     }
@@ -646,6 +663,8 @@ final class SetupScreen
     {
         $id = (string) $this->activeProviderId;
         $this->phase = self::PHASE_ACTION;
+        $this->titleWidget->setText('AI Provider Setup');
+        $this->stepWidget->setText('');
         $this->hintWidget->setText(\sprintf('%s is already enabled. What do you want to do?', $this->labelFor($id)));
         $this->showList($this->actionItems());
     }
@@ -657,10 +676,12 @@ final class SetupScreen
     {
         $items = [];
         foreach ($this->flow->providerRows() as $row) {
+            $enabled = '✓ enabled' === $row['status'];
+            $statusLabel = $enabled ? '✓ enabled' : '✗ disabled';
             $items[] = [
                 'value' => $row['id'],
-                'label' => $row['label'].('✓ enabled' === $row['status'] ? ' (enabled)' : ''),
-                'description' => $row['need'].' · '.$row['status'],
+                'label' => $row['label'],
+                'description' => $row['need'].'  '.$this->colorStatus($statusLabel, $enabled),
             ];
         }
         $items[] = [
@@ -704,11 +725,11 @@ final class SetupScreen
      */
     private function showList(array $items): void
     {
-        $this->inputWidget->setPrompt('');
-        $this->inputWidget->setValue('');
+        $this->applyCustomChromeIfNeeded();
         $this->listWidget->setItems($items);
         $this->listWidget->setSelectedIndex(0);
         $this->refreshError();
+        $this->applyPhaseLayout();
         $this->tui->setFocus($this->listWidget);
         $this->tui->requestRender(force: true);
         $this->tui->processRender();
@@ -718,10 +739,18 @@ final class SetupScreen
     {
         $this->formKind = $kind;
         $this->phase = self::PHASE_INPUT;
+        if ($this->isCustomWizardKind($kind)) {
+            $this->titleWidget->setText('Add your own server');
+            $this->stepWidget->setText($this->customStepHeader($kind));
+        } else {
+            $this->titleWidget->setText('AI Provider Setup');
+            $this->stepWidget->setText('');
+        }
         $this->hintWidget->setText($prompt);
         $this->inputWidget->setPrompt('> ');
         $this->inputWidget->setValue($default);
         $this->refreshError();
+        $this->applyPhaseLayout();
         $this->focusInput();
         $this->tui->requestRender(force: true);
         $this->tui->processRender();
@@ -735,6 +764,78 @@ final class SetupScreen
     private function refreshError(): void
     {
         $this->errorWidget->setText(null !== $this->error && '' !== $this->error ? '⚠ '.$this->error : '');
+    }
+
+    private function applyPhaseLayout(): void
+    {
+        $this->tui->remove($this->listWidget);
+        $this->tui->remove($this->inputWidget);
+        if (self::PHASE_INPUT === $this->phase) {
+            $this->tui->add($this->inputWidget);
+
+            return;
+        }
+
+        $this->inputWidget->setPrompt('');
+        $this->inputWidget->setValue('');
+        $this->tui->add($this->listWidget);
+    }
+
+    private function applyCustomChromeIfNeeded(): void
+    {
+        if (!$this->isCustomWizardKind($this->formKind)) {
+            return;
+        }
+        $this->titleWidget->setText('Add your own server');
+        $this->stepWidget->setText($this->customStepHeader($this->formKind));
+    }
+
+    private function isCustomWizardKind(string $kind): bool
+    {
+        return '' !== $kind && (
+            str_starts_with($kind, 'custom_')
+            || (
+                isset($this->formState['afterKey'])
+                && \in_array($kind, ['api_where', 'api_env_name', 'api_raw_key', 'api_raw_confirm'], true)
+            )
+        );
+    }
+
+    private function customStepHeader(string $kind): string
+    {
+        [$step, $field] = $this->customStepMeta($kind);
+
+        return \sprintf('Step %d of %d — %s', $step, self::CUSTOM_STEP_TOTAL, $field);
+    }
+
+    /**
+     * @return array{0: int, 1: string}
+     */
+    private function customStepMeta(string $kind): array
+    {
+        return match ($kind) {
+            'custom_id' => [1, 'Provider id'],
+            'custom_url' => [2, 'Server URL'],
+            'custom_path' => [3, 'Completions path'],
+            'custom_want_key', 'api_where', 'api_env_name', 'api_raw_key', 'api_raw_confirm' => [4, 'API key'],
+            'custom_model_id' => [5, 'Model id'],
+            'custom_model_name' => [6, 'Display name'],
+            'custom_context' => [7, 'Context window'],
+            'custom_max_tokens' => [8, 'Max output tokens'],
+            'custom_modalities' => [9, 'Modalities'],
+            'custom_reasoning' => [10, 'Reasoning'],
+            'custom_another_model' => [11, 'Another model'],
+            'custom_developer_role' => [12, 'Developer role'],
+            'custom_thinking_format' => [13, 'Reasoning format'],
+            default => [1, 'Setup'],
+        };
+    }
+
+    private function colorStatus(string $label, bool $enabled): string
+    {
+        $style = new Style(color: Color::named($enabled ? 'green' : 'red'));
+
+        return $style->apply($label);
     }
 
     private function labelFor(string $id): string
