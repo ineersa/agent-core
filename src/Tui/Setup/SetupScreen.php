@@ -7,6 +7,8 @@ namespace Ineersa\Tui\Setup;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SubmitEvent;
+use Symfony\Component\Tui\Input\Key;
+use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Style\Color;
 use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Terminal\Terminal;
@@ -39,8 +41,10 @@ final class SetupScreen
     private TextWidget $stepWidget;
     private TextWidget $hintWidget;
     private TextWidget $errorWidget;
+    private TextWidget $footerWidget;
     private SelectListWidget $listWidget;
     private InputWidget $inputWidget;
+    private Keybindings $quitKeybindings;
     private bool $mounted = false;
 
     private string $phase = self::PHASE_PICKER;
@@ -60,8 +64,11 @@ final class SetupScreen
         $this->stepWidget = new TextWidget('');
         $this->hintWidget = new TextWidget('Hatfield needs at least one AI provider to run.');
         $this->errorWidget = new TextWidget('');
+        $this->footerWidget = new TextWidget('');
         $this->listWidget = new SelectListWidget([], maxVisible: 12);
         $this->inputWidget = new InputWidget();
+        // Ctrl+D is delete_char_forward on InputWidget by default — intercept via onInput.
+        $this->quitKeybindings = new Keybindings(['quit' => [Key::ctrl('d')]]);
     }
 
     public function mount(Tui $tui): void
@@ -76,6 +83,8 @@ final class SetupScreen
         $tui->add($this->stepWidget);
         $tui->add($this->hintWidget);
         $tui->add($this->errorWidget);
+        // Footer stays chrome; applyPhaseLayout re-adds it last so list/input never sink below it.
+        $tui->add($this->footerWidget);
 
         $this->listWidget->onSelect(function (SelectEvent $event): void {
             $value = $event->getValue();
@@ -85,7 +94,8 @@ final class SetupScreen
             $this->onListSelect($value);
         });
         $this->listWidget->onCancel(function (CancelEvent $_): void {
-            if (self::PHASE_PICKER === $this->phase) {
+            // Esc: exit from picker/summary; back to picker from every other list phase.
+            if (\in_array($this->phase, [self::PHASE_PICKER, self::PHASE_SUMMARY], true)) {
                 $this->finishSuccess();
             } else {
                 $this->showPicker();
@@ -97,6 +107,19 @@ final class SetupScreen
         $this->inputWidget->onCancel(function (CancelEvent $_): void {
             $this->showPicker();
         });
+
+        $quit = function (string $data): bool {
+            if ($this->quitKeybindings->matches($data, 'quit')) {
+                $this->finishSuccess();
+
+                return true;
+            }
+
+            return false;
+        };
+        // onInput runs before widget keybindings — required so InputWidget does not treat Ctrl+D as delete.
+        $this->listWidget->onInput($quit);
+        $this->inputWidget->onInput($quit);
 
         $this->showPicker();
     }
@@ -143,6 +166,22 @@ final class SetupScreen
     public function errorText(): string
     {
         return $this->errorWidget->getText();
+    }
+
+    public function footerText(): string
+    {
+        return $this->footerWidget->getText();
+    }
+
+    /**
+     * Drive Ctrl+D through the focused widget's onInput quit intercept (virtual tests).
+     */
+    public function pressCtrlD(): void
+    {
+        $focused = self::PHASE_INPUT === $this->phase ? $this->inputWidget : $this->listWidget;
+        $focused->handleInput("\x04");
+        $this->tui->requestRender(force: true);
+        $this->tui->processRender();
     }
 
     private function onListSelect(string $value): void
@@ -729,6 +768,7 @@ final class SetupScreen
         $this->listWidget->setItems($items);
         $this->listWidget->setSelectedIndex(0);
         $this->refreshError();
+        $this->refreshFooter();
         $this->applyPhaseLayout();
         $this->tui->setFocus($this->listWidget);
         $this->tui->requestRender(force: true);
@@ -750,6 +790,7 @@ final class SetupScreen
         $this->inputWidget->setPrompt('> ');
         $this->inputWidget->setValue($default);
         $this->refreshError();
+        $this->refreshFooter();
         $this->applyPhaseLayout();
         $this->focusInput();
         $this->tui->requestRender(force: true);
@@ -770,15 +811,27 @@ final class SetupScreen
     {
         $this->tui->remove($this->listWidget);
         $this->tui->remove($this->inputWidget);
+        $this->tui->remove($this->footerWidget);
         if (self::PHASE_INPUT === $this->phase) {
             $this->tui->add($this->inputWidget);
-
-            return;
+        } else {
+            $this->inputWidget->setPrompt('');
+            $this->inputWidget->setValue('');
+            $this->tui->add($this->listWidget);
         }
+        // Always re-add last so the keybind line stays at the bottom.
+        $this->tui->add($this->footerWidget);
+    }
 
-        $this->inputWidget->setPrompt('');
-        $this->inputWidget->setValue('');
-        $this->tui->add($this->listWidget);
+    private function refreshFooter(): void
+    {
+        $plain = match ($this->phase) {
+            self::PHASE_PICKER => '↑/↓ select · Enter confirm · Esc exit · Ctrl+D quit',
+            self::PHASE_INPUT => 'Enter submit · Esc back · Ctrl+D quit',
+            self::PHASE_SUMMARY => 'Enter close · Esc exit · Ctrl+D quit',
+            default => '↑/↓ select · Enter confirm · Esc back · Ctrl+D quit',
+        };
+        $this->footerWidget->setText((new Style(dim: true))->apply($plain));
     }
 
     private function applyCustomChromeIfNeeded(): void

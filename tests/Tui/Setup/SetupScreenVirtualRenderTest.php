@@ -42,6 +42,59 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringNotContainsString('(enabled)', $text);
         $this->assertStringNotContainsString('not set up', $text);
         $this->assertSame('picker', $screen->phase());
+        $this->assertStringContainsString('↑/↓ select · Enter confirm · Esc exit · Ctrl+D quit', $screen->footerText());
+        $this->assertStringContainsString('↑/↓ select · Enter confirm · Esc exit · Ctrl+D quit', $text);
+    }
+
+    #[Test]
+    public function footerCopyMatchesPhaseForActionInputAndSummary(): void
+    {
+        $flow = new FakeProvidersSetupFlow(enabled: ['zai' => true]);
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('zai');
+        $this->assertSame('action', $screen->phase());
+        $this->assertStringContainsString('Esc back · Ctrl+D quit', $screen->footerText());
+
+        $screen->selectValue('configure');
+        $this->assertSame('choice', $screen->phase()); // api where list
+        $this->assertStringContainsString('Esc back · Ctrl+D quit', $screen->footerText());
+
+        $screen->selectValue('env');
+        $this->assertSame('input', $screen->phase());
+        $this->assertStringContainsString('Enter submit · Esc back · Ctrl+D quit', $screen->footerText());
+        $this->assertStringContainsString('Enter submit · Esc back · Ctrl+D quit', $this->plain($terminal));
+
+        $screen = $this->mount(new FakeProvidersSetupFlow())[0];
+        $screen->selectValue('done');
+        $this->assertSame('summary', $screen->phase());
+        $this->assertStringContainsString('Enter close · Esc exit · Ctrl+D quit', $screen->footerText());
+    }
+
+    #[Test]
+    public function ctrlDFromPickerQuitsCleanly(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen] = $this->mount($flow);
+
+        $screen->pressCtrlD();
+
+        $this->assertTrue($screen->finished());
+        $this->assertSame('summary', $screen->phase());
+    }
+
+    #[Test]
+    public function ctrlDFromInputQuitsCleanly(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen] = $this->mount($flow);
+
+        $screen->selectValue('custom');
+        $this->assertSame('input', $screen->phase());
+        $screen->pressCtrlD();
+
+        $this->assertTrue($screen->finished());
+        $this->assertSame('summary', $screen->phase());
     }
 
     #[Test]
