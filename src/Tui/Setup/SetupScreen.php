@@ -435,7 +435,6 @@ final class SetupScreen
         $this->formState['completionsPath'] = $path;
         $this->formKind = 'custom_want_key';
         $this->phase = self::PHASE_CHOICE;
-        $this->hintWidget->setText('Set an API key?');
         $this->showList([
             ['value' => 'yes', 'label' => 'Yes'],
             ['value' => 'no', 'label' => 'No'],
@@ -449,7 +448,6 @@ final class SetupScreen
             $this->formKind = 'api_where';
             $this->formState['id'] = (string) ($this->formState['id'] ?? 'local');
             $this->phase = self::PHASE_CHOICE;
-            $this->hintWidget->setText('API key: read from an environment variable, or paste it now?');
             // Mark before showList so Step-4 chrome is intentional, not accidental.
             $this->formState['afterKey'] = 'custom_model';
             $this->showList([
@@ -472,7 +470,6 @@ final class SetupScreen
 
     private function beginCustomModel(): void
     {
-        $this->hintWidget->setText('Add at least one model (Enter keeps the default).');
         $this->beginInput('custom_model_id', 'Model id (e.g. llama-3.3-70b)', 'default');
     }
 
@@ -509,7 +506,6 @@ final class SetupScreen
         $this->formState['maxTokens'] = $n;
         $this->formKind = 'custom_modalities';
         $this->phase = self::PHASE_CHOICE;
-        $this->hintWidget->setText('Input modalities');
         $this->showList([
             ['value' => 'text', 'label' => 'text'],
             ['value' => 'text+image', 'label' => 'text+image'],
@@ -521,7 +517,6 @@ final class SetupScreen
         $this->formState['input'] = 'text+image' === $value ? ['text', 'image'] : ['text'];
         $this->formKind = 'custom_reasoning';
         $this->phase = self::PHASE_CHOICE;
-        $this->hintWidget->setText('Supports reasoning/thinking?');
         $this->showList([
             ['value' => 'yes', 'label' => 'Yes'],
             ['value' => 'no', 'label' => 'No'],
@@ -554,7 +549,6 @@ final class SetupScreen
         $this->formState['models'] = $models;
         $this->formKind = 'custom_another_model';
         $this->phase = self::PHASE_CHOICE;
-        $this->hintWidget->setText('Add another model?');
         $this->showList([
             ['value' => 'yes', 'label' => 'Yes'],
             ['value' => 'no', 'label' => 'No'],
@@ -570,7 +564,6 @@ final class SetupScreen
         }
         $this->formKind = 'custom_developer_role';
         $this->phase = self::PHASE_CHOICE;
-        $this->hintWidget->setText('Allow developer-role messages?');
         $this->showList([
             ['value' => 'yes', 'label' => 'Yes'],
             ['value' => 'no', 'label' => 'No'],
