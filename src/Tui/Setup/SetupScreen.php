@@ -7,8 +7,6 @@ namespace Ineersa\Tui\Setup;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SubmitEvent;
-use Symfony\Component\Tui\Input\Key;
-use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Style\Color;
 use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Terminal\Terminal;
@@ -44,7 +42,6 @@ final class SetupScreen
     private TextWidget $footerWidget;
     private SelectListWidget $listWidget;
     private InputWidget $inputWidget;
-    private Keybindings $quitKeybindings;
     private bool $mounted = false;
 
     private string $phase = self::PHASE_PICKER;
@@ -67,14 +64,12 @@ final class SetupScreen
         $this->footerWidget = new TextWidget('');
         $this->listWidget = new SelectListWidget([], maxVisible: 12);
         $this->inputWidget = new InputWidget();
-        // Ctrl+D is delete_char_forward on InputWidget by default — intercept via onInput.
-        $this->quitKeybindings = new Keybindings(['quit' => [Key::ctrl('d')]]);
     }
 
-    public function mount(Tui $tui): void
+    public function mount(Tui $tui): Tui
     {
         if ($this->mounted) {
-            return;
+            return $tui;
         }
         $this->mounted = true;
         $this->tui = $tui;
@@ -109,7 +104,8 @@ final class SetupScreen
         });
 
         $quit = function (string $data): bool {
-            if ($this->quitKeybindings->matches($data, 'quit')) {
+            // Ctrl+D is delete_char_forward on InputWidget by default — steal it before widget keybindings.
+            if ("\x04" === $data) {
                 $this->finishSuccess();
 
                 return true;
@@ -117,11 +113,12 @@ final class SetupScreen
 
             return false;
         };
-        // onInput runs before widget keybindings — required so InputWidget does not treat Ctrl+D as delete.
         $this->listWidget->onInput($quit);
         $this->inputWidget->onInput($quit);
 
         $this->showPicker();
+
+        return $tui;
     }
 
     public function run(?TerminalInterface $terminal = null): int
@@ -166,22 +163,6 @@ final class SetupScreen
     public function errorText(): string
     {
         return $this->errorWidget->getText();
-    }
-
-    public function footerText(): string
-    {
-        return $this->footerWidget->getText();
-    }
-
-    /**
-     * Drive Ctrl+D through the focused widget's onInput quit intercept (virtual tests).
-     */
-    public function pressCtrlD(): void
-    {
-        $focused = self::PHASE_INPUT === $this->phase ? $this->inputWidget : $this->listWidget;
-        $focused->handleInput("\x04");
-        $this->tui->requestRender(force: true);
-        $this->tui->processRender();
     }
 
     private function onListSelect(string $value): void
@@ -445,12 +426,12 @@ final class SetupScreen
             $this->formState['id'] = (string) ($this->formState['id'] ?? 'local');
             $this->phase = self::PHASE_CHOICE;
             $this->hintWidget->setText('API key: read from an environment variable, or paste it now?');
+            // Mark before showList so Step-4 chrome is intentional, not accidental.
+            $this->formState['afterKey'] = 'custom_model';
             $this->showList([
                 ['value' => 'env', 'label' => 'environment variable'],
                 ['value' => 'raw', 'label' => 'paste'],
             ]);
-            // Mark that after key we resume custom model form.
-            $this->formState['afterKey'] = 'custom_model';
 
             return;
         }
@@ -600,8 +581,6 @@ final class SetupScreen
         $this->pendingConfirm = 'add_another';
         $this->phase = self::PHASE_CONFIRM;
         $this->formKind = '';
-        $this->titleWidget->setText('AI Provider Setup');
-        $this->stepWidget->setText('');
         $this->hintWidget->setText($message."\n\nAdd another?");
         $this->showList($this->confirmItems());
     }
@@ -620,8 +599,6 @@ final class SetupScreen
             $this->pendingConfirm = 'set_default';
             $this->phase = self::PHASE_CONFIRM;
             $this->formKind = '';
-            $this->titleWidget->setText('AI Provider Setup');
-            $this->stepWidget->setText('');
             $this->hintWidget->setText('Set as your default model?');
             $this->showList($this->confirmItems());
 
@@ -641,8 +618,6 @@ final class SetupScreen
         }
         $this->formKind = 'default_model';
         $this->phase = self::PHASE_CHOICE;
-        $this->titleWidget->setText('AI Provider Setup');
-        $this->stepWidget->setText('');
         $this->hintWidget->setText('Default model');
         $items = [];
         foreach ($refs as $ref) {
@@ -671,8 +646,7 @@ final class SetupScreen
         }
 
         $this->phase = self::PHASE_SUMMARY;
-        $this->titleWidget->setText('AI Provider Setup');
-        $this->stepWidget->setText('');
+        $this->formKind = '';
         $this->hintWidget->setText(implode("\n", $lines));
         $this->showList([
             ['value' => 'ok', 'label' => 'Done'],
@@ -692,8 +666,6 @@ final class SetupScreen
         $this->formState = [];
         $this->activeProviderId = null;
         $this->pendingConfirm = null;
-        $this->titleWidget->setText('AI Provider Setup');
-        $this->stepWidget->setText('');
         $this->hintWidget->setText('Hatfield needs at least one AI provider to run.');
         $this->showList($this->pickerItems());
     }
@@ -702,8 +674,6 @@ final class SetupScreen
     {
         $id = (string) $this->activeProviderId;
         $this->phase = self::PHASE_ACTION;
-        $this->titleWidget->setText('AI Provider Setup');
-        $this->stepWidget->setText('');
         $this->hintWidget->setText(\sprintf('%s is already enabled. What do you want to do?', $this->labelFor($id)));
         $this->showList($this->actionItems());
     }
@@ -764,7 +734,7 @@ final class SetupScreen
      */
     private function showList(array $items): void
     {
-        $this->applyCustomChromeIfNeeded();
+        $this->applyChrome();
         $this->listWidget->setItems($items);
         $this->listWidget->setSelectedIndex(0);
         $this->refreshError();
@@ -779,13 +749,7 @@ final class SetupScreen
     {
         $this->formKind = $kind;
         $this->phase = self::PHASE_INPUT;
-        if ($this->isCustomWizardKind($kind)) {
-            $this->titleWidget->setText('Add your own server');
-            $this->stepWidget->setText($this->customStepHeader($kind));
-        } else {
-            $this->titleWidget->setText('AI Provider Setup');
-            $this->stepWidget->setText('');
-        }
+        $this->applyChrome();
         $this->hintWidget->setText($prompt);
         $this->inputWidget->setPrompt('> ');
         $this->inputWidget->setValue($default);
@@ -828,19 +792,22 @@ final class SetupScreen
         $plain = match ($this->phase) {
             self::PHASE_PICKER => '↑/↓ select · Enter confirm · Esc exit · Ctrl+D quit',
             self::PHASE_INPUT => 'Enter submit · Esc back · Ctrl+D quit',
-            self::PHASE_SUMMARY => 'Enter close · Esc exit · Ctrl+D quit',
+            self::PHASE_SUMMARY => 'Esc exit · Ctrl+D quit',
             default => '↑/↓ select · Enter confirm · Esc back · Ctrl+D quit',
         };
         $this->footerWidget->setText((new Style(dim: true))->apply($plain));
     }
 
-    private function applyCustomChromeIfNeeded(): void
+    private function applyChrome(): void
     {
-        if (!$this->isCustomWizardKind($this->formKind)) {
+        if ($this->isCustomWizardKind($this->formKind)) {
+            $this->titleWidget->setText('Add your own server');
+            $this->stepWidget->setText($this->customStepHeader($this->formKind));
+
             return;
         }
-        $this->titleWidget->setText('Add your own server');
-        $this->stepWidget->setText($this->customStepHeader($this->formKind));
+        $this->titleWidget->setText('AI Provider Setup');
+        $this->stepWidget->setText('');
     }
 
     private function isCustomWizardKind(string $kind): bool

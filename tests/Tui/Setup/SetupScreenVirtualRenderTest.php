@@ -42,7 +42,6 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringNotContainsString('(enabled)', $text);
         $this->assertStringNotContainsString('not set up', $text);
         $this->assertSame('picker', $screen->phase());
-        $this->assertStringContainsString('↑/↓ select · Enter confirm · Esc exit · Ctrl+D quit', $screen->footerText());
         $this->assertStringContainsString('↑/↓ select · Enter confirm · Esc exit · Ctrl+D quit', $text);
     }
 
@@ -54,47 +53,58 @@ final class SetupScreenVirtualRenderTest extends TestCase
 
         $screen->selectValue('zai');
         $this->assertSame('action', $screen->phase());
-        $this->assertStringContainsString('Esc back · Ctrl+D quit', $screen->footerText());
+        $this->assertStringContainsString('Esc back · Ctrl+D quit', $this->plain($terminal));
 
         $screen->selectValue('configure');
         $this->assertSame('choice', $screen->phase()); // api where list
-        $this->assertStringContainsString('Esc back · Ctrl+D quit', $screen->footerText());
+        $this->assertStringContainsString('Esc back · Ctrl+D quit', $this->plain($terminal));
 
         $screen->selectValue('env');
         $this->assertSame('input', $screen->phase());
-        $this->assertStringContainsString('Enter submit · Esc back · Ctrl+D quit', $screen->footerText());
         $this->assertStringContainsString('Enter submit · Esc back · Ctrl+D quit', $this->plain($terminal));
 
-        $screen = $this->mount(new FakeProvidersSetupFlow())[0];
+        [$screen, $terminal] = $this->mount(new FakeProvidersSetupFlow());
         $screen->selectValue('done');
         $this->assertSame('summary', $screen->phase());
-        $this->assertStringContainsString('Enter close · Esc exit · Ctrl+D quit', $screen->footerText());
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('Esc exit · Ctrl+D quit', $text);
+        $this->assertStringNotContainsString('Enter close', $text);
     }
 
     #[Test]
     public function ctrlDFromPickerQuitsCleanly(): void
     {
         $flow = new FakeProvidersSetupFlow();
-        [$screen] = $this->mount($flow);
+        [$screen, $terminal, $tui] = $this->mount($flow);
 
-        $screen->pressCtrlD();
+        $tui->handleInput("\x04");
+        $tui->requestRender(force: true);
+        $tui->processRender();
 
         $this->assertTrue($screen->finished());
         $this->assertSame('summary', $screen->phase());
+        $this->assertStringContainsString('AI Provider Setup', $this->plain($terminal));
     }
 
     #[Test]
-    public function ctrlDFromInputQuitsCleanly(): void
+    public function ctrlDFromCustomInputResetsChromeOnSummary(): void
     {
         $flow = new FakeProvidersSetupFlow();
-        [$screen] = $this->mount($flow);
+        [$screen, $terminal, $tui] = $this->mount($flow);
 
         $screen->selectValue('custom');
         $this->assertSame('input', $screen->phase());
-        $screen->pressCtrlD();
+        $this->assertStringContainsString('Add your own server', $this->plain($terminal));
+
+        $tui->handleInput("\x04");
+        $tui->requestRender(force: true);
+        $tui->processRender();
 
         $this->assertTrue($screen->finished());
         $this->assertSame('summary', $screen->phase());
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('AI Provider Setup', $text);
+        $this->assertStringNotContainsString('Add your own server', $text);
     }
 
     #[Test]
@@ -144,6 +154,32 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringNotContainsString('Other server', $text);
         $this->assertStringNotContainsString('Done', $text);
         $this->assertSame('input', $screen->phase());
+    }
+
+    #[Test]
+    public function customWizardReachesStepThirteenReasoningFormat(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('custom');
+        $screen->submitInput('local-llm');
+        $screen->submitInput('http://127.0.0.1:8080');
+        $screen->submitInput('/v1/chat/completions');
+        $screen->selectValue('no'); // Set an API key?
+        $screen->submitInput('llama-3');
+        $screen->submitInput('Llama 3');
+        $screen->submitInput('128000');
+        $screen->submitInput('8192');
+        $screen->selectValue('text');
+        $screen->selectValue('no'); // reasoning
+        $screen->selectValue('no'); // another model
+        $screen->selectValue('no'); // developer role
+
+        $this->assertSame('input', $screen->phase());
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('Step 13 of 13 — Reasoning format', $text);
+        $this->assertStringContainsString('Reasoning format label (blank = none)', $text);
     }
 
     #[Test]
@@ -237,7 +273,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
     }
 
     /**
-     * @return array{0: SetupScreen, 1: VirtualTerminal}
+     * @return array{0: SetupScreen, 1: VirtualTerminal, 2: Tui}
      */
     private function mount(FakeProvidersSetupFlow $flow): array
     {
@@ -249,7 +285,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $tui->requestRender(force: true);
         $tui->processRender();
 
-        return [$screen, $terminal];
+        return [$screen, $terminal, $tui];
     }
 
     private function plain(VirtualTerminal $terminal): string
