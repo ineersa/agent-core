@@ -160,9 +160,10 @@ YAML);
         $this->assertArrayNotHasKey('api', $zai['models']['glm-5.3']);
         $this->assertArrayNotHasKey('base_url', $zai['models']['glm-5.3']);
 
-        $this->assertStringContainsString('1 metadata refreshes, 1 new models available upstream (not added)', $display);
-        $this->assertStringContainsString('available upstream (not added): zai: glm-future', $display);
-        $this->assertStringNotContainsString('added:', $display);
+        $displayNormalized = (string) preg_replace('/\s+/', ' ', $display);
+        $this->assertStringContainsString('1 metadata refreshes, 1 new models available upstream (not added)', $displayNormalized);
+        $this->assertStringContainsString('available upstream (not added): zai: glm-future', $displayNormalized);
+        $this->assertStringNotContainsString('added:', $displayNormalized);
     }
 
     public function testNetworkErrorLeavesUserCatalogUntouched(): void

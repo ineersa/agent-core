@@ -61,7 +61,7 @@ final class TuiResumeSessionVirtualTest extends TestCase
     {
         $harness = new VirtualTuiHarness(sessionId: 'resume-picker-virtual');
         $overlay = new PickerOverlay();
-        $header = new TextWidget(text: 'Resume session — arrows move, Enter resumes, Esc cancels', truncate: true);
+        $header = new TextWidget(text: 'Resume session — arrows move, Enter resumes, d deletes, Esc cancels', truncate: true);
         $listWidget = new SelectListWidget(items: [
             ['value' => '42', 'label' => '#42 — Example session'],
         ]);
