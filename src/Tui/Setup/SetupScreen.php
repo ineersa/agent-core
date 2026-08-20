@@ -834,7 +834,6 @@ final class SetupScreen
     {
         if ($this->isCustomWizardKind($this->formKind)) {
             $this->titleWidget->setText('Add your own server');
-            $this->titleWidget->setStyle(new Style(bold: true, color: Color::named('cyan')));
             $this->stepWidget->setText(
                 (new Style(dim: true))->apply($this->customStepHeader($this->formKind))
             );
@@ -843,7 +842,6 @@ final class SetupScreen
             return;
         }
         $this->titleWidget->setText('AI Provider Setup');
-        $this->titleWidget->setStyle(new Style(bold: true, color: Color::named('cyan')));
         $this->stepWidget->setText('');
     }
 
@@ -890,7 +888,7 @@ final class SetupScreen
             ],
             'api_raw_key' => [
                 'The API key for this server. It will be stored in your settings file.',
-                '(leave blank if none)',
+                '',
             ],
             'api_raw_confirm' => [
                 'Type the same API key again to confirm.',
@@ -926,7 +924,7 @@ final class SetupScreen
             ],
             'custom_developer_role' => [
                 'Whether the server accepts \'developer\' role messages. Some clones only accept \'system\' — pick No then.',
-                'No, if unsure',
+                '',
             ],
             'custom_thinking_format' => [
                 'Label the server uses to return thinking output, if any. Leave blank if it doesn\'t.',
