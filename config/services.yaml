@@ -848,6 +848,9 @@ services:
   Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface:
     alias: Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader
 
+  Ineersa\CodingAgent\Extension\AgentChildRunDetectorInterface:
+    alias: Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader
+
   Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface:
     alias: Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver
 

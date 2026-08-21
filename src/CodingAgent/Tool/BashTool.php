@@ -7,10 +7,10 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Extension\AgentChildRunDetectorInterface;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Psr\Log\LoggerInterface;
 
@@ -70,7 +70,7 @@ final class BashTool implements HatfieldToolProviderInterface
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ToolRuntime $toolRuntime,
         private readonly LoggerInterface $logger,
-        private readonly SubagentRunMetadataReader $metadataReader,
+        private readonly AgentChildRunDetectorInterface $agentChildRunDetector,
         private readonly BashToolConfig $config = new BashToolConfig(),
         private readonly BashBackgroundPromptAdapterInterface $promptAdapter = new BashBackgroundPromptDeclineAdapter(),
     ) {
@@ -300,7 +300,7 @@ final class BashTool implements HatfieldToolProviderInterface
     {
         if (null !== $sessionId) {
             try {
-                if ($this->metadataReader->isAgentChild($sessionId)) {
+                if ($this->agentChildRunDetector->isAgentChild($sessionId)) {
                     $this->logger->info('bash_tool.background_skipped_agent_child', [
                         'component' => 'tool.bash',
                         'event_type' => 'bash_tool.background_skipped_agent_child',

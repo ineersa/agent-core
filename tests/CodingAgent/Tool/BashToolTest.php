@@ -1083,7 +1083,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             contextAccessor: $this->contextAccessor,
             toolRuntime: $this->toolRuntime,
             logger: $this->logger,
-            metadataReader: $this->metadataReader,
+            agentChildRunDetector: $this->metadataReader,
             config: $this->bashConfig,
             promptAdapter: $promptAdapter ?? new BashToolDeclineAdapter(),
         );
