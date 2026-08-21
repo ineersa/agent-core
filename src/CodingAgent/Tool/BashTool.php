@@ -211,7 +211,9 @@ final class BashTool implements HatfieldToolProviderInterface
                     if ($elapsedSeconds >= $this->config->backgroundPromptThresholdSeconds) {
                         $promptTriggered = true;
 
-                        if ($this->shouldOfferBackground($sessionId, $command, $pid, $logPath, $elapsedSeconds)) {
+                        if ($this->shouldSkipBackgroundOffer($sessionId, $pid)) {
+                            // Child / fail-closed path: continue foreground supervision.
+                        } elseif ($this->promptAdapter->shouldBackground($command, $pid, $logPath, $elapsedSeconds)) {
                             // Re-check process status — it may have finished while we
                             // were waiting for the user's decision. If the process
                             // completed, return the finished output instead of the
@@ -249,13 +251,13 @@ final class BashTool implements HatfieldToolProviderInterface
                                 $pidStr,
                                 $pidStr,
                             );
+                        } else {
+                            $this->logger->info('bash_tool.background_declined', [
+                                'component' => 'tool.bash',
+                                'event_type' => 'bash_tool.background_declined',
+                                'process_pid' => $pid,
+                            ]);
                         }
-
-                        $this->logger->info('bash_tool.background_declined', [
-                            'component' => 'tool.bash',
-                            'event_type' => 'bash_tool.background_declined',
-                            'process_pid' => $pid,
-                        ]);
                     }
                 }
 
@@ -286,25 +288,47 @@ final class BashTool implements HatfieldToolProviderInterface
 
     // ─── Private helpers ────────────────────────────────────────────
 
-    private function shouldOfferBackground(
-        ?string $sessionId,
-        string $command,
-        int $pid,
-        string $logPath,
-        float $elapsedSeconds,
-    ): bool {
-        if (null !== $sessionId && $this->metadataReader->isAgentChild($sessionId)) {
-            $this->logger->info('bash_tool.background_skipped_agent_child', [
-                'component' => 'tool.bash',
-                'event_type' => 'bash_tool.background_skipped_agent_child',
-                'process_pid' => $pid,
-                'session_id' => $sessionId,
-            ]);
+    /**
+     * Skip the optional background HITL offer for agent_child runs, or when
+     * RunStarted metadata cannot be read safely after the process has started.
+     *
+     * Missing metadata remains parent-compatible (returns false) so normal
+     * parent/main sessions without a RunStarted event keep background offers.
+     * Malformed child metadata fails closed (returns true) after structured log.
+     */
+    private function shouldSkipBackgroundOffer(?string $sessionId, int $pid): bool
+    {
+        if (null !== $sessionId) {
+            try {
+                if ($this->metadataReader->isAgentChild($sessionId)) {
+                    $this->logger->info('bash_tool.background_skipped_agent_child', [
+                        'component' => 'tool.bash',
+                        'event_type' => 'bash_tool.background_skipped_agent_child',
+                        'process_pid' => $pid,
+                        'session_id' => $sessionId,
+                    ]);
 
-            return false;
+                    return true;
+                }
+            } catch (\Throwable $e) {
+                // Intentional local degradation: malformed/unreadable RunStarted
+                // must not escape after the process has started. Fail closed by
+                // skipping the optional background offer so cancellation/timeout
+                // supervision can continue and reap the process group.
+                $this->logger->warning('bash_tool.background_skipped_metadata_error', [
+                    'component' => 'tool.bash',
+                    'event_type' => 'bash_tool.background_skipped_metadata_error',
+                    'process_pid' => $pid,
+                    'session_id' => $sessionId,
+                    'exception_class' => $e::class,
+                    'exception_message' => $e->getMessage(),
+                ]);
+
+                return true;
+            }
         }
 
-        return $this->promptAdapter->shouldBackground($command, $pid, $logPath, $elapsedSeconds);
+        return false;
     }
 
     private function resolveTimeout(BashArgumentsDTO $arguments): int

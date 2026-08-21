@@ -8,10 +8,9 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\CodingAgent\Entity\ToolQuestion;
 use Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum;
+use Ineersa\CodingAgent\Tests\Support\AgentChildRunStartedEventFactory;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BashTool;
@@ -32,33 +31,10 @@ final class BashToolAgentChildTimeoutIntegrationTest extends IsolatedKernelTestC
 
         /** @var EventStoreInterface $eventStore */
         $eventStore = self::getContainer()->get(EventStoreInterface::class);
-        $eventStore->append(new RunEvent(
+        $eventStore->append(AgentChildRunStartedEventFactory::create(
             runId: $childRunId,
+            artifactId: 'agent_bash_di',
             seq: 0,
-            turnNo: 0,
-            type: RunEventTypeEnum::RunStarted->value,
-            payload: [
-                'step_id' => 'child-start',
-                'payload' => [
-                    'metadata' => [
-                        'session' => [
-                            'kind' => 'agent_child',
-                            'child_kind' => 'fork',
-                            'parent_run_id' => 'parent-run',
-                            'agent_name' => 'fork',
-                            'artifact_id' => 'agent_bash_di',
-                            'interactive' => true,
-                        ],
-                        'model' => 'llama_cpp_test/test',
-                        'reasoning' => 'off',
-                        'tools_scope' => [
-                            'allowed_tools' => ['bash'],
-                            'mcp' => ['mode' => 'none', 'tools' => []],
-                        ],
-                        'extensions' => [],
-                    ],
-                ],
-            ],
         ));
 
         /** @var BashTool $bashTool */

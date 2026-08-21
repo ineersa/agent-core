@@ -178,7 +178,12 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
 
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'Child agent', 10.0, 'Live view working line must appear');
-            $this->tmux->waitForCaptureContains($pane, 'bash', 10.0, 'Child live view must represent in-flight bash tool');
+            $this->tmux->waitForCaptureContains(
+                $pane,
+                'child-bash-bg-marker-9f3c',
+                10.0,
+                'Child live view must project distinctive in-flight bash command',
+            );
 
             $liveCap = $this->tmux->capturePlainWithHistory($pane, 2500);
             $this->assertStringNotContainsString(
@@ -217,7 +222,11 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
                 $reenterCap,
                 'Re-entering agent_child live view must not show confirm overlay chrome for bash backgrounding',
             );
-            $this->assertStringContainsString('bash', $reenterCap, 'Child live reconstruction must still show bash tool path');
+            $this->assertStringContainsString(
+                'child-bash-bg-marker-9f3c',
+                $reenterCap,
+                'Child live reconstruction must still show distinctive bash command',
+            );
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {

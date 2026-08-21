@@ -73,12 +73,12 @@ final class SubagentChildBashBackgroundPromptFixture
             ],
         ], $now);
         $childEvents[] = self::childEvent($childRunId, 2, 1, 'tool_execution_start', [
-            'tool_call_id' => 'call_child_bash_bg',
+            'tool_call_id' => 'call_child_bash_bg_marker_9f3c',
             'tool_name' => 'bash',
             'order_index' => 0,
             'mode' => 'parallel',
             'arguments' => [
-                'command' => 'sleep 30',
+                'command' => 'sleep 30 # child-bash-bg-marker-9f3c',
                 'timeout' => 60,
             ],
         ], $now);
