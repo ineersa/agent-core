@@ -6,11 +6,11 @@ namespace Ineersa\Tui\Setup;
 
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
-use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Widget\BracketedPasteTrait;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\Util\Line;
+use Symfony\Component\Tui\Widget\Util\StringUtils;
 
 /**
  * Text input that satisfies SettingsListWidget's submenu contract.
@@ -79,9 +79,10 @@ final class SettingsTextInputWidget extends SelectListWidget
             return;
         }
 
-        // Ignore other control bytes; insert printable / UTF-8 text.
-        if (1 === preg_match('/^[\x20-\x7e\x80-\xff]+$/u', $data)) {
-            $this->line->insert($data);
+        // Accept full UTF-8 (CJK/emoji); strip control bytes so escapes can't inject.
+        $text = StringUtils::stripControlBytes(StringUtils::sanitizeUtf8($data));
+        if ('' !== $text) {
+            $this->line->insert($text);
             $this->invalidate();
         }
     }
@@ -92,16 +93,5 @@ final class SettingsTextInputWidget extends SelectListWidget
     public function render(RenderContext $context): array
     {
         return [$this->prompt.$this->line->getText().'█'];
-    }
-
-    /**
-     * @return array<string, list<string>>
-     */
-    protected static function getDefaultKeybindings(): array
-    {
-        return [
-            'select_confirm' => [Key::ENTER],
-            'select_cancel' => [Key::ESCAPE, 'ctrl+c'],
-        ];
     }
 }

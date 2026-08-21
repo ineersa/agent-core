@@ -154,16 +154,6 @@ final class SetupScreen
         $this->tui->processRender();
     }
 
-    /**
-     * Activate the named custom-form action row (save / add_model) in tests.
-     */
-    public function activateCustomAction(string $id): void
-    {
-        $this->onCustomSettingChange($id, '↵');
-        $this->tui->requestRender(force: true);
-        $this->tui->processRender();
-    }
-
     public function errorText(): string
     {
         return $this->errorWidget->getText();
@@ -210,8 +200,8 @@ final class SetupScreen
             $this->onCustomSettingChange($event->getId(), $event->getValue());
         });
         $this->settingsWidget->onCancel(function (CancelEvent $_): void {
-            if (self::PHASE_SERVERS === $this->actionReturn
-                || true === ($this->formState['editing'] ?? false)) {
+            // Edit path always sets actionReturn=SERVERS; add path keeps PICKER.
+            if (self::PHASE_SERVERS === $this->actionReturn) {
                 $this->showServersSubmenu();
 
                 return;
@@ -557,6 +547,9 @@ final class SetupScreen
         $this->error = null;
         $this->applyChrome();
         $this->hintWidget->setText('Edit any row. Enter opens editor or toggles. Save when ready.');
+        // Remove before reassign — ContainerWidget::remove() no-ops on a fresh
+        // unattached instance, which would orphan the previously mounted form.
+        $this->panelWidget->remove($this->settingsWidget);
         $this->settingsWidget = new SettingsListWidget($this->customSettingItems(), maxVisible: 16);
         $this->refreshError();
         $this->refreshFooter();
@@ -573,8 +566,7 @@ final class SetupScreen
     {
         $editing = true === ($this->formState['editing'] ?? false);
         $id = (string) ($this->formState['id'] ?? 'local');
-        $apiKey = $this->formState['apiKey'] ?? null;
-        $apiKeyDisplay = \is_string($apiKey) && '' !== $apiKey ? $apiKey : '(none)';
+        $apiKeyDisplay = $this->apiKeyDisplay();
         $models = \is_array($this->formState['models'] ?? null) ? $this->formState['models'] : [];
         $modelIds = array_keys($models);
         $modelsDisplay = [] === $modelIds ? '(none yet)' : implode(', ', $modelIds);
@@ -619,7 +611,7 @@ final class SetupScreen
             submenu: $this->textSubmenu(...),
         );
         $items[] = new SettingItem(
-            'models_saved',
+            'modelsSaved',
             'Saved models',
             $modelsDisplay,
             'Models already on this provider. Add another below, then Save.',
@@ -698,11 +690,9 @@ final class SetupScreen
         return $items;
     }
 
-    private function textSubmenu(string $current, callable $onDone): SettingsTextInputWidget
+    private function textSubmenu(string $current): SettingsTextInputWidget
     {
-        // $onDone is owned by SettingsListWidget — keep signature for the vendor contract.
-        unset($onDone);
-
+        // Vendor submenu factory passes ($current, $onDone); PHP ignores the extra arg.
         return new SettingsTextInputWidget($current);
     }
 
@@ -735,36 +725,65 @@ final class SetupScreen
 
             return;
         }
-
-        // Structure-changing rows need a full rebuild; scalars just updateValue
-        // so the selected index stays put.
-        if (\in_array($id, ['add_model', 'apiKey', 'id'], true) || null !== $this->error) {
-            $this->settingsWidget = new SettingsListWidget($this->customSettingItems(), maxVisible: 16);
+        if (null !== $this->error) {
+            // Vendor submenu writes the rejected value onto the item before onChange;
+            // restore from formState so the row stays coherent without a rebuild.
+            if (!\in_array($id, ['save', 'add_model', 'modalities', 'reasoning'], true)) {
+                $this->settingsWidget->updateValue($id, $this->displayForSetting($id, $value));
+            }
             $this->refreshError();
-            $this->applyPhaseLayout();
-            $this->tui->setFocus($this->settingsWidget);
+
+            return;
+        }
+        if ('save' === $id) {
+            $this->refreshError();
+
+            return;
+        }
+        if ('add_model' === $id) {
+            $this->refreshCustomFormValuesAfterModelCommit();
+            $this->refreshError();
 
             return;
         }
 
-        $display = match ($id) {
-            'supportsDeveloperRole' => true === ($this->formState['supportsDeveloperRole'] ?? false) ? 'yes' : 'no',
-            'baseUrl' => (string) ($this->formState['baseUrl'] ?? ''),
-            'completionsPath' => (string) ($this->formState['completionsPath'] ?? ''),
-            'modelId' => (string) ($this->formState['modelId'] ?? ''),
-            'modelName' => (string) ($this->formState['modelName'] ?? ''),
-            'contextWindow' => (string) ($this->formState['contextWindow'] ?? ''),
-            'maxTokens' => (string) ($this->formState['maxTokens'] ?? ''),
-            'thinkingFormat' => (string) ($this->formState['thinkingFormat'] ?? ''),
-            default => $value,
-        };
-        if (!\in_array($id, ['save', 'add_model'], true)) {
-            $this->settingsWidget->updateValue($id, $display);
-            if ('modelId' === $id && '' !== (string) ($this->formState['modelName'] ?? '')) {
-                $this->settingsWidget->updateValue('modelName', (string) $this->formState['modelName']);
-            }
+        $this->settingsWidget->updateValue($id, $this->displayForSetting($id, $value));
+        if ('modelId' === $id && '' !== (string) ($this->formState['modelName'] ?? '')) {
+            $this->settingsWidget->updateValue('modelName', (string) $this->formState['modelName']);
         }
         $this->refreshError();
+    }
+
+    private function displayForSetting(string $id, string $value): string
+    {
+        // Prefer formState so normalized values (rtrim URL, int coerce) and
+        // error-path restores beat the raw vendor event value.
+        return match ($id) {
+            'apiKey' => $this->apiKeyDisplay(),
+            'supportsDeveloperRole' => true === ($this->formState['supportsDeveloperRole'] ?? false) ? 'yes' : 'no',
+            default => (string) ($this->formState[$id] ?? $value),
+        };
+    }
+
+    private function apiKeyDisplay(): string
+    {
+        $apiKey = $this->formState['apiKey'] ?? null;
+
+        return \is_string($apiKey) && '' !== $apiKey ? $apiKey : '(none)';
+    }
+
+    private function refreshCustomFormValuesAfterModelCommit(): void
+    {
+        $models = \is_array($this->formState['models'] ?? null) ? $this->formState['models'] : [];
+        $modelIds = array_keys($models);
+        $modelsDisplay = [] === $modelIds ? '(none yet)' : implode(', ', $modelIds);
+        $this->settingsWidget->updateValue('modelsSaved', $modelsDisplay);
+        $this->settingsWidget->updateValue('modelId', (string) ($this->formState['modelId'] ?? ''));
+        $this->settingsWidget->updateValue('modelName', (string) ($this->formState['modelName'] ?? ''));
+        $this->settingsWidget->updateValue('contextWindow', (string) ($this->formState['contextWindow'] ?? '128000'));
+        $this->settingsWidget->updateValue('maxTokens', (string) ($this->formState['maxTokens'] ?? '8192'));
+        $this->settingsWidget->updateValue('modalities', (string) ($this->formState['modalities'] ?? 'text'));
+        $this->settingsWidget->updateValue('reasoning', (string) ($this->formState['reasoning'] ?? 'no'));
     }
 
     private function setCustomId(string $value): void
@@ -1198,7 +1217,7 @@ final class SetupScreen
                 true === ($this->formState['editing'] ?? false) ? 'Edit your server' : 'Add your own server'
             );
             $this->stepWidget->setText(
-                (new Style(dim: true))->apply('All options on one screen — edit any row, then Save and enable')
+                (new Style(dim: true))->apply('All options on one screen — edit any row, then save')
             );
 
             return;

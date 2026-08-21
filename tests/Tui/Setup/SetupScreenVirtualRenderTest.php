@@ -229,7 +229,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringContainsString('Developer role', $text);
         $this->assertStringContainsString('Reasoning format', $text);
         $this->assertStringContainsString('Add model to list', $text);
-        $this->assertStringContainsString('Save and enable', $text);
+        $this->assertSame(1, substr_count($text, 'Save and enable')); // orphan-guard: exactly one save row
         // Selected row description (first = Provider id)
         $this->assertStringContainsString('A short name to identify this provider', $text);
         $this->assertStringContainsString('Example: runpod', $text);
@@ -257,7 +257,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $screen->changeSetting('reasoning', 'no');
         $screen->changeSetting('supportsDeveloperRole', 'no');
         $screen->changeSetting('thinkingFormat', '');
-        $screen->activateCustomAction('save');
+        $screen->changeSetting('save', '↵');
 
         $this->assertSame('confirm', $screen->phase());
         $this->assertCount(1, $flow->savedCustoms);
@@ -288,14 +288,14 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $screen->changeSetting('baseUrl', 'http://127.0.0.1:8080');
         $screen->changeSetting('modelId', 'a');
         $screen->changeSetting('modelName', 'A');
-        $screen->activateCustomAction('add_model');
+        $screen->changeSetting('add_model', '↵');
         $text = $this->plain($terminal);
         $this->assertStringContainsString('a', $text); // saved models row
         $screen->changeSetting('modelId', 'b');
         $screen->changeSetting('modelName', 'B');
         $screen->changeSetting('modalities', 'text+image');
         $screen->changeSetting('reasoning', 'yes');
-        $screen->activateCustomAction('save');
+        $screen->changeSetting('save', '↵');
 
         $this->assertCount(1, $flow->savedCustoms);
         $models = $flow->savedCustoms[0]['models'];
@@ -335,7 +335,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $screen->changeSetting('id', 'empty');
         $screen->changeSetting('baseUrl', 'http://127.0.0.1:8080');
         $screen->changeSetting('modelId', ''); // clear draft
-        $screen->activateCustomAction('save');
+        $screen->changeSetting('save', '↵');
 
         $this->assertSame('custom', $screen->phase());
         $this->assertStringContainsString('Add at least one model.', $screen->errorText());
@@ -352,11 +352,94 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $screen->changeSetting('id', 'nourl');
         $screen->changeSetting('baseUrl', '');
         $screen->changeSetting('modelId', 'm');
-        $screen->activateCustomAction('save');
+        $screen->changeSetting('save', '↵');
 
         $this->assertSame('custom', $screen->phase());
         $this->assertStringContainsString('Server URL is required.', $screen->errorText());
         $this->assertSame([], $flow->savedCustoms);
+    }
+
+    #[Test]
+    public function customSubmenuTextPathTypesAndSavesViaRealEvents(): void
+    {
+        // Drives activateCurrentItem → submenu factory → SelectEvent → SettingChangeEvent.
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal, $tui] = $this->mount($flow);
+
+        $screen->selectValue('custom');
+        $this->assertSame('custom', $screen->phase());
+
+        // Row 0 = Provider id (default 'local'). Clear, type, backspace, submit.
+        $tui->handleInput("\r");
+        $tui->processRender();
+        for ($i = 0; $i < 5; ++$i) { // erase 'local'
+            $tui->handleInput("\x7f");
+        }
+        foreach (str_split('runpodx') as $ch) {
+            $tui->handleInput($ch);
+        }
+        $tui->handleInput("\x7f"); // backspace trailing x
+        $tui->handleInput("\r"); // submit submenu
+        $tui->processRender();
+
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('runpod', $text);
+        $this->assertStringNotContainsString('runpodx', $text);
+        $this->assertStringNotContainsString('local', $text);
+
+        // Fill remaining required fields via drivers, then Save via changeSetting.
+        $screen->changeSetting('baseUrl', 'https://abc.proxy.runpod.net');
+        $screen->changeSetting('modelId', 'llama');
+        $screen->changeSetting('modelName', 'Llama');
+        $screen->changeSetting('save', '↵');
+
+        $this->assertCount(1, $flow->savedCustoms);
+        $this->assertSame('runpod', $flow->savedCustoms[0]['id']);
+        $this->assertSame('https://abc.proxy.runpod.net', $flow->savedCustoms[0]['baseUrl']);
+    }
+
+    #[Test]
+    public function customSubmenuEscCancelsWithoutChangingValue(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal, $tui] = $this->mount($flow);
+
+        $screen->selectValue('custom');
+        $before = $this->plain($terminal);
+        $this->assertStringContainsString('local', $before); // default id
+
+        $tui->handleInput("\r"); // open id submenu
+        $tui->processRender();
+        foreach (str_split('changed') as $ch) {
+            $tui->handleInput($ch);
+        }
+        $tui->handleInput("\x1b"); // Esc cancel
+        $tui->processRender();
+
+        $this->assertSame('custom', $screen->phase());
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('local', $text);
+        $this->assertStringNotContainsString('changed', $text);
+        $this->assertSame([], $flow->savedCustoms);
+    }
+
+    #[Test]
+    public function ctrlDInsideOpenCustomSubmenuQuits(): void
+    {
+        // SettingsListWidget.onInput(quitOnCtrlD) runs BEFORE submenu forward.
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal, $tui] = $this->mount($flow);
+
+        $screen->selectValue('custom');
+        $tui->handleInput("\r"); // open id submenu
+        $tui->processRender();
+        $tui->handleInput("\x04"); // Ctrl+D
+
+        $this->assertTrue($screen->finished());
+        $this->assertSame('summary', $screen->phase());
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('AI Provider Setup', $text);
+        $this->assertStringNotContainsString('Add your own server', $text);
     }
 
     #[Test]
