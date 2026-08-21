@@ -187,6 +187,11 @@ final class QuestionChoiceListWidget extends SelectListWidget
         $continuationIndent = str_repeat(' ', $prefixWidth);
 
         for ($i = $startIndex; $i < $endIndex; ++$i) {
+            if ($i > $startIndex) {
+                // Exactly one blank row between logical choices; never inside a wrapped label/description.
+                $lines[] = '';
+            }
+
             $item = $this->choiceItems[$i];
             $isSelected = $i === $this->choiceSelectedIndex;
             $prefix = $isSelected ? self::SELECTED_PREFIX : self::UNSELECTED_PREFIX;

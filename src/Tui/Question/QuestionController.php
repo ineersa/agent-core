@@ -9,6 +9,8 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Widget\SelectListKeybindings;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
+use Symfony\Component\Tui\Style\Direction;
+use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
@@ -57,6 +59,8 @@ final class QuestionController
         $this->awaitingFreeForm = false;
         $this->activeRequest = $request;
         $this->container = new ContainerWidget();
+        // Modest vertical rhythm between header / question / answers (native container gap).
+        $this->container->setStyle(new Style(direction: Direction::Vertical, gap: 1));
         $this->addHeader($request);
 
         if (QuestionKind::Text === $request->kind) {

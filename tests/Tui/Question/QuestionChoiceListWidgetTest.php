@@ -58,6 +58,9 @@ final class QuestionChoiceListWidgetTest extends TestCase
         $selectedRows = [];
         foreach ($lines as $line) {
             $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $line) ?? $line;
+            if ('' === trim($plain)) {
+                continue;
+            }
             if (str_contains($plain, 'SELECTED_') || (str_starts_with($plain, '  ') && [] !== $selectedRows && !str_contains($plain, 'short'))) {
                 if (str_contains($plain, 'SELECTED_') || (str_starts_with($plain, '  ') && str_contains($line, "\x1b"))) {
                     $selectedRows[] = $line;
@@ -74,6 +77,76 @@ final class QuestionChoiceListWidgetTest extends TestCase
             $this->assertStringStartsWith('  ', $plain);
             $this->assertStringNotContainsString('→', $plain);
             $this->assertStringContainsString("\x1b", $continuation, 'Selected continuation must keep selected styling');
+        }
+    }
+
+    #[Test]
+    public function testExactlyOneBlankRowBetweenLogicalChoicesNeverInsideWrappedLabel(): void
+    {
+        $long = 'WRAP_BEGIN '.str_repeat('wrap-token ', 8).'WRAP_TAIL';
+        $widget = $this->widget([
+            ['value' => 'short-a', 'label' => 'SHORT_A'],
+            ['value' => $long, 'label' => $long, 'description' => 'DESC_BEGIN '.str_repeat('desc-token ', 6).'DESC_TAIL'],
+            ['value' => 'short-b', 'label' => 'SHORT_B'],
+        ], maxVisible: 10);
+
+        foreach ([42, 100] as $width) {
+            $lines = $this->render($widget, $width);
+            $plainLines = array_map(
+                static fn (string $line): string => preg_replace('/\x1b\[[0-9;]*m/', '', $line) ?? $line,
+                $lines,
+            );
+
+            $shortA = null;
+            $wrapBegin = null;
+            $wrapTail = null;
+            $descBegin = null;
+            $descTail = null;
+            $shortB = null;
+            foreach ($plainLines as $index => $plain) {
+                if (str_contains($plain, 'SHORT_A')) {
+                    $shortA = $index;
+                }
+                if (str_contains($plain, 'WRAP_BEGIN')) {
+                    $wrapBegin = $index;
+                }
+                if (str_contains($plain, 'WRAP_TAIL')) {
+                    $wrapTail = $index;
+                }
+                if (str_contains($plain, 'DESC_BEGIN')) {
+                    $descBegin = $index;
+                }
+                if (str_contains($plain, 'DESC_TAIL')) {
+                    $descTail = $index;
+                }
+                if (str_contains($plain, 'SHORT_B')) {
+                    $shortB = $index;
+                }
+            }
+
+            $this->assertNotNull($shortA);
+            $this->assertNotNull($wrapBegin);
+            $this->assertNotNull($wrapTail);
+            $this->assertNotNull($descBegin);
+            $this->assertNotNull($descTail);
+            $this->assertNotNull($shortB);
+
+            $this->assertSame('', trim($plainLines[$shortA + 1] ?? 'missing'), 'Exactly one blank row after first logical choice');
+            $this->assertSame($wrapBegin, $shortA + 2, 'Wrapped second choice starts immediately after the blank separator');
+
+            for ($i = $wrapBegin; $i < $wrapTail; ++$i) {
+                $this->assertNotSame('', trim($plainLines[$i]), 'No blank rows inside wrapped label');
+            }
+            for ($i = $wrapTail; $i < $descBegin; ++$i) {
+                $this->assertNotSame('', trim($plainLines[$i]), 'No blank rows between wrapped label and its description');
+            }
+            for ($i = $descBegin; $i < $descTail; ++$i) {
+                $this->assertNotSame('', trim($plainLines[$i]), 'No blank rows inside wrapped description');
+            }
+
+            $this->assertSame('', trim($plainLines[$descTail + 1] ?? 'missing'), 'Exactly one blank row after second logical choice');
+            $this->assertSame($shortB, $descTail + 2, 'Third choice starts immediately after the blank separator');
+            $this->assertNotSame('', trim($plainLines[\count($plainLines) - 1] ?? ''), 'No trailing blank after final visible choice');
         }
     }
 
