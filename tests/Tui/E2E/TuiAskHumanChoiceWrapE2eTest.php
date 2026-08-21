@@ -17,6 +17,8 @@ use PHPUnit\Framework\TestCase;
 #[Group('tui-e2e-replay')]
 final class TuiAskHumanChoiceWrapE2eTest extends TestCase
 {
+    private const string LONG_OPTION_VALUE = 'LONG_OPTION_BEGIN keep every word visible across multiple terminal rows without ellipsis LONG_OPTION_TAIL_UNIQUE';
+
     private TmuxHarness $tmux;
     private string $testProjectDir;
 
@@ -91,6 +93,12 @@ final class TuiAskHumanChoiceWrapE2eTest extends TestCase
             );
             $this->tmux->saveAnsiSnapshot($pane, 'ask-human-choice-wrap-answered');
             $this->assertStringContainsString('CHOICE_WRAP_SELECTED_OK', $answered);
+
+            $sessionId = $this->resolveSingleCreatedSessionId();
+            $this->assertNotNull($sessionId, 'Expected exactly one isolated session directory after ask_human answer');
+            $eventsPath = $this->testProjectDir.'/.hatfield/sessions/'.$sessionId.'/events.jsonl';
+            $this->assertFileExists($eventsPath);
+            $this->assertCanonicalHumanResponseAnswer($eventsPath, self::LONG_OPTION_VALUE);
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'ask-human-choice-wrap-FAILURE');
             throw $e;
@@ -176,5 +184,57 @@ final class TuiAskHumanChoiceWrapE2eTest extends TestCase
         TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;
+    }
+
+    private function resolveSingleCreatedSessionId(): ?string
+    {
+        $sessionsRoot = $this->testProjectDir.'/.hatfield/sessions';
+        if (!is_dir($sessionsRoot)) {
+            return null;
+        }
+
+        $dirs = array_values(array_filter(
+            scandir($sessionsRoot) ?: [],
+            static fn (string $entry): bool => !\in_array($entry, ['.', '..'], true) && is_dir($sessionsRoot.'/'.$entry),
+        ));
+        if (1 !== \count($dirs)) {
+            return null;
+        }
+
+        return $dirs[0];
+    }
+
+    private function assertCanonicalHumanResponseAnswer(string $eventsPath, string $expectedAnswer): void
+    {
+        $lines = file($eventsPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) ?: [];
+        $matched = null;
+
+        foreach ($lines as $line) {
+            $decoded = json_decode($line, true);
+            if (!\is_array($decoded)) {
+                continue;
+            }
+            if ('agent_command_applied' !== ($decoded['type'] ?? null)) {
+                continue;
+            }
+            $payload = $decoded['payload'] ?? null;
+            if (!\is_array($payload) || 'human_response' !== ($payload['kind'] ?? null)) {
+                continue;
+            }
+            if (!\array_key_exists('answer', $payload)) {
+                continue;
+            }
+            $matched = $payload['answer'];
+        }
+
+        $this->assertNotNull(
+            $matched,
+            'events.jsonl must contain agent_command_applied with kind=human_response and answer',
+        );
+        $this->assertSame(
+            $expectedAnswer,
+            $matched,
+            'Down+Enter must persist the exact selected long option as payload.answer',
+        );
     }
 }
