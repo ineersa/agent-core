@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
@@ -26,9 +27,11 @@ use Psr\Log\LoggerInterface;
  * - A foreground supervision loop polls the manager for process status,
  *   checks ambient ToolContext cancellation, and enforces a monotonic
  *   timeout deadline.
- * - At the configured background_prompt_threshold_seconds, the tool asks
- *   the injectable BashBackgroundPromptAdapterInterface whether to leave
- *   the process running in background. The TOOLS-09 default declines.
+ * - At the configured background_prompt_threshold_seconds, parent/main
+ *   sessions ask the injectable BashBackgroundPromptAdapterInterface
+ *   whether to leave the process running in background. Agent-child
+ *   runs (session.kind=agent_child) never offer backgrounding — they stay
+ *   foreground-supervised so the per-call Bash timeout can still fire.
  * - On successful completion, returns captured capped output.
  * - On non-zero exit, returns output + exit code info.
  * - On timeout/cancellation, stops the managed process and returns
@@ -67,6 +70,7 @@ final class BashTool implements HatfieldToolProviderInterface
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ToolRuntime $toolRuntime,
         private readonly LoggerInterface $logger,
+        private readonly SubagentRunMetadataReader $metadataReader,
         private readonly BashToolConfig $config = new BashToolConfig(),
         private readonly BashBackgroundPromptAdapterInterface $promptAdapter = new BashBackgroundPromptDeclineAdapter(),
     ) {
@@ -197,14 +201,17 @@ final class BashTool implements HatfieldToolProviderInterface
                     return $this->handleFinished($record, $sessionId);
                 }
 
-                // 4. Background prompt threshold check (once per invocation)
+                // 4. Background prompt threshold check (once per invocation).
+                // Agent-child runs never create the HITL question: awaiting it
+                // would block this loop and prevent the Bash deadline above
+                // from firing (session #41 fork hang).
                 if (!$promptTriggered) {
                     $elapsedSeconds = (hrtime(true) - $startTime) / 1_000_000_000;
 
                     if ($elapsedSeconds >= $this->config->backgroundPromptThresholdSeconds) {
                         $promptTriggered = true;
 
-                        if ($this->promptAdapter->shouldBackground($command, $pid, $logPath, $elapsedSeconds)) {
+                        if ($this->shouldOfferBackground($sessionId, $command, $pid, $logPath, $elapsedSeconds)) {
                             // Re-check process status — it may have finished while we
                             // were waiting for the user's decision. If the process
                             // completed, return the finished output instead of the
@@ -278,6 +285,27 @@ final class BashTool implements HatfieldToolProviderInterface
     }
 
     // ─── Private helpers ────────────────────────────────────────────
+
+    private function shouldOfferBackground(
+        ?string $sessionId,
+        string $command,
+        int $pid,
+        string $logPath,
+        float $elapsedSeconds,
+    ): bool {
+        if (null !== $sessionId && $this->metadataReader->isAgentChild($sessionId)) {
+            $this->logger->info('bash_tool.background_skipped_agent_child', [
+                'component' => 'tool.bash',
+                'event_type' => 'bash_tool.background_skipped_agent_child',
+                'process_pid' => $pid,
+                'session_id' => $sessionId,
+            ]);
+
+            return false;
+        }
+
+        return $this->promptAdapter->shouldBackground($command, $pid, $logPath, $elapsedSeconds);
+    }
 
     private function resolveTimeout(BashArgumentsDTO $arguments): int
     {
