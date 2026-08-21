@@ -32,11 +32,15 @@ final readonly class CodingAgentToolSetResolver implements ToolSetResolverInterf
         // tool author/provider. Default is Sequential.
         $executionModes = [];
         $timeoutSeconds = [];
+        $backgroundPromptAllowed = [];
         foreach ($this->toolRegistry->activeToolDefinitions() as $definition) {
             $executionModes[$definition->name] = $definition->executionMode->value;
             if (null !== $definition->timeoutSeconds && $definition->timeoutSeconds > 0) {
                 $timeoutSeconds[$definition->name] = $definition->timeoutSeconds;
             }
+            // Default: background HITL is allowed for every tool unless a child
+            // policy resolver later flips a specific entry to false.
+            $backgroundPromptAllowed[$definition->name] = true;
         }
 
         return new ActiveToolSet(
@@ -44,6 +48,7 @@ final readonly class CodingAgentToolSetResolver implements ToolSetResolverInterf
             allowListNames: $toolNames,
             executionModes: $executionModes,
             timeoutSeconds: $timeoutSeconds,
+            backgroundPromptAllowed: $backgroundPromptAllowed,
         );
     }
 }

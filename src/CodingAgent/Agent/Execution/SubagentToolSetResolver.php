@@ -20,8 +20,9 @@ use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
  *  3. Intersects the inner resolver's ActiveToolSet with the child's
  *     allowed tools — both toolNames and allowListNames.
  *  4. Drops tools owned by extensions outside metadata.extensions.
- *  5. Filters executionModes to only include entries for tools that
- *     remain after intersection.
+ *  5. Filters executionModes/timeoutSeconds/backgroundPromptAllowed to
+ *     only include entries for tools that remain after intersection.
+ *  6. Disables Bash background HITL for remaining child Bash tools.
  *
  * For parent (non-child) runs or when child metadata is missing,
  * passes through to the inner resolver unchanged.
@@ -31,6 +32,8 @@ use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
  */
 final readonly class SubagentToolSetResolver implements ToolSetResolverInterface
 {
+    private const string BASH_TOOL_NAME = 'bash';
+
     public function __construct(
         private ToolSetResolverInterface $inner,
         private SubagentRunMetadataReader $metadataReader,
@@ -103,11 +106,25 @@ final readonly class SubagentToolSetResolver implements ToolSetResolverInterface
             }
         }
 
+        $filteredBackgroundPromptAllowed = [];
+        foreach ($inner->backgroundPromptAllowed as $toolName => $allowed) {
+            if (isset($allowedLookup[$toolName])) {
+                $filteredBackgroundPromptAllowed[$toolName] = $allowed;
+            }
+        }
+
+        // Child runs never offer Bash background HITL; keep foreground
+        // supervision so per-call Bash timeouts remain enforceable.
+        if (isset($allowedLookup[self::BASH_TOOL_NAME])) {
+            $filteredBackgroundPromptAllowed[self::BASH_TOOL_NAME] = false;
+        }
+
         return new ActiveToolSet(
             toolNames: $filteredToolNames,
             allowListNames: $filteredAllowList,
             executionModes: $filteredExecutionModes,
             timeoutSeconds: $filteredTimeoutSeconds,
+            backgroundPromptAllowed: $filteredBackgroundPromptAllowed,
         );
     }
 }

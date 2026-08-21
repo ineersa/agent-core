@@ -7,17 +7,11 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
-use Ineersa\CodingAgent\Tests\Support\AgentChildRunStartedEventFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
@@ -74,8 +68,6 @@ final class BashToolTest extends IsolatedKernelTestCase
     private StackToolExecutionContextAccessor $contextAccessor;
     private ToolRuntime $toolRuntime;
     private OutputCap $outputCap;
-    private InMemoryEventStore $eventStore;
-    private SubagentRunMetadataReader $metadataReader;
     private TestLogger $logger;
     private string $tmpDir;
     private bool $managerCreated = false;
@@ -101,11 +93,6 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->toolRuntime = new ToolRuntime($this->contextAccessor);
         $this->outputCap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/output-cap'));
-        $this->eventStore = new InMemoryEventStore();
-        $this->metadataReader = new SubagentRunMetadataReader(
-            $this->eventStore,
-            AttributeSerializerValidatorTestFactory::denormalizer(),
-        );
         $this->logger = new TestLogger();
     }
 
@@ -199,11 +186,8 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('partial', $result);
     }
 
-    public function testAgentChildSkipsBackgroundPromptAndStaysForeground(): void
+    public function testBackgroundPromptDisallowedSkipsAdapterAndStaysForeground(): void
     {
-        $childRunId = 'agent-child-bash-skip-bg';
-        $this->seedAgentChildRun($childRunId);
-
         $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
         $promptAdapter->expects($this->never())->method('shouldBackground');
 
@@ -216,36 +200,28 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->createManager();
 
         $started = hrtime(true);
-        $result = $this->withContext($childRunId, function () use ($promptAdapter): string {
+        $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
             return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(
                 command: 'echo "child-foreground" && sleep 1 && echo "child-done"',
                 timeout: 5,
             ));
-        });
+        }, backgroundPromptAllowed: false);
         $elapsedMs = (int) round((hrtime(true) - $started) / 1_000_000);
 
         $this->assertStringContainsString('child-foreground', $result);
         $this->assertStringContainsString('child-done', $result);
         $this->assertStringNotContainsString('Command moved to background', $result);
-        $this->assertLessThan(4500, $elapsedMs, 'Foreground child bash must finish without waiting on HITL');
+        $this->assertLessThan(4500, $elapsedMs, 'Disallowed background prompt must finish without waiting on HITL');
 
-        $skipped = array_values(array_filter(
-            $this->logger->records,
-            static fn (array $record): bool => 'bash_tool.background_skipped_agent_child' === $record['message'],
-        ));
-        $this->assertNotEmpty($skipped);
         $declined = array_values(array_filter(
             $this->logger->records,
             static fn (array $record): bool => 'bash_tool.background_declined' === $record['message'],
         ));
-        $this->assertSame([], $declined, 'Child skip must not log parent background_declined');
+        $this->assertSame([], $declined, 'Policy skip must not log parent background_declined');
     }
 
-    public function testAgentChildRequestedTimeoutTerminatesNearBound(): void
+    public function testBackgroundPromptDisallowedTimeoutTerminatesNearBound(): void
     {
-        $childRunId = 'agent-child-bash-timeout';
-        $this->seedAgentChildRun($childRunId);
-
         $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
         $promptAdapter->expects($this->never())->method('shouldBackground');
 
@@ -258,89 +234,19 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->createManager();
 
         $started = hrtime(true);
-        $result = $this->withContext($childRunId, function () use ($promptAdapter): string {
+        $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
             return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(
                 command: 'echo "child-partial" && sleep 10 && echo "should-not-see"',
                 timeout: 1,
             ));
-        });
+        }, backgroundPromptAllowed: false);
         $elapsedMs = (int) round((hrtime(true) - $started) / 1_000_000);
 
         $this->assertStringContainsString('Command timed out after 1 seconds', $result);
         $this->assertStringContainsString('child-partial', $result);
         $this->assertStringNotContainsString('should-not-see', $result);
         $this->assertGreaterThanOrEqual(900, $elapsedMs);
-        $this->assertLessThan(3500, $elapsedMs, 'Child bash timeout must fire near the requested bound, not Castor/HITL');
-    }
-
-    public function testMalformedChildMetadataSkipsBackgroundOfferAndTimesOut(): void
-    {
-        $runId = 'malformed-child-bash-metadata';
-        $this->eventStore->seed(new RunEvent(
-            runId: $runId,
-            seq: 1,
-            turnNo: 0,
-            type: RunEventTypeEnum::RunStarted->value,
-            payload: [
-                'step_id' => 'child-start',
-                'payload' => [
-                    'metadata' => [
-                        'session' => [
-                            'kind' => 'agent_child',
-                            // Missing required parent_run_id/agent_name/artifact_id
-                        ],
-                        'model' => 'llama_cpp_test/test',
-                        'reasoning' => 'off',
-                        'tools_scope' => [
-                            'allowed_tools' => ['bash'],
-                            'mcp' => ['mode' => 'none', 'tools' => []],
-                        ],
-                        'extensions' => [],
-                    ],
-                ],
-            ],
-        ));
-
-        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
-        $promptAdapter->expects($this->never())->method('shouldBackground');
-
-        $this->bashConfig = new BashToolConfig(
-            defaultTimeoutSeconds: 30,
-            backgroundPromptThresholdSeconds: 0,
-            pollIntervalMicros: 50_000,
-            logTailChars: 20000,
-        );
-        $this->createManager();
-
-        $started = hrtime(true);
-        $result = $this->withContext($runId, function () use ($promptAdapter): string {
-            return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(
-                command: 'echo "malformed-partial" && sleep 10 && echo "should-not-see"',
-                timeout: 1,
-            ));
-        });
-        $elapsedMs = (int) round((hrtime(true) - $started) / 1_000_000);
-
-        $this->assertStringContainsString('Command timed out after 1 seconds', $result);
-        $this->assertStringContainsString('malformed-partial', $result);
-        $this->assertStringNotContainsString('should-not-see', $result);
-        $this->assertStringNotContainsString('Command moved to background', $result);
-        $this->assertGreaterThanOrEqual(900, $elapsedMs);
-        $this->assertLessThan(3500, $elapsedMs);
-
-        $degradation = array_values(array_filter(
-            $this->logger->records,
-            static fn (array $record): bool => 'bash_tool.background_skipped_metadata_error' === $record['message'],
-        ));
-        $this->assertCount(1, $degradation);
-        $this->assertSame('warning', $degradation[0]['level']);
-        $this->assertSame($runId, $degradation[0]['context']['session_id'] ?? null);
-
-        $declined = array_values(array_filter(
-            $this->logger->records,
-            static fn (array $record): bool => 'bash_tool.background_declined' === $record['message'],
-        ));
-        $this->assertSame([], $declined, 'Fail-closed skip must not log parent decline');
+        $this->assertLessThan(3500, $elapsedMs, 'Disallowed background prompt timeout must fire near the requested bound, not Castor/HITL');
     }
 
     public function testTimeoutReapsProcessGroupDescendants(): void
@@ -1083,15 +989,9 @@ final class BashToolTest extends IsolatedKernelTestCase
             contextAccessor: $this->contextAccessor,
             toolRuntime: $this->toolRuntime,
             logger: $this->logger,
-            agentChildRunDetector: $this->metadataReader,
             config: $this->bashConfig,
             promptAdapter: $promptAdapter ?? new BashToolDeclineAdapter(),
         );
-    }
-
-    private function seedAgentChildRun(string $runId): void
-    {
-        $this->eventStore->seed(AgentChildRunStartedEventFactory::create($runId));
     }
 
     private function countProcessesHoldingMarker(string $markerPath): int
@@ -1148,6 +1048,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         callable $callback,
         ?ToolExecutionMode $executionMode = null,
         int $batchToolCallCount = 1,
+        bool $backgroundPromptAllowed = true,
     ): mixed {
         $cancellationToken = $this->createStub(CancellationTokenInterface::class);
         $cancellationToken->method('isCancellationRequested')->willReturn(false);
@@ -1161,6 +1062,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             timeoutSeconds: 30,
             executionMode: $executionMode,
             batchToolCallCount: $batchToolCallCount,
+            backgroundPromptAllowed: $backgroundPromptAllowed,
         );
 
         return $this->contextAccessor->with($context, $callback);

@@ -278,6 +278,8 @@ final class ToolExecutor implements ToolExecutorInterface
             humanInputAnswer: $humanInputAnswer instanceof ToolCallHumanInputAnswerDTO ? $humanInputAnswer : null,
             stepId: \is_string($stepId) && '' !== $stepId ? $stepId : null,
             parentModel: \is_string($toolCall->context['parent_model'] ?? null) ? $toolCall->context['parent_model'] : null,
+            backgroundPromptAllowed: !\array_key_exists('background_prompt_allowed', $toolCall->context)
+                || true === $toolCall->context['background_prompt_allowed'],
         );
 
         /** @var SymfonyToolResult $result */

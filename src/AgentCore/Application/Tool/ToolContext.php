@@ -26,6 +26,7 @@ final readonly class ToolContext
         private ?ToolCallHumanInputAnswerDTO $humanInputAnswer = null,
         private ?string $stepId = null,
         private ?string $parentModel = null,
+        private bool $backgroundPromptAllowed = true,
     ) {
     }
 
@@ -97,5 +98,14 @@ final readonly class ToolContext
     public function parentModel(): ?string
     {
         return $this->parentModel;
+    }
+
+    /**
+     * Whether this invocation may offer Bash-style background HITL.
+     * False keeps foreground supervision (deadline/cancellation) without prompting.
+     */
+    public function backgroundPromptAllowed(): bool
+    {
+        return $this->backgroundPromptAllowed;
     }
 }

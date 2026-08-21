@@ -53,6 +53,7 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
             toolsRef: 'tools-v1',
             humanInputAnswer: $answer,
             parentModel: 'deepseek/deepseek-v4-flash',
+            backgroundPromptAllowed: false,
         );
         $result = new ToolCallResult(
             runId: 'run-1',
@@ -93,6 +94,7 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
         $this->assertSame('live-ik', $batchWire['call_data']['c1']['idempotency_key']);
         $this->assertArrayNotHasKey('pending_human_input', $batchWire['result_data']['c2']);
         $this->assertSame('deepseek/deepseek-v4-flash', $batchWire['call_data']['c1']['parent_model']);
+        $this->assertFalse($batchWire['call_data']['c1']['background_prompt_allowed']);
         $this->assertSame('q-1', $batchWire['call_data']['c1']['human_input_answer']['question_id']);
 
         $restoredEnvelope = $serializer->deserialize(
@@ -108,6 +110,7 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
         $this->assertSame('bash', $restored->calls['c1']->toolName);
         $this->assertSame(['command' => 'ls'], $restored->calls['c1']->args);
         $this->assertSame('deepseek/deepseek-v4-flash', $restored->calls['c1']->parentModel);
+        $this->assertFalse($restored->calls['c1']->backgroundPromptAllowed);
         $this->assertNotNull($restored->calls['c1']->humanInputAnswer);
         $this->assertSame('q-1', $restored->calls['c1']->humanInputAnswer->questionId);
         $this->assertSame(['stdout' => 'ok'], $restored->results['c2']->result);

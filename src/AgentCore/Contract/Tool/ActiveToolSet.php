@@ -23,16 +23,18 @@ namespace Ineersa\AgentCore\Contract\Tool;
 final readonly class ActiveToolSet
 {
     /**
-     * @param list<string>          $toolNames      Provider-visible tool names (schemas sent to LLM)
-     * @param list<string>          $allowListNames Execution allowlist names (accepted for execution)
-     * @param array<string, string> $executionModes Tool name => mode value map (e.g. 'sequential', 'parallel')
-     * @param array<string, int>    $timeoutSeconds Tool name => explicit per-tool timeout budget; omit for none
+     * @param list<string>          $toolNames               Provider-visible tool names (schemas sent to LLM)
+     * @param list<string>          $allowListNames          Execution allowlist names (accepted for execution)
+     * @param array<string, string> $executionModes          Tool name => mode value map (e.g. 'sequential', 'parallel')
+     * @param array<string, int>    $timeoutSeconds          Tool name => explicit per-tool timeout budget; omit for none
+     * @param array<string, bool>   $backgroundPromptAllowed Tool name => whether Bash-style background HITL may be offered; absent keys default true
      */
     public function __construct(
         public array $toolNames = [],
         public array $allowListNames = [],
         public array $executionModes = [],
         public array $timeoutSeconds = [],
+        public array $backgroundPromptAllowed = [],
     ) {
     }
 }

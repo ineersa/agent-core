@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
-use Ineersa\CodingAgent\Extension\AgentChildRunDetectorInterface;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Psr\Log\LoggerInterface;
 
@@ -29,9 +28,10 @@ use Psr\Log\LoggerInterface;
  *   timeout deadline.
  * - At the configured background_prompt_threshold_seconds, parent/main
  *   sessions ask the injectable BashBackgroundPromptAdapterInterface
- *   whether to leave the process running in background. Agent-child
- *   runs (session.kind=agent_child) never offer backgrounding — they stay
- *   foreground-supervised so the per-call Bash timeout can still fire.
+ *   whether to leave the process running in background when
+ *   ToolContext::backgroundPromptAllowed() is true. Child tool policy
+ *   sets that flag false so those invocations stay foreground-supervised
+ *   and the per-call Bash timeout can still fire.
  * - On successful completion, returns captured capped output.
  * - On non-zero exit, returns output + exit code info.
  * - On timeout/cancellation, stops the managed process and returns
@@ -70,7 +70,6 @@ final class BashTool implements HatfieldToolProviderInterface
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ToolRuntime $toolRuntime,
         private readonly LoggerInterface $logger,
-        private readonly AgentChildRunDetectorInterface $agentChildRunDetector,
         private readonly BashToolConfig $config = new BashToolConfig(),
         private readonly BashBackgroundPromptAdapterInterface $promptAdapter = new BashBackgroundPromptDeclineAdapter(),
     ) {
@@ -202,8 +201,8 @@ final class BashTool implements HatfieldToolProviderInterface
                 }
 
                 // 4. Background prompt threshold check (once per invocation).
-                // Agent-child runs never create the HITL question: awaiting it
-                // would block this loop and prevent the Bash deadline above
+                // Policy may disable the HITL offer (agent-child toolset): awaiting
+                // it would block this loop and prevent the Bash deadline above
                 // from firing (session #41 fork hang).
                 if (!$promptTriggered) {
                     $elapsedSeconds = (hrtime(true) - $startTime) / 1_000_000_000;
@@ -211,8 +210,8 @@ final class BashTool implements HatfieldToolProviderInterface
                     if ($elapsedSeconds >= $this->config->backgroundPromptThresholdSeconds) {
                         $promptTriggered = true;
 
-                        if ($this->shouldSkipBackgroundOffer($sessionId, $pid)) {
-                            // Child / fail-closed path: continue foreground supervision.
+                        if (false === ($context?->backgroundPromptAllowed() ?? true)) {
+                            // Policy path: continue foreground supervision.
                         } elseif ($this->promptAdapter->shouldBackground($command, $pid, $logPath, $elapsedSeconds)) {
                             // Re-check process status — it may have finished while we
                             // were waiting for the user's decision. If the process
@@ -287,49 +286,6 @@ final class BashTool implements HatfieldToolProviderInterface
     }
 
     // ─── Private helpers ────────────────────────────────────────────
-
-    /**
-     * Skip the optional background HITL offer for agent_child runs, or when
-     * RunStarted metadata cannot be read safely after the process has started.
-     *
-     * Missing metadata remains parent-compatible (returns false) so normal
-     * parent/main sessions without a RunStarted event keep background offers.
-     * Malformed child metadata fails closed (returns true) after structured log.
-     */
-    private function shouldSkipBackgroundOffer(?string $sessionId, int $pid): bool
-    {
-        if (null !== $sessionId) {
-            try {
-                if ($this->agentChildRunDetector->isAgentChild($sessionId)) {
-                    $this->logger->info('bash_tool.background_skipped_agent_child', [
-                        'component' => 'tool.bash',
-                        'event_type' => 'bash_tool.background_skipped_agent_child',
-                        'process_pid' => $pid,
-                        'session_id' => $sessionId,
-                    ]);
-
-                    return true;
-                }
-            } catch (\Throwable $e) {
-                // Intentional local degradation: malformed/unreadable RunStarted
-                // must not escape after the process has started. Fail closed by
-                // skipping the optional background offer so cancellation/timeout
-                // supervision can continue and reap the process group.
-                $this->logger->warning('bash_tool.background_skipped_metadata_error', [
-                    'component' => 'tool.bash',
-                    'event_type' => 'bash_tool.background_skipped_metadata_error',
-                    'process_pid' => $pid,
-                    'session_id' => $sessionId,
-                    'exception_class' => $e::class,
-                    'exception_message' => $e->getMessage(),
-                ]);
-
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     private function resolveTimeout(BashArgumentsDTO $arguments): int
     {

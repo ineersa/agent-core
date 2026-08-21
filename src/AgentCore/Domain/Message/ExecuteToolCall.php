@@ -51,6 +51,8 @@ final readonly class ExecuteToolCall extends AbstractAgentBusMessage
         public ?ToolCallHumanInputAnswerDTO $humanInputAnswer = null,
         #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public ?string $parentModel = null,
+        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
+        public bool $backgroundPromptAllowed = true,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
     }
@@ -76,6 +78,7 @@ final readonly class ExecuteToolCall extends AbstractAgentBusMessage
             toolsRef: $this->toolsRef,
             humanInputAnswer: $answer,
             parentModel: $this->parentModel,
+            backgroundPromptAllowed: $this->backgroundPromptAllowed,
         );
     }
 }

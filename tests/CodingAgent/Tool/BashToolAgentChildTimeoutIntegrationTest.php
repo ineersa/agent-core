@@ -6,36 +6,27 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\CodingAgent\Entity\ToolQuestion;
 use Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum;
-use Ineersa\CodingAgent\Tests\Support\AgentChildRunStartedEventFactory;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BashTool;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
 
 /**
- * Production DI proof: agent_child Bash uses the wired RuntimeBashBackgroundPromptAdapter
- * path but never creates a ToolQuestion, and the requested Bash timeout still resolves.
+ * Production DI proof: Bash with backgroundPromptAllowed=false never creates a
+ * ToolQuestion, and the requested Bash timeout still resolves through the wired
+ * RuntimeBashBackgroundPromptAdapter path.
  *
  * @requires extension pdo_sqlite
  * @requires OS Linux
  */
 final class BashToolAgentChildTimeoutIntegrationTest extends IsolatedKernelTestCase
 {
-    public function testAgentChildBashTimeoutResolvesWithoutToolQuestion(): void
+    public function testDisallowedBackgroundPromptTimeoutResolvesWithoutToolQuestion(): void
     {
         $childRunId = 'agent-child-bash-di-'.bin2hex(random_bytes(4));
-
-        /** @var EventStoreInterface $eventStore */
-        $eventStore = self::getContainer()->get(EventStoreInterface::class);
-        $eventStore->append(AgentChildRunStartedEventFactory::create(
-            runId: $childRunId,
-            artifactId: 'agent_bash_di',
-            seq: 0,
-        ));
 
         /** @var BashTool $bashTool */
         $bashTool = self::getContainer()->get(BashTool::class);
@@ -55,6 +46,7 @@ final class BashToolAgentChildTimeoutIntegrationTest extends IsolatedKernelTestC
             cancellationToken: $cancelToken,
             // Ambient policy timeout stays null/large; BashArgumentsDTO timeout is authoritative.
             timeoutSeconds: null,
+            backgroundPromptAllowed: false,
         );
 
         $started = hrtime(true);
@@ -76,6 +68,6 @@ final class BashToolAgentChildTimeoutIntegrationTest extends IsolatedKernelTestC
             static fn (ToolQuestion $q): bool => $q->runId === $childRunId
                 && ToolQuestionStatusEnum::Pending === $q->status,
         ));
-        $this->assertSame([], $pending, 'agent_child bash must never create a background ToolQuestion');
+        $this->assertSame([], $pending, 'disallowed background prompt must never create a background ToolQuestion');
     }
 }

@@ -312,6 +312,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 argSchema: $toolSchemas[$toolCall['name']] ?? null,
                 toolsRef: $message->toolsRef,
                 parentModel: $state->model,
+                backgroundPromptAllowed: $policy['background_prompt_allowed'],
             );
         }
 
@@ -462,13 +463,14 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
      * Per-tool timeout overrides come from ActiveToolSet.timeoutSeconds when set.
      * Absent overrides mean no per-call cooperative timeout budget (null).
      *
-     * @return array{mode: ToolExecutionMode, timeout_seconds: ?int, max_parallelism: int}
+     * @return array{mode: ToolExecutionMode, timeout_seconds: ?int, max_parallelism: int, background_prompt_allowed: bool}
      */
     private function resolveToolPolicy(string $toolName, ?ActiveToolSet $activeSet = null): array
     {
         $mode = ToolExecutionMode::Sequential;
         $timeoutSeconds = null;
         $maxParallelism = max(1, $this->maxParallelism);
+        $backgroundPromptAllowed = true;
 
         if (null !== $this->toolExecutionSettings) {
             $defaults = ToolExecutionPolicyResolver::fromSettings($this->toolExecutionSettings)->resolve($toolName);
@@ -481,12 +483,16 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             if (isset($activeSet->timeoutSeconds[$toolName]) && $activeSet->timeoutSeconds[$toolName] > 0) {
                 $timeoutSeconds = $activeSet->timeoutSeconds[$toolName];
             }
+            if (\array_key_exists($toolName, $activeSet->backgroundPromptAllowed)) {
+                $backgroundPromptAllowed = $activeSet->backgroundPromptAllowed[$toolName];
+            }
         }
 
         return [
             'mode' => $mode,
             'timeout_seconds' => null !== $timeoutSeconds && $timeoutSeconds > 0 ? max(1, $timeoutSeconds) : null,
             'max_parallelism' => max(1, $maxParallelism),
+            'background_prompt_allowed' => $backgroundPromptAllowed,
         ];
     }
 
