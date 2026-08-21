@@ -110,6 +110,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
                             launchModel: $intent['launchModel'],
                             launchReasoning: $intent['launchReasoning'],
                             conn: $conn,
+                            existing: $byChildRun,
                         );
 
                         continue;
@@ -191,11 +192,12 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         string $launchModel,
         string $launchReasoning,
         ?Connection $conn = null,
+        ?DeferredSubagentChild $existing = null,
     ): void {
         $now = Clock::get()->now();
         $conn ??= $this->getEntityManager()->getConnection();
-        $existing = $this->findEntityByChildRunId($childRunId);
-        $cursor = $existing?->childEventCursor ?? 0;
+        $existing ??= $this->findEntityByChildRunId($childRunId);
+        $cursor = null === $existing ? 0 : $existing->childEventCursor;
         $previous = null !== $existing ? $this->decodeChildLifecycleProjection($existing->childLifecycleProjection) : null;
         $projection = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
@@ -203,7 +205,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
             lastCommittedSeq: $cursor,
             model: $launchModel,
             reasoning: $launchReasoning,
-            latestInputTokens: $previous?->latestInputTokens ?? 0,
+            latestInputTokens: null === $previous ? 0 : $previous->latestInputTokens,
             contextWindow: $previous?->contextWindow,
         );
 

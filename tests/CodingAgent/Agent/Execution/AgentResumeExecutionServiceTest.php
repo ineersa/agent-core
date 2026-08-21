@@ -24,6 +24,7 @@ use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeTaskDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
@@ -33,6 +34,7 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
+use Psr\Log\NullLogger;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\SerializerInterface;
 
@@ -251,6 +253,53 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         );
     }
 
+    public function testFollowUpFailureMarksBatchFailedAndKeepsFailedChildTerminal(): void
+    {
+        $parent = 'parent-followup-fail';
+        $artifactId = 'agent_followup_fail';
+        $childRunId = 'child-followup-fail';
+        $toolCallId = 'tc-followup-fail';
+        $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 10, contextWindow: 200_000);
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->once())
+            ->method('followUp')
+            ->willThrowException(new \RuntimeException('follow_up boom'));
+
+        try {
+            $this->resume(
+                parentRunId: $parent,
+                tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+                childRunId: $childRunId,
+                runStatus: RunStatus::Completed,
+                agentRunner: $agentRunner,
+                toolCallId: $toolCallId,
+            );
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('failed to follow_up', $e->getMessage());
+        }
+
+        $batch = self::getContainer()->get(DeferredSubagentBatchRepository::class)
+            ->findByParentRunAndToolCall($parent, $toolCallId);
+        $this->assertNotNull($batch);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch->launchStatus);
+
+        $entry = $this->registry()->get($parent, $artifactId);
+        $this->assertNotNull($entry);
+        $this->assertSame(AgentArtifactStatusEnum::Completed, $entry->status);
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('batch launch previously failed');
+        $this->resume(
+            parentRunId: $parent,
+            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue again')],
+            childRunId: $childRunId,
+            runStatus: RunStatus::Completed,
+            toolCallId: $toolCallId,
+        );
+    }
+
     /**
      * @param list<AgentResumeTaskDTO> $tasks
      */
@@ -260,12 +309,17 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         ?string $childRunId = null,
         ?EventStoreInterface $eventStore = null,
         RunStatus $runStatus = RunStatus::Completed,
+        ?AgentRunnerInterface $agentRunner = null,
+        string $toolCallId = 'tc-resume-1',
+        ChildRunBatchExecutionModeEnum $executionMode = ChildRunBatchExecutionModeEnum::Single,
     ): void {
         $contextAccessor = new StackToolExecutionContextAccessor();
         $runStore = $this->createStub(RunStoreInterface::class);
-        if (null !== $childRunId) {
-            $runStore->method('get')->willReturn(new RunState(runId: $childRunId, status: $runStatus));
-        }
+        $runStore->method('get')->willReturnCallback(
+            static function (string $runId) use ($runStatus): RunState {
+                return new RunState(runId: $runId, status: $runStatus);
+            },
+        );
 
         $eventStore ??= $this->createStub(EventStoreInterface::class);
         $metadataReader = new SubagentRunMetadataReader(
@@ -278,27 +332,28 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             batchRepository: self::getContainer()->get(DeferredSubagentBatchRepository::class),
             childRepository: self::getContainer()->get(DeferredSubagentChildRepository::class),
             identityFactory: new DeferredSubagentBatchIdentityFactory(),
-            agentRunner: $this->createStub(AgentRunnerInterface::class),
+            agentRunner: $agentRunner ?? $this->createStub(AgentRunnerInterface::class),
             runStore: $runStore,
             metadataReader: $metadataReader,
             depthGuard: new AgentDepthGuard(),
             contextAccessor: $contextAccessor,
             agentsConfig: new AgentsConfig(maxAgents: 4),
+            logger: new NullLogger(),
         );
 
         $contextAccessor->with(
             new ToolContext(
                 runId: $parentRunId,
                 turnNo: 1,
-                toolCallId: 'tc-resume-1',
+                toolCallId: $toolCallId,
                 toolName: 'agent_resume',
                 cancellationToken: new NullCancellationToken(),
                 timeoutSeconds: 30,
                 orderIndex: 0,
                 parentModel: 'test/model',
             ),
-            static function () use ($service, $parentRunId, $tasks): void {
-                $service->resume($parentRunId, $tasks, ChildRunBatchExecutionModeEnum::Single);
+            static function () use ($service, $parentRunId, $tasks, $executionMode): void {
+                $service->resume($parentRunId, $tasks, $executionMode);
             },
         );
     }

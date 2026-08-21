@@ -360,7 +360,19 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
         $this->registry->writeHandoff($parent, $artifactId, '# First archive body');
         $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'first done');
-        $this->registry->writeHandoff($parent, $artifactId, '# Latest handoff body');
+
+        $prior = $this->registry->get($parent, $artifactId);
+        $this->assertNotNull($prior);
+        $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'second done');
+        $this->registry->writeHandoff(
+            $parent,
+            $artifactId,
+            '# Latest handoff body',
+            archivedMeta: [
+                'status' => $prior->status,
+                'summary' => $prior->summary,
+            ],
+        );
 
         $service = $this->makeService();
 
@@ -371,6 +383,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('Archived handoffs (oldest → newest)', $list);
         $this->assertStringContainsString('n=1', $list);
         $this->assertStringContainsString('status=completed', $list);
+        $this->assertStringContainsString('first done', $list);
         $this->assertStringNotContainsString('# Latest handoff body', $list);
 
         $body = $service->retrieve($parent, $this->args([

@@ -816,12 +816,28 @@ Done.', $this->registry->readHandoff($parentRunId, $artifactId));
         $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
         $this->registry->writeHandoff($parentRunId, $artifactId, '# First');
         $this->registry->update($parentRunId, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'first done');
-        $this->registry->writeHandoff($parentRunId, $artifactId, '# Second');
+
+        // Mirror SubagentChildRunArtifactFinalizer order: update terminal fields, then write
+        // the new handoff while passing pre-update metadata for the archive index entry.
+        $prior = $this->registry->get($parentRunId, $artifactId);
+        $this->assertNotNull($prior);
+        $this->registry->update($parentRunId, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'second done');
+        $this->registry->writeHandoff(
+            $parentRunId,
+            $artifactId,
+            '# Second',
+            archivedMeta: [
+                'status' => $prior->status,
+                'summary' => $prior->summary,
+            ],
+        );
 
         $this->assertSame('# Second', $this->registry->readHandoff($parentRunId, $artifactId));
         $history = $this->registry->listHandoffHistory($parentRunId, $artifactId);
         $this->assertCount(1, $history);
         $this->assertSame(1, $history[0]['n']);
+        $this->assertSame(AgentArtifactStatusEnum::Completed->value, $history[0]['status']);
+        $this->assertSame('first done', $history[0]['summary']);
         $this->assertSame('# First', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, 1));
     }
 

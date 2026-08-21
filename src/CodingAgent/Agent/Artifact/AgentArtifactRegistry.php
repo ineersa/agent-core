@@ -453,10 +453,19 @@ final class AgentArtifactRegistry
      *
      * Uses atomic temp-file + rename to avoid partial writes.
      *
+     * @param array{status?: ?AgentArtifactStatusEnum, summary?: ?string}|null $archivedMeta
+     *                                                                                       Optional pre-captured status/summary for the archived prior handoff.
+     *                                                                                       Callers that update registry status before writeHandoff must pass this so
+     *                                                                                       archive index metadata reflects the prior run, not the post-update entry.
+     *
      * @throws \InvalidArgumentException when IDs contain path separators
      */
-    public function writeHandoff(string $parentRunId, string $artifactId, string $content): void
-    {
+    public function writeHandoff(
+        string $parentRunId,
+        string $artifactId,
+        string $content,
+        ?array $archivedMeta = null,
+    ): void {
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
 
@@ -464,7 +473,11 @@ final class AgentArtifactRegistry
         $lock->acquire(true);
 
         try {
-            $this->archiveExistingHandoffIfPresent($parentRunId, $artifactId);
+            $this->archiveExistingHandoffIfPresent(
+                $parentRunId,
+                $artifactId,
+                $archivedMeta,
+            );
             $this->writeHandoffInternal($parentRunId, $artifactId, $content);
         } finally {
             $lock->release();
@@ -701,8 +714,14 @@ final class AgentArtifactRegistry
         }
     }
 
-    private function archiveExistingHandoffIfPresent(string $parentRunId, string $artifactId): void
-    {
+    /**
+     * @param array{status?: ?AgentArtifactStatusEnum, summary?: ?string}|null $archivedMeta
+     */
+    private function archiveExistingHandoffIfPresent(
+        string $parentRunId,
+        string $artifactId,
+        ?array $archivedMeta = null,
+    ): void {
         $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
         $handoffPath = $this->pathResolver->absolutePath($parentRunId, $paths->handoffPath);
         if (!is_file($handoffPath) || !is_readable($handoffPath)) {
@@ -736,22 +755,39 @@ final class AgentArtifactRegistry
             throw new \RuntimeException(\sprintf('Failed to archive handoff.md for artifact "%s" parent "%s".', $artifactId, $parentRunId), previous: $exception);
         }
 
-        $entryMeta = null;
-        foreach ($this->loadRegistry($parentRunId) as $entry) {
-            if ($entry->artifactId === $artifactId) {
-                $entryMeta = $entry;
-                break;
-            }
-        }
+        $status = null;
         $summary = null;
-        if (null !== $entryMeta?->summary && '' !== trim($entryMeta->summary)) {
-            $summary = mb_substr(preg_replace('/\s+/', ' ', $entryMeta->summary) ?? $entryMeta->summary, 0, 240);
+        if (null !== $archivedMeta) {
+            $status = $archivedMeta['status'] ?? null;
+            $summary = $archivedMeta['summary'] ?? null;
+            if (!$status instanceof AgentArtifactStatusEnum) {
+                $status = null;
+            }
+            if (!\is_string($summary)) {
+                $summary = null;
+            }
+        } else {
+            $entryMeta = null;
+            foreach ($this->loadRegistry($parentRunId) as $entry) {
+                if ($entry->artifactId === $artifactId) {
+                    $entryMeta = $entry;
+                    break;
+                }
+            }
+            $status = $entryMeta?->status;
+            $summary = $entryMeta?->summary;
+        }
+
+        if (null !== $summary && '' !== trim($summary)) {
+            $summary = mb_substr(preg_replace('/\s+/', ' ', $summary) ?? $summary, 0, 240);
+        } else {
+            $summary = null;
         }
 
         $entries[] = [
             'n' => $nextN,
             'created_at' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
-            'status' => $entryMeta?->status->value,
+            'status' => $status?->value,
             'summary' => $summary,
             'path' => $relativeArchive,
         ];
