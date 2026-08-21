@@ -150,10 +150,10 @@ class AppConfigTest extends TestCase
     }
 
     // ──────────────────────────────────────────────
-    //  Dangling default_model — throws
+    //  Dangling default_model — falls back
     // ──────────────────────────────────────────────
 
-    public function testDanglingDefaultModelThrows(): void
+    public function testDanglingDefaultModelFallsBackToFirstAvailable(): void
     {
         $this->writeDefaults([
             'tui' => ['theme' => 'cyberpunk', 'theme_paths' => ['/app/config/themes']],
@@ -180,17 +180,22 @@ class AppConfigTest extends TestCase
             ],
         ]);
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('is not available');
+        $config = $this->buildConfig();
 
-        $this->buildConfig();
+        $this->assertSame('openai/gpt-5', $config->staleDefaultModel);
+        $this->assertSame('deepseek/deepseek-v4-pro', $config->ai?->defaultModel);
+        // $raw must stay faithful to disk — mutating it would permanently trip
+        // SettingsShowCommandHandler's "Restart required: disk settings differ".
+        $this->assertSame('openai/gpt-5', $config->raw['ai']['default_model'] ?? null);
+        $this->assertNotNull($config->catalog);
+        $this->assertTrue($config->catalog->isAvailable('deepseek/deepseek-v4-pro'));
     }
 
     // ──────────────────────────────────────────────
     //  Dangling default_model with no providers at all
     // ──────────────────────────────────────────────
 
-    public function testDanglingDefaultModelWhenNoProvidersConfiguredThrows(): void
+    public function testDanglingDefaultModelWhenNoProvidersConfiguredBoots(): void
     {
         $this->writeDefaults([
             'tui' => ['theme' => 'cyberpunk', 'theme_paths' => ['/app/config/themes']],
@@ -201,10 +206,19 @@ class AppConfigTest extends TestCase
             ],
         ]);
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('No enabled providers or models');
+        $config = $this->buildConfig();
 
-        $this->buildConfig();
+        // No fallback available — keep configured value; AgentCommand gate owns the fail-fast.
+        $this->assertSame('openai/gpt-5', $config->staleDefaultModel);
+        $this->assertSame('openai/gpt-5', $config->ai?->defaultModel);
+    }
+
+    public function testAvailableDefaultModelLeavesStaleNull(): void
+    {
+        $config = $this->buildConfig();
+
+        $this->assertNull($config->staleDefaultModel);
+        $this->assertSame('deepseek/deepseek-v4-pro', $config->ai?->defaultModel);
     }
 
     // ──────────────────────────────────────────────

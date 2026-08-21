@@ -115,6 +115,11 @@ parameters:
         - type: directory
           value: src/Tui/Startup/.*
 
+    - name: TuiSetup
+      collectors:
+        - type: directory
+          value: src/Tui/Setup/.*
+
     - name: TuiCompactHeader
       collectors:
         - type: directory
@@ -535,6 +540,9 @@ parameters:
       - TuiTheme
       - SymfonyTui
 
+    TuiSetup:
+      - SymfonyTui
+
     TuiCompactHeader:
       - AppRuntimeContract
       - AppSkills
@@ -646,6 +654,7 @@ parameters:
       - SymfonySerializer
 
     AppCli:
+      - TuiSetup
       - AppAuth
       - AppAgent
       - AppExtension

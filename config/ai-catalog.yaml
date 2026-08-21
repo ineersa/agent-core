@@ -8,7 +8,7 @@
 # Refresh: hatfield providers:update
 # Interactive setup: bin/console providers:setup (see providers-setup-command task)
 
-version: 1
+version: 2
 
 providers:
     deepseek:
@@ -151,7 +151,7 @@ providers:
                 cost: { input: 2.50, output: 15.00, cache_read: 0.25, cache_write: 3.125 }
 
     grok-cli:
-        label: 'Grok CLI (xAI)'
+        label: 'Grok / xAI'
         kind: oauth
         type: grok
         enabled: false
