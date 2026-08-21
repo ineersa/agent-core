@@ -451,8 +451,10 @@ final class TmuxHarness
     /**
      * After the Hatfield logo (█) is visible, poll until idle/work status and footer render.
      * Replaces fixed post-logo sleeps; exits early when the TUI finishes init.
+     * Default timeout matches {@see self::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL} so parallel
+     * castor-check contention does not blank-capture flake at a 3s hard stop.
      */
-    public function waitForTuiReadyAfterLogo(TmuxPane $pane, float $timeout = 3.0): string
+    public function waitForTuiReadyAfterLogo(TmuxPane $pane, float $timeout = self::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL): string
     {
         return $this->waitForCallback(
             $pane,
