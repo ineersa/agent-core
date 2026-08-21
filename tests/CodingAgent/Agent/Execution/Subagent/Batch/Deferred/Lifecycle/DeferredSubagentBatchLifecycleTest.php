@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Lifecycle;
 
+use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
@@ -12,6 +13,7 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
@@ -1181,6 +1183,85 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertInstanceOf(CompleteDeferredToolCall::class, $complete);
         $this->assertSame($lifecycle, $complete->deferredId);
         $this->assertFalse($complete->isError);
+
+        $commandBus->messages = [];
+        $delivery->deliver($lifecycle);
+        $this->assertCount(0, $commandBus->messages, 'Redelivered lifecycle observation must not complete parent tool twice');
+    }
+
+    public function testAgentResumeToolNameDeferredLifecyclePreservesToolNameThroughCompleteDeferredToolCall(): void
+    {
+        $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $factory = new DeferredSubagentBatchIdentityFactory();
+        $parent = 'parent-batch-agent-resume-once';
+        $tool = 'tool-batch-agent-resume-once';
+        $lifecycle = $factory->batchLifecycleId($parent, $tool);
+        $c1 = $factory->childIdentity($parent, $tool, 1);
+        $repo->reserveBatch(
+            lifecycleId: $lifecycle,
+            parentRunId: $parent,
+            parentTurnNo: 2,
+            parentToolCallId: $tool,
+            parentOrderIndex: 0,
+            executionMode: ChildRunBatchExecutionModeEnum::Single,
+            totalChildCount: 1,
+            deadlineAt: new \DateTimeImmutable('+600 seconds'),
+            childIntents: [
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'scout', 'task' => 'Resume task', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
+            ],
+        );
+        $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
+        $this->ensureArtifactReserved($parent, $c1['childRunId'], $c1['artifactId'], 'scout', 'Resume task');
+
+        $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
+            $repo,
+            self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
+            new TestLogger(),
+            new TestMessageBus(),
+        );
+        $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Completed, 2, [
+            new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, [
+                'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'resume child done']]],
+            ]),
+            new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
+        ]));
+
+        $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
+        $deferred->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: $lifecycle,
+            runId: $parent,
+            turnNo: 2,
+            stepId: 'turn-2-tools-1',
+            attempt: 1,
+            idempotencyKey: 'idem-agent-resume-once',
+            toolCallId: $tool,
+            toolName: 'agent_resume',
+            arguments: [],
+            orderIndex: 0,
+        ));
+
+        $commandBus = new TestMessageBus();
+        $delivery = $this->buildLifecycleDelivery($commandBus);
+        $delivery->deliver($lifecycle);
+        $this->assertCount(1, $commandBus->messages);
+        $complete = $commandBus->messages[0];
+        $this->assertInstanceOf(CompleteDeferredToolCall::class, $complete);
+        $this->assertSame($lifecycle, $complete->deferredId);
+        $this->assertFalse($complete->isError);
+
+        $resultBus = new TestMessageBus();
+        $completionHandler = new CompleteDeferredToolCallHandler(
+            $deferred,
+            $resultBus,
+            new TestLogger(),
+        );
+        $completionHandler($complete);
+        $this->assertCount(1, $resultBus->messages);
+        $toolCallResult = $resultBus->messages[0];
+        $this->assertInstanceOf(ToolCallResult::class, $toolCallResult);
+        $this->assertIsArray($toolCallResult->result);
+        $this->assertSame('agent_resume', $toolCallResult->result['tool_name']);
 
         $commandBus->messages = [];
         $delivery->deliver($lifecycle);
