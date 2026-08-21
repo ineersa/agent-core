@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Setup;
 
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
+use Symfony\Component\Tui\Event\SettingChangeEvent;
 use Symfony\Component\Tui\Event\SubmitEvent;
 use Symfony\Component\Tui\Style\Border;
 use Symfony\Component\Tui\Style\Color;
@@ -17,6 +18,8 @@ use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\InputWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
+use Symfony\Component\Tui\Widget\SettingItem;
+use Symfony\Component\Tui\Widget\SettingsListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
@@ -33,10 +36,8 @@ final class SetupScreen
     private const PHASE_CONFIRM = 'confirm';
     private const PHASE_CHOICE = 'choice';
     private const PHASE_INPUT = 'input';
+    private const PHASE_CUSTOM = 'custom';
     private const PHASE_SUMMARY = 'summary';
-
-    /** Custom-wizard step count (id→thinking format, with API-key branch collapsed). */
-    private const CUSTOM_STEP_TOTAL = 13;
 
     private Tui $tui;
     private TextWidget $titleWidget;
@@ -47,6 +48,7 @@ final class SetupScreen
     private TextWidget $footerWidget;
     private SelectListWidget $listWidget;
     private InputWidget $inputWidget;
+    private SettingsListWidget $settingsWidget;
     private bool $mounted = false;
 
     private string $phase = self::PHASE_PICKER;
@@ -80,8 +82,9 @@ final class SetupScreen
         $this->footerWidget = new TextWidget('');
         $this->listWidget = new SelectListWidget([], maxVisible: 12);
         $this->inputWidget = new InputWidget();
+        $this->settingsWidget = new SettingsListWidget([], maxVisible: 16);
 
-        // Static panel chrome — list/input are mounted by applyPhaseLayout().
+        // Static panel chrome — list/input/settings are mounted by applyPhaseLayout().
         $this->panelWidget->add($this->stepWidget);
         $this->panelWidget->add($this->hintWidget);
         $this->panelWidget->add($this->errorWidget);
@@ -97,11 +100,8 @@ final class SetupScreen
 
         $tui->add($this->titleWidget);
         $tui->add($this->panelWidget);
-        // Footer stays root chrome below the panel.
         $tui->add($this->footerWidget);
 
-        // Listeners are wired in applyPhaseLayout() after each add — remove()
-        // → detach() wipes them, so mount never pre-wires.
         $this->showPicker();
     }
 
@@ -144,6 +144,26 @@ final class SetupScreen
         $this->tui->processRender();
     }
 
+    /**
+     * Drive a SettingsList change without a live TTY (virtual tests).
+     */
+    public function changeSetting(string $id, string $value): void
+    {
+        $this->onCustomSettingChange($id, $value);
+        $this->tui->requestRender(force: true);
+        $this->tui->processRender();
+    }
+
+    /**
+     * Activate the named custom-form action row (save / add_model) in tests.
+     */
+    public function activateCustomAction(string $id): void
+    {
+        $this->onCustomSettingChange($id, '↵');
+        $this->tui->requestRender(force: true);
+        $this->tui->processRender();
+    }
+
     public function errorText(): string
     {
         return $this->errorWidget->getText();
@@ -159,7 +179,6 @@ final class SetupScreen
             $this->onListSelect($value);
         });
         $this->listWidget->onCancel(function (CancelEvent $_): void {
-            // Esc: exit from picker/summary; servers → picker; action/confirm → return phase.
             if (\in_array($this->phase, [self::PHASE_PICKER, self::PHASE_SUMMARY], true)) {
                 $this->finishSuccess();
             } elseif (self::PHASE_SERVERS === $this->phase) {
@@ -185,9 +204,25 @@ final class SetupScreen
         $this->inputWidget->onInput($this->quitOnCtrlD(...));
     }
 
+    private function wireSettingsListeners(): void
+    {
+        $this->settingsWidget->onChange(function (SettingChangeEvent $event): void {
+            $this->onCustomSettingChange($event->getId(), $event->getValue());
+        });
+        $this->settingsWidget->onCancel(function (CancelEvent $_): void {
+            if (self::PHASE_SERVERS === $this->actionReturn
+                || true === ($this->formState['editing'] ?? false)) {
+                $this->showServersSubmenu();
+
+                return;
+            }
+            $this->showPicker();
+        });
+        $this->settingsWidget->onInput($this->quitOnCtrlD(...));
+    }
+
     private function quitOnCtrlD(string $data): bool
     {
-        // Ctrl+D is delete_char_forward on InputWidget by default — steal it before widget keybindings.
         if ("\x04" === $data) {
             $this->finishSuccess();
 
@@ -206,7 +241,6 @@ final class SetupScreen
             self::PHASE_ACTION => $this->handleActionSelect($value),
             self::PHASE_CONFIRM => $this->handleConfirmSelect($value),
             self::PHASE_CHOICE => $this->handleChoiceSelect($value),
-            // SUMMARY exits via tui->stop() before input; no select handler.
             default => null,
         };
         $this->refreshError();
@@ -220,14 +254,6 @@ final class SetupScreen
                 'api_env_name' => $this->finishApiEnv($value),
                 'api_raw_key' => $this->finishApiRaw($value),
                 'api_raw_confirm' => $this->finishApiRawConfirm($value),
-                'custom_id' => $this->advanceCustomId($value),
-                'custom_url' => $this->advanceCustomUrl($value),
-                'custom_path' => $this->advanceCustomPath($value),
-                'custom_model_id' => $this->advanceCustomModelId($value),
-                'custom_model_name' => $this->advanceCustomModelName($value),
-                'custom_context' => $this->advanceCustomContext($value),
-                'custom_max_tokens' => $this->advanceCustomMaxTokens($value),
-                'custom_thinking_format' => $this->finishCustomThinkingFormat($value),
                 default => $this->showPicker(),
             };
         } catch (\InvalidArgumentException $e) {
@@ -332,7 +358,6 @@ final class SetupScreen
 
             return;
         }
-        // Reconfigure (API-key catalog providers only — oauth omits this option).
         $this->startEnable($this->activeProviderId);
     }
 
@@ -399,11 +424,6 @@ final class SetupScreen
     {
         match ($this->formKind) {
             'api_where' => $this->handleApiWhere($value),
-            'custom_want_key' => $this->handleCustomWantKey($value),
-            'custom_modalities' => $this->handleCustomModalities($value),
-            'custom_reasoning' => $this->handleCustomReasoning($value),
-            'custom_another_model' => $this->handleCustomAnotherModel($value),
-            'custom_developer_role' => $this->handleCustomDeveloperRole($value),
             'default_model' => $this->handleDefaultModel($value),
             default => $this->showPicker(),
         };
@@ -434,7 +454,6 @@ final class SetupScreen
     {
         $id = (string) ($this->formState['id'] ?? '');
         if ('raw' === $value) {
-            // InputWidget has no mask — show-then-confirm.
             $this->beginInput('api_raw_key', 'Paste your API key (shown; confirm next)');
 
             return;
@@ -446,11 +465,6 @@ final class SetupScreen
     {
         $id = (string) ($this->formState['id'] ?? '');
         $apiKey = $this->flow->formatEnvApiKey('' !== $value ? $value : $this->suggestedEnvVar($id));
-        if (($this->formState['afterKey'] ?? null) === 'custom_model') {
-            $this->resumeAfterCustomKey($apiKey);
-
-            return;
-        }
         $this->flow->enableApiKey($id, $apiKey);
         $this->askContinue(\sprintf('%s enabled.', $this->labelFor($id))."\n(Everything else is preconfigured.)");
     }
@@ -471,28 +485,17 @@ final class SetupScreen
             throw new \InvalidArgumentException('Keys did not match — try again.');
         }
         $id = (string) ($this->formState['id'] ?? '');
-        if (($this->formState['afterKey'] ?? null) === 'custom_model') {
-            $this->resumeAfterCustomKey($raw);
-
-            return;
-        }
         $this->flow->enableApiKey($id, $raw);
         $this->askContinue(\sprintf('%s enabled.', $this->labelFor($id))."\n(Everything else is preconfigured.)");
     }
 
     private function startCustom(): void
     {
-        $this->formKind = 'custom_id';
-        $this->formState = [
-            'models' => [],
-        ];
-        $this->beginInput('custom_id', 'Provider id (slug)', 'local');
+        $this->actionReturn = self::PHASE_PICKER;
+        $this->formState = $this->blankCustomState();
+        $this->showCustomForm();
     }
 
-    /**
-     * Re-run the custom wizard prefilled from a saved definition.
-     * Skips the id step; keeps existing models (can only add more — remove+re-add to drop one).
-     */
     private function startCustomEdit(string $id): void
     {
         $definition = $this->flow->customDefinition($id);
@@ -503,6 +506,7 @@ final class SetupScreen
             return;
         }
 
+        $this->actionReturn = self::PHASE_SERVERS;
         $this->formState = [
             'id' => $definition['id'],
             'baseUrl' => $definition['baseUrl'],
@@ -513,177 +517,348 @@ final class SetupScreen
             'supportsDeveloperRole' => $definition['supportsDeveloperRole'],
             'thinkingFormat' => $definition['thinkingFormat'],
             'editing' => true,
+            'modelId' => '',
+            'modelName' => '',
+            'contextWindow' => '128000',
+            'maxTokens' => '8192',
+            'modalities' => 'text',
+            'reasoning' => 'no',
         ];
-        $this->beginInput(
-            'custom_url',
-            'Server URL (e.g. http://localhost:8080)',
-            '' !== $definition['baseUrl'] ? $definition['baseUrl'] : 'http://127.0.0.1:8080',
-        );
+        $this->showCustomForm();
     }
 
-    private function advanceCustomId(string $value): void
+    /**
+     * @return array<string, mixed>
+     */
+    private function blankCustomState(): array
     {
+        return [
+            'id' => 'local',
+            'baseUrl' => 'http://127.0.0.1:8080',
+            'completionsPath' => '/v1/chat/completions',
+            'apiKey' => null,
+            'models' => [],
+            'supportsDeveloperRole' => false,
+            'thinkingFormat' => '',
+            'editing' => false,
+            'modelId' => 'default',
+            'modelName' => 'default',
+            'contextWindow' => '128000',
+            'maxTokens' => '8192',
+            'modalities' => 'text',
+            'reasoning' => 'no',
+        ];
+    }
+
+    private function showCustomForm(): void
+    {
+        $this->phase = self::PHASE_CUSTOM;
+        $this->formKind = '';
+        $this->error = null;
+        $this->applyChrome();
+        $this->hintWidget->setText('Edit any row. Enter opens editor or toggles. Save when ready.');
+        $this->settingsWidget = new SettingsListWidget($this->customSettingItems(), maxVisible: 16);
+        $this->refreshError();
+        $this->refreshFooter();
+        $this->applyPhaseLayout();
+        $this->tui->setFocus($this->settingsWidget);
+        $this->tui->requestRender(force: true);
+        $this->tui->processRender();
+    }
+
+    /**
+     * @return list<SettingItem>
+     */
+    private function customSettingItems(): array
+    {
+        $editing = true === ($this->formState['editing'] ?? false);
+        $id = (string) ($this->formState['id'] ?? 'local');
+        $apiKey = $this->formState['apiKey'] ?? null;
+        $apiKeyDisplay = \is_string($apiKey) && '' !== $apiKey ? $apiKey : '(none)';
+        $models = \is_array($this->formState['models'] ?? null) ? $this->formState['models'] : [];
+        $modelIds = array_keys($models);
+        $modelsDisplay = [] === $modelIds ? '(none yet)' : implode(', ', $modelIds);
+
+        $items = [];
+        if ($editing) {
+            $items[] = new SettingItem(
+                'id',
+                'Provider id',
+                $id,
+                'Locked while editing. Remove and re-add to rename.',
+            );
+        } else {
+            $items[] = new SettingItem(
+                'id',
+                'Provider id',
+                $id,
+                'A short name to identify this provider in menus and settings. Example: runpod',
+                submenu: $this->textSubmenu(...),
+            );
+        }
+
+        $items[] = new SettingItem(
+            'baseUrl',
+            'Server URL',
+            (string) ($this->formState['baseUrl'] ?? ''),
+            'The address of the API server Hatfield will talk to. Example: https://abc-123.proxy.runpod.net',
+            submenu: $this->textSubmenu(...),
+        );
+        $items[] = new SettingItem(
+            'completionsPath',
+            'Completions path',
+            (string) ($this->formState['completionsPath'] ?? '/v1/chat/completions'),
+            'Where the server accepts chat requests. Nearly all OpenAI-compatible servers use /v1/chat/completions.',
+            submenu: $this->textSubmenu(...),
+        );
+        $items[] = new SettingItem(
+            'apiKey',
+            'API key',
+            $apiKeyDisplay,
+            'Blank = none. Env var name (RUNPOD_API_KEY) or env:NAME, or paste a raw key (stored in settings).',
+            submenu: $this->textSubmenu(...),
+        );
+        $items[] = new SettingItem(
+            'models_saved',
+            'Saved models',
+            $modelsDisplay,
+            'Models already on this provider. Add another below, then Save.',
+        );
+        $items[] = new SettingItem(
+            'modelId',
+            'Model id',
+            (string) ($this->formState['modelId'] ?? ''),
+            'The model\'s id exactly as the server expects it in requests. Example: llama-3.3-70b',
+            submenu: $this->textSubmenu(...),
+        );
+        $items[] = new SettingItem(
+            'modelName',
+            'Display name',
+            (string) ($this->formState['modelName'] ?? ''),
+            'A friendly name shown in the model picker. Defaults to the id.',
+            submenu: $this->textSubmenu(...),
+        );
+        $items[] = new SettingItem(
+            'contextWindow',
+            'Context window',
+            (string) ($this->formState['contextWindow'] ?? '128000'),
+            'How much text (tokens) the model can read at once. 128000 is a safe default.',
+            submenu: $this->textSubmenu(...),
+        );
+        $items[] = new SettingItem(
+            'maxTokens',
+            'Max output tokens',
+            (string) ($this->formState['maxTokens'] ?? '8192'),
+            'The most text the model can produce in one reply.',
+            submenu: $this->textSubmenu(...),
+        );
+        $items[] = new SettingItem(
+            'modalities',
+            'Modalities',
+            (string) ($this->formState['modalities'] ?? 'text'),
+            'What kinds of input the model accepts: text only, or text and images.',
+            values: ['text', 'text+image'],
+        );
+        $items[] = new SettingItem(
+            'reasoning',
+            'Reasoning',
+            (string) ($this->formState['reasoning'] ?? 'no'),
+            'Whether this model shows its thinking before answering.',
+            values: ['yes', 'no'],
+        );
+        $items[] = new SettingItem(
+            'supportsDeveloperRole',
+            'Developer role',
+            true === ($this->formState['supportsDeveloperRole'] ?? false) ? 'yes' : 'no',
+            'Whether the server accepts \'developer\' role messages. Some clones only accept \'system\' — pick No then.',
+            values: ['yes', 'no'],
+        );
+        $items[] = new SettingItem(
+            'thinkingFormat',
+            'Reasoning format',
+            (string) ($this->formState['thinkingFormat'] ?? ''),
+            'Label the server uses to return thinking output, if any. Leave blank if it doesn\'t.',
+            submenu: $this->textSubmenu(...),
+        );
+        $items[] = new SettingItem(
+            'add_model',
+            'Add model to list',
+            '↵',
+            'Commit the model fields above into Saved models, then clear them for another.',
+            values: ['↵'],
+        );
+        $items[] = new SettingItem(
+            'save',
+            'Save and enable',
+            '↵',
+            'Validate and write the full provider definition to your settings.',
+            values: ['↵'],
+        );
+
+        return $items;
+    }
+
+    private function textSubmenu(string $current, callable $onDone): SettingsTextInputWidget
+    {
+        // $onDone is owned by SettingsListWidget — keep signature for the vendor contract.
+        unset($onDone);
+
+        return new SettingsTextInputWidget($current);
+    }
+
+    private function onCustomSettingChange(string $id, string $value): void
+    {
+        $this->error = null;
+        try {
+            match ($id) {
+                'id' => $this->setCustomId($value),
+                'baseUrl' => $this->formState['baseUrl'] = rtrim(trim($value), '/'),
+                'completionsPath' => $this->formState['completionsPath'] = $this->normalizePath($value),
+                'apiKey' => $this->formState['apiKey'] = $this->normalizeApiKeyInput($value),
+                'modelId' => $this->setModelId($value),
+                'modelName' => $this->formState['modelName'] = trim($value),
+                'contextWindow' => $this->formState['contextWindow'] = $this->normalizePositiveInt($value, 'Context window', '128000'),
+                'maxTokens' => $this->formState['maxTokens'] = $this->normalizePositiveInt($value, 'Max tokens', '8192'),
+                'modalities' => $this->formState['modalities'] = $value,
+                'reasoning' => $this->formState['reasoning'] = $value,
+                'supportsDeveloperRole' => $this->formState['supportsDeveloperRole'] = 'yes' === $value,
+                'thinkingFormat' => $this->formState['thinkingFormat'] = trim($value),
+                'add_model' => $this->commitDraftModel(),
+                'save' => $this->saveCustomForm(),
+                default => null,
+            };
+        } catch (\InvalidArgumentException $e) {
+            $this->error = $e->getMessage();
+        }
+        if (self::PHASE_CUSTOM !== $this->phase) {
+            $this->refreshError();
+
+            return;
+        }
+
+        // Structure-changing rows need a full rebuild; scalars just updateValue
+        // so the selected index stays put.
+        if (\in_array($id, ['add_model', 'apiKey', 'id'], true) || null !== $this->error) {
+            $this->settingsWidget = new SettingsListWidget($this->customSettingItems(), maxVisible: 16);
+            $this->refreshError();
+            $this->applyPhaseLayout();
+            $this->tui->setFocus($this->settingsWidget);
+
+            return;
+        }
+
+        $display = match ($id) {
+            'supportsDeveloperRole' => true === ($this->formState['supportsDeveloperRole'] ?? false) ? 'yes' : 'no',
+            'baseUrl' => (string) ($this->formState['baseUrl'] ?? ''),
+            'completionsPath' => (string) ($this->formState['completionsPath'] ?? ''),
+            'modelId' => (string) ($this->formState['modelId'] ?? ''),
+            'modelName' => (string) ($this->formState['modelName'] ?? ''),
+            'contextWindow' => (string) ($this->formState['contextWindow'] ?? ''),
+            'maxTokens' => (string) ($this->formState['maxTokens'] ?? ''),
+            'thinkingFormat' => (string) ($this->formState['thinkingFormat'] ?? ''),
+            default => $value,
+        };
+        if (!\in_array($id, ['save', 'add_model'], true)) {
+            $this->settingsWidget->updateValue($id, $display);
+            if ('modelId' === $id && '' !== (string) ($this->formState['modelName'] ?? '')) {
+                $this->settingsWidget->updateValue('modelName', (string) $this->formState['modelName']);
+            }
+        }
+        $this->refreshError();
+    }
+
+    private function setCustomId(string $value): void
+    {
+        if (true === ($this->formState['editing'] ?? false)) {
+            return;
+        }
         $id = strtolower(trim('' !== $value ? $value : 'local'));
         $this->flow->validateCustomId($id);
         $this->formState['id'] = $id;
-        $this->beginInput('custom_url', 'Server URL (e.g. http://localhost:8080)', 'http://127.0.0.1:8080');
     }
 
-    private function advanceCustomUrl(string $value): void
+    private function setModelId(string $value): void
     {
-        $url = '' !== $value ? $value : (string) ($this->formState['baseUrl'] ?? 'http://127.0.0.1:8080');
-        if ('' === trim($url)) {
-            throw new \InvalidArgumentException('Server URL is required.');
+        $modelId = trim($value);
+        $this->formState['modelId'] = $modelId;
+        if ('' !== $modelId && '' === trim((string) ($this->formState['modelName'] ?? ''))) {
+            $this->formState['modelName'] = $modelId;
         }
-        $this->formState['baseUrl'] = rtrim(trim($url), '/');
-        $existingPath = $this->formState['completionsPath'] ?? null;
-        $pathDefault = \is_string($existingPath) && '' !== $existingPath
-            ? $existingPath
-            : '/v1/chat/completions';
-        $this->beginInput('custom_path', 'Completions path', $pathDefault);
     }
 
-    private function advanceCustomPath(string $value): void
+    private function normalizePath(string $value): string
     {
-        $existingPath = $this->formState['completionsPath'] ?? null;
-        $path = '' !== $value
-            ? $value
-            : (\is_string($existingPath) && '' !== $existingPath ? $existingPath : '/v1/chat/completions');
+        $path = trim($value);
+        if ('' === $path) {
+            $path = '/v1/chat/completions';
+        }
         if (!str_starts_with($path, '/')) {
             $path = '/'.$path;
         }
-        $this->formState['completionsPath'] = $path;
 
-        // Edit with a saved key: keep it and continue (user can still change via Remove+re-add).
-        $apiKey = $this->formState['apiKey'] ?? null;
-        if (true === ($this->formState['editing'] ?? false)
-            && \is_string($apiKey)
-            && '' !== $apiKey) {
-            $this->continueAfterCustomKeyOrModels();
+        return $path;
+    }
 
-            return;
+    private function normalizeApiKeyInput(string $value): ?string
+    {
+        $value = trim($value);
+        if ('' === $value || '(none)' === $value) {
+            return null;
+        }
+        if (str_starts_with($value, 'env:')) {
+            return $this->flow->formatEnvApiKey(substr($value, 4));
+        }
+        if (1 === preg_match('/^[A-Z][A-Z0-9_]*$/', $value)) {
+            return $this->flow->formatEnvApiKey($value);
         }
 
-        $this->formKind = 'custom_want_key';
-        $this->phase = self::PHASE_CHOICE;
-        $this->showList([
-            ['value' => 'yes', 'label' => 'Yes'],
-            ['value' => 'no', 'label' => 'No'],
-        ]);
+        return $value;
     }
 
-    /** After key decision (or kept key on edit): either add first model or ask to add another. */
-    private function continueAfterCustomKeyOrModels(): void
+    private function normalizePositiveInt(string $value, string $label, string $default): string
     {
-        $models = $this->formState['models'] ?? [];
-        if (true === ($this->formState['editing'] ?? false) && \is_array($models) && [] !== $models) {
-            $this->formKind = 'custom_another_model';
-            $this->phase = self::PHASE_CHOICE;
-            $this->showList([
-                ['value' => 'yes', 'label' => 'Add another model'],
-                ['value' => 'no', 'label' => 'Finish'],
-            ]);
-
-            return;
-        }
-        $this->beginCustomModel();
-    }
-
-    private function handleCustomWantKey(string $value): void
-    {
-        if ('yes' === $value) {
-            $this->formState['wantKey'] = true;
-            $this->formKind = 'api_where';
-            $this->formState['id'] = (string) ($this->formState['id'] ?? 'local');
-            $this->phase = self::PHASE_CHOICE;
-            // Mark before showList so Step-4 chrome is intentional, not accidental.
-            $this->formState['afterKey'] = 'custom_model';
-            $this->showList([
-                ['value' => 'env', 'label' => 'environment variable'],
-                ['value' => 'raw', 'label' => 'paste'],
-            ]);
-
-            return;
-        }
-        $this->formState['apiKey'] = null;
-        $this->continueAfterCustomKeyOrModels();
-    }
-
-    private function resumeAfterCustomKey(string $apiKey): void
-    {
-        $this->formState['apiKey'] = $apiKey;
-        unset($this->formState['afterKey'], $this->formState['raw']);
-        $this->continueAfterCustomKeyOrModels();
-    }
-
-    private function beginCustomModel(): void
-    {
-        $this->beginInput('custom_model_id', 'Model id (e.g. llama-3.3-70b)', 'default');
-    }
-
-    private function advanceCustomModelId(string $value): void
-    {
-        $modelId = '' !== $value ? $value : 'default';
-        $this->formState['modelId'] = $modelId;
-        $this->beginInput('custom_model_name', 'Display name', $modelId);
-    }
-
-    private function advanceCustomModelName(string $value): void
-    {
-        $modelId = (string) ($this->formState['modelId'] ?? 'default');
-        $this->formState['modelName'] = '' !== $value ? $value : $modelId;
-        $this->beginInput('custom_context', 'Context window', '128000');
-    }
-
-    private function advanceCustomContext(string $value): void
-    {
-        $n = (int) ('' !== $value ? $value : '128000');
+        $raw = '' !== trim($value) ? trim($value) : $default;
+        $n = (int) $raw;
         if ($n < 1) {
-            throw new \InvalidArgumentException('Context window must be >= 1.');
+            throw new \InvalidArgumentException($label.' must be >= 1.');
         }
-        $this->formState['contextWindow'] = $n;
-        $this->beginInput('custom_max_tokens', 'Max output tokens', '8192');
+
+        return (string) $n;
     }
 
-    private function advanceCustomMaxTokens(string $value): void
+    private function commitDraftModel(): void
     {
-        $n = (int) ('' !== $value ? $value : '8192');
-        if ($n < 1) {
-            throw new \InvalidArgumentException('Max tokens must be >= 1.');
+        $modelId = trim((string) ($this->formState['modelId'] ?? ''));
+        if ('' === $modelId) {
+            throw new \InvalidArgumentException('Model id is required to add a model.');
         }
-        $this->formState['maxTokens'] = $n;
-        $this->formKind = 'custom_modalities';
-        $this->phase = self::PHASE_CHOICE;
-        $this->showList([
-            ['value' => 'text', 'label' => 'text'],
-            ['value' => 'text+image', 'label' => 'text+image'],
-        ]);
+        $models = \is_array($this->formState['models'] ?? null) ? $this->formState['models'] : [];
+        $models[$modelId] = $this->draftModelPayload($modelId);
+        $this->formState['models'] = $models;
+        $this->formState['modelId'] = '';
+        $this->formState['modelName'] = '';
+        $this->formState['contextWindow'] = '128000';
+        $this->formState['maxTokens'] = '8192';
+        $this->formState['modalities'] = 'text';
+        $this->formState['reasoning'] = 'no';
     }
 
-    private function handleCustomModalities(string $value): void
+    /**
+     * @return array<string, mixed>
+     */
+    private function draftModelPayload(string $modelId): array
     {
-        $this->formState['input'] = 'text+image' === $value ? ['text', 'image'] : ['text'];
-        $this->formKind = 'custom_reasoning';
-        $this->phase = self::PHASE_CHOICE;
-        $this->showList([
-            ['value' => 'yes', 'label' => 'Yes'],
-            ['value' => 'no', 'label' => 'No'],
-        ]);
-    }
-
-    private function handleCustomReasoning(string $value): void
-    {
-        $reasoning = 'yes' === $value;
-        $modelId = (string) ($this->formState['modelId'] ?? 'default');
-        $models = $this->formState['models'] ?? [];
-        if (!\is_array($models)) {
-            $models = [];
+        $name = trim((string) ($this->formState['modelName'] ?? ''));
+        if ('' === $name) {
+            $name = $modelId;
         }
-        $models[$modelId] = [
-            'name' => (string) ($this->formState['modelName'] ?? $modelId),
+        $reasoning = 'yes' === ($this->formState['reasoning'] ?? 'no');
+
+        return [
+            'name' => $name,
             'context_window' => (int) ($this->formState['contextWindow'] ?? 128000),
             'max_tokens' => (int) ($this->formState['maxTokens'] ?? 8192),
-            'input' => $this->formState['input'] ?? ['text'],
+            'input' => 'text+image' === ($this->formState['modalities'] ?? 'text') ? ['text', 'image'] : ['text'],
             'tool_calling' => true,
             'reasoning' => $reasoning,
             'thinking_level_map' => $reasoning ? $this->flow->defaultThinkingLevelMap() : [],
@@ -694,51 +869,34 @@ final class SetupScreen
                 'cache_write' => 0,
             ],
         ];
-        $this->formState['models'] = $models;
-        $this->formKind = 'custom_another_model';
-        $this->phase = self::PHASE_CHOICE;
-        $this->showList([
-            ['value' => 'yes', 'label' => 'Add another model'],
-            ['value' => 'no', 'label' => 'Finish'],
-        ]);
     }
 
-    private function handleCustomAnotherModel(string $value): void
+    private function saveCustomForm(): void
     {
-        if ('yes' === $value) {
-            $this->beginCustomModel();
-
-            return;
-        }
-        $this->formKind = 'custom_developer_role';
-        $this->phase = self::PHASE_CHOICE;
-        $this->showList([
-            ['value' => 'yes', 'label' => 'Yes'],
-            ['value' => 'no', 'label' => 'No'],
-        ]);
-    }
-
-    private function handleCustomDeveloperRole(string $value): void
-    {
-        $this->formState['supportsDeveloperRole'] = 'yes' === $value;
-        $thinkingFormat = $this->formState['thinkingFormat'] ?? null;
-        $default = \is_string($thinkingFormat) ? $thinkingFormat : '';
-        $this->beginInput('custom_thinking_format', 'Reasoning format label (blank = none)', $default);
-    }
-
-    private function finishCustomThinkingFormat(string $value): void
-    {
-        /** @var array<string, array<string, mixed>> $models */
         $models = \is_array($this->formState['models'] ?? null) ? $this->formState['models'] : [];
+        $draftId = trim((string) ($this->formState['modelId'] ?? ''));
+        if ('' !== $draftId) {
+            $models[$draftId] = $this->draftModelPayload($draftId);
+        }
+        if ([] === $models) {
+            throw new \InvalidArgumentException('Add at least one model.');
+        }
+
         $id = (string) ($this->formState['id'] ?? '');
+        $baseUrl = (string) ($this->formState['baseUrl'] ?? '');
+        if ('' === trim($baseUrl)) {
+            throw new \InvalidArgumentException('Server URL is required.');
+        }
+
+        $apiKey = $this->formState['apiKey'] ?? null;
         $this->flow->saveCustom(
             $id,
-            (string) ($this->formState['baseUrl'] ?? ''),
+            $baseUrl,
             (string) ($this->formState['completionsPath'] ?? '/v1/chat/completions'),
-            isset($this->formState['apiKey']) && \is_string($this->formState['apiKey']) ? $this->formState['apiKey'] : null,
+            \is_string($apiKey) && '' !== $apiKey ? $apiKey : null,
             $models,
             (bool) ($this->formState['supportsDeveloperRole'] ?? false),
-            $value,
+            (string) ($this->formState['thinkingFormat'] ?? ''),
         );
         $verb = true === ($this->formState['editing'] ?? false) ? 'updated' : 'added';
         $this->askContinue(\sprintf('%s %s.', $id, $verb));
@@ -749,6 +907,7 @@ final class SetupScreen
         $this->pendingConfirm = 'add_another';
         $this->phase = self::PHASE_CONFIRM;
         $this->formKind = '';
+        $this->formState = [];
         $this->hintWidget->setText($message."\n\nContinue?");
         $this->showList([
             ['value' => 'yes', 'label' => 'Continue'],
@@ -794,13 +953,13 @@ final class SetupScreen
 
         $this->phase = self::PHASE_SUMMARY;
         $this->formKind = '';
+        $this->formState = [];
         $this->hintWidget->setText(implode("\n", $lines));
         $this->showList([
             ['value' => 'ok', 'label' => 'Done'],
         ]);
         $this->finished = true;
         $this->exitCode = 0;
-        // Stop the live event loop if running; virtual harnesses never call run().
         if ($this->tui->isRunning()) {
             $this->tui->stop();
         }
@@ -934,7 +1093,6 @@ final class SetupScreen
             return $items;
         }
 
-        // OAuth: no Reconfigure (nothing to reconfigure beyond login).
         if ('oauth' !== $kind) {
             $items[] = ['value' => 'configure', 'label' => 'Reconfigure'];
         }
@@ -976,10 +1134,7 @@ final class SetupScreen
         $this->formKind = $kind;
         $this->phase = self::PHASE_INPUT;
         $this->applyChrome();
-        // Custom wizard help/example come from applyChrome(); other inputs keep $prompt.
-        if (!$this->isCustomWizardKind($kind)) {
-            $this->hintWidget->setText($prompt);
-        }
+        $this->hintWidget->setText($prompt);
         $this->inputWidget->setPrompt('> ');
         $this->inputWidget->setValue($default);
         $this->refreshError();
@@ -1003,22 +1158,25 @@ final class SetupScreen
     private function applyPhaseLayout(): void
     {
         // ContainerWidget::remove → WidgetTree::detach → AbstractWidget::detach()
-        // clears $listeners. Always remove both first, then wire unconditionally
-        // after the add that mounts the active widget — at add() time the widget
-        // was either just detached (listeners wiped) or never attached (never
-        // wired, since wiring only happens here).
+        // clears $listeners. Always remove all focusables first, then wire
+        // unconditionally after the add that mounts the active widget.
         $this->panelWidget->remove($this->listWidget);
         $this->panelWidget->remove($this->inputWidget);
+        $this->panelWidget->remove($this->settingsWidget);
         if (self::PHASE_INPUT === $this->phase) {
             $this->panelWidget->add($this->inputWidget);
             $this->wireInputListeners();
+        } elseif (self::PHASE_CUSTOM === $this->phase) {
+            $this->inputWidget->setPrompt('');
+            $this->inputWidget->setValue('');
+            $this->panelWidget->add($this->settingsWidget);
+            $this->wireSettingsListeners();
         } else {
             $this->inputWidget->setPrompt('');
             $this->inputWidget->setValue('');
             $this->panelWidget->add($this->listWidget);
             $this->wireListListeners();
         }
-        // Footer stays root chrome below the panel (already mounted in mount()).
     }
 
     private function refreshFooter(): void
@@ -1026,6 +1184,7 @@ final class SetupScreen
         $plain = match ($this->phase) {
             self::PHASE_PICKER => '↑/↓ select · Enter confirm · Esc exit · Ctrl+D quit',
             self::PHASE_INPUT => 'Enter submit · Esc back · Ctrl+D quit',
+            self::PHASE_CUSTOM => '↑/↓ select · Enter edit/toggle · Esc back · Ctrl+D quit',
             self::PHASE_SUMMARY => 'Esc exit · Ctrl+D quit',
             default => '↑/↓ select · Enter confirm · Esc back · Ctrl+D quit',
         };
@@ -1034,149 +1193,18 @@ final class SetupScreen
 
     private function applyChrome(): void
     {
-        if ($this->isCustomWizardKind($this->formKind)) {
+        if (self::PHASE_CUSTOM === $this->phase) {
             $this->titleWidget->setText(
                 true === ($this->formState['editing'] ?? false) ? 'Edit your server' : 'Add your own server'
             );
             $this->stepWidget->setText(
-                (new Style(dim: true))->apply($this->customStepHeader($this->formKind))
+                (new Style(dim: true))->apply('All options on one screen — edit any row, then Save and enable')
             );
-            $this->hintWidget->setText($this->formatStepHelp($this->formKind));
 
             return;
         }
         $this->titleWidget->setText('AI Provider Setup');
         $this->stepWidget->setText('');
-    }
-
-    private function formatStepHelp(string $kind): string
-    {
-        [$help, $example] = $this->customStepHelp($kind);
-        $lines = [$help];
-        if ('' !== $example) {
-            $lines[] = (new Style(dim: true))->apply('Example: '.$example);
-        }
-
-        return implode("\n", $lines);
-    }
-
-    /**
-     * @return array{0: string, 1: string} help text + optional example (empty = none)
-     */
-    private function customStepHelp(string $kind): array
-    {
-        return match ($kind) {
-            'custom_id' => [
-                'A short name to identify this provider in menus and settings.',
-                'runpod',
-            ],
-            'custom_url' => [
-                'The address of the API server Hatfield will talk to.',
-                'https://abc-123.proxy.runpod.net',
-            ],
-            'custom_path' => [
-                'Where the server accepts chat requests. Nearly all OpenAI-compatible servers use /v1/chat/completions — keep the default unless yours differs.',
-                '/v1/chat/completions',
-            ],
-            'custom_want_key' => [
-                'Whether the server requires an API key to authenticate.',
-                '',
-            ],
-            'api_where' => [
-                'How Hatfield should get the key: read it from an environment variable (recommended — stays out of files), or you type it in now.',
-                'OPENAI_API_KEY',
-            ],
-            'api_env_name' => [
-                'Name of the environment variable holding the API key.',
-                'RUNPOD_API_KEY',
-            ],
-            'api_raw_key' => [
-                'The API key for this server. It will be stored in your settings file.',
-                '',
-            ],
-            'api_raw_confirm' => [
-                'Type the same API key again to confirm.',
-                '',
-            ],
-            'custom_model_id' => [
-                'The model\'s id exactly as the server expects it in requests.',
-                'llama-3.3-70b',
-            ],
-            'custom_model_name' => [
-                'A friendly name shown in the model picker. Defaults to the id.',
-                'Llama 3.3 70B',
-            ],
-            'custom_context' => [
-                'How much text (tokens) the model can read at once. Bigger = longer conversations it can see. Check your model\'s docs; 128000 is a safe default.',
-                '128000',
-            ],
-            'custom_max_tokens' => [
-                'The most text the model can produce in one reply.',
-                '8192',
-            ],
-            'custom_modalities' => [
-                'What kinds of input the model accepts: text only, or text and images.',
-                '',
-            ],
-            'custom_reasoning' => [
-                'Whether this model shows its thinking before answering.',
-                '',
-            ],
-            'custom_another_model' => [
-                'Add another model now, or finish this provider.',
-                '',
-            ],
-            'custom_developer_role' => [
-                'Whether the server accepts \'developer\' role messages. Some clones only accept \'system\' — pick No then.',
-                '',
-            ],
-            'custom_thinking_format' => [
-                'Label the server uses to return thinking output, if any. Leave blank if it doesn\'t.',
-                '(blank for none)',
-            ],
-            default => ['', ''],
-        };
-    }
-
-    private function isCustomWizardKind(string $kind): bool
-    {
-        return '' !== $kind && (
-            str_starts_with($kind, 'custom_')
-            || (
-                isset($this->formState['afterKey'])
-                && \in_array($kind, ['api_where', 'api_env_name', 'api_raw_key', 'api_raw_confirm'], true)
-            )
-        );
-    }
-
-    private function customStepHeader(string $kind): string
-    {
-        [$step, $field] = $this->customStepMeta($kind);
-
-        return \sprintf('Step %d of %d — %s', $step, self::CUSTOM_STEP_TOTAL, $field);
-    }
-
-    /**
-     * @return array{0: int, 1: string}
-     */
-    private function customStepMeta(string $kind): array
-    {
-        return match ($kind) {
-            'custom_id' => [1, 'Provider id'],
-            'custom_url' => [2, 'Server URL'],
-            'custom_path' => [3, 'Completions path'],
-            'custom_want_key', 'api_where', 'api_env_name', 'api_raw_key', 'api_raw_confirm' => [4, 'API key'],
-            'custom_model_id' => [5, 'Model id'],
-            'custom_model_name' => [6, 'Display name'],
-            'custom_context' => [7, 'Context window'],
-            'custom_max_tokens' => [8, 'Max output tokens'],
-            'custom_modalities' => [9, 'Modalities'],
-            'custom_reasoning' => [10, 'Reasoning'],
-            'custom_another_model' => [11, 'Another model'],
-            'custom_developer_role' => [12, 'Developer role'],
-            'custom_thinking_format' => [13, 'Reasoning format'],
-            default => [1, 'Setup'],
-        };
     }
 
     private function colorStatus(string $label, bool $enabled): string

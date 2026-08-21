@@ -93,7 +93,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         [$screen, $terminal, $tui] = $this->mount($flow);
 
         $screen->selectValue('custom');
-        $this->assertSame('input', $screen->phase());
+        $this->assertSame('custom', $screen->phase());
         $this->assertStringContainsString('Add your own server', $this->plain($terminal));
 
         $tui->handleInput("\x04");
@@ -106,43 +106,15 @@ final class SetupScreenVirtualRenderTest extends TestCase
     }
 
     #[Test]
-    public function realEnterAdvancesCustomUrlAfterPhaseRemount(): void
-    {
-        // Regression: AbstractWidget::detach() wipes onSubmit listeners when
-        // applyPhaseLayout removes+re-adds input between custom steps. Drivers
-        // bypass widgets; this uses the real Tui::handleInput path.
-        $flow = new FakeProvidersSetupFlow();
-        [$screen, $terminal, $tui] = $this->mount($flow, columns: 120);
-
-        $screen->selectValue('custom');
-        $screen->submitInput('runpod'); // now at custom_url (second input attach)
-        $this->assertSame('input', $screen->phase());
-        $this->assertStringContainsString('Server URL', $this->plain($terminal));
-
-        // Clear the default URL first (ctrl+u = delete_to_line_start), then paste.
-        // Bracketed paste inserts at the cursor; without clearing it would append.
-        $tui->handleInput("\x15");
-        $tui->handleInput("\x1b[200~https://example.com/v1\x1b[201~");
-        $tui->processRender(); // handleInput only requestRender()s; virtual needs flush
-        $this->assertStringContainsString('https://example.com/v1', $this->plain($terminal));
-
-        $tui->handleInput("\r");
-
-        $this->assertSame('input', $screen->phase());
-        $this->assertStringContainsString('Completions path', $this->plain($terminal));
-        $this->assertStringContainsString('Step 3 of 13', $this->plain($terminal));
-    }
-
-    #[Test]
     public function listEnterSurvivesDetachAndReattachRoundtrip(): void
     {
-        // list → input (list detached/listeners wiped) → Esc back → list re-added;
+        // list → custom settings (list detached) → Esc back → list re-added;
         // Enter must still fire onSelect after re-wire.
         $flow = new FakeProvidersSetupFlow();
         [$screen, $terminal, $tui] = $this->mount($flow);
 
         $screen->selectValue('custom');
-        $this->assertSame('input', $screen->phase());
+        $this->assertSame('custom', $screen->phase());
 
         $tui->handleInput("\x1b"); // Esc back to picker (list re-attached)
         $this->assertSame('picker', $screen->phase());
@@ -152,23 +124,6 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $text = $this->plain($terminal);
         $this->assertStringContainsString('environment variable', $text);
         $this->assertStringContainsString('Esc back · Ctrl+D quit', $text);
-    }
-
-    #[Test]
-    public function ctrlDQuitWorksAfterInputPhaseTransition(): void
-    {
-        $flow = new FakeProvidersSetupFlow();
-        [$screen, $terminal, $tui] = $this->mount($flow);
-
-        $screen->selectValue('custom');
-        $screen->submitInput('runpod'); // remounts input (listeners wiped then re-wired)
-        $this->assertSame('input', $screen->phase());
-
-        $tui->handleInput("\x04");
-
-        $this->assertTrue($screen->finished());
-        $this->assertSame('summary', $screen->phase());
-        $this->assertStringContainsString('AI Provider Setup', $this->plain($terminal));
     }
 
     #[Test]
@@ -250,98 +205,117 @@ final class SetupScreenVirtualRenderTest extends TestCase
     }
 
     #[Test]
-    public function customFormStartsWithProviderIdPrompt(): void
+    public function customFormShowsAllRowsWithHelpDescriptions(): void
     {
         $flow = new FakeProvidersSetupFlow();
         [$screen, $terminal] = $this->mount($flow);
 
         $screen->selectValue('custom');
         $text = $this->plain($terminal);
+        $this->assertSame('custom', $screen->phase());
         $this->assertStringContainsString('Add your own server', $text);
-        $this->assertStringContainsString('Step 1 of 13 — Provider id', $text);
-        $this->assertStringContainsString('A short name to identify this provider in menus and settings.', $text);
+        $this->assertStringContainsString('All options on one screen', $text);
+        $this->assertStringContainsString('Provider id', $text);
+        $this->assertStringContainsString('Server URL', $text);
+        $this->assertStringContainsString('Completions path', $text);
+        $this->assertStringContainsString('API key', $text);
+        $this->assertStringContainsString('Saved models', $text);
+        $this->assertStringContainsString('Model id', $text);
+        $this->assertStringContainsString('Display name', $text);
+        $this->assertStringContainsString('Context window', $text);
+        $this->assertStringContainsString('Max output tokens', $text);
+        $this->assertStringContainsString('Modalities', $text);
+        $this->assertStringContainsString('Reasoning', $text);
+        $this->assertStringContainsString('Developer role', $text);
+        $this->assertStringContainsString('Reasoning format', $text);
+        $this->assertStringContainsString('Add model to list', $text);
+        $this->assertStringContainsString('Save and enable', $text);
+        // Selected row description (first = Provider id)
+        $this->assertStringContainsString('A short name to identify this provider', $text);
         $this->assertStringContainsString('Example: runpod', $text);
         $this->assertStringNotContainsString('Other server', $text);
         $this->assertStringNotContainsString('Done', $text);
-        $this->assertSame('input', $screen->phase());
-    }
-
-    #[Test]
-    public function customUrlStepShowsHelpAndExampleInsidePanel(): void
-    {
-        $flow = new FakeProvidersSetupFlow();
-        [$screen, $terminal] = $this->mount($flow);
-
-        $screen->selectValue('custom');
-        $screen->submitInput('runpod');
-
-        $text = $this->plain($terminal);
-        $this->assertSame('input', $screen->phase());
-        $this->assertStringContainsString('Step 2 of 13 — Server URL', $text);
-        $this->assertStringContainsString('The address of the API server Hatfield will talk to.', $text);
-        $this->assertStringContainsString('Example: https://abc-123.proxy.runpod.net', $text);
         $this->assertStringContainsString('┌', $text);
-        $this->assertStringContainsString('│', $text);
     }
 
     #[Test]
-    public function customWizardReachesStepThirteenReasoningFormat(): void
+    public function customFormCyclesYesNoAndSavesFullDefinition(): void
     {
         $flow = new FakeProvidersSetupFlow();
         [$screen, $terminal] = $this->mount($flow);
 
         $screen->selectValue('custom');
-        $screen->submitInput('local-llm');
-        $screen->submitInput('http://127.0.0.1:8080');
-        $screen->submitInput('/v1/chat/completions');
-        $screen->selectValue('yes'); // Set an API key?
-        $this->assertStringContainsString('Step 4 of 13', $this->plain($terminal));
-        $screen->selectValue('env');
-        $screen->submitInput('LOCAL_API_KEY');
-        $screen->submitInput('llama-3');
-        $screen->submitInput('Llama 3');
-        $screen->submitInput('128000');
-        $screen->submitInput('8192');
-        $screen->selectValue('text');
-        $screen->selectValue('no'); // reasoning
-        $screen->selectValue('no'); // another model
-        $screen->selectValue('no'); // developer role
+        $screen->changeSetting('id', 'local-llm');
+        $screen->changeSetting('baseUrl', 'http://127.0.0.1:8080');
+        $screen->changeSetting('completionsPath', '/v1/chat/completions');
+        $screen->changeSetting('apiKey', 'LOCAL_API_KEY');
+        $screen->changeSetting('modelId', 'llama-3');
+        $screen->changeSetting('modelName', 'Llama 3');
+        $screen->changeSetting('contextWindow', '128000');
+        $screen->changeSetting('maxTokens', '8192');
+        $screen->changeSetting('modalities', 'text');
+        $screen->changeSetting('reasoning', 'no');
+        $screen->changeSetting('supportsDeveloperRole', 'no');
+        $screen->changeSetting('thinkingFormat', '');
+        $screen->activateCustomAction('save');
 
-        $this->assertSame('input', $screen->phase());
+        $this->assertSame('confirm', $screen->phase());
+        $this->assertCount(1, $flow->savedCustoms);
+        $saved = $flow->savedCustoms[0];
+        $this->assertSame('local-llm', $saved['id']);
+        $this->assertSame('http://127.0.0.1:8080', $saved['baseUrl']);
+        $this->assertSame('/v1/chat/completions', $saved['completionsPath']);
+        $this->assertSame('env:LOCAL_API_KEY', $saved['apiKey']);
+        $this->assertArrayHasKey('llama-3', $saved['models']);
+        $this->assertSame('Llama 3', $saved['models']['llama-3']['name']);
+        $this->assertSame(['text'], $saved['models']['llama-3']['input']);
+        $this->assertFalse($saved['models']['llama-3']['reasoning']);
+        $this->assertFalse($saved['supportsDeveloperRole']);
+        $this->assertSame('', $saved['thinkingFormat']);
         $text = $this->plain($terminal);
-        $this->assertStringContainsString('Step 13 of 13 — Reasoning format', $text);
-        $this->assertStringContainsString('Label the server uses to return thinking output, if any.', $text);
-        $this->assertStringContainsString('Example: (blank for none)', $text);
+        $this->assertStringContainsString('Continue', $text);
+        $this->assertStringContainsString('Exit', $text);
     }
 
     #[Test]
-    public function inputPhaseHidesProviderList(): void
-    {
-        $flow = new FakeProvidersSetupFlow();
-        [$screen, $terminal] = $this->mount($flow);
-
-        $screen->selectValue('deepseek');
-        $this->assertSame('choice', $screen->phase()); // api where
-        $screen->selectValue('env');
-        $this->assertSame('input', $screen->phase());
-
-        $text = $this->plain($terminal);
-        $this->assertStringContainsString('Variable name', $text);
-        $this->assertStringNotContainsString('Other server', $text);
-        $this->assertStringNotContainsString('Z.ai (GLM)', $text);
-        $this->assertStringNotContainsString('Done', $text);
-    }
-
-    #[Test]
-    public function customCatalogCollisionShowsInlineErrorAndStaysOnInput(): void
+    public function customFormAddModelThenSaveKeepsBothModels(): void
     {
         $flow = new FakeProvidersSetupFlow();
         [$screen, $terminal] = $this->mount($flow);
 
         $screen->selectValue('custom');
-        $screen->submitInput('zai');
+        $screen->changeSetting('id', 'multi');
+        $screen->changeSetting('baseUrl', 'http://127.0.0.1:8080');
+        $screen->changeSetting('modelId', 'a');
+        $screen->changeSetting('modelName', 'A');
+        $screen->activateCustomAction('add_model');
+        $text = $this->plain($terminal);
+        $this->assertStringContainsString('a', $text); // saved models row
+        $screen->changeSetting('modelId', 'b');
+        $screen->changeSetting('modelName', 'B');
+        $screen->changeSetting('modalities', 'text+image');
+        $screen->changeSetting('reasoning', 'yes');
+        $screen->activateCustomAction('save');
 
-        $this->assertSame('input', $screen->phase());
+        $this->assertCount(1, $flow->savedCustoms);
+        $models = $flow->savedCustoms[0]['models'];
+        $this->assertArrayHasKey('a', $models);
+        $this->assertArrayHasKey('b', $models);
+        $this->assertSame(['text', 'image'], $models['b']['input']);
+        $this->assertTrue($models['b']['reasoning']);
+        $this->assertNotSame([], $models['b']['thinking_level_map']);
+    }
+
+    #[Test]
+    public function customCatalogCollisionShowsInlineErrorAndStaysOnForm(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal] = $this->mount($flow);
+
+        $screen->selectValue('custom');
+        $screen->changeSetting('id', 'zai');
+
+        $this->assertSame('custom', $screen->phase());
         $this->assertStringContainsString(
             '"zai" is built into Hatfield — choose it from the list above instead.',
             $screen->errorText(),
@@ -352,46 +326,37 @@ final class SetupScreenVirtualRenderTest extends TestCase
     }
 
     #[Test]
-    public function oauthEnableSummaryContainsAuthHintAndSavedTo(): void
+    public function customSaveWithZeroModelsShowsError(): void
     {
         $flow = new FakeProvidersSetupFlow();
         [$screen, $terminal] = $this->mount($flow);
 
-        $screen->selectValue('grok-cli');
-        $screen->selectValue('yes'); // Enable?
-        $text = $this->plain($terminal);
-        $this->assertStringContainsString('Continue?', $text);
-        $this->assertStringContainsString('Exit', $text);
-        $this->assertStringNotContainsString('Add another?', $text);
-        $screen->selectValue('no'); // Exit → summary directly (no default-model ask)
+        $screen->selectValue('custom');
+        $screen->changeSetting('id', 'empty');
+        $screen->changeSetting('baseUrl', 'http://127.0.0.1:8080');
+        $screen->changeSetting('modelId', ''); // clear draft
+        $screen->activateCustomAction('save');
 
-        $this->assertSame('summary', $screen->phase());
-        $this->assertTrue($screen->finished());
-        $collapsed = str_replace(["\n", ' '], '', $this->plain($terminal));
-        $this->assertStringContainsString(str_replace(' ', '', 'To finish: run `hatfield auth:grok`'), $collapsed);
-        $this->assertStringContainsString(str_replace(' ', '', 'Saved to'), $collapsed);
-        $this->assertStringNotContainsString(str_replace(' ', '', 'Set as your default model?'), $collapsed);
+        $this->assertSame('custom', $screen->phase());
+        $this->assertStringContainsString('Add at least one model.', $screen->errorText());
+        $this->assertSame([], $flow->savedCustoms);
     }
 
     #[Test]
-    public function enableThenDisableSameRunSummaryHasSavedToButNoAuthHint(): void
+    public function customSaveRequiresServerUrl(): void
     {
         $flow = new FakeProvidersSetupFlow();
-        [$screen, $terminal] = $this->mount($flow);
+        [$screen] = $this->mount($flow);
 
-        $screen->selectValue('grok-cli');
-        $screen->selectValue('yes'); // Enable?
-        $screen->selectValue('yes'); // Continue?
-        $screen->selectValue('grok-cli');
-        $screen->selectValue('disable');
-        $screen->selectValue('yes'); // confirm disable
-        $screen->selectValue('no'); // Exit → summary
+        $screen->selectValue('custom');
+        $screen->changeSetting('id', 'nourl');
+        $screen->changeSetting('baseUrl', '');
+        $screen->changeSetting('modelId', 'm');
+        $screen->activateCustomAction('save');
 
-        $this->assertSame('summary', $screen->phase());
-        $collapsed = str_replace(["\n", ' '], '', $this->plain($terminal));
-        $this->assertStringContainsString(str_replace(' ', '', 'Saved to'), $collapsed);
-        $this->assertStringNotContainsString(str_replace(' ', '', 'To finish'), $collapsed);
-        $this->assertSame([], $flow->pendingAuthCommands());
+        $this->assertSame('custom', $screen->phase());
+        $this->assertStringContainsString('Server URL is required.', $screen->errorText());
+        $this->assertSame([], $flow->savedCustoms);
     }
 
     #[Test]
@@ -528,42 +493,14 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $screen->selectValue('runpod');
         $screen->selectValue('edit');
 
-        $this->assertSame('input', $screen->phase());
+        $this->assertSame('custom', $screen->phase());
         $text = $this->plain($terminal);
         $this->assertStringContainsString('Edit your server', $text);
-        $this->assertStringContainsString('Step 2 of 13 — Server URL', $text);
         $this->assertStringContainsString('https://abc.proxy.runpod.net', $text);
-
-        $screen->submitInput('https://abc.proxy.runpod.net');
-        $text = $this->plain($terminal);
-        $this->assertStringContainsString('Step 3 of 13 — Completions path', $text);
         $this->assertStringContainsString('/v1/chat/completions', $text);
-    }
-
-    #[Test]
-    public function anotherModelChoiceUsesAddAndFinishLabels(): void
-    {
-        $flow = new FakeProvidersSetupFlow();
-        [$screen, $terminal] = $this->mount($flow);
-
-        $screen->selectValue('custom');
-        $screen->submitInput('local-llm');
-        $screen->submitInput('http://127.0.0.1:8080');
-        $screen->submitInput('/v1/chat/completions');
-        $screen->selectValue('no'); // no API key
-        $screen->submitInput('llama-3');
-        $screen->submitInput('Llama 3');
-        $screen->submitInput('128000');
-        $screen->submitInput('8192');
-        $screen->selectValue('text');
-        $screen->selectValue('no'); // reasoning
-
-        $this->assertSame('choice', $screen->phase());
-        $text = $this->plain($terminal);
-        $this->assertStringContainsString('Add another model', $text);
-        $this->assertStringContainsString('Finish', $text);
-        $this->assertStringNotContainsString('→ Yes', $text);
-        $this->assertStringNotContainsString('→ No', $text);
+        $this->assertStringContainsString('env:RUNPOD_API_KEY', $text);
+        $this->assertStringContainsString('llama', $text);
+        $this->assertStringContainsString('Locked while editing', $text);
     }
 
     #[Test]
