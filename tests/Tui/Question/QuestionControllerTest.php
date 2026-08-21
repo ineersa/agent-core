@@ -77,7 +77,7 @@ class QuestionControllerTest extends TestCase
         // after close(). This test verifies that editorWidget() is accessible
         // through a ChatScreen with a PromptEditor injected.
         //
-        // Full SelectListWidget event dispatch requires Symfony Tui
+        // Full QuestionChoiceListWidget event dispatch requires Symfony Tui
         // infrastructure (tui->mount(), insertOverlayBeforeEditor) and is
         // not unit-testable without it. This test at minimum proves the
         // editorWidget() call path does not crash.
@@ -393,7 +393,7 @@ class QuestionControllerTest extends TestCase
         );
 
         // Text kind never builds list items; the controller uses a TextWidget banner
-        // instead of SelectListWidget. This test verifies the buildItems path
+        // instead of QuestionChoiceListWidget. This test verifies the buildItems path
         // returns empty for Text kind.
         $items = $this->invokeBuildItems($request);
 
