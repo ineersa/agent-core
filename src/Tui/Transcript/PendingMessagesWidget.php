@@ -59,7 +59,7 @@ final class PendingMessagesWidget extends AbstractWidget
 
         $lines = [];
         foreach ($this->messages as $msg) {
-            $lines[] = $this->theme->muted(\sprintf('  ⏳ %s', $msg));
+            $lines[] = $this->theme->muted(\sprintf('%s %s', TranscriptGlyphs::GLYPH_PROGRESS, $msg));
         }
 
         return TextWrapper::wrapTextWithAnsi(implode("\n", $lines), $context->getColumns());

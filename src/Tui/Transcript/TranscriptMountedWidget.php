@@ -7,6 +7,8 @@ namespace Ineersa\Tui\Transcript;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\Tui\Theme\TuiTheme;
+use Symfony\Component\Tui\Style\Direction;
+use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -41,6 +43,8 @@ final class TranscriptMountedWidget extends ContainerWidget
             displayState: $displayState,
         );
         $this->applyPatch($this->projector->replaceAll([]));
+        // Modest vertical rhythm between distinct transcript nodes (not every wrapped line).
+        $this->setStyle(new Style(direction: Direction::Vertical, gap: 1));
     }
 
     /**

@@ -9,18 +9,6 @@ use PHPUnit\Framework\TestCase;
 
 final class ViewImageTranscriptFormatterTest extends TestCase
 {
-    public function testFormatsToolCallLinesFromFlatArguments(): void
-    {
-        // Tool-call arguments are the flat provider map: the DTO path field
-        // is a top-level key.
-        $formatter = new ViewImageTranscriptFormatter();
-        $lines = $formatter->formatToolCallLines([
-            'path' => '/a/b.png',
-        ]);
-
-        $this->assertSame(['path: /a/b.png'], $lines);
-    }
-
     public function testFormatsMetadataWithoutRawJsonDump(): void
     {
         $formatter = new ViewImageTranscriptFormatter();

@@ -100,7 +100,7 @@ final class TuiQueuedSteerE2eTest extends TestCase
                 substr_count($finalCapture, self::STEER_MARKER),
                 'Steer marker must appear exactly once in the final transcript (no duplicate user blocks)',
             );
-            // The renderer emits "  ⏳ " + text (prefix has a trailing space), so assert the
+            // The renderer emits GLYPH_PROGRESS (" ⏳ ") + text, so assert the
             // spaced form — the unspaced "⏳"+marker substring could never appear (vacuous).
             $this->assertStringNotContainsString(
                 '⏳ '.self::STEER_MARKER,

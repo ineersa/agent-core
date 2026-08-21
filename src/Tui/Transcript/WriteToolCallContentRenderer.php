@@ -59,7 +59,7 @@ final readonly class WriteToolCallContentRenderer
         }
 
         if (null !== $preview['ellipsis']) {
-            $widgets[] = new TextWidget($theme->color(ThemeColorEnum::ToolOutput, '    '.$preview['ellipsis']));
+            $widgets[] = new TextWidget('    '.TranscriptPreviewEllipsis::style($theme, $preview['ellipsis']));
         }
 
         return $widgets;

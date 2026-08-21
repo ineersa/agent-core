@@ -21,6 +21,7 @@ final class TuiSubagentProgressE2eTest extends TestCase
 {
     private TmuxHarness $tmux;
     private string $testProjectDir;
+    private ?string $comparisonDir = null;
 
     protected function setUp(): void
     {
@@ -31,6 +32,8 @@ final class TuiSubagentProgressE2eTest extends TestCase
         $this->tmux = new TmuxHarness();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->tmux->setSnapshotDir($this->testProjectDir);
+        $this->comparisonDir = ProjectDir::get().'/var/tmp/tui-visual-readability/after';
+        @mkdir($this->comparisonDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -38,7 +41,13 @@ final class TuiSubagentProgressE2eTest extends TestCase
         if (isset($this->tmux)) {
             $this->tmux->killAll();
         }
-        if (isset($this->testProjectDir)) {
+        if (isset($this->testProjectDir) && is_dir($this->testProjectDir)) {
+            $smokeDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
+            if (null !== $this->comparisonDir && is_dir($smokeDir)) {
+                foreach (glob($smokeDir.'/*.ansi') ?: [] as $ansi) {
+                    @copy($ansi, $this->comparisonDir.'/'.basename($ansi));
+                }
+            }
             TestDirectoryIsolation::removeDirectory($this->testProjectDir);
         }
     }
@@ -84,19 +93,56 @@ final class TuiSubagentProgressE2eTest extends TestCase
             $this->assertStringNotContainsString('running scout |', $capture);
             $this->assertStringNotContainsString('parallel subagents running', $capture);
 
+            $this->assertMatchesRegularExpression(
+                '/╭─.*\n.*╰─\n\s*\n\s*Handoff/s',
+                $capture,
+                'Progress card and handoff markdown should be separated by a blank row',
+            );
+
+            $this->assertStringContainsString('finding one about transcript rendering', $capture);
+            $this->assertStringContainsString('more line', $capture, 'Collapsed handoff must show preview ellipsis');
+            $this->assertStringNotContainsString('scout-handoff-tail-line', $capture, 'Collapsed handoff must hide the long tail');
+
+            $ansiHistory = $this->tmux->captureAnsiWithHistory($pane, 3000);
+            $this->assertMatchesRegularExpression(
+                '/\x1b\[3m(?:\x1b\[[0-9;]*m)*… \d+ more lines?/',
+                $ansiHistory,
+                'Collapsed handoff ellipsis must keep italic ANSI in real tmux render',
+            );
+
             $turnOneCount = substr_count($capture, 'turn 1');
             $this->assertLessThanOrEqual(1, $turnOneCount, 'Coalesced progress must not repeat stale turn 1 spam');
 
             $this->tmux->saveAnsiSnapshot($pane, 'subagent-progress-resume');
+            $this->persistComparisonArtifacts($pane, 'subagent-progress-resume');
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'subagent-progress-resume-FAILURE');
+            $this->persistComparisonArtifacts($pane, 'subagent-progress-resume-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
             }
             throw $e;
         }
+    }
+
+    private function persistComparisonArtifacts(TmuxPane $pane, string $tag): void
+    {
+        if (null === $this->comparisonDir) {
+            return;
+        }
+
+        @mkdir($this->comparisonDir, 0o777, true);
+        $stamp = date('Ymd-His');
+        file_put_contents(
+            \sprintf('%s/%s-history-%s.ansi', $this->comparisonDir, $tag, $stamp),
+            $this->tmux->captureAnsiWithHistory($pane, 3000),
+        );
+        file_put_contents(
+            \sprintf('%s/%s-history-%s.txt', $this->comparisonDir, $tag, $stamp),
+            $this->tmux->capturePlainWithHistory($pane, 3000),
+        );
     }
 
     private function createSessionAndWaitForAssistant(TmuxPane $pane): string

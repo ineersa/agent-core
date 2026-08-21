@@ -238,6 +238,22 @@ final class TmuxHarness
     }
 
     /**
+     * Capture pane scrollback with ANSI escape codes preserved.
+     */
+    public function captureAnsiWithHistory(TmuxPane $pane, int $lines = 1000): string
+    {
+        return $this->runTmux(
+            \sprintf(
+                'tmux capture-pane -p -e -S -%d -E - -t %s 2>&1',
+                $lines,
+                escapeshellarg($pane->paneId),
+            ),
+            self::TMUX_CMD_TIMEOUT,
+            throwOnTimeout: false,
+        );
+    }
+
+    /**
      * Point ANSI smoke artifacts at `<testProjectDir>/.hatfield/tmp/tui/smoke`.
      */
     public function setSnapshotDir(string $testProjectDir): void
