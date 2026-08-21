@@ -268,6 +268,34 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringNotContainsString('bullet nine', $joined);
     }
 
+    public function testCollapsedHandoffEllipsisKeepsItalicAnsiAsSiblingWidget(): void
+    {
+        $progress = [
+            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_done', 'task_summary' => 'task', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 3,
+            'artifact_path' => 'artifacts/agents/agent_done',
+        ];
+        $handoff = "# Handoff title\n\nUnique handoff body.\n\n- bullet one\n- bullet two\n- bullet three\n- bullet four\n- bullet five\n- bullet six\n- bullet seven\n- bullet eight\n- bullet nine";
+        $block = new TranscriptBlock(
+            id: 'tool_result_tc_italic', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
+            text: 'fallback', meta: [
+                'tool_name' => 'subagent',
+                'subagent_progress' => $this->snapshot($progress),
+                'subagent_final' => true,
+                'result' => $handoff,
+            ],
+            streaming: false,
+        );
+
+        $joined = implode("\n", $this->renderBlockLines($block, previewLines: 3));
+        $this->assertMatchesRegularExpression(
+            '/\x1b\[3m(?:\x1b\[[0-9;]*m)*… \d+ more lines?/',
+            $joined,
+            'Collapsed handoff ellipsis must keep italic ANSI outside MarkdownWidget',
+        );
+        $this->assertStringContainsString('… ', preg_replace('/\x1b\[[0-9;]*m/', '', $joined) ?? $joined);
+    }
+
     public function testExpandedHandoffShowsFullMarkdownBody(): void
     {
         $progress = [

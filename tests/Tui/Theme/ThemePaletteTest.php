@@ -109,7 +109,8 @@ final class ThemePaletteTest extends TestCase
             'colors' => [
                 'muted' => 'nord3',
                 'text' => '',
-                'tool_argument_key' => 'muted',
+                'tool_argument_key' => 'warning',
+                'warning' => '#ebcb8b',
                 'tool_argument_value' => 'text',
             ],
         ];
@@ -118,7 +119,7 @@ final class ThemePaletteTest extends TestCase
 
         $this->assertSame('#4c566a', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Muted));
         $this->assertSame('', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Text));
-        $this->assertSame('#4c566a', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::ToolArgumentKey));
+        $this->assertSame('#ebcb8b', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::ToolArgumentKey));
         $this->assertSame('', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::ToolArgumentValue));
     }
 

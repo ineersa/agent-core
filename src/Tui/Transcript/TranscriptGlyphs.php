@@ -25,12 +25,12 @@ final class TranscriptGlyphs
     public const string GLYPH_ASSISTANT_THINKING = '  ⋯';
     /** Tool call/result prefix glyph */
     public const string GLYPH_TOOL = '  ●';
-    /** Progress block prefix glyph */
-    public const string GLYPH_PROGRESS = '  ⏳';
+    /** Progress block prefix glyph (one leading space: emoji is width-2 so text still starts at col 4) */
+    public const string GLYPH_PROGRESS = ' ⏳';
     /** Question block prefix glyph */
     public const string GLYPH_QUESTION = '  ?';
-    /** Approval block prefix glyph */
-    public const string GLYPH_APPROVAL = '  🔐';
+    /** Approval block prefix glyph (one leading space: emoji is width-2 so text still starts at col 4) */
+    public const string GLYPH_APPROVAL = ' 🔐';
     /** Cancelled block prefix glyph */
     public const string GLYPH_CANCELLED = '  ✕';
     /** Error block prefix glyph */

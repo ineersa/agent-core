@@ -159,7 +159,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
                 $pane,
                 static fn (string $plain): bool => (str_contains($plain, '● idle') || str_contains($plain, '◐ Work'))
                     && str_contains($plain, '◆'),
-                timeout: 5.0,
+                timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
                 message: 'Fresh session must reach idle-ready state after the welcome block',
                 history: 0,
             );
