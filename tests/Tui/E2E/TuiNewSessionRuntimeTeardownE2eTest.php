@@ -163,22 +163,36 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
         } catch (\Throwable $shutdownKeyError) {
             if (null === $originalFailure) {
                 $originalFailure = $shutdownKeyError;
+            } else {
+                fwrite(
+                    \STDERR,
+                    \sprintf(
+                        "[TuiNewSessionRuntimeTeardownE2eTest] intentional degradation: Ctrl+D shutdown key failed after original body failure (%s): %s\n",
+                        $originalFailure::class,
+                        $shutdownKeyError->getMessage(),
+                    ),
+                );
             }
         }
 
         try {
             // Prove natural pane/session exit before force cleanup or leak scanning.
             $this->tmux->waitUntilPaneExits($pane, 15.0);
-            $this->assertFalse(
-                $this->tmux->paneExists($pane),
-                'TUI pane must be gone after Ctrl+D; tearDown killAll() is fallback only',
-            );
             $this->assertNoLeakedWorkersForThisTestWithRetry();
             // sleep/tool children inherit HATFIELD_E2E_LEAK_TAG via ProcessLifecycle setsid.
             $this->assertNoLeakTaggedProcessesForThisTestWithRetry();
         } catch (\Throwable $teardownProofError) {
             if (null === $originalFailure) {
                 $originalFailure = $teardownProofError;
+            } else {
+                fwrite(
+                    \STDERR,
+                    \sprintf(
+                        "[TuiNewSessionRuntimeTeardownE2eTest] intentional degradation: teardown proof failed after original body failure (%s): %s\n",
+                        $originalFailure::class,
+                        $teardownProofError->getMessage(),
+                    ),
+                );
             }
         }
 

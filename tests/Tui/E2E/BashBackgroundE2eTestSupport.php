@@ -92,20 +92,10 @@ trait BashBackgroundE2eTestSupport
 
     protected function assertNoLeakedWorkersForThisTestWithRetry(): void
     {
-        $deadline = microtime(true) + 5.0;
-        $lastLeaks = [];
-
-        while (microtime(true) < $deadline) {
-            $lastLeaks = $this->collectLeakedWorkersForThisTest();
-            if ([] === $lastLeaks) {
-                self::assertSame([], $lastLeaks, 'Current-user controller/messenger workers from this test must not survive teardown');
-
-                return;
-            }
-            usleep(200_000);
-        }
-
-        self::assertSame([], $lastLeaks, 'Current-user controller/messenger workers from this test must not survive teardown');
+        $this->assertNoProcessesWithRetry(
+            $this->collectLeakedWorkersForThisTest(...),
+            'Current-user controller/messenger workers from this test must not survive teardown',
+        );
     }
 
     /**
@@ -151,20 +141,29 @@ trait BashBackgroundE2eTestSupport
 
     protected function assertNoLeakTaggedProcessesForThisTestWithRetry(): void
     {
+        $this->assertNoProcessesWithRetry(
+            $this->collectLeakTaggedProcessesForThisTest(...),
+            'No process carrying this test HATFIELD_E2E_LEAK_TAG may survive clean pane exit',
+        );
+    }
+
+    /**
+     * @param callable(): list<string> $collector
+     */
+    private function assertNoProcessesWithRetry(callable $collector, string $message): void
+    {
         $deadline = microtime(true) + 5.0;
         $lastLeaks = [];
 
         while (microtime(true) < $deadline) {
-            $lastLeaks = $this->collectLeakTaggedProcessesForThisTest();
+            $lastLeaks = $collector();
             if ([] === $lastLeaks) {
-                self::assertSame([], $lastLeaks, 'No process carrying this test HATFIELD_E2E_LEAK_TAG may survive clean pane exit');
-
                 return;
             }
             usleep(200_000);
         }
 
-        self::assertSame([], $lastLeaks, 'No process carrying this test HATFIELD_E2E_LEAK_TAG may survive clean pane exit');
+        self::assertSame([], $lastLeaks, $message);
     }
 
     /**
