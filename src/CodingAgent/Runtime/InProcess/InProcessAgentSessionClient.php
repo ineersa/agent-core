@@ -313,7 +313,9 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     }
 
     /**
-     * No-op: the in-process transport owns no subprocess tree to tear down.
+     * No-op for process teardown: the in-process transport owns no subprocess
+     * tree. Still a session-boundary hook for callers that always shut down
+     * before /new or /resume.
      *
      * The /reload guards guarantee the run is idle/terminal before reload,
      * so no runner work is in flight; dropping the old container's service

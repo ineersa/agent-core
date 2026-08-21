@@ -345,6 +345,13 @@ final readonly class InteractiveMode
                 // preserved unchanged.
                 $this->clearScreenForNextSession($tui->getTerminal());
 
+                // Hard session boundary: stop the previous controller/consumers
+                // and clear client-local buffers/child observation before the
+                // next draft or resume attaches. /new must not keep the old
+                // runtime alive under a sessionless draft; /resume then
+                // attach() starts a fresh session-scoped controller.
+                $client->shutdown();
+
                 $needsTerminalClear = true;
                 // Record the session id we're leaving so the next
                 // iteration's lifecycle start event can reference

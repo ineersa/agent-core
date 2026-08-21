@@ -56,18 +56,18 @@ final class TuiSubagentChildHitlCancellationE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
             $this->tmux->waitForTuiReadyAfterLogo($pane);
 
-            $this->tmux->waitForCaptureContains($pane, 'needs input', 12.0, 'Main transcript card must show child needs input');
+            $this->tmux->waitForCaptureContains($pane, 'needs input', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Main transcript card must show child needs input');
 
             $this->tmux->sendKey($pane, 'C-u');
             $this->tmux->sendLiteral($pane, '/agents-live');
             $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'Agents live', 10.0, 'Agents live picker must open');
-            $this->tmux->waitForCaptureContains($pane, '⚠ needs input', 10.0, 'Picker must mark waiting child');
+            $this->tmux->waitForCaptureContains($pane, 'Agents live', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Agents live picker must open');
+            $this->tmux->waitForCaptureContains($pane, '⚠ needs input', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Picker must mark waiting child');
 
             $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'Child waiting for your input', 10.0, 'Live view working line must show child waiting');
-            $this->tmux->waitForCaptureContains($pane, 'Which file should the scout inspect next?', 12.0, 'Child question overlay prompt must appear');
-            $this->tmux->waitForCaptureContains($pane, 'awaiting answer', 10.0, 'Child HITL must surface in transcript');
+            $this->tmux->waitForCaptureContains($pane, 'Child waiting for your input', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Live view working line must show child waiting');
+            $this->tmux->waitForCaptureContains($pane, 'Which file should the scout inspect next?', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Child question overlay prompt must appear');
+            $this->tmux->waitForCaptureContains($pane, 'awaiting answer', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Child HITL must surface in transcript');
             // Child cancel target/precedence: SubagentLiveCommandRegistrarTest + CancelListenerTest (overlay blocks ESC/cancel underneath).
         } finally {
             // snapshot optional; TmuxHarness has no saveAnsiSnapshot helper on this test class

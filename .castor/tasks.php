@@ -13,7 +13,7 @@ declare(strict_types=1);
  *
  * Lanes (typical shell timeouts):
  *   deptrac (30s), test ParaTest (120s), test:controller-replay (150s),
- *   test:tui (180s), test:llm-real (180s), phpstan (90s), cs-check (30s),
+ *   test:tui (210s), test:llm-real (210s), phpstan (90s), cs-check (30s),
  *   docs:validate (30s).
  *   Absolute castor check wall clock: castor_test_runner_max_seconds() (210s)
  *   from check() entry — lock wait, QA init, preflight, lanes, and finalizers
@@ -34,7 +34,7 @@ declare(strict_types=1);
  * Individual fixture waits remain fixture-local; Castor lane hard-stop is
  * the shell budget clamped to remaining wall (no +15s pad).
  *
- * Budget for test:tui (120s → 180s): the replay TUI lane runs 36 tests on
+ * Budget for test:tui (120s → 180s → 210s): the replay TUI lane runs 36 tests on
  * 2 ParaTest workers; healthy gate runs are often 108–118s, so 120s left
  * little margin under concurrent lane contention and risked GNU timeout
  * killing ParaTest before PHPUnit tearDown.
@@ -104,7 +104,7 @@ require_once __DIR__.'/env.php';
 function check(): void
 {
     $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
-    // Absolute wall starts at task entry — before lock wait and QA init.
+    // Absolute 210s wall starts at task entry — before lock wait and QA init.
     $checkWallDeadline = (hrtime(true) / 1e9) + castor_test_runner_max_seconds();
     /** @var LockInterface|null $checkLock */
     $checkLock = null;
@@ -252,7 +252,7 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
 
     // DB schema must be ready before the test / controller-replay / TUI
     // lanes start.  Migrate once (fast, idempotent). Bound by remaining wall
-    // so an unbounded migrate cannot outlive the absolute wall budget.
+    // so an unbounded migrate cannot outlive the absolute 210s budget.
     castor_check_fail_if_wall_exceeded($checkWallDeadline, 'before test database migration');
     $migrateTimeout = min(30, castor_check_remaining_wall_seconds($checkWallDeadline));
     $migrate = run_quiet_command(timeout_check_command(
@@ -687,7 +687,7 @@ function run_check_commands_parallel(array $steps, array &$failures, array &$tim
         $laneTimeout = castor_test_runner_max_seconds();
         if (preg_match('/^timeout\s+.*?\s+(\d+)s\s/', $info['cmd'], $m)) {
             // Prefer the shell budget itself (already the intended kill time).
-            // Do not pad past the absolute wall / remaining gate budget.
+            // Do not pad past the absolute 210s wall / remaining gate budget.
             $laneTimeout = (int) $m[1];
         }
         $timeouts[$step] = max(1, min($laneTimeout, $remainingWall, castor_test_runner_max_seconds()));

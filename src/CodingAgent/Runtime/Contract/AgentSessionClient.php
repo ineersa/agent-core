@@ -74,8 +74,11 @@ interface AgentSessionClient
 
     /**
      * Synchronously shut down the session client's runtime (controller
-     * subprocess, consumers, held locks) before the process re-bootstraps
-     * (e.g. /reload). Idempotent; safe to call when nothing is running.
+     * subprocess, consumers, held locks) and clear client-local cross-run
+     * buffers/observation state. Used before process re-bootstrap (/reload)
+     * and before same-process session switches (/new draft, /resume) so the
+     * previous session's runtime cannot survive under a fresh draft or target.
+     * Idempotent; safe to call when nothing is running.
      */
     public function shutdown(): void;
 

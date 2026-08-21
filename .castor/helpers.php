@@ -308,13 +308,51 @@ function qa_test_home_dir(): string
 }
 
 /**
+ * Invocation-scoped Symfony cache root for standalone Castor test/migrate.
+ *
+ * Avoids shared `.hatfield/cache/test` when HATFIELD_CACHE_DIR is unset.
+ * Reuses an already-set HATFIELD_CACHE_DIR (castor check run-scoped cache,
+ * ParaTest worker override, or explicit caller) without allocating a new one.
+ */
+function qa_standalone_test_cache_dir(): string
+{
+    $existing = getenv('HATFIELD_CACHE_DIR');
+    if (false !== $existing && '' !== trim((string) $existing)) {
+        return (string) $existing;
+    }
+
+    $projectRoot = project_root_dir();
+    $runId = getenv('HATFIELD_QA_RUN_ID');
+    if (false !== $runId && '' !== trim((string) $runId)) {
+        $segment = sanitize_qa_run_id_segment((string) $runId);
+        $resolved = '.hatfield/cache-'.$segment;
+    } else {
+        $resolved = '.hatfield/cache-test-pid-'.getmypid();
+    }
+
+    $path = $projectRoot.'/'.$resolved;
+    if (!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path)) {
+        throw new \RuntimeException(\sprintf('Unable to create standalone test cache directory "%s".', $path));
+    }
+
+    putenv('HATFIELD_CACHE_DIR='.$resolved);
+    $_ENV['HATFIELD_CACHE_DIR'] = $resolved;
+    $_SERVER['HATFIELD_CACHE_DIR'] = $resolved;
+
+    return $resolved;
+}
+
+/**
  * Shell prefix exporting isolated HOME for subprocesses that boot the test kernel.
  */
 function qa_test_home_shell_prefix(): string
 {
     $home = qa_test_home_dir();
+    $cache = qa_standalone_test_cache_dir();
 
-    return 'HOME='.escapeshellarg($home).' HATFIELD_QA_TEST_HOME='.escapeshellarg($home);
+    return 'HOME='.escapeshellarg($home)
+        .' HATFIELD_QA_TEST_HOME='.escapeshellarg($home)
+        .' HATFIELD_CACHE_DIR='.escapeshellarg($cache);
 }
 
 // ─── PHAR packaging constants ──────────────────────────────────────────
@@ -1224,7 +1262,7 @@ const CASTOR_CHECK_LOCK_WAIT_HEARTBEAT_S = 15;
  * Override with `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT` (positive number, max 3600).
  * When `$checkWallDeadline` is set (absolute hrtime-seconds from check() entry),
  * the acquire wait is also clamped so lock waiting cannot push total check
- * invocation past the absolute 180s wall.
+ * invocation past the absolute 210s wall.
  */
 function castor_check_lock_acquire_timeout_seconds(?float $checkWallDeadline = null): float
 {
@@ -1447,7 +1485,7 @@ function clear_castor_check_lock_meta(string $projectRoot): void
  *
  * Sibling worktrees of the same repository share the lock resource name.
  * When `$checkWallDeadline` is provided, acquire wait is also bounded by remaining
- * absolute check wall so lock wait + gate cannot exceed 180s total.
+ * absolute check wall so lock wait + gate cannot exceed 210s total.
  */
 function acquire_castor_check_lock(string $projectRoot, ?float $checkWallDeadline = null): LockInterface
 {

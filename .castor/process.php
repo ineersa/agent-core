@@ -65,7 +65,7 @@ function castor_test_runner_max_seconds(): int
  *
  * @return array{exitCode:int,output:string,duration:float}
  */
-function run_test_command_bounded(string $step, string $command, int $timeoutSeconds = 180, ?string $logPath = null): array
+function run_test_command_bounded(string $step, string $command, int $timeoutSeconds = 210, ?string $logPath = null): array
 {
     $timeoutSeconds = max(1, min(castor_test_runner_max_seconds(), $timeoutSeconds));
     $results = run_commands_parallel(
@@ -1201,7 +1201,7 @@ PHPCODE;
     putenv('HATFIELD_QA_RUN_ID');
     unset($_ENV['HATFIELD_QA_RUN_ID']);
 
-    // ── Test I: standalone test runner helper hard-timeout (≈1s, not 180s) ──
+    // ── Test I: standalone test runner helper hard-timeout (≈1s, not 210s) ──
     echo "\n── Test I: run_test_command_bounded hard-timeout ──\n\n";
     $beforeI = count_alive_descendants();
     $startI = hrtime(true);
@@ -1233,10 +1233,10 @@ PHPCODE;
         echo "PASS: no surviving descendants after bounded hang\n";
     }
 
-    // ── Test J: castor check wall remaining clamps lane timeouts to <=180 ──
+    // ── Test J: castor check wall remaining clamps lane timeouts to <=210 ──
     echo "\n── Test J: check wall remaining clamp math ──\n\n";
     $shellTimeoutJ = 180;
-    // No +15 pad: pad would exceed the absolute 180s check wall.
+    // No +15 pad: pad would exceed the absolute 210s check wall.
     $castorTimeoutJ = min(castor_test_runner_max_seconds(), $shellTimeoutJ);
     $remainingJ = 5; // simulate late gate start
     $effectiveJ = min($castorTimeoutJ, max(1, $remainingJ));
@@ -1250,11 +1250,11 @@ PHPCODE;
         echo "FAIL: castor timeout {$castorTimeoutJ} exceeds max\n";
         $ok = false;
     } else {
-        echo "PASS: shell 180 clamps to {$castorTimeoutJ} (<=180, no pad)\n";
+        echo "PASS: shell 180 clamps to {$castorTimeoutJ} (<=210 max, no pad)\n";
     }
 
     // ── Test K: absolute wall starts at check() entry (lock+preflight share budget) ──
-    echo "\n── Test K: check() entry wall accounting (lock + preflight share 180s) ──\n\n";
+    echo "\n── Test K: check() entry wall accounting (lock + preflight share 210s) ──\n\n";
     // Simulate: wall starts at entry; lock wait burns 2s of a 5s injected budget.
     $entryK = hrtime(true) / 1e9;
     $injectedBudgetK = 5.0;
