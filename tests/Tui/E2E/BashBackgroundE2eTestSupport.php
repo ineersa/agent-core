@@ -158,6 +158,8 @@ trait BashBackgroundE2eTestSupport
         while (microtime(true) < $deadline) {
             $lastLeaks = $collector();
             if ([] === $lastLeaks) {
+                self::assertSame([], $lastLeaks, $message);
+
                 return;
             }
             usleep(200_000);
