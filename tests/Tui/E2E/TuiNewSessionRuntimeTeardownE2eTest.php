@@ -13,6 +13,8 @@ use Symfony\Component\Yaml\Yaml;
  * while an in-flight tool run is still active, keeps the draft free of old
  * progress/result text, and still allows a fresh session to start afterward.
  *
+ * Also proves clean Ctrl+D pane exit before leak scanning and tearDown force-kill.
+ *
  * @group tui-e2e-replay
  */
 #[Group('tui-e2e-replay')]
@@ -32,6 +34,7 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
 
     protected function tearDown(): void
     {
+        // killAll() remains the force-cleanup fallback; removeDirectory runs after it.
         $this->tearDownBashBackgroundE2e();
     }
 
@@ -47,6 +50,8 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
             height: 60,
             cwd: $this->testProjectDir,
         );
+
+        $originalFailure = null;
 
         try {
             $this->prepareEditorForUserPrompt($this->tmux, $pane);
@@ -148,15 +153,37 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
             );
 
             $this->tmux->saveAnsiSnapshot($pane, 'new-during-inflight-fresh-session');
-            $this->tmux->sendKey($pane, 'C-d');
-            $this->assertNoLeakedWorkersForThisTestWithRetry();
         } catch (\Throwable $e) {
+            $originalFailure = $e;
             $this->tmux->saveAnsiSnapshot($pane, 'new-during-inflight-FAILURE');
-            try {
-                $this->tmux->sendKey($pane, 'C-d');
-            } catch (\Throwable) {
+        }
+
+        try {
+            $this->tmux->sendKey($pane, 'C-d');
+        } catch (\Throwable $shutdownKeyError) {
+            if (null === $originalFailure) {
+                $originalFailure = $shutdownKeyError;
             }
-            throw $e;
+        }
+
+        try {
+            // Prove natural pane/session exit before force cleanup or leak scanning.
+            $this->tmux->waitUntilPaneExits($pane, 15.0);
+            $this->assertFalse(
+                $this->tmux->paneExists($pane),
+                'TUI pane must be gone after Ctrl+D; tearDown killAll() is fallback only',
+            );
+            $this->assertNoLeakedWorkersForThisTestWithRetry();
+            // sleep/tool children inherit HATFIELD_E2E_LEAK_TAG via ProcessLifecycle setsid.
+            $this->assertNoLeakTaggedProcessesForThisTestWithRetry();
+        } catch (\Throwable $teardownProofError) {
+            if (null === $originalFailure) {
+                $originalFailure = $teardownProofError;
+            }
+        }
+
+        if (null !== $originalFailure) {
+            throw $originalFailure;
         }
     }
 

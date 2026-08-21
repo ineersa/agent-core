@@ -37,6 +37,10 @@ trait BashBackgroundE2eTestSupport
         if (isset($this->tmux)) {
             $this->tmux->killAll();
         }
+
+        if (isset($this->testProjectDir)) {
+            TestDirectoryIsolation::removeDirectory($this->testProjectDir);
+        }
     }
 
     protected function agentCommandWithFixtures(string ...$fixtureRelativePaths): string
@@ -102,6 +106,65 @@ trait BashBackgroundE2eTestSupport
         }
 
         self::assertSame([], $lastLeaks, 'Current-user controller/messenger workers from this test must not survive teardown');
+    }
+
+    /**
+     * Any current-user process still carrying this test's HATFIELD_E2E_LEAK_TAG.
+     *
+     * Broader than controller/messenger leak scanning: catches tagged bash/tool
+     * children (e.g. in-flight `sleep`) when ProcessLifecycle inherits the tag.
+     *
+     * @return list<string>
+     */
+    protected function collectLeakTaggedProcessesForThisTest(): array
+    {
+        $leakTag = $this->leakTag;
+        if ('' === $leakTag) {
+            return [];
+        }
+
+        $uid = \function_exists('posix_geteuid') ? posix_geteuid() : null;
+        $output = [];
+        @exec('timeout --kill-after=1s 2s ps -eo pid=,uid=,args= 2>/dev/null', $output);
+        $leaks = [];
+        foreach ($output as $line) {
+            $trim = trim($line);
+            if ('' === $trim || !preg_match('/^\s*(\d+)\s+(\d+)\s+(.+)$/s', $trim, $m)) {
+                continue;
+            }
+            $pid = (int) $m[1];
+            $procUid = (int) $m[2];
+            if (null !== $uid && $procUid !== $uid) {
+                continue;
+            }
+            if (getmypid() === $pid) {
+                continue;
+            }
+            if (!$this->processEnvironContainsLeakTag($pid, $leakTag)) {
+                continue;
+            }
+            $leaks[] = $pid.' '.$m[3];
+        }
+
+        return $leaks;
+    }
+
+    protected function assertNoLeakTaggedProcessesForThisTestWithRetry(): void
+    {
+        $deadline = microtime(true) + 5.0;
+        $lastLeaks = [];
+
+        while (microtime(true) < $deadline) {
+            $lastLeaks = $this->collectLeakTaggedProcessesForThisTest();
+            if ([] === $lastLeaks) {
+                self::assertSame([], $lastLeaks, 'No process carrying this test HATFIELD_E2E_LEAK_TAG may survive clean pane exit');
+
+                return;
+            }
+            usleep(200_000);
+        }
+
+        self::assertSame([], $lastLeaks, 'No process carrying this test HATFIELD_E2E_LEAK_TAG may survive clean pane exit');
     }
 
     /**
