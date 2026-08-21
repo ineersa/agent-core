@@ -735,11 +735,6 @@ final class SetupScreen
 
             return;
         }
-        if ('save' === $id) {
-            $this->refreshError();
-
-            return;
-        }
         if ('add_model' === $id) {
             $this->refreshCustomFormValuesAfterModelCommit();
             $this->refreshError();
@@ -778,12 +773,13 @@ final class SetupScreen
         $modelIds = array_keys($models);
         $modelsDisplay = [] === $modelIds ? '(none yet)' : implode(', ', $modelIds);
         $this->settingsWidget->updateValue('modelsSaved', $modelsDisplay);
-        $this->settingsWidget->updateValue('modelId', (string) ($this->formState['modelId'] ?? ''));
-        $this->settingsWidget->updateValue('modelName', (string) ($this->formState['modelName'] ?? ''));
-        $this->settingsWidget->updateValue('contextWindow', (string) ($this->formState['contextWindow'] ?? '128000'));
-        $this->settingsWidget->updateValue('maxTokens', (string) ($this->formState['maxTokens'] ?? '8192'));
-        $this->settingsWidget->updateValue('modalities', (string) ($this->formState['modalities'] ?? 'text'));
-        $this->settingsWidget->updateValue('reasoning', (string) ($this->formState['reasoning'] ?? 'no'));
+        // commitDraftModel always resets draft keys before this runs.
+        $this->settingsWidget->updateValue('modelId', (string) $this->formState['modelId']);
+        $this->settingsWidget->updateValue('modelName', (string) $this->formState['modelName']);
+        $this->settingsWidget->updateValue('contextWindow', (string) $this->formState['contextWindow']);
+        $this->settingsWidget->updateValue('maxTokens', (string) $this->formState['maxTokens']);
+        $this->settingsWidget->updateValue('modalities', (string) $this->formState['modalities']);
+        $this->settingsWidget->updateValue('reasoning', (string) $this->formState['reasoning']);
     }
 
     private function setCustomId(string $value): void

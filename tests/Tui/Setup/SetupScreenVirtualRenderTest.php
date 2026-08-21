@@ -215,7 +215,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertSame('custom', $screen->phase());
         $this->assertStringContainsString('Add your own server', $text);
         $this->assertStringContainsString('All options on one screen', $text);
-        $this->assertStringContainsString('Provider id', $text);
+        $this->assertSame(1, substr_count($text, 'Provider id')); // orphan-guard: clipped duplicate would repeat labels
         $this->assertStringContainsString('Server URL', $text);
         $this->assertStringContainsString('Completions path', $text);
         $this->assertStringContainsString('API key', $text);
