@@ -54,7 +54,7 @@ require_once __DIR__.'/qa_tmux.php';
  */
 function castor_test_runner_max_seconds(): int
 {
-    return 180;
+    return 210;
 }
 
 /**

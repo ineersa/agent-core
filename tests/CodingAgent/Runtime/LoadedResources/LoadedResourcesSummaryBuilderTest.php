@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\LoadedResources;
 
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiscovery;
 use Ineersa\CodingAgent\Config\Ai\AiCatalog;
+use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -165,6 +166,64 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
         $this->assertSame('', $section->conflicts[0]->winnerPath);
         $this->assertSame('update available — run `hatfield providers:update`', $section->conflicts[0]->message);
         $this->assertContains($section, $summary->nonEmptySections());
+    }
+
+    #[Test]
+    public function testStaleDefaultModelAddsWarningConflictSection(): void
+    {
+        $appConfig = new AppConfig(
+            cwd: $this->tmpDir,
+            logging: new LoggingConfig(),
+            tui: new TuiConfig(theme: 'default', themePaths: []),
+            ai: new AiConfig(defaultModel: 'deepseek/deepseek-v4-pro'),
+            staleDefaultModel: 'openai/gpt-5',
+        );
+
+        $builder = new LoadedResourcesSummaryBuilder(
+            agentsContextDiscovery: new AgentsContextDiscovery(
+                pathResolver: new SettingsPathResolver($this->tmpDir),
+                appConfig: $appConfig,
+            ),
+            skillDiscovery: $this->emptySkillDiscovery($this->tmpDir),
+            promptTemplateLoader: $this->emptyPromptLoader(),
+            agentDefinitionDiscovery: $this->disabledAgentDiscovery(),
+            themeLoadedResourcesProvider: $this->emptyThemeRegistry(),
+            extensionManager: $this->emptyExtensionManager(),
+            appConfig: $appConfig,
+        );
+
+        $summary = $builder->build();
+        $section = $this->sectionByKey($summary, 'default-model');
+
+        $this->assertSame('Default model', $section->label);
+        $this->assertSame([], $section->items);
+        $this->assertCount(1, $section->conflicts);
+        $this->assertSame('openai/gpt-5', $section->conflicts[0]->name);
+        $this->assertSame('', $section->conflicts[0]->winnerPath);
+        $this->assertSame('unavailable — using deepseek/deepseek-v4-pro', $section->conflicts[0]->message);
+        $this->assertContains($section, $summary->nonEmptySections());
+    }
+
+    #[Test]
+    public function testStaleDefaultModelAbsentWhenNull(): void
+    {
+        $appConfig = $this->appConfig($this->tmpDir);
+        $builder = new LoadedResourcesSummaryBuilder(
+            agentsContextDiscovery: new AgentsContextDiscovery(
+                pathResolver: new SettingsPathResolver($this->tmpDir),
+                appConfig: $appConfig,
+            ),
+            skillDiscovery: $this->emptySkillDiscovery($this->tmpDir),
+            promptTemplateLoader: $this->emptyPromptLoader(),
+            agentDefinitionDiscovery: $this->disabledAgentDiscovery(),
+            themeLoadedResourcesProvider: $this->emptyThemeRegistry(),
+            extensionManager: $this->emptyExtensionManager(),
+            appConfig: $appConfig,
+        );
+
+        foreach ($builder->build()->sections as $section) {
+            $this->assertNotSame('default-model', $section->key);
+        }
     }
 
     #[Test]
