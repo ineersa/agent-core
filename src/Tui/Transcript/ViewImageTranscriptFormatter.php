@@ -13,21 +13,6 @@ namespace Ineersa\Tui\Transcript;
 final class ViewImageTranscriptFormatter
 {
     /**
-     * @param array<string, mixed> $arguments
-     *
-     * @return list<string>
-     */
-    public function formatToolCallLines(array $arguments): array
-    {
-        $path = $arguments['path'] ?? null;
-        if (!\is_string($path) || '' === $path) {
-            return [];
-        }
-
-        return ['path: '.$path];
-    }
-
-    /**
      * @param array<string, mixed>|string|null $result
      *
      * @return list<string>
