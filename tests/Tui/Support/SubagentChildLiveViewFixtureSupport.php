@@ -73,6 +73,9 @@ final class SubagentChildLiveViewFixtureSupport
         $parentLines = file($parentEventsPath, \FILE_IGNORE_NEW_LINES);
         $patched = [];
         foreach ($parentLines as $line) {
+            if ('' === $line) {
+                continue;
+            }
             $row = json_decode($line, true, 512, \JSON_THROW_ON_ERROR);
             $progress = $row['payload']['subagent_progress'] ?? null;
             if (\is_array($progress) && ($progress['status'] ?? '') === 'completed') {
