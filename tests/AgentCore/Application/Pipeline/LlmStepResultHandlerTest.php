@@ -761,9 +761,6 @@ final class LlmStepResultHandlerTest extends TestCase
         foreach ($executionBus->messages as $dispatched) {
             $this->assertInstanceOf(ExecuteToolCall::class, $dispatched);
             $this->assertFalse($dispatched->backgroundPromptAllowed);
-        }
-        foreach ($executionBus->messages as $dispatched) {
-            $this->assertInstanceOf(ExecuteToolCall::class, $dispatched);
             $this->assertSame(4, $dispatched->maxParallelism);
             $this->assertSame('parallel', $dispatched->mode);
         }
