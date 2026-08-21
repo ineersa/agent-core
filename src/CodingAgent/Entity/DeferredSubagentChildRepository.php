@@ -17,7 +17,7 @@ use Symfony\Component\Clock\Clock;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
-use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
@@ -28,7 +28,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
 {
     public function __construct(
         ManagerRegistry $registry,
-        private readonly DenormalizerInterface&NormalizerInterface $serializer,
+        private readonly SerializerInterface&DenormalizerInterface $serializer,
         private readonly ValidatorInterface $validator,
     ) {
         parent::__construct($registry, DeferredSubagentChild::class);
