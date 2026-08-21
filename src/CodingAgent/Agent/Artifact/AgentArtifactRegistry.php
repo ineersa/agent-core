@@ -447,6 +447,10 @@ final class AgentArtifactRegistry
      * This is a public interface for {@see SubagentExecutionService} to
      * finalize child agent handoffs after run completion.
      *
+     * When a previous non-empty handoff.md exists, it is archived under
+     * handoffs/<n>.md with an updated handoffs/index.json before the new
+     * latest content is written to handoff.md.
+     *
      * Uses atomic temp-file + rename to avoid partial writes.
      *
      * @throws \InvalidArgumentException when IDs contain path separators
@@ -456,7 +460,82 @@ final class AgentArtifactRegistry
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
 
-        $this->writeHandoffInternal($parentRunId, $artifactId, $content);
+        $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
+        $lock->acquire(true);
+
+        try {
+            $this->archiveExistingHandoffIfPresent($parentRunId, $artifactId);
+            $this->writeHandoffInternal($parentRunId, $artifactId, $content);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * List archived handoff versions for an artifact (oldest → newest).
+     *
+     * @return list<array{n: int, created_at: string, status: ?string, summary: ?string, path: string}>
+     */
+    public function listHandoffHistory(string $parentRunId, string $artifactId): array
+    {
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
+
+        $index = $this->readHandoffIndex($parentRunId, $artifactId);
+        $entries = $index['entries'] ?? [];
+        if (!\is_array($entries)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($entries as $entry) {
+            if (!\is_array($entry) || !isset($entry['n']) || !is_numeric($entry['n'])) {
+                continue;
+            }
+            $n = (int) $entry['n'];
+            $out[] = [
+                'n' => $n,
+                'created_at' => \is_string($entry['created_at'] ?? null) ? $entry['created_at'] : '',
+                'status' => \is_string($entry['status'] ?? null) ? $entry['status'] : null,
+                'summary' => \is_string($entry['summary'] ?? null) ? $entry['summary'] : null,
+                'path' => \is_string($entry['path'] ?? null) ? $entry['path'] : "artifacts/agents/{$artifactId}/handoffs/{$n}.md",
+            ];
+        }
+
+        usort($out, static fn (array $a, array $b): int => $a['n'] <=> $b['n']);
+
+        return $out;
+    }
+
+    /**
+     * Read one archived handoff body by 1-based index n.
+     *
+     * @throws \InvalidArgumentException when the archived handoff does not exist
+     */
+    public function readHandoffHistoryEntry(string $parentRunId, string $artifactId, int $n): string
+    {
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
+
+        if ($n < 1) {
+            throw new \InvalidArgumentException('Handoff history index must be >= 1.');
+        }
+
+        $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
+        $relative = "{$paths->artifactDir}/handoffs/{$n}.md";
+        $path = $this->pathResolver->absolutePath($parentRunId, $relative);
+
+        if (!is_file($path)) {
+            throw new \InvalidArgumentException(\sprintf('No archived handoff #%d for artifact "%s".', $n, $artifactId));
+        }
+
+        if (!is_readable($path)) {
+            throw new \RuntimeException(\sprintf('Archived handoff #%d for artifact "%s" parent "%s" is not readable.', $n, $artifactId, $parentRunId));
+        }
+
+        $content = file_get_contents($path);
+
+        return false === $content ? '' : $content;
     }
 
     // ── Internal read/write methods ─────────────────────────────────────
@@ -493,7 +572,9 @@ final class AgentArtifactRegistry
         array $entries,
     ): void {
         $this->ensureArtifactDir($parentRunId, $artifactId);
-        $this->writeHandoff($parentRunId, $artifactId, '');
+        // Already under the parent-artifact lock in create/ensureReserved — do not
+        // re-enter public writeHandoff() (non-reentrant FlockStore deadlock).
+        $this->writeHandoffInternal($parentRunId, $artifactId, '');
 
         // Write the canonical registry first — if a later sidecar write
         // fails, the canonical registry is still correct.  metadata.json
@@ -617,6 +698,111 @@ final class AgentArtifactRegistry
             AtomicFileWriter::write($path, $content, fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
         } catch (AtomicFileWriterException $exception) {
             throw new \RuntimeException(\sprintf('Failed to write handoff.md for artifact "%s" parent "%s".', $artifactId, $parentRunId), previous: $exception);
+        }
+    }
+
+    private function archiveExistingHandoffIfPresent(string $parentRunId, string $artifactId): void
+    {
+        $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
+        $handoffPath = $this->pathResolver->absolutePath($parentRunId, $paths->handoffPath);
+        if (!is_file($handoffPath) || !is_readable($handoffPath)) {
+            return;
+        }
+
+        $existing = file_get_contents($handoffPath);
+        if (false === $existing || '' === trim($existing)) {
+            return;
+        }
+
+        $index = $this->readHandoffIndex($parentRunId, $artifactId);
+        $entries = $index['entries'] ?? [];
+        if (!\is_array($entries)) {
+            $entries = [];
+        }
+
+        $nextN = 1;
+        foreach ($entries as $entry) {
+            if (\is_array($entry) && isset($entry['n']) && is_numeric($entry['n'])) {
+                $nextN = max($nextN, ((int) $entry['n']) + 1);
+            }
+        }
+
+        $relativeArchive = "{$paths->artifactDir}/handoffs/{$nextN}.md";
+        $archivePath = $this->pathResolver->absolutePath($parentRunId, $relativeArchive);
+
+        try {
+            AtomicFileWriter::write($archivePath, $existing, fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
+        } catch (AtomicFileWriterException $exception) {
+            throw new \RuntimeException(\sprintf('Failed to archive handoff.md for artifact "%s" parent "%s".', $artifactId, $parentRunId), previous: $exception);
+        }
+
+        $entryMeta = null;
+        foreach ($this->loadRegistry($parentRunId) as $entry) {
+            if ($entry->artifactId === $artifactId) {
+                $entryMeta = $entry;
+                break;
+            }
+        }
+        $summary = null;
+        if (null !== $entryMeta?->summary && '' !== trim($entryMeta->summary)) {
+            $summary = mb_substr(preg_replace('/\s+/', ' ', $entryMeta->summary) ?? $entryMeta->summary, 0, 240);
+        }
+
+        $entries[] = [
+            'n' => $nextN,
+            'created_at' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+            'status' => $entryMeta?->status->value,
+            'summary' => $summary,
+            'path' => $relativeArchive,
+        ];
+
+        $this->writeHandoffIndex($parentRunId, $artifactId, [
+            'schema_version' => 1,
+            'entries' => $entries,
+        ]);
+    }
+
+    /**
+     * @return array{schema_version?: int, entries?: list<mixed>}
+     */
+    private function readHandoffIndex(string $parentRunId, string $artifactId): array
+    {
+        $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
+        $indexPath = $this->pathResolver->absolutePath($parentRunId, "{$paths->artifactDir}/handoffs/index.json");
+        if (!is_file($indexPath) || !is_readable($indexPath)) {
+            return ['schema_version' => 1, 'entries' => []];
+        }
+
+        $raw = file_get_contents($indexPath);
+        if (false === $raw || '' === trim($raw)) {
+            return ['schema_version' => 1, 'entries' => []];
+        }
+
+        try {
+            $decoded = json_decode($raw, true, 512, \JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return ['schema_version' => 1, 'entries' => []];
+        }
+
+        return \is_array($decoded) ? $decoded : ['schema_version' => 1, 'entries' => []];
+    }
+
+    /**
+     * @param array{schema_version: int, entries: list<array<string, mixed>>} $index
+     */
+    private function writeHandoffIndex(string $parentRunId, string $artifactId, array $index): void
+    {
+        $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
+        $indexPath = $this->pathResolver->absolutePath($parentRunId, "{$paths->artifactDir}/handoffs/index.json");
+
+        try {
+            AtomicFileWriter::write(
+                $indexPath,
+                json_encode($index, \JSON_THROW_ON_ERROR | \JSON_PRETTY_PRINT)."\n",
+                fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS,
+            );
+        } catch (AtomicFileWriterException|\JsonException $exception) {
+            throw new \RuntimeException(\sprintf('Failed to write handoffs/index.json for artifact "%s" parent "%s".', $artifactId, $parentRunId), previous: $exception);
         }
     }
 

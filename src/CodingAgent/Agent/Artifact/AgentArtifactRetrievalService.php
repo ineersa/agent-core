@@ -70,6 +70,15 @@ MD;
 {summary_line}
 MD;
 
+    private const string TEMPLATE_HANDOFF_HISTORY_HEADER = <<<'MD'
+# Subagent handoff history
+
+- artifact_id: {artifact_id}
+- agent_run_id: {agent_run_id}
+- agent_name: {agent_name}
+- parent_run_id: {parent_run_id}
+MD;
+
     private const string TEMPLATE_DEBUG = <<<'MD'
 # Subagent artifact debug paths
 
@@ -119,6 +128,7 @@ MD;
             AgentRetrieveModeEnum::Metadata => $this->renderMetadata($entry),
             AgentRetrieveModeEnum::Events => $this->renderEvents($entry, $limit),
             AgentRetrieveModeEnum::History => $this->renderHistory($entry, $limit),
+            AgentRetrieveModeEnum::HandoffHistory => $this->renderHandoffHistory($entry, $args->resolvedIndex()),
             AgentRetrieveModeEnum::Debug => $this->renderDebug($entry),
         };
     }
@@ -299,6 +309,46 @@ MD;
 
         if ([] === $slice) {
             $lines[] = '_(No eligible messages in child state.)_';
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function renderHandoffHistory(AgentArtifactEntryDTO $entry, ?int $index): string
+    {
+        $header = rtrim($this->renderTemplate(self::TEMPLATE_HANDOFF_HISTORY_HEADER, $this->identityVars($entry)));
+
+        if (null !== $index) {
+            try {
+                $body = $this->artifactRegistry->readHandoffHistoryEntry($entry->parentRunId, $entry->artifactId, $index);
+            } catch (\InvalidArgumentException $e) {
+                throw new ToolCallException($e->getMessage(), retryable: false);
+            }
+
+            return $header."\n\n## Archived handoff #{$index}\n\n".$body;
+        }
+
+        $entries = $this->artifactRegistry->listHandoffHistory($entry->parentRunId, $entry->artifactId);
+        $lines = [$header, '', 'Archived handoffs (oldest → newest). Pass index=<n> to fetch one body. Latest remains mode=handoff.'];
+
+        if ([] === $entries) {
+            $lines[] = '_(No archived handoffs.)_';
+
+            return implode("\n", $lines);
+        }
+
+        foreach ($entries as $row) {
+            $status = $row['status'] ?? 'unknown';
+            $summary = $row['summary'] ?? '';
+            $created = $row['created_at'] ?? '';
+            $summaryPart = '' !== trim((string) $summary) ? ' — '.$this->truncateLine((string) $summary, 160) : '';
+            $lines[] = \sprintf(
+                '- n=%d created_at=%s status=%s%s',
+                $row['n'],
+                $created,
+                $status,
+                $summaryPart,
+            );
         }
 
         return implode("\n", $lines);

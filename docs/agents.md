@@ -74,9 +74,36 @@ hatfield agents:init
 - **Single mode:** `agent` + `task` — blocks until the child finishes; success returns full handoff inline.
 - **Parallel mode:** `tasks` list — up to `agents.max_agents` children; results are bounded summaries.
 - Default child denylist includes `settings` and `hatfield_docs` (`agents.subagent_excluded_tools`). Empty list disables the denylist.
-- **Always stripped on every child:** `subagent` and `fork` (no nested subagent/fork launches).
+- **Always stripped on every child:** `subagent`, `fork`, and `agent_resume` (no nested child launches/resumes).
 - Durable timeout: `agents.subagent_tool_timeout_seconds` (default `86400`, min `60`) schedules deferred-batch interruption. This is not a generic ToolExecutor cap.
 - Child extensions: `agents.extensions.always_on` ∪ per-agent frontmatter `extensions` only (does **not** use `forks.extensions.*` or parent `extensions.enabled`).
+
+## Launch versus continue
+
+Use `subagent` when no existing child run matches the task and you need a new named-role investigation or review.
+
+Use `agent_resume` when an existing child run already contains useful progress or an incomplete handoff. Resume the existing run instead of launching a duplicate child. Identify the run with the artifact/run identifier returned by the earlier launch.
+
+Do not use `subagent` to continue an existing child, and do not use `agent_resume` as a fresh-task launcher. A resumed child keeps its existing identity and session history; provide a focused continuation instruction.
+
+Child runs cannot resume or launch other children. Resume is parent-scoped and rejects fork children.
+
+## `agent_resume`
+
+Parent-scoped continuation of an existing terminal child run via `follow_up` on the same child `run_id`.
+
+| Argument | Meaning |
+|---|---|
+| `artifact_id` | Child artifact id (preferred) |
+| `agent_run_id` | Child run UUID (optional alternative / cross-check) |
+| `task` | Continuation instruction |
+| `tasks` | Parallel list of `{artifact_id,task}` (cap `agents.max_agents`) |
+
+- Eligible statuses: `completed`, `failed`, `cancelled` when the child run/session is still usable.
+- Rejects in-flight artifacts (`running`, `needs_clarification`) and fork children.
+- Refuses oversized children when latest input tokens are near context limit (`max(75% contextWindow, 200k)`; absolute 200k when window unknown).
+- Parent result mirrors `subagent`: single = full latest handoff inline; parallel = bounded summaries.
+- Same artifact id is preserved; prior handoffs are archived under `handoffs/<n>.md`.
 
 ## `agent_retrieve`
 
@@ -86,10 +113,13 @@ Parent-scoped retrieval for child artifacts:
 |---|---|
 | `artifact_id` | Child artifact id (for example `agent_abc123`) |
 | `agent_run_id` | Child run UUID |
-| `mode` | `handoff` (default), `metadata`, `events`, `history`, `debug` |
+| `mode` | `handoff` (default), `metadata`, `events`, `history`, `handoff_history`, `debug` |
+| `index` | Optional archived handoff n for `mode=handoff_history` |
 | `limit` | Max rows for events/history (default 20, max 100) |
 
 Provide at least one identifier. Cross-parent retrieval is rejected. Use when parallel summaries were truncated, a child failed/cancelled/timed out, or you need extra detail — not to re-fetch a successful single-mode handoff already returned inline.
+
+`mode=handoff` returns the latest handoff. `mode=handoff_history` lists archived prior handoffs by default; pass `index=<n>` to fetch one archived body.
 
 ## Subagent live view (parent TUI)
 

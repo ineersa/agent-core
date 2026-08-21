@@ -799,6 +799,11 @@ services:
       $executionServiceLocator: !service_locator
         execution: '@Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService'
 
+  Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler:
+    arguments:
+      $executionServiceLocator: !service_locator
+        execution: '@Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService'
+
   Ineersa\CodingAgent\Agent\Tool\ForkToolHandler:
     arguments:
       $executionServiceLocator: !service_locator

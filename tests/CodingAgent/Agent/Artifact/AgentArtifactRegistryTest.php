@@ -807,6 +807,24 @@ Done.');
 Done.', $this->registry->readHandoff($parentRunId, $artifactId));
     }
 
+    public function testWriteHandoffArchivesPreviousNonEmptyHandoff(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $artifactId = 'agent_hist_01';
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+
+        $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
+        $this->registry->writeHandoff($parentRunId, $artifactId, '# First');
+        $this->registry->update($parentRunId, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'first done');
+        $this->registry->writeHandoff($parentRunId, $artifactId, '# Second');
+
+        $this->assertSame('# Second', $this->registry->readHandoff($parentRunId, $artifactId));
+        $history = $this->registry->listHandoffHistory($parentRunId, $artifactId);
+        $this->assertCount(1, $history);
+        $this->assertSame(1, $history[0]['n']);
+        $this->assertSame('# First', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, 1));
+    }
+
     public function testReadHandoffRejectsPathTraversalArtifactId(): void
     {
         $this->expectException(\InvalidArgumentException::class);

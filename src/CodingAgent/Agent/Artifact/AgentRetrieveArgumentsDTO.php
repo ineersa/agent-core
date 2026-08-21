@@ -34,11 +34,14 @@ final class AgentRetrieveArgumentsDTO
         )]
         public readonly ?string $agent_run_id = null,
         #[Schema(description: 'Output mode. Default handoff.')]
-        #[Assert\Choice(choices: ['handoff', 'metadata', 'events', 'history', 'debug'], message: 'Invalid mode "{{ value }}". Supported modes: handoff, metadata, events, history, debug.')]
+        #[Assert\Choice(choices: ['handoff', 'metadata', 'events', 'history', 'handoff_history', 'debug'], message: 'Invalid mode "{{ value }}". Supported modes: handoff, metadata, events, history, handoff_history, debug.')]
         public readonly ?string $mode = null,
         #[Schema(description: 'Max rows for events/history modes (default '.AgentArtifactRetrievalService::DEFAULT_LIMIT.').')]
         #[Assert\Range(min: 1, max: AgentArtifactRetrievalService::MAX_LIMIT)]
         public readonly ?int $limit = null,
+        #[Schema(description: 'Optional archived handoff index (1-based) for mode=handoff_history. Omit to list archives.')]
+        #[Assert\Range(min: 1)]
+        public readonly ?int $index = null,
     ) {
     }
 
@@ -73,10 +76,15 @@ final class AgentRetrieveArgumentsDTO
 
         $mode = AgentRetrieveModeEnum::tryFrom(trim($raw));
         if (null === $mode) {
-            throw new \InvalidArgumentException(\sprintf('Invalid mode "%s". Supported modes: handoff, metadata, events, history, debug.', $raw));
+            throw new \InvalidArgumentException(\sprintf('Invalid mode "%s". Supported modes: handoff, metadata, events, history, handoff_history, debug.', $raw));
         }
 
         return $mode;
+    }
+
+    public function resolvedIndex(): ?int
+    {
+        return $this->index;
     }
 
     public function resolvedLimit(int $defaultLimit, int $maxLimit): int
