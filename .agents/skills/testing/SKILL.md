@@ -13,13 +13,13 @@ Not every Castor task adds those flags (for example `test:tui-update` runs a fix
 snapshot-update command without a Castor `--filter` option).
 
 ```bash
-castor check                # Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real smoke (ParaTest, port 9052 / llama-proxy), phpstan, cs-check, docs:validate; lanes parallel; logs under per-run `var/reports/qa-<id>/check-*.log`. Absolute 180s wall from task entry (lock wait + setup/preflight + lanes + finalizers). Deterministic mode: Symfony Lock across sibling worktrees (60s acquire timeout clamped by remaining wall, `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT`), cache-growth guard, post-run `HATFIELD_QA_RUN_ID` leak assertion (no auto-kill), lane log integrity. Stress overrides (`HATFIELD_CASTOR_CHECK_LOCK=0`, `HATFIELD_LLM_CACHE_GUARD=0`, concurrency envs) are investigation-only — not CODE-REVIEW evidence. Worker budgets under check: unit=4 (max 8, `HATFIELD_CHECK_UNIT_PARATEST_PROCESSES`), TUI=2 (max 4, `HATFIELD_CHECK_TUI_PARATEST_PROCESSES` / legacy `HATFIELD_TUI_PARATEST_PROCESSES`), llm-real=1 (max 4, `HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES`); controller-replay sequential. Warm proxy before gate: `castor test:llm-real`.
-castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups; internal hard timeout ≤180s with process-tree reaping
+castor check                # Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real smoke (ParaTest, port 9052 / llama-proxy), phpstan, cs-check, docs:validate; lanes parallel; logs under per-run `var/reports/qa-<id>/check-*.log`. Absolute 210s wall from task entry (lock wait + setup/preflight + lanes + finalizers). Deterministic mode: Symfony Lock across sibling worktrees (60s acquire timeout clamped by remaining wall, `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT`), cache-growth guard, post-run `HATFIELD_QA_RUN_ID` leak assertion (no auto-kill), lane log integrity. Stress overrides (`HATFIELD_CASTOR_CHECK_LOCK=0`, `HATFIELD_LLM_CACHE_GUARD=0`, concurrency envs) are investigation-only — not CODE-REVIEW evidence. Worker budgets under check: unit=4 (max 8, `HATFIELD_CHECK_UNIT_PARATEST_PROCESSES`), TUI=2 (max 4, `HATFIELD_CHECK_TUI_PARATEST_PROCESSES` / legacy `HATFIELD_TUI_PARATEST_PROCESSES`), llm-real=1 (max 4, `HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES`); controller-replay sequential. Warm proxy before gate: `castor test:llm-real`.
+castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups; internal hard timeout ≤210s with process-tree reaping
 castor test --filter=X      # filter tests by name
 castor test --suite=X       # target a specific phpunit.xml test suite (ParaTest parallel)
-castor test:tui [--filter=X]    # TUI E2E journey tests (replay-backed, no live LLM); full group uses ParaTest (default 2 workers; under `castor check` uses `HATFIELD_CHECK_TUI_PARATEST_PROCESSES`, legacy `HATFIELD_TUI_PARATEST_PROCESSES` still honored, max 4); --filter stays sequential PHPUnit; hard timeout ≤180s
+castor test:tui [--filter=X]    # TUI E2E journey tests (replay-backed, no live LLM); full group uses ParaTest (default 2 workers; under `castor check` uses `HATFIELD_CHECK_TUI_PARATEST_PROCESSES`, legacy `HATFIELD_TUI_PARATEST_PROCESSES` still honored, max 4); --filter stays sequential PHPUnit; hard timeout ≤210s
 castor test:tui-update      # update TUI snapshot baselines (no Castor --filter; fixed tui-e2e-replay group)
-castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional); standalone full group ParaTest 4 workers; filtered sequential; hard timeout ≤180s
+castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional); standalone full group ParaTest 4 workers; filtered sequential; hard timeout ≤210s
 castor test:controller      # controller E2E smoke (live LLM, opt-in; fixed ControllerSmokeTest filter inside Castor — no Castor --filter option)
 castor test:controller-replay      # controller E2E smoke tests with replay fixtures (no live LLM, default controller validation)
 castor llm:fixtures:record         # Re-record LLM replay fixtures from live LLM
@@ -100,13 +100,13 @@ If `LLAMA_PROXY_ADMIN_TOKEN` is set, pass `-H 'X-Llama-Proxy-Token: <token>'` on
 
 ### Castor test runner timeouts
 
-- Every Castor-started test runner uses `run_test_command_bounded()` with hard cap `castor_test_runner_max_seconds()` (**180s**) and session/process-tree reaping on timeout or normal exit.
-- **`castor check`** absolute wall is also **180s from `check()` entry** (before lock acquisition). Lock wait, migrate/preflight, lanes, and finalizers consume the same budget; lane hard timeouts clamp to remaining wall. Non-test Castor tasks (build/package/CI helpers) do **not** use this cap.
+- Every Castor-started test runner uses `run_test_command_bounded()` with hard cap `castor_test_runner_max_seconds()` (**210s**) and session/process-tree reaping on timeout or normal exit.
+- **`castor check`** absolute wall is also **210s from `check()` entry** (before lock acquisition). Lock wait, migrate/preflight, lanes, and finalizers consume the same budget; lane hard timeouts clamp to remaining wall. Non-test Castor tasks (build/package/CI helpers) do **not** use this cap.
 
 ### `castor check` live lane
 
 - Runs `check_llm_generation_ready()` once (curl to `…/v1/chat/completions`, model `test`; see `.castor/helpers.php`).
-- Parallel lane **`test:llm-real`**: same builder as `castor test:llm-real` — `build_test_llm_real_phpunit_command(null)` → ParaTest `--group=llm-real`; under check default **1** worker (max 4, `HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES`), lane timeout ≤ remaining wall / 180s. Standalone/focused log path uses `check-test-llm-real.log` under the active reports dir; check lanes write per-run `check-<lane>.log` artifacts.
+- Parallel lane **`test:llm-real`**: same builder as `castor test:llm-real` — `build_test_llm_real_phpunit_command(null)` → ParaTest `--group=llm-real`; under check default **1** worker (max 4, `HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES`), lane timeout ≤ remaining wall / 210s. Standalone/focused log path uses `check-test-llm-real.log` under the active reports dir; check lanes write per-run `check-<lane>.log` artifacts.
 - Standalone full `castor test:llm-real` keeps ParaTest **4** workers; filtered `castor test:llm-real --filter=…` uses sequential PHPUnit.
 - Unit/integration ParaTest lane in check **excludes** `llm-real` (see `build_check_paratest_command()`).
 

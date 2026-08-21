@@ -195,6 +195,23 @@ final class RuntimeEventPerRunCompactBufferTest extends TestCase
         $this->assertSame(str_repeat('x', 5000), $drained[0]->payload['text'] ?? null);
     }
 
+    public function testClearDropsEveryRetainedTail(): void
+    {
+        $buffer = new RuntimeEventPerRunCompactBuffer();
+        $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'old-run', 1, []), true);
+        $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::AssistantTextDelta->value, 'old-run', 0, [
+            'block_id' => 'old-run_text',
+            'text' => 'stale',
+        ]));
+
+        $this->assertGreaterThan(0, $buffer->totalTailCount());
+
+        $buffer->clear();
+
+        $this->assertSame(0, $buffer->totalTailCount());
+        $this->assertSame([], iterator_to_array($buffer->drain('old-run')));
+    }
+
     /**
      * @param list<RuntimeEvent> $events
      */

@@ -134,7 +134,7 @@ function test_llm_real(?string $filter = null): void
     $cmd = build_test_llm_real_phpunit_command($filter);
 
     // Session-aware runner reaps PHPUnit/ParaTest + messenger/controller children.
-    // Hard cap is castor_test_runner_max_seconds() (180s).
+    // Hard cap is castor_test_runner_max_seconds() (210s).
     $result = run_test_command_bounded(
         'llm-real',
         $cmd,

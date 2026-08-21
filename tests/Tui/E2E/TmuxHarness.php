@@ -311,8 +311,8 @@ final class TmuxHarness
     /**
      * Poll until the pane command exits (pane/session gone) or timeout.
      *
-     * Used by artifact boot smoke after Ctrl+D so clean process exit is
-     * proven without relying only on tearDown killSession.
+     * Used after Ctrl+D so clean natural process exit is proven before
+     * tearDown killAll() / killSession() force-cleanup fallbacks.
      */
     public function waitUntilPaneExits(TmuxPane $pane, float $timeout = 10.0): void
     {
@@ -326,7 +326,14 @@ final class TmuxHarness
             usleep(100_000); // 100ms
         }
 
-        throw new \RuntimeException(\sprintf('Timed out after %.1fs waiting for pane %s (session %s) to exit cleanly after shutdown key.', $timeout, $pane->paneId, $pane->session));
+        $panePid = 'unknown';
+        try {
+            $panePid = (string) $this->panePid($pane);
+        } catch (\Throwable) {
+            // Pane may be half-dead; keep timeout diagnostics best-effort.
+        }
+
+        throw new \RuntimeException(\sprintf('Timed out after %.1fs waiting for pane %s (session %s, pane_pid=%s) to exit cleanly after shutdown key. Force cleanup (killAll/killSession) remains tearDown-only and must not replace this wait.', $timeout, $pane->paneId, $pane->session, $panePid));
     }
 
     /**
@@ -444,8 +451,10 @@ final class TmuxHarness
     /**
      * After the Hatfield logo (█) is visible, poll until idle/work status and footer render.
      * Replaces fixed post-logo sleeps; exits early when the TUI finishes init.
+     * Default timeout matches {@see self::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL} so parallel
+     * castor-check contention does not blank-capture flake at a 3s hard stop.
      */
-    public function waitForTuiReadyAfterLogo(TmuxPane $pane, float $timeout = 3.0): string
+    public function waitForTuiReadyAfterLogo(TmuxPane $pane, float $timeout = self::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL): string
     {
         return $this->waitForCallback(
             $pane,
