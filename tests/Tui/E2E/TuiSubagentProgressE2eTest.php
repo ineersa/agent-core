@@ -99,6 +99,17 @@ final class TuiSubagentProgressE2eTest extends TestCase
                 'Progress card and handoff markdown should be separated by a blank row',
             );
 
+            $this->assertStringContainsString('finding one about transcript rendering', $capture);
+            $this->assertStringContainsString('more line', $capture, 'Collapsed handoff must show preview ellipsis');
+            $this->assertStringNotContainsString('scout-handoff-tail-line', $capture, 'Collapsed handoff must hide the long tail');
+
+            $ansiHistory = $this->tmux->captureAnsiWithHistory($pane, 3000);
+            $this->assertMatchesRegularExpression(
+                '/\x1b\[3m(?:\x1b\[[0-9;]*m)*… \d+ more lines?/',
+                $ansiHistory,
+                'Collapsed handoff ellipsis must keep italic ANSI in real tmux render',
+            );
+
             $turnOneCount = substr_count($capture, 'turn 1');
             $this->assertLessThanOrEqual(1, $turnOneCount, 'Coalesced progress must not repeat stale turn 1 spam');
 

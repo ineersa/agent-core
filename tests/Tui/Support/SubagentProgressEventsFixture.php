@@ -107,7 +107,25 @@ final class SubagentProgressEventsFixture
             'order_index' => 0,
         ], $now);
 
-        $finalResult = "Subagent scout completed.\nArtifact: {$artifactId}\n\nDone.";
+        $handoffLines = [
+            '# Handoff',
+            '',
+            'Structured scout handoff for TUI ellipsis proof.',
+            '',
+            '- finding one about transcript rendering',
+            '- finding two about muted italic collapse indicators',
+            '- finding three about MarkdownWidget ESC stripping',
+            '- finding four about sibling TextWidget ellipsis',
+            '- finding five about preview line budgets',
+            '- finding six about resume replay fixtures',
+            '- finding seven about card and handoff spacing',
+            '- finding eight about artifact retrieval',
+            '- finding nine must stay collapsed until Ctrl+O',
+            '- finding ten must stay collapsed until Ctrl+O',
+            '',
+            'Unique collapsed-tail marker: scout-handoff-tail-line',
+        ];
+        $finalResult = implode("\n", $handoffLines);
         $events[] = self::event($sessionId, 10, 1, 'tool_execution_end', [
             'tool_call_id' => $toolCallId,
             'order_index' => 0,

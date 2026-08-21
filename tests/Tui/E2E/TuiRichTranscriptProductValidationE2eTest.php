@@ -132,7 +132,7 @@ final class TuiRichTranscriptProductValidationE2eTest extends TestCase
             $this->assertStringContainsString('session ', $fullCapture, 'Footer session chrome expected');
 
             $ansiHistory = $this->tmux->captureAnsiWithHistory($pane, 3000);
-            // Default replay theme is cyberpunk: tool title electric (#00ffff), argument key neon (#ff00ff).
+            // Configured theme is cyberpunk: tool title electric (#00ffff), argument key neon (#ff00ff).
             $this->assertStringContainsString(
                 "\033[38;2;0;255;255m",
                 $ansiHistory,

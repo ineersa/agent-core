@@ -650,6 +650,121 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
     #[Test]
+    public function testVirtualViewImageExchangeArgumentKeyUsesConfiguredThemeColor(): void
+    {
+        $palette = new ThemePalette('virtual-view-image-args', [
+            ThemeColorEnum::ToolTitle->value => '#00ffff',
+            ThemeColorEnum::ToolArgumentKey->value => '#ff00ff',
+            ThemeColorEnum::ToolArgumentValue->value => '',
+            ThemeColorEnum::ToolOutput->value => '#39ff14',
+            ThemeColorEnum::Muted->value => '#718096',
+            ThemeColorEnum::Text->value => '',
+        ]);
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID, palette: $palette);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tc-view-image',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'view_image',
+                meta: [
+                    'tool_call_id' => 'call-view-image',
+                    'tool_name' => 'view_image',
+                    'arguments' => ['path' => '/tmp/shot.png'],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-view-image',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 2,
+                text: 'view_image',
+                meta: [
+                    'tool_call_id' => 'call-view-image',
+                    'tool_name' => 'view_image',
+                    'result' => [
+                        'type' => 'view_image',
+                        'path' => '/tmp/shot.png',
+                        'media_type' => 'image/png',
+                        'width' => 10,
+                        'height' => 20,
+                        'bytes' => 99,
+                    ],
+                    'is_error' => false,
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $ansi = $harness->ansiOutput();
+        $plain = $harness->plainScreenText();
+
+        $this->assertStringContainsString('view_image', $plain);
+        $this->assertStringContainsString('path:', $plain);
+        $this->assertStringContainsString('/tmp/shot.png', $plain);
+        $this->assertMatchesRegularExpression(
+            '/\x1b\[38;2;255;0;255mpath\x1b\[39m:/',
+            $ansi,
+            'view_image exchange argument key must use ToolArgumentKey ANSI',
+        );
+        $this->assertStringContainsString("\033[38;2;0;255;255m", $ansi, 'view_image tool title should remain distinct');
+    }
+
+    #[Test]
+    public function testVirtualToolResultLiteralEllipsisKeepsToolOutputColor(): void
+    {
+        $palette = new ThemePalette('virtual-literal-ellipsis', [
+            ThemeColorEnum::ToolOutput->value => '#39ff14',
+            ThemeColorEnum::Muted->value => '#718096',
+            ThemeColorEnum::Text->value => '',
+        ]);
+        $body = implode("\n", [
+            '… literal ellipsis in tool output',
+            'line1',
+            'line2',
+            'line3',
+        ]);
+        $harness = new VirtualTuiHarness(
+            sessionId: self::SESSION_ID,
+            palette: $palette,
+            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 2),
+        );
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tr-literal-ellipsis',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: $body,
+                meta: ['tool_name' => 'read', 'result' => $body, 'is_error' => false],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $ansi = $harness->ansiOutput();
+        $plain = $harness->plainScreenText();
+
+        $this->assertStringContainsString('… literal ellipsis in tool output', $plain);
+        $this->assertStringContainsString('… 2 more lines', $plain);
+        $this->assertMatchesRegularExpression(
+            '/\x1b\[38;2;57;255;20m\s*… literal ellipsis in tool output/',
+            $ansi,
+            'Literal U+2026 tool output must keep ToolOutput color',
+        );
+        $this->assertMatchesRegularExpression(
+            '/\x1b\[3m(?:\x1b\[[0-9;]*m)*… 2 more lines/',
+            $ansi,
+            'Generated collapsed indicator must stay muted+italic',
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/\x1b\[38;2;57;255;20m\s*… 2 more lines/',
+            $ansi,
+            'Generated collapsed indicator must not inherit ToolOutput color',
+        );
+    }
+
+    #[Test]
     public function testVirtualLongToolResultPreviewsByDefault(): void
     {
         $body = implode("\n", ['v0', 'v1', 'v2', 'v3']);
@@ -1041,7 +1156,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $ansi = $harness->ansiOutput();
         $this->assertMatchesRegularExpression(
-            '/\x1b\[3m… 2 more lines/',
+            '/\x1b\[3m(?:\x1b\[[0-9;]*m)*… 2 more lines/',
             $ansi,
             'Collapsed ellipsis must carry italic ANSI styling',
         );

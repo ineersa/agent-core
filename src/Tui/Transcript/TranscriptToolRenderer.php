@@ -89,17 +89,18 @@ final readonly class TranscriptToolRenderer
 
         $header = $this->toolResultHeaderLabel($block);
         $headerLine = \sprintf('%s %s', TranscriptGlyphs::GLYPH_TOOL, $header);
-        $lines = [];
+        $previewLines = [];
+        $styledEllipsis = null;
 
         $body = $this->toolResultFacts->toolResultBodyText($block);
         if ('' !== $body) {
             $bodyLines = explode("\n", $body);
             $preview = $this->applyToolResultPreview($bodyLines, $block);
             foreach ($preview['lines'] as $bodyLine) {
-                $lines[] = '    '.$bodyLine;
+                $previewLines[] = '    '.$bodyLine;
             }
             if (null !== $preview['ellipsis']) {
-                $lines[] = '    '.TranscriptPreviewEllipsis::style($theme, $preview['ellipsis']);
+                $styledEllipsis = '    '.TranscriptPreviewEllipsis::style($theme, $preview['ellipsis']);
             }
         }
 
@@ -114,13 +115,11 @@ final readonly class TranscriptToolRenderer
 
         $coloredHeader = $theme->color($color, $headerLine);
         $coloredBody = [];
-        foreach ($lines as $line) {
-            // Ellipsis already carries muted+italic ANSI; do not recolor it.
-            if (str_contains($line, '…')) {
-                $coloredBody[] = $line;
-                continue;
-            }
+        foreach ($previewLines as $line) {
             $coloredBody[] = $theme->color($color, $line);
+        }
+        if (null !== $styledEllipsis) {
+            $coloredBody[] = $styledEllipsis;
         }
 
         return new TextWidget(implode("\n", array_merge([$coloredHeader], $coloredBody)));
@@ -196,9 +195,7 @@ final readonly class TranscriptToolRenderer
         }
 
         $lines = [$theme->color(ThemeColorEnum::Skill, $headerLine)];
-        foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
-            $lines[] = $this->styledIndentedBodyLine($theme, $this->toolExchangeBodyColor($resultBlock), $bodyLine);
-        }
+        $this->appendStyledToolExchangeResultBody($lines, $resultBlock, $theme);
 
         return new TextWidget(implode("\n", $lines));
     }
@@ -400,7 +397,7 @@ final readonly class TranscriptToolRenderer
         $header = $this->toolCallHeaderLabel($callBlock);
         $suffix = $callBlock->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
         $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
-        $lines = [$headerLine];
+        $lines = [$theme->color(ThemeColorEnum::ToolTitle, $headerLine)];
 
         if ([] !== $arguments) {
             $argLines = $this->toolArgumentColoredFormatter->formatColoredLines($arguments, $theme);
@@ -413,14 +410,9 @@ final readonly class TranscriptToolRenderer
             }
         }
 
-        foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
-            $lines[] = $this->styledIndentedBodyLine($theme, $this->toolExchangeBodyColor($resultBlock), $bodyLine);
-        }
+        $this->appendStyledToolExchangeResultBody($lines, $resultBlock, $theme);
 
-        $coloredHeader = $theme->color(ThemeColorEnum::ToolTitle, $lines[0]);
-        $body = \array_slice($lines, 1);
-
-        return new TextWidget(implode("\n", array_merge([$coloredHeader], $body)));
+        return new TextWidget(implode("\n", $lines));
     }
 
     /**
@@ -452,11 +444,7 @@ final readonly class TranscriptToolRenderer
             }
         }
 
-        foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
-            $container->add(new TextWidget(
-                $this->styledIndentedBodyLine($theme, $this->toolExchangeBodyColor($resultBlock), $bodyLine),
-            ));
-        }
+        $this->appendStyledToolExchangeResultBodyWidgets($container, $resultBlock, $theme);
 
         return $container;
     }
@@ -494,11 +482,7 @@ final readonly class TranscriptToolRenderer
             $container->add($widget);
         }
 
-        foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
-            $container->add(new TextWidget(
-                $this->styledIndentedBodyLine($theme, $this->toolExchangeBodyColor($resultBlock), $bodyLine),
-            ));
-        }
+        $this->appendStyledToolExchangeResultBodyWidgets($container, $resultBlock, $theme);
 
         return $container;
     }
@@ -507,63 +491,82 @@ final readonly class TranscriptToolRenderer
         TranscriptBlock $callBlock,
         TranscriptBlock $resultBlock,
         TuiTheme $theme,
-    ): TextWidget {
+    ): AbstractWidget {
         $header = $this->toolCallHeaderLabel($callBlock);
         $suffix = $callBlock->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
         $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
-        $lines = [$headerLine];
+        $container = new ContainerWidget();
+        $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
 
         $arguments = $callBlock->meta['arguments'] ?? null;
         if (!\is_array($arguments)) {
             $arguments = [];
         }
-        foreach ($this->viewImageFormatter->formatToolCallLines($arguments) as $bodyLine) {
-            $lines[] = '    '.$bodyLine;
+        $path = $arguments['path'] ?? null;
+        if (\is_string($path) && '' !== $path) {
+            $container->add(new TextWidget($this->coloredArgumentPathLine($theme, $path)));
         }
 
-        foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
-            $lines[] = $this->styledIndentedBodyLine($theme, $this->toolExchangeBodyColor($resultBlock), $bodyLine);
-        }
+        $this->appendStyledToolExchangeResultBodyWidgets($container, $resultBlock, $theme);
 
-        $coloredHeader = $theme->color(ThemeColorEnum::ToolTitle, $lines[0]);
-        $body = \array_slice($lines, 1);
-
-        return new TextWidget(implode("\n", array_merge([$coloredHeader], $body)));
+        return $container;
     }
 
     /**
-     * @return list<string>
+     * @param list<string> $lines
      */
-    private function toolExchangeResultBodyLines(TranscriptBlock $resultBlock): array
+    private function appendStyledToolExchangeResultBody(array &$lines, TranscriptBlock $resultBlock, TuiTheme $theme): void
+    {
+        $color = $this->toolExchangeBodyColor($resultBlock);
+        $preview = $this->toolExchangeResultPreview($resultBlock);
+        foreach ($preview['lines'] as $bodyLine) {
+            $lines[] = $theme->color($color, '    '.$bodyLine);
+        }
+        if (null !== $preview['ellipsis']) {
+            $lines[] = '    '.TranscriptPreviewEllipsis::style($theme, $preview['ellipsis']);
+        }
+    }
+
+    private function appendStyledToolExchangeResultBodyWidgets(
+        ContainerWidget $container,
+        TranscriptBlock $resultBlock,
+        TuiTheme $theme,
+    ): void {
+        $color = $this->toolExchangeBodyColor($resultBlock);
+        $preview = $this->toolExchangeResultPreview($resultBlock);
+        foreach ($preview['lines'] as $bodyLine) {
+            $container->add(new TextWidget($theme->color($color, '    '.$bodyLine)));
+        }
+        if (null !== $preview['ellipsis']) {
+            $container->add(new TextWidget('    '.TranscriptPreviewEllipsis::style($theme, $preview['ellipsis'])));
+        }
+    }
+
+    /**
+     * @return array{lines: list<string>, ellipsis: ?string}
+     */
+    private function toolExchangeResultPreview(TranscriptBlock $resultBlock): array
     {
         if ($this->isViewImageToolName($resultBlock->meta['tool_name'] ?? null)) {
             $result = $resultBlock->meta['result'] ?? null;
             $bodyLines = $this->viewImageFormatter->formatToolResultLines($result);
             if ([] === $bodyLines && \is_string($result) && '' !== $result) {
                 if ($this->toolResultFacts->toolResultIsFullRender($resultBlock)) {
-                    return [$result];
+                    $bodyLines = [$result];
+                } else {
+                    $bodyLines = ['(image metadata)'];
                 }
-
-                return ['(image metadata)'];
             }
 
-            return $bodyLines;
+            return ['lines' => $bodyLines, 'ellipsis' => null];
         }
 
         $body = $this->toolResultFacts->toolResultBodyText($resultBlock);
         if ('' === $body) {
-            return [];
+            return ['lines' => [], 'ellipsis' => null];
         }
 
-        $bodyLines = explode("\n", $body);
-        $preview = $this->applyToolResultPreview($bodyLines, $resultBlock);
-
-        $lines = $preview['lines'];
-        if (null !== $preview['ellipsis']) {
-            $lines[] = $preview['ellipsis'];
-        }
-
-        return $lines;
+        return $this->applyToolResultPreview(explode("\n", $body), $resultBlock);
     }
 
     private function toolExchangeBodyColor(TranscriptBlock $resultBlock): ThemeColorEnum
@@ -573,18 +576,6 @@ final readonly class TranscriptToolRenderer
         }
 
         return ThemeColorEnum::ToolOutput;
-    }
-
-    /**
-     * Indent a tool body/ellipsis line and apply theme color unless it is already a styled ellipsis.
-     */
-    private function styledIndentedBodyLine(TuiTheme $theme, ThemeColorEnum $color, string $bodyLine): string
-    {
-        if (str_starts_with($bodyLine, '…')) {
-            return '    '.TranscriptPreviewEllipsis::style($theme, $bodyLine);
-        }
-
-        return $theme->color($color, '    '.$bodyLine);
     }
 
     private function coloredArgumentPathLine(TuiTheme $theme, string $path): string
@@ -601,12 +592,13 @@ final readonly class TranscriptToolRenderer
     private function buildViewImageToolCallWidget(TranscriptBlock $block, TuiTheme $theme, string $headerLine, array $arguments): TextWidget
     {
         // $headerLine already includes the streaming suffix from buildToolCallWidget().
-        $lines = [$headerLine];
-        foreach ($this->viewImageFormatter->formatToolCallLines($arguments) as $bodyLine) {
-            $lines[] = '    '.$bodyLine;
+        $lines = [$theme->color(ThemeColorEnum::ToolTitle, $headerLine)];
+        $path = $arguments['path'] ?? null;
+        if (\is_string($path) && '' !== $path) {
+            $lines[] = $this->coloredArgumentPathLine($theme, $path);
         }
 
-        return new TextWidget($theme->color(ThemeColorEnum::ToolTitle, implode("\n", $lines)));
+        return new TextWidget(implode("\n", $lines));
     }
 
     private function buildViewImageToolResultWidget(TranscriptBlock $block, TuiTheme $theme): TextWidget
