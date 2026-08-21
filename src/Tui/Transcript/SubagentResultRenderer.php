@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Symfony\Component\Tui\Style\Direction;
 use Symfony\Component\Tui\Style\Padding;
 use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Widget\AbstractWidget;
@@ -77,6 +78,7 @@ final readonly class SubagentResultRenderer
             : null;
 
         $container = new ContainerWidget();
+        $container->setStyle(new Style(direction: Direction::Vertical, gap: 1));
         $container->add(new SubagentProgressCardWidget(
             progress: $progress,
             streaming: $block->streaming,
@@ -105,7 +107,7 @@ final readonly class SubagentResultRenderer
 
     private function buildHandoffMarkdownWidget(string $handoffMarkdown, TuiTheme $theme, string $status): MarkdownWidget
     {
-        $preview = $this->previewHandoffLines($handoffMarkdown);
+        $preview = $this->previewHandoffLines($handoffMarkdown, $theme);
         $mdWidget = new MarkdownWidget("### Handoff\n\n".$preview);
         $colorSpec = $theme->getPalette()->get(ThemeColorEnum::ToolOutput);
         $style = '' !== $colorSpec
@@ -116,7 +118,7 @@ final readonly class SubagentResultRenderer
         return $mdWidget;
     }
 
-    private function previewHandoffLines(string $handoffMarkdown): string
+    private function previewHandoffLines(string $handoffMarkdown, TuiTheme $theme): string
     {
         $lines = explode("\n", $handoffMarkdown);
         $preview = $this->linePreviewService->apply(
@@ -127,7 +129,8 @@ final readonly class SubagentResultRenderer
         );
         $body = implode("\n", $preview['lines']);
         if (null !== $preview['ellipsis']) {
-            $body .= "\n".$preview['ellipsis'];
+            // Keep visible ellipsis text unchanged; italic+muted via ANSI so Markdown does not restyle the indicator.
+            $body .= "\n".TranscriptPreviewEllipsis::style($theme, $preview['ellipsis']);
         }
 
         return $body;

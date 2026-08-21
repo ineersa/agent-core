@@ -71,7 +71,7 @@ final readonly class TranscriptToolRenderer
                 $lines[] = '    '.$argLine;
             }
             if (null !== $preview['ellipsis']) {
-                $lines[] = '    '.$preview['ellipsis'];
+                $lines[] = '    '.TranscriptPreviewEllipsis::style($theme, $preview['ellipsis']);
             }
         }
 
@@ -88,7 +88,8 @@ final readonly class TranscriptToolRenderer
         }
 
         $header = $this->toolResultHeaderLabel($block);
-        $lines = [\sprintf('%s %s', TranscriptGlyphs::GLYPH_TOOL, $header)];
+        $headerLine = \sprintf('%s %s', TranscriptGlyphs::GLYPH_TOOL, $header);
+        $lines = [];
 
         $body = $this->toolResultFacts->toolResultBodyText($block);
         if ('' !== $body) {
@@ -98,20 +99,31 @@ final readonly class TranscriptToolRenderer
                 $lines[] = '    '.$bodyLine;
             }
             if (null !== $preview['ellipsis']) {
-                $lines[] = '    '.$preview['ellipsis'];
+                $lines[] = '    '.TranscriptPreviewEllipsis::style($theme, $preview['ellipsis']);
             }
         }
 
         $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
         if ('' !== $suffix) {
-            $lines[0] .= $suffix;
+            $headerLine .= $suffix;
         }
 
         $color = $this->toolResultFacts->toolResultIsFullRender($block) && $this->toolResultFacts->metaIsTruthy($block->meta['is_error'] ?? false)
             ? ThemeColorEnum::Error
             : ThemeColorEnum::ToolOutput;
 
-        return new TextWidget($theme->color($color, implode("\n", $lines)));
+        $coloredHeader = $theme->color($color, $headerLine);
+        $coloredBody = [];
+        foreach ($lines as $line) {
+            // Ellipsis already carries muted+italic ANSI; do not recolor it.
+            if (str_contains($line, '…')) {
+                $coloredBody[] = $line;
+                continue;
+            }
+            $coloredBody[] = $theme->color($color, $line);
+        }
+
+        return new TextWidget(implode("\n", array_merge([$coloredHeader], $coloredBody)));
     }
 
     public function buildToolExchangeWidget(TranscriptBlock $callBlock, TranscriptBlock $resultBlock, TuiTheme $theme): AbstractWidget
@@ -185,7 +197,7 @@ final readonly class TranscriptToolRenderer
 
         $lines = [$theme->color(ThemeColorEnum::Skill, $headerLine)];
         foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
-            $lines[] = $theme->color($this->toolExchangeBodyColor($resultBlock), '    '.$bodyLine);
+            $lines[] = $this->styledIndentedBodyLine($theme, $this->toolExchangeBodyColor($resultBlock), $bodyLine);
         }
 
         return new TextWidget(implode("\n", $lines));
@@ -397,19 +409,18 @@ final readonly class TranscriptToolRenderer
                 $lines[] = '    '.$argLine;
             }
             if (null !== $preview['ellipsis']) {
-                $lines[] = '    '.$preview['ellipsis'];
+                $lines[] = '    '.TranscriptPreviewEllipsis::style($theme, $preview['ellipsis']);
             }
         }
 
         foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
-            $lines[] = '    '.$bodyLine;
+            $lines[] = $this->styledIndentedBodyLine($theme, $this->toolExchangeBodyColor($resultBlock), $bodyLine);
         }
 
         $coloredHeader = $theme->color(ThemeColorEnum::ToolTitle, $lines[0]);
         $body = \array_slice($lines, 1);
-        $color = $this->toolExchangeBodyColor($resultBlock);
 
-        return new TextWidget($theme->color($color, implode("\n", array_merge([$coloredHeader], $body))));
+        return new TextWidget(implode("\n", array_merge([$coloredHeader], $body)));
     }
 
     /**
@@ -442,7 +453,9 @@ final readonly class TranscriptToolRenderer
         }
 
         foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
-            $container->add(new TextWidget($theme->color($this->toolExchangeBodyColor($resultBlock), '    '.$bodyLine)));
+            $container->add(new TextWidget(
+                $this->styledIndentedBodyLine($theme, $this->toolExchangeBodyColor($resultBlock), $bodyLine),
+            ));
         }
 
         return $container;
@@ -482,7 +495,9 @@ final readonly class TranscriptToolRenderer
         }
 
         foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
-            $container->add(new TextWidget($theme->color($this->toolExchangeBodyColor($resultBlock), '    '.$bodyLine)));
+            $container->add(new TextWidget(
+                $this->styledIndentedBodyLine($theme, $this->toolExchangeBodyColor($resultBlock), $bodyLine),
+            ));
         }
 
         return $container;
@@ -507,12 +522,13 @@ final readonly class TranscriptToolRenderer
         }
 
         foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
-            $lines[] = '    '.$bodyLine;
+            $lines[] = $this->styledIndentedBodyLine($theme, $this->toolExchangeBodyColor($resultBlock), $bodyLine);
         }
 
-        $color = $this->toolExchangeBodyColor($resultBlock);
+        $coloredHeader = $theme->color(ThemeColorEnum::ToolTitle, $lines[0]);
+        $body = \array_slice($lines, 1);
 
-        return new TextWidget($theme->color($color, implode("\n", $lines)));
+        return new TextWidget(implode("\n", array_merge([$coloredHeader], $body)));
     }
 
     /**
@@ -557,6 +573,18 @@ final readonly class TranscriptToolRenderer
         }
 
         return ThemeColorEnum::ToolOutput;
+    }
+
+    /**
+     * Indent a tool body/ellipsis line and apply theme color unless it is already a styled ellipsis.
+     */
+    private function styledIndentedBodyLine(TuiTheme $theme, ThemeColorEnum $color, string $bodyLine): string
+    {
+        if (str_starts_with($bodyLine, '…')) {
+            return '    '.TranscriptPreviewEllipsis::style($theme, $bodyLine);
+        }
+
+        return $theme->color($color, '    '.$bodyLine);
     }
 
     /**

@@ -17,6 +17,7 @@ use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Tui\Ansi\AnsiUtils;
 
 /**
  * Virtual product proof that {@see ChatScreen} → mounted
@@ -925,5 +926,145 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $this->assertSame(1, substr_count($text, 'bash'), 'Collapsed exchange should show one bash header: '.$text);
         $this->assertStringContainsString('find bin', $text);
         $this->assertStringContainsString('/path/bin/console', $text);
+    }
+
+    #[Test]
+    public function testDistinctBlocksHaveBlankLineSeparationAcrossWidths(): void
+    {
+        foreach ([80, 120] as $columns) {
+            $harness = new VirtualTuiHarness(columns: $columns, sessionId: self::SESSION_ID);
+            $harness->screen()->setTranscriptBlocks([
+                new TranscriptBlock(
+                    id: 'u-gap',
+                    kind: TranscriptBlockKindEnum::UserMessage,
+                    runId: self::SESSION_ID,
+                    seq: 1,
+                    text: 'prompt for spacing',
+                ),
+                new TranscriptBlock(
+                    id: 'a-gap',
+                    kind: TranscriptBlockKindEnum::AssistantMessage,
+                    runId: self::SESSION_ID,
+                    seq: 2,
+                    text: 'assistant spacing reply',
+                ),
+                new TranscriptBlock(
+                    id: 'tc-gap',
+                    kind: TranscriptBlockKindEnum::ToolCall,
+                    runId: self::SESSION_ID,
+                    seq: 3,
+                    text: 'bash',
+                    meta: [
+                        'tool_call_id' => 'call-gap',
+                        'tool_name' => 'bash',
+                        'arguments' => ['command' => 'echo spacing'],
+                    ],
+                ),
+            ]);
+            $harness->screen()->setWorkingVisible(false);
+
+            $text = $harness->plainScreenText();
+            $this->assertMatchesRegularExpression(
+                '/prompt for spacing\n\s*\n.*assistant spacing reply/s',
+                $text,
+                "Expected blank row between user and assistant at width {$columns}",
+            );
+            $this->assertMatchesRegularExpression(
+                '/assistant spacing reply\n\s*\n.*●/s',
+                $text,
+                "Expected blank row between assistant and tool at width {$columns}",
+            );
+        }
+    }
+
+    #[Test]
+    public function testCollapsedPreviewEllipsisIsItalicInAnsiOutput(): void
+    {
+        $body = implode("\n", ['line0', 'line1', 'line2', 'line3']);
+        $harness = new VirtualTuiHarness(
+            sessionId: self::SESSION_ID,
+            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 2),
+        );
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tr-italic',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: $body,
+                meta: ['tool_name' => 'read', 'result' => $body, 'is_error' => false],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $ansi = $harness->ansiOutput();
+        $this->assertMatchesRegularExpression(
+            '/\x1b\[3m… 2 more lines/',
+            $ansi,
+            'Collapsed ellipsis must carry italic ANSI styling',
+        );
+        $this->assertStringContainsString('… 2 more lines', $harness->plainScreenText());
+        $this->assertStringNotContainsString('line3', $harness->plainScreenText());
+    }
+
+    #[Test]
+    public function testWideGlyphMarkersAlignTextColumnWithNarrowGlyphs(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tool-align',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-align',
+                    'tool_name' => 'bash',
+                    'arguments' => ['command' => 'true'],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'progress-align',
+                kind: TranscriptBlockKindEnum::Progress,
+                runId: self::SESSION_ID,
+                seq: 2,
+                text: 'working on it',
+            ),
+            new TranscriptBlock(
+                id: 'approval-align',
+                kind: TranscriptBlockKindEnum::Approval,
+                runId: self::SESSION_ID,
+                seq: 3,
+                text: 'needs approval',
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $lines = preg_split("/\n/", $harness->plainScreenText()) ?: [];
+        $toolLine = null;
+        $progressLine = null;
+        $approvalLine = null;
+        foreach ($lines as $line) {
+            if (null === $toolLine && str_contains($line, '●') && str_contains($line, 'bash')) {
+                $toolLine = $line;
+            }
+            if (null === $progressLine && str_contains($line, '⏳') && str_contains($line, 'working on it')) {
+                $progressLine = $line;
+            }
+            if (null === $approvalLine && str_contains($line, '🔐') && str_contains($line, 'needs approval')) {
+                $approvalLine = $line;
+            }
+        }
+
+        $this->assertNotNull($toolLine, 'Tool marker line missing');
+        $this->assertNotNull($progressLine, 'Progress marker line missing');
+        $this->assertNotNull($approvalLine, 'Approval marker line missing');
+
+        $toolTextCol = AnsiUtils::visibleWidth(mb_substr($toolLine, 0, (int) mb_strpos($toolLine, 'bash')));
+        $progressTextCol = AnsiUtils::visibleWidth(mb_substr($progressLine, 0, (int) mb_strpos($progressLine, 'working on it')));
+        $approvalTextCol = AnsiUtils::visibleWidth(mb_substr($approvalLine, 0, (int) mb_strpos($approvalLine, 'needs approval')));
+        $this->assertSame($toolTextCol, $progressTextCol, 'Progress text should share tool text column: '.$progressLine);
+        $this->assertSame($toolTextCol, $approvalTextCol, 'Approval text should share tool text column: '.$approvalLine);
     }
 }

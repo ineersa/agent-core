@@ -25,6 +25,7 @@ final class TuiRichTranscriptProductValidationE2eTest extends TestCase
     private TmuxHarness $tmux;
     private string $projectRoot;
     private string $testProjectDir;
+    private ?string $comparisonDir = null;
 
     protected function setUp(): void
     {
@@ -36,6 +37,8 @@ final class TuiRichTranscriptProductValidationE2eTest extends TestCase
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->tmux->setSnapshotDir($this->testProjectDir);
+        $this->comparisonDir = $this->projectRoot.'/var/tmp/tui-visual-readability/after';
+        @mkdir($this->comparisonDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -43,7 +46,16 @@ final class TuiRichTranscriptProductValidationE2eTest extends TestCase
         if (isset($this->tmux)) {
             $this->tmux->killAll();
         }
-        if (isset($this->testProjectDir)) {
+        // Keep ANSI smoke snapshots for before/after comparison; only remove the
+        // rest of the isolated project tree after copying artifacts out.
+        if (isset($this->testProjectDir) && is_dir($this->testProjectDir)) {
+            $smokeDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
+            if (null !== $this->comparisonDir && is_dir($smokeDir)) {
+                foreach (glob($smokeDir.'/*.ansi') ?: [] as $ansi) {
+                    $target = $this->comparisonDir.'/'.basename($ansi);
+                    @copy($ansi, $target);
+                }
+            }
             TestDirectoryIsolation::removeDirectory($this->testProjectDir);
         }
     }
@@ -119,10 +131,23 @@ final class TuiRichTranscriptProductValidationE2eTest extends TestCase
             $this->assertStringNotContainsString('```', $fullCapture);
             $this->assertStringContainsString('session ', $fullCapture, 'Footer session chrome expected');
 
+            $this->assertMatchesRegularExpression(
+                '/hello\n\s*\n.*◇/s',
+                $fullCapture,
+                'User prompt and assistant block should be separated by a blank transcript row',
+            );
+            $this->assertMatchesRegularExpression(
+                '/◇.*\n\s*\n.*●/s',
+                $fullCapture,
+                'Assistant block and tool exchange should be separated by a blank transcript row',
+            );
+
             $this->tmux->saveAnsiSnapshot($pane, 'rich-transcript-product-validation');
+            $this->persistComparisonArtifacts($pane, 'rich-transcript-product-validation');
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'rich-transcript-product-validation-FAILURE');
+            $this->persistComparisonArtifacts($pane, 'rich-transcript-product-validation-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
@@ -130,6 +155,23 @@ final class TuiRichTranscriptProductValidationE2eTest extends TestCase
             }
             throw $e;
         }
+    }
+
+    private function persistComparisonArtifacts(TmuxPane $pane, string $tag): void
+    {
+        if (null === $this->comparisonDir) {
+            return;
+        }
+
+        @mkdir($this->comparisonDir, 0o777, true);
+        $stamp = date('Ymd-His');
+        // Visible-pane ANSI can be logo-only once content scrolls; keep history for before/after proof.
+        $ansiHistory = $this->tmux->captureAnsiWithHistory($pane, 3000);
+        file_put_contents(\sprintf('%s/%s-history-%s.ansi', $this->comparisonDir, $tag, $stamp), $ansiHistory);
+        file_put_contents(
+            \sprintf('%s/%s-history-%s.txt', $this->comparisonDir, $tag, $stamp),
+            $this->tmux->capturePlainWithHistory($pane, 3000),
+        );
     }
 
     private function agentCommand(): string
