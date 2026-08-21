@@ -1262,7 +1262,7 @@ const CASTOR_CHECK_LOCK_WAIT_HEARTBEAT_S = 15;
  * Override with `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT` (positive number, max 3600).
  * When `$checkWallDeadline` is set (absolute hrtime-seconds from check() entry),
  * the acquire wait is also clamped so lock waiting cannot push total check
- * invocation past the absolute 180s wall.
+ * invocation past the absolute 210s wall.
  */
 function castor_check_lock_acquire_timeout_seconds(?float $checkWallDeadline = null): float
 {
@@ -1485,7 +1485,7 @@ function clear_castor_check_lock_meta(string $projectRoot): void
  *
  * Sibling worktrees of the same repository share the lock resource name.
  * When `$checkWallDeadline` is provided, acquire wait is also bounded by remaining
- * absolute check wall so lock wait + gate cannot exceed 180s total.
+ * absolute check wall so lock wait + gate cannot exceed 210s total.
  */
 function acquire_castor_check_lock(string $projectRoot, ?float $checkWallDeadline = null): LockInterface
 {
