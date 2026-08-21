@@ -253,7 +253,7 @@ final readonly class TranscriptToolRenderer
 
         $path = $arguments['path'] ?? null;
         if (\is_string($path) && '' !== $path) {
-            $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, '    path: '.$path)));
+            $container->add(new TextWidget($this->coloredArgumentPathLine($theme, $path)));
         }
 
         $patch = $arguments['patch'] ?? '';
@@ -280,7 +280,7 @@ final readonly class TranscriptToolRenderer
             $path = '';
         }
         if ('' !== $path) {
-            $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, '    path: '.$path)));
+            $container->add(new TextWidget($this->coloredArgumentPathLine($theme, $path)));
         }
 
         $content = $arguments['content'] ?? '';
@@ -441,7 +441,7 @@ final readonly class TranscriptToolRenderer
 
         $path = $arguments['path'] ?? null;
         if (\is_string($path) && '' !== $path) {
-            $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, '    path: '.$path)));
+            $container->add(new TextWidget($this->coloredArgumentPathLine($theme, $path)));
         }
 
         $patch = $arguments['patch'] ?? '';
@@ -482,7 +482,7 @@ final readonly class TranscriptToolRenderer
             $path = '';
         }
         if ('' !== $path) {
-            $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, '    path: '.$path)));
+            $container->add(new TextWidget($this->coloredArgumentPathLine($theme, $path)));
         }
 
         $content = $arguments['content'] ?? '';
@@ -585,6 +585,14 @@ final readonly class TranscriptToolRenderer
         }
 
         return $theme->color($color, '    '.$bodyLine);
+    }
+
+    private function coloredArgumentPathLine(TuiTheme $theme, string $path): string
+    {
+        return '    '
+            .$theme->color(ThemeColorEnum::ToolArgumentKey, 'path')
+            .':'
+            .$theme->color(ThemeColorEnum::ToolArgumentValue, ' '.$path);
     }
 
     /**

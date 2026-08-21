@@ -131,6 +131,24 @@ final class TuiRichTranscriptProductValidationE2eTest extends TestCase
             $this->assertStringNotContainsString('```', $fullCapture);
             $this->assertStringContainsString('session ', $fullCapture, 'Footer session chrome expected');
 
+            $ansiHistory = $this->tmux->captureAnsiWithHistory($pane, 3000);
+            // Default replay theme is cyberpunk: tool title electric (#00ffff), argument key neon (#ff00ff).
+            $this->assertStringContainsString(
+                "\033[38;2;0;255;255m",
+                $ansiHistory,
+                'Cyberpunk tool title (electric) ANSI missing around tool exchange',
+            );
+            $this->assertStringContainsString(
+                "\033[38;2;255;0;255m",
+                $ansiHistory,
+                'Cyberpunk tool argument key (neon) ANSI missing around path label',
+            );
+            $this->assertMatchesRegularExpression(
+                '/\x1b\[38;2;255;0;255mpath\x1b\[39m:/',
+                $ansiHistory,
+                'Argument key path must use neon, distinct from tool title electric',
+            );
+
             $this->assertMatchesRegularExpression(
                 '/hello\n\s*\n.*◇/s',
                 $fullCapture,
@@ -235,6 +253,7 @@ final class TuiRichTranscriptProductValidationE2eTest extends TestCase
                 ],
             ],
             'tui' => [
+                'theme' => 'cyberpunk',
                 'transcript' => [
                     'thinking' => [
                         'visible' => false,

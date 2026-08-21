@@ -11,6 +11,8 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
+use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
@@ -605,6 +607,46 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $this->assertStringNotContainsString('```', $text);
         $this->assertStringContainsString('path:', $text);
         $this->assertStringContainsString('./virtual.txt', $text);
+    }
+
+    #[Test]
+    public function testVirtualToolCallArgumentKeysUseConfiguredThemeColorDistinctFromToolTitle(): void
+    {
+        $palette = new ThemePalette('virtual-tool-args', [
+            ThemeColorEnum::ToolTitle->value => '#00ffff',
+            ThemeColorEnum::ToolArgumentKey->value => '#ff00ff',
+            ThemeColorEnum::ToolArgumentValue->value => '',
+            ThemeColorEnum::Muted->value => '#718096',
+            ThemeColorEnum::Text->value => '',
+        ]);
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID, palette: $palette);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tc-args',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'read',
+                meta: [
+                    'tool_name' => 'read',
+                    'arguments' => ['path' => './colored.txt'],
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $ansi = $harness->ansiOutput();
+        $plain = $harness->plainScreenText();
+
+        $this->assertStringContainsString('read', $plain);
+        $this->assertStringContainsString('path:', $plain);
+        $this->assertStringContainsString("\033[38;2;0;255;255m", $ansi, 'Tool title should use configured cyan');
+        $this->assertStringContainsString("\033[38;2;255;0;255m", $ansi, 'Argument key should use configured magenta');
+        $this->assertMatchesRegularExpression(
+            '/\x1b\[38;2;255;0;255mpath\x1b\[39m:/',
+            $ansi,
+            'Argument key path must carry ToolArgumentKey ANSI, not ToolTitle',
+        );
     }
 
     #[Test]

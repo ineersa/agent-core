@@ -103,6 +103,34 @@ final class ThemeRegistryTest extends TestCase
         $this->assertContains('tokyo-night', $names);
     }
 
+    public function testBuiltinThemesResolveDistinctToolArgumentKeyColors(): void
+    {
+        $registry = $this->createRegistry();
+        $themeNames = [
+            'cyberpunk',
+            'tokyo-night',
+            'nord',
+            'gruvbox-dark',
+            'catppuccin-mocha',
+            'oh-p-dark',
+        ];
+
+        foreach ($themeNames as $themeName) {
+            $this->assertTrue($registry->has($themeName), \sprintf('Missing built-in theme %s', $themeName));
+            $palette = $registry->getOrThrow($themeName);
+
+            $argumentKey = $palette->get(ThemeColorEnum::ToolArgumentKey);
+            $argumentValue = $palette->get(ThemeColorEnum::ToolArgumentValue);
+            $muted = $palette->get(ThemeColorEnum::Muted);
+            $toolTitle = $palette->get(ThemeColorEnum::ToolTitle);
+
+            $this->assertNotSame('', $argumentKey, \sprintf('%s tool_argument_key must resolve', $themeName));
+            $this->assertNotSame($muted, $argumentKey, \sprintf('%s tool_argument_key must differ from muted', $themeName));
+            $this->assertNotSame($toolTitle, $argumentKey, \sprintf('%s tool_argument_key must differ from tool_title', $themeName));
+            $this->assertSame('', $argumentValue, \sprintf('%s tool_argument_value stays default text', $themeName));
+        }
+    }
+
     public function testRegisterAddsNewTheme(): void
     {
         $registry = $this->createEmptyRegistry();
