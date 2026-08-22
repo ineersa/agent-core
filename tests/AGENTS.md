@@ -2,6 +2,45 @@
 
 Directory-specific test infrastructure and conventions. Root `AGENTS.md` owns global Castor/safety/workflow rules. Operational runbooks (timeouts, check lock, llama-proxy cache guard, preflight, worker diagnostics, full command matrix): load the `testing` skill (`.agents/skills/testing/SKILL.md`).
 
+## Hard quality standards (MUST / MUST NOT)
+
+Bad tests are worse than missing tests. Prefer deletion/demotion over keeping a non-deterministic, soft, duplicate, or timing-window case.
+
+### Duration and contention
+
+- **Default hard ceiling:** each individual PHPUnit case MUST finish in **≤10s** under normal Castor load.
+- Contention counts: a case that is ≤10s solo but **>10s under relevant concurrent lanes** (e.g. `castor check` + standalone `castor test:tui` / `castor test:llm-real`) is still unacceptable.
+- Exceeding 10s → rewrite, demote to a lower layer, or delete. Rare exceptions MUST document in the test (comment or docblock): the unique external/process/provider contract, why lower layers cannot prove it, and that the timeout is a safety cap—not a sync strategy.
+- MUST NOT “fix” flakes by raising Castor/PHPUnit/HTTP timeouts, retrying until green, or masking hangs with broad 20–60s waits.
+
+### Determinism and synchronization
+
+- MUST assert **positive** readiness: visible pane state, event type/id, artifact file contents, log line, socket accept, or process status. MUST NOT prove correctness by absence against stale tmux scrollback, “wait a few seconds and maybe”, or elapsed-time race windows.
+- Timeouts are **safety caps**, not synchronization. Prefer existing harness predicates (`waitForCallback`, `waitForCaptureContains`, `waitForTuiReady`, `collectEventsUntil*`) with short bounds and early exit.
+- MUST NOT use arbitrary `sleep` / `usleep` / `response_delay_ms` / multi-second shell `sleep N` solely to create interaction windows. If a product threshold forces a real sleep (document it), keep the shortest valid value; if the only thesis is a timing window and no deterministic barrier exists without a test-only production API, **delete the test**.
+- Contention / locking proofs need deterministic barriers (locks, pipes, markers coupled to child liveness). Timing lotteries are unacceptable—delete them.
+- MUST NOT busy-spin readiness loops. Yield (`usleep` of a few ms only inside a bounded predicate poll) or block on a real event.
+
+### Isolation, ownership, teardown
+
+- Controller/TUI E2E that uses Messenger MUST pair app DB + transport DB env (`TuiE2eDatabaseEnv` / equivalent). Omitting the transport DB is unacceptable.
+- MUST NOT share tmux sessions, fixture FIFO cursors, or mutate process-global env without full restore of `putenv` + `$_ENV` + `$_SERVER`.
+- Process readiness markers/files/sockets MUST be coupled to **child liveness** and fail with diagnostics if the child dies; blind `is_file` polls alone are unacceptable.
+- Spawned controller/consumer trees MUST have explicit process-group/session ownership and deterministic teardown of the **owned tree**. Multiple roots (e.g. second controller) MUST track independent PID lists—never overwrite the first.
+- Never signal root-owned or `HATFIELD_SESSION_ID` processes (root `AGENTS.md`).
+
+### Fixtures, assertions, live proofs
+
+- Replay fixture exhaustion MUST fail loudly (no synthetic successful `done`). Every legitimate LLM turn the test expects MUST have an explicit fixture.
+- Soft/conditional assertions that allow the target behavior not to occur are unacceptable—delete or harden.
+- Generated model prose is **not** a contract. Live/`llm-real` tests MUST assert provider/tool/event/schema/stream/artifact contracts (tool name, `tool_call_id`, stop/finality, non-empty structured output)—not chat wording.
+- Live LLM and tmux exist for contracts unavailable at unit/virtual/controller-replay. Prefer **one** minimal terminal or live smoke per unique contract—not repeated journeys that re-prove picker/chrome/hotkeys/cards already covered virtually.
+- MUST NOT add production APIs, settings, or paths solely for tests.
+
+### Demotion / deletion evidence
+
+When deleting or demoting an E2E/live case, record a short proof mapping (test or PR/task note): what lower-layer test(s) retain the contract. Reviewers MUST reject demotions with no mapping.
+
 ## Shared infrastructure (do not duplicate)
 
 ### Directory isolation
@@ -45,6 +84,8 @@ Replay seam is test-layer only:
 - `config/services_test.yaml` wires `HttpClientInterface` through that factory
 - Controller subprocess boots `APP_ENV=test` so test DI applies; **no** production `src/` code checks the replay env var
 
+Fixture queues MUST cover every expected model turn. Exhaustion MUST fail loudly (`X-Replay-Exhausted` / HTTP error)—never fabricate a successful assistant `done`.
+
 ### Live (opt-in)
 
 Extend `ControllerE2eTestCase`. Requires live LLM readiness. Run: `castor test:controller` / `castor test:llm-real` (group `llm-real`). See testing skill for preflight, proxy, and timeouts.
@@ -68,6 +109,8 @@ For tool-focused LLM smoke: prefer `collectEventsUntilToolCompleted()`; assert i
 
 When tmux is required: `startDetached()`, isolated project dir, `sendLiteral`/`sendKey`, short targeted waits (`waitForCaptureContains` / `waitForCallback`), `saveAnsiSnapshot()` for artifacts. Avoid broad 30–60s caps and fixed `usleep()` unless delay is the behavior under test.
 
+Use `TuiE2eDatabaseEnv` for paired app + Messenger transport DB isolation. Prefer `waitForTuiReady()` over duplicated logo/footer polls. Assert positive visible-pane / event / artifact proof—not scrollback absence.
+
 TUI work is incomplete without automated proof at the lowest correct layer. Service-only DTO tests, custom smoke scripts, or picker/footer-only checks are not sole proof. Root `AGENTS.md` + testing skill own `castor check` triggers and live-vs-replay policy.
 
 ## What NOT to test
@@ -79,7 +122,7 @@ Do not write tests that only:
 - Verify class/method existence
 - Exhaustively enumerate enum cases in dedicated cases
 
-One representative behavior test is enough.
+One representative behavior test is enough. Also do **not** keep: soft/conditional live proofs, timing-window races, duplicate tmux journeys of virtual coverage, or prose-only LLM assertions (see Hard quality standards).
 
 ## One test class per production class
 
