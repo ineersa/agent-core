@@ -807,6 +807,72 @@ Done.');
 Done.', $this->registry->readHandoff($parentRunId, $artifactId));
     }
 
+    public function testWriteHandoffArchivesPreviousNonEmptyHandoff(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $artifactId = 'agent_hist_01';
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+
+        $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
+        $this->registry->writeHandoff($parentRunId, $artifactId, '# First');
+        $this->registry->update($parentRunId, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'first done');
+
+        // Mirror SubagentChildRunArtifactFinalizer order: update terminal fields, then write
+        // the new handoff while passing pre-update metadata for the archive index entry.
+        $prior = $this->registry->get($parentRunId, $artifactId);
+        $this->assertNotNull($prior);
+        $this->registry->update($parentRunId, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'second done');
+        $this->registry->writeHandoff(
+            $parentRunId,
+            $artifactId,
+            '# Second',
+            archivedMeta: [
+                'status' => $prior->status,
+                'summary' => $prior->summary,
+            ],
+        );
+
+        $this->assertSame('# Second', $this->registry->readHandoff($parentRunId, $artifactId));
+        $history = $this->registry->listHandoffHistory($parentRunId, $artifactId);
+        $this->assertCount(1, $history);
+        $this->assertSame(1, $history[0]['n']);
+        $this->assertSame(AgentArtifactStatusEnum::Completed->value, $history[0]['status']);
+        $this->assertSame('first done', $history[0]['summary']);
+        $this->assertSame('# First', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, 1));
+    }
+
+    public function testWriteHandoffArchiveStatusPrefersBodyOverRunningRegistryMeta(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $artifactId = 'agent_hist_body_01';
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+
+        $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
+        $this->registry->writeHandoff(
+            $parentRunId,
+            $artifactId,
+            "# Subagent handoff\n\nStatus: completed\n\n## Result\n\nfirst done\n",
+        );
+
+        // Resume marks the artifact Running before the next handoff write; archive index must
+        // still record the prior body status (completed), not the live Running registry value.
+        $this->registry->update($parentRunId, $artifactId, status: AgentArtifactStatusEnum::Running, startedAt: new \DateTimeImmutable());
+        $this->registry->writeHandoff(
+            $parentRunId,
+            $artifactId,
+            "# Subagent handoff\n\nStatus: completed\n\n## Result\n\nsecond done\n",
+            archivedMeta: [
+                'status' => AgentArtifactStatusEnum::Running,
+                'summary' => 'first done',
+            ],
+        );
+
+        $history = $this->registry->listHandoffHistory($parentRunId, $artifactId);
+        $this->assertCount(1, $history);
+        $this->assertSame(AgentArtifactStatusEnum::Completed->value, $history[0]['status']);
+        $this->assertSame('first done', $history[0]['summary']);
+    }
+
     public function testReadHandoffRejectsPathTraversalArtifactId(): void
     {
         $this->expectException(\InvalidArgumentException::class);

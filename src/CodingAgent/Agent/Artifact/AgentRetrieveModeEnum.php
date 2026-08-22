@@ -13,5 +13,6 @@ enum AgentRetrieveModeEnum: string
     case Metadata = 'metadata';
     case Events = 'events';
     case History = 'history';
+    case HandoffHistory = 'handoff_history';
     case Debug = 'debug';
 }

@@ -352,6 +352,55 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('last_seq: 18', $out);
     }
 
+    public function testHandoffHistoryListsArchivesAndFetchesByIndex(): void
+    {
+        $parent = 'parent-handoff-history';
+        $artifactId = 'agent_hist_retrieve';
+        $childRun = 'child-hist-retrieve';
+        $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
+        $this->registry->writeHandoff($parent, $artifactId, '# First archive body');
+        $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'first done');
+
+        $prior = $this->registry->get($parent, $artifactId);
+        $this->assertNotNull($prior);
+        $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'second done');
+        $this->registry->writeHandoff(
+            $parent,
+            $artifactId,
+            '# Latest handoff body',
+            archivedMeta: [
+                'status' => $prior->status,
+                'summary' => $prior->summary,
+            ],
+        );
+
+        $service = $this->makeService();
+
+        $list = $service->retrieve($parent, $this->args([
+            'artifact_id' => $artifactId,
+            'mode' => 'handoff_history',
+        ]));
+        $this->assertStringContainsString('Archived handoffs (oldest → newest)', $list);
+        $this->assertStringContainsString('n=1', $list);
+        $this->assertStringContainsString('status=completed', $list);
+        $this->assertStringContainsString('first done', $list);
+        $this->assertStringNotContainsString('# Latest handoff body', $list);
+
+        $body = $service->retrieve($parent, $this->args([
+            'artifact_id' => $artifactId,
+            'mode' => 'handoff_history',
+            'index' => 1,
+        ]));
+        $this->assertStringContainsString('## Archived handoff #1', $body);
+        $this->assertStringContainsString('# First archive body', $body);
+
+        $latest = $service->retrieve($parent, $this->args([
+            'artifact_id' => $artifactId,
+            'mode' => 'handoff',
+        ]));
+        $this->assertStringContainsString('# Latest handoff body', $latest);
+    }
+
     private function makeService(
         ?RunStoreInterface $runStore = null,
         ?EventStoreInterface $eventStore = null,
@@ -375,6 +424,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
             agent_run_id: isset($arguments['agent_run_id']) && \is_string($arguments['agent_run_id']) ? $arguments['agent_run_id'] : null,
             mode: isset($arguments['mode']) && \is_string($arguments['mode']) ? $arguments['mode'] : null,
             limit: isset($arguments['limit']) && \is_int($arguments['limit']) ? $arguments['limit'] : null,
+            index: isset($arguments['index']) && \is_int($arguments['index']) ? $arguments['index'] : null,
         );
     }
 }

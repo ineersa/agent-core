@@ -59,6 +59,7 @@ final class AgentRetrieveTool implements HatfieldToolProviderInterface
                 'Provide artifact_id and/or agent_run_id from the current parent session only; cross-parent retrieval is rejected.',
                 'Use metadata for status, timestamps, and counts without raw message or tool output.',
                 'Use events or history for bounded debugging summaries; payloads and prompts are omitted by default.',
+                'Use mode=handoff_history to list archived prior handoffs, or pass index=<n> to fetch one archived body. mode=handoff remains the latest handoff only.',
                 'Use debug for relative artifact paths only — not absolute filesystem paths.',
             ],
         );
