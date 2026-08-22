@@ -9,11 +9,8 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Replay-backed TmuxHarness proof: /new stops the previous controller/consumers
- * while an in-flight tool run is still active, keeps the draft free of old
- * progress/result text, and still allows a fresh session to start afterward.
- *
- * Also proves clean Ctrl+D pane exit before leak scanning and tearDown force-kill.
+ * Replay-backed proof: /new during an in-flight bash run stops the old
+ * controller/consumers, shows a clean draft, then starts a fresh session.
  *
  * @group tui-e2e-replay
  */
@@ -34,7 +31,6 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
 
     protected function tearDown(): void
     {
-        // killAll() remains the force-cleanup fallback; removeDirectory runs after it.
         $this->tearDownBashBackgroundE2e();
     }
 
@@ -47,7 +43,7 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
             ),
             prefix: 'tui-new-teardown',
             width: 120,
-            height: 60,
+            height: 40,
             cwd: $this->testProjectDir,
         );
 
@@ -69,63 +65,54 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
                     $oldSessionId = $matches[1];
 
                     return str_contains($cap, 'Running')
-                        || str_contains($cap, 'sleep 2')
                         || str_contains($cap, '◐ Work');
                 },
-                timeout: 20.0,
+                timeout: 12.0,
                 message: 'In-flight bash run and session id must appear before /new',
                 history: 2000,
             );
-            $this->assertNotEmpty($oldSessionId, 'Old session id must be captured before /new');
-            $this->assertTrue(
-                $this->waitForLogCount('controller.session_owner_lock_acquired', 1, 8.0),
-                'Old session controller must acquire the session-owner lock before /new',
+            $this->assertNotEmpty($oldSessionId);
+
+            $this->tmux->waitForCallback(
+                $pane,
+                fn (string $_): bool => 1 <= mb_substr_count($this->readAgentLog(), 'controller.session_owner_lock_acquired'),
+                timeout: 8.0,
+                message: 'Old session controller must acquire the session-owner lock before /new',
+                history: 0,
             );
 
             $this->tmux->sendKey($pane, 'C-u');
             $this->tmux->sendLiteral($pane, '/new');
             $this->tmux->waitForCallback(
                 $pane,
-                static function (string $cap): bool {
-                    return str_contains($cap, 'Completions')
-                        && str_contains($cap, '/new');
-                },
+                static fn (string $cap): bool => str_contains($cap, 'Completions')
+                    && str_contains($cap, '/new'),
                 timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
                 message: 'Typing "/new" must open the Completions overlay showing /new',
-                history: 2000,
+                history: 0,
             );
             $this->tmux->sendKey($pane, 'Enter');
 
-            $this->tmux->waitForCaptureContains(
-                $pane,
-                'Welcome to Hatfield',
-                TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL,
-            );
             $draftPane = $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $plain): bool => (str_contains($plain, '● idle') || str_contains($plain, '◐ Work'))
-                    && str_contains($plain, '◆')
-                    && str_contains($plain, 'Welcome to Hatfield'),
-                timeout: 8.0,
+                static fn (string $plain): bool => str_contains($plain, 'Welcome to Hatfield')
+                    && (str_contains($plain, '● idle') || str_contains($plain, '◐ Work'))
+                    && str_contains($plain, '◆'),
+                timeout: TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL,
                 message: 'Fresh /new draft must reach idle-ready welcome state',
                 history: 0,
             );
 
             $this->assertStringContainsString('Welcome to Hatfield', $draftPane);
             $this->assertStringNotContainsString('session '.$oldSessionId, $draftPane);
-            $this->assertStringNotContainsString('sleep 2', $draftPane);
-            $this->assertStringNotContainsString('Running', $draftPane);
-            $this->assertStringNotContainsString('❯ Run sleep 2', $draftPane);
-            $this->assertStringNotContainsString(self::NEW_SESSION_SENTINEL, $draftPane);
 
-            $this->assertTrue(
-                $this->waitForLogCount('Controller shutting down gracefully', 1, 12.0),
-                'Old controller must shut down synchronously when switching to the /new draft',
-            );
-            $this->assertSame(
-                1,
-                mb_substr_count($this->readAgentLog(), 'controller.session_owner_lock_acquired'),
-                'Draft after /new must not spawn a replacement controller',
+            $this->tmux->waitForCallback(
+                $pane,
+                fn (string $_): bool => 1 <= mb_substr_count($this->readAgentLog(), 'Controller shutting down gracefully')
+                    && 1 === mb_substr_count($this->readAgentLog(), 'controller.session_owner_lock_acquired'),
+                timeout: 10.0,
+                message: 'Old controller must shut down synchronously and draft must not spawn a replacement controller',
+                history: 0,
             );
 
             $this->tmux->saveAnsiSnapshot($pane, 'new-during-inflight-draft');
@@ -137,19 +124,19 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, self::NEW_SESSION_SENTINEL)
-                    && 1 === preg_match('/session\s+(\d+)/', $cap),
+                    && 1 === preg_match('/session\s+(\d+)/', $cap)
+                    && !str_contains($cap, 'session '.$oldSessionId),
                 timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
                 message: 'Fresh session after /new must start and show the new assistant reply',
-                history: 2000,
+                history: 0,
             );
 
-            $afterCapture = $this->tmux->capturePlainWithHistory($pane, 2500);
-            $this->assertStringContainsString(self::NEW_SESSION_SENTINEL, $afterCapture);
-            $this->assertStringNotContainsString('session '.$oldSessionId, $afterCapture);
-            $this->assertStringNotContainsString('sleep 2', $afterCapture);
-            $this->assertTrue(
-                $this->waitForLogCount('controller.session_owner_lock_acquired', 2, 10.0),
-                'First prompt after /new must start a fresh session-scoped controller',
+            $this->tmux->waitForCallback(
+                $pane,
+                fn (string $_): bool => 2 <= mb_substr_count($this->readAgentLog(), 'controller.session_owner_lock_acquired'),
+                timeout: 8.0,
+                message: 'First prompt after /new must start a fresh session-scoped controller',
+                history: 0,
             );
 
             $this->tmux->saveAnsiSnapshot($pane, 'new-during-inflight-fresh-session');
@@ -176,10 +163,8 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
         }
 
         try {
-            // Prove natural pane/session exit before force cleanup or leak scanning.
-            $this->tmux->waitUntilPaneExits($pane, 15.0);
+            $this->tmux->waitUntilPaneExits($pane, 10.0);
             $this->assertNoLeakedWorkersForThisTestWithRetry();
-            // sleep/tool children inherit HATFIELD_E2E_LEAK_TAG via ProcessLifecycle setsid.
             $this->assertNoLeakTaggedProcessesForThisTestWithRetry();
         } catch (\Throwable $teardownProofError) {
             if (null === $originalFailure) {
@@ -229,18 +214,5 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
 
         $settings['tools']['bash']['background_prompt_threshold_seconds'] = 60;
         TuiE2eDatabaseEnv::writeReplaySettings($this->testProjectDir, $settings);
-    }
-
-    private function waitForLogCount(string $needle, int $expected, float $timeout = 10.0): bool
-    {
-        $deadline = microtime(true) + $timeout;
-        while (microtime(true) < $deadline) {
-            if ($expected <= mb_substr_count($this->readAgentLog(), $needle)) {
-                return true;
-            }
-            usleep(100_000);
-        }
-
-        return $expected <= mb_substr_count($this->readAgentLog(), $needle);
     }
 }

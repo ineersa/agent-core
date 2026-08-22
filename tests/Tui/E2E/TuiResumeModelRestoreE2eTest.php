@@ -118,18 +118,7 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
             // ── Phase 2: Exit the TUI ──
             $this->tmux->sendKey($pane1, 'C-d');
 
-            // Wait for tmux session to die (process exit).
-            $deadline = microtime(true) + 5.0;
-            $exited = false;
-            while (microtime(true) < $deadline) {
-                $alive = $this->tmuxSessionAlive($pane1->session);
-                if (!$alive) {
-                    $exited = true;
-                    break;
-                }
-                usleep(200_000);
-            }
-            $this->assertTrue($exited, 'First TUI session must exit after Ctrl+D');
+            $this->tmux->waitUntilPaneExits($pane1, 8.0);
 
             // Kill the pane to clean up (session may already be dead).
             try {

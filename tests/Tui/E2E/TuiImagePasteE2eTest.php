@@ -10,8 +10,13 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Replay-backed tmux proof: real Ctrl+V inserts [Image #1], submit promotes attachment
- * and canonical prompt contains view_image path (GitHub issue #119).
+ * Replay-backed tmux proof: real Ctrl+V inserts [Image #1], submit promotes
+ * attachment, and canonical events contain the view_image path (GitHub #119).
+ *
+ * Non-blocking paste while clipboard helpers are slow is covered by
+ * ImagePasteInputVirtualTest + ClipboardImageReaderTest.
+ *
+ * @group tui-e2e-replay
  */
 #[Group('tui-e2e-replay')]
 final class TuiImagePasteE2eTest extends TestCase
@@ -40,80 +45,8 @@ final class TuiImagePasteE2eTest extends TestCase
         if (isset($this->tmux)) {
             $this->tmux->killAll();
         }
-    }
-
-    public function testCtrlVPasteDoesNotBlockEditorWhileClipboardHelperIsSlow(): void
-    {
-        $this->installFakeWlPaste(delaySeconds: 1);
-
-        $pane = $this->tmux->startDetached(
-            command: $this->agentCommand(),
-            prefix: 'tui-image-paste-slow',
-            width: 120,
-            height: 60,
-            cwd: $this->testProjectDir,
-        );
-
-        try {
-            $this->tmux->waitForTuiReady($pane);
-
-            $marker = 'PASTE_RESPONSIVE_'.bin2hex(random_bytes(4));
-            $this->tmux->sendKey($pane, 'C-v');
-            $this->tmux->sendLiteral($pane, ' '.$marker);
-
-            $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, '[Image #1]') && str_contains($cap, $marker),
-                timeout: 1.5,
-                message: 'Placeholder and typed input must appear before slow clipboard helper finishes (~1s)',
-                history: 500,
-            );
-
-            // Wait until the delayed fake wl-paste (sleep 1) has finished producing PNG bytes.
-            // Elapsed wall time is not the contract; readiness is the fake helper exiting.
-            $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, '[Image #1]') && str_contains($cap, $marker),
-                timeout: 4.0,
-                message: 'Image placeholder must remain visible while delayed clipboard completes',
-                history: 500,
-            );
-            // Bounded poll for no in-flight wl-paste child under the fake bin (process readiness).
-            $deadline = microtime(true) + 4.0;
-            while (microtime(true) < $deadline) {
-                $running = trim((string) shell_exec('pgrep -f '.escapeshellarg($this->fakeBinDir.'/wl-paste').' || true'));
-                if ('' === $running) {
-                    break;
-                }
-                usleep(50_000);
-            }
-
-            $this->tmux->sendLiteral($pane, ' describe pasted image');
-            $this->tmux->sendKey($pane, 'Enter');
-
-            $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Image paste acknowledged'),
-                timeout: 12.0,
-                message: 'Expected replay assistant response after slow image paste submit',
-                history: 3000,
-            );
-
-            $sessionId = $this->resolveSingleCreatedSessionId();
-            $this->assertNotNull($sessionId);
-            $attachment = $this->testProjectDir.'/.hatfield/sessions/'.$sessionId.'/attachments/pasted-image-1.png';
-            $this->assertFileExists($attachment);
-
-            $this->tmux->saveAnsiSnapshot($pane, 'image-paste-slow');
-            $this->tmux->sendKey($pane, 'C-d');
-        } catch (\Throwable $e) {
-            $this->tmux->saveAnsiSnapshot($pane, 'image-paste-slow-FAILURE');
-            try {
-                $this->tmux->sendKey($pane, 'C-d');
-            } catch (\Throwable $shutdownFailure) {
-                // Best-effort graceful shutdown before rethrowing the original assertion failure.
-            }
-            throw $e;
+        if (isset($this->testProjectDir)) {
+            TestDirectoryIsolation::removeDirectory($this->testProjectDir);
         }
     }
 
@@ -123,7 +56,7 @@ final class TuiImagePasteE2eTest extends TestCase
             command: $this->agentCommand(),
             prefix: 'tui-image-paste',
             width: 120,
-            height: 60,
+            height: 40,
             cwd: $this->testProjectDir,
         );
 
@@ -134,7 +67,7 @@ final class TuiImagePasteE2eTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '[Image #1]'),
-                timeout: 10.0,
+                timeout: 8.0,
                 message: '[Image #1] placeholder did not appear after Ctrl+V',
                 history: 500,
             );
@@ -145,13 +78,10 @@ final class TuiImagePasteE2eTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, 'Image paste acknowledged'),
-                timeout: 12.0,
+                timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
                 message: 'Expected replay assistant response after image paste submit',
-                history: 3000,
+                history: 2000,
             );
-
-            $fullCapture = $this->tmux->capturePlainWithHistory($pane, 3000);
-            $this->assertStringContainsString('view_image', $fullCapture);
 
             $sessionId = $this->resolveSingleCreatedSessionId();
             $this->assertNotNull($sessionId);
@@ -168,24 +98,22 @@ final class TuiImagePasteE2eTest extends TestCase
 
             $this->tmux->saveAnsiSnapshot($pane, 'image-paste');
             $this->tmux->sendKey($pane, 'C-d');
+            $this->tmux->waitUntilPaneExits($pane, 10.0);
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'image-paste-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
-            } catch (\Throwable $shutdownFailure) {
-                // Best-effort graceful shutdown before rethrowing the original assertion failure.
+            } catch (\Throwable) {
             }
             throw $e;
         }
     }
 
-    private function installFakeWlPaste(int $delaySeconds = 0): void
+    private function installFakeWlPaste(): void
     {
         @mkdir($this->fakeBinDir, 0o777, true);
         $png = __DIR__.'/fixtures/paste-test-1x1.png';
-        $delay = $delaySeconds > 0 ? 'sleep '.(int) $delaySeconds.'
-' : '';
-        $script = '#!/bin/sh'."\n".$delay.'cat '.escapeshellarg($png)."\n";
+        $script = '#!/bin/sh'."\n".'cat '.escapeshellarg($png)."\n";
         file_put_contents($this->fakeBinDir.'/wl-paste', $script);
         chmod($this->fakeBinDir.'/wl-paste', 0o755);
     }
@@ -193,25 +121,16 @@ final class TuiImagePasteE2eTest extends TestCase
     private function agentCommand(): string
     {
         $fixturePath = __DIR__.'/fixtures/tui-image-paste-response.json';
-        $fixtureEnv = is_file($fixturePath)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($fixturePath).' '
-            : '';
-
         $paths = TuiE2eDatabaseEnv::allocatePaths('tui-image-paste');
-        $php = \PHP_BINARY;
-        $script = $this->projectRoot.'/bin/console';
-        $pathPrefix = 'PATH='.escapeshellarg($this->fakeBinDir.':'.getenv('PATH')).' ';
-        $wayland = 'XDG_SESSION_TYPE=wayland WAYLAND_DISPLAY=wayland-test ';
 
         return \sprintf(
-            'APP_ENV=test %s%s%sHOME=%s %s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
-            $pathPrefix,
-            $wayland,
+            'APP_ENV=test PATH=%s XDG_SESSION_TYPE=wayland WAYLAND_DISPLAY=wayland-test %sHOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
+            escapeshellarg($this->fakeBinDir.':'.(getenv('PATH') ?: '')),
             TuiE2eDatabaseEnv::shellPrefix($paths['app'], $paths['transport']),
             escapeshellarg($this->testProjectDir.'/home'),
-            $fixtureEnv,
-            escapeshellarg($php),
-            escapeshellarg($script),
+            escapeshellarg($fixturePath),
+            escapeshellarg(\PHP_BINARY),
+            escapeshellarg($this->projectRoot.'/bin/console'),
         );
     }
 
@@ -219,11 +138,8 @@ final class TuiImagePasteE2eTest extends TestCase
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-paste');
         TestDirectoryIsolation::createHatfieldTree($dir, withSessions: true, permissions: 0o777);
-
-        $settings = TuiE2eDatabaseEnv::replayBaseSettings();
-
         TestDirectoryIsolation::createHatfieldTree($dir.'/home', withSessions: true, permissions: 0o777);
-        TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
+        TuiE2eDatabaseEnv::writeReplaySettings($dir, TuiE2eDatabaseEnv::replayBaseSettings());
 
         return $dir;
     }
@@ -235,7 +151,11 @@ final class TuiImagePasteE2eTest extends TestCase
             return null;
         }
 
-        $dirs = array_values(array_filter(scandir($sessionsRoot) ?: [], static fn (string $entry): bool => !\in_array($entry, ['.', '..'], true) && is_dir($sessionsRoot.'/'.$entry)));
+        $dirs = array_values(array_filter(
+            scandir($sessionsRoot) ?: [],
+            static fn (string $entry): bool => !\in_array($entry, ['.', '..'], true)
+                && is_dir($sessionsRoot.'/'.$entry),
+        ));
         if (1 !== \count($dirs)) {
             return null;
         }

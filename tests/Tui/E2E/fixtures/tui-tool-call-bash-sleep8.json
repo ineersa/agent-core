@@ -1,5 +1,5 @@
 {
-    "$schema": "TUI bash background E2E — sleep 2 (<15s) for accept overlay",
+    "$schema": "TUI bash background E2E — sleep 2 (>1s threshold) for accept overlay",
     "model": "llama_cpp_test/test",
     "provider_id": "llama_cpp_test",
     "reasoning": "off",

@@ -27,7 +27,7 @@ use PHPUnit\Framework\TestCase;
  * Test design:
  *  1. Agent starts with two chained replay fixtures:
  *     - Fixture 0: fast assistant response (input_tokens=100 > compact threshold=10)
- *     - Fixture 1: delayed compaction summary (response_delay_ms=1000)
+ *     - Fixture 1: delayed compaction summary (response_delay_ms=250)
  *  2. Send prompt, wait for assistant response + "Compacting conversation..."
  *  3. Send Escape while compaction is still in-flight (delayed by fixture 1)
  *  4. Verify TUI shows cancellation evidence ("Cancelling", "Cancelled", or
@@ -109,10 +109,9 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
                 history: 2000,
             );
 
-            // After the turn commits, auto-compaction fires.  The
-            // delayed fixture (response_delay_ms=1000) keeps the
-            // compaction LLM call in-flight for ~3 seconds — long
-            // enough for Escape to arrive while Compacting.
+            // After the turn commits, auto-compaction fires. The delayed
+            // fixture keeps the compaction LLM call in-flight long enough
+            // for Escape to arrive while Compacting.
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, 'Compacting conversation'),
@@ -127,41 +126,14 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
             // cancel instead of clearing the editor.
             $this->tmux->sendKey($pane, 'Escape');
 
-            // Wait for cancellation evidence in TUI.  With the
-            // production fix, CancelListener sends cancel during
-            // Compacting; evidence may be activity text (Cancelling/Cancelled)
-            // or a dynamic transcript/status line (e.g. "run cancelled").
-            $hasCancellation = false;
-            $deadline = microtime(true) + 10.0;
-
-            while (microtime(true) < $deadline) {
-                $capture = $this->tmux->captureAnsi($pane);
-
-                // User-visible cancellation evidence:
-                // - Capitalized activity labels Cancelling / Cancelled
-                // - Exact phrase "run cancelled" from dynamic event transcript
-                // Generic lowercase "cancel" is excluded — it can match
-                // static footer/hotkey text without a real cancel transition.
-                if (
-                    str_contains($capture, 'Cancelling')
-                    || str_contains($capture, 'Cancelled')
-                    || str_contains($capture, 'run cancelled')
-                ) {
-                    $hasCancellation = true;
-
-                    break;
-                }
-
-                usleep(200_000);
-            }
-
-            $this->assertTrue(
-                $hasCancellation,
-                "TUI must show 'Cancelling', 'Cancelled', or dynamic 'run cancelled' after Escape during auto-compaction.\n"
-                .'On HEAD (RED): Completed.isActive() is false, so CancelListener clears '
-                ."the editor instead of sending cancel.  The TUI shows no cancellation evidence.\n"
-                ."Lowercase 'cancel' alone (footer/hotkey) is NOT sufficient evidence.\n"
-                ."Final capture:\n".$this->tmux->captureAnsi($pane),
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, 'Cancelling')
+                    || str_contains($cap, 'Cancelled')
+                    || str_contains($cap, 'run cancelled'),
+                timeout: 8.0,
+                message: "TUI must show 'Cancelling', 'Cancelled', or dynamic 'run cancelled' after Escape during auto-compaction",
+                history: 0,
             );
 
             // Post-cancellation: poll events.jsonl until cancel command is durable.
