@@ -65,8 +65,13 @@ final class AgentResumeExecutionService
         }
 
         $resolved = [];
+        $seenArtifactIds = [];
         foreach ($tasks as $index => $task) {
             $entry = $this->resolveAndValidateTarget($parentRunId, $task);
+            if (isset($seenArtifactIds[$entry->artifactId])) {
+                throw new ToolCallException(\sprintf('Duplicate artifact_id "%s" in one agent_resume call.', $entry->artifactId), retryable: false);
+            }
+            $seenArtifactIds[$entry->artifactId] = true;
             $resolved[] = [
                 'batchIndex' => $index + 1,
                 'entry' => $entry,
@@ -183,13 +188,36 @@ final class AgentResumeExecutionService
                         'exception_class' => $markRunningFailure::class,
                     ]);
                 }
-                $this->agentRunner->followUp(
-                    $entry->agentRunId,
-                    new AgentMessage(
-                        role: 'user',
-                        content: [['type' => 'text', 'text' => $item['task']]],
-                    ),
-                );
+                try {
+                    $this->agentRunner->followUp(
+                        $entry->agentRunId,
+                        new AgentMessage(
+                            role: 'user',
+                            content: [['type' => 'text', 'text' => $item['task']]],
+                        ),
+                    );
+                } catch (\Throwable $followUpFailure) {
+                    try {
+                        $this->artifactRegistry->update(
+                            parentRunId: $parentRunId,
+                            artifactId: $entry->artifactId,
+                            status: $entry->status,
+                        );
+                    } catch (\Throwable $revertFailure) {
+                        $this->logger->warning('agent_resume.artifact_running_revert_failed', [
+                            'run_id' => $parentRunId,
+                            'tool_call_id' => $toolCallId,
+                            'child_run_id' => $entry->agentRunId,
+                            'artifact_id' => $entry->artifactId,
+                            'prior_status' => $entry->status->value,
+                            'component' => 'agent.execution',
+                            'event_type' => 'agent_resume.artifact_running_revert_failed',
+                            'exception_class' => $revertFailure::class,
+                        ]);
+                    }
+
+                    throw $followUpFailure;
+                }
                 $launchedBeforeFailure[] = $item['batchIndex'];
             }
         } catch (\Throwable $e) {
@@ -222,8 +250,8 @@ final class AgentResumeExecutionService
                 ]);
             }
 
-            // Children marked Running before followUp stay Running (registry projection
-            // already reopened). Not-yet-marked children keep their prior terminal status.
+            // Failed followUp reverts that child's artifact to its prior terminal status
+            // (best-effort). Successfully followUp'd siblings remain Running.
             if ($e instanceof ToolCallException) {
                 throw $e;
             }

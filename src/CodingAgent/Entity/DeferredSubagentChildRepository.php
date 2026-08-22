@@ -282,9 +282,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
                 DeferredChildRunLifecycleProjectionDTO::class,
                 'json',
             );
-        } catch (SerializerExceptionInterface|\TypeError|\ValueError $exception) {
-            throw new \InvalidArgumentException(\sprintf('Invalid deferred child lifecycle projection: %s', $exception->getMessage()), 0, $exception);
-        } catch (\JsonException $exception) {
+        } catch (SerializerExceptionInterface|\TypeError|\ValueError|\JsonException $exception) {
             throw new \InvalidArgumentException(\sprintf('Invalid deferred child lifecycle projection: %s', $exception->getMessage()), 0, $exception);
         }
 

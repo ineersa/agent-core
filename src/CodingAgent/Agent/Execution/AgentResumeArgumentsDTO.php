@@ -8,7 +8,6 @@ use Ineersa\CodingAgent\Tool\Schema\AgentResumeTasksSchemaProvider;
 use Ineersa\CodingAgent\Tool\Validation\SubagentTasks\SubagentTasksLimit;
 use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\Component\Validator\Constraints as Assert;
-use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
  * Validated `agent_resume` tool arguments (single or parallel mode).
@@ -68,33 +67,6 @@ final class AgentResumeArgumentsDTO
         #[SubagentTasksLimit]
         public readonly ?array $tasks = null,
     ) {
-    }
-
-    #[Assert\Callback]
-    public function validateUniqueArtifactIds(ExecutionContextInterface $context): void
-    {
-        if (null === $this->tasks || [] === $this->tasks) {
-            return;
-        }
-
-        $seen = [];
-        foreach ($this->tasks as $index => $task) {
-            if (!$task instanceof AgentResumeTaskDTO) {
-                continue;
-            }
-            $artifactId = $task->trimmedArtifactId();
-            if (null === $artifactId) {
-                continue;
-            }
-            if (isset($seen[$artifactId])) {
-                $context->buildViolation(\sprintf('Duplicate artifact_id "%s" in one agent_resume call.', $artifactId))
-                    ->atPath('tasks['.$index.'].artifact_id')
-                    ->addViolation();
-
-                continue;
-            }
-            $seen[$artifactId] = true;
-        }
     }
 
     public function isParallelMode(): bool

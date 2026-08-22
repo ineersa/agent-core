@@ -253,7 +253,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         );
     }
 
-    public function testFollowUpFailureMarksBatchFailedAndLeavesChildRunning(): void
+    public function testFollowUpFailureMarksBatchFailedAndRevertsChildToPriorTerminal(): void
     {
         $parent = 'parent-followup-fail';
         $artifactId = 'agent_followup_fail';
@@ -287,19 +287,44 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $entry = $this->registry()->get($parent, $artifactId);
         $this->assertNotNull($entry);
-        // Running is persisted before followUp so registry projection reopens even when followUp fails.
-        $this->assertSame(AgentArtifactStatusEnum::Running, $entry->status);
+        // followUp failure reverts the Running mark back to the prior terminal status.
+        $this->assertSame(AgentArtifactStatusEnum::Completed, $entry->status);
 
         $this->expectException(ToolCallException::class);
-        // Artifact was marked Running before followUp failed, so a retry is rejected as in-flight
-        // before the previously-failed batch short-circuit is reached.
-        $this->expectExceptionMessage('already in flight');
+        // Same tool_call_id still short-circuits on the previously failed batch.
+        $this->expectExceptionMessage('batch launch previously failed');
         $this->resume(
             parentRunId: $parent,
             tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue again')],
             childRunId: $childRunId,
             runStatus: RunStatus::Completed,
             toolCallId: $toolCallId,
+        );
+    }
+
+    public function testRejectsDuplicateResolvedArtifactViaMixedIdentifiers(): void
+    {
+        $parent = 'parent-dup-mixed';
+        $artifactId = 'agent_dup_mixed';
+        $childRunId = 'child-dup-mixed';
+        $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 10, contextWindow: 200_000);
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->never())->method('followUp');
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage(\sprintf('Duplicate artifact_id "%s" in one agent_resume call.', $artifactId));
+
+        $this->resume(
+            parentRunId: $parent,
+            tasks: [
+                new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue via artifact'),
+                new AgentResumeTaskDTO(agent_run_id: $childRunId, task: 'continue via run id'),
+            ],
+            childRunId: $childRunId,
+            runStatus: RunStatus::Completed,
+            agentRunner: $agentRunner,
+            executionMode: ChildRunBatchExecutionModeEnum::Parallel,
         );
     }
 
