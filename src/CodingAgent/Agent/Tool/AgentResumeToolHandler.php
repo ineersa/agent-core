@@ -55,9 +55,9 @@ final class AgentResumeToolHandler
             }
 
             $task = new AgentResumeTaskDTO(
-                artifact_id: $arguments->trimmedArtifactId(),
-                task: $arguments->trimmedTask(),
-                agent_run_id: $arguments->trimmedAgentRunId(),
+                artifact_id: $arguments->artifact_id,
+                task: $arguments->task,
+                agent_run_id: $arguments->agent_run_id,
             );
 
             return $this->executionService()->resume(

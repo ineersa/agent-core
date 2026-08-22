@@ -68,6 +68,7 @@ final class AgentResumeExecutionService
         $seenArtifactIds = [];
         foreach ($tasks as $index => $task) {
             $entry = $this->resolveAndValidateTarget($parentRunId, $task);
+            // DTO uniqueness cannot cover agent_run_id→artifact aliases; dedupe after registry resolve.
             if (isset($seenArtifactIds[$entry->artifactId])) {
                 throw new ToolCallException(\sprintf('Duplicate artifact_id "%s" in one agent_resume call.', $entry->artifactId), retryable: false);
             }
@@ -75,7 +76,7 @@ final class AgentResumeExecutionService
             $resolved[] = [
                 'batchIndex' => $index + 1,
                 'entry' => $entry,
-                'task' => $task->trimmedTask(),
+                'task' => (string) $task->task,
             ];
         }
 
@@ -273,9 +274,9 @@ final class AgentResumeExecutionService
 
     private function resolveAndValidateTarget(string $parentRunId, AgentResumeTaskDTO $task): AgentArtifactEntryDTO
     {
-        $artifactId = $task->trimmedArtifactId();
-        $agentRunId = $task->trimmedAgentRunId();
-        if ('' === $task->trimmedTask()) {
+        $artifactId = $task->artifact_id;
+        $agentRunId = $task->agent_run_id;
+        if (null === $task->task || '' === $task->task) {
             throw new ToolCallException('agent_resume task must be non-empty.', retryable: false);
         }
 

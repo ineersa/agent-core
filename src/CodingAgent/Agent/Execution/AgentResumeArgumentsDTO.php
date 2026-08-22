@@ -14,97 +14,83 @@ use Symfony\Component\Validator\Constraints as Assert;
  */
 final class AgentResumeArgumentsDTO
 {
+    #[Assert\Length(min: 1)]
+    #[Assert\When(
+        expression: 'this.tasks !== null',
+        constraints: [
+            new Assert\IsNull(message: 'Use either single mode {"artifact_id","task"} or parallel mode {"tasks":[...]}, not both.'),
+        ],
+    )]
+    #[Assert\When(
+        expression: 'this.tasks === null && this.agent_run_id === null',
+        constraints: [
+            new Assert\NotBlank(message: 'Single agent_resume mode requires artifact_id or agent_run_id plus a non-empty task.'),
+        ],
+    )]
+    public readonly ?string $artifact_id;
+
+    #[Assert\When(
+        expression: 'this.tasks !== null',
+        constraints: [
+            new Assert\IsNull(message: 'Use either single mode {"artifact_id","task"} or parallel mode {"tasks":[...]}, not both.'),
+        ],
+    )]
+    #[Assert\When(
+        expression: 'this.tasks === null',
+        constraints: [
+            new Assert\NotBlank(message: 'Single agent_resume mode requires a non-empty task.'),
+        ],
+    )]
+    public readonly ?string $task;
+
+    #[Assert\Length(min: 1)]
+    #[Assert\When(
+        expression: 'this.tasks !== null',
+        constraints: [
+            new Assert\IsNull(message: 'Use either single mode {"artifact_id","task"} or parallel mode {"tasks":[...]}, not both.'),
+        ],
+    )]
+    public readonly ?string $agent_run_id;
+
+    /**
+     * @var list<AgentResumeTaskDTO>|null
+     */
+    #[Assert\When(
+        expression: 'this.tasks !== null',
+        constraints: [
+            new Assert\Count(min: 1, minMessage: 'Parallel agent_resume mode requires a non-empty "tasks" array.'),
+        ],
+    )]
+    #[Assert\Valid]
+    #[SubagentTasksLimit]
+    public readonly ?array $tasks;
+
     /**
      * @param list<AgentResumeTaskDTO>|null $tasks
      */
     public function __construct(
         #[Schema(description: 'Child artifact id for single mode (e.g. agent_abc123).')]
-        #[Assert\Length(min: 1)]
-        #[Assert\When(
-            expression: 'this.tasks !== null',
-            constraints: [
-                new Assert\IsNull(message: 'Use either single mode {"artifact_id","task"} or parallel mode {"tasks":[...]}, not both.'),
-            ],
-        )]
-        #[Assert\When(
-            expression: 'this.tasks === null && this.agent_run_id === null',
-            constraints: [
-                new Assert\NotBlank(normalizer: 'trim', message: 'Single agent_resume mode requires artifact_id or agent_run_id plus a non-empty task.'),
-            ],
-        )]
-        public readonly ?string $artifact_id = null,
+        ?string $artifact_id = null,
         #[Schema(description: 'Continuation task for single mode.')]
-        #[Assert\When(
-            expression: 'this.tasks !== null',
-            constraints: [
-                new Assert\IsNull(message: 'Use either single mode {"artifact_id","task"} or parallel mode {"tasks":[...]}, not both.'),
-            ],
-        )]
-        #[Assert\When(
-            expression: 'this.tasks === null',
-            constraints: [
-                new Assert\NotBlank(normalizer: 'trim', message: 'Single agent_resume mode requires a non-empty task.'),
-            ],
-        )]
-        public readonly ?string $task = null,
+        ?string $task = null,
         #[Schema(description: 'Child AgentCore run id for single mode.')]
-        #[Assert\Length(min: 1)]
-        #[Assert\When(
-            expression: 'this.tasks !== null',
-            constraints: [
-                new Assert\IsNull(message: 'Use either single mode {"artifact_id","task"} or parallel mode {"tasks":[...]}, not both.'),
-            ],
-        )]
-        public readonly ?string $agent_run_id = null,
+        ?string $agent_run_id = null,
         #[Schema(provider: AgentResumeTasksSchemaProvider::class)]
-        #[Assert\When(
-            expression: 'this.tasks !== null',
-            constraints: [
-                new Assert\Count(min: 1, minMessage: 'Parallel agent_resume mode requires a non-empty "tasks" array.'),
-            ],
-        )]
-        #[Assert\Valid]
-        #[SubagentTasksLimit]
-        public readonly ?array $tasks = null,
+        ?array $tasks = null,
     ) {
+        $artifactId = null === $artifact_id ? null : trim($artifact_id);
+        $taskValue = null === $task ? null : trim($task);
+        $agentRunId = null === $agent_run_id ? null : trim($agent_run_id);
+
+        $this->artifact_id = (null === $artifactId || '' === $artifactId) ? null : $artifactId;
+        $this->task = (null === $taskValue || '' === $taskValue) ? null : $taskValue;
+        $this->agent_run_id = (null === $agentRunId || '' === $agentRunId) ? null : $agentRunId;
+        $this->tasks = $tasks;
     }
 
     public function isParallelMode(): bool
     {
         return null !== $this->tasks && [] !== $this->tasks;
-    }
-
-    public function trimmedArtifactId(): ?string
-    {
-        if (null === $this->artifact_id) {
-            return null;
-        }
-
-        $trimmed = trim($this->artifact_id);
-
-        return '' === $trimmed ? null : $trimmed;
-    }
-
-    public function trimmedAgentRunId(): ?string
-    {
-        if (null === $this->agent_run_id) {
-            return null;
-        }
-
-        $trimmed = trim($this->agent_run_id);
-
-        return '' === $trimmed ? null : $trimmed;
-    }
-
-    public function trimmedTask(): ?string
-    {
-        if (null === $this->task) {
-            return null;
-        }
-
-        $trimmed = trim($this->task);
-
-        return '' === $trimmed ? null : $trimmed;
     }
 
     /**
