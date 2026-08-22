@@ -847,6 +847,34 @@ Done.', $this->registry->readHandoff($parentRunId, $artifactId));
         $this->assertSame('# Second', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, $secondId));
     }
 
+    public function testReadHandoffIgnoresTamperedIndexPath(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $artifactId = 'agent_path_01';
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+
+        $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
+        $handoffId = $this->registry->writeHandoff(
+            $parentRunId,
+            $artifactId,
+            '# Canonical body',
+            status: AgentArtifactStatusEnum::Completed,
+            summary: 'ok',
+        );
+
+        $indexPath = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/'.$artifactId.'/handoffs/index.json';
+        $index = json_decode((string) file_get_contents($indexPath), true, 512, \JSON_THROW_ON_ERROR);
+        $this->assertIsArray($index['entries'][0] ?? null);
+        $index['entries'][0]['path'] = 'artifacts/agents/'.$artifactId.'/handoffs/../../evil.md';
+        file_put_contents(
+            $indexPath,
+            json_encode($index, \JSON_THROW_ON_ERROR | \JSON_PRETTY_PRINT)."\n",
+        );
+
+        $this->assertSame('# Canonical body', $this->registry->readHandoff($parentRunId, $artifactId));
+        $this->assertSame('# Canonical body', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, $handoffId));
+    }
+
     public function testReadHandoffRejectsPathTraversalArtifactId(): void
     {
         $this->expectException(\InvalidArgumentException::class);

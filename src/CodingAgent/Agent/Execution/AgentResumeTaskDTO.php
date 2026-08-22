@@ -12,7 +12,6 @@ use Symfony\Component\Validator\Constraints as Assert;
  */
 final class AgentResumeTaskDTO
 {
-    #[Assert\Length(min: 1)]
     #[Assert\When(
         expression: 'this.agent_run_id === null',
         constraints: [
@@ -24,7 +23,6 @@ final class AgentResumeTaskDTO
     #[Assert\NotBlank(message: 'Resume task must be a non-empty string.')]
     public readonly ?string $task;
 
-    #[Assert\Length(min: 1)]
     #[Assert\When(
         expression: 'this.artifact_id === null',
         constraints: [

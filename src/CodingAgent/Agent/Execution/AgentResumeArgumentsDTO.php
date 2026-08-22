@@ -14,7 +14,6 @@ use Symfony\Component\Validator\Constraints as Assert;
  */
 final class AgentResumeArgumentsDTO
 {
-    #[Assert\Length(min: 1)]
     #[Assert\When(
         expression: 'this.tasks !== null',
         constraints: [
@@ -43,7 +42,6 @@ final class AgentResumeArgumentsDTO
     )]
     public readonly ?string $task;
 
-    #[Assert\Length(min: 1)]
     #[Assert\When(
         expression: 'this.tasks !== null',
         constraints: [

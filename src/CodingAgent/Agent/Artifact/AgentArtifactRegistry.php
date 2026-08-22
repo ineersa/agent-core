@@ -434,7 +434,7 @@ final class AgentArtifactRegistry
             return '';
         }
 
-        return $this->readHandoffFile($parentRunId, $artifactId, $latest['id'], $latest['path']);
+        return $this->readHandoffFile($parentRunId, $artifactId, $latest['id']);
     }
 
     /**
@@ -502,7 +502,7 @@ final class AgentArtifactRegistry
 
         foreach ($this->normalizedHandoffEntries($parentRunId, $artifactId) as $entry) {
             if ($entry['id'] === $handoffId) {
-                return $this->readHandoffFile($parentRunId, $artifactId, $handoffId, $entry['path']);
+                return $this->readHandoffFile($parentRunId, $artifactId, $handoffId);
             }
         }
 
@@ -770,9 +770,14 @@ final class AgentArtifactRegistry
         return $entries[array_key_last($entries)];
     }
 
-    private function readHandoffFile(string $parentRunId, string $artifactId, string $handoffId, string $relativePath): string
+    private function readHandoffFile(string $parentRunId, string $artifactId, string $handoffId): string
     {
-        $path = $this->pathResolver->absolutePath($parentRunId, $relativePath);
+        // Derive the FS path from validated components only. Index `path` is
+        // informational — never open a stored relative path from index.json.
+        $this->pathResolver->validatePathComponent($handoffId, 'handoffId');
+        $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
+        $relative = "{$paths->artifactDir}/handoffs/{$handoffId}.md";
+        $path = $this->pathResolver->absolutePath($parentRunId, $relative);
         if (!is_file($path)) {
             throw new \InvalidArgumentException(\sprintf('No handoff "%s" for artifact "%s".', $handoffId, $artifactId));
         }

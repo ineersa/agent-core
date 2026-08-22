@@ -121,6 +121,8 @@ Provide at least one identifier. Cross-parent retrieval is rejected. Use when pa
 
 `mode=handoff` returns the latest handoff. `mode=handoff_history` lists prior handoffs by default; pass `handoff_id=<uuid>` to fetch one body.
 
+Pre-upgrade sessions that only have mutable `handoff.md` or numeric `handoffs/<n>.md` archives are not migrated; `mode=handoff` / `handoff_history` may be empty for those children (files remain on disk).
+
 ## Subagent live view (parent TUI)
 
 - `/agents-live` — picker of known child runs; Enter opens interactive live view for steering / child HITL.

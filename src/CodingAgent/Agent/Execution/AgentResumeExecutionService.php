@@ -276,7 +276,7 @@ final class AgentResumeExecutionService
     {
         $artifactId = $task->artifact_id;
         $agentRunId = $task->agent_run_id;
-        if (null === $task->task || '' === $task->task) {
+        if (null === $task->task) {
             throw new ToolCallException('agent_resume task must be non-empty.', retryable: false);
         }
 

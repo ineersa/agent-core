@@ -21,7 +21,7 @@ final class AgentResumeToolHandler
 {
     public const string NAME = 'agent_resume';
 
-    public const string DESCRIPTION_TEMPLATE = 'Continue an existing terminal subagent by artifact_id (or agent_run_id) with a follow-up task. Single mode uses artifact_id/task. Parallel mode uses tasks with up to %d resumes per call (agents.max_agents). Blocks until resumed children finish. Single-mode results include the full latest handoff inline; parallel results are bounded summaries — use agent_retrieve for complete parallel handoffs or older archived handoffs.';
+    public const string DESCRIPTION_TEMPLATE = 'Continue an existing terminal subagent by artifact_id (or agent_run_id) with a follow-up task. Single mode uses artifact_id/task. Parallel mode uses tasks with up to %d resumes per call (agents.max_agents). Blocks until resumed children finish. Single-mode results include the full latest handoff inline; parallel results are bounded summaries — use agent_retrieve (mode=handoff_history) for complete parallel handoffs or prior handoffs.';
 
     private const string EXECUTION_SERVICE_LOCATOR_KEY = 'execution';
 
