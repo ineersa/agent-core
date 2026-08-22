@@ -39,9 +39,9 @@ final class AgentRetrieveArgumentsDTO
         #[Schema(description: 'Max rows for events/history modes (default '.AgentArtifactRetrievalService::DEFAULT_LIMIT.').')]
         #[Assert\Range(min: 1, max: AgentArtifactRetrievalService::MAX_LIMIT)]
         public readonly ?int $limit = null,
-        #[Schema(description: 'Optional archived handoff index (1-based) for mode=handoff_history. Omit to list archives.')]
-        #[Assert\Range(min: 1)]
-        public readonly ?int $index = null,
+        #[Schema(description: 'Optional handoff id (uuid) for mode=handoff_history. Omit to list handoffs.')]
+        #[Assert\Length(min: 1)]
+        public readonly ?string $handoff_id = null,
     ) {
     }
 
@@ -67,6 +67,17 @@ final class AgentRetrieveArgumentsDTO
         return '' === $trimmed ? null : $trimmed;
     }
 
+    public function trimmedHandoffId(): ?string
+    {
+        if (null === $this->handoff_id) {
+            return null;
+        }
+
+        $trimmed = trim($this->handoff_id);
+
+        return '' === $trimmed ? null : $trimmed;
+    }
+
     public function resolvedMode(): AgentRetrieveModeEnum
     {
         $raw = $this->mode;
@@ -80,11 +91,6 @@ final class AgentRetrieveArgumentsDTO
         }
 
         return $mode;
-    }
-
-    public function resolvedIndex(): ?int
-    {
-        return $this->index;
     }
 
     public function resolvedLimit(int $defaultLimit, int $maxLimit): int

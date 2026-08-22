@@ -90,7 +90,6 @@ MD;
 - status: {status}
 - artifact_dir: {artifact_dir}
 - metadata_path: {metadata_path}
-- handoff_path: {handoff_path}
 - events_path: {events_path}
 - state_path: {state_path}
 MD;
@@ -128,7 +127,7 @@ MD;
             AgentRetrieveModeEnum::Metadata => $this->renderMetadata($entry),
             AgentRetrieveModeEnum::Events => $this->renderEvents($entry, $limit),
             AgentRetrieveModeEnum::History => $this->renderHistory($entry, $limit),
-            AgentRetrieveModeEnum::HandoffHistory => $this->renderHandoffHistory($entry, $args->resolvedIndex()),
+            AgentRetrieveModeEnum::HandoffHistory => $this->renderHandoffHistory($entry, $args->trimmedHandoffId()),
             AgentRetrieveModeEnum::Debug => $this->renderDebug($entry),
         };
     }
@@ -314,25 +313,25 @@ MD;
         return implode("\n", $lines);
     }
 
-    private function renderHandoffHistory(AgentArtifactEntryDTO $entry, ?int $index): string
+    private function renderHandoffHistory(AgentArtifactEntryDTO $entry, ?string $handoffId): string
     {
         $header = rtrim($this->renderTemplate(self::TEMPLATE_HANDOFF_HISTORY_HEADER, $this->identityVars($entry)));
 
-        if (null !== $index) {
+        if (null !== $handoffId) {
             try {
-                $body = $this->artifactRegistry->readHandoffHistoryEntry($entry->parentRunId, $entry->artifactId, $index);
+                $body = $this->artifactRegistry->readHandoffHistoryEntry($entry->parentRunId, $entry->artifactId, $handoffId);
             } catch (\InvalidArgumentException $e) {
                 throw new ToolCallException($e->getMessage(), retryable: false);
             }
 
-            return $header."\n\n## Archived handoff #{$index}\n\n".$body;
+            return $header."\n\n## Handoff {$handoffId}\n\n".$body;
         }
 
         $entries = $this->artifactRegistry->listHandoffHistory($entry->parentRunId, $entry->artifactId);
-        $lines = [$header, '', 'Archived handoffs (oldest → newest). Pass index=<n> to fetch one body. Latest remains mode=handoff.'];
+        $lines = [$header, '', 'Handoffs (oldest → newest). Pass handoff_id=<uuid> to fetch one body. Latest remains mode=handoff.'];
 
         if ([] === $entries) {
-            $lines[] = '_(No archived handoffs.)_';
+            $lines[] = '_(No handoffs.)_';
 
             return implode("\n", $lines);
         }
@@ -343,8 +342,8 @@ MD;
             $created = $row['created_at'] ?? '';
             $summaryPart = '' !== trim((string) $summary) ? ' — '.$this->truncateLine((string) $summary, 160) : '';
             $lines[] = \sprintf(
-                '- n=%d created_at=%s status=%s%s',
-                $row['n'],
+                '- id=%s created_at=%s status=%s%s',
+                $row['id'],
                 $created,
                 $status,
                 $summaryPart,
@@ -362,7 +361,6 @@ MD;
             'status' => $entry->status->value,
             'artifact_dir' => $p->artifactDir,
             'metadata_path' => $p->metadataPath,
-            'handoff_path' => $p->handoffPath,
             'events_path' => $p->eventsPath,
             'state_path' => $p->statePath,
         ]);

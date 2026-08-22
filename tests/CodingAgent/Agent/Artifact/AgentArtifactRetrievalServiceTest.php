@@ -302,7 +302,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('artifacts/agents/'.$artifactId.'/', $out);
         $this->assertStringContainsString('- artifact_dir: artifacts/agents/'.$artifactId, $out);
         $this->assertStringContainsString('- metadata_path: artifacts/agents/'.$artifactId.'/metadata.json', $out);
-        $this->assertStringContainsString('- handoff_path: artifacts/agents/'.$artifactId.'/handoff.md', $out);
+        $this->assertStringNotContainsString('handoff_path', $out);
         $this->assertStringContainsString('- events_path: artifacts/agents/'.$artifactId.'/events.jsonl', $out);
         $this->assertStringContainsString('- state_path: artifacts/agents/'.$artifactId.'/state.json', $out);
         $this->assertStringNotContainsString($isolatedRoot, $out);
@@ -352,26 +352,25 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('last_seq: 18', $out);
     }
 
-    public function testHandoffHistoryListsArchivesAndFetchesByIndex(): void
+    public function testHandoffHistoryListsAndFetchesByHandoffId(): void
     {
         $parent = 'parent-handoff-history';
         $artifactId = 'agent_hist_retrieve';
         $childRun = 'child-hist-retrieve';
         $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
-        $this->registry->writeHandoff($parent, $artifactId, '# First archive body');
-        $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'first done');
-
-        $prior = $this->registry->get($parent, $artifactId);
-        $this->assertNotNull($prior);
-        $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'second done');
+        $firstId = $this->registry->writeHandoff(
+            $parent,
+            $artifactId,
+            '# First archive body',
+            status: AgentArtifactStatusEnum::Completed,
+            summary: 'first done',
+        );
         $this->registry->writeHandoff(
             $parent,
             $artifactId,
             '# Latest handoff body',
-            archivedMeta: [
-                'status' => $prior->status,
-                'summary' => $prior->summary,
-            ],
+            status: AgentArtifactStatusEnum::Completed,
+            summary: 'second done',
         );
 
         $service = $this->makeService();
@@ -380,8 +379,8 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
             'artifact_id' => $artifactId,
             'mode' => 'handoff_history',
         ]));
-        $this->assertStringContainsString('Archived handoffs (oldest → newest)', $list);
-        $this->assertStringContainsString('n=1', $list);
+        $this->assertStringContainsString('Handoffs (oldest → newest)', $list);
+        $this->assertStringContainsString('id='.$firstId, $list);
         $this->assertStringContainsString('status=completed', $list);
         $this->assertStringContainsString('first done', $list);
         $this->assertStringNotContainsString('# Latest handoff body', $list);
@@ -389,9 +388,9 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $body = $service->retrieve($parent, $this->args([
             'artifact_id' => $artifactId,
             'mode' => 'handoff_history',
-            'index' => 1,
+            'handoff_id' => $firstId,
         ]));
-        $this->assertStringContainsString('## Archived handoff #1', $body);
+        $this->assertStringContainsString('## Handoff '.$firstId, $body);
         $this->assertStringContainsString('# First archive body', $body);
 
         $latest = $service->retrieve($parent, $this->args([
@@ -424,7 +423,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
             agent_run_id: isset($arguments['agent_run_id']) && \is_string($arguments['agent_run_id']) ? $arguments['agent_run_id'] : null,
             mode: isset($arguments['mode']) && \is_string($arguments['mode']) ? $arguments['mode'] : null,
             limit: isset($arguments['limit']) && \is_int($arguments['limit']) ? $arguments['limit'] : null,
-            index: isset($arguments['index']) && \is_int($arguments['index']) ? $arguments['index'] : null,
+            handoff_id: isset($arguments['handoff_id']) && \is_string($arguments['handoff_id']) ? $arguments['handoff_id'] : null,
         );
     }
 }

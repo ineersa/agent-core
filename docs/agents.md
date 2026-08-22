@@ -103,7 +103,7 @@ Parent-scoped continuation of an existing terminal child run via `follow_up` on 
 - Rejects in-flight artifacts (`running`, `needs_clarification`) and fork children.
 - Refuses oversized children when latest input tokens are near context limit (`max(75% contextWindow, 200k)`; absolute 200k when window unknown).
 - Parent result mirrors `subagent`: single = full latest handoff inline; parallel = bounded summaries.
-- Same artifact id is preserved; prior handoffs are archived under `handoffs/<n>.md`.
+- Same artifact id is preserved; each finalize appends an immutable handoff under `handoffs/<uuid>.md`.
 
 ## `agent_retrieve`
 
@@ -114,12 +114,12 @@ Parent-scoped retrieval for child artifacts:
 | `artifact_id` | Child artifact id (for example `agent_abc123`) |
 | `agent_run_id` | Child run UUID |
 | `mode` | `handoff` (default), `metadata`, `events`, `history`, `handoff_history`, `debug` |
-| `index` | Optional archived handoff n for `mode=handoff_history` |
+| `handoff_id` | Optional handoff uuid for `mode=handoff_history` |
 | `limit` | Max rows for events/history (default 20, max 100) |
 
 Provide at least one identifier. Cross-parent retrieval is rejected. Use when parallel summaries were truncated, a child failed/cancelled/timed out, or you need extra detail — not to re-fetch a successful single-mode handoff already returned inline.
 
-`mode=handoff` returns the latest handoff. `mode=handoff_history` lists archived prior handoffs by default; pass `index=<n>` to fetch one archived body.
+`mode=handoff` returns the latest handoff. `mode=handoff_history` lists prior handoffs by default; pass `handoff_id=<uuid>` to fetch one body.
 
 ## Subagent live view (parent TUI)
 

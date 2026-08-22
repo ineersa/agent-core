@@ -88,7 +88,7 @@ Explore read-only. Return dense bullets and file paths.
 
 - Parent session only. Provide `artifact_id` and/or `agent_run_id` (both must refer to the same artifact when set).
 - Modes: `handoff` (default), `metadata`, `events`, `history`, `debug`.
-- Additional mode: `handoff_history` lists archived prior handoffs; pass `index=<n>` to fetch one archived body. `mode=handoff` remains latest only.
+- Additional mode: `handoff_history` lists prior handoffs; pass `handoff_id=<uuid>` to fetch one body. `mode=handoff` remains latest only.
 - `limit` accepted range **1–100**, default **20** (events/history row bounds; fixed constants, not settings).
 - `history` skips system, user-context, and tool roles; bounded text only (summary chars **240**).
 - `debug` returns **relative** artifact paths under the parent session, not absolute filesystem paths.

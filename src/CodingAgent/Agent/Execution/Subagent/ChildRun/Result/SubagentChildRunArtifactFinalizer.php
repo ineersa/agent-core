@@ -23,8 +23,6 @@ final class SubagentChildRunArtifactFinalizer
         $identity = $outcome->identity;
         $completedAt = new \DateTimeImmutable();
 
-        $prior = $this->artifactRegistry->get($identity->parentRunId, $identity->artifactId);
-
         $this->artifactRegistry->update(
             parentRunId: $identity->parentRunId,
             artifactId: $identity->artifactId,
@@ -46,16 +44,13 @@ final class SubagentChildRunArtifactFinalizer
             childState: $outcome->childState,
         );
 
-        // Pass pre-update status/summary so archived handoff index metadata reflects the
-        // run that produced the previous handoff.md, not the just-written terminal outcome.
+        // Append immutable handoff with the status/summary known at this finalize.
         $this->artifactRegistry->writeHandoff(
             $identity->parentRunId,
             $identity->artifactId,
             $handoff,
-            archivedMeta: null === $prior ? null : [
-                'status' => $prior->status,
-                'summary' => $prior->summary,
-            ],
+            status: $outcome->status,
+            summary: $outcome->summary,
         );
     }
 

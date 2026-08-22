@@ -108,7 +108,8 @@ final class AgentArtifactRegistryTest extends TestCase
         $base = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents';
         $this->assertFileExists($base.'/registry.json');
         $this->assertFileExists($base.'/'.$artifactId.'/metadata.json');
-        $this->assertFileExists($base.'/'.$artifactId.'/handoff.md');
+        $this->assertFileDoesNotExist($base.'/'.$artifactId.'/handoff.md');
+        $this->assertFileExists($base.'/'.$artifactId.'/handoffs/index.json');
         $this->assertDirectoryExists($base.'/'.$artifactId);
 
         // Verify no top-level child session directory was created
@@ -569,14 +570,16 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->assertSame('artifacts/agents/agent_01HX', $meta['paths']['artifact_dir']);
     }
 
-    public function testHandoffMdIsCreatedEmpty(): void
+    public function testHandoffsIndexIsCreatedEmpty(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
         $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
-        $handoffPath = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/agent_01HX/handoff.md';
-        $this->assertFileExists($handoffPath);
-        $this->assertSame('', file_get_contents($handoffPath));
+        $indexPath = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/agent_01HX/handoffs/index.json';
+        $this->assertFileExists($indexPath);
+        $decoded = json_decode((string) file_get_contents($indexPath), true, 512, \JSON_THROW_ON_ERROR);
+        $this->assertSame(['schema_version' => 1, 'entries' => []], $decoded);
+        $this->assertSame('', $this->registry->readHandoff($parentRunId, 'agent_01HX'));
     }
 
     // ── Corrupt registry / malformed entry resilience ────────────────────
@@ -661,7 +664,6 @@ final class AgentArtifactRegistryTest extends TestCase
                 'created_at' => '2026-06-22T12:00:00+00:00',
                 'paths' => [
                     'artifact_dir' => 'artifacts/agents/agent_01HX',
-                    'handoff_path' => 'artifacts/agents/agent_01HX/handoff.md',
                     'metadata_path' => 'artifacts/agents/agent_01HX/metadata.json',
                     'events_path' => 'artifacts/agents/agent_01HX/events.jsonl',
                     'state_path' => 'artifacts/agents/agent_01HX/state.json',
@@ -743,7 +745,6 @@ final class AgentArtifactRegistryTest extends TestCase
                 'created_at' => '2026-06-22T12:00:00+00:00',
                 'paths' => [
                     'artifact_dir' => 'artifacts/agents/',
-                    'handoff_path' => 'artifacts/agents//handoff.md',
                     'metadata_path' => 'artifacts/agents//metadata.json',
                     'events_path' => 'artifacts/agents//events.jsonl',
                     'state_path' => 'artifacts/agents//state.json',
@@ -777,7 +778,6 @@ final class AgentArtifactRegistryTest extends TestCase
                 'created_at' => '2026-06-22T12:00:00+00:00',
                 'paths' => [
                     'artifact_dir' => 'artifacts/agents/evil_dir',
-                    'handoff_path' => 'artifacts/agents/agent_01HX/handoff.md',
                     'metadata_path' => 'artifacts/agents/agent_01HX/metadata.json',
                     'events_path' => 'artifacts/agents/agent_01HX/events.jsonl',
                     'state_path' => 'artifacts/agents/agent_01HX/state.json',
@@ -807,70 +807,44 @@ Done.');
 Done.', $this->registry->readHandoff($parentRunId, $artifactId));
     }
 
-    public function testWriteHandoffArchivesPreviousNonEmptyHandoff(): void
+    public function testWriteHandoffAppendsImmutableUuidEntries(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
         $artifactId = 'agent_hist_01';
         $agentRunId = 'child-'.bin2hex(random_bytes(4));
 
         $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
-        $this->registry->writeHandoff($parentRunId, $artifactId, '# First');
-        $this->registry->update($parentRunId, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'first done');
-
-        // Mirror SubagentChildRunArtifactFinalizer order: update terminal fields, then write
-        // the new handoff while passing pre-update metadata for the archive index entry.
-        $prior = $this->registry->get($parentRunId, $artifactId);
-        $this->assertNotNull($prior);
-        $this->registry->update($parentRunId, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'second done');
-        $this->registry->writeHandoff(
+        $firstId = $this->registry->writeHandoff(
+            $parentRunId,
+            $artifactId,
+            '# First',
+            status: AgentArtifactStatusEnum::Completed,
+            summary: 'first done',
+        );
+        $secondId = $this->registry->writeHandoff(
             $parentRunId,
             $artifactId,
             '# Second',
-            archivedMeta: [
-                'status' => $prior->status,
-                'summary' => $prior->summary,
-            ],
+            status: AgentArtifactStatusEnum::Completed,
+            summary: 'second done',
         );
 
+        $this->assertNotSame($firstId, $secondId);
         $this->assertSame('# Second', $this->registry->readHandoff($parentRunId, $artifactId));
-        $history = $this->registry->listHandoffHistory($parentRunId, $artifactId);
-        $this->assertCount(1, $history);
-        $this->assertSame(1, $history[0]['n']);
-        $this->assertSame(AgentArtifactStatusEnum::Completed->value, $history[0]['status']);
-        $this->assertSame('first done', $history[0]['summary']);
-        $this->assertSame('# First', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, 1));
-    }
-
-    public function testWriteHandoffArchiveStatusPrefersBodyOverRunningRegistryMeta(): void
-    {
-        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-        $artifactId = 'agent_hist_body_01';
-        $agentRunId = 'child-'.bin2hex(random_bytes(4));
-
-        $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
-        $this->registry->writeHandoff(
-            $parentRunId,
-            $artifactId,
-            "# Subagent handoff\n\nStatus: completed\n\n## Result\n\nfirst done\n",
-        );
-
-        // Resume marks the artifact Running before the next handoff write; archive index must
-        // still record the prior body status (completed), not the live Running registry value.
-        $this->registry->update($parentRunId, $artifactId, status: AgentArtifactStatusEnum::Running, startedAt: new \DateTimeImmutable());
-        $this->registry->writeHandoff(
-            $parentRunId,
-            $artifactId,
-            "# Subagent handoff\n\nStatus: completed\n\n## Result\n\nsecond done\n",
-            archivedMeta: [
-                'status' => AgentArtifactStatusEnum::Running,
-                'summary' => 'first done',
-            ],
-        );
 
         $history = $this->registry->listHandoffHistory($parentRunId, $artifactId);
-        $this->assertCount(1, $history);
+        $this->assertCount(2, $history);
+        $this->assertSame($firstId, $history[0]['id']);
         $this->assertSame(AgentArtifactStatusEnum::Completed->value, $history[0]['status']);
         $this->assertSame('first done', $history[0]['summary']);
+        $this->assertSame($secondId, $history[1]['id']);
+        $this->assertSame('second done', $history[1]['summary']);
+
+        $base = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/'.$artifactId.'/handoffs';
+        $this->assertFileExists($base.'/'.$firstId.'.md');
+        $this->assertFileExists($base.'/'.$secondId.'.md');
+        $this->assertSame('# First', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, $firstId));
+        $this->assertSame('# Second', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, $secondId));
     }
 
     public function testReadHandoffRejectsPathTraversalArtifactId(): void
