@@ -1,0 +1,12 @@
+{
+    "model": "llama_cpp_test/test",
+    "provider_id": "llama_cpp_test",
+    "reasoning": "off",
+    "stop_reason": "stop",
+    "deltas": [
+        {
+            "type": "text",
+            "content": "CHOICE_WRAP_SELECTED_OK"
+        }
+    ]
+}

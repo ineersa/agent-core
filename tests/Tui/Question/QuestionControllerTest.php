@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Question;
 
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Question\QuestionChoiceListWidget;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
@@ -17,6 +18,9 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Render\Renderer;
+use Symfony\Component\Tui\Style\Color;
+use Symfony\Component\Tui\Style\Direction;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\EditorWidget;
@@ -77,7 +81,7 @@ class QuestionControllerTest extends TestCase
         // after close(). This test verifies that editorWidget() is accessible
         // through a ChatScreen with a PromptEditor injected.
         //
-        // Full SelectListWidget event dispatch requires Symfony Tui
+        // Full QuestionChoiceListWidget event dispatch requires Symfony Tui
         // infrastructure (tui->mount(), insertOverlayBeforeEditor) and is
         // not unit-testable without it. This test at minimum proves the
         // editorWidget() call path does not crash.
@@ -109,6 +113,7 @@ class QuestionControllerTest extends TestCase
             colors: [
                 ThemeColorEnum::Accent->value => 'cyan',
                 ThemeColorEnum::Muted->value => 'gray',
+                ThemeColorEnum::Prompt->value => 'magenta',
             ],
         );
         $screen = new ChatScreen(new DefaultTheme($palette), 'test-session', new PromptEditor());
@@ -146,6 +151,103 @@ class QuestionControllerTest extends TestCase
     }
 
     #[Test]
+    public function testChoiceOverlayUsesPromptColorAndNativeGapBetweenBlocks(): void
+    {
+        $request = new QuestionRequest(
+            requestId: 'choice-style',
+            source: QuestionSource::AgentCore,
+            kind: QuestionKind::Choice,
+            prompt: 'PROMPT_BODY_UNIQUE Choose carefully',
+            choices: [
+                new QuestionOption(label: 'ANSWER_ALPHA_UNIQUE'),
+                new QuestionOption(label: 'ANSWER_BETA_UNIQUE'),
+            ],
+            allowOther: false,
+        );
+
+        $palette = new ThemePalette(
+            name: 'test',
+            colors: [
+                ThemeColorEnum::Accent->value => 'cyan',
+                ThemeColorEnum::Prompt->value => 'magenta',
+                ThemeColorEnum::Muted->value => 'gray',
+                ThemeColorEnum::Text->value => 'white',
+            ],
+        );
+        $theme = new DefaultTheme($palette);
+        $tui = new Tui();
+        $screen = new ChatScreen($theme, 'choice-style-session', new PromptEditor());
+        $screen->mount($tui);
+        $controller = new QuestionController(new QuestionCoordinator(), $screen);
+        $controller->open($request);
+
+        $containerProp = new \ReflectionProperty($controller, 'container');
+        /** @var ContainerWidget $container */
+        $container = $containerProp->getValue($controller);
+        $this->assertInstanceOf(ContainerWidget::class, $container);
+
+        $containerStyle = $container->getStyle();
+        $this->assertNotNull($containerStyle);
+        $this->assertSame(1, $containerStyle->getGap());
+        $this->assertSame(Direction::Vertical, $containerStyle->getDirection());
+
+        $children = $container->all();
+        $this->assertCount(3, $children, 'Choice overlay should be header + prompt + list');
+        $this->assertInstanceOf(TextWidget::class, $children[0]);
+        $this->assertInstanceOf(MarkdownWidget::class, $children[1]);
+        $this->assertInstanceOf(QuestionChoiceListWidget::class, $children[2]);
+
+        $promptStyle = $children[1]->getStyle();
+        $this->assertNotNull($promptStyle);
+        $this->assertNotNull($promptStyle->getColor(), 'Prompt markdown must carry ThemeColorEnum::Prompt foreground');
+        $this->assertSame(
+            Color::from('magenta')->toForegroundCode(),
+            $promptStyle->getColor()->toForegroundCode(),
+            'Prompt markdown must use ThemeColorEnum::Prompt color',
+        );
+
+        $promptProbe = $theme->color(ThemeColorEnum::Prompt, 'PROMPT_BODY_UNIQUE');
+        $accentProbe = $theme->color(ThemeColorEnum::Accent, 'PROBE');
+        $rendered = (new Renderer())->render($container, 72, 30);
+        $joined = implode("\n", $rendered);
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $joined) ?? $joined;
+
+        $this->assertStringContainsString('PROMPT_BODY_UNIQUE', $plain);
+        $this->assertStringContainsString('ANSWER_ALPHA_UNIQUE', $plain);
+        $this->assertStringContainsString('ANSWER_BETA_UNIQUE', $plain);
+        $promptPrefix = substr($promptProbe, 0, (int) strpos($promptProbe, 'PROMPT_BODY_UNIQUE'));
+        $accentPrefix = substr($accentProbe, 0, (int) strpos($accentProbe, 'PROBE'));
+        $this->assertNotSame('', $promptPrefix);
+        $this->assertNotSame($accentPrefix, $promptPrefix, 'Prompt and Accent theme colors must differ');
+        $this->assertStringContainsString($promptPrefix, $joined, 'Rendered prompt must use Prompt theme ANSI prefix');
+        $this->assertDoesNotMatchRegularExpression(
+            '/'.preg_quote($accentPrefix, '/').'PROMPT_BODY_UNIQUE/',
+            $joined,
+            'Prompt body must not use Accent coloring reserved for the header',
+        );
+
+        $alphaIndex = null;
+        $betaIndex = null;
+        foreach ($rendered as $index => $line) {
+            $linePlain = preg_replace('/\x1b\[[0-9;]*m/', '', $line) ?? $line;
+            if (str_contains($linePlain, 'ANSWER_ALPHA_UNIQUE')) {
+                $alphaIndex = $index;
+            }
+            if (str_contains($linePlain, 'ANSWER_BETA_UNIQUE')) {
+                $betaIndex = $index;
+            }
+        }
+        $this->assertNotNull($alphaIndex);
+        $this->assertNotNull($betaIndex);
+        $this->assertSame(
+            '',
+            trim(preg_replace('/\x1b\[[0-9;]*m/', '', $rendered[$alphaIndex + 1] ?? 'missing') ?? ''),
+            'Native list spacing must keep one blank row between logical answers',
+        );
+        $this->assertSame($betaIndex, $alphaIndex + 2);
+    }
+
+    #[Test]
     public function testTextOverlayMountClearsActionStatusInsteadOfQuestionPending(): void
     {
         $request = new QuestionRequest(
@@ -161,6 +263,7 @@ class QuestionControllerTest extends TestCase
             colors: [
                 ThemeColorEnum::Accent->value => 'cyan',
                 ThemeColorEnum::Muted->value => 'gray',
+                ThemeColorEnum::Prompt->value => 'magenta',
             ],
         );
         $screen = new ChatScreen(new DefaultTheme($palette), 'text-status-session', new PromptEditor());
@@ -393,7 +496,7 @@ class QuestionControllerTest extends TestCase
         );
 
         // Text kind never builds list items; the controller uses a TextWidget banner
-        // instead of SelectListWidget. This test verifies the buildItems path
+        // instead of QuestionChoiceListWidget. This test verifies the buildItems path
         // returns empty for Text kind.
         $items = $this->invokeBuildItems($request);
 
