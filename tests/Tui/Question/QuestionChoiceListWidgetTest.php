@@ -174,6 +174,44 @@ final class QuestionChoiceListWidgetTest extends TestCase
     }
 
     #[Test]
+    public function testLeftAndRightPageAcrossMaxVisibleOptionsUsingParentCursorActions(): void
+    {
+        $items = [];
+        for ($i = 0; $i < 8; ++$i) {
+            $label = \sprintf('OPTION_%02d', $i);
+            $items[] = ['value' => $label, 'label' => $label];
+        }
+
+        $widget = $this->widget($items, maxVisible: 3);
+        $kb = $widget->getKeybindings();
+
+        // Parent SelectListWidget defaults still merge under SelectListKeybindings::standard().
+        $this->assertSame(['left', 'ctrl+b'], $kb->getBindings('cursor_left'));
+        $this->assertSame(['right', 'ctrl+f'], $kb->getBindings('cursor_right'));
+
+        $this->assertSame('OPTION_00', $widget->getSelectedItem()['value'] ?? null);
+
+        // Left/Ctrl+B share cursor_left; Right/Ctrl+F share cursor_right.
+        $widget->handleInput("\x1b[C"); // Right → page down by maxVisible
+        $this->assertSame('OPTION_03', $widget->getSelectedItem()['value'] ?? null);
+
+        $widget->handleInput("\x06"); // Ctrl+F → same cursor_right / page-down path
+        $this->assertSame('OPTION_06', $widget->getSelectedItem()['value'] ?? null);
+
+        $widget->handleInput("\x1b[D"); // Left → page up by maxVisible
+        $this->assertSame('OPTION_03', $widget->getSelectedItem()['value'] ?? null);
+
+        $widget->handleInput("\x02"); // Ctrl+B → same cursor_left / page-up path
+        $this->assertSame('OPTION_00', $widget->getSelectedItem()['value'] ?? null);
+
+        // Explicit page keys still work through select_page_* actions.
+        $widget->handleInput("\x1b[6~"); // Page Down
+        $this->assertSame('OPTION_03', $widget->getSelectedItem()['value'] ?? null);
+        $widget->handleInput("\x1b[5~"); // Page Up
+        $this->assertSame('OPTION_00', $widget->getSelectedItem()['value'] ?? null);
+    }
+
+    #[Test]
     public function testEscapeCancelsWithoutSelecting(): void
     {
         $widget = $this->widget([

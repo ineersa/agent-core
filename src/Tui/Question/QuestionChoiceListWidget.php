@@ -9,7 +9,6 @@ use Symfony\Component\Tui\Ansi\TextWrapper;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SelectionChangeEvent;
-use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Widget\SelectListWidget;
@@ -51,53 +50,6 @@ final class QuestionChoiceListWidget extends SelectListWidget
         $this->choiceMaxVisible = max(1, $maxVisible);
     }
 
-    /**
-     * @param array<array{value: string, label: string}> $items
-     *
-     * @return $this
-     */
-    public function setItems(array $items): static
-    {
-        parent::setItems($items);
-        /** @var list<array{value: string, label: string, description?: string}> $normalized */
-        $normalized = array_values($items);
-        $this->choiceItems = $normalized;
-        $this->choiceSelectedIndex = 0;
-        $this->invalidate();
-
-        return $this;
-    }
-
-    /**
-     * @return $this
-     */
-    public function setSelectedIndex(int $index): static
-    {
-        if ([] === $this->choiceItems) {
-            $this->choiceSelectedIndex = 0;
-            parent::setSelectedIndex(0);
-
-            return $this;
-        }
-
-        $index = max(0, min($index, \count($this->choiceItems) - 1));
-        if ($this->choiceSelectedIndex !== $index) {
-            $this->choiceSelectedIndex = $index;
-            parent::setSelectedIndex($index);
-            $this->invalidate();
-        }
-
-        return $this;
-    }
-
-    /**
-     * @return array{value: string, label: string, description?: string}|null
-     */
-    public function getSelectedItem(): ?array
-    {
-        return $this->choiceItems[$this->choiceSelectedIndex] ?? null;
-    }
-
     public function wasSelected(): bool
     {
         return $this->choiceSelected;
@@ -129,7 +81,7 @@ final class QuestionChoiceListWidget extends SelectListWidget
                 return;
             }
 
-            if ($kb->matches($data, 'select_page_up')) {
+            if ($kb->matches($data, 'select_page_up') || $kb->matches($data, 'cursor_left')) {
                 $this->choiceSelectedIndex = max(0, $this->choiceSelectedIndex - $this->choiceMaxVisible);
                 parent::setSelectedIndex($this->choiceSelectedIndex);
                 $this->notifySelectionChange();
@@ -137,7 +89,7 @@ final class QuestionChoiceListWidget extends SelectListWidget
                 return;
             }
 
-            if ($kb->matches($data, 'select_page_down')) {
+            if ($kb->matches($data, 'select_page_down') || $kb->matches($data, 'cursor_right')) {
                 $this->choiceSelectedIndex = min(
                     \count($this->choiceItems) - 1,
                     $this->choiceSelectedIndex + $this->choiceMaxVisible,
@@ -230,21 +182,6 @@ final class QuestionChoiceListWidget extends SelectListWidget
         }
 
         return $lines;
-    }
-
-    /**
-     * @return array<string, string[]>
-     */
-    protected static function getDefaultKeybindings(): array
-    {
-        return [
-            'select_up' => [Key::UP],
-            'select_down' => [Key::DOWN],
-            'select_page_up' => [Key::PAGE_UP],
-            'select_page_down' => [Key::PAGE_DOWN],
-            'select_confirm' => [Key::ENTER],
-            'select_cancel' => [Key::ESCAPE, 'ctrl+c'],
-        ];
     }
 
     private function normalizeDescription(string $description): string
