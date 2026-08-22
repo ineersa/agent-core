@@ -148,29 +148,41 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
 
             $this->tmux->sendKey($pane, 'Enter');
 
-            // Positive fresh-session marker: the rebuild is complete once the
-            // welcome block is visible AND the fresh frame is fully painted
-            // (idle/work status + footer diamond are the last rows the
-            // renderer writes).  The welcome block alone can appear while the
-            // pane below is still being repainted, so wait for the full frame
-            // before asserting the negative proof.
-            $this->tmux->waitForCaptureContains($pane, 'Welcome to Hatfield', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
+            // Wait for a transition-complete draft, not generic chrome that
+            // already exists while Completions + old transcript remain.
+            // Required: Completions gone, old assistant text gone, old session
+            // label gone, and a fresh idle draft with welcome + footer chrome.
             $freshPane = $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $plain): bool => (str_contains($plain, '● idle') || str_contains($plain, '◐ Work'))
-                    && str_contains($plain, '◆'),
+                static function (string $plain) use ($sessionId): bool {
+                    if (str_contains($plain, 'Completions')) {
+                        return false;
+                    }
+                    if (str_contains($plain, 'Hello from the test harness.')) {
+                        return false;
+                    }
+                    if (str_contains($plain, 'session '.$sessionId)) {
+                        return false;
+                    }
+
+                    return str_contains($plain, 'Welcome to Hatfield')
+                        && str_contains($plain, '● idle')
+                        && str_contains($plain, '◆');
+                },
                 timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-                message: 'Fresh session must reach idle-ready state after the welcome block',
+                message: 'After /new Enter, Completions and old transcript must clear into a fresh idle draft',
                 history: 0,
             );
 
             // Positive fresh-session marker: the draft welcome block.
             $this->assertStringContainsString('Welcome to Hatfield', $freshPane);
+            $this->assertStringContainsString('● idle', $freshPane);
             // Negative proof: session N's assistant text, submitted text, and
             // session label are not visible in the fresh session pane.
             $this->assertStringNotContainsString('Hello from the test harness.', $freshPane);
             $this->assertStringNotContainsString('❯ hi', $freshPane);
             $this->assertStringNotContainsString('session '.$sessionId, $freshPane);
+            $this->assertStringNotContainsString('Completions', $freshPane);
 
             $this->tmux->saveAnsiSnapshot($pane, 'new-session-isolation');
             $this->tmux->sendKey($pane, 'C-d');
