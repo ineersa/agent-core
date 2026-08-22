@@ -19,7 +19,7 @@ castor test --filter=X      # filter tests by name
 castor test --suite=X       # target a specific phpunit.xml test suite (ParaTest parallel)
 castor test:tui [--filter=X]    # TUI E2E journey tests (replay-backed, no live LLM); full group uses ParaTest (default 2 workers; under `castor check` uses `HATFIELD_CHECK_TUI_PARATEST_PROCESSES`, legacy `HATFIELD_TUI_PARATEST_PROCESSES` still honored, max 4); --filter stays sequential PHPUnit; hard timeout ≤210s
 castor test:tui-update      # update TUI snapshot baselines (no Castor --filter; fixed tui-e2e-replay group)
-castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional); standalone full group ParaTest 4 workers; filtered sequential; hard timeout ≤210s
+castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional); standalone full group ParaTest 2 workers; filtered sequential; hard timeout ≤210s
 castor test:controller      # controller E2E smoke (live LLM, opt-in; fixed ControllerSmokeTest filter inside Castor — no Castor --filter option)
 castor test:controller-replay      # controller E2E smoke tests with replay fixtures (no live LLM, default controller validation)
 castor llm:fixtures:record         # Re-record LLM replay fixtures from live LLM
@@ -107,7 +107,7 @@ If `LLAMA_PROXY_ADMIN_TOKEN` is set, pass `-H 'X-Llama-Proxy-Token: <token>'` on
 
 - Runs `check_llm_generation_ready()` once (curl to `…/v1/chat/completions`, model `test`; see `.castor/helpers.php`).
 - Parallel lane **`test:llm-real`**: same builder as `castor test:llm-real` — `build_test_llm_real_phpunit_command(null)` → ParaTest `--group=llm-real`; under check default **1** worker (max 4, `HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES`), lane timeout ≤ remaining wall / 210s. Standalone/focused log path uses `check-test-llm-real.log` under the active reports dir; check lanes write per-run `check-<lane>.log` artifacts.
-- Standalone full `castor test:llm-real` keeps ParaTest **4** workers; filtered `castor test:llm-real --filter=…` uses sequential PHPUnit.
+- Standalone full `castor test:llm-real` keeps ParaTest **2** workers; filtered `castor test:llm-real --filter=…` uses sequential PHPUnit.
 - Unit/integration ParaTest lane in check **excludes** `llm-real` (see `build_check_paratest_command()`).
 
 ### Reset vs warm vs regenerate

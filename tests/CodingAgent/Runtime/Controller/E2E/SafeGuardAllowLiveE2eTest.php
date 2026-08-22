@@ -141,8 +141,9 @@ final class SafeGuardAllowLiveE2eTest extends ControllerE2eTestCase
     {
         return [
             'HATFIELD_APPROVAL_CHANNEL' => 'controller',
-            // Live path needs room for LLM + SafeGuard suspend + resume tool hop.
-            'HATFIELD_TEST_LLM_HTTP_TIMEOUT' => '60',
+            // Live path needs room for LLM + SafeGuard suspend + resume tool hop,
+            // but keep the request timeout under the collector budget.
+            'HATFIELD_TEST_LLM_HTTP_TIMEOUT' => '15',
         ];
     }
 

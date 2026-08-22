@@ -732,7 +732,7 @@ ai:
                 test:
                     name: test
                     context_window: 32768
-                    max_tokens: 32768
+                    max_tokens: 256
                     input: [{$input}]
                     tool_calling: {$toolCalling}
                     reasoning: false

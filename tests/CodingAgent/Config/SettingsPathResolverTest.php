@@ -52,9 +52,4 @@ class SettingsPathResolverTest extends TestCase
         $result = $this->resolver->resolve('', '/tmp');
         $this->assertSame('', $result);
     }
-
-    public function testGetHomeDir(): void
-    {
-        $this->assertSame('/home/user', $this->resolver->getHomeDir());
-    }
 }

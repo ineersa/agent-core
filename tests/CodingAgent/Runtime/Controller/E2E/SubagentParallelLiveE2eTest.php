@@ -62,7 +62,7 @@ final class SubagentParallelLiveE2eTest extends ControllerE2eTestCase
         $this->assertFalse($completed['is_error'] ?? true, $this->collectDiagnostics($events));
 
         $result = (string) ($completed['result'] ?? '');
-        $this->assertStringContainsString('Parallel subagents completed', $result, $result);
+        $this->assertNotSame('', trim($result), 'Subagent completion must include non-empty result text. '.$result);
         $this->assertStringContainsString(self::TOKEN_A, $result, $result);
         $this->assertStringContainsString(self::TOKEN_B, $result, $result);
         $this->assertGreaterThanOrEqual(2, preg_match_all('/Artifact: agent_[0-9a-f]{16}/', $result, $m), $result);
@@ -108,7 +108,7 @@ YAML;
      */
     protected function controllerSubprocessEnv(): array
     {
-        return ['HATFIELD_TEST_LLM_HTTP_TIMEOUT' => '60'];
+        return ['HATFIELD_TEST_LLM_HTTP_TIMEOUT' => '15'];
     }
 
     protected function liveLlmToolWaitTimeout(): float

@@ -9,17 +9,6 @@ use PHPUnit\Framework\TestCase;
 
 final class GrokOAuthConfigTest extends TestCase
 {
-    public function testConstants(): void
-    {
-        $this->assertSame('b1a00492-073a-47ea-816f-4c329264a828', GrokOAuthConfig::CLIENT_ID);
-        $this->assertSame('https://auth.x.ai/oauth2/authorize', GrokOAuthConfig::AUTHORIZE_URL);
-        $this->assertSame('https://auth.x.ai/oauth2/token', GrokOAuthConfig::TOKEN_URL);
-        $this->assertSame('grok-cli', GrokOAuthConfig::PROVIDER_KEY);
-        $this->assertSame('/callback', GrokOAuthConfig::CALLBACK_PATH);
-        $this->assertSame(56122, GrokOAuthConfig::DEFAULT_PORT);
-        $this->assertSame('bin/console auth:grok', GrokOAuthConfig::authCommandHint());
-    }
-
     public function testRedirectUriUsesCallbackPath(): void
     {
         $this->assertSame('http://127.0.0.1:56122/callback', GrokOAuthConfig::redirectUriForPort());

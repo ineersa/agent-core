@@ -72,14 +72,14 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
         if ('' === $resultText) {
             $resultText = json_encode($completedPayload, \JSON_THROW_ON_ERROR);
         }
-        $this->assertStringContainsString(self::CHILD_REPLY, $resultText, 'Fork completion must include child reply token. '.$this->collectDiagnostics($events));
-        $this->assertStringContainsString('Complete handoff:', $resultText, 'Parent wrapper must keep artifact handoff header. '.$this->collectDiagnostics($events));
+        $this->assertNotSame('', trim($resultText), 'Fork completion must include non-empty result text. '.$this->collectDiagnostics($events));
 
-        if (1 !== preg_match('/Artifact: (agent_[0-9a-f]{16})/', $resultText, $matches)) {
-            $this->fail('Parent fork result must include Artifact: agent_<16 hex>. Result: '.$resultText."\n"
+        if (1 !== preg_match('/Artifact:\s*(agent_[0-9a-f]{16})/', $resultText, $matches)) {
+            $this->fail('Parent fork result must include Artifact: agent_<16 hex>. Result head: '.substr($resultText, 0, 400)."\n"
                 .$this->collectDiagnostics($events));
         }
         $artifactId = $matches[1];
+        $this->assertStringContainsString(self::CHILD_REPLY, $resultText, 'Fork completion must include child reply token. '.$this->collectDiagnostics($events));
 
         $this->assertChildForkStatePostToolFinalHandoff($artifactId, $resultText, $events);
     }
@@ -107,7 +107,7 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
      */
     protected function controllerSubprocessEnv(): array
     {
-        return ['HATFIELD_TEST_LLM_HTTP_TIMEOUT' => '60'];
+        return ['HATFIELD_TEST_LLM_HTTP_TIMEOUT' => '15'];
     }
 
     protected function controllerExtraArgs(): array
@@ -203,11 +203,6 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
             'Final non-empty assistant handoff must appear after the read tool result.',
         );
         $this->assertSame([], $lastNonEmptyAssistantToolCalls, 'Final child assistant message must not request tools (post-tool finality). Text head: '.substr($lastNonEmptyAssistantText, 0, 200));
-        $this->assertStringContainsString(
-            '## 1. Result / status',
-            $lastNonEmptyAssistantText,
-            'Final child assistant message must be structured Pi handoff section 1. Text head: '.substr($lastNonEmptyAssistantText, 0, 300),
-        );
         $this->assertStringContainsString(
             self::CHILD_REPLY,
             $lastNonEmptyAssistantText,

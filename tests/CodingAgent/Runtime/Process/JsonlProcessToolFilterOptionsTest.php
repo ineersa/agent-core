@@ -172,13 +172,10 @@ PHP);
      */
     private function waitForDump(string $dumpFile): array
     {
-        $timeout = time() + 5;
-        while (!is_file($dumpFile) || 0 === filesize($dumpFile)) {
-            if (time() > $timeout) {
-                $this->fail('Timeout waiting for dump at '.$dumpFile);
-            }
-            usleep(50_000);
-        }
+        // Fake controller writes the dump before emitting runtime.ready; start()
+        // already waited for that event, so the dump must exist now.
+        $this->assertFileExists($dumpFile, 'dump must exist after runtime.ready');
+        $this->assertGreaterThan(0, filesize($dumpFile), 'dump must be non-empty after runtime.ready');
 
         $json = file_get_contents($dumpFile);
         $this->assertNotFalse($json);

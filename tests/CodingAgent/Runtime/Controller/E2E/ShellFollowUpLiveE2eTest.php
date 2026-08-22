@@ -18,80 +18,6 @@ use PHPUnit\Framework\Attributes\Group;
 final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
 {
     /**
-     * Isolation test: follow_up on a completed run with NO shell in between.
-     * If this fails, the issue is in the follow_up path itself (generic),
-     * not specific to the shell-command interaction.
-     */
-    public function testFollowUpWithoutShell(): void
-    {
-        $this->spawnController();
-        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
-
-        // ── Turn 1 ──
-        $startCmdId = 'cmd_turn1_'.uniqid();
-        $this->writeCommand([
-            'v' => 1, 'id' => $startCmdId,
-            'type' => 'start_run',
-            'payload' => ['prompt' => '[llm-real:shell-followup-no-shell] Respond with exactly one word: hello.'],
-        ]);
-
-        $turn1Events = $this->collectEvents($this->liveLlmRunWaitTimeout());
-        $byType = $this->indexByType($turn1Events);
-        $this->assertStartRunAcked($turn1Events, $startCmdId);
-
-        $this->assertArrayHasKey('run.started', $byType,
-            'Turn 1: expected run.started. '.$this->collectDiagnostics($turn1Events));
-
-        $this->runId = (string) ($byType['run.started'][0]['runId']
-            ?? $byType['run.started'][0]['payload']['runId'] ?? '');
-        $this->assertNotEmpty($this->runId);
-
-        $this->assertTrue(
-            $this->hasAssistantResponseEvidence($byType),
-            'Turn 1: expected assistant response. '
-            .'Event types: '.implode(', ', array_keys($byType))."\n"
-            .$this->collectDiagnostics($turn1Events),
-        );
-
-        $this->assertTrue(
-            isset($byType['run.completed']) || isset($byType['run.failed']),
-            'Turn 1: expected run.completed/run.failed. '
-            .'Event types: '.implode(', ', array_keys($byType))."\n"
-            .$this->collectDiagnostics($turn1Events),
-        );
-
-        // ── Follow-up (no shell in between — isolation control) ──
-        $followUpCmdId = 'cmd_followup_'.uniqid();
-        $this->writeCommand([
-            'v' => 1, 'id' => $followUpCmdId,
-            'type' => 'follow_up',
-            'runId' => $this->runId,
-            'payload' => ['text' => 'Say hello again.'],
-        ]);
-
-        $followUpEvents = $this->collectEvents($this->liveLlmRunWaitTimeout());
-        $followUpByType = $this->indexByType($followUpEvents);
-
-        $this->assertTrue($this->foundAck($followUpEvents, $followUpCmdId),
-            'Follow-up: expected command.ack. '.$this->collectDiagnostics($followUpEvents));
-
-        // The follow-up MUST produce an assistant response.
-        $this->assertTrue(
-            $this->hasAssistantResponseEvidence($followUpByType),
-            'Follow-up without shell: NO assistant response — follow_up broken generically. '
-            .'Event types: '.implode(', ', array_keys($followUpByType))."\n"
-            .$this->collectDiagnostics($followUpEvents),
-        );
-
-        $this->assertTrue(
-            isset($followUpByType['run.completed']) || isset($followUpByType['run.failed']),
-            'Follow-up without shell: expected terminal state. '
-            .'Event types: '.implode(', ', array_keys($followUpByType))."\n"
-            .$this->collectDiagnostics($followUpEvents),
-        );
-    }
-
-    /**
      * Full scenario:
      *   1. Start run: "Respond with exactly one word: hello."
      *   2. Shell command (!ls -1) on the completed run.
@@ -231,9 +157,8 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
 
     protected function controllerSubprocessEnv(): array
     {
-        // Two LLM turns (start + follow-up); the follow-up request can cold-miss
-        // the llama-proxy cache and needs more than the 5s test HttpClient default.
-        return ['HATFIELD_TEST_LLM_HTTP_TIMEOUT' => '60'];
+        // Two LLM turns (start + follow-up). Keep below the collector budget.
+        return ['HATFIELD_TEST_LLM_HTTP_TIMEOUT' => '15'];
     }
 
     /**

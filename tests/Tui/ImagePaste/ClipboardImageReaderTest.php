@@ -180,7 +180,7 @@ echo "xclip: Error: Can\'t open display" 1>&2; exit 1');
     public function hungClipboardBackendTimesOutAndCancelCleansUp(): void
     {
         $this->installScript('wl-paste', '#!/bin/sh'.'
-sleep 30');
+sleep 6');
 
         putenv('XDG_SESSION_TYPE=wayland');
         putenv('WAYLAND_DISPLAY=wayland-test');
@@ -188,7 +188,7 @@ sleep 30');
         $reader = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
         $this->assertTrue($reader->startRead()->started);
 
-        $deadline = microtime(true) + 8.0;
+        $deadline = microtime(true) + 6.5;
         $result = null;
         while (microtime(true) < $deadline) {
             $poll = $reader->poll();

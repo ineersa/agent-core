@@ -48,6 +48,8 @@ final class SafeGuardToolCallHookTest extends TestCase
     public function testBashDestructiveStillRequiresApprovalWhenChannelSet(): void
     {
         putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        $_ENV['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
+        $_SERVER['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
         $dto = $this->hook->onToolCall(new ToolCallContextDTO('c2', 'bash', ['command' => 'rm -rf /tmp/x'], 0));
         $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
     }
@@ -55,6 +57,8 @@ final class SafeGuardToolCallHookTest extends TestCase
     public function testBashDestructiveRequiresApprovalWithAllowDenyOnly(): void
     {
         putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        $_ENV['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
+        $_SERVER['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
         $dto = $this->hook->onToolCall(new ToolCallContextDTO('c3', 'bash', ['command' => 'rm -rf /tmp/build'], 0));
         $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
         $this->assertNotSame('', (string) ($dto->details['question_id'] ?? ''));
@@ -64,6 +68,8 @@ final class SafeGuardToolCallHookTest extends TestCase
     public function testWriteOutsideCwdRequiresApproval(): void
     {
         putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        $_ENV['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
+        $_SERVER['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
         $dto = $this->hook->onToolCall(new ToolCallContextDTO('c4', 'write', ['path' => '/tmp/out.txt', 'content' => 'x'], 0));
         $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
     }
@@ -71,6 +77,8 @@ final class SafeGuardToolCallHookTest extends TestCase
     public function testRawSettingsMutationWithChannelStillRequiresApproval(): void
     {
         putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        $_ENV['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
+        $_SERVER['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
         // settings is a raw-array tool: arguments stay flat, never enveloped.
         $dto = $this->hook->onToolCall(new ToolCallContextDTO(
             'c8',
@@ -85,6 +93,8 @@ final class SafeGuardToolCallHookTest extends TestCase
     public function testRawSettingsWithTopLevelArgumentsKeyIsNotMisunwrapped(): void
     {
         putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        $_ENV['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
+        $_SERVER['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
         // settings stays flat: a top-level `arguments` key in its raw
         // value/schema is an ordinary field of the raw map, not a typed
         // built-in envelope (typed calls never carry an envelope).
@@ -166,15 +176,19 @@ final class SafeGuardToolCallHookTest extends TestCase
         $value = getenv('HATFIELD_APPROVAL_CHANNEL');
         $this->approvalChannelEnvBackup = false === $value ? false : $value;
         putenv('HATFIELD_APPROVAL_CHANNEL');
+        unset($_ENV['HATFIELD_APPROVAL_CHANNEL'], $_SERVER['HATFIELD_APPROVAL_CHANNEL']);
     }
 
     private function restoreApprovalChannelEnv(): void
     {
         if (false === $this->approvalChannelEnvBackup) {
             putenv('HATFIELD_APPROVAL_CHANNEL');
+            unset($_ENV['HATFIELD_APPROVAL_CHANNEL'], $_SERVER['HATFIELD_APPROVAL_CHANNEL']);
 
             return;
         }
         putenv('HATFIELD_APPROVAL_CHANNEL='.$this->approvalChannelEnvBackup);
+        $_ENV['HATFIELD_APPROVAL_CHANNEL'] = $this->approvalChannelEnvBackup;
+        $_SERVER['HATFIELD_APPROVAL_CHANNEL'] = $this->approvalChannelEnvBackup;
     }
 }
