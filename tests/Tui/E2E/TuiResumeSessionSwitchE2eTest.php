@@ -80,7 +80,6 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
         }
     }
 
-
     /**
      * Real-TTY isolation proof for per-session composition: submit in session
      * N, /new, then assert the fresh session's VISIBLE pane contains neither
