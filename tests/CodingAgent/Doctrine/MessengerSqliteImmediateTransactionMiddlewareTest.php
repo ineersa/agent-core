@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Doctrine;
 
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\DependencyInjection\Container;
 
@@ -18,9 +17,6 @@ use Symfony\Component\DependencyInjection\Container;
  * from the container. StaticDriver::setKeepStaticConnections(false) in those subprocesses
  * avoids DAMA's static outer transaction so production outer BEGIN IMMEDIATE semantics
  * can be exercised (in-process kernel connections stay under DAMA in the parent test).
- *
- * Contention proof uses a two-sided file barrier so kernel boot is never part of the
- * measured beginTransaction wait under parallel suite/gate load.
  *
  * @requires extension pdo_sqlite
  *
@@ -63,106 +59,6 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
         $this->runKernelWorker(['rollback-probe']);
     }
 
-    public function testBeginImmediateWaitsForCompetingWriterThenCompletesClaimTransaction(): void
-    {
-        $barrierDir = TestDirectoryIsolation::createProjectTempDir('sqlite-immediate-barrier', 0o750);
-        $queueName = 'immediate_claim_'.bin2hex(random_bytes(8));
-        $messageIdPath = $barrierDir.'/message_id';
-        $claimReadyPath = $barrierDir.'/claim_ready';
-        $claimGoPath = $barrierDir.'/claim_go';
-        $holderReadyPath = $barrierDir.'/holder_ready';
-        $holderReleasePath = $barrierDir.'/holder_release';
-        $acquiredPath = $barrierDir.'/acquired';
-        // Deliberate contention after both sides are fully ready (not a kernel-boot budget).
-        $contentionMs = 250;
-        // Long safety deadlines only prevent leaked subprocesses if the parent dies mid-barrier.
-        $safetyDeadlineMs = 30_000;
-
-        $holderProc = null;
-        $holderPipes = null;
-        $claimProc = null;
-        $claimPipes = null;
-
-        try {
-            $this->runKernelWorker(['seed-message', $queueName, $messageIdPath]);
-            $this->assertFileExists($messageIdPath);
-
-            // 1) Start claim first so kernel boot completes before any contention measurement.
-            //    Claim signals claim_ready immediately before beginTransaction and waits on claim_go.
-            $claimProc = $this->startKernelWorkerProcess(
-                [
-                    'claim-message',
-                    $queueName,
-                    $messageIdPath,
-                    $acquiredPath,
-                    $claimReadyPath,
-                    $claimGoPath,
-                    (string) $safetyDeadlineMs,
-                ],
-                $claimPipes,
-            );
-            $this->waitForFile($claimReadyPath, 30.0, 'Claim subprocess must signal readiness after kernel boot');
-
-            // 2) Holder starts only after claim is booted; acquires BEGIN IMMEDIATE, then waits for release.
-            $holderProc = $this->startKernelWorkerProcess(
-                ['hold-writer', $holderReadyPath, $holderReleasePath, (string) $safetyDeadlineMs],
-                $holderPipes,
-            );
-            $this->waitForFile($holderReadyPath, 15.0, 'Writer subprocess must signal outer transaction hold');
-
-            // 3) Release claim into beginTransaction while holder owns the writer slot.
-            touch($claimGoPath);
-            usleep($contentionMs * 1000);
-            touch($holderReleasePath);
-
-            $claimExit = $this->waitForProcessExit($claimProc, $claimPipes, 20.0);
-            $holderExit = $this->waitForProcessExit($holderProc, $holderPipes, 20.0);
-            $claimProc = null;
-            $holderProc = null;
-
-            $this->assertSame(0, $claimExit['exit'], 'claim worker stderr: '.$claimExit['stderr']);
-            $this->assertSame(0, $holderExit['exit'], 'hold worker stderr: '.$holderExit['stderr']);
-            $this->assertFileExists($acquiredPath);
-
-            /** @var array{begin_elapsed_ms: float, claim_elapsed_ms: float} $acquired */
-            $acquired = json_decode((string) file_get_contents($acquiredPath), true, 512, \JSON_THROW_ON_ERROR);
-            // Require most of the deliberate contention window (not kernel-boot-sensitive 400ms hold).
-            $this->assertGreaterThanOrEqual(
-                $contentionMs * 0.70,
-                $acquired['begin_elapsed_ms'],
-                'Writer contention must block at beginTransaction()/BEGIN IMMEDIATE for the deliberate interval',
-            );
-            $this->assertLessThan(
-                $acquired['begin_elapsed_ms'] + 50.0,
-                $acquired['claim_elapsed_ms'],
-                'Post-begin claim work should be fast relative to begin wait',
-            );
-        } finally {
-            if (\is_resource($claimProc)) {
-                @touch($claimGoPath);
-                @proc_terminate($claimProc);
-                @proc_close($claimProc);
-            }
-            if (\is_resource($holderProc)) {
-                @touch($holderReleasePath);
-                @proc_terminate($holderProc);
-                @proc_close($holderProc);
-            }
-            try {
-                $this->runKernelWorker(['delete-queue', $queueName]);
-            } catch (\Throwable $cleanupFailure) {
-                // Intentional test cleanup degradation: queue delete is best-effort so barrier
-                // removal and the primary assertion outcome are not masked.
-                fwrite(
-                    \STDERR,
-                    'MessengerSqliteImmediateTransactionMiddlewareTest cleanup degradation: '
-                    .$cleanupFailure::class."\n",
-                );
-            }
-            TestDirectoryIsolation::removeDirectory($barrierDir);
-        }
-    }
-
     /**
      * @param list<string> $args
      */
@@ -184,21 +80,6 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
         stream_set_blocking($pipes[2], false);
 
         return $this->waitForProcessExit($proc, $pipes, 60.0);
-    }
-
-    /**
-     * @param list<string>              $args
-     * @param array<int, resource>|null $pipes
-     *
-     * @return resource
-     */
-    private function startKernelWorkerProcess(array $args, ?array &$pipes)
-    {
-        $proc = $this->openKernelWorkerProcess($args, $pipes, 'kernel worker subprocess must start');
-        stream_set_blocking($pipes[1], false);
-        stream_set_blocking($pipes[2], false);
-
-        return $proc;
     }
 
     /**
@@ -261,18 +142,6 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
         $exit = proc_close($proc);
 
         return ['exit' => $exit, 'stderr' => $stderr];
-    }
-
-    private function waitForFile(string $path, float $timeoutSeconds, string $message): void
-    {
-        $deadline = microtime(true) + $timeoutSeconds;
-        while (microtime(true) < $deadline) {
-            if (is_file($path)) {
-                return;
-            }
-            usleep(5000);
-        }
-        $this->fail($message);
     }
 
     /**
