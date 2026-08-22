@@ -61,7 +61,7 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
         // This test proves the image tool path and provider image-gating
         // behavior.  Do not wait for the second post-tool LLM turn to finish:
         // the tool has already completed by this point, and terminal run
-        // completion is covered by ControllerSmokeTest/WriteFileToolE2eTest.
+        // completion is covered by ControllerSmokeTest.
         $this->assertArrayNotHasKey('tool_execution.failed', $byType, 'view_image tool must not fail. '
             .$this->collectDiagnostics($events));
 
