@@ -34,6 +34,9 @@ abstract class ControllerE2eTestCase extends TestCase
     /** @var list<int> Same-UID tracked PIDs still alive after the last stopProcess() teardown. */
     protected array $lastTeardownSurvivorPids = [];
 
+    /** Filename under project var/test/ for this controller's Messenger transport DB. */
+    protected string $messengerTransportDbFilename = '';
+
     protected string $stdoutBuf = '';
     protected string $stderrBuf = '';
     protected string $runId = '';
@@ -230,9 +233,12 @@ abstract class ControllerE2eTestCase extends TestCase
         $env = array_merge($env, $this->controllerSubprocessEnv());
 
         $pipes = [];
+        // Isolate the controller (and its inherited session) via setsid -w so
+        // the proc_open child is the session/process-group leader. Descendants
+        // that later create their own PGIDs still share this SID for teardown.
         $process = @proc_open(
             array_merge(
-                [$php, $script, 'agent', '--controller', '--cwd='.$this->tempDir],
+                ['setsid', '-w', $php, $script, 'agent', '--controller', '--cwd='.$this->tempDir],
                 $this->controllerExtraArgs(),
             ),
             $descriptors,
@@ -252,6 +258,7 @@ abstract class ControllerE2eTestCase extends TestCase
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
 
+        $this->messengerTransportDbFilename = (string) ($env['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] ?? '');
         $this->trackControllerProcessTree($process);
     }
 
@@ -269,35 +276,7 @@ abstract class ControllerE2eTestCase extends TestCase
         }
 
         $this->refreshTrackedControllerPids();
-
-        // Tracked list is the ownership boundary (process-tree + same UID).
-        // Never signal root-owned PIDs (filtered at discovery).
-        foreach ($this->trackedControllerPids as $pid) {
-            if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
-                @posix_kill($pid, \SIGTERM);
-            }
-        }
-
-        $deadline = microtime(true) + 3.0;
-        $stillAlive = true;
-        while ($stillAlive && microtime(true) < $deadline) {
-            $stillAlive = false;
-            foreach ($this->trackedControllerPids as $pid) {
-                if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
-                    $stillAlive = true;
-                    break;
-                }
-            }
-            if ($stillAlive) {
-                usleep(50_000);
-            }
-        }
-
-        foreach ($this->trackedControllerPids as $pid) {
-            if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
-                @posix_kill($pid, \SIGKILL);
-            }
-        }
+        $this->terminateTrackedControllerPids($this->trackedControllerPids);
 
         @proc_close($this->process);
         $this->process = null;
@@ -637,7 +616,7 @@ abstract class ControllerE2eTestCase extends TestCase
 
         $chunks[] = $this->dumpSessionDir($this->tempDir.'/.hatfield/sessions');
 
-        $transportDb = $this->tempDir.'/.hatfield/messenger-transport.sqlite';
+        $transportDb = $this->configuredMessengerTransportDbPath();
         if (is_file($transportDb)) {
             $chunks[] = 'Messenger transport DB: '.filesize($transportDb).' bytes';
             try {
@@ -652,7 +631,7 @@ abstract class ControllerE2eTestCase extends TestCase
                 $chunks[] = '  Messenger transport DB read error: '.$e->getMessage();
             }
         } else {
-            $chunks[] = 'Messenger transport DB: missing';
+            $chunks[] = 'Messenger transport DB: missing ('.$transportDb.')';
         }
 
         return "\n\n".implode("\n", $chunks)."\n\n";
@@ -1006,8 +985,78 @@ YAML;
         $this->assertSame(
             [],
             $this->lastTeardownSurvivorPids,
-            'No controller-owned descendants may remain after SIGTERM→3s→SIGKILL teardown',
+            'No controller-owned descendants may remain after SIGTERM→0.25s→SIGKILL teardown',
         );
+    }
+
+    /**
+     * Absolute path of the Messenger transport SQLite file configured for this controller.
+     */
+    protected function configuredMessengerTransportDbPath(): string
+    {
+        $filename = '' !== $this->messengerTransportDbFilename
+            ? $this->messengerTransportDbFilename
+            : 'messenger_transport_test.sqlite';
+
+        return $this->projectDir.'/var/test/'.$filename;
+    }
+
+    /**
+     * Deterministic owned-tree teardown: SIGTERM, short grace, then SIGKILL.
+     * Also signals the root process group when the root is still the PGID leader
+     * (setsid spawn). Never signals root-owned PIDs (filtered by UID).
+     *
+     * @param list<int> $pids
+     */
+    protected function terminateTrackedControllerPids(array $pids): void
+    {
+        $pids = array_values(array_unique(array_filter(
+            $pids,
+            static fn (int $pid): bool => $pid > 1,
+        )));
+        if ([] === $pids) {
+            return;
+        }
+
+        $rootPid = $pids[0];
+        $pgid = @posix_getpgid($rootPid);
+        if (\is_int($pgid) && $pgid > 1 && $pgid === $rootPid && $this->isSameUidProcess($rootPid)) {
+            // Negative PGID targets the whole process group created by setsid.
+            @posix_kill(-$pgid, \SIGTERM);
+        }
+
+        foreach ($pids as $pid) {
+            if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
+                @posix_kill($pid, \SIGTERM);
+            }
+        }
+
+        // Production graceful-shutdown timing is covered by ConsumerSupervisorTest.
+        // Replay/live E2E only needs deterministic reaping, not a full 3s grace.
+        $deadline = microtime(true) + 0.25;
+        $stillAlive = true;
+        while ($stillAlive && microtime(true) < $deadline) {
+            $stillAlive = false;
+            foreach ($pids as $pid) {
+                if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
+                    $stillAlive = true;
+                    break;
+                }
+            }
+            if ($stillAlive) {
+                usleep(10_000);
+            }
+        }
+
+        if (\is_int($pgid) && $pgid > 1 && $pgid === $rootPid && $this->isSameUidProcess($rootPid)) {
+            @posix_kill(-$pgid, \SIGKILL);
+        }
+
+        foreach ($pids as $pid) {
+            if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
+                @posix_kill($pid, \SIGKILL);
+            }
+        }
     }
 
     /**

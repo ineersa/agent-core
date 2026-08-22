@@ -9,7 +9,7 @@
         "messages": [
             {
                 "role": "user",
-                "content": "Run printf done and sleep 8 in one step."
+                "content": "Run printf done and sleep 1 in one step."
             }
         ]
     },
@@ -41,7 +41,7 @@
             "type": "tool_input_delta",
             "id": "call_bash_slow_2",
             "name": "bash",
-            "partial_json": "{\"command\":\"sleep 8\"}"
+            "partial_json": "{\"command\":\"sleep 1\"}"
         },
         {
             "type": "tool_call_complete",
@@ -57,7 +57,7 @@
                     "id": "call_bash_slow_2",
                     "name": "bash",
                     "arguments": {
-                        "command": "sleep 8"
+                        "command": "sleep 1"
                     }
                 }
             ]

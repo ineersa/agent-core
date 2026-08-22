@@ -243,7 +243,12 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
                 $exitCode = 124; // matches GNU timeout convention
                 $stepTimeout = $timeouts[$step] ?? 0;
                 $output = $pInfo['outBuf'].$pInfo['errBuf']
-                    ."\n[Castor hard timeout after {$stepTimeout}s]";
+                    ."\n[Castor hard timeout after {$stepTimeout}s]"
+                    ."\n"._format_timeout_process_diagnostics(
+                        $pInfo['sid'] ?? null,
+                        $descendantPids,
+                        $sessionPids,
+                    );
             } else {
                 $exitCode = proc_close($pInfo['handle']);
                 $output = $pInfo['outBuf'].$pInfo['errBuf'];
@@ -281,6 +286,45 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
 }
 
 // ── Process-group cleanup (belt-and-suspenders) ───────────────
+
+/**
+ * Bounded timeout diagnostic using already-collected process evidence.
+ *
+ * @param list<int> $descendantPids
+ * @param list<int> $sessionPids
+ */
+function _format_timeout_process_diagnostics(?int $sid, array $descendantPids, array $sessionPids): string
+{
+    $sessionPid = (null !== $sid && $sid > 1) ? $sid : null;
+    $pids = array_values(array_unique(array_filter(
+        array_merge(null !== $sessionPid ? [$sessionPid] : [], $descendantPids, $sessionPids),
+        static fn (int $pid): bool => $pid > 1,
+    )));
+    sort($pids);
+
+    $lines = [
+        '[Castor timeout process snapshot]',
+        'session_pid='.(null !== $sessionPid ? (string) $sessionPid : '(none)'),
+        'pid_count='.count($pids),
+    ];
+
+    $limit = 24;
+    foreach (array_slice($pids, 0, $limit) as $pid) {
+        $cmdRaw = @file_get_contents("/proc/{$pid}/cmdline");
+        $cmd = false === $cmdRaw || '' === $cmdRaw
+            ? '(no cmdline)'
+            : str_replace("\0", ' ', trim($cmdRaw));
+        if (strlen($cmd) > 220) {
+            $cmd = substr($cmd, 0, 217).'...';
+        }
+        $lines[] = "  pid={$pid} cmd={$cmd}";
+    }
+    if (count($pids) > $limit) {
+        $lines[] = '  ... '.(count($pids) - $limit).' more pids omitted';
+    }
+
+    return implode("\n", $lines);
+}
 
 /**
  * Reap all processes in a process group.

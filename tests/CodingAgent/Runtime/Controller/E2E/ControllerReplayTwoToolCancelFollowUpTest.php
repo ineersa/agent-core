@@ -38,12 +38,12 @@ final class ControllerReplayTwoToolCancelFollowUpTest extends ControllerReplayE2
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => 'Run printf done and sleep 8 in one step.',
+                'prompt' => 'Run printf done and sleep 1 in one step.',
             ],
         ]);
 
         // Gate on the FAST tool's durable completion while the slow sibling is still in flight.
-        $phase1 = $this->collectEventsUntilToolCallCompleted(self::FAST_TOOL_ID, 12.0);
+        $phase1 = $this->collectEventsUntilToolCallCompleted(self::FAST_TOOL_ID, 6.0);
 
         $p1 = $this->indexByType($phase1);
         $this->assertStartRunAcked($phase1, $startCmdId);
@@ -66,7 +66,7 @@ final class ControllerReplayTwoToolCancelFollowUpTest extends ControllerReplayE2
             'runId' => $this->runId,
         ]);
 
-        $cancelPhase = $this->collectEventsUntil('run.cancelled', 12.0);
+        $cancelPhase = $this->collectEventsUntil('run.cancelled', 6.0);
         $cancelByType = $this->indexByType($cancelPhase);
         $this->assertTrue(
             $this->foundAck($cancelPhase, $cancelCmdId),
@@ -118,7 +118,7 @@ final class ControllerReplayTwoToolCancelFollowUpTest extends ControllerReplayE2
             'payload' => ['text' => self::FOLLOW_UP_SENTINEL],
         ]);
 
-        $followUpPhase = $this->collectEventsUntil('run.completed', 15.0);
+        $followUpPhase = $this->collectEventsUntil('run.completed', 8.0);
         $fuByType = $this->indexByType($followUpPhase);
 
         $this->assertTrue(

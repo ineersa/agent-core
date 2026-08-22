@@ -31,10 +31,10 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
  * data.
  *
  * Process ownership: the controller and its Messenger consumer
- * children are tracked explicitly via process group PID tracking.
- * Teardown terminates the entire process group deterministically,
- * then asserts no children remain.  This replaces the previous
- * broad stale-killer cleanup for normal test runs.
+ * children are spawned under setsid so the controller is the session
+ * / process-group leader, then tracked via process-tree PID discovery.
+ * Teardown terminates the owned tree deterministically and asserts no
+ * children remain.
  *
  * MAINT-05D foundation.  This is the replay seam for controller
  * E2E tests; MAINT-05E will add similar support for TUI E2E.
@@ -201,20 +201,16 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
 
         $pipes = [];
 
-        // Use setsid() to create a new process group for the controller
-        // and all its Messenger consumer descendants.  We track the group
-        // PGID and terminate the entire group on teardown.
         $process = @proc_open(
             array_merge(
-                [$php, $script, 'agent', '--controller', '--cwd='.$this->tempDir],
+                // setsid -w: proc_open child becomes session/PGID leader.
+                ['setsid', '-w', $php, $script, 'agent', '--controller', '--cwd='.$this->tempDir],
                 $this->controllerExtraArgs(),
             ),
             $descriptors,
             $pipes,
             $this->tempDir,
             $env,
-            // Run in a new process session so the controller + Messenger
-            // consumers share a PGID.
         );
 
         if (!\is_resource($process)) {
@@ -228,6 +224,7 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
 
+        $this->messengerTransportDbFilename = (string) ($env['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] ?? '');
         $this->trackControllerProcessTree($process);
     }
 

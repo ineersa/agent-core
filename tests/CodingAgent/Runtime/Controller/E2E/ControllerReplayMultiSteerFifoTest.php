@@ -33,11 +33,11 @@ final class ControllerReplayMultiSteerFifoTest extends ControllerReplayE2eTestCa
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => 'Run bash sleep 4 once. Do not call any other tool.',
+                'prompt' => 'Run bash sleep 1 once. Do not call any other tool.',
             ],
         ]);
 
-        $phase1 = $this->collectEventsUntil('tool_execution.started', 8.0);
+        $phase1 = $this->collectEventsUntil('tool_execution.started', 4.0);
         $p1 = $this->indexByType($phase1);
         $this->assertStartRunAcked($phase1, $startCmdId);
         $this->assertArrayHasKey('tool_execution.started', $p1, $this->collectDiagnostics($phase1));
@@ -70,7 +70,7 @@ final class ControllerReplayMultiSteerFifoTest extends ControllerReplayE2eTestCa
         ]);
 
         // ACK alone is not the cutoff — wait until both steers are durably queued.
-        $queuedPhase = $this->collectUntilQueuedSteerCount(2, 12.0);
+        $queuedPhase = $this->collectUntilQueuedSteerCount(2, 6.0);
         $this->assertTrue(
             $this->foundAck($queuedPhase, $steer1CmdId),
             'Expected command.ack for first steer. '.$this->collectDiagnostics($queuedPhase),
@@ -80,7 +80,7 @@ final class ControllerReplayMultiSteerFifoTest extends ControllerReplayE2eTestCa
             'Expected command.ack for second steer. '.$this->collectDiagnostics($queuedPhase),
         );
 
-        $completePhase = $this->collectEventsUntil('run.completed', 20.0);
+        $completePhase = $this->collectEventsUntil('run.completed', 8.0);
         $allEvents = array_merge($queuedPhase, $completePhase);
         $byType = $this->indexByType($allEvents);
 
@@ -200,7 +200,7 @@ YAML;
      */
     protected function replayFixtures(): array
     {
-        $bashFixturePath = \dirname(__DIR__, 4).'/Tui/E2E/fixtures/tui-tool-call-bash-sleep8.json';
+        $bashFixturePath = __DIR__.'/fixtures/controller-bash-blocker.json';
         $bashFixture = json_decode(
             (string) file_get_contents($bashFixturePath),
             true,
