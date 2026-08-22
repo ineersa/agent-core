@@ -69,6 +69,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
 
             $this->tmux->saveAnsiSnapshot($pane, 'resume-repaint');
             $this->tmux->sendKey($pane, 'C-d');
+            $this->tmux->waitUntilPaneExits($pane, 15.0);
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'resume-repaint-FAILURE');
             try {
@@ -101,6 +102,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
 
             $this->tmux->saveAnsiSnapshot($pane, 'resume-picker-select');
             $this->tmux->sendKey($pane, 'C-d');
+            $this->tmux->waitUntilPaneExits($pane, 15.0);
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'resume-picker-select-FAILURE');
             try {
@@ -174,6 +176,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
 
             $this->tmux->saveAnsiSnapshot($pane, 'new-session-isolation');
             $this->tmux->sendKey($pane, 'C-d');
+            $this->tmux->waitUntilPaneExits($pane, 15.0);
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'new-session-isolation-FAILURE');
             try {
