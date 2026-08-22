@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\E2E;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture;
+use Ineersa\Tui\Tests\Support\SubagentChildBashBackgroundPromptFixture;
 use Ineersa\Tui\Tests\Support\SubagentProgressEventsFixture;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -132,6 +133,99 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
                 $childBorderSgr,
                 $restoredBorderSgr,
                 'Restored main border must differ from child live border',
+            );
+
+            $this->tmux->sendKey($pane, 'C-d');
+        } catch (\Throwable $e) {
+            try {
+                $this->tmux->sendKey($pane, 'C-d');
+            } catch (\Throwable) {
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Replay-backed proof: agent_child live view leave/re-enter never shows the
+     * parent-only bash "Move it to the background?" overlay while child bash is
+     * represented as an in-flight tool execution.
+     */
+    public function testAgentsLiveChildBashPathDoesNotShowBackgroundOverlayOnReenter(): void
+    {
+        $pane = $this->tmux->startDetached(
+            command: $this->agentCommand(),
+            prefix: 'tui-subagent-child-bash-bg',
+            width: 120,
+            height: 60,
+            cwd: $this->testProjectDir,
+        );
+
+        try {
+            $sessionId = $this->createSessionAndWaitForAssistant($pane);
+            SubagentChildBashBackgroundPromptFixture::write($this->testProjectDir, $sessionId);
+
+            $this->tmux->sendKey($pane, 'C-u');
+            $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
+            $this->tmux->sendKey($pane, 'Enter');
+            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 12.0, 'Resumed transcript must show fixture artifact');
+
+            $this->tmux->sendKey($pane, 'C-u');
+            $this->tmux->sendLiteral($pane, '/agents-live');
+            $this->tmux->sendKey($pane, 'Enter');
+            $this->tmux->waitForCaptureContains($pane, 'Agents live', 10.0, 'Agents live picker must open');
+
+            $this->tmux->sendKey($pane, 'Enter');
+            $this->tmux->waitForCaptureContains($pane, 'Child agent', 10.0, 'Live view working line must appear');
+            $this->tmux->waitForCaptureContains(
+                $pane,
+                'child-bash-bg-marker-9f3c',
+                10.0,
+                'Child live view must project distinctive in-flight bash command',
+            );
+
+            $liveCap = $this->tmux->capturePlainWithHistory($pane, 2500);
+            $this->assertStringNotContainsString(
+                'Move it to the background',
+                $liveCap,
+                'Initial agent_child live view must not show bash background overlay',
+            );
+
+            $this->tmux->sendKey($pane, 'C-\\');
+            $this->tmux->waitForCallback(
+                $pane,
+                static function (string $cap): bool {
+                    return !str_contains($cap, 'agents-live scout')
+                        && str_contains($cap, 'agent_e2e_progress_fixture');
+                },
+                timeout: 12.0,
+                message: 'Ctrl+\\ leave must restore parent transcript chrome',
+                history: 2000,
+            );
+
+            $this->tmux->sendKey($pane, 'C-u');
+            $this->tmux->sendLiteral($pane, '/agents-live');
+            $this->tmux->sendKey($pane, 'Enter');
+            $this->tmux->waitForCaptureContains($pane, 'Agents live', 10.0, 'Agents live picker must reopen');
+            $this->tmux->sendKey($pane, 'Enter');
+            $this->tmux->waitForCaptureContains($pane, 'Child agent', 10.0, 'Live view must reopen after leave');
+
+            $reenterCap = $this->tmux->capturePlainWithHistory($pane, 2500);
+            $this->assertStringNotContainsString(
+                'Move it to the background',
+                $reenterCap,
+                'Re-entering agent_child live view must not resurrect bash background overlay',
+            );
+            $this->assertStringNotContainsString(
+                'Confirmation required',
+                $reenterCap,
+                'Re-entering agent_child live view must not show confirm overlay chrome for bash backgrounding',
+            );
+            $this->assertStringContainsString(
+                'child-bash-bg-marker-9f3c',
+                $reenterCap,
+                'Child live reconstruction must still show distinctive bash command',
             );
 
             $this->tmux->sendKey($pane, 'C-d');
