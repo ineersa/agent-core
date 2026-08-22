@@ -42,15 +42,7 @@ final class SubagentToolSetResolverTest extends TestCase
         $inner = $this->createMock(ToolSetResolverInterface::class);
         $inner->expects($this->once())
             ->method('resolve')
-            ->willReturn(new ActiveToolSet(
-                toolNames: ['read', 'write', 'bash'],
-                allowListNames: ['read', 'write', 'bash'],
-                backgroundPromptAllowed: [
-                    'read' => true,
-                    'write' => true,
-                    'bash' => true,
-                ],
-            ));
+            ->willReturn(new ActiveToolSet(toolNames: ['read', 'write']));
 
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->atLeastOnce())
@@ -61,46 +53,7 @@ final class SubagentToolSetResolverTest extends TestCase
         $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'parent-run');
 
-        $this->assertSame(['read', 'write', 'bash'], $result->toolNames);
-        $this->assertTrue($result->backgroundPromptAllowed['bash']);
-    }
-
-    public function testChildWithoutBashLeavesBackgroundPolicyMapEmpty(): void
-    {
-        $inner = $this->createMock(ToolSetResolverInterface::class);
-        $inner->expects($this->once())
-            ->method('resolve')
-            ->willReturn(new ActiveToolSet(
-                toolNames: ['read', 'write', 'bash'],
-                allowListNames: ['read', 'write', 'bash'],
-                backgroundPromptAllowed: [
-                    'read' => true,
-                    'write' => true,
-                    'bash' => true,
-                ],
-            ));
-
-        $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects($this->atLeastOnce())
-            ->method('allFor')
-            ->with('child-run')
-            ->willReturn([
-                new RunEvent(
-                    runId: 'child-run',
-                    seq: 1,
-                    turnNo: 0,
-                    type: RunEventTypeEnum::RunStarted->value,
-                    payload: $this->childRunStartedPayload(['read', 'write']),
-                ),
-            ]);
-
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
-        $result = $resolver->resolve('ref', runId: 'child-run');
-
         $this->assertSame(['read', 'write'], $result->toolNames);
-        $this->assertArrayNotHasKey('bash', $result->backgroundPromptAllowed);
-        $this->assertTrue($result->backgroundPromptAllowed['read']);
-        $this->assertTrue($result->backgroundPromptAllowed['write']);
     }
 
     public function testFiltersChildToolsToAllowedList(): void
@@ -116,12 +69,6 @@ final class SubagentToolSetResolverTest extends TestCase
                     'write' => ToolExecutionMode::Sequential,
                     'bash' => ToolExecutionMode::Sequential,
                     'edit' => ToolExecutionMode::Sequential,
-                ],
-                backgroundPromptAllowed: [
-                    'read' => true,
-                    'write' => true,
-                    'bash' => true,
-                    'edit' => true,
                 ],
             ));
 
@@ -150,10 +97,6 @@ final class SubagentToolSetResolverTest extends TestCase
         $this->assertArrayHasKey('bash', $result->executionModes);
         $this->assertArrayNotHasKey('write', $result->executionModes);
         $this->assertArrayNotHasKey('edit', $result->executionModes);
-        $this->assertFalse($result->backgroundPromptAllowed['bash']);
-        $this->assertTrue($result->backgroundPromptAllowed['read']);
-        $this->assertArrayNotHasKey('write', $result->backgroundPromptAllowed);
-        $this->assertArrayNotHasKey('edit', $result->backgroundPromptAllowed);
     }
 
     public function testFiltersOutAllToolsWhenNoOverlap(): void

@@ -709,7 +709,6 @@ final class LlmStepResultHandlerTest extends TestCase
                     toolNames: ['bash'],
                     allowListNames: ['bash'],
                     executionModes: ['bash' => ToolExecutionMode::Parallel->value],
-                    backgroundPromptAllowed: ['bash' => false],
                 );
             }
         };
@@ -760,7 +759,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertCount(2, $executionBus->messages);
         foreach ($executionBus->messages as $dispatched) {
             $this->assertInstanceOf(ExecuteToolCall::class, $dispatched);
-            $this->assertFalse($dispatched->backgroundPromptAllowed);
             $this->assertSame(4, $dispatched->maxParallelism);
             $this->assertSame('parallel', $dispatched->mode);
         }

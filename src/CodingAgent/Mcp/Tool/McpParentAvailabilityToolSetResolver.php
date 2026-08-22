@@ -73,19 +73,11 @@ final readonly class McpParentAvailabilityToolSetResolver implements ToolSetReso
             }
         }
 
-        $backgroundPromptAllowed = [];
-        foreach ($inner->backgroundPromptAllowed as $toolName => $allowed) {
-            if (!isset($hiddenLookup[$toolName])) {
-                $backgroundPromptAllowed[$toolName] = $allowed;
-            }
-        }
-
         return new ActiveToolSet(
             toolNames: $toolNames,
             allowListNames: $allowList,
             executionModes: $executionModes,
             timeoutSeconds: $timeoutSeconds,
-            backgroundPromptAllowed: $backgroundPromptAllowed,
         );
     }
 

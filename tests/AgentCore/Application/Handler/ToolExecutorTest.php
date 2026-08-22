@@ -593,58 +593,6 @@ final class ToolExecutorTest extends TestCase
         $this->assertArrayNotHasKey('timed_out', $result->details ?? []);
         $this->assertGreaterThanOrEqual(2000, $result->details['duration_ms'] ?? 0);
     }
-
-    public function testBackgroundPromptAllowedPropagatesIntoToolContext(): void
-    {
-        $accessor = new StackToolExecutionContextAccessor();
-        $seen = new \stdClass();
-        $seen->value = null;
-        $toolbox = new class($accessor, $seen) implements ToolboxInterface {
-            public int $executions = 0;
-
-            public function __construct(
-                private StackToolExecutionContextAccessor $accessor,
-                private \stdClass $seen,
-            ) {
-            }
-
-            public function getTools(): array
-            {
-                return [];
-            }
-
-            public function execute(SymfonyToolCall $toolCall): SymfonyToolResult
-            {
-                ++$this->executions;
-                $this->seen->value = $this->accessor->current()?->backgroundPromptAllowed();
-
-                return new SymfonyToolResult($toolCall, ['status' => 'ok']);
-            }
-        };
-
-        $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
-            toolbox: $toolbox,
-            resultStore: new ToolExecutionResultStore(),
-            contextAccessor: $accessor,
-        );
-
-        $result = $executor->execute(ToolCallBuilder::create('call-bg-policy')
-            ->withToolName('bash')
-            ->withArguments([])
-            ->withOrderIndex(0)
-            ->withContext([
-                'run_id' => 'run-bg',
-                'turn_no' => 1,
-                'background_prompt_allowed' => false,
-            ])
-            ->build());
-
-        $this->assertFalse($result->isError);
-        $this->assertFalse($seen->value);
-        $this->assertSame(1, $toolbox->executions);
-    }
 }
 
 #[AsTool(name: 'human_gate', description: 'Ask for human input.')]

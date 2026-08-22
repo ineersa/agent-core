@@ -15,9 +15,19 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  *
  * Root RunEvent.payload is denormalized via Symfony Serializer into
  * {@see RunStartedMetadataDTO} using SerializedPath attributes.
+ *
+ * Successfully decoded RunStarted metadata is immutable, so this reader
+ * keeps a process-local bounded positive-only cache keyed by run ID.
+ * Missing metadata is never cached (it may appear later). Malformed
+ * payloads still raise Serializer type errors and are not cached.
  */
-final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllowlistReaderInterface
+final class SubagentRunMetadataReader implements ChildRunExtensionAllowlistReaderInterface
 {
+    private const int CACHE_LIMIT = 64;
+
+    /** @var array<string, RunStartedMetadataDTO> */
+    private array $resolved = [];
+
     public function __construct(
         private EventStoreInterface $eventStore,
         private DenormalizerInterface $denormalizer,
@@ -89,6 +99,10 @@ final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllow
      */
     public function readRunStartedMetadata(string $runId): ?RunStartedMetadataDTO
     {
+        if (isset($this->resolved[$runId])) {
+            return $this->resolved[$runId];
+        }
+
         $events = $this->eventStore->allFor($runId);
 
         foreach ($events as $event) {
@@ -96,9 +110,26 @@ final readonly class SubagentRunMetadataReader implements ChildRunExtensionAllow
                 continue;
             }
 
-            return $this->denormalizer->denormalize($event->payload, RunStartedMetadataDTO::class);
+            $metadata = $this->denormalizer->denormalize($event->payload, RunStartedMetadataDTO::class);
+            $this->remember($runId, $metadata);
+
+            return $metadata;
         }
 
         return null;
+    }
+
+    private function remember(string $runId, RunStartedMetadataDTO $metadata): void
+    {
+        if (isset($this->resolved[$runId])) {
+            return;
+        }
+
+        if (\count($this->resolved) >= self::CACHE_LIMIT) {
+            // Minimal FIFO eviction for long-lived Messenger workers.
+            array_shift($this->resolved);
+        }
+
+        $this->resolved[$runId] = $metadata;
     }
 }
