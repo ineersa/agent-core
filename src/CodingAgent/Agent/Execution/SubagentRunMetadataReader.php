@@ -121,10 +121,6 @@ final class SubagentRunMetadataReader implements ChildRunExtensionAllowlistReade
 
     private function remember(string $runId, RunStartedMetadataDTO $metadata): void
     {
-        if (isset($this->resolved[$runId])) {
-            return;
-        }
-
         if (\count($this->resolved) >= self::CACHE_LIMIT) {
             // Minimal FIFO eviction for long-lived Messenger workers.
             array_shift($this->resolved);
