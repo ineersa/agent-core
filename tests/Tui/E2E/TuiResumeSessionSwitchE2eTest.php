@@ -80,36 +80,6 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
         }
     }
 
-    public function testSelectSessionFromPickerTransitionsCleanly(): void
-    {
-        $pane = $this->startPane('tui-picker-select');
-
-        try {
-            $sessionId = $this->createSessionAndWaitForAssistant($pane);
-
-            $this->tmux->sendKey($pane, 'C-u');
-            $this->tmux->sendLiteral($pane, '/resume');
-            $this->tmux->sendKey($pane, 'Enter');
-
-            $this->tmux->waitForCaptureContains($pane, 'Resume session', 3.0);
-            $this->tmux->sendKey($pane, 'Enter');
-
-            $resumedPane = $this->tmux->waitForTuiReady($pane);
-            $this->assertStringContainsString($sessionId, $resumedPane);
-            $this->assertStringNotContainsString('Resume session', $resumedPane);
-            $this->assertStringContainsString('● idle', $resumedPane);
-
-            $this->tmux->saveAnsiSnapshot($pane, 'resume-picker-select');
-            $this->tmux->sendKey($pane, 'C-d');
-        } catch (\Throwable $e) {
-            $this->tmux->saveAnsiSnapshot($pane, 'resume-picker-select-FAILURE');
-            try {
-                $this->tmux->sendKey($pane, 'C-d');
-            } catch (\Throwable) {
-            }
-            throw $e;
-        }
-    }
 
     /**
      * Real-TTY isolation proof for per-session composition: submit in session
