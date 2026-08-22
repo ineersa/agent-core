@@ -6,7 +6,7 @@
     "deltas": [
         {
             "type": "text",
-            "content": "CHOICE_WRAP_SELECTED_OK"
+            "content": "CHOICE_FULL_WIDTH_SELECTED_OK"
         }
     ]
 }

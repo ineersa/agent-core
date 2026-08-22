@@ -10,14 +10,16 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Replay-backed tmux proof: ask_human Choice labels wrap fully at narrow width
- * (no truncation ellipsis), Down+Enter selects the long logical option, and the
- * exact selected value reaches the next model turn.
+ * Replay-backed tmux proof: empty-description ask_human choices render past the
+ * accidental 30-column clamp, Down+Enter selects the long option, and the exact
+ * selected value reaches the next model turn.
+ *
+ * True multiline wrapping beyond one terminal row remains deferred upstream.
  */
 #[Group('tui-e2e-replay')]
-final class TuiAskHumanChoiceWrapE2eTest extends TestCase
+final class TuiAskHumanChoiceFullWidthE2eTest extends TestCase
 {
-    private const string LONG_OPTION_VALUE = 'LONG_OPTION_BEGIN keep every word visible across multiple terminal rows without ellipsis LONG_OPTION_TAIL_UNIQUE';
+    private const string LONG_OPTION_VALUE = 'LONG_OPTION_BEGIN keep every word visible past thirty columns LONG_OPTION_TAIL_UNIQUE';
 
     private TmuxHarness $tmux;
     private string $testProjectDir;
@@ -44,12 +46,14 @@ final class TuiAskHumanChoiceWrapE2eTest extends TestCase
         }
     }
 
-    public function testAskHumanChoiceLabelsWrapAndDownEnterReturnsExactValue(): void
+    public function testAskHumanChoiceRendersPastThirtyColumnsAndDownEnterReturnsExactValue(): void
     {
+        $this->assertGreaterThan(30, \strlen(self::LONG_OPTION_VALUE));
+
         $pane = $this->tmux->startDetached(
             command: $this->agentCommand(),
-            prefix: 'tui-ask-human-choice-wrap',
-            width: 56,
+            prefix: 'tui-ask-human-choice-full-width',
+            width: 100,
             height: 40,
             cwd: $this->testProjectDir,
         );
@@ -58,7 +62,7 @@ final class TuiAskHumanChoiceWrapE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
             $this->tmux->waitForTuiReadyAfterLogo($pane);
             $this->tmux->sendKey($pane, 'C-u');
-            $this->tmux->sendLiteral($pane, 'Ask me a wrapping choice');
+            $this->tmux->sendLiteral($pane, 'Ask me a full-width choice');
             $this->tmux->sendKey($pane, 'Enter');
 
             $capture = $this->tmux->waitForCallback(
@@ -68,18 +72,18 @@ final class TuiAskHumanChoiceWrapE2eTest extends TestCase
                     && str_contains($cap, 'LONG_OPTION_BEGIN')
                     && str_contains($cap, 'LONG_OPTION_TAIL_UNIQUE'),
                 timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-                message: 'ask_human choice overlay did not show full wrapped long option',
+                message: 'ask_human choice overlay did not show the full-width long option tail',
                 history: 3000,
             );
 
-            $this->tmux->saveAnsiSnapshot($pane, 'ask-human-choice-wrap-overlay');
+            $this->tmux->saveAnsiSnapshot($pane, 'ask-human-choice-full-width-overlay');
 
             $this->assertStringContainsString('SHORT_OPTION_KEEP_SINGLE_LINE', $capture);
             $this->assertStringContainsString('LONG_OPTION_BEGIN', $capture);
             $this->assertStringContainsString('LONG_OPTION_TAIL_UNIQUE', $capture);
             foreach (explode("\n", $capture) as $line) {
                 if (str_contains($line, 'LONG_OPTION_') || str_contains($line, 'SHORT_OPTION_')) {
-                    $this->assertStringNotContainsString('…', $line, 'Choice labels must wrap, not ellipsize');
+                    $this->assertStringNotContainsString('…', $line, 'Full-width labels must not be ellipsized under available columns');
                 }
             }
 
@@ -88,11 +92,11 @@ final class TuiAskHumanChoiceWrapE2eTest extends TestCase
 
             $answered = $this->tmux->waitForCaptureContains(
                 $pane,
-                'CHOICE_WRAP_SELECTED_OK',
+                'CHOICE_FULL_WIDTH_SELECTED_OK',
                 TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
             );
-            $this->tmux->saveAnsiSnapshot($pane, 'ask-human-choice-wrap-answered');
-            $this->assertStringContainsString('CHOICE_WRAP_SELECTED_OK', $answered);
+            $this->tmux->saveAnsiSnapshot($pane, 'ask-human-choice-full-width-answered');
+            $this->assertStringContainsString('CHOICE_FULL_WIDTH_SELECTED_OK', $answered);
 
             $sessionId = $this->resolveSingleCreatedSessionId();
             $this->assertNotNull($sessionId, 'Expected exactly one isolated session directory after ask_human answer');
@@ -100,7 +104,7 @@ final class TuiAskHumanChoiceWrapE2eTest extends TestCase
             $this->assertFileExists($eventsPath);
             $this->assertCanonicalHumanResponseAnswer($eventsPath, self::LONG_OPTION_VALUE);
         } catch (\Throwable $e) {
-            $this->tmux->saveAnsiSnapshot($pane, 'ask-human-choice-wrap-FAILURE');
+            $this->tmux->saveAnsiSnapshot($pane, 'ask-human-choice-full-width-FAILURE');
             throw $e;
         }
     }
@@ -110,13 +114,13 @@ final class TuiAskHumanChoiceWrapE2eTest extends TestCase
         $projectDir = ProjectDir::get();
         $php = \PHP_BINARY;
         $script = $projectDir.'/bin/console';
-        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-ask-human-choice-wrap');
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-ask-human-choice-full-width');
         $dbPath = $paths['app'];
         $transportDbPath = $paths['transport'];
 
         $fixturePath = implode(';', [
-            $projectDir.'/tests/Tui/E2E/fixtures/tui-ask-human-choice-wrap.json',
-            $projectDir.'/tests/Tui/E2E/fixtures/tui-ask-human-choice-wrap-after-answer.json',
+            $projectDir.'/tests/Tui/E2E/fixtures/tui-ask-human-choice-full-width.json',
+            $projectDir.'/tests/Tui/E2E/fixtures/tui-ask-human-choice-full-width-after-answer.json',
         ]);
 
         return \sprintf(
@@ -128,7 +132,7 @@ final class TuiAskHumanChoiceWrapE2eTest extends TestCase
             .'--model=llama_cpp_test/test '
             .'--tools=ask_human '
             .'--tools-excluded=bash,write,edit,read,subagent '
-            .'--prompt="Ask me a wrapping choice" '
+            .'--prompt="Ask me a full-width choice" '
             .'2>&1',
             escapeshellarg($this->testProjectDir.'/home'),
             escapeshellarg($fixturePath),
@@ -139,7 +143,7 @@ final class TuiAskHumanChoiceWrapE2eTest extends TestCase
 
     private function createIsolatedProjectDir(): string
     {
-        $dir = TestDirectoryIsolation::createProjectTempDir('tui-ask-human-choice-wrap');
+        $dir = TestDirectoryIsolation::createProjectTempDir('tui-ask-human-choice-full-width');
         @mkdir($dir.'/.hatfield', 0o777, true);
 
         $settings = [
@@ -193,8 +197,13 @@ final class TuiAskHumanChoiceWrapE2eTest extends TestCase
             return null;
         }
 
+        $entries = scandir($sessionsRoot);
+        if (false === $entries) {
+            return null;
+        }
+
         $dirs = array_values(array_filter(
-            scandir($sessionsRoot) ?: [],
+            $entries,
             static fn (string $entry): bool => !\in_array($entry, ['.', '..'], true) && is_dir($sessionsRoot.'/'.$entry),
         ));
         if (1 !== \count($dirs)) {
@@ -206,7 +215,9 @@ final class TuiAskHumanChoiceWrapE2eTest extends TestCase
 
     private function assertCanonicalHumanResponseAnswer(string $eventsPath, string $expectedAnswer): void
     {
-        $lines = file($eventsPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) ?: [];
+        $lines = false !== ($rawLines = file($eventsPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES))
+            ? $rawLines
+            : [];
         $matched = null;
 
         foreach ($lines as $line) {
@@ -234,7 +245,7 @@ final class TuiAskHumanChoiceWrapE2eTest extends TestCase
         $this->assertSame(
             $expectedAnswer,
             $matched,
-            'Down+Enter must persist the exact selected long option as payload.answer',
+            'Down+Enter must persist the exact selected full-width option as payload.answer',
         );
     }
 }

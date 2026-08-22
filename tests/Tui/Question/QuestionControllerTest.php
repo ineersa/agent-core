@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Question;
 
 use Ineersa\Tui\Editor\PromptEditor;
-use Ineersa\Tui\Question\QuestionChoiceListWidget;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
@@ -25,6 +24,7 @@ use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\EditorWidget;
 use Symfony\Component\Tui\Widget\MarkdownWidget;
+use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
@@ -81,7 +81,7 @@ class QuestionControllerTest extends TestCase
         // after close(). This test verifies that editorWidget() is accessible
         // through a ChatScreen with a PromptEditor injected.
         //
-        // Full QuestionChoiceListWidget event dispatch requires Symfony Tui
+        // Full SelectListWidget event dispatch requires Symfony Tui
         // infrastructure (tui->mount(), insertOverlayBeforeEditor) and is
         // not unit-testable without it. This test at minimum proves the
         // editorWidget() call path does not crash.
@@ -195,7 +195,12 @@ class QuestionControllerTest extends TestCase
         $this->assertCount(3, $children, 'Choice overlay should be header + prompt + list');
         $this->assertInstanceOf(TextWidget::class, $children[0]);
         $this->assertInstanceOf(MarkdownWidget::class, $children[1]);
-        $this->assertInstanceOf(QuestionChoiceListWidget::class, $children[2]);
+        $this->assertInstanceOf(SelectListWidget::class, $children[2]);
+        $this->assertContains(
+            'question-choice-list',
+            $children[2]->getStyleClasses(),
+            'Question list must use the scoped style class for stylesheet rules',
+        );
 
         $promptStyle = $children[1]->getStyle();
         $this->assertNotNull($promptStyle);
@@ -225,26 +230,6 @@ class QuestionControllerTest extends TestCase
             $joined,
             'Prompt body must not use Accent coloring reserved for the header',
         );
-
-        $alphaIndex = null;
-        $betaIndex = null;
-        foreach ($rendered as $index => $line) {
-            $linePlain = preg_replace('/\x1b\[[0-9;]*m/', '', $line) ?? $line;
-            if (str_contains($linePlain, 'ANSWER_ALPHA_UNIQUE')) {
-                $alphaIndex = $index;
-            }
-            if (str_contains($linePlain, 'ANSWER_BETA_UNIQUE')) {
-                $betaIndex = $index;
-            }
-        }
-        $this->assertNotNull($alphaIndex);
-        $this->assertNotNull($betaIndex);
-        $this->assertSame(
-            '',
-            trim(preg_replace('/\x1b\[[0-9;]*m/', '', $rendered[$alphaIndex + 1] ?? 'missing') ?? ''),
-            'Native list spacing must keep one blank row between logical answers',
-        );
-        $this->assertSame($betaIndex, $alphaIndex + 2);
     }
 
     #[Test]
@@ -384,7 +369,11 @@ class QuestionControllerTest extends TestCase
 
         $this->assertCount(1, $items);
         $this->assertSame('NoDesc', $items[0]['value']);
-        $this->assertSame('', $items[0]['description']);
+        $this->assertArrayNotHasKey(
+            'description',
+            $items[0],
+            'Empty descriptions must be omitted so SelectListWidget keeps full-width labels',
+        );
     }
 
     #[Test]
@@ -496,11 +485,70 @@ class QuestionControllerTest extends TestCase
         );
 
         // Text kind never builds list items; the controller uses a TextWidget banner
-        // instead of QuestionChoiceListWidget. This test verifies the buildItems path
+        // instead of SelectListWidget. This test verifies the buildItems path
         // returns empty for Text kind.
         $items = $this->invokeBuildItems($request);
 
         $this->assertCount(0, $items);
+    }
+
+    #[Test]
+    public function testEmptyDescriptionChoiceRendersPastThirtyColumnsAtFullWidth(): void
+    {
+        $longLabel = 'LONG_OPTION_BEGIN keep every word visible past thirty columns LONG_OPTION_TAIL_UNIQUE';
+        $this->assertGreaterThan(30, mb_strlen($longLabel));
+
+        $request = new QuestionRequest(
+            requestId: 'choice-full-width',
+            source: QuestionSource::AgentCore,
+            kind: QuestionKind::Choice,
+            prompt: 'Pick the full-width option',
+            choices: [
+                new QuestionOption(label: 'SHORT_OPTION_KEEP_SINGLE_LINE'),
+                new QuestionOption(label: $longLabel),
+                new QuestionOption(label: 'WITH_DESC', description: 'Visible description remains mapped'),
+            ],
+            allowOther: false,
+        );
+
+        $items = $this->invokeBuildItems($request);
+        $this->assertArrayNotHasKey('description', $items[0]);
+        $this->assertArrayNotHasKey('description', $items[1]);
+        $this->assertSame('Visible description remains mapped', $items[2]['description']);
+
+        $palette = new ThemePalette(
+            name: 'test',
+            colors: [
+                ThemeColorEnum::Accent->value => 'cyan',
+                ThemeColorEnum::Prompt->value => 'magenta',
+                ThemeColorEnum::Muted->value => 'gray',
+                ThemeColorEnum::Text->value => 'white',
+            ],
+        );
+        $theme = new DefaultTheme($palette);
+        $tui = new Tui();
+        $screen = new ChatScreen($theme, 'choice-full-width-session', new PromptEditor());
+        $screen->mount($tui);
+        $controller = new QuestionController(new QuestionCoordinator(), $screen);
+        $controller->open($request);
+
+        $containerProp = new \ReflectionProperty($controller, 'container');
+        /** @var ContainerWidget $container */
+        $container = $containerProp->getValue($controller);
+        $this->assertInstanceOf(ContainerWidget::class, $container);
+
+        $rendered = (new Renderer())->render($container, 96, 30);
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $rendered)) ?? '';
+
+        $this->assertStringContainsString('LONG_OPTION_BEGIN', $plain);
+        $this->assertStringContainsString('LONG_OPTION_TAIL_UNIQUE', $plain);
+        $this->assertStringContainsString('Visible description remains mapped', $plain);
+        foreach ($rendered as $line) {
+            $linePlain = preg_replace('/\x1b\[[0-9;]*m/', '', $line) ?? $line;
+            if (str_contains($linePlain, 'LONG_OPTION_')) {
+                $this->assertStringNotContainsString('…', $linePlain);
+            }
+        }
     }
 
     // ── Confirm styling ──

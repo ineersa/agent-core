@@ -6,26 +6,26 @@
     "deltas": [
         {
             "type": "tool_call_start",
-            "id": "call_ask_human_choice_wrap",
+            "id": "call_ask_human_choice_full_width",
             "name": "ask_human"
         },
         {
             "type": "tool_input_delta",
-            "id": "call_ask_human_choice_wrap",
+            "id": "call_ask_human_choice_full_width",
             "name": "ask_human",
-            "partial_json": "{\"question\":\"Pick the full wrapped option\",\"choices\":[\"SHORT_OPTION_KEEP_SINGLE_LINE\",\"LONG_OPTION_BEGIN keep every word visible across multiple terminal rows without ellipsis LONG_OPTION_TAIL_UNIQUE\"]}"
+            "partial_json": "{\"question\":\"Pick the full-width option\",\"choices\":[\"SHORT_OPTION_KEEP_SINGLE_LINE\",\"LONG_OPTION_BEGIN keep every word visible past thirty columns LONG_OPTION_TAIL_UNIQUE\"]}"
         },
         {
             "type": "tool_call_complete",
             "tool_calls": [
                 {
-                    "id": "call_ask_human_choice_wrap",
+                    "id": "call_ask_human_choice_full_width",
                     "name": "ask_human",
                     "arguments": {
-                        "question": "Pick the full wrapped option",
+                        "question": "Pick the full-width option",
                         "choices": [
                             "SHORT_OPTION_KEEP_SINGLE_LINE",
-                            "LONG_OPTION_BEGIN keep every word visible across multiple terminal rows without ellipsis LONG_OPTION_TAIL_UNIQUE"
+                            "LONG_OPTION_BEGIN keep every word visible past thirty columns LONG_OPTION_TAIL_UNIQUE"
                         ]
                     }
                 }

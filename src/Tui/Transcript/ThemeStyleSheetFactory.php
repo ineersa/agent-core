@@ -79,6 +79,24 @@ final class ThemeStyleSheetFactory
     }
 
     /**
+     * Styles scoped to the ask_human/native question SelectListWidget class only.
+     *
+     * Uses class selectors so session/model/history pickers keep Symfony defaults.
+     */
+    public function createQuestionChoiceList(ThemePalette $palette): StyleSheet
+    {
+        $rules = [];
+
+        $this->addRule($rules, '.question-choice-list::selected', $palette, ThemeColorEnum::Accent, bold: true);
+        $this->addRule($rules, '.question-choice-list::selected:focus', $palette, ThemeColorEnum::Accent, bold: true);
+        $this->addRule($rules, '.question-choice-list::label', $palette, ThemeColorEnum::Text);
+        $this->addRule($rules, '.question-choice-list::description', $palette, ThemeColorEnum::Muted);
+        $this->addRule($rules, '.question-choice-list::scroll-info', $palette, ThemeColorEnum::Muted);
+
+        return new StyleSheet($rules);
+    }
+
+    /**
      * @param array<string, Style> $rules
      */
     private function addRule(

@@ -12,6 +12,7 @@ use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Style\Direction;
 use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Widget\ContainerWidget;
+use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
@@ -19,9 +20,8 @@ use Symfony\Component\Tui\Widget\TextWidget;
  *
  * Opens a question-specific overlay on the TUI:
  *  - Text kind: renders a TextWidget banner with prompt/hint above the editor
- *  - Confirm/Choice/Approval kinds: opens an interactive QuestionChoiceListWidget
- *    with arrow-key navigation and Enter to select / Esc to cancel. Labels wrap
- *    instead of truncating (Symfony SelectListWidget truncates every row).
+ *  - Confirm/Choice/Approval kinds: opens an interactive SelectListWidget
+ *    with arrow-key navigation and Enter to select / Esc to cancel.
  *
  * When allowOther is true on the request, a "Type your answer" option is
  * appended to the select list, allowing free-form input from the editor.
@@ -31,7 +31,7 @@ use Symfony\Component\Tui\Widget\TextWidget;
  */
 final class QuestionController
 {
-    private ?QuestionChoiceListWidget $listWidget = null;
+    private ?SelectListWidget $listWidget = null;
     private ?ContainerWidget $container = null;
     private bool $isOpen = false;
     private bool $awaitingFreeForm = false;
@@ -48,7 +48,7 @@ final class QuestionController
      * Open the interactive question overlay.
      *
      * Builds and mounts a ContainerWidget with header + prompt for Text
-     * kind, or header + QuestionChoiceListWidget for interactive kinds.
+     * kind, or header + SelectListWidget for interactive kinds.
      */
     public function open(QuestionRequest $request): void
     {
@@ -138,10 +138,10 @@ final class QuestionController
      * Sets awaitingFreeForm=true so TickPollListener's per-tick re-open guard
      * does NOT rebuild the select overlay on the next tick (the active request
      * remains unanswered so actionRequired() is still true — without this flag
-     * the guard would see !isOpen() and re-open with a fresh QuestionChoiceListWidget
+     * the guard would see !isOpen() and re-open with a fresh SelectListWidget
      * at selectedIndex=0, resetting the selection).
      *
-     * Focus is moved to the editor BEFORE close() so the QuestionChoiceListWidget is
+     * Focus is moved to the editor BEFORE close() so the SelectListWidget is
      * not the focused widget when it detaches (avoids FocusManager::remove()
      * reassigning focus at detach time).
      *
@@ -186,7 +186,7 @@ final class QuestionController
     }
 
     /**
-     * Build and wire a QuestionChoiceListWidget for interactive question kinds.
+     * Build and wire a SelectListWidget for interactive question kinds.
      *
      * Creates the widget with items from buildItems(), attaches Enter/ESCAPE
      * callbacks, and adds it to the container.
@@ -201,11 +201,13 @@ final class QuestionController
         $items = $this->styleConfirmItems($items, $request->kind);
         $kb = SelectListKeybindings::standard();
 
-        $this->listWidget = new QuestionChoiceListWidget(
+        $this->listWidget = new SelectListWidget(
             items: $items,
             maxVisible: SelectListKeybindings::MAX_VISIBLE,
             keybindings: $kb,
         );
+        // Scope stylesheet rules to this overlay only; other pickers stay on defaults.
+        $this->listWidget->addStyleClass('question-choice-list');
 
         $this->listWidget->onSelect(function (SelectEvent $event): void {
             $item = $event->getItem();
@@ -293,7 +295,7 @@ final class QuestionController
     }
 
     /**
-     * Build QuestionChoiceListWidget items for the given request kind.
+     * Build SelectListWidget items for the given request kind.
      *
      * When allowOther is true, a "Type your answer" option is appended
      * as the last item.
@@ -302,7 +304,7 @@ final class QuestionController
      */
     private function buildItems(QuestionRequest $request): array
     {
-        // Text kind uses a TextWidget banner, never QuestionChoiceListWidget.
+        // Text kind uses a TextWidget banner, never SelectListWidget.
         if (QuestionKind::Text === $request->kind) {
             return [];
         }
@@ -313,11 +315,19 @@ final class QuestionController
                 ['value' => 'no', 'label' => "\u{2717} No"],
             ],
             QuestionKind::Choice => array_map(
-                static fn (QuestionOption $opt): array => [
-                    'value' => $opt->label,
-                    'label' => $opt->label,
-                    'description' => $opt->description,
-                ],
+                static function (QuestionOption $opt): array {
+                    $item = [
+                        'value' => $opt->label,
+                        'label' => $opt->label,
+                    ];
+                    // Omit empty descriptions so SelectListWidget stays in full-width
+                    // label mode instead of clamping labels to min(30, maxLabelWidth).
+                    if ('' !== $opt->description) {
+                        $item['description'] = $opt->description;
+                    }
+
+                    return $item;
+                },
                 $request->choices,
             ),
         };
