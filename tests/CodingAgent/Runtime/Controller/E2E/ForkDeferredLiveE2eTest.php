@@ -73,7 +73,7 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
             $resultText = json_encode($completedPayload, \JSON_THROW_ON_ERROR);
         }
         $this->assertStringContainsString(self::CHILD_REPLY, $resultText, 'Fork completion must include child reply token. '.$this->collectDiagnostics($events));
-        $this->assertStringContainsString('Complete handoff:', $resultText, 'Parent wrapper must keep artifact handoff header. '.$this->collectDiagnostics($events));
+        $this->assertStringContainsString('Handoff:', $resultText, 'Parent wrapper must keep artifact handoff header. '.$this->collectDiagnostics($events));
 
         if (1 !== preg_match('/Artifact: (agent_[0-9a-f]{16})/', $resultText, $matches)) {
             $this->fail('Parent fork result must include Artifact: agent_<16 hex>. Result: '.$resultText."\n"

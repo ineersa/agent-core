@@ -253,7 +253,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         );
     }
 
-    public function testFollowUpFailureMarksBatchFailedAndKeepsFailedChildTerminal(): void
+    public function testFollowUpFailureMarksBatchFailedAndLeavesChildRunning(): void
     {
         $parent = 'parent-followup-fail';
         $artifactId = 'agent_followup_fail';
@@ -287,10 +287,13 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $entry = $this->registry()->get($parent, $artifactId);
         $this->assertNotNull($entry);
-        $this->assertSame(AgentArtifactStatusEnum::Completed, $entry->status);
+        // Running is persisted before followUp so registry projection reopens even when followUp fails.
+        $this->assertSame(AgentArtifactStatusEnum::Running, $entry->status);
 
         $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('batch launch previously failed');
+        // Artifact was marked Running before followUp failed, so a retry is rejected as in-flight
+        // before the previously-failed batch short-circuit is reached.
+        $this->expectExceptionMessage('already in flight');
         $this->resume(
             parentRunId: $parent,
             tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue again')],

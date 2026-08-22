@@ -54,19 +54,6 @@ final class AgentResumeExecutionService
      */
     public function resume(string $parentRunId, array $tasks, ChildRunBatchExecutionModeEnum $executionMode): DeferredToolCompletionOutcome
     {
-        if ([] === $tasks) {
-            throw new ToolCallException('agent_resume requires at least one task.', retryable: false);
-        }
-
-        if (ChildRunBatchExecutionModeEnum::Single === $executionMode && 1 !== \count($tasks)) {
-            throw new ToolCallException('Single agent_resume requires exactly one task.', retryable: false);
-        }
-
-        $maxAgents = $this->agentsConfig->maxAgents;
-        if (\count($tasks) > $maxAgents) {
-            throw new ToolCallException(\sprintf('Parallel agent_resume supports at most %d children per tool call, but %d tasks were requested.', $maxAgents, \count($tasks)), retryable: false);
-        }
-
         $depthBlock = $this->depthGuard->checkLaunchAllowed($this->metadataReader->isAgentChild($parentRunId));
         if (null !== $depthBlock) {
             throw new ToolCallException($depthBlock, retryable: false);
@@ -78,13 +65,8 @@ final class AgentResumeExecutionService
         }
 
         $resolved = [];
-        $seenArtifactIds = [];
         foreach ($tasks as $index => $task) {
             $entry = $this->resolveAndValidateTarget($parentRunId, $task);
-            if (isset($seenArtifactIds[$entry->artifactId])) {
-                throw new ToolCallException(\sprintf('Duplicate artifact_id "%s" in one agent_resume call.', $entry->artifactId), retryable: false);
-            }
-            $seenArtifactIds[$entry->artifactId] = true;
             $resolved[] = [
                 'batchIndex' => $index + 1,
                 'entry' => $entry,
@@ -183,14 +165,6 @@ final class AgentResumeExecutionService
             foreach ($resolved as $item) {
                 /** @var AgentArtifactEntryDTO $entry */
                 $entry = $item['entry'];
-                $this->agentRunner->followUp(
-                    $entry->agentRunId,
-                    new AgentMessage(
-                        role: 'user',
-                        content: [['type' => 'text', 'text' => $item['task']]],
-                    ),
-                );
-                $launchedBeforeFailure[] = $item['batchIndex'];
                 try {
                     $this->artifactRegistry->update(
                         parentRunId: $parentRunId,
@@ -209,6 +183,14 @@ final class AgentResumeExecutionService
                         'exception_class' => $markRunningFailure::class,
                     ]);
                 }
+                $this->agentRunner->followUp(
+                    $entry->agentRunId,
+                    new AgentMessage(
+                        role: 'user',
+                        content: [['type' => 'text', 'text' => $item['task']]],
+                    ),
+                );
+                $launchedBeforeFailure[] = $item['batchIndex'];
             }
         } catch (\Throwable $e) {
             $failureBatchIndex = null;
@@ -240,8 +222,8 @@ final class AgentResumeExecutionService
                 ]);
             }
 
-            // Not-yet-followUp'd children keep their prior terminal artifact status.
-            // Successfully followUp'd children remain Running (real progress started).
+            // Children marked Running before followUp stay Running (registry projection
+            // already reopened). Not-yet-marked children keep their prior terminal status.
             if ($e instanceof ToolCallException) {
                 throw $e;
             }

@@ -16,7 +16,6 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChild
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
-use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -28,7 +27,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
 {
     public function __construct(
         ManagerRegistry $registry,
-        private readonly SerializerInterface&DenormalizerInterface $serializer,
+        private readonly SerializerInterface $serializer,
         private readonly ValidatorInterface $validator,
     ) {
         parent::__construct($registry, DeferredSubagentChild::class);
@@ -278,8 +277,14 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
 
         try {
             /** @var DeferredChildRunLifecycleProjectionDTO $projection */
-            $projection = $this->serializer->denormalize($raw, DeferredChildRunLifecycleProjectionDTO::class);
+            $projection = $this->serializer->deserialize(
+                json_encode($raw, \JSON_THROW_ON_ERROR),
+                DeferredChildRunLifecycleProjectionDTO::class,
+                'json',
+            );
         } catch (SerializerExceptionInterface|\TypeError|\ValueError $exception) {
+            throw new \InvalidArgumentException(\sprintf('Invalid deferred child lifecycle projection: %s', $exception->getMessage()), 0, $exception);
+        } catch (\JsonException $exception) {
             throw new \InvalidArgumentException(\sprintf('Invalid deferred child lifecycle projection: %s', $exception->getMessage()), 0, $exception);
         }
 

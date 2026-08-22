@@ -31,7 +31,6 @@ final class AgentResumeToolDefinitionBuilder
                 'Use agent_resume to continue an existing child by artifact_id (preferred) or agent_run_id with a focused continuation task. Do not launch a duplicate via subagent when relevant child context already exists.',
                 'Batch independent resumes in one {"tasks":[{"artifact_id":"...","task":"..."}]} call; use single-mode fields for one child or dependent/serialized work.',
                 \sprintf('Tasks in one call run concurrently (max %d).', $maxAgents),
-                'Rejects in-flight children (running/needs_clarification) and fork children. Failed/cancelled children are tried when the child session is still usable.',
                 'Single-mode success includes full latest handoff inline. Parallel results are bounded summaries — use agent_retrieve; mode=handoff_history lists/fetches archived prior handoffs.',
             ],
         );

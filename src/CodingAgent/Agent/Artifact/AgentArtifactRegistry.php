@@ -778,6 +778,14 @@ final class AgentArtifactRegistry
             $summary = $entryMeta?->summary;
         }
 
+        // Prefer canonical Status: line from archived handoff body over registry/meta.
+        // After resume the registry may already be Running while the archived body still
+        // records the prior terminal outcome (completed/failed/cancelled/...).
+        $bodyStatus = $this->parseHandoffBodyStatus($existing);
+        if (null !== $bodyStatus) {
+            $status = $bodyStatus;
+        }
+
         if (null !== $summary && '' !== trim($summary)) {
             $summary = mb_substr(preg_replace('/\s+/', ' ', $summary) ?? $summary, 0, 240);
         } else {
@@ -843,6 +851,15 @@ final class AgentArtifactRegistry
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    private function parseHandoffBodyStatus(string $handoffMarkdown): ?AgentArtifactStatusEnum
+    {
+        if (1 !== preg_match('/^Status:\s*(\S+)\s*$/m', $handoffMarkdown, $matches)) {
+            return null;
+        }
+
+        return AgentArtifactStatusEnum::tryFrom($matches[1]);
+    }
 
     /**
      * Remove a reserved artifact directory tree after a Pending-only discard.
