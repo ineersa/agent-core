@@ -52,8 +52,7 @@ final class TuiAskHumanOverlayMarkdownE2eTest extends TestCase
         );
 
         try {
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
             $this->tmux->sendKey($pane, 'C-u');
             $this->tmux->sendLiteral($pane, 'Ask me a markdown question');
             $this->tmux->sendKey($pane, 'Enter');

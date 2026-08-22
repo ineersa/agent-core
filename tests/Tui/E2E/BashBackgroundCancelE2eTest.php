@@ -40,7 +40,7 @@ final class BashBackgroundCancelE2eTest extends TestCase
         try {
             $this->prepareEditorForUserPrompt($this->tmux, $pane);
 
-            $this->tmux->sendLiteral($pane, 'Run sleep 4');
+            $this->tmux->sendLiteral($pane, 'Run sleep 2');
             $this->tmux->sendKey($pane, 'Enter');
 
             // Proof is the confirm overlay itself; do not stage on generic "Running".

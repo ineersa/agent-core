@@ -21,8 +21,7 @@ use PHPUnit\Framework\TestCase;
  * Uses a replay fixture that forces a real `task_list` tool call.  The
  * task-workflow extension is enabled in the isolated project settings and
  * resolves its board from HATFIELD_TASK_WORKFLOW_ROOT (isolated temp
- * board seeded with one TODO task).  The fixture exhaustion fallback
- * ("done") lets the turn complete after the tool executes.
+ * board seeded with one TODO task).  A second explicit replay fixture returns "done" after the tool executes.
  *
  * Design (mirrors TuiToolOutputE2eTest):
  *  - Single detached tmux session with a replay fixture returning a
@@ -80,15 +79,14 @@ final class TuiTaskListToolE2eTest extends TestCase
         );
 
         try {
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
 
             $this->tmux->sendKey($pane, 'C-u');
             $this->tmux->sendLiteral($pane, 'List the tasks');
             $this->tmux->sendKey($pane, 'Enter');
 
             // Wait for the assistant block (◇) — the tool executed and the
-            // fixture exhaustion fallback returned "done".
+            // post-tool replay fixture returned "done".
             $capture = $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '◇')
@@ -99,7 +97,7 @@ final class TuiTaskListToolE2eTest extends TestCase
             );
             $this->assertTrue(
                 str_contains($capture, '◇'),
-                'Transcript must display an assistant block (◇) after tool execution + done response',
+                'Transcript must display an assistant block (◇) after tool execution + post-tool done response',
             );
 
             $fullCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
@@ -153,9 +151,13 @@ final class TuiTaskListToolE2eTest extends TestCase
 
     private function agentCommand(): string
     {
-        $fixturePath = __DIR__.'/fixtures/tui-task-list-tool-call.json';
-        $fixtureEnv = is_file($fixturePath)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($fixturePath).' '
+        $fixturePaths = [
+            __DIR__.'/fixtures/tui-task-list-tool-call.json',
+            __DIR__.'/fixtures/tui-task-list-done.json',
+        ];
+        $existing = array_values(array_filter($fixturePaths, is_file(...)));
+        $fixtureEnv = [] !== $existing
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg(implode(';', $existing)).' '
             : '';
 
         $projectDir = ProjectDir::get();

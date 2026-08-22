@@ -53,7 +53,7 @@ final class BashBackgroundAcceptE2eTest extends TestCase
         try {
             $this->prepareEditorForUserPrompt($this->tmux, $pane);
 
-            $this->tmux->sendLiteral($pane, 'Run sleep 4');
+            $this->tmux->sendLiteral($pane, 'Run sleep 2');
             $this->tmux->sendKey($pane, 'Enter');
 
             // Proof is the confirm overlay itself; do not stage on generic "Running".
@@ -87,9 +87,9 @@ final class BashBackgroundAcceptE2eTest extends TestCase
                 $pane,
                 fn (string $cap): bool => null !== $this->backgroundedPid
                     && str_contains($cap, (string) $this->backgroundedPid)
-                    && str_contains($cap, 'sleep 4'),
+                    && str_contains($cap, 'sleep 2'),
                 timeout: 15.0,
-                message: 'bg_status list did not show the backgrounded sleep 4 process',
+                message: 'bg_status list did not show the backgrounded sleep 2 process',
                 history: 6000,
             );
 

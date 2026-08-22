@@ -53,8 +53,7 @@ final class TuiSubagentLiveChildExportE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'C-u');
             $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
             $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
             // Resume proof: fixture artifact must be visible before slash commands.
             $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 12.0, 'Resumed transcript must show fixture artifact');
             $this->tmux->sendKey($pane, 'C-u');
@@ -116,8 +115,7 @@ final class TuiSubagentLiveChildExportE2eTest extends TestCase
 
     private function createSessionAndWaitForAssistant(TmuxPane $pane): string
     {
-        $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-        $this->tmux->waitForTuiReadyAfterLogo($pane);
+        $this->tmux->waitForTuiReady($pane);
         $this->tmux->sendLiteral($pane, 'hi');
         $this->tmux->sendKey($pane, 'Enter');
         $sessionId = null;

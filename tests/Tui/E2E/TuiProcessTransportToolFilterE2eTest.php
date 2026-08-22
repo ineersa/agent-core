@@ -120,8 +120,7 @@ final class TuiProcessTransportToolFilterE2eTest extends TestCase
 
     private function createSessionAndWaitForAssistant(TmuxPane $pane): string
     {
-        $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-        $this->tmux->waitForTuiReadyAfterLogo($pane);
+        $this->tmux->waitForTuiReady($pane);
         $this->tmux->sendLiteral($pane, self::REPLAY_PROMPT);
         $this->tmux->sendKey($pane, 'Enter');
 

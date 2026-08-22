@@ -27,7 +27,7 @@ use PHPUnit\Framework\TestCase;
  * Test design:
  *  1. Agent starts with two chained replay fixtures:
  *     - Fixture 0: fast assistant response (input_tokens=100 > compact threshold=10)
- *     - Fixture 1: delayed compaction summary (response_delay_ms=3000)
+ *     - Fixture 1: delayed compaction summary (response_delay_ms=1000)
  *  2. Send prompt, wait for assistant response + "Compacting conversation..."
  *  3. Send Escape while compaction is still in-flight (delayed by fixture 1)
  *  4. Verify TUI shows cancellation evidence ("Cancelling", "Cancelled", or
@@ -89,8 +89,7 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
 
         try {
             // Wait for TUI startup (logo visible). 20s under parallel castor check.
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
 
             // Submit a prompt with a fixture whose input_tokens=100
             // (well above compact_after_tokens=10) so auto-compaction
@@ -111,7 +110,7 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
             );
 
             // After the turn commits, auto-compaction fires.  The
-            // delayed fixture (response_delay_ms=3000) keeps the
+            // delayed fixture (response_delay_ms=1000) keeps the
             // compaction LLM call in-flight for ~3 seconds — long
             // enough for Escape to arrive while Compacting.
             $this->tmux->waitForCallback(
@@ -281,7 +280,7 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
     {
         // Two chained fixtures:
         //   fixture 0: fast assistant response (100 tokens, above threshold)
-        //   fixture 1: delayed compaction summary (3s delay)
+        //   fixture 1: delayed compaction summary (1s delay)
         $fixture0 = $this->projectRoot.'/tests/Tui/E2E/fixtures/tui-startup-prompt-response.json';
         $fixture1 = $this->projectRoot.'/tests/Tui/E2E/fixtures/tui-compaction-summary-delayed.json';
 

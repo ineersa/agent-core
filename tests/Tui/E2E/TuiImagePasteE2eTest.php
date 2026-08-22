@@ -55,8 +55,7 @@ final class TuiImagePasteE2eTest extends TestCase
         );
 
         try {
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
 
             $marker = 'PASTE_RESPONSIVE_'.bin2hex(random_bytes(4));
             $this->tmux->sendKey($pane, 'C-v');
@@ -129,8 +128,7 @@ final class TuiImagePasteE2eTest extends TestCase
         );
 
         try {
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
 
             $this->tmux->sendKey($pane, 'C-v');
             $this->tmux->waitForCallback(

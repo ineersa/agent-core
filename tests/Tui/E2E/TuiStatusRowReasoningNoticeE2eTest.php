@@ -71,8 +71,7 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
         );
 
         try {
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
 
             $baselineCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
             $baselineFooterIndex = $this->footerLineIndexLast($baselineCapture);

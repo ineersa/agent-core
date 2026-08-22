@@ -56,7 +56,7 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
         try {
             $this->prepareEditorForUserPrompt($this->tmux, $pane);
 
-            $this->tmux->sendLiteral($pane, 'Run sleep 4');
+            $this->tmux->sendLiteral($pane, 'Run sleep 2');
             $this->tmux->sendKey($pane, 'Enter');
 
             $oldSessionId = null;
@@ -69,7 +69,7 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
                     $oldSessionId = $matches[1];
 
                     return str_contains($cap, 'Running')
-                        || str_contains($cap, 'sleep 4')
+                        || str_contains($cap, 'sleep 2')
                         || str_contains($cap, '◐ Work');
                 },
                 timeout: 20.0,
@@ -113,9 +113,9 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
 
             $this->assertStringContainsString('Welcome to Hatfield', $draftPane);
             $this->assertStringNotContainsString('session '.$oldSessionId, $draftPane);
-            $this->assertStringNotContainsString('sleep 4', $draftPane);
+            $this->assertStringNotContainsString('sleep 2', $draftPane);
             $this->assertStringNotContainsString('Running', $draftPane);
-            $this->assertStringNotContainsString('❯ Run sleep 4', $draftPane);
+            $this->assertStringNotContainsString('❯ Run sleep 2', $draftPane);
             $this->assertStringNotContainsString(self::NEW_SESSION_SENTINEL, $draftPane);
 
             $this->assertTrue(
@@ -146,7 +146,7 @@ final class TuiNewSessionRuntimeTeardownE2eTest extends TestCase
             $afterCapture = $this->tmux->capturePlainWithHistory($pane, 2500);
             $this->assertStringContainsString(self::NEW_SESSION_SENTINEL, $afterCapture);
             $this->assertStringNotContainsString('session '.$oldSessionId, $afterCapture);
-            $this->assertStringNotContainsString('sleep 4', $afterCapture);
+            $this->assertStringNotContainsString('sleep 2', $afterCapture);
             $this->assertTrue(
                 $this->waitForLogCount('controller.session_owner_lock_acquired', 2, 10.0),
                 'First prompt after /new must start a fresh session-scoped controller',

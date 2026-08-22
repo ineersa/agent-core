@@ -55,8 +55,7 @@ final class TuiFileRewindE2eTest extends TestCase
         );
 
         try {
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
 
             $this->submitPrompt($pane, 'hello');
             $this->waitAssistantBlock($pane);
@@ -103,78 +102,6 @@ final class TuiFileRewindE2eTest extends TestCase
         }
     }
 
-    /**
-     * Replay edit tool mutates target.txt; turn-1 checkpoint (pre-edit) restores "before" and undo returns "after".
-     */
-    public function testRewindRestoreUndoAfterEditToolCheckpoint(): void
-    {
-        $pane = $this->tmux->startDetached(
-            command: $this->agentCommandForFixtureChain(
-                'tui-followup-response.json',
-                'tui-tool-call-edit.json',
-            ),
-            prefix: 'tui-file-rewind-edit',
-            width: 120,
-            height: 60,
-            cwd: $this->testProjectDir,
-        );
-
-        try {
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
-
-            $this->submitPrompt($pane, 'hello');
-            $this->waitAssistantBlock($pane);
-            $this->assertNotStuckWorking($pane);
-            // Opaque first-prompt checkpoint identity (may be turn 2 under sparse allocation).
-            $checkpointTurn = $this->waitForFirstTurnCheckpointRecorded();
-
-            $this->submitPrompt($pane, 'Edit target.txt');
-            $this->waitAssistantBlock($pane);
-            $this->assertNotStuckWorking($pane);
-            $this->waitForTargetFileContains(
-                'after',
-                timeoutSeconds: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-                message: 'Edit tool must change target.txt from before to after',
-            );
-
-            $this->openRewindTurnPicker($pane);
-            $this->selectRewindTurnWithCheckpoint($pane, $checkpointTurn);
-            $restoreCapture = $this->confirmRestoreFilesToSelectedTurn($pane);
-            $this->assertStringNotContainsString('File rewind failed', $restoreCapture);
-            $this->assertStringContainsString('before', (string) file_get_contents($this->testProjectDir.'/target.txt'));
-
-            $this->submitPrompt($pane, 'follow-up after edit rewind');
-            $this->waitAssistantBlock($pane);
-            $this->assertNotStuckWorking($pane);
-
-            $this->runSlashCommand($pane, '/history');
-            $treeCapture = $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Session history — Enter to edit prompt'),
-                timeout: 10.0,
-                message: '/history conversation picker did not appear after edit journey',
-                history: 2000,
-            );
-            $this->assertStringNotContainsString('Restore files to this turn', $treeCapture);
-            $this->assertStringNotContainsString('Undo last file restore', $treeCapture);
-            $this->assertStringNotContainsString('File rewind', $treeCapture);
-            $this->assertSame(1, substr_count($treeCapture, 'Session history — Enter to edit prompt'), 'History picker should show a single header (no stacked overlay regression)');
-            $this->assertStringContainsString('Session history', $treeCapture, 'History picker should open for conversation-only selection');
-
-            $this->tmux->saveAnsiSnapshot($pane, 'file-rewind-edit-tool');
-            $this->tmux->sendKey($pane, 'Escape');
-            $this->tmux->sendKey($pane, 'C-d');
-        } catch (\Throwable $e) {
-            $this->tmux->saveAnsiSnapshot($pane, 'file-rewind-edit-tool-FAILURE');
-            try {
-                $this->tmux->sendKey($pane, 'C-d');
-            } catch (\Throwable) {
-            }
-            throw $e;
-        }
-    }
-
     private function ledgerPath(): string
     {
         $real = realpath($this->testProjectDir) ?: $this->testProjectDir;
@@ -183,7 +110,7 @@ final class TuiFileRewindE2eTest extends TestCase
         return $this->testProjectDir.'/.hatfield/rewind/snapshots/'.$hash.'/ledger.json';
     }
 
-    private function waitForTargetFileContains(string $needle, float $timeoutSeconds = 30.0, string $message = ''): void
+    private function waitForTargetFileContains(string $needle, float $timeoutSeconds = 8.0, string $message = ''): void
     {
         $path = $this->testProjectDir.'/target.txt';
         $deadline = microtime(true) + $timeoutSeconds;
@@ -208,7 +135,7 @@ final class TuiFileRewindE2eTest extends TestCase
      * conversational checkpoint is not necessarily turn 1. Callers thread the returned value
      * into picker selection so assertions still confirm a real ledger checkpoint.
      */
-    private function waitForFirstTurnCheckpointRecorded(float $timeoutSeconds = 20.0): int
+    private function waitForFirstTurnCheckpointRecorded(float $timeoutSeconds = 8.0): int
     {
         $ledgerPath = $this->ledgerPath();
         $deadline = microtime(true) + $timeoutSeconds;

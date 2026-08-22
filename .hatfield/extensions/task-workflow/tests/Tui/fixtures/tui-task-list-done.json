@@ -1,0 +1,33 @@
+{
+  "$schema": "Post-tool assistant reply for task_list TUI E2E after fixture-exhaustion hardening",
+  "model": "llama_cpp_test/test",
+  "provider_id": "llama_cpp_test",
+  "reasoning": "off",
+  "recorded_at": "2026-08-22T00:00:00+00:00",
+  "recording_source": "synthetic",
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "List the tasks"
+      }
+    ]
+  },
+  "usage": {
+    "input_tokens": 5,
+    "output_tokens": 2,
+    "total_tokens": 7
+  },
+  "stop_reason": "stop",
+  "expected_text": "done",
+  "deltas": [
+    {
+      "type": "text",
+      "content": "done"
+    },
+    {
+      "type": "finished",
+      "content": "stop"
+    }
+  ]
+}

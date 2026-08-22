@@ -72,8 +72,7 @@ trait BashBackgroundE2eTestSupport
 
     protected function prepareEditorForUserPrompt(TmuxHarness $tmux, TmuxPane $pane): void
     {
-        $tmux->waitForCaptureContains($pane, '█', 10.0);
-        $tmux->waitForTuiReadyAfterLogo($pane);
+        $tmux->waitForTuiReady($pane);
         $tmux->sendKey($pane, 'Escape');
         $tmux->sendKey($pane, 'C-u');
     }

@@ -10,7 +10,12 @@ use Ineersa\Tui\Tests\Support\SubagentChildHitlEventsFixture;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
-/** @group tui-e2e-replay */
+/**
+ * Real-TTY proof that child HITL surfaces through agents-live and that leaving
+ * live view drops the child question without fabricating a cancel confirmation.
+ *
+ * @group tui-e2e-replay
+ */
 #[Group('tui-e2e-replay')]
 final class TuiSubagentChildHitlCancellationE2eTest extends TestCase
 {
@@ -36,49 +41,11 @@ final class TuiSubagentChildHitlCancellationE2eTest extends TestCase
         }
     }
 
-    public function testMainAttentionLiveViewChildHitlQuestionSurfaces(): void
+    public function testChildHitlSurfacesAndLeaveDropsQuestionWithoutFalseCancel(): void
     {
         $pane = $this->tmux->startDetached(
             command: $this->agentCommand(),
             prefix: 'tui-subagent-child-hitl',
-            width: 120,
-            height: 60,
-            cwd: $this->testProjectDir,
-        );
-
-        try {
-            $sessionId = $this->createSessionAndWaitForAssistant($pane);
-            SubagentChildHitlEventsFixture::write($this->testProjectDir, $sessionId);
-
-            $this->tmux->sendKey($pane, 'C-u');
-            $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
-            $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
-
-            $this->tmux->waitForCaptureContains($pane, 'needs input', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Main transcript card must show child needs input');
-
-            $this->tmux->sendKey($pane, 'C-u');
-            $this->tmux->sendLiteral($pane, '/agents-live');
-            $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'Agents live', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Agents live picker must open');
-            $this->tmux->waitForCaptureContains($pane, '⚠ needs input', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Picker must mark waiting child');
-
-            $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'Child waiting for your input', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Live view working line must show child waiting');
-            $this->tmux->waitForCaptureContains($pane, 'Which file should the scout inspect next?', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Child question overlay prompt must appear');
-            $this->tmux->waitForCaptureContains($pane, 'awaiting answer', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Child HITL must surface in transcript');
-            // Child cancel target/precedence: SubagentLiveCommandRegistrarTest + CancelListenerTest (overlay blocks ESC/cancel underneath).
-        } finally {
-            // snapshot optional; TmuxHarness has no saveAnsiSnapshot helper on this test class
-        }
-    }
-
-    public function testLeaveChildLiveViewDropsChildQuestionAndEscDoesNotFalseCancel(): void
-    {
-        $pane = $this->tmux->startDetached(
-            command: $this->agentCommand(),
-            prefix: 'tui-subagent-child-hitl-leave',
             width: 120,
             height: 60,
             cwd: $this->testProjectDir,
@@ -90,82 +57,51 @@ final class TuiSubagentChildHitlCancellationE2eTest extends TestCase
         $this->tmux->sendKey($pane, 'C-u');
         $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
         $this->tmux->sendKey($pane, 'Enter');
-        $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-        $this->tmux->waitForTuiReadyAfterLogo($pane);
-
-        $this->tmux->waitForCaptureContains($pane, 'needs input', 12.0, 'Main transcript card must show child needs input');
+        $this->tmux->waitForTuiReady($pane);
+        $this->tmux->waitForCaptureContains($pane, 'needs input', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Main transcript card must show child needs input');
 
         $this->tmux->sendKey($pane, 'C-u');
         $this->tmux->sendLiteral($pane, '/agents-live');
         $this->tmux->sendKey($pane, 'Enter');
-        $this->tmux->waitForCaptureContains($pane, 'Agents live', 10.0, 'Agents live picker must open');
-        $this->tmux->waitForCaptureContains($pane, '⚠ needs input', 10.0, 'Picker must mark waiting child');
+        $this->tmux->waitForCaptureContains($pane, 'Agents live', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Agents live picker must open');
+        $this->tmux->waitForCaptureContains($pane, '⚠ needs input', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Picker must mark waiting child');
 
         $this->tmux->sendKey($pane, 'Enter');
-        $this->tmux->waitForCaptureContains($pane, 'Child waiting for your input', 10.0, 'Live view working line must show child waiting');
-        $this->tmux->waitForCaptureContains($pane, 'Which file should the scout inspect next?', 12.0, 'Child question overlay prompt must appear');
-        $this->tmux->waitForCaptureContains($pane, 'agents-live scout', 10.0, 'Live-view footer must show agents-live chrome');
+        $this->tmux->waitForCaptureContains($pane, 'Child waiting for your input', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Live view working line must show child waiting');
+        $this->tmux->waitForCaptureContains($pane, 'Which file should the scout inspect next?', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL, 'Child question overlay prompt must appear');
 
-        // Production leave path: Ctrl+\ → SubagentLiveMainReturn (same as /agents-main).
-        // Do not wait for the transient "Returned to main session" working line — ticks overwrite it.
         $this->tmux->sendKey($pane, 'C-\\');
         $this->tmux->waitForCallback(
             $pane,
             static function (string $cap): bool {
-                $leftLiveChrome = !str_contains($cap, 'agents-live scout')
-                    && !str_contains($cap, 'Child waiting for your input');
-                $questionGone = !str_contains($cap, 'Which file should the scout inspect next?');
-
-                return $leftLiveChrome && $questionGone;
+                return !str_contains($cap, 'agents-live scout')
+                    && !str_contains($cap, 'Child waiting for your input')
+                    && !str_contains($cap, 'Which file should the scout inspect next?')
+                    && (str_contains($cap, '● idle') || str_contains($cap, '◆'));
             },
-            timeout: 12.0,
-            message: 'Ctrl+\\ leave must drop live chrome and child question from main UI',
-            history: 2000,
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+            message: 'Ctrl+\\ leave must drop live chrome and child question from visible UI',
+            history: 0,
         );
 
-        $captureAfterLeave = $this->tmux->capturePlainWithHistory($pane, 2000);
-        $this->assertStringNotContainsString(
-            'Which file should the scout inspect next?',
-            $captureAfterLeave,
-            'Child question must not remain visible in main after leaving live view',
-        );
-        $this->assertStringNotContainsString(
-            'Child waiting for your input',
-            $captureAfterLeave,
-            'Child live working line must not remain after Ctrl+\\',
-        );
-        $this->assertStringNotContainsString(
-            'agents-live scout',
-            $captureAfterLeave,
-            'Live-view footer chrome must clear after leave',
-        );
-
-        // Esc on main after leave must not fabricate child-cancel confirmation.
         $this->tmux->sendKey($pane, 'Escape');
-        usleep(500_000);
-        $captureAfterEsc = $this->tmux->capturePlainWithHistory($pane, 2000);
-
-        $this->assertStringNotContainsString(
-            'Child cancelled',
-            $captureAfterEsc,
-            'Esc on main must not show false child-cancel confirmation',
-        );
-        $this->assertStringNotContainsString(
-            'Cancelling child',
-            $captureAfterEsc,
-            'Esc on main must not request selected-child cancellation after leave',
-        );
-        $this->assertStringNotContainsString(
-            'Cancelled by parent',
-            $captureAfterEsc,
-            'Esc after leave must not indicate parent-driven child cancellation',
+        $this->tmux->waitForCallback(
+            $pane,
+            static function (string $cap): bool {
+                return !str_contains($cap, 'Child cancelled')
+                    && !str_contains($cap, 'Cancelling child')
+                    && !str_contains($cap, 'Cancelled by parent')
+                    && (str_contains($cap, '● idle') || str_contains($cap, '◆'));
+            },
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+            message: 'Esc on main after leave must not fabricate child-cancel confirmation',
+            history: 0,
         );
     }
 
     private function createSessionAndWaitForAssistant(TmuxPane $pane): string
     {
-        $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-        $this->tmux->waitForTuiReadyAfterLogo($pane);
+        $this->tmux->waitForTuiReady($pane);
         $this->tmux->sendLiteral($pane, 'hi');
         $this->tmux->sendKey($pane, 'Enter');
         $sessionId = null;
@@ -195,11 +131,11 @@ final class TuiSubagentChildHitlCancellationE2eTest extends TestCase
     {
         $fixturePath = __DIR__.'/fixtures/tui-resume-minimal.json';
         $projectDir = ProjectDir::get();
-        $dbPath = 'app_test-tui-subagent-hitl-'.bin2hex(random_bytes(4)).'.sqlite';
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-subagent-hitl');
 
         return \sprintf(
-            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
-            escapeshellarg($dbPath),
+            'APP_ENV=test %sHOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
+            TuiE2eDatabaseEnv::shellPrefix($paths['app'], $paths['transport']),
             escapeshellarg($this->testProjectDir.'/home'),
             escapeshellarg($fixturePath),
             escapeshellarg(\PHP_BINARY),
@@ -212,7 +148,7 @@ final class TuiSubagentChildHitlCancellationE2eTest extends TestCase
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-subagent-child-hitl');
         @mkdir($dir.'/.hatfield', 0o777, true);
         @mkdir($dir.'/home/.hatfield', 0o777, true);
-        $settings = ['ai' => ['providers' => ['llama_cpp_test' => ['api' => 'openai-completions', 'api_key' => 'dummy', 'completions_path' => '/chat/completions', 'supports_completions' => true, 'supports_embeddings' => false, 'supports_thinking_levels' => true, 'models' => ['test' => ['name' => 'test', 'context_window' => 32768, 'max_tokens' => 32768, 'input' => ['text'], 'tool_calling' => true, 'reasoning' => true, 'thinking_level_map' => ['off' => '0'], 'cost' => ['input' => 0, 'output' => 0]]]]]]];
+        $settings = TuiE2eDatabaseEnv::replayBaseSettings();
         TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;

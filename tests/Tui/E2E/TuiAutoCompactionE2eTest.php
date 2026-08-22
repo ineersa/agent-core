@@ -71,8 +71,7 @@ final class TuiAutoCompactionE2eTest extends TestCase
 
         try {
             // Wait for TUI startup (logo visible).
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
 
             // Submit a prompt.  The replay fixture provides a response
             // whose token count exceeds the 10-token auto threshold.

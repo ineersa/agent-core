@@ -73,8 +73,7 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
 
         try {
             // Wait for TUI startup. 20s under parallel castor check.
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
 
             // Submit a prompt that triggers read on the oversized file.
             $this->tmux->sendKey($pane, 'C-u');
@@ -162,9 +161,13 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
 
     private function agentCommand(): string
     {
-        $fixturePath = __DIR__.'/fixtures/tui-output-cap-read.json';
-        $fixtureEnv = is_file($fixturePath)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($fixturePath).' '
+        $fixturePaths = [
+            __DIR__.'/fixtures/tui-output-cap-read.json',
+            __DIR__.'/fixtures/tui-post-tool-done.json',
+        ];
+        $existing = array_values(array_filter($fixturePaths, is_file(...)));
+        $fixtureEnv = [] !== $existing
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg(implode(';', $existing)).' '
             : '';
 
         $projectDir = ProjectDir::get();

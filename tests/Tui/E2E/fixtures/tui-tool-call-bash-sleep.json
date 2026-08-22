@@ -1,5 +1,5 @@
 {
-    "$schema": "TUI cancel-stickiness fixture — bash sleep 4 gives cancel time window under 15s wall clock",
+    "$schema": "TUI cancel-stickiness fixture — bash sleep 2 gives cancel time window under 15s wall clock",
     "model": "llama_cpp_test/test",
     "provider_id": "llama_cpp_test",
     "reasoning": "off",
@@ -9,7 +9,7 @@
         "messages": [
             {
                 "role": "user",
-                "content": "Run sleep 4"
+                "content": "Run sleep 2"
             }
         ]
     },
@@ -30,7 +30,7 @@
             "type": "tool_input_delta",
             "id": "call_cancel_test_1",
             "name": "bash",
-            "partial_json": "{\"command\":\"sleep 4\"}"
+            "partial_json": "{\"command\":\"sleep 2\"}"
         },
         {
             "type": "tool_call_complete",
@@ -39,7 +39,7 @@
                     "id": "call_cancel_test_1",
                     "name": "bash",
                     "arguments": {
-                        "command": "sleep 4"
+                        "command": "sleep 2"
                     }
                 }
             ]

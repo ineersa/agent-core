@@ -87,8 +87,7 @@ final class TuiRepairCommandE2eTest extends TestCase
         );
 
         try {
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
 
             $this->tmux->sendKey($pane, 'C-u');
             $this->tmux->sendLiteral($pane, '/repair');

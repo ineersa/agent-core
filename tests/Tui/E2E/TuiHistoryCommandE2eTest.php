@@ -58,8 +58,7 @@ final class TuiHistoryCommandE2eTest extends TestCase
         );
 
         try {
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
 
             $this->submitPrompt($pane, 'first-turn-marker-07c');
             $this->waitAssistantBlock($pane);

@@ -392,6 +392,7 @@ final class TmuxHarness
         TmuxPane $pane,
         string $needle,
         float $timeout = 10.0,
+        string $message = '',
     ): string {
         $deadline = microtime(true) + $timeout;
         $lastCapture = '';
@@ -406,7 +407,21 @@ final class TmuxHarness
             usleep(100_000); // 100ms
         }
 
-        throw new \RuntimeException($this->formatCaptureTimeoutDiagnostics($pane, $needle, $timeout, $lastCapture));
+        $diagnostics = $this->formatCaptureTimeoutDiagnostics($pane, $needle, $timeout, $lastCapture);
+        if ('' !== $message) {
+            throw new \RuntimeException($message.' '.$diagnostics);
+        }
+
+        throw new \RuntimeException($diagnostics);
+    }
+
+    /**
+     * Single startup readiness wait: logo + idle/work status + footer.
+     * Prefer this over waitForCaptureContains(█) followed by waitForTuiReadyAfterLogo().
+     */
+    public function waitForTuiReady(TmuxPane $pane, float $timeout = self::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL): string
+    {
+        return $this->waitForTuiReadyAfterLogo($pane, $timeout);
     }
 
     /**

@@ -40,6 +40,8 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
         if (isset($this->tmux)) {
             $this->tmux->killAll();
         }
+        // Controller/session children can briefly hold files under the isolated
+        // tree after pane exit; remove only after tmux sessions are gone.
         if (isset($this->testProjectDir)) {
             TestDirectoryIsolation::removeDirectory($this->testProjectDir);
         }
@@ -57,8 +59,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
             $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
             $this->tmux->sendKey($pane, 'Enter');
 
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $visiblePane = $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $visiblePane = $this->tmux->waitForTuiReady($pane);
             $this->assertStringContainsString($sessionId, $visiblePane);
             $this->assertStringContainsString('█', $visiblePane);
             $this->assertStringContainsString('◆', $visiblePane);
@@ -69,7 +70,6 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
 
             $this->tmux->saveAnsiSnapshot($pane, 'resume-repaint');
             $this->tmux->sendKey($pane, 'C-d');
-            $this->tmux->waitUntilPaneExits($pane, 15.0);
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'resume-repaint-FAILURE');
             try {
@@ -94,15 +94,13 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, 'Resume session', 3.0);
             $this->tmux->sendKey($pane, 'Enter');
 
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $resumedPane = $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $resumedPane = $this->tmux->waitForTuiReady($pane);
             $this->assertStringContainsString($sessionId, $resumedPane);
             $this->assertStringNotContainsString('Resume session', $resumedPane);
             $this->assertStringContainsString('● idle', $resumedPane);
 
             $this->tmux->saveAnsiSnapshot($pane, 'resume-picker-select');
             $this->tmux->sendKey($pane, 'C-d');
-            $this->tmux->waitUntilPaneExits($pane, 15.0);
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'resume-picker-select-FAILURE');
             try {
@@ -176,7 +174,6 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
 
             $this->tmux->saveAnsiSnapshot($pane, 'new-session-isolation');
             $this->tmux->sendKey($pane, 'C-d');
-            $this->tmux->waitUntilPaneExits($pane, 15.0);
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'new-session-isolation-FAILURE');
             try {
@@ -200,8 +197,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
 
     private function createSessionAndWaitForAssistant(TmuxPane $pane): string
     {
-        $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-        $this->tmux->waitForTuiReadyAfterLogo($pane);
+        $this->tmux->waitForTuiReady($pane);
 
         $this->tmux->sendLiteral($pane, 'hi');
         $this->tmux->sendKey($pane, 'Enter');
