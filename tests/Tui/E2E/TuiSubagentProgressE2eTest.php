@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\E2E;
 
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Tui\Tests\E2E\Support\TuiE2eSessionCatalogSeeder;
 use Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture;
 use Ineersa\Tui\Tests\Support\SubagentProgressEventsFixture;
 use PHPUnit\Framework\Attributes\Group;
@@ -13,6 +14,9 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * TmuxHarness proof: structured subagent progress renders inline after resume replay.
+ *
+ * Seeds catalog + canonical events without an LLM turn; card/handoff formatting is
+ * the unique tmux contract under test.
  *
  * @group tui-e2e-replay
  */
@@ -22,6 +26,9 @@ final class TuiSubagentProgressE2eTest extends TestCase
     private TmuxHarness $tmux;
     private string $testProjectDir;
     private ?string $comparisonDir = null;
+
+    /** @var array{app: string, transport: string, appEnv: string, transportEnv: string}|null */
+    private ?array $dbPaths = null;
 
     protected function setUp(): void
     {
@@ -54,6 +61,15 @@ final class TuiSubagentProgressE2eTest extends TestCase
 
     public function testResumeShowsStructuredSubagentProgressWithoutSpam(): void
     {
+        $paths = $this->dbPaths ?? $this->fail('DB paths must be allocated before seeding');
+        $sessionId = TuiE2eSessionCatalogSeeder::createSession(
+            $this->testProjectDir,
+            $paths['appEnv'],
+            $paths['transportEnv'],
+            'Run a scout subagent.',
+        );
+        SubagentProgressEventsFixture::write($this->testProjectDir, $sessionId);
+
         $pane = $this->tmux->startDetached(
             command: $this->agentCommand(),
             prefix: 'tui-subagent-progress',
@@ -63,15 +79,13 @@ final class TuiSubagentProgressE2eTest extends TestCase
         );
 
         try {
-            $sessionId = $this->createSessionAndWaitForAssistant($pane);
-            SubagentProgressEventsFixture::write($this->testProjectDir, $sessionId);
+            $this->tmux->waitForTuiReady($pane);
 
             $this->tmux->sendKey($pane, 'C-u');
             $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
             $this->tmux->sendKey($pane, 'Enter');
 
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
             // Progress proof is fixture transcript content after resume, not keystroke settle.
             $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 10.0, 'Resumed transcript must show fixture artifact');
 
@@ -145,58 +159,21 @@ final class TuiSubagentProgressE2eTest extends TestCase
         );
     }
 
-    private function createSessionAndWaitForAssistant(TmuxPane $pane): string
-    {
-        $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-        $this->tmux->waitForTuiReadyAfterLogo($pane);
-
-        $this->tmux->sendLiteral($pane, 'hi');
-        $this->tmux->sendKey($pane, 'Enter');
-
-        $sessionId = null;
-        $this->tmux->waitForCallback(
-            $pane,
-            static function (string $cap) use (&$sessionId): bool {
-                if (!str_contains($cap, '◇') && !str_contains($cap, '✕')) {
-                    return false;
-                }
-                if (!preg_match('/session\s+(\d+)/', $cap, $matches)) {
-                    return false;
-                }
-                $sessionId = $matches[1];
-
-                return true;
-            },
-            timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
-            message: 'Assistant block and session id must both appear in capture',
-            history: 2000,
-        );
-        $this->assertNotEmpty($sessionId, 'Session id must appear in the same capture as assistant/error glyph');
-
-        return $sessionId;
-    }
-
     private function agentCommand(): string
     {
-        $fixturePath = __DIR__.'/fixtures/tui-resume-minimal.json';
-        if (!is_file($fixturePath)) {
-            $this->fail("Fixture not found: {$fixturePath}");
-        }
+        $paths = $this->dbPaths ?? $this->fail('DB paths must be allocated before building agent command');
 
-        $projectDir = ProjectDir::get();
-        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-subagent-progress-');
-
-        $dbPath = $paths['app'];
-
-        $transportDbPath = $paths['transport'];
-
+        // Draft boot only — no LLM fixture/env; resume loads seeded canonical events.
         return \sprintf(
-            'APP_ENV=test %sHOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
-            TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
+            'APP_ENV=test %sHOME=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
+            TuiE2eDatabaseEnv::shellPrefixWithLowLatencyMessenger(
+                $paths['appEnv'],
+                $paths['transportEnv'],
+                $this->testProjectDir,
+            ),
             escapeshellarg($this->testProjectDir.'/home'),
-            escapeshellarg($fixturePath),
             escapeshellarg(\PHP_BINARY),
-            escapeshellarg($projectDir.'/bin/console'),
+            escapeshellarg(ProjectDir::get().'/bin/console'),
         );
     }
 
@@ -205,6 +182,18 @@ final class TuiSubagentProgressE2eTest extends TestCase
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-subagent-progress');
         @mkdir($dir.'/.hatfield', 0o777, true);
         @mkdir($dir.'/home/.hatfield', 0o777, true);
+
+        $allocated = TuiE2eDatabaseEnv::allocateIsolatedPaths(
+            ProjectDir::get(),
+            $dir,
+            'tui-subagent-progress-',
+        );
+        $this->dbPaths = [
+            'app' => $allocated['app'],
+            'transport' => $allocated['transport'],
+            'appEnv' => $allocated['appEnv'],
+            'transportEnv' => $allocated['transportEnv'],
+        ];
 
         $settings = [
             'ai' => [

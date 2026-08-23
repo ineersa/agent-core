@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
+use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplayLowLatencyMessengerConsole;
+use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -30,45 +32,20 @@ final class TuiE2eDatabaseEnv
 
     public static function shellPrefix(string $appDbPath, string $transportDbPath): string
     {
-        return \sprintf(
-            'HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=%s ',
-            escapeshellarg($appDbPath),
-            escapeshellarg($transportDbPath),
-        );
+        return self::shellPrefixWithOptionalMessengerBinary($appDbPath, $transportDbPath, null);
     }
 
     /**
-     * Derive paired transport filename from an app_test-*.sqlite basename.
+     * Same as shellPrefix, plus HATFIELD_BINARY_PATH → low-latency messenger
+     * console wrapper under the isolated project tree (source-console TUI
+     * replay only; do not use for PHAR/artifact boots).
      */
-    public static function transportPathForAppBasename(string $appBasename): string
-    {
-        if (str_starts_with($appBasename, 'app_test-')) {
-            return 'messenger_transport_test-'.substr($appBasename, \strlen('app_test-'));
-        }
-
-        return 'messenger_transport_'.$appBasename;
-    }
-
-    /**
-     * @return array{app: string, transport: string}
-     */
-    public static function allocatePathsFromAppBasename(string $appBasename): array
-    {
-        return [
-            'app' => $appBasename,
-            'transport' => self::transportPathForAppBasename($appBasename),
-        ];
-    }
-
-    /**
-     * Physical SQLite directory inside an isolated TUI E2E project tree.
-     *
-     * DB files must live under the per-test temp dir so tearDown removes them via
-     * TestDirectoryIsolation::removeDirectory().
-     */
-    public static function isolatedSqliteDirectory(string $isolatedProjectDir): string
-    {
-        return rtrim($isolatedProjectDir, '/').'/.hatfield/tmp/test-db';
+    public static function shellPrefixWithLowLatencyMessenger(
+        string $appDbPath,
+        string $transportDbPath,
+        string $testProjectDir,
+    ): string {
+        return self::shellPrefixWithOptionalMessengerBinary($appDbPath, $transportDbPath, $testProjectDir);
     }
 
     /**
@@ -116,55 +93,13 @@ final class TuiE2eDatabaseEnv
         ];
     }
 
-    public static function shellPrefixForIsolatedEnv(string $appEnvPath, string $transportEnvPath): string
-    {
-        return \sprintf(
-            'HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=%s ',
-            escapeshellarg($appEnvPath),
-            escapeshellarg($transportEnvPath),
-        );
-    }
-
-    /**
-     * Ensure messenger_messages exists on the isolated transport SQLite file.
-     *
-     * doctrine:migrations:migrate may not touch the transport connection in all setups;
-     * agent startup uses MessengerTransportSchemaEnsurer on the transport DB path.
-     */
-    public static function ensureIsolatedMessengerTransportSchema(string $transportDbAbsolutePath): void
-    {
-        $pdo = new \PDO('sqlite:'.$transportDbAbsolutePath);
-        $pdo->exec('PRAGMA journal_mode=WAL');
-        $pdo->exec('PRAGMA busy_timeout=5000');
-        $pdo->exec(
-            'CREATE TABLE IF NOT EXISTS messenger_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                body TEXT NOT NULL,
-                headers TEXT NOT NULL,
-                queue_name TEXT NOT NULL,
-                created_at DATETIME NOT NULL,
-                available_at DATETIME NOT NULL,
-                delivered_at DATETIME DEFAULT NULL
-            )',
-        );
-        $pdo->exec('CREATE INDEX IF NOT EXISTS IDX_75EA56E0FB7336F0 ON messenger_messages (queue_name)');
-        $pdo->exec('CREATE INDEX IF NOT EXISTS IDX_75EA56E0E3BD61C1 ON messenger_messages (available_at)');
-        $pdo->exec('CREATE INDEX IF NOT EXISTS IDX_75EA56E016BA31DB ON messenger_messages (delivered_at)');
-    }
-
-    /**
-     * Prefix for tmux agent shell commands: APP_ENV=test plus paired DB env vars.
-     */
-    public static function agentShellPrefix(string $appDbPath, string $transportDbPath): string
-    {
-        return 'APP_ENV=test '.self::shellPrefix($appDbPath, $transportDbPath);
-    }
-
     /**
      * Replay fixtures use a process-local FIFO cursor inside each llm worker.
      * With production default runtime.llm_worker_count=4, concurrent workers each
      * restart at fixture 0 and can serve the wrong turn. Force a single llm consumer
      * for all TUI replay isolation (same rationale as ControllerReplayE2eTestCase).
+     * Also force tools.execution.max_parallelism=1: TUI replay cases do not need
+     * four idle tool consumers paying Symfony messenger --sleep=1 under contention.
      *
      * @param array<string, mixed> $settings
      *
@@ -178,6 +113,18 @@ final class TuiE2eDatabaseEnv
         }
         $runtime['llm_worker_count'] = 1;
         $settings['runtime'] = $runtime;
+
+        $tools = $settings['tools'] ?? [];
+        if (!\is_array($tools)) {
+            $tools = [];
+        }
+        $execution = $tools['execution'] ?? [];
+        if (!\is_array($execution)) {
+            $execution = [];
+        }
+        $execution['max_parallelism'] = 1;
+        $tools['execution'] = $execution;
+        $settings['tools'] = $tools;
 
         return $settings;
     }
@@ -263,6 +210,39 @@ final class TuiE2eDatabaseEnv
 
         @mkdir($testProjectDir.'/home/.hatfield', 0o777, true);
         file_put_contents($testProjectDir.'/home/.hatfield/settings.yaml', $yaml);
+    }
+
+    /**
+     * Physical SQLite directory inside an isolated TUI E2E project tree.
+     *
+     * DB files must live under the per-test temp dir so tearDown removes them via
+     * TestDirectoryIsolation::removeDirectory().
+     */
+    private static function isolatedSqliteDirectory(string $isolatedProjectDir): string
+    {
+        return rtrim($isolatedProjectDir, '/').'/.hatfield/tmp/test-db';
+    }
+
+    private static function shellPrefixWithOptionalMessengerBinary(
+        string $appDbPath,
+        string $transportDbPath,
+        ?string $testProjectDir,
+    ): string {
+        $prefix = \sprintf(
+            'HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=%s ',
+            escapeshellarg($appDbPath),
+            escapeshellarg($transportDbPath),
+        );
+        if (null === $testProjectDir || '' === $testProjectDir) {
+            return $prefix;
+        }
+
+        $wrapper = ControllerReplayLowLatencyMessengerConsole::install(
+            $testProjectDir,
+            ProjectDir::get().'/bin/console',
+        );
+
+        return $prefix.'HATFIELD_BINARY_PATH='.escapeshellarg($wrapper).' ';
     }
 
     /**

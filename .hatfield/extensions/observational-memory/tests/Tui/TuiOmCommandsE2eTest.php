@@ -72,8 +72,7 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
         );
 
         try {
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
 
             // Promote draft → real session (session_id is lazy until first submit).
             $this->tmux->sendKey($pane, 'C-u');
@@ -155,8 +154,7 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
         );
 
         try {
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
 
             $this->tmux->sendKey($pane, 'C-u');
             $this->tmux->sendLiteral($pane, 'om e2e status seed');
@@ -225,7 +223,7 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
         return \sprintf(
             'APP_ENV=test HATFIELD_CWD=%s %sHOME=%s %s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
             escapeshellarg($this->testProjectDir),
-            TuiE2eDatabaseEnv::shellPrefix($paths['app'], $paths['transport']),
+            TuiE2eDatabaseEnv::shellPrefixWithLowLatencyMessenger($paths['app'], $paths['transport'], $this->testProjectDir),
             escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
             escapeshellarg($php),

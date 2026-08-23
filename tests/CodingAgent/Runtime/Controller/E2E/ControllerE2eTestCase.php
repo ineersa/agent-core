@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Shared infrastructure for controller E2E smoke tests.
@@ -33,6 +34,9 @@ abstract class ControllerE2eTestCase extends TestCase
 
     /** @var list<int> Same-UID tracked PIDs still alive after the last stopProcess() teardown. */
     protected array $lastTeardownSurvivorPids = [];
+
+    /** Filename under project var/test/ for this controller's Messenger transport DB. */
+    protected string $messengerTransportDbFilename = '';
 
     protected string $stdoutBuf = '';
     protected string $stderrBuf = '';
@@ -150,18 +154,9 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     /**
-     * Wall-clock budget for live LLM tool smoke tests (first LLM turn + tool execution).
-     * Replay-backed controller tests may pass with shorter timeouts; live llama.cpp is slower.
-     */
-    protected function liveLlmToolWaitTimeout(): float
-    {
-        return 12.0;
-    }
-
-    /**
      * Wall-clock budget for a single-turn live LLM run (start_run → terminal state).
      * Under full castor check, ParaTest llm-real defaults to 1 worker (standalone full
-     * uses 4); concurrent gate lanes still compete for CPU/proxy, so 8s can expire after
+     * uses 2); concurrent gate lanes still compete for CPU/proxy, so 8s can expire after
      * run.started before the first LLM response reaches stdout (collectEvents exits on
      * run.completed only when seen).
      */
@@ -185,7 +180,7 @@ abstract class ControllerE2eTestCase extends TestCase
     /**
      * Wall-clock budget for controller subprocess to emit runtime.ready.
      * Under full castor check, ParaTest llm-real defaults to 1 worker (standalone full
-     * uses 4); concurrent gate load still competes with other parallel lanes, so 5s
+     * uses 2); concurrent gate load still competes with other parallel lanes, so 5s
      * flakes while standalone llm-real passes. Early-exit on event — does not slow
      * passing tests.
      */
@@ -230,9 +225,12 @@ abstract class ControllerE2eTestCase extends TestCase
         $env = array_merge($env, $this->controllerSubprocessEnv());
 
         $pipes = [];
+        // Isolate the controller (and its inherited session) via setsid -w so
+        // the proc_open child is the session/process-group leader. Descendants
+        // that later create their own PGIDs still share this SID for teardown.
         $process = @proc_open(
             array_merge(
-                [$php, $script, 'agent', '--controller', '--cwd='.$this->tempDir],
+                ['setsid', '-w', $php, $script, 'agent', '--controller', '--cwd='.$this->tempDir],
                 $this->controllerExtraArgs(),
             ),
             $descriptors,
@@ -252,6 +250,7 @@ abstract class ControllerE2eTestCase extends TestCase
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
 
+        $this->messengerTransportDbFilename = (string) ($env['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] ?? '');
         $this->trackControllerProcessTree($process);
     }
 
@@ -269,35 +268,7 @@ abstract class ControllerE2eTestCase extends TestCase
         }
 
         $this->refreshTrackedControllerPids();
-
-        // Tracked list is the ownership boundary (process-tree + same UID).
-        // Never signal root-owned PIDs (filtered at discovery).
-        foreach ($this->trackedControllerPids as $pid) {
-            if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
-                @posix_kill($pid, \SIGTERM);
-            }
-        }
-
-        $deadline = microtime(true) + 3.0;
-        $stillAlive = true;
-        while ($stillAlive && microtime(true) < $deadline) {
-            $stillAlive = false;
-            foreach ($this->trackedControllerPids as $pid) {
-                if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
-                    $stillAlive = true;
-                    break;
-                }
-            }
-            if ($stillAlive) {
-                usleep(50_000);
-            }
-        }
-
-        foreach ($this->trackedControllerPids as $pid) {
-            if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
-                @posix_kill($pid, \SIGKILL);
-            }
-        }
+        $this->terminateTrackedControllerPids($this->trackedControllerPids);
 
         @proc_close($this->process);
         $this->process = null;
@@ -462,9 +433,15 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     /**
+     * Early-exit collector. When $until is provided it alone decides the match
+     * (pass null $targetType); otherwise match $targetType. Parent-run terminals
+     * still stop. Null $targetType with no $until drains until timeout/exit.
+     *
+     * @param (callable(array<string, mixed>): bool)|null $until
+     *
      * @return list<array<string, mixed>>
      */
-    protected function collectEventsUntil(?string $targetType, float $timeout): array
+    protected function collectEventsUntil(?string $targetType, float $timeout, ?callable $until = null): array
     {
         $events = [];
         $deadline = microtime(true) + $timeout;
@@ -474,72 +451,20 @@ abstract class ControllerE2eTestCase extends TestCase
             foreach ($this->readEvents() as $event) {
                 $events[] = $event;
                 $this->noteParentRunIdFromEvent($event);
-
-                $type = $event['type'] ?? '';
-                if ($targetType === $type
-                    || $this->isParentRunTerminalEvent($event)
-                ) {
-                    return $events;
-                }
-            }
-
-            if (!$this->isRunning()) {
-                foreach ($this->readEvents() as $event) {
-                    $events[] = $event;
-                }
-                break;
-            }
-
-            usleep(10_000);
-        }
-
-        return $events;
-    }
-
-    /**
-     * Collect events until a specific tool call has completed.
-     *
-     * The controller stream exposes the tool name on tool_execution.started,
-     * while tool_execution.completed only carries the call id.  Track started
-     * call ids so tests can wait for the tool they actually care about instead
-     * of stopping at the first completed tool if the small smoke-test model
-     * performs an exploratory call first.
-     *
-     * @return list<array<string, mixed>>
-     */
-    protected function collectEventsUntilToolCompleted(string $toolName, float $timeout): array
-    {
-        $events = [];
-        $targetToolCallIds = [];
-        $deadline = microtime(true) + $timeout;
-        $this->parentRunIdForCollection = '' !== $this->runId ? $this->runId : null;
-
-        while (microtime(true) < $deadline) {
-            foreach ($this->readEvents() as $event) {
-                $events[] = $event;
-                $this->noteParentRunIdFromEvent($event);
-
-                $type = $event['type'] ?? '';
-                $payload = $event['payload'] ?? [];
-                if (!\is_array($payload)) {
-                    $payload = [];
-                }
-
-                if ('tool_execution.started' === $type
-                    && $toolName === ($payload['tool_name'] ?? null)
-                    && isset($payload['tool_call_id'])
-                ) {
-                    $targetToolCallIds[(string) $payload['tool_call_id']] = true;
-                }
-
-                if ('tool_execution.completed' === $type
-                    && isset($payload['tool_call_id'])
-                    && isset($targetToolCallIds[(string) $payload['tool_call_id']])
-                ) {
-                    return $events;
-                }
 
                 if ($this->isParentRunTerminalEvent($event)) {
+                    return $events;
+                }
+
+                if (null !== $until) {
+                    if ($until($event)) {
+                        return $events;
+                    }
+
+                    continue;
+                }
+
+                if ($targetType === ($event['type'] ?? '')) {
                     return $events;
                 }
             }
@@ -637,7 +562,7 @@ abstract class ControllerE2eTestCase extends TestCase
 
         $chunks[] = $this->dumpSessionDir($this->tempDir.'/.hatfield/sessions');
 
-        $transportDb = $this->tempDir.'/.hatfield/messenger-transport.sqlite';
+        $transportDb = $this->configuredMessengerTransportDbPath();
         if (is_file($transportDb)) {
             $chunks[] = 'Messenger transport DB: '.filesize($transportDb).' bytes';
             try {
@@ -652,7 +577,7 @@ abstract class ControllerE2eTestCase extends TestCase
                 $chunks[] = '  Messenger transport DB read error: '.$e->getMessage();
             }
         } else {
-            $chunks[] = 'Messenger transport DB: missing';
+            $chunks[] = 'Messenger transport DB: missing ('.$transportDb.')';
         }
 
         return "\n\n".implode("\n", $chunks)."\n\n";
@@ -731,6 +656,10 @@ abstract class ControllerE2eTestCase extends TestCase
         // is trusted Symfony Messenger/Doctrine transport behavior. Replay
         // subclasses inherit the same isolation (process-local FIFO fixtures
         // also require one consumer).
+        // Likewise force tools.execution.max_parallelism=1: these E2Es use at
+        // most one active generic tool; production default 4 tool consumers is
+        // contention-only overhead. Multi-tool worker topology remains covered
+        // by HeadlessController*ProcessTest cases that set the same override.
         $settings = <<<YAML
 ai:
     default_model: llama_cpp_test/test
@@ -753,7 +682,7 @@ ai:
                 test:
                     name: test
                     context_window: 32768
-                    max_tokens: 32768
+                    max_tokens: 256
                     input: [{$input}]
                     tool_calling: {$toolCalling}
                     reasoning: false
@@ -762,6 +691,10 @@ ai:
 # Isolation only — not production behavior. See createIsolatedProjectDir() comment.
 runtime:
     llm_worker_count: {$this->isolatedLlmWorkerCount()}
+
+tools:
+    execution:
+        max_parallelism: 1
 
 extensions:
     enabled:
@@ -781,7 +714,17 @@ YAML;
 
         $extraYaml = $this->extraSettingsYaml();
         if ('' !== $extraYaml) {
-            $settings .= "\n".$extraYaml;
+            // Deep-merge so subclasses can append tools.*/runtime.* without
+            // producing duplicate top-level YAML keys (Symfony Yaml rejects them).
+            $base = Yaml::parse($settings);
+            $extra = Yaml::parse($extraYaml);
+            \PHPUnit\Framework\Assert::assertIsArray($base);
+            \PHPUnit\Framework\Assert::assertIsArray($extra);
+            $settings = Yaml::dump(
+                array_replace_recursive($base, $extra),
+                8,
+                4,
+            );
         }
 
         file_put_contents($this->tempDir.'/.hatfield/settings.yaml', $settings);
@@ -1006,8 +949,78 @@ YAML;
         $this->assertSame(
             [],
             $this->lastTeardownSurvivorPids,
-            'No controller-owned descendants may remain after SIGTERM→3s→SIGKILL teardown',
+            'No controller-owned descendants may remain after SIGTERM→0.05s→SIGKILL teardown',
         );
+    }
+
+    /**
+     * Absolute path of the Messenger transport SQLite file configured for this controller.
+     */
+    protected function configuredMessengerTransportDbPath(): string
+    {
+        $filename = '' !== $this->messengerTransportDbFilename
+            ? $this->messengerTransportDbFilename
+            : 'messenger_transport_test.sqlite';
+
+        return $this->projectDir.'/var/test/'.$filename;
+    }
+
+    /**
+     * Deterministic owned-tree teardown: SIGTERM, short grace, then SIGKILL.
+     * Also signals the root process group when the root is still the PGID leader
+     * (setsid spawn). Never signals root-owned PIDs (filtered by UID).
+     *
+     * @param list<int> $pids
+     */
+    protected function terminateTrackedControllerPids(array $pids): void
+    {
+        $pids = array_values(array_unique(array_filter(
+            $pids,
+            static fn (int $pid): bool => $pid > 1,
+        )));
+        if ([] === $pids) {
+            return;
+        }
+
+        $rootPid = $pids[0];
+        $pgid = @posix_getpgid($rootPid);
+        if (\is_int($pgid) && $pgid > 1 && $pgid === $rootPid && $this->isSameUidProcess($rootPid)) {
+            // Negative PGID targets the whole process group created by setsid.
+            @posix_kill(-$pgid, \SIGTERM);
+        }
+
+        foreach ($pids as $pid) {
+            if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
+                @posix_kill($pid, \SIGTERM);
+            }
+        }
+
+        // Production graceful-shutdown timing is covered by ConsumerSupervisorTest.
+        // Replay/live E2E only needs deterministic reaping, not a multi-second grace.
+        $deadline = microtime(true) + 0.05;
+        $stillAlive = true;
+        while ($stillAlive && microtime(true) < $deadline) {
+            $stillAlive = false;
+            foreach ($pids as $pid) {
+                if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
+                    $stillAlive = true;
+                    break;
+                }
+            }
+            if ($stillAlive) {
+                usleep(10_000);
+            }
+        }
+
+        if (\is_int($pgid) && $pgid > 1 && $pgid === $rootPid && $this->isSameUidProcess($rootPid)) {
+            @posix_kill(-$pgid, \SIGKILL);
+        }
+
+        foreach ($pids as $pid) {
+            if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
+                @posix_kill($pid, \SIGKILL);
+            }
+        }
     }
 
     /**

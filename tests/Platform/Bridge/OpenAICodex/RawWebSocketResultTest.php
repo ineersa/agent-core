@@ -120,7 +120,11 @@ final class RawWebSocketResultTest extends TestCase
         $raw = new RawWebSocketResult($connection, 0.15, $logger, cachedStreamContext: $context);
 
         // Keep the event loop alive while buffer() waits on the incomplete fragment stream.
-        $keeper = async(static fn () => delay(1.0));
+        $keeper = async(static function (): void {
+            while (true) {
+                delay(0.05);
+            }
+        });
 
         $started = microtime(true);
         try {

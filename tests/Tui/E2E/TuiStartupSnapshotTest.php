@@ -115,6 +115,8 @@ final class TuiStartupSnapshotTest extends TestCase
 
         return \sprintf(
             'APP_ENV=test %sHOME=%s %s %s %s agent --model=llama_cpp_test/test%s --tools-excluded=bash 2>&1',
+            // Boot-only chrome smoke: no controller/Messenger consumers needed,
+            // so keep the plain DB prefix (no low-latency messenger wrapper).
             TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
             escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,

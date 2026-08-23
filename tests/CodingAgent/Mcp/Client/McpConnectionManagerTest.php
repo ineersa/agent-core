@@ -250,7 +250,7 @@ class McpConnectionManagerTest extends TestCase
         $fixtureScript = __DIR__.'/../Fixtures/http-echo-server.php';
         $host = '127.0.0.1';
         $process = proc_open(
-            \sprintf('exec %s -S %s:%d %s 2>/dev/null', \PHP_BINARY, $host, $port, escapeshellarg($fixtureScript)),
+            [\PHP_BINARY, '-S', $host.':'.$port, $fixtureScript],
             [
                 0 => ['pipe', 'r'],
                 1 => ['pipe', 'w'],
@@ -274,31 +274,24 @@ class McpConnectionManagerTest extends TestCase
         };
 
         try {
-            // Poll health-check endpoint for readiness with short cap
+            // Wait for TCP accept readiness (not HTTP health polling).
             $ready = false;
-            $startTime = microtime(true);
-            while ((microtime(true) - $startTime) < 10.0) {
-                $ch = curl_init(\sprintf('http://%s:%d/health', $host, $port));
-                curl_setopt_array($ch, [
-                    \CURLOPT_RETURNTRANSFER => true,
-                    \CURLOPT_TIMEOUT => 1,
-                    \CURLOPT_CONNECTTIMEOUT => 1,
-                ]);
-                $body = curl_exec($ch);
-                $httpCode = curl_getinfo($ch, \CURLINFO_HTTP_CODE);
-                // curl_close() is deprecated since PHP 8.5; has no effect since 8.0
-                \is_resource($ch) && @curl_close($ch);
-
-                if (200 === $httpCode && false !== $body) {
-                    $data = json_decode($body, true);
-                    if (\is_array($data) && ($data['status'] ?? '') === 'ok') {
-                        $ready = true;
-                        break;
-                    }
+            $deadline = microtime(true) + 5.0;
+            while (microtime(true) < $deadline) {
+                $status = proc_get_status($process);
+                if (!$status['running']) {
+                    $stderr = stream_get_contents($pipes[2]) ?: '';
+                    $this->fail('HTTP fixture server exited before listen readiness: '.$stderr);
                 }
-                usleep(100000); // 100ms
+                $socket = @stream_socket_client(\sprintf('tcp://%s:%d', $host, $port), $errno, $errstr, 0.05);
+                if (false !== $socket) {
+                    fclose($socket);
+                    $ready = true;
+                    break;
+                }
+                usleep(5_000);
             }
-            $this->assertTrue($ready, 'HTTP fixture server did not become ready within 10s');
+            $this->assertTrue($ready, 'HTTP fixture server did not accept TCP connections within 5s');
 
             // Write an mcp.json with the HTTP server
             $mcpConfig = [

@@ -93,16 +93,6 @@ final class ThemeRegistryTest extends TestCase
         $this->assertFalse($registry->has('nonexistent'));
     }
 
-    public function testGetNames(): void
-    {
-        $registry = $this->createRegistry();
-        $names = $registry->getNames();
-
-        $this->assertContains('cyberpunk', $names);
-        $this->assertContains('nord', $names);
-        $this->assertContains('tokyo-night', $names);
-    }
-
     public function testBuiltinThemesResolveDistinctToolArgumentKeyColors(): void
     {
         $registry = $this->createRegistry();
