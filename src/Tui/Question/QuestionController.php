@@ -9,6 +9,7 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Widget\SelectListKeybindings;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
+use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -57,6 +58,8 @@ final class QuestionController
         $this->awaitingFreeForm = false;
         $this->activeRequest = $request;
         $this->container = new ContainerWidget();
+        // Modest vertical rhythm between header / question / answers (native container gap).
+        $this->container->setStyle(new Style(gap: 1));
         $this->addHeader($request);
 
         if (QuestionKind::Text === $request->kind) {
@@ -202,6 +205,8 @@ final class QuestionController
             maxVisible: SelectListKeybindings::MAX_VISIBLE,
             keybindings: $kb,
         );
+        // Scope stylesheet rules to this overlay only; other pickers stay on defaults.
+        $this->listWidget->addStyleClass('question-choice-list');
 
         $this->listWidget->onSelect(function (SelectEvent $event): void {
             $item = $event->getItem();
@@ -309,11 +314,19 @@ final class QuestionController
                 ['value' => 'no', 'label' => "\u{2717} No"],
             ],
             QuestionKind::Choice => array_map(
-                static fn (QuestionOption $opt): array => [
-                    'value' => $opt->label,
-                    'label' => $opt->label,
-                    'description' => $opt->description,
-                ],
+                static function (QuestionOption $opt): array {
+                    $item = [
+                        'value' => $opt->label,
+                        'label' => $opt->label,
+                    ];
+                    // Omit empty descriptions so SelectListWidget stays in full-width
+                    // label mode instead of clamping labels to min(30, maxLabelWidth).
+                    if ('' !== trim($opt->description)) {
+                        $item['description'] = $opt->description;
+                    }
+
+                    return $item;
+                },
                 $request->choices,
             ),
         };
