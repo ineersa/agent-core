@@ -745,6 +745,8 @@ parameters:
       - AppExtensionApi
       - AppExtension
       - AgentCore
+      # CodingAgent Bash consults immutable child-run metadata owned by AppAgent.
+      - AppAgent
       - AppConfig
       - AppMarkdown
       - SymfonyFinder

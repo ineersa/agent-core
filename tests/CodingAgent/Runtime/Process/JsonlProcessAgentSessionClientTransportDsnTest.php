@@ -116,13 +116,10 @@ PHP);
             runId: 'session-42',
         ));
 
-        $timeout = time() + 5;
-        while (!is_file($envDump) || 0 === filesize($envDump)) {
-            if (time() > $timeout) {
-                $this->fail('Timeout waiting for env dump at '.$envDump);
-            }
-            usleep(50_000);
-        }
+        // Fake controller writes the env dump before emitting runtime.ready;
+        // start() already waited for that event, so the dump must exist now.
+        $this->assertFileExists($envDump, 'env dump must exist after runtime.ready');
+        $this->assertGreaterThan(0, filesize($envDump), 'env dump must be non-empty after runtime.ready');
 
         $raw = file_get_contents($envDump);
         $this->assertIsString($raw);
@@ -270,13 +267,10 @@ PHP);
      */
     private function waitForEnvDump(string $envDump): array
     {
-        $timeout = time() + 5;
-        while (!is_file($envDump) || 0 === filesize($envDump)) {
-            if (time() > $timeout) {
-                $this->fail('Timeout waiting for env dump at '.$envDump);
-            }
-            usleep(50_000);
-        }
+        // Fake controller writes the env dump before emitting runtime.ready;
+        // start() already waited for that event, so the dump must exist now.
+        $this->assertFileExists($envDump, 'env dump must exist after runtime.ready');
+        $this->assertGreaterThan(0, filesize($envDump), 'env dump must be non-empty after runtime.ready');
 
         $raw = file_get_contents($envDump);
         $this->assertIsString($raw);

@@ -296,6 +296,8 @@ final class SessionToolBatchStoreTest extends TestCase
             if ($readyCount >= \count($callIds)) {
                 return;
             }
+
+            usleep(5_000);
         }
 
         $this->fail(\sprintf('Timed out waiting for %d parallel workers to reach mutate gate.', \count($callIds)));

@@ -25,6 +25,9 @@ final class HeadlessControllerSessionOwnerLockProcessTest extends ControllerRepl
     /** @var array<int, resource> */
     private array $secondPipes = [];
 
+    /** @var list<int> Independent ownership list for the second controller tree. */
+    private array $secondTrackedPids = [];
+
     private string $secondStdoutBuf = '';
     private string $secondStderrBuf = '';
 
@@ -105,7 +108,7 @@ YAML;
         $pipes = [];
         $process = @proc_open(
             array_merge(
-                [$php, $script, 'agent', '--controller', '--cwd='.$this->tempDir],
+                ['setsid', '-w', $php, $script, 'agent', '--controller', '--cwd='.$this->tempDir],
                 $this->controllerExtraArgs(),
             ),
             $descriptors,
@@ -123,7 +126,16 @@ YAML;
         stream_set_blocking($pipes[0], true);
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
-        $this->trackControllerProcessTree($process);
+        // Do NOT call trackControllerProcessTree() — that overwrites the first
+        // controller's ownership list. Keep a separate PID list for teardown.
+        $status = @proc_get_status($process);
+        $rootPid = \is_array($status) && isset($status['pid']) ? (int) $status['pid'] : 0;
+        $this->secondTrackedPids = $rootPid > 0
+            ? array_values(array_unique(array_merge(
+                [$rootPid],
+                $this->discoverControllerProcessTreePids($rootPid),
+            )))
+            : [];
     }
 
     private function assertSecondControllerRejectedWithoutRuntimeReady(): void
@@ -216,25 +228,21 @@ YAML;
         }
 
         if (\is_resource($this->secondProcess)) {
-            $status = proc_get_status($this->secondProcess);
-            if ($status['running']) {
-                @proc_terminate($this->secondProcess, \SIGTERM);
-                $deadline = microtime(true) + 3.0;
-                while (microtime(true) < $deadline) {
-                    $status = proc_get_status($this->secondProcess);
-                    if (!$status['running']) {
-                        break;
-                    }
-                    usleep(50_000);
-                }
-                $status = proc_get_status($this->secondProcess);
-                if ($status['running']) {
-                    @proc_terminate($this->secondProcess, \SIGKILL);
-                }
+            $status = @proc_get_status($this->secondProcess);
+            $rootPid = \is_array($status) && isset($status['pid']) ? (int) $status['pid'] : 0;
+            if ($rootPid > 0) {
+                $this->secondTrackedPids = array_values(array_unique(array_merge(
+                    $this->secondTrackedPids,
+                    [$rootPid],
+                    $this->discoverControllerProcessTreePids($rootPid),
+                )));
             }
+
+            $this->terminateTrackedControllerPids($this->secondTrackedPids);
             @proc_close($this->secondProcess);
         }
 
         $this->secondProcess = null;
+        $this->secondTrackedPids = [];
     }
 }

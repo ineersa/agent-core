@@ -179,14 +179,10 @@ PHP);
 
         $this->assertSame('running', $handle->status);
 
-        // Wait for the process to finish writing the dump.
-        $timeout = time() + 5;
-        while (!is_file($argvFile) || 0 === filesize($argvFile)) {
-            if (time() > $timeout) {
-                $this->fail('Timeout waiting for argv dump file at '.$argvFile);
-            }
-            usleep(50_000);
-        }
+        // Fake controller writes the dump before emitting runtime.ready; start()
+        // already waited for that event, so the dump must exist now.
+        $this->assertFileExists($argvFile, 'argv dump must exist after runtime.ready');
+        $this->assertGreaterThan(0, filesize($argvFile), 'argv dump must be non-empty after runtime.ready');
 
         $json = file_get_contents($argvFile);
         $this->assertNotFalse($json, 'argv dump file should be readable');

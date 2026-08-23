@@ -33,7 +33,16 @@ Before writing, editing, debugging, reviewing, or running tests—and before val
 
 Do this before proposing a test strategy, adding tests, running Castor tests, or handing off validation. Forks must state in handoff that both were read and followed; omit that and the parent must not treat the handoff as CODE-REVIEW/DONE-ready for test-related work.
 
-**Constraints (detail in testing skill + `tests/AGENTS.md`):**
+**Hard quality gate (authoritative detail: `tests/AGENTS.md`; procedure: testing skill):**
+
+- **Bad tests are worse than missing tests.** A flaky, timing-window, soft-assert, or duplicate-layer test MUST be deleted or demoted. Do not keep a test that cannot be made deterministic.
+- Individual cases MUST finish in **≤10s** under normal Castor load. A case that exceeds 10s solo **or under relevant concurrent lanes** is unacceptable: rewrite, demote, or delete. Rare exceptions MUST document the unique external/process contract in the test and why lower layers cannot prove it.
+- MUST NOT use arbitrary `sleep` / `usleep` / delayed fixtures, elapsed-time races, retry-until-green, or timeout increases as the fix for flakes or hangs.
+- Prove at the **lowest correct layer**. Live LLM / tmux ONLY for contracts unavailable below. One minimal terminal/live smoke beats repeated journeys.
+- Every spawned process/resource MUST have explicit ownership, isolation, and deterministic teardown. Leaks are product/harness bugs.
+- Solo green is **insufficient** for known parallel/contention flakes—validate under the relevant concurrent Castor lanes.
+
+**Lane / proof constraints (detail in testing skill + `tests/AGENTS.md`):**
 
 - Changes touching TUI runtime, `AgentSessionClient`, Messenger, `TranscriptProjector`, `RuntimeEventPoller`, or LLM-visible flow require `castor check`. Unit/container/mocked tests alone are not enough. If required tmux is unavailable, stay IN-PROGRESS with the blocker.
 - TUI proof at the **lowest correct layer**: virtual/`castor test` → controller-replay → minimal `castor test:tui`. Do not default every feature to tmux. Custom smoke scripts, service-only DTO tests, picker/footer-only checks, or manual fork reports are not sole proof.

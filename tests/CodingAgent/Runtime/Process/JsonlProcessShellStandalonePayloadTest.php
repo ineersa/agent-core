@@ -121,12 +121,13 @@ PHP);
             text: '!ls -1',
         ));
 
-        $deadline = time() + 5;
-        while (!is_file($commandsFile) && time() < $deadline) {
-            usleep(50_000);
+        // Fake controller writes the commands dump before exiting after the
+        // shell_command line. Poll briefly only for that specific write.
+        $deadline = microtime(true) + 1.0;
+        while (!is_file($commandsFile) && microtime(true) < $deadline) {
+            usleep(10_000);
         }
-
-        $this->assertFileExists($commandsFile);
+        $this->assertFileExists($commandsFile, 'commands dump must exist after shell_command send');
         $commands = json_decode((string) file_get_contents($commandsFile), true);
         $this->assertIsArray($commands);
 

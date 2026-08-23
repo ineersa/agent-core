@@ -242,7 +242,9 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
                             ],
                         ], \JSON_THROW_ON_ERROR)));
                         // Stop reading: leave the TCP peer open so the next client write blocks.
-                        delay(10.0);
+                        while (!$peerSocket->isClosed()) {
+                            delay(0.05);
+                        }
 
                         return;
                     }
@@ -254,7 +256,9 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
                             'output' => [['type' => 'message', 'role' => 'assistant', 'content' => 'recovered']],
                         ],
                     ], \JSON_THROW_ON_ERROR)));
-                    delay(2.0);
+                    while (!$peerSocket->isClosed()) {
+                        delay(0.05);
+                    }
                 } catch (\Throwable) {
                     // Peer is torn down by the test; swallow late I/O errors.
                 }

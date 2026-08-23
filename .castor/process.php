@@ -223,6 +223,14 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
             // mechanism for separate-PGID grandchildren that pgrep -P misses.
             $descendantPids = _collect_descendant_pids($pInfo['sid'] ?? 0);
             $sessionPids = _collect_session_pids($pInfo['sid'] ?? 0);
+            // Capture cmdlines before SIGTERM/SIGKILL — /proc cmdline is empty
+            // for zombies and gone after reaping, so post-kill reads defeat the
+            // "name the hung process" diagnostic.
+            $cmdlineByPid = _collect_timeout_cmdline_snapshot(
+                $pInfo['sid'] ?? null,
+                $descendantPids,
+                $sessionPids,
+            );
 
             // ── Close our pipe ends FIRST ──
             // Close stdout/stderr before reaping so that processes
@@ -243,7 +251,13 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
                 $exitCode = 124; // matches GNU timeout convention
                 $stepTimeout = $timeouts[$step] ?? 0;
                 $output = $pInfo['outBuf'].$pInfo['errBuf']
-                    ."\n[Castor hard timeout after {$stepTimeout}s]";
+                    ."\n[Castor hard timeout after {$stepTimeout}s]"
+                    ."\n"._format_timeout_process_diagnostics(
+                        $pInfo['sid'] ?? null,
+                        $descendantPids,
+                        $sessionPids,
+                        $cmdlineByPid,
+                    );
             } else {
                 $exitCode = proc_close($pInfo['handle']);
                 $output = $pInfo['outBuf'].$pInfo['errBuf'];
@@ -281,6 +295,74 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
 }
 
 // ── Process-group cleanup (belt-and-suspenders) ───────────────
+
+/**
+ * Bounded timeout diagnostic using already-collected process evidence.
+ *
+ * @param list<int>          $descendantPids
+ * @param list<int>          $sessionPids
+ * @param array<int, string> $cmdlineByPid   pre-reap /proc cmdline snapshot (pid => cmd)
+ */
+function _format_timeout_process_diagnostics(?int $sid, array $descendantPids, array $sessionPids, array $cmdlineByPid = []): string
+{
+    $sessionPid = (null !== $sid && $sid > 1) ? $sid : null;
+    $pids = array_values(array_unique(array_filter(
+        array_merge(null !== $sessionPid ? [$sessionPid] : [], $descendantPids, $sessionPids),
+        static fn (int $pid): bool => $pid > 1,
+    )));
+    sort($pids);
+
+    $lines = [
+        '[Castor timeout process snapshot]',
+        'session_pid='.(null !== $sessionPid ? (string) $sessionPid : '(none)'),
+        'pid_count='.count($pids),
+    ];
+
+    $limit = 24;
+    foreach (array_slice($pids, 0, $limit) as $pid) {
+        $cmd = $cmdlineByPid[$pid] ?? '(no cmdline)';
+        $lines[] = "  pid={$pid} cmd={$cmd}";
+    }
+    if (count($pids) > $limit) {
+        $lines[] = '  ... '.(count($pids) - $limit).' more pids omitted';
+    }
+
+    return implode("\n", $lines);
+}
+
+/**
+ * Read bounded /proc cmdline strings for timeout diagnostics before any reaping.
+ *
+ * @param list<int> $descendantPids
+ * @param list<int> $sessionPids
+ *
+ * @return array<int, string>
+ */
+function _collect_timeout_cmdline_snapshot(?int $sid, array $descendantPids, array $sessionPids): array
+{
+    $sessionPid = (null !== $sid && $sid > 1) ? $sid : null;
+    $pids = array_values(array_unique(array_filter(
+        array_merge(null !== $sessionPid ? [$sessionPid] : [], $descendantPids, $sessionPids),
+        static fn (int $pid): bool => $pid > 1,
+    )));
+    sort($pids);
+
+    $snapshot = [];
+    foreach (array_slice($pids, 0, 24) as $pid) {
+        $cmdRaw = @file_get_contents("/proc/{$pid}/cmdline");
+        if (false === $cmdRaw || '' === $cmdRaw) {
+            $snapshot[$pid] = '(no cmdline)';
+            continue;
+        }
+        $cmd = str_replace("\0", ' ', trim($cmdRaw));
+        if (strlen($cmd) > 220) {
+            $cmd = substr($cmd, 0, 217).'...';
+        }
+        $snapshot[$pid] = $cmd;
+    }
+
+    return $snapshot;
+}
 
 /**
  * Reap all processes in a process group.

@@ -2232,7 +2232,8 @@ function cleanup_exact_qa_run_cache_roots(string $qaRunId, ?string $projectRoot 
  * ParaTest worker budget for check E2E lanes (conservative under parallel castor check).
  *
  * Under castor check, llm-real defaults to 1 worker to avoid process contention with
- * unit/TUI lanes. Standalone castor test:llm-real keeps the higher focused budget.
+ * unit/TUI lanes. Standalone castor test:llm-real defaults to 2 workers against the
+ * shared llama-proxy endpoint.
  */
 function check_lane_paratest_processes(string $lane, int $default, int $max = 4): int
 {
@@ -2253,7 +2254,10 @@ function check_lane_paratest_processes(string $lane, int $default, int $max = 4)
             // process crashes seen when llm-real raced unit workers.
             $processes = 'llm-real' === $lane ? 1 : $default;
         } else {
-            $processes = 'llm-real' === $lane ? 4 : $default;
+            // Standalone llm-real still shares one llama-proxy/model endpoint.
+            // Two workers keep some parallelism without the 4-worker contention
+            // that previously produced flaky multi-hop tool completions.
+            $processes = 'llm-real' === $lane ? 2 : $default;
         }
     } else {
         $processes = (int) $raw;

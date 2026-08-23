@@ -7,7 +7,13 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
@@ -67,6 +73,7 @@ final class BashToolTest extends IsolatedKernelTestCase
     private StackToolExecutionContextAccessor $contextAccessor;
     private ToolRuntime $toolRuntime;
     private OutputCap $outputCap;
+    private TestLogger $logger;
     private string $tmpDir;
     private bool $managerCreated = false;
 
@@ -91,6 +98,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->toolRuntime = new ToolRuntime($this->contextAccessor);
         $this->outputCap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/output-cap'));
+        $this->logger = new TestLogger();
     }
 
     protected function tearDown(): void
@@ -181,6 +189,191 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $this->assertStringContainsString('timed out', $result);
         $this->assertStringContainsString('partial', $result);
+    }
+
+    public function testAgentChildSkipsBackgroundPromptAdapterAndStaysForeground(): void
+    {
+        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
+        $promptAdapter->expects($this->never())->method('shouldBackground');
+
+        $this->bashConfig = new BashToolConfig(
+            defaultTimeoutSeconds: 5,
+            backgroundPromptThresholdSeconds: 0,
+            pollIntervalMicros: 50_000,
+            logTailChars: 20000,
+        );
+        $this->createManager();
+
+        $childRunId = 'child-bash-foreground';
+        $reader = $this->metadataReaderWithChild($childRunId);
+
+        $started = hrtime(true);
+        $result = $this->withContext($childRunId, function () use ($promptAdapter, $reader): string {
+            return ($this->makeBashTool($promptAdapter, $reader))(new BashArgumentsDTO(
+                command: 'echo "child-foreground" && sleep 1 && echo "child-done"',
+                timeout: 5,
+            ));
+        });
+        $elapsedMs = (int) round((hrtime(true) - $started) / 1_000_000);
+
+        $this->assertStringContainsString('child-foreground', $result);
+        $this->assertStringContainsString('child-done', $result);
+        $this->assertStringNotContainsString('Command moved to background', $result);
+        $this->assertLessThan(4500, $elapsedMs, 'Child background skip must finish without waiting on HITL');
+
+        $declined = array_values(array_filter(
+            $this->logger->records,
+            static fn (array $record): bool => 'bash_tool.background_declined' === $record['message'],
+        ));
+        $this->assertSame([], $declined, 'Policy skip must not log parent background_declined');
+    }
+
+    public function testAgentChildTimeoutTerminatesNearBound(): void
+    {
+        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
+        $promptAdapter->expects($this->never())->method('shouldBackground');
+
+        $this->bashConfig = new BashToolConfig(
+            defaultTimeoutSeconds: 30,
+            backgroundPromptThresholdSeconds: 0,
+            pollIntervalMicros: 50_000,
+            logTailChars: 20000,
+        );
+        $this->createManager();
+
+        $childRunId = 'child-bash-timeout';
+        $reader = $this->metadataReaderWithChild($childRunId);
+
+        $started = hrtime(true);
+        $result = $this->withContext($childRunId, function () use ($promptAdapter, $reader): string {
+            return ($this->makeBashTool($promptAdapter, $reader))(new BashArgumentsDTO(
+                command: 'echo "child-partial" && sleep 10 && echo "should-not-see"',
+                timeout: 1,
+            ));
+        });
+        $elapsedMs = (int) round((hrtime(true) - $started) / 1_000_000);
+
+        $this->assertStringContainsString('Command timed out after 1 seconds', $result);
+        $this->assertStringContainsString('child-partial', $result);
+        $this->assertStringNotContainsString('should-not-see', $result);
+        $this->assertGreaterThanOrEqual(900, $elapsedMs);
+        $this->assertLessThan(3500, $elapsedMs, 'Child bash timeout must fire near the requested bound, not Castor/HITL');
+    }
+
+    public function testMalformedChildMetadataDisablesPromptAndContinues(): void
+    {
+        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
+        $promptAdapter->expects($this->never())->method('shouldBackground');
+
+        $this->bashConfig = new BashToolConfig(
+            defaultTimeoutSeconds: 5,
+            backgroundPromptThresholdSeconds: 0,
+            pollIntervalMicros: 50_000,
+            logTailChars: 20000,
+        );
+        $this->createManager();
+
+        $runId = 'malformed-child-bash';
+        $store = new InMemoryEventStore();
+        $store->seed(new RunEvent(
+            runId: $runId,
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'payload' => [
+                    'metadata' => [
+                        'session' => [
+                            'kind' => 'agent_child',
+                        ],
+                        'model' => 'm',
+                        'reasoning' => 'medium',
+                        'tools_scope' => ['allowed_tools' => ['bash']],
+                    ],
+                ],
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+        $reader = new SubagentRunMetadataReader($store, AttributeSerializerValidatorTestFactory::denormalizer());
+
+        $result = $this->withContext($runId, function () use ($promptAdapter, $reader): string {
+            return ($this->makeBashTool($promptAdapter, $reader))(new BashArgumentsDTO(
+                command: 'echo "malformed-ok"',
+                timeout: 5,
+            ));
+        });
+
+        $this->assertStringContainsString('malformed-ok', $result);
+        $failed = array_values(array_filter(
+            $this->logger->records,
+            static fn (array $record): bool => 'bash_tool.background_policy_resolution_failed' === $record['message'],
+        ));
+        $this->assertCount(1, $failed);
+        $this->assertSame($runId, $failed[0]['context']['run_id'] ?? null);
+    }
+
+    public function testMissingMetadataKeepsParentBackgroundPromptBehavior(): void
+    {
+        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
+        $promptAdapter->expects($this->once())->method('shouldBackground')->willReturn(true);
+
+        $this->bashConfig = new BashToolConfig(
+            defaultTimeoutSeconds: 5,
+            backgroundPromptThresholdSeconds: 0,
+            pollIntervalMicros: 50_000,
+            logTailChars: 20000,
+        );
+        $this->createManager();
+
+        $result = $this->withContext('parent-missing-metadata', function () use ($promptAdapter): string {
+            return ($this->makeBashTool($promptAdapter, $this->emptyMetadataReader()))(new BashArgumentsDTO(
+                command: 'sleep 2',
+                timeout: 5,
+            ));
+        });
+
+        $this->assertStringContainsString('Command moved to background', $result);
+    }
+
+    public function testTimeoutReapsProcessGroupDescendants(): void
+    {
+        $this->createManager();
+        $this->bashConfig = new BashToolConfig(
+            defaultTimeoutSeconds: 1,
+            backgroundPromptThresholdSeconds: 30,
+            pollIntervalMicros: 50_000,
+            logTailChars: 20000,
+        );
+
+        $markerDir = $this->tmpDir.'/reap-marker';
+        $this->assertTrue(mkdir($markerDir, 0o777, true) || is_dir($markerDir));
+        $aliveMarker = $markerDir.'/alive';
+        $command = \sprintf(
+            'bash -c %s',
+            escapeshellarg(\sprintf(
+                'touch %1$s; (while [ -f %1$s ]; do sleep 0.05; done) & sleep 10; echo should-not-see',
+                escapeshellarg($aliveMarker),
+            )),
+        );
+
+        $result = $this->withContext(self::TEST_SESSION, function () use ($command): string {
+            return ($this->makeBashTool())(new BashArgumentsDTO(command: $command, timeout: 1));
+        });
+
+        $this->assertStringContainsString('timed out', $result);
+        $this->assertStringNotContainsString('should-not-see', $result);
+
+        @unlink($aliveMarker);
+        $deadline = microtime(true) + 2.0;
+        $orphanCount = -1;
+        while (microtime(true) < $deadline) {
+            $orphanCount = $this->countProcessesHoldingMarker($aliveMarker);
+            if (0 === $orphanCount) {
+                break;
+            }
+            usleep(50_000);
+        }
+        $this->assertSame(0, $orphanCount, 'Timeout must reap the setsid process group, including descendants');
     }
 
     /* ── Cancellation ── */
@@ -875,16 +1068,78 @@ final class BashToolTest extends IsolatedKernelTestCase
     /**
      * Create a BashTool with the configured dependencies.
      */
-    private function makeBashTool(?BashBackgroundPromptAdapterInterface $promptAdapter = null): BashTool
-    {
+    private function makeBashTool(
+        ?BashBackgroundPromptAdapterInterface $promptAdapter = null,
+        ?SubagentRunMetadataReader $runMetadataReader = null,
+    ): BashTool {
         return new BashTool(
             manager: $this->manager,
             contextAccessor: $this->contextAccessor,
             toolRuntime: $this->toolRuntime,
-            logger: new NullLogger(),
+            logger: $this->logger,
+            runMetadataReader: $runMetadataReader ?? $this->emptyMetadataReader(),
             config: $this->bashConfig,
             promptAdapter: $promptAdapter ?? new BashToolDeclineAdapter(),
         );
+    }
+
+    private function emptyMetadataReader(): SubagentRunMetadataReader
+    {
+        return new SubagentRunMetadataReader(new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::denormalizer());
+    }
+
+    private function metadataReaderWithChild(string $runId): SubagentRunMetadataReader
+    {
+        $store = new InMemoryEventStore();
+        $store->seed(new RunEvent(
+            runId: $runId,
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'step_id' => 'start-1',
+                'payload' => [
+                    'system_prompt' => 'You are a scout.',
+                    'messages' => [],
+                    'metadata' => [
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'parent_run_id' => 'parent-1',
+                            'agent_name' => 'scout',
+                            'artifact_id' => 'agent_abc123',
+                            'interactive' => false,
+                        ],
+                        'model' => 'deepseek/deepseek-v4-flash',
+                        'reasoning' => 'medium',
+                        'tools_scope' => [
+                            'allowed_tools' => ['bash'],
+                            'mcp' => [
+                                'mode' => 'none',
+                                'tools' => [],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+
+        return new SubagentRunMetadataReader($store, AttributeSerializerValidatorTestFactory::denormalizer());
+    }
+
+    private function countProcessesHoldingMarker(string $markerPath): int
+    {
+        $escaped = preg_quote($markerPath, '/');
+        $output = [];
+        exec(\sprintf('pgrep -af %s 2>/dev/null || true', escapeshellarg($markerPath)), $output);
+        $count = 0;
+        foreach ($output as $line) {
+            if (1 === preg_match('/'.$escaped.'/', $line) && !str_contains($line, 'pgrep -af')) {
+                ++$count;
+            }
+        }
+
+        return $count;
     }
 
     /**

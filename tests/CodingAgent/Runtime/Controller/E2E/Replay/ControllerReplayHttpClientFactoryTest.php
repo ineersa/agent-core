@@ -164,4 +164,46 @@ final class ControllerReplayHttpClientFactoryTest extends TestCase
             TestDirectoryIsolation::removeDirectory($dir);
         }
     }
+
+    #[Test]
+    public function exhaustedFifoQueueFailsLoudlyInsteadOfSyntheticDone(): void
+    {
+        $dir = TestDirectoryIsolation::createOsTempDir('replay-factory-exhausted');
+        $fixture = $dir.'/one.json';
+        file_put_contents($fixture, json_encode([
+            'model' => 'llama_cpp/test',
+            'deltas' => [['type' => 'text', 'content' => 'only-one']],
+            'usage' => ['input_tokens' => 1, 'output_tokens' => 1, 'total_tokens' => 2],
+            'stop_reason' => 'stop',
+        ], \JSON_THROW_ON_ERROR));
+
+        $_ENV['HATFIELD_LLM_REPLAY_FIXTURE_PATH'] = $fixture;
+        $_SERVER['HATFIELD_LLM_REPLAY_FIXTURE_PATH'] = $fixture;
+
+        try {
+            $client = ControllerReplayHttpClientFactory::create();
+            $this->assertInstanceOf(MockHttpClient::class, $client);
+
+            $first = $client->request('POST', 'http://replay.internal/v1/chat/completions', [
+                'body' => json_encode([
+                    'messages' => [['role' => 'user', 'content' => 'first']],
+                ], \JSON_THROW_ON_ERROR),
+            ]);
+            $this->assertSame(200, $first->getStatusCode());
+            $this->assertStringContainsString('only-one', $first->getContent());
+
+            $second = $client->request('POST', 'http://replay.internal/v1/chat/completions', [
+                'body' => json_encode([
+                    'messages' => [['role' => 'user', 'content' => 'second']],
+                ], \JSON_THROW_ON_ERROR),
+            ]);
+            $this->assertSame(500, $second->getStatusCode());
+            $this->assertSame(['1'], $second->getHeaders(false)['x-replay-exhausted'] ?? null);
+            $this->assertStringContainsString('Replay fixture queue exhausted', $second->getContent(false));
+            $this->assertStringNotContainsString('"content":"done"', $second->getContent(false));
+        } finally {
+            unset($_ENV['HATFIELD_LLM_REPLAY_FIXTURE_PATH'], $_SERVER['HATFIELD_LLM_REPLAY_FIXTURE_PATH']);
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
+    }
 }
