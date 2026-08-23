@@ -223,6 +223,14 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
             // mechanism for separate-PGID grandchildren that pgrep -P misses.
             $descendantPids = _collect_descendant_pids($pInfo['sid'] ?? 0);
             $sessionPids = _collect_session_pids($pInfo['sid'] ?? 0);
+            // Capture cmdlines before SIGTERM/SIGKILL — /proc cmdline is empty
+            // for zombies and gone after reaping, so post-kill reads defeat the
+            // "name the hung process" diagnostic.
+            $cmdlineByPid = _collect_timeout_cmdline_snapshot(
+                $pInfo['sid'] ?? null,
+                $descendantPids,
+                $sessionPids,
+            );
 
             // ── Close our pipe ends FIRST ──
             // Close stdout/stderr before reaping so that processes
@@ -248,6 +256,7 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
                         $pInfo['sid'] ?? null,
                         $descendantPids,
                         $sessionPids,
+                        $cmdlineByPid,
                     );
             } else {
                 $exitCode = proc_close($pInfo['handle']);
@@ -290,10 +299,11 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
 /**
  * Bounded timeout diagnostic using already-collected process evidence.
  *
- * @param list<int> $descendantPids
- * @param list<int> $sessionPids
+ * @param list<int>          $descendantPids
+ * @param list<int>          $sessionPids
+ * @param array<int, string> $cmdlineByPid   pre-reap /proc cmdline snapshot (pid => cmd)
  */
-function _format_timeout_process_diagnostics(?int $sid, array $descendantPids, array $sessionPids): string
+function _format_timeout_process_diagnostics(?int $sid, array $descendantPids, array $sessionPids, array $cmdlineByPid = []): string
 {
     $sessionPid = (null !== $sid && $sid > 1) ? $sid : null;
     $pids = array_values(array_unique(array_filter(
@@ -310,13 +320,7 @@ function _format_timeout_process_diagnostics(?int $sid, array $descendantPids, a
 
     $limit = 24;
     foreach (array_slice($pids, 0, $limit) as $pid) {
-        $cmdRaw = @file_get_contents("/proc/{$pid}/cmdline");
-        $cmd = false === $cmdRaw || '' === $cmdRaw
-            ? '(no cmdline)'
-            : str_replace("\0", ' ', trim($cmdRaw));
-        if (strlen($cmd) > 220) {
-            $cmd = substr($cmd, 0, 217).'...';
-        }
+        $cmd = $cmdlineByPid[$pid] ?? '(no cmdline)';
         $lines[] = "  pid={$pid} cmd={$cmd}";
     }
     if (count($pids) > $limit) {
@@ -324,6 +328,40 @@ function _format_timeout_process_diagnostics(?int $sid, array $descendantPids, a
     }
 
     return implode("\n", $lines);
+}
+
+/**
+ * Read bounded /proc cmdline strings for timeout diagnostics before any reaping.
+ *
+ * @param list<int> $descendantPids
+ * @param list<int> $sessionPids
+ *
+ * @return array<int, string>
+ */
+function _collect_timeout_cmdline_snapshot(?int $sid, array $descendantPids, array $sessionPids): array
+{
+    $sessionPid = (null !== $sid && $sid > 1) ? $sid : null;
+    $pids = array_values(array_unique(array_filter(
+        array_merge(null !== $sessionPid ? [$sessionPid] : [], $descendantPids, $sessionPids),
+        static fn (int $pid): bool => $pid > 1,
+    )));
+    sort($pids);
+
+    $snapshot = [];
+    foreach (array_slice($pids, 0, 24) as $pid) {
+        $cmdRaw = @file_get_contents("/proc/{$pid}/cmdline");
+        if (false === $cmdRaw || '' === $cmdRaw) {
+            $snapshot[$pid] = '(no cmdline)';
+            continue;
+        }
+        $cmd = str_replace("\0", ' ', trim($cmdRaw));
+        if (strlen($cmd) > 220) {
+            $cmd = substr($cmd, 0, 217).'...';
+        }
+        $snapshot[$pid] = $cmd;
+    }
+
+    return $snapshot;
 }
 
 /**

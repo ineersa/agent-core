@@ -153,18 +153,9 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     /**
-     * Wall-clock budget for live LLM tool smoke tests (first LLM turn + tool execution).
-     * Replay-backed controller tests may pass with shorter timeouts; live llama.cpp is slower.
-     */
-    protected function liveLlmToolWaitTimeout(): float
-    {
-        return 12.0;
-    }
-
-    /**
      * Wall-clock budget for a single-turn live LLM run (start_run → terminal state).
      * Under full castor check, ParaTest llm-real defaults to 1 worker (standalone full
-     * uses 4); concurrent gate lanes still compete for CPU/proxy, so 8s can expire after
+     * uses 2); concurrent gate lanes still compete for CPU/proxy, so 8s can expire after
      * run.started before the first LLM response reaches stdout (collectEvents exits on
      * run.completed only when seen).
      */
@@ -188,7 +179,7 @@ abstract class ControllerE2eTestCase extends TestCase
     /**
      * Wall-clock budget for controller subprocess to emit runtime.ready.
      * Under full castor check, ParaTest llm-real defaults to 1 worker (standalone full
-     * uses 4); concurrent gate load still competes with other parallel lanes, so 5s
+     * uses 2); concurrent gate load still competes with other parallel lanes, so 5s
      * flakes while standalone llm-real passes. Early-exit on event — does not slow
      * passing tests.
      */
@@ -458,67 +449,6 @@ abstract class ControllerE2eTestCase extends TestCase
                 if ($targetType === $type
                     || $this->isParentRunTerminalEvent($event)
                 ) {
-                    return $events;
-                }
-            }
-
-            if (!$this->isRunning()) {
-                foreach ($this->readEvents() as $event) {
-                    $events[] = $event;
-                }
-                break;
-            }
-
-            usleep(10_000);
-        }
-
-        return $events;
-    }
-
-    /**
-     * Collect events until a specific tool call has completed.
-     *
-     * The controller stream exposes the tool name on tool_execution.started,
-     * while tool_execution.completed only carries the call id.  Track started
-     * call ids so tests can wait for the tool they actually care about instead
-     * of stopping at the first completed tool if the small smoke-test model
-     * performs an exploratory call first.
-     *
-     * @return list<array<string, mixed>>
-     */
-    protected function collectEventsUntilToolCompleted(string $toolName, float $timeout): array
-    {
-        $events = [];
-        $targetToolCallIds = [];
-        $deadline = microtime(true) + $timeout;
-        $this->parentRunIdForCollection = '' !== $this->runId ? $this->runId : null;
-
-        while (microtime(true) < $deadline) {
-            foreach ($this->readEvents() as $event) {
-                $events[] = $event;
-                $this->noteParentRunIdFromEvent($event);
-
-                $type = $event['type'] ?? '';
-                $payload = $event['payload'] ?? [];
-                if (!\is_array($payload)) {
-                    $payload = [];
-                }
-
-                if ('tool_execution.started' === $type
-                    && $toolName === ($payload['tool_name'] ?? null)
-                    && isset($payload['tool_call_id'])
-                ) {
-                    $targetToolCallIds[(string) $payload['tool_call_id']] = true;
-                }
-
-                if ('tool_execution.completed' === $type
-                    && isset($payload['tool_call_id'])
-                    && isset($targetToolCallIds[(string) $payload['tool_call_id']])
-                ) {
-                    return $events;
-                }
-
-                if ($this->isParentRunTerminalEvent($event)) {
                     return $events;
                 }
             }

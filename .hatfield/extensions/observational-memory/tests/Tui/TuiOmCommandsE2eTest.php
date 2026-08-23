@@ -72,8 +72,7 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
         );
 
         try {
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
 
             // Promote draft → real session (session_id is lazy until first submit).
             $this->tmux->sendKey($pane, 'C-u');
@@ -155,8 +154,7 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
         );
 
         try {
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->waitForTuiReady($pane);
 
             $this->tmux->sendKey($pane, 'C-u');
             $this->tmux->sendLiteral($pane, 'om e2e status seed');

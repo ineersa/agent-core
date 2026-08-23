@@ -308,7 +308,7 @@ This exercises the full async runtime pipeline:
 
 Use the narrowest event proof instead of waiting for the whole run when the feature does not require it:
 - `collectEventsUntil($eventType, 5.0)` for a specific runtime event.
-- `collectEventsUntilToolCompleted($toolName, 5.0)` for tool tests; it tracks `tool_call_id` from `tool_execution.started` to the matching `tool_execution.completed`.
+- For tool smoke: collect until the intended `tool_execution.started` / matching `tool_execution.completed` by `tool_call_id` (via `collectEventsUntil` + indexing). Prefer that over draining to `run.completed`.
 - Do not hard-require `run.completed` for tests whose real assertion is tool execution. The post-tool assistant turn can be slower or more variable than the tool path itself.
 - Prompts in `llm-real` tests must name the exact tool and exact relative path, e.g. `Call the tool named read exactly once with path ./file.txt`. Avoid vague natural-language prompts that let the small model pick a different tool or shorten paths.
 

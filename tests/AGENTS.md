@@ -93,13 +93,13 @@ Extend `ControllerE2eTestCase`. Requires live LLM readiness. Run: `castor test:c
 Inherited helpers (do not reimplement inline `byType`/ack loops):
 
 - `indexByType`, `foundAck`, `assertStartRunAcked`
-- `collectEvents`, `collectEventsUntil`, `collectEventsUntilToolCompleted`
+- `collectEvents`, `collectEventsUntil`
 - `collectDiagnostics`
-- Live waits: `liveControllerReadyTimeout()`, `liveLlmToolWaitTimeout()`, `liveLlmRunWaitTimeout()` — prefer early-exit collectors over full-timeout drains
+- Live waits: `liveControllerReadyTimeout()`, `liveLlmRunWaitTimeout()` — prefer early-exit collectors over full-timeout drains
 
 Live `llm-real` scenarios that share llama-proxy cache normalization must use a **unique first user prompt** per scenario (e.g. `[llm-real:write-file] …`) so stripped prologue keys do not collide. Live controller subprocess uses source `bin/console` with `APP_ENV=test` (and `APP_DEBUG=1` for diagnostics). Do **not** spawn the PHAR with `APP_ENV=test` — dev-only bundles are excluded from the PHAR.
 
-For tool-focused LLM smoke: prefer `collectEventsUntilToolCompleted()`; assert intended `tool_name`, matching `tool_call_id`, and presence/absence of `tool_execution.failed` as appropriate. Do not hard-require `run.completed` when the contract is tool execution.
+For tool-focused LLM smoke: assert intended `tool_name`, matching `tool_call_id`, and presence/absence of `tool_execution.failed` as appropriate (via `collectEventsUntil` / indexed events). Do not hard-require `run.completed` when the contract is tool execution.
 
 ## TUI tests (lowest correct layer)
 

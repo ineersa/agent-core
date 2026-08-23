@@ -10,8 +10,9 @@ use Symfony\Component\DependencyInjection\Container;
 
 /**
  * Regression: Messenger transport SQLite claims use BEGIN IMMEDIATE on the
- * dedicated messenger_transport connection so a competing writer waits at
- * beginTransaction() (busy_timeout) instead of failing on deferred read→write upgrade.
+ * dedicated messenger_transport connection (middleware registration + nested
+ * savepoint / rollback probes). Timing-lottery competing-writer wait coverage
+ * was removed — restore only with a deterministic barrier, never elapsed-time.
  *
  * Subprocess helpers boot APP_ENV=test and resolve doctrine.dbal.messenger_transport_connection
  * from the container. StaticDriver::setKeepStaticConnections(false) in those subprocesses
