@@ -32,12 +32,6 @@ final class TmuxHarness
     public const float TUI_STARTUP_LOGO_TIMEOUT_PARALLEL = 20.0;
 
     /**
-     * Wait for assistant (◇) or error (✕) blocks after replay+tool work when
-     * test:tui runs under full parallel castor check load.
-     */
-    public const float TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL = 20.0;
-
-    /**
      * Generic transcript/marker/shell-output waits when test:tui runs under
      * full parallel castor check load (unit + controller-replay + llm-real).
      */
