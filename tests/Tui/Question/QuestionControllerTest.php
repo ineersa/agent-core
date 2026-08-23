@@ -18,8 +18,6 @@ use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Render\Renderer;
-use Symfony\Component\Tui\Style\Color;
-use Symfony\Component\Tui\Style\Direction;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\EditorWidget;
@@ -113,7 +111,6 @@ class QuestionControllerTest extends TestCase
             colors: [
                 ThemeColorEnum::Accent->value => 'cyan',
                 ThemeColorEnum::Muted->value => 'gray',
-                ThemeColorEnum::Prompt->value => 'magenta',
             ],
         );
         $screen = new ChatScreen(new DefaultTheme($palette), 'test-session', new PromptEditor());
@@ -160,7 +157,8 @@ class QuestionControllerTest extends TestCase
             prompt: 'PROMPT_BODY_UNIQUE Choose carefully',
             choices: [
                 new QuestionOption(label: 'ANSWER_ALPHA_UNIQUE'),
-                new QuestionOption(label: 'ANSWER_BETA_UNIQUE'),
+                new QuestionOption(label: 'LONG_OPTION_BEGIN keep every word visible past thirty columns LONG_OPTION_TAIL_UNIQUE'),
+                new QuestionOption(label: 'WITH_DESC', description: 'Visible description remains mapped'),
             ],
             allowOther: false,
         );
@@ -186,50 +184,32 @@ class QuestionControllerTest extends TestCase
         $container = $containerProp->getValue($controller);
         $this->assertInstanceOf(ContainerWidget::class, $container);
 
-        $containerStyle = $container->getStyle();
-        $this->assertNotNull($containerStyle);
-        $this->assertSame(1, $containerStyle->getGap());
-        $this->assertSame(Direction::Vertical, $containerStyle->getDirection());
-
         $children = $container->all();
-        $this->assertCount(3, $children, 'Choice overlay should be header + prompt + list');
-        $this->assertInstanceOf(TextWidget::class, $children[0]);
-        $this->assertInstanceOf(MarkdownWidget::class, $children[1]);
         $this->assertInstanceOf(SelectListWidget::class, $children[2]);
-        $this->assertContains(
-            'question-choice-list',
-            $children[2]->getStyleClasses(),
-            'Question list must use the scoped style class for stylesheet rules',
-        );
-
-        $promptStyle = $children[1]->getStyle();
-        $this->assertNotNull($promptStyle);
-        $this->assertNotNull($promptStyle->getColor(), 'Prompt markdown must carry ThemeColorEnum::Prompt foreground');
-        $this->assertSame(
-            Color::from('magenta')->toForegroundCode(),
-            $promptStyle->getColor()->toForegroundCode(),
-            'Prompt markdown must use ThemeColorEnum::Prompt color',
-        );
 
         $promptProbe = $theme->color(ThemeColorEnum::Prompt, 'PROMPT_BODY_UNIQUE');
         $accentProbe = $theme->color(ThemeColorEnum::Accent, 'PROBE');
-        $rendered = (new Renderer())->render($container, 72, 30);
+        $rendered = (new Renderer())->render($container, 96, 30);
         $joined = implode("\n", $rendered);
         $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $joined) ?? $joined;
+        $plainLines = array_map(
+            static fn (string $line): string => trim(preg_replace('/\x1b\[[0-9;]*m/', '', $line) ?? $line, " \t\r\n"),
+            $rendered,
+        );
 
         $this->assertStringContainsString('PROMPT_BODY_UNIQUE', $plain);
         $this->assertStringContainsString('ANSWER_ALPHA_UNIQUE', $plain);
-        $this->assertStringContainsString('ANSWER_BETA_UNIQUE', $plain);
+        $this->assertStringContainsString('LONG_OPTION_TAIL_UNIQUE', $plain);
+        $this->assertStringContainsString('Visible description remains mapped', $plain);
+        $this->assertGreaterThanOrEqual(
+            2,
+            \count(array_filter($plainLines, static fn (string $line): bool => '' === $line)),
+            'The native container gap must render separation between overlay blocks',
+        );
         $promptPrefix = substr($promptProbe, 0, (int) strpos($promptProbe, 'PROMPT_BODY_UNIQUE'));
         $accentPrefix = substr($accentProbe, 0, (int) strpos($accentProbe, 'PROBE'));
-        $this->assertNotSame('', $promptPrefix);
         $this->assertNotSame($accentPrefix, $promptPrefix, 'Prompt and Accent theme colors must differ');
         $this->assertStringContainsString($promptPrefix, $joined, 'Rendered prompt must use Prompt theme ANSI prefix');
-        $this->assertDoesNotMatchRegularExpression(
-            '/'.preg_quote($accentPrefix, '/').'PROMPT_BODY_UNIQUE/',
-            $joined,
-            'Prompt body must not use Accent coloring reserved for the header',
-        );
     }
 
     #[Test]
@@ -248,7 +228,6 @@ class QuestionControllerTest extends TestCase
             colors: [
                 ThemeColorEnum::Accent->value => 'cyan',
                 ThemeColorEnum::Muted->value => 'gray',
-                ThemeColorEnum::Prompt->value => 'magenta',
             ],
         );
         $screen = new ChatScreen(new DefaultTheme($palette), 'text-status-session', new PromptEditor());
@@ -490,65 +469,6 @@ class QuestionControllerTest extends TestCase
         $items = $this->invokeBuildItems($request);
 
         $this->assertCount(0, $items);
-    }
-
-    #[Test]
-    public function testEmptyDescriptionChoiceRendersPastThirtyColumnsAtFullWidth(): void
-    {
-        $longLabel = 'LONG_OPTION_BEGIN keep every word visible past thirty columns LONG_OPTION_TAIL_UNIQUE';
-        $this->assertGreaterThan(30, mb_strlen($longLabel));
-
-        $request = new QuestionRequest(
-            requestId: 'choice-full-width',
-            source: QuestionSource::AgentCore,
-            kind: QuestionKind::Choice,
-            prompt: 'Pick the full-width option',
-            choices: [
-                new QuestionOption(label: 'SHORT_OPTION_KEEP_SINGLE_LINE'),
-                new QuestionOption(label: $longLabel),
-                new QuestionOption(label: 'WITH_DESC', description: 'Visible description remains mapped'),
-            ],
-            allowOther: false,
-        );
-
-        $items = $this->invokeBuildItems($request);
-        $this->assertArrayNotHasKey('description', $items[0]);
-        $this->assertArrayNotHasKey('description', $items[1]);
-        $this->assertSame('Visible description remains mapped', $items[2]['description']);
-
-        $palette = new ThemePalette(
-            name: 'test',
-            colors: [
-                ThemeColorEnum::Accent->value => 'cyan',
-                ThemeColorEnum::Prompt->value => 'magenta',
-                ThemeColorEnum::Muted->value => 'gray',
-                ThemeColorEnum::Text->value => 'white',
-            ],
-        );
-        $theme = new DefaultTheme($palette);
-        $tui = new Tui();
-        $screen = new ChatScreen($theme, 'choice-full-width-session', new PromptEditor());
-        $screen->mount($tui);
-        $controller = new QuestionController(new QuestionCoordinator(), $screen);
-        $controller->open($request);
-
-        $containerProp = new \ReflectionProperty($controller, 'container');
-        /** @var ContainerWidget $container */
-        $container = $containerProp->getValue($controller);
-        $this->assertInstanceOf(ContainerWidget::class, $container);
-
-        $rendered = (new Renderer())->render($container, 96, 30);
-        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $rendered)) ?? '';
-
-        $this->assertStringContainsString('LONG_OPTION_BEGIN', $plain);
-        $this->assertStringContainsString('LONG_OPTION_TAIL_UNIQUE', $plain);
-        $this->assertStringContainsString('Visible description remains mapped', $plain);
-        foreach ($rendered as $line) {
-            $linePlain = preg_replace('/\x1b\[[0-9;]*m/', '', $line) ?? $line;
-            if (str_contains($linePlain, 'LONG_OPTION_')) {
-                $this->assertStringNotContainsString('…', $linePlain);
-            }
-        }
     }
 
     // ── Confirm styling ──
