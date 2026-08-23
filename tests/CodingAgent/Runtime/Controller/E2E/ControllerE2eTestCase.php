@@ -432,9 +432,14 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     /**
+     * Early-exit collector. Optional $until replaces type matching (parent-run
+     * terminals still stop). Null $targetType with no $until drains until timeout/exit.
+     *
+     * @param (callable(array<string, mixed>): bool)|null $until
+     *
      * @return list<array<string, mixed>>
      */
-    protected function collectEventsUntil(?string $targetType, float $timeout): array
+    protected function collectEventsUntil(?string $targetType, float $timeout, ?callable $until = null): array
     {
         $events = [];
         $deadline = microtime(true) + $timeout;
@@ -445,10 +450,19 @@ abstract class ControllerE2eTestCase extends TestCase
                 $events[] = $event;
                 $this->noteParentRunIdFromEvent($event);
 
-                $type = $event['type'] ?? '';
-                if ($targetType === $type
-                    || $this->isParentRunTerminalEvent($event)
-                ) {
+                if ($this->isParentRunTerminalEvent($event)) {
+                    return $events;
+                }
+
+                if (null !== $until) {
+                    if ($until($event)) {
+                        return $events;
+                    }
+
+                    continue;
+                }
+
+                if ($targetType === ($event['type'] ?? '')) {
                     return $events;
                 }
             }

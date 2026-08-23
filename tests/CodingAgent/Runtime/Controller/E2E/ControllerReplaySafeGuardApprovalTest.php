@@ -108,7 +108,12 @@ final class ControllerReplaySafeGuardApprovalTest extends ControllerReplayE2eTes
             ],
         ]);
 
-        $post = $this->collectEventsUntilMatchingToolCompleted(self::TOOL_CALL_ID, 8.0);
+        $post = $this->collectEventsUntil(
+            'tool_execution.completed',
+            8.0,
+            static fn (array $event): bool => ($event['type'] ?? '') === 'tool_execution.completed'
+                && ($event['payload']['tool_call_id'] ?? null) === self::TOOL_CALL_ID,
+        );
         $all = array_merge($preAnswer, $post);
         $byType = $this->indexByType($all);
 
@@ -135,9 +140,10 @@ final class ControllerReplaySafeGuardApprovalTest extends ControllerReplayE2eTes
             $byType['tool_execution.completed'] ?? [],
             static fn (array $e): bool => ($e['payload']['tool_call_id'] ?? null) === self::TOOL_CALL_ID,
         ));
-        $this->assertNotEmpty(
+        $this->assertCount(
+            1,
             $writeCompleted,
-            'Allow must deliver terminal tool_execution.completed for the suspended write call. '
+            'Allow must deliver exactly one tool_execution.completed for the suspended write call. '
             .$this->collectDiagnostics($all),
         );
 
@@ -216,46 +222,5 @@ final class ControllerReplaySafeGuardApprovalTest extends ControllerReplayE2eTes
             // Interactive approval channel so SafeGuard emits RequireApproval instead of auto-deny.
             'HATFIELD_APPROVAL_CHANNEL' => 'controller',
         ];
-    }
-
-    /**
-     * Collect until tool_execution.completed for the exact suspended call id.
-     *
-     * @return list<array<string, mixed>>
-     */
-    private function collectEventsUntilMatchingToolCompleted(string $toolCallId, float $timeout): array
-    {
-        $events = [];
-        $deadline = microtime(true) + $timeout;
-        $this->parentRunIdForCollection = '' !== $this->runId ? $this->runId : null;
-
-        while (microtime(true) < $deadline) {
-            foreach ($this->readEvents() as $event) {
-                $events[] = $event;
-                $this->noteParentRunIdFromEvent($event);
-
-                if ($this->isParentRunTerminalEvent($event)) {
-                    return $events;
-                }
-
-                if (($event['type'] ?? '') !== 'tool_execution.completed') {
-                    continue;
-                }
-                if (($event['payload']['tool_call_id'] ?? null) === $toolCallId) {
-                    return $events;
-                }
-            }
-
-            if (!$this->isRunning()) {
-                foreach ($this->readEvents() as $event) {
-                    $events[] = $event;
-                }
-                break;
-            }
-
-            usleep(10_000);
-        }
-
-        return $events;
     }
 }
