@@ -929,7 +929,7 @@ YAML;
         $this->assertSame(
             [],
             $this->lastTeardownSurvivorPids,
-            'No controller-owned descendants may remain after SIGTERM→0.25s→SIGKILL teardown',
+            'No controller-owned descendants may remain after SIGTERM→0.05s→SIGKILL teardown',
         );
     }
 
@@ -976,8 +976,8 @@ YAML;
         }
 
         // Production graceful-shutdown timing is covered by ConsumerSupervisorTest.
-        // Replay/live E2E only needs deterministic reaping, not a full 3s grace.
-        $deadline = microtime(true) + 0.25;
+        // Replay/live E2E only needs deterministic reaping, not a multi-second grace.
+        $deadline = microtime(true) + 0.05;
         $stillAlive = true;
         while ($stillAlive && microtime(true) < $deadline) {
             $stillAlive = false;

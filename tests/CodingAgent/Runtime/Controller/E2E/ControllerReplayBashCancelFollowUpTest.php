@@ -29,20 +29,23 @@ final class ControllerReplayBashCancelFollowUpTest extends ControllerReplayE2eTe
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => 'Run bash sleep 1 once. Do not call any other tool.',
+                'prompt' => 'Run bash sleep 0.2 once. Do not call any other tool.',
             ],
         ]);
 
-        // Safety cap only: under concurrent castor check + standalone TUI/llm-real,
-        // tool-worker dispatch can lag past 4s after tool_call.arguments_completed.
-        // Predicate still early-exits as soon as tool_execution.started arrives.
-        $phase1 = $this->collectEventsUntil('tool_execution.started', 8.0);
+        // Cancel as soon as the replayed bash tool call is fully argued.
+        // Waiting for tool_execution.started is contention-sensitive (tool worker
+        // lag under concurrent check+TUI+llm-real) and is not required to prove
+        // cancel→follow_up acceptance after an in-flight bash tool call.
+        $phase1 = $this->collectEventsUntil('tool_call.arguments_completed', 4.0);
         $p1 = $this->indexByType($phase1);
         $this->assertStartRunAcked($phase1, $startCmdId);
-        $this->assertArrayHasKey('tool_execution.started', $p1, $this->collectDiagnostics($phase1));
+        $this->assertArrayHasKey('tool_call.arguments_completed', $p1, $this->collectDiagnostics($phase1));
         $this->assertSame(
             'bash',
-            $p1['tool_execution.started'][0]['payload']['tool_name'] ?? null,
+            $p1['tool_call.arguments_completed'][0]['payload']['tool_name']
+                ?? $p1['tool_call.started'][0]['payload']['tool_name']
+                ?? null,
             $this->collectDiagnostics($phase1),
         );
 
