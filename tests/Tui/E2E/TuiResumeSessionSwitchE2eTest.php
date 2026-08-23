@@ -6,15 +6,17 @@ namespace Ineersa\Tui\Tests\E2E;
 
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Tui\Tests\E2E\Support\TuiE2eSessionCatalogSeeder;
 use Ineersa\Tui\Tests\Support\ResumeCanonicalEventsFixture;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Minimal tmux lifecycle proofs for /resume direct repaint and picker selection.
+ * Minimal tmux lifecycle proof for /resume direct repaint.
  *
- * Canonical replay block reconstruction and picker render/escape cleanliness
- * are covered by virtual/initializer tests.
+ * Seeds a real hatfield_session row + canonical events without an LLM turn.
+ * Canonical block reconstruction remains virtual-owned
+ * ({@see \Ineersa\Tui\Tests\Screen\TuiResumeSessionVirtualTest}).
  *
  * @group tui-e2e-replay
  */
@@ -23,6 +25,9 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
 {
     private TmuxHarness $tmux;
     private string $testProjectDir;
+
+    /** @var array{app: string, transport: string, appEnv: string, transportEnv: string}|null */
+    private ?array $dbPaths = null;
 
     protected function setUp(): void
     {
@@ -49,18 +54,46 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
 
     public function testResumeRepaintsSelectedSessionInVisiblePane(): void
     {
+        $paths = $this->dbPaths ?? $this->fail('DB paths must be allocated before seeding');
+        $sessionId = TuiE2eSessionCatalogSeeder::createSession(
+            $this->testProjectDir,
+            $paths['appEnv'],
+            $paths['transportEnv'],
+            'Tell me about testing.',
+        );
+        ResumeCanonicalEventsFixture::write($this->testProjectDir, $sessionId);
+
         $pane = $this->startPane('tui-resume-repaint');
 
         try {
-            $sessionId = $this->createSessionAndWaitForAssistant($pane);
-            ResumeCanonicalEventsFixture::write($this->testProjectDir, $sessionId);
+            $this->tmux->waitForTuiReady($pane);
 
             $this->tmux->sendKey($pane, 'C-u');
             $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
             $this->tmux->sendKey($pane, 'Enter');
 
-            $visiblePane = $this->tmux->waitForTuiReady($pane);
+            $visiblePane = $this->tmux->waitForCallback(
+                $pane,
+                static function (string $cap) use ($sessionId): bool {
+                    if (!str_contains($cap, $sessionId)) {
+                        return false;
+                    }
+                    if (!str_contains($cap, 'Here is the answer you requested.')) {
+                        return false;
+                    }
+                    if (!str_contains($cap, '█') || !str_contains($cap, '◆')) {
+                        return false;
+                    }
+
+                    return str_contains($cap, '● idle') || str_contains($cap, '◐ Work');
+                },
+                timeout: TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL,
+                message: 'Resumed pane must show target session id, canonical fixture text, chrome, and active status',
+                history: 2500,
+            );
+
             $this->assertStringContainsString($sessionId, $visiblePane);
+            $this->assertStringContainsString('Here is the answer you requested.', $visiblePane);
             $this->assertStringContainsString('█', $visiblePane);
             $this->assertStringContainsString('◆', $visiblePane);
             $this->assertTrue(
@@ -91,57 +124,21 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
         );
     }
 
-    private function createSessionAndWaitForAssistant(TmuxPane $pane): string
-    {
-        $this->tmux->waitForTuiReady($pane);
-
-        $this->tmux->sendLiteral($pane, 'hi');
-        $this->tmux->sendKey($pane, 'Enter');
-
-        $sessionId = null;
-        $this->tmux->waitForCallback(
-            $pane,
-            static function (string $cap) use (&$sessionId): bool {
-                if (!str_contains($cap, '◇') && !str_contains($cap, '✕')) {
-                    return false;
-                }
-                if (!preg_match('/session\s+(\d+)/', $cap, $matches)) {
-                    return false;
-                }
-                $sessionId = $matches[1];
-
-                return true;
-            },
-            timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
-            message: 'Assistant block and session id must both appear in capture',
-            history: 2000,
-        );
-        $this->assertNotEmpty($sessionId, 'Session id must appear in the same capture as assistant/error glyph');
-
-        return $sessionId;
-    }
-
     private function agentCommand(): string
     {
-        $fixturePath = __DIR__.'/fixtures/tui-resume-minimal.json';
-        if (!is_file($fixturePath)) {
-            $this->fail("Fixture not found: {$fixturePath}");
-        }
+        $paths = $this->dbPaths ?? $this->fail('DB paths must be allocated before building agent command');
 
-        $projectDir = ProjectDir::get();
-        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-resume-');
-
-        $dbPath = $paths['app'];
-
-        $transportDbPath = $paths['transport'];
-
+        // Draft boot only — no LLM fixture/env; resume loads seeded canonical events.
         return \sprintf(
-            'APP_ENV=test %sHOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
-            TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
+            'APP_ENV=test %sHOME=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
+            TuiE2eDatabaseEnv::shellPrefixWithLowLatencyMessenger(
+                $paths['appEnv'],
+                $paths['transportEnv'],
+                $this->testProjectDir,
+            ),
             escapeshellarg($this->testProjectDir.'/home'),
-            escapeshellarg($fixturePath),
             escapeshellarg(\PHP_BINARY),
-            escapeshellarg($projectDir.'/bin/console'),
+            escapeshellarg(ProjectDir::get().'/bin/console'),
         );
     }
 
@@ -150,8 +147,19 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e');
         @mkdir($dir.'/.hatfield', 0o777, true);
 
-        $settings = TuiE2eDatabaseEnv::replayBaseSettings();
+        $allocated = TuiE2eDatabaseEnv::allocateIsolatedPaths(
+            ProjectDir::get(),
+            $dir,
+            'tui-resume-',
+        );
+        $this->dbPaths = [
+            'app' => $allocated['app'],
+            'transport' => $allocated['transport'],
+            'appEnv' => $allocated['appEnv'],
+            'transportEnv' => $allocated['transportEnv'],
+        ];
 
+        $settings = TuiE2eDatabaseEnv::replayBaseSettings();
         TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;

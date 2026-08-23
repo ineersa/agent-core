@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
+use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplayLowLatencyMessengerConsole;
+use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -30,11 +32,20 @@ final class TuiE2eDatabaseEnv
 
     public static function shellPrefix(string $appDbPath, string $transportDbPath): string
     {
-        return \sprintf(
-            'HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=%s ',
-            escapeshellarg($appDbPath),
-            escapeshellarg($transportDbPath),
-        );
+        return self::shellPrefixWithOptionalMessengerBinary($appDbPath, $transportDbPath, null);
+    }
+
+    /**
+     * Same as shellPrefix, plus HATFIELD_BINARY_PATH → low-latency messenger
+     * console wrapper under the isolated project tree (source-console TUI
+     * replay only; do not use for PHAR/artifact boots).
+     */
+    public static function shellPrefixWithLowLatencyMessenger(
+        string $appDbPath,
+        string $transportDbPath,
+        string $testProjectDir,
+    ): string {
+        return self::shellPrefixWithOptionalMessengerBinary($appDbPath, $transportDbPath, $testProjectDir);
     }
 
     /**
@@ -165,6 +176,8 @@ final class TuiE2eDatabaseEnv
      * With production default runtime.llm_worker_count=4, concurrent workers each
      * restart at fixture 0 and can serve the wrong turn. Force a single llm consumer
      * for all TUI replay isolation (same rationale as ControllerReplayE2eTestCase).
+     * Also force tools.execution.max_parallelism=1: TUI replay cases do not need
+     * four idle tool consumers paying Symfony messenger --sleep=1 under contention.
      *
      * @param array<string, mixed> $settings
      *
@@ -178,6 +191,18 @@ final class TuiE2eDatabaseEnv
         }
         $runtime['llm_worker_count'] = 1;
         $settings['runtime'] = $runtime;
+
+        $tools = $settings['tools'] ?? [];
+        if (!\is_array($tools)) {
+            $tools = [];
+        }
+        $execution = $tools['execution'] ?? [];
+        if (!\is_array($execution)) {
+            $execution = [];
+        }
+        $execution['max_parallelism'] = 1;
+        $tools['execution'] = $execution;
+        $settings['tools'] = $tools;
 
         return $settings;
     }
@@ -263,6 +288,28 @@ final class TuiE2eDatabaseEnv
 
         @mkdir($testProjectDir.'/home/.hatfield', 0o777, true);
         file_put_contents($testProjectDir.'/home/.hatfield/settings.yaml', $yaml);
+    }
+
+    private static function shellPrefixWithOptionalMessengerBinary(
+        string $appDbPath,
+        string $transportDbPath,
+        ?string $testProjectDir,
+    ): string {
+        $prefix = \sprintf(
+            'HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=%s ',
+            escapeshellarg($appDbPath),
+            escapeshellarg($transportDbPath),
+        );
+        if (null === $testProjectDir || '' === $testProjectDir) {
+            return $prefix;
+        }
+
+        $wrapper = ControllerReplayLowLatencyMessengerConsole::install(
+            $testProjectDir,
+            ProjectDir::get().'/bin/console',
+        );
+
+        return $prefix.'HATFIELD_BINARY_PATH='.escapeshellarg($wrapper).' ';
     }
 
     /**

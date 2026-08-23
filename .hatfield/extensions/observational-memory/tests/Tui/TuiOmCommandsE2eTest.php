@@ -223,7 +223,7 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
         return \sprintf(
             'APP_ENV=test HATFIELD_CWD=%s %sHOME=%s %s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
             escapeshellarg($this->testProjectDir),
-            TuiE2eDatabaseEnv::shellPrefix($paths['app'], $paths['transport']),
+            TuiE2eDatabaseEnv::shellPrefixWithLowLatencyMessenger($paths['app'], $paths['transport'], $this->testProjectDir),
             escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
             escapeshellarg($php),

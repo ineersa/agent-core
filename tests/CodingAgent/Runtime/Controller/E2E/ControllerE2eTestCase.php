@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Shared infrastructure for controller E2E smoke tests.
@@ -654,6 +655,10 @@ abstract class ControllerE2eTestCase extends TestCase
         // is trusted Symfony Messenger/Doctrine transport behavior. Replay
         // subclasses inherit the same isolation (process-local FIFO fixtures
         // also require one consumer).
+        // Likewise force tools.execution.max_parallelism=1: these E2Es use at
+        // most one active generic tool; production default 4 tool consumers is
+        // contention-only overhead. Multi-tool worker topology remains covered
+        // by HeadlessController*ProcessTest cases that set the same override.
         $settings = <<<YAML
 ai:
     default_model: llama_cpp_test/test
@@ -686,6 +691,10 @@ ai:
 runtime:
     llm_worker_count: {$this->isolatedLlmWorkerCount()}
 
+tools:
+    execution:
+        max_parallelism: 1
+
 extensions:
     enabled:
         - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
@@ -704,7 +713,17 @@ YAML;
 
         $extraYaml = $this->extraSettingsYaml();
         if ('' !== $extraYaml) {
-            $settings .= "\n".$extraYaml;
+            // Deep-merge so subclasses can append tools.*/runtime.* without
+            // producing duplicate top-level YAML keys (Symfony Yaml rejects them).
+            $base = Yaml::parse($settings);
+            $extra = Yaml::parse($extraYaml);
+            \PHPUnit\Framework\Assert::assertIsArray($base);
+            \PHPUnit\Framework\Assert::assertIsArray($extra);
+            $settings = Yaml::dump(
+                array_replace_recursive($base, $extra),
+                8,
+                4,
+            );
         }
 
         file_put_contents($this->tempDir.'/.hatfield/settings.yaml', $settings);

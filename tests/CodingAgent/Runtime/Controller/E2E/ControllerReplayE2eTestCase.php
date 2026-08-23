@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
+use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplayLowLatencyMessengerConsole;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 
 /**
@@ -154,6 +155,16 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             $fixturePaths[] = $fixturePath;
         }
 
+        // ConsumerSupervisor relaunches messenger:consume via HATFIELD_BINARY_PATH.
+        // Point it at a test-only wrapper that injects a small --sleep so idle
+        // queue polls do not burn the default 1s Symfony Messenger sleep under
+        // SafeGuard multi-hop / tool-start contention. Controller itself still
+        // boots from source bin/console below.
+        $messengerConsole = ControllerReplayLowLatencyMessengerConsole::install(
+            $this->tempDir,
+            $script,
+        );
+
         $descriptors = [
             0 => ['pipe', 'r'],
             1 => ['pipe', 'w'],
@@ -184,6 +195,8 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             'HATFIELD_SESSION_ID' => $this->sessionId,
             // Replay activation — consumed by ControllerReplayHttpClientFactory
             'HATFIELD_LLM_REPLAY_FIXTURE_PATH' => implode(';', $fixturePaths),
+            // Inherited by ConsumerSupervisor children; ConfigExecutableLocator wins.
+            'HATFIELD_BINARY_PATH' => $messengerConsole,
             // Explicitly NOT setting LLAMA_CPP_SMOKE_TEST.
         ];
 

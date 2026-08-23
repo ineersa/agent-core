@@ -171,7 +171,7 @@ final class TuiProviderErrorE2eTest extends TestCase
             'APP_ENV=test %sHOME=%s %s %s %s agent '
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
-            TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
+            TuiE2eDatabaseEnv::shellPrefixWithLowLatencyMessenger($dbPath, $transportDbPath, $this->testProjectDir),
             escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
             escapeshellarg($php),
