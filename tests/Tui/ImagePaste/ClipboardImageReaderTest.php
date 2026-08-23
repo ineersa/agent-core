@@ -179,11 +179,12 @@ echo "xclip: Error: Can\'t open display" 1>&2; exit 1');
     #[Test]
     public function cancelStopsInFlightClipboardBackendWithoutWaitingForTimeout(): void
     {
-        // Accepted coverage gap: production hang→PROCESS_TIMEOUT(5.0)→Failed("timed out")
-        // cannot be proven here without sleeping ~5s or adding a test-only injectable
-        // timeout (forbidden). Cancel/cleanup remains the deterministic proof; the
-        // timeout path stays covered only by ClipboardImageReader::setTimeout +
-        // ProcessTimedOutException handling in production code.
+        // Intentional coverage choice: the old elapsed hang→PROCESS_TIMEOUT(5.0)→
+        // Failed("timed out") case was removed because it used wall-clock sleep as
+        // synchronization and was slow/low-value coverage (not because a 5s case is
+        // impossible under the ≤10s ceiling). Cancel/cleanup is the deterministic
+        // proof here; production still sets ClipboardImageReader::PROCESS_TIMEOUT
+        // via setTimeout and handles ProcessTimedOutException.
         $this->installScript('wl-paste', '#!/bin/sh'.'
 while true; do sleep 1; done');
 

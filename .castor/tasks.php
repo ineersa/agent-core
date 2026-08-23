@@ -21,23 +21,23 @@ declare(strict_types=1);
  *   subprocesses are clamped to remaining wall (no pad past 210s).
  *   No PHAR in the gate.
  *
- * Budget for test:controller-replay (75s → 90s → 120s → 150s) reflects the
- * current replay E2E suite: 10 sequential controller-subprocess tests
- * (9 fixture replay cases + HeadlessControllerLlmWorkerPoolProcessTest
- * fixed-pool topology proof), each spawning controller + messenger
- * consumers with SIGTERM → 3s grace → SIGKILL teardown. Main raised the
- * budget to 120s for the prior 9-test suite (~79s isolated; 90s failed
- * under concurrent gate contention with GNU timeout exit 124). After the
- * pool topology case joined this branch, standalone sequential runtime is
- * ~88s and concurrent castor-check load still needs more headroom than
- * 120s; 150s keeps ~60s load/teardown margin without masking a true hang.
- * Individual fixture waits remain fixture-local; Castor lane hard-stop is
- * the shell budget clamped to remaining wall (no +15s pad).
+ * Budget for test:controller-replay (75s → 90s → 120s → 150s): sequential
+ * controller-subprocess cases (fixture replay + headless process proofs) each
+ * spawn controller + messenger consumers. Replay/live E2E teardown is
+ * SIGTERM → ~0.25s grace → SIGKILL (deterministic reaping; production
+ * ConsumerSupervisor grace is separate). Lane budget history: prior suites
+ * needed raises under concurrent castor-check contention (GNU timeout 124);
+ * 150s keeps load/teardown headroom without masking a true hang. Individual
+ * fixture waits remain fixture-local; Castor lane hard-stop is the shell
+ * budget clamped to remaining wall (no +15s pad). Do not treat exact case
+ * counts in older comments as current — count the `controller-replay` group.
  *
- * Budget for test:tui (120s → 180s → 210s): the replay TUI lane runs 36 tests on
- * 2 ParaTest workers; healthy gate runs are often 108–118s, so 120s left
- * little margin under concurrent lane contention and risked GNU timeout
- * killing ParaTest before PHPUnit tearDown.
+ * Budget for test:tui (120s → 180s → 210s): the replay TUI lane uses ParaTest
+ * (default 2 workers under check). Healthy gate runs used to sit near the old
+ * 120s shell budget under concurrent lane contention and risked GNU timeout
+ * killing ParaTest before PHPUnit tearDown; 210s is the current shell cap
+ * clamped to remaining wall. Exact TUI case counts change with suite cleanup —
+ * count the `tui-e2e-replay` group rather than baking a number here.
  *
  * =========================================================================
  * This file was split from the former monolithic .castor/tasks.php.
