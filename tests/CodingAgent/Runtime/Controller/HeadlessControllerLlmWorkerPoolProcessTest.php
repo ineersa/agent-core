@@ -15,7 +15,7 @@ use PHPUnit\Framework\Attributes\Group;
  * claiming is trusted Symfony Messenger/Doctrine transport behavior.
  *
  * Reuses ControllerE2eTestCase process spawn + process-tree teardown
- * (SIGTERM → 3s grace → SIGKILL). Never signals root-owned processes.
+ * (SIGTERM → short grace → SIGKILL). Never signals root-owned processes.
  *
  * @group controller-replay
  */

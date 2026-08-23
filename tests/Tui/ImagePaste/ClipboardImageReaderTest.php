@@ -177,38 +177,26 @@ echo "xclip: Error: Can\'t open display" 1>&2; exit 1');
     }
 
     #[Test]
-    public function hungClipboardBackendTimesOutAndCancelCleansUp(): void
+    public function cancelStopsInFlightClipboardBackendWithoutWaitingForTimeout(): void
     {
+        // Intentional coverage choice: the old elapsed hang→PROCESS_TIMEOUT(5.0)→
+        // Failed("timed out") case was removed because it used wall-clock sleep as
+        // synchronization and was slow/low-value coverage (not because a 5s case is
+        // impossible under the ≤10s ceiling). Cancel/cleanup is the deterministic
+        // proof here; production still sets ClipboardImageReader::PROCESS_TIMEOUT
+        // via setTimeout and handles ProcessTimedOutException.
         $this->installScript('wl-paste', '#!/bin/sh'.'
-sleep 30');
+while true; do sleep 1; done');
 
         putenv('XDG_SESSION_TYPE=wayland');
         putenv('WAYLAND_DISPLAY=wayland-test');
 
         $reader = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
         $this->assertTrue($reader->startRead()->started);
+        $this->assertTrue($reader->isReading());
 
-        $deadline = microtime(true) + 8.0;
-        $result = null;
-        while (microtime(true) < $deadline) {
-            $poll = $reader->poll();
-            if (!$poll->pending && null !== $poll->terminal) {
-                $result = $poll->terminal;
-                break;
-            }
-            usleep(20_000);
-        }
-
-        $this->assertNotNull($result);
-        $this->assertSame(ClipboardImageReadOutcomeEnum::Failed, $result->outcome);
-        $this->assertStringContainsString('timed out', strtolower($result->userMessage ?? ''));
-        $this->assertNull($result->tempPath);
+        $reader->cancel();
         $this->assertFalse($reader->isReading());
-
-        $reader2 = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
-        $this->assertTrue($reader2->startRead()->started);
-        $reader2->cancel();
-        $this->assertFalse($reader2->isReading());
     }
 
     private function pollUntilTerminal(ClipboardImageReader $reader, int $maxSteps = 500): \Ineersa\Tui\ImagePaste\ClipboardImageReadResultDTO

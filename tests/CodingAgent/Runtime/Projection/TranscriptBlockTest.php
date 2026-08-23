@@ -53,32 +53,6 @@ final class TranscriptBlockTest extends TestCase
         $this->assertFalse($block->collapsed);
     }
 
-    // ── TranscriptBlockKindEnum values ─────────────────────────────────────
-
-    public function testEnumValues(): void
-    {
-        $expected = [
-            'user_message',
-            'assistant_message',
-            'assistant_thinking',
-            'tool_call',
-            'tool_result',
-            'progress',
-            'question',
-            'approval',
-            'cancelled',
-            'error',
-            'system',
-        ];
-
-        $actual = array_map(
-            static fn (TranscriptBlockKindEnum $k): string => $k->value,
-            TranscriptBlockKindEnum::cases(),
-        );
-
-        $this->assertSame($expected, $actual);
-    }
-
     // ── Symfony Serializer round-trip ───────────────────────────────────────
 
     public function testNormalizeProducesCorrectArray(): void

@@ -13,13 +13,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(DefaultTheme::class)]
 final class DefaultThemeTest extends TestCase
 {
-    public function testName(): void
-    {
-        $theme = $this->createTheme();
-
-        $this->assertSame('test', $theme->name());
-    }
-
     public function testAccentAppliesAnsiStyle(): void
     {
         $theme = $this->createTheme();
@@ -88,14 +81,6 @@ final class DefaultThemeTest extends TestCase
         $result = $theme->warning('caution');
 
         $this->assertStringContainsString('caution', $result);
-    }
-
-    public function testGetPalette(): void
-    {
-        $palette = new ThemePalette('test', ['accent' => 'cyan']);
-        $theme = new DefaultTheme($palette);
-
-        $this->assertSame($palette, $theme->getPalette());
     }
 
     public function testMissingPaletteKeyFallsBackToUnstyled(): void

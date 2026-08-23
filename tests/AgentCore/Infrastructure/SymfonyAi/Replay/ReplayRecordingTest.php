@@ -136,63 +136,6 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
     }
 
     /**
-     * Record the TUI simple-text-response fixture from live LLM.
-     *
-     * Writes to the path set by HATFIELD_RECORD_TUI_SIMPLE_FIXTURE_PATH
-     * when LLAMA_CPP_SMOKE_TEST is also set.  Skips otherwise.
-     */
-    public function testRecordTuiSimpleTextResponse(): void
-    {
-        $outputPath = getenv('HATFIELD_RECORD_TUI_SIMPLE_FIXTURE_PATH');
-        if (!$outputPath || !getenv('LLAMA_CPP_SMOKE_TEST')) {
-            $this->markTestSkipped('HATFIELD_RECORD_TUI_SIMPLE_FIXTURE_PATH / LLAMA_CPP_SMOKE_TEST not set');
-        }
-
-        $recorder = new StreamRecorderObserver();
-        $adapter = $this->buildRecordingAdapter($recorder);
-
-        $result = $adapter->invoke(new ModelInvocationRequest(
-            model: 'llama_cpp/test',
-            input: new ModelInvocationInput(
-                runId: 'record-tui-simple',
-                turnNo: 1,
-                stepId: 'turn-1-llm-1',
-                messages: [
-                    new AgentMessage('user', [['type' => 'text', 'text' => 'Respond with exactly one sentence: the sky is blue.']]),
-                ],
-            ),
-        ));
-
-        $deltas = $recorder->getDeltas();
-        $this->assertNotEmpty($deltas, 'Recording should capture at least one delta');
-
-        $stopReason = StreamRecorderObserver::resolveFixtureStopReason(
-            $result->stopReason,
-            $recorder->getDeltas(),
-        );
-
-        $bytes = $recorder->writeFixture($outputPath, [
-            '$schema' => 'TUI journey reply fixture — simple text response for replay-backed TUI E2E',
-            'model' => 'llama_cpp_test/test',
-            'provider_id' => 'llama_cpp_test',
-            'reasoning' => 'off',
-            'recorded_at' => date('c'),
-            'recording_source' => 'llama_cpp_test/test',
-            'input' => [
-                'messages' => [
-                    ['role' => 'user', 'content' => 'Respond with exactly one sentence: the sky is blue.'],
-                ],
-            ],
-            'usage' => $result->usage,
-            'stop_reason' => $stopReason,
-            'expected_text' => null,
-        ]);
-
-        $this->assertGreaterThan(0, $bytes, 'Fixture file should be non-empty');
-        echo "\nRecorded TUI simple text fixture → {$outputPath} (".\count($deltas)." deltas, {$bytes} bytes)\n";
-    }
-
-    /**
      * Record the TUI startup-prompt-response fixture from live LLM.
      *
      * Writes to the path set by HATFIELD_RECORD_TUI_STARTUP_FIXTURE_PATH

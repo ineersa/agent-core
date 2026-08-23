@@ -43,15 +43,20 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         // Restore env vars
         if (null !== $this->savedCaptureEnv) {
             putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE='.$this->savedCaptureEnv);
+            $_ENV['HATFIELD_LLM_RAW_STREAM_CAPTURE'] = $this->savedCaptureEnv;
+            $_SERVER['HATFIELD_LLM_RAW_STREAM_CAPTURE'] = $this->savedCaptureEnv;
         } else {
             putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE');
+            unset($_ENV['HATFIELD_LLM_RAW_STREAM_CAPTURE'], $_SERVER['HATFIELD_LLM_RAW_STREAM_CAPTURE']);
         }
         if (null !== $this->savedCapturePathEnv) {
             putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH='.$this->savedCapturePathEnv);
+            $_ENV['HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH'] = $this->savedCapturePathEnv;
+            $_SERVER['HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH'] = $this->savedCapturePathEnv;
         } else {
             putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH');
+            unset($_ENV['HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH'], $_SERVER['HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH']);
         }
-        unset($_ENV['HATFIELD_LLM_RAW_STREAM_CAPTURE'], $_ENV['HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH']);
         parent::tearDown();
     }
 

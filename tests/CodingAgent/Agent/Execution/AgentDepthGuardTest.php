@@ -14,6 +14,7 @@ final class AgentDepthGuardTest extends TestCase
     protected function tearDown(): void
     {
         putenv('HATFIELD_AGENTS_DISABLED');
+        unset($_ENV['HATFIELD_AGENTS_DISABLED'], $_SERVER['HATFIELD_AGENTS_DISABLED']);
     }
 
     public function testCheckLaunchAllowedWhenParentIsNotChild(): void
@@ -33,6 +34,8 @@ final class AgentDepthGuardTest extends TestCase
     public function testCheckLaunchBlockedWhenGloballyDisabled(): void
     {
         putenv('HATFIELD_AGENTS_DISABLED=1');
+        $_ENV['HATFIELD_AGENTS_DISABLED'] = '1';
+        $_SERVER['HATFIELD_AGENTS_DISABLED'] = '1';
 
         $guard = new AgentDepthGuard();
         $result = $guard->checkLaunchAllowed(parentIsAgentChild: false);

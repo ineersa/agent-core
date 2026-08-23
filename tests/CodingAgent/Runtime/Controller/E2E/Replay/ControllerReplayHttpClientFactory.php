@@ -27,9 +27,9 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * When the env var is set, the factory loads each fixture file,
  * converts its deltas to OpenAI-compatible SSE chunks, and returns
  * a MockHttpClient that serves one response per LLM invocation
- * (cycling through the fixture queue).  After the queue is exhausted,
- * a minimal "done" text response is returned so the run can complete
- * cleanly.
+ * (FIFO or request-matcher selection).  After the queue is exhausted,
+ * the next LLM call fails loudly with a 500 diagnostic response so
+ * unexpected extra turns cannot hide behind a synthetic "done".
  *
  * When the env var is NOT set, the factory returns the normal test
  * HttpClient with a 5s timeout — preserving existing behavior for
@@ -293,24 +293,33 @@ final class ControllerReplayHttpClientFactory
             static function (string $method, string $url, array $options) use (&$fifoIndex, $fixtures, $hasRequestMatchers): MockResponse {
                 $fixture = self::selectFixtureForRequest($fixtures, $options, $fifoIndex, $hasRequestMatchers);
                 if (null === $fixture) {
-                    // Queue exhausted — the next LLM call in this run
-                    // would normally be the post-tool assistant turn.
-                    // Return a minimal text-only stop response so the
-                    // run can complete cleanly.
+                    $fifoCount = 0;
+                    foreach ($fixtures as $candidate) {
+                        if (!self::fixtureHasRequestMatcher($candidate)) {
+                            ++$fifoCount;
+                        }
+                    }
+                    $message = \sprintf(
+                        'Replay fixture queue exhausted: fifo_index=%d fifo_fixtures=%d total_fixtures=%d matchers=%s. '
+                        .'Add an explicit fixture for this LLM call instead of relying on a synthetic done response.',
+                        $fifoIndex,
+                        $fifoCount,
+                        \count($fixtures),
+                        $hasRequestMatchers ? 'yes' : 'no',
+                    );
+
                     return new MockResponse(
-                        self::buildSSEFromDeltas(
-                            model: 'llama_cpp/test',
-                            deltas: [
-                                ['type' => 'text', 'content' => 'done'],
+                        json_encode([
+                            'error' => [
+                                'message' => $message,
+                                'type' => 'replay_fixture_exhausted',
                             ],
-                            stopReason: 'stop',
-                            usage: null,
-                        ),
+                        ], \JSON_THROW_ON_ERROR),
                         [
-                            'http_code' => 200,
+                            'http_code' => 500,
                             'response_headers' => [
-                                'Content-Type' => 'text/event-stream',
-                                'X-Replay-Fallback' => '1',
+                                'Content-Type' => 'application/json',
+                                'X-Replay-Exhausted' => '1',
                             ],
                         ],
                     );

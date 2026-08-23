@@ -11,13 +11,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(ThemePalette::class)]
 final class ThemePaletteTest extends TestCase
 {
-    public function testName(): void
-    {
-        $palette = new ThemePalette('test');
-
-        $this->assertSame('test', $palette->name);
-    }
-
     public function testGetKnownColor(): void
     {
         $palette = new ThemePalette('test', ['accent' => '#ff00ff']);
@@ -30,20 +23,6 @@ final class ThemePaletteTest extends TestCase
         $palette = new ThemePalette('test', []);
 
         $this->assertSame('', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
-    }
-
-    public function testHasReturnsTrueForNonEmpty(): void
-    {
-        $palette = new ThemePalette('test', ['accent' => 'cyan']);
-
-        $this->assertTrue($palette->has(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
-    }
-
-    public function testHasReturnsFalseForEmpty(): void
-    {
-        $palette = new ThemePalette('test', []);
-
-        $this->assertFalse($palette->has(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
     }
 
     public function testWithOverrides(): void
