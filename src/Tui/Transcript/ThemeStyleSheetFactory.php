@@ -88,7 +88,6 @@ final class ThemeStyleSheetFactory
         $rules = [];
 
         $this->addRule($rules, '.question-choice-list::selected', $palette, ThemeColorEnum::Accent, bold: true);
-        $this->addRule($rules, '.question-choice-list::selected:focus', $palette, ThemeColorEnum::Accent, bold: true);
         $this->addRule($rules, '.question-choice-list::label', $palette, ThemeColorEnum::Text);
         $this->addRule($rules, '.question-choice-list::description', $palette, ThemeColorEnum::Muted);
         $this->addRule($rules, '.question-choice-list::scroll-info', $palette, ThemeColorEnum::Muted);

@@ -15,6 +15,7 @@ use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
+use Ineersa\Tui\Transcript\ThemeStyleSheetFactory;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Render\Renderer;
@@ -189,13 +190,15 @@ class QuestionControllerTest extends TestCase
 
         $promptProbe = $theme->color(ThemeColorEnum::Prompt, 'PROMPT_BODY_UNIQUE');
         $accentProbe = $theme->color(ThemeColorEnum::Accent, 'PROBE');
-        $rendered = (new Renderer())->render($container, 96, 30);
+        $renderer = new Renderer();
+        $renderer->addStyleSheet((new ThemeStyleSheetFactory())->createQuestionChoiceList($palette));
+        $rendered = $renderer->render($container, 96, 30);
         $joined = implode("\n", $rendered);
-        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $joined) ?? $joined;
         $plainLines = array_map(
             static fn (string $line): string => trim(preg_replace('/\x1b\[[0-9;]*m/', '', $line) ?? $line, " \t\r\n"),
             $rendered,
         );
+        $plain = implode("\n", $plainLines);
 
         $this->assertStringContainsString('PROMPT_BODY_UNIQUE', $plain);
         $this->assertStringContainsString('ANSWER_ALPHA_UNIQUE', $plain);
@@ -208,8 +211,15 @@ class QuestionControllerTest extends TestCase
         );
         $promptPrefix = substr($promptProbe, 0, (int) strpos($promptProbe, 'PROMPT_BODY_UNIQUE'));
         $accentPrefix = substr($accentProbe, 0, (int) strpos($accentProbe, 'PROBE'));
+        $this->assertNotSame('', $promptPrefix, 'Prompt theme color must produce an ANSI prefix');
+        $this->assertNotSame('', $accentPrefix, 'Accent theme color must produce an ANSI prefix');
         $this->assertNotSame($accentPrefix, $promptPrefix, 'Prompt and Accent theme colors must differ');
         $this->assertStringContainsString($promptPrefix, $joined, 'Rendered prompt must use Prompt theme ANSI prefix');
+        $this->assertStringContainsString(
+            $accentPrefix."\x1b[1m→ ANSWER_ALPHA_UNIQUE",
+            $joined,
+            'Native selected row must resolve the question-scoped Accent style',
+        );
     }
 
     #[Test]
@@ -340,18 +350,25 @@ class QuestionControllerTest extends TestCase
             prompt: 'Pick:',
             choices: [
                 new QuestionOption(label: 'NoDesc'),
+                new QuestionOption(label: 'WhitespaceDesc', description: " \t\n "),
             ],
             allowOther: false,
         );
 
         $items = $this->invokeBuildItems($request);
 
-        $this->assertCount(1, $items);
+        $this->assertCount(2, $items);
         $this->assertSame('NoDesc', $items[0]['value']);
         $this->assertArrayNotHasKey(
             'description',
             $items[0],
             'Empty descriptions must be omitted so SelectListWidget keeps full-width labels',
+        );
+        $this->assertSame('WhitespaceDesc', $items[1]['value']);
+        $this->assertArrayNotHasKey(
+            'description',
+            $items[1],
+            'Whitespace-only descriptions must be omitted so SelectListWidget keeps full-width labels',
         );
     }
 
