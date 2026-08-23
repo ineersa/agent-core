@@ -33,7 +33,10 @@ final class ControllerReplayBashCancelFollowUpTest extends ControllerReplayE2eTe
             ],
         ]);
 
-        $phase1 = $this->collectEventsUntil('tool_execution.started', 4.0);
+        // Safety cap only: under concurrent castor check + standalone TUI/llm-real,
+        // tool-worker dispatch can lag past 4s after tool_call.arguments_completed.
+        // Predicate still early-exits as soon as tool_execution.started arrives.
+        $phase1 = $this->collectEventsUntil('tool_execution.started', 8.0);
         $p1 = $this->indexByType($phase1);
         $this->assertStartRunAcked($phase1, $startCmdId);
         $this->assertArrayHasKey('tool_execution.started', $p1, $this->collectDiagnostics($phase1));
