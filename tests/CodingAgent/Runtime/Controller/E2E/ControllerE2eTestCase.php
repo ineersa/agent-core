@@ -433,8 +433,9 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     /**
-     * Early-exit collector. Optional $until replaces type matching (parent-run
-     * terminals still stop). Null $targetType with no $until drains until timeout/exit.
+     * Early-exit collector. When $until is provided it alone decides the match
+     * (pass null $targetType); otherwise match $targetType. Parent-run terminals
+     * still stop. Null $targetType with no $until drains until timeout/exit.
      *
      * @param (callable(array<string, mixed>): bool)|null $until
      *

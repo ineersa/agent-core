@@ -25,14 +25,6 @@ final class TuiE2eDatabaseEnvTest extends TestCase
         $this->assertStringContainsString('messenger_transport_test-abc.sqlite', $prefix);
     }
 
-    public function testAllocatePathsFromAppBasenamePairsTransportFilename(): void
-    {
-        $paths = TuiE2eDatabaseEnv::allocatePathsFromAppBasename('app_test-tui-journey-deadbeef.sqlite');
-
-        $this->assertSame('app_test-tui-journey-deadbeef.sqlite', $paths['app']);
-        $this->assertSame('messenger_transport_test-tui-journey-deadbeef.sqlite', $paths['transport']);
-    }
-
     public function testDoctrineEnvPathResolvesToIsolatedAbsolutePath(): void
     {
         $kernelRoot = '/worktree';

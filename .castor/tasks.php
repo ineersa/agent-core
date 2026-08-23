@@ -24,7 +24,7 @@ declare(strict_types=1);
  * Budget for test:controller-replay (75s → 90s → 120s → 150s): sequential
  * controller-subprocess cases (fixture replay + headless process proofs) each
  * spawn controller + messenger consumers. Replay/live E2E teardown is
- * SIGTERM → ~0.25s grace → SIGKILL (deterministic reaping; production
+ * SIGTERM → 0.05s grace → SIGKILL (deterministic reaping; production
  * ConsumerSupervisor grace is separate). Lane budget history: prior suites
  * needed raises under concurrent castor-check contention (GNU timeout 124);
  * 150s keeps load/teardown headroom without masking a true hang. Individual

@@ -109,7 +109,7 @@ final class ControllerReplaySafeGuardApprovalTest extends ControllerReplayE2eTes
         ]);
 
         $post = $this->collectEventsUntil(
-            'tool_execution.completed',
+            null,
             8.0,
             static fn (array $event): bool => ($event['type'] ?? '') === 'tool_execution.completed'
                 && ($event['payload']['tool_call_id'] ?? null) === self::TOOL_CALL_ID,

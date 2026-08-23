@@ -277,7 +277,7 @@ Every expected model turn needs an explicit fixture; exhaustion must fail loudly
 Process ownership:
 - Spawn via `setsid -w`; track session/process-group + `/proc` descendants (same UID)
 - Independent PID lists when multiple controller roots exist
-- Teardown: SIGTERM owned tree → short grace (~0.25s) → SIGKILL; never signal root-owned / `HATFIELD_SESSION_ID` processes
+- Teardown: SIGTERM owned tree → short grace (0.05s) → SIGKILL; never signal root-owned / `HATFIELD_SESSION_ID` processes
 - Diagnostics on failure: tracked PIDs, fixture count, process state
 
 ### Controller live E2E (opt-in)

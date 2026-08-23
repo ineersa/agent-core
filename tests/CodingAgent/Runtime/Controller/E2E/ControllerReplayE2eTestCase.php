@@ -42,8 +42,6 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
  */
 abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
 {
-    /** Max wait for compaction.completed/failed after compaction.started (replay fixtures). */
-    protected const COMPACTION_TERMINAL_AFTER_STARTED_SECONDS = 4.0;
     /** @var list<array<string, mixed>> One fixture per expected LLM call */
     protected array $replayFixtures = [];
     // ── Lifecycle ──
@@ -272,8 +270,8 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
     }
 
     /**
-     * After run.completed when compaction is expected: wait event-driven for
-     * compaction.completed/failed once compaction.started appears (bounded phase).
+     * After run.completed when compaction is expected: drain until
+     * compaction.completed/failed or the plain bounded timeout/exit.
      *
      * @return list<array<string, mixed>>
      */
@@ -281,8 +279,6 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
     {
         $events = [];
         $deadline = microtime(true) + $timeoutSeconds;
-        $compactionStartedAt = null;
-        $compactionTerminalDeadline = null;
 
         while (microtime(true) < $deadline) {
             $sawNew = false;
@@ -290,12 +286,6 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
                 $events[] = $event;
                 $sawNew = true;
                 $type = $event['type'] ?? '';
-
-                if ('compaction.started' === $type && null === $compactionStartedAt) {
-                    $compactionStartedAt = microtime(true);
-                    $compactionTerminalDeadline = $compactionStartedAt
-                        + self::COMPACTION_TERMINAL_AFTER_STARTED_SECONDS;
-                }
 
                 if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
                     return $events;
@@ -311,10 +301,6 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
                         return $events;
                     }
                 }
-                break;
-            }
-
-            if (null !== $compactionTerminalDeadline && microtime(true) > $compactionTerminalDeadline) {
                 break;
             }
 
