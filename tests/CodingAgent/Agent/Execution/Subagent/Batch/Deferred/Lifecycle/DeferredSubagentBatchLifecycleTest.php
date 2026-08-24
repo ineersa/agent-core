@@ -48,6 +48,8 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchL
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -1184,10 +1186,25 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
      */
     private function createSpyProgressAppender(array &$appended): SubagentProgressEventAppender
     {
-        return new class(self::getContainer()->get(CommittedRunEventAppender::class), $appended) extends SubagentProgressEventAppender {
-            public function __construct(CommittedRunEventAppender $inner, private array &$appended)
-            {
-                parent::__construct($inner, SubagentProgressSerializerTestSupport::normalizer(), SubagentProgressSerializerTestSupport::validator());
+        $inner = self::getContainer()->get(CommittedRunEventAppender::class);
+        $sink = self::getContainer()->get(RuntimeEventSinkInterface::class);
+        $mapper = self::getContainer()->get(RuntimeEventMapper::class);
+
+        return new class($inner, $sink, $mapper, $appended) extends SubagentProgressEventAppender {
+            public function __construct(
+                CommittedRunEventAppender $inner,
+                RuntimeEventSinkInterface $sink,
+                RuntimeEventMapper $mapper,
+                private array &$appended,
+            ) {
+                parent::__construct(
+                    $inner,
+                    SubagentProgressSerializerTestSupport::normalizer(),
+                    SubagentProgressSerializerTestSupport::validator(),
+                    $sink,
+                    $mapper,
+                    false,
+                );
             }
 
             public function append(

@@ -35,7 +35,6 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
-use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Ineersa\CodingAgent\Skills\SkillContextRenderer;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
@@ -109,7 +108,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'runStore' => $runStore,
             'parentRunStore' => $parentRunStore,
             'eventStore' => $eventStore,
-            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class), self::getContainer()->get(\Symfony\Component\Serializer\Normalizer\NormalizerInterface::class), self::getContainer()->get(\Symfony\Component\Validator\Validator\ValidatorInterface::class)),
+            'committedRunEventAppender' => self::getContainer()->get(SubagentProgressEventAppender::class),
             'metadataReader' => $metadataReader,
             'childRunDirectory' => $directory,
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -145,7 +144,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'runStore' => $this->createStub(RunStoreInterface::class),
             'parentRunStore' => $this->createStub(RunStoreInterface::class),
             'eventStore' => $eventStore,
-            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class), self::getContainer()->get(\Symfony\Component\Serializer\Normalizer\NormalizerInterface::class), self::getContainer()->get(\Symfony\Component\Validator\Validator\ValidatorInterface::class)),
+            'committedRunEventAppender' => self::getContainer()->get(SubagentProgressEventAppender::class),
             'metadataReader' => new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
             'childRunDirectory' => $directory,
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -244,7 +243,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'runStore' => $this->createStub(RunStoreInterface::class),
             'parentRunStore' => $this->createStub(RunStoreInterface::class),
             'eventStore' => $this->createStub(EventStoreInterface::class),
-            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class), self::getContainer()->get(\Symfony\Component\Serializer\Normalizer\NormalizerInterface::class), self::getContainer()->get(\Symfony\Component\Validator\Validator\ValidatorInterface::class)),
+            'committedRunEventAppender' => self::getContainer()->get(SubagentProgressEventAppender::class),
             'metadataReader' => new SubagentRunMetadataReader($this->createStub(EventStoreInterface::class), AttributeSerializerValidatorTestFactory::denormalizer()),
             'childRunDirectory' => self::getContainer()->get(AgentChildRunDirectory::class),
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),

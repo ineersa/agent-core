@@ -117,112 +117,112 @@ final class RuntimeEventPoller
                 try {
                     $this->eventApplier->apply($state, $runtimeEvent);
 
-                // ── History position change: rebuild transcript wholesale ──
-                // The applier resets live projector state; projected blocks come from
-                // SessionTranscriptProvider (isolated projector), not TUI local replay.
-                if (RuntimeEventTypeEnum::RunHistoryPositionChanged->value === $runtimeEvent->type) {
-                    // position_turn_no is retained tip; 0 means before first turn (valid).
-                    $hasPositionKey = \array_key_exists('position_turn_no', $runtimeEvent->payload);
-                    $positionTurnNo = (int) ($runtimeEvent->payload['position_turn_no'] ?? -1);
-                    $editorPromptText = \is_string($runtimeEvent->payload['editor_prompt_text'] ?? null)
-                        ? $runtimeEvent->payload['editor_prompt_text']
-                        : '';
-                    // Always treat history position change as wholesale replace so the mounted path
-                    // receives an explicit full snapshot (including empty after failure).
-                    $hasRunHistoryPositionChanged = true;
+                    // ── History position change: rebuild transcript wholesale ──
+                    // The applier resets live projector state; projected blocks come from
+                    // SessionTranscriptProvider (isolated projector), not TUI local replay.
+                    if (RuntimeEventTypeEnum::RunHistoryPositionChanged->value === $runtimeEvent->type) {
+                        // position_turn_no is retained tip; 0 means before first turn (valid).
+                        $hasPositionKey = \array_key_exists('position_turn_no', $runtimeEvent->payload);
+                        $positionTurnNo = (int) ($runtimeEvent->payload['position_turn_no'] ?? -1);
+                        $editorPromptText = \is_string($runtimeEvent->payload['editor_prompt_text'] ?? null)
+                            ? $runtimeEvent->payload['editor_prompt_text']
+                            : '';
+                        // Always treat history position change as wholesale replace so the mounted path
+                        // receives an explicit full snapshot (including empty after failure).
+                        $hasRunHistoryPositionChanged = true;
 
-                    if ($hasPositionKey && $positionTurnNo >= 0 && null !== $state->handle) {
-                        try {
-                            if ($positionTurnNo > 0) {
-                                $snapshot = $this->sessionTranscriptProvider->transcriptAtPosition(
-                                    $state->handle->runId,
-                                    $positionTurnNo,
-                                );
-                                $state->replaceTranscript($snapshot->transcriptBlocks);
-                            } else {
-                                // Before first turn: empty conversation transcript.
+                        if ($hasPositionKey && $positionTurnNo >= 0 && null !== $state->handle) {
+                            try {
+                                if ($positionTurnNo > 0) {
+                                    $snapshot = $this->sessionTranscriptProvider->transcriptAtPosition(
+                                        $state->handle->runId,
+                                        $positionTurnNo,
+                                    );
+                                    $state->replaceTranscript($snapshot->transcriptBlocks);
+                                } else {
+                                    // Before first turn: empty conversation transcript.
+                                    $state->replaceTranscript([]);
+                                }
+                            } catch (\Throwable $e) {
+                                $this->logger->warning('runtime_event_poller.history_position_changed_rebuild_failed', [
+                                    'run_id' => $state->handle->runId,
+                                    'position_turn_no' => $positionTurnNo,
+                                    'exception' => $e->getMessage(),
+                                ]);
+                                // Intentional degradation: clear transcript rather than show stale
+                                // discarded-tail content when projection fails.
                                 $state->replaceTranscript([]);
                             }
-                        } catch (\Throwable $e) {
-                            $this->logger->warning('runtime_event_poller.history_position_changed_rebuild_failed', [
-                                'run_id' => $state->handle->runId,
+
+                            if ('' !== $editorPromptText) {
+                                $state->pendingEditorPromptText = $editorPromptText;
+                            }
+                        } else {
+                            // Malformed RunHistoryPositionChanged: missing position_turn_no, or no handle.
+                            $this->logger->warning('runtime_event_poller.history_position_changed_malformed', [
+                                'run_id' => null !== $state->handle ? $state->handle->runId : 'unknown',
                                 'position_turn_no' => $positionTurnNo,
-                                'exception' => $e->getMessage(),
                             ]);
-                            // Intentional degradation: clear transcript rather than show stale
-                            // discarded-tail content when projection fails.
                             $state->replaceTranscript([]);
                         }
 
-                        if ('' !== $editorPromptText) {
-                            $state->pendingEditorPromptText = $editorPromptText;
+                        // Skip queued follow-up dispatch, callback handlers, and processing
+                        // placeholder removal — all already handled by the applier's early
+                        // return. The transcript has been wholesale-replaced above.
+                        if (0 !== $seq) {
+                            $state->lastSeq = $seq;
                         }
-                    } else {
-                        // Malformed RunHistoryPositionChanged: missing position_turn_no, or no handle.
-                        $this->logger->warning('runtime_event_poller.history_position_changed_malformed', [
-                            'run_id' => null !== $state->handle ? $state->handle->runId : 'unknown',
-                            'position_turn_no' => $positionTurnNo,
-                        ]);
-                        $state->replaceTranscript([]);
+                        continue;
                     }
 
-                    // Skip queued follow-up dispatch, callback handlers, and processing
-                    // placeholder removal — all already handled by the applier's early
-                    // return. The transcript has been wholesale-replaced above.
-                    if (0 !== $seq) {
-                        $state->lastSeq = $seq;
+                    // Auto-dispatch a queued follow-up when cancellation completes.
+                    // The user may have typed a message during the Cancelling grace
+                    // window; it was queued in $state->queuedFollowUp instead of
+                    // being sent immediately (where it would be rejected).
+                    if (RuntimeEventTypeEnum::RunCancelled->value === $runtimeEvent->type
+                        && null !== $state->queuedFollowUp
+                        && null !== $state->handle) {
+                        $queuedText = $state->queuedFollowUp;
+                        $state->queuedFollowUp = null;
+
+                        $client->send(
+                            $state->handle->runId,
+                            new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: 'follow_up', text: $queuedText),
+                        );
+                        $state->activity = RunActivityStateEnum::Starting;
                     }
-                    continue;
-                }
 
-                // Auto-dispatch a queued follow-up when cancellation completes.
-                // The user may have typed a message during the Cancelling grace
-                // window; it was queued in $state->queuedFollowUp instead of
-                // being sent immediately (where it would be rejected).
-                if (RuntimeEventTypeEnum::RunCancelled->value === $runtimeEvent->type
-                    && null !== $state->queuedFollowUp
-                    && null !== $state->handle) {
-                    $queuedText = $state->queuedFollowUp;
-                    $state->queuedFollowUp = null;
+                    // Auto-dispatch a queued follow-up when compaction completes.
+                    // The user may have typed a message during the Compacting
+                    // window; it was queued in $state->queuedFollowUp instead of
+                    // being sent immediately (where it would race the compaction).
+                    //
+                    // GUARD: if activity is Cancelling, the user also pressed
+                    // Escape during compaction.  Do NOT dispatch the queued
+                    // follow-up on the compaction result — the RunCancelled
+                    // branch above handles dispatch after the cancellation
+                    // terminalizes.  Dispatching here would race the cancel
+                    // terminal and may start a new run before Cancelled is
+                    // visible in the UI.
+                    if ((RuntimeEventTypeEnum::CompactionCompleted->value === $runtimeEvent->type
+                        || RuntimeEventTypeEnum::CompactionFailed->value === $runtimeEvent->type)
+                        && null !== $state->queuedFollowUp
+                        && null !== $state->handle
+                        && RunActivityStateEnum::Cancelling !== $state->activity) {
+                        $queuedText = $state->queuedFollowUp;
+                        $state->queuedFollowUp = null;
 
-                    $client->send(
-                        $state->handle->runId,
-                        new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: 'follow_up', text: $queuedText),
-                    );
-                    $state->activity = RunActivityStateEnum::Starting;
-                }
+                        $client->send(
+                            $state->handle->runId,
+                            new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: 'follow_up', text: $queuedText),
+                        );
+                        $state->activity = RunActivityStateEnum::Starting;
+                    }
 
-                // Auto-dispatch a queued follow-up when compaction completes.
-                // The user may have typed a message during the Compacting
-                // window; it was queued in $state->queuedFollowUp instead of
-                // being sent immediately (where it would race the compaction).
-                //
-                // GUARD: if activity is Cancelling, the user also pressed
-                // Escape during compaction.  Do NOT dispatch the queued
-                // follow-up on the compaction result — the RunCancelled
-                // branch above handles dispatch after the cancellation
-                // terminalizes.  Dispatching here would race the cancel
-                // terminal and may start a new run before Cancelled is
-                // visible in the UI.
-                if ((RuntimeEventTypeEnum::CompactionCompleted->value === $runtimeEvent->type
-                    || RuntimeEventTypeEnum::CompactionFailed->value === $runtimeEvent->type)
-                    && null !== $state->queuedFollowUp
-                    && null !== $state->handle
-                    && RunActivityStateEnum::Cancelling !== $state->activity) {
-                    $queuedText = $state->queuedFollowUp;
-                    $state->queuedFollowUp = null;
-
-                    $client->send(
-                        $state->handle->runId,
-                        new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: 'follow_up', text: $queuedText),
-                    );
-                    $state->activity = RunActivityStateEnum::Starting;
-                }
-
-                // Notify handlers for specific event types (isolated: one bad overlay callback
-                // must not drop later events in the same batch, e.g. run.cancelled).
-                // Projection is handled by TuiRuntimeEventApplier::apply() above.
-                $callbacks->dispatch($runtimeEvent, $state->handle->runId);
+                    // Notify handlers for specific event types (isolated: one bad overlay callback
+                    // must not drop later events in the same batch, e.g. run.cancelled).
+                    // Projection is handled by TuiRuntimeEventApplier::apply() above.
+                    $callbacks->dispatch($runtimeEvent, $state->handle->runId);
 
                     if (!$processingRemoved) {
                         $beforeCount = \count($state->transcript);
