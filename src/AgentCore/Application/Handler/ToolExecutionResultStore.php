@@ -35,6 +35,17 @@ final class ToolExecutionResultStore
         $this->resultsByToolIdempotency[$this->toolIdempotencyKey($toolName, $toolIdempotencyKey)] = $result;
     }
 
+    public function releaseCompleted(string $runId, string $toolCallId, string $toolName, ?string $toolIdempotencyKey): void
+    {
+        unset($this->resultsByRunToolCall[$this->runToolCallKey($runId, $toolCallId)]);
+
+        if (null === $toolIdempotencyKey || '' === $toolIdempotencyKey) {
+            return;
+        }
+
+        unset($this->resultsByToolIdempotency[$this->toolIdempotencyKey($toolName, $toolIdempotencyKey)]);
+    }
+
     private function runToolCallKey(string $runId, string $toolCallId): string
     {
         return $runId.'|'.$toolCallId;

@@ -43,17 +43,25 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
     }
 
     /**
-     * Writes one event to STDOUT when it is a pipe, encoded via {@see JsonlCodec::encodeEvent()}.
-     *
-     * @return bool|null null when STDOUT is not a pipe or the handle could not be opened; false when fwrite failed or wrote zero bytes; true when written and flushed
+     * Whether this process writes runtime events to a controller pipe.
      */
-    public function write(RuntimeEvent $event): ?bool
+    public function isPipe(): bool
     {
         if (null === self::$isPipe) {
             self::$isPipe = \function_exists('posix_isatty') && !posix_isatty(\STDOUT);
         }
 
-        if (!self::$isPipe) {
+        return self::$isPipe;
+    }
+
+    /**
+     * Writes one event to STDOUT when it is a pipe, encoded via {@see JsonlCodec::encodeEvent()}.
+     *
+     * @return bool|null null when STDOUT is not a pipe or the handle could not be opened; false when a write failed or wrote zero bytes; true when written and flushed
+     */
+    public function write(RuntimeEvent $event): ?bool
+    {
+        if (!$this->isPipe()) {
             return null;
         }
 
@@ -67,9 +75,7 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
         }
 
         $line = JsonlCodec::encodeEvent($event);
-
-        $written = @fwrite(self::$stdout, $line);
-        if (false === $written || 0 === $written) {
+        if (!JsonlCodec::write(self::$stdout, $line)) {
             return false;
         }
 

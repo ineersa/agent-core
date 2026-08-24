@@ -133,6 +133,7 @@ PHP;
             $this->assertIsArray($argv);
             $this->assertContains('--memory-limit=256M', $argv);
             $this->assertContains('--keepalive=5', $argv);
+            $this->assertContains('--sleep=0.01', $argv);
             $this->assertNotContains('--time-limit=3600', $argv);
             $this->assertContains('messenger:consume', $argv);
             $this->assertContains('test_transport', $argv);

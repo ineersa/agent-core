@@ -15,6 +15,16 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(RuntimeEvent::class)]
 final class JsonlCodecTest extends TestCase
 {
+    public static function setUpBeforeClass(): void
+    {
+        stream_wrapper_register('jsonl-test', JsonlCodecShortWriteStreamWrapper::class);
+    }
+
+    public static function tearDownAfterClass(): void
+    {
+        stream_wrapper_unregister('jsonl-test');
+    }
+
     public function testEncodeAndDecodeCommand(): void
     {
         $command = new RuntimeCommand(
@@ -125,5 +135,60 @@ final class JsonlCodecTest extends TestCase
         $decoded = JsonlCodec::decodeCommand($line);
 
         $this->assertNull($decoded->runId);
+    }
+
+    public function testWriteCompletesShortPositiveWrites(): void
+    {
+        JsonlCodecShortWriteStreamWrapper::$output = '';
+        JsonlCodecShortWriteStreamWrapper::$writeLimit = 2;
+        JsonlCodecShortWriteStreamWrapper::$writeResult = null;
+        $stream = fopen('jsonl-test://short-write', 'wb');
+        $this->assertIsResource($stream);
+
+        $this->assertTrue(JsonlCodec::write($stream, "abcdef\n"));
+        $this->assertSame("abcdef\n", JsonlCodecShortWriteStreamWrapper::$output);
+        fclose($stream);
+    }
+
+    public function testWriteFailsForZeroOrFalseWrite(): void
+    {
+        $stream = fopen('jsonl-test://failed-write', 'wb');
+        $this->assertIsResource($stream);
+
+        JsonlCodecShortWriteStreamWrapper::$writeResult = 0;
+        $this->assertFalse(JsonlCodec::write($stream, "x\n"));
+
+        JsonlCodecShortWriteStreamWrapper::$writeResult = false;
+        $this->assertFalse(JsonlCodec::write($stream, "x\n"));
+        fclose($stream);
+    }
+}
+
+/** @internal */
+final class JsonlCodecShortWriteStreamWrapper
+{
+    public mixed $context;
+
+    public static string $output = '';
+
+    public static int $writeLimit = 1;
+
+    public static int|false|null $writeResult = null;
+
+    public function stream_open(string $path, string $mode, int $options, ?string &$openedPath): bool
+    {
+        return true;
+    }
+
+    public function stream_write(string $data): int|false
+    {
+        if (null !== self::$writeResult) {
+            return self::$writeResult;
+        }
+
+        $chunk = substr($data, 0, self::$writeLimit);
+        self::$output .= $chunk;
+
+        return \strlen($chunk);
     }
 }

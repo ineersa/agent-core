@@ -121,6 +121,61 @@ final class AgentChildRunEventStore implements EventStoreInterface
         }
     }
 
+    public function latestSequenceFor(string $runId): ?int
+    {
+        $events = $this->allFor($runId);
+
+        return [] === $events ? null : $events[array_key_last($events)]->seq;
+    }
+
+    public function firstFor(string $runId): ?RunEvent
+    {
+        if ($runId !== $this->agentRunId) {
+            return null;
+        }
+
+        foreach ($this->streamRunEventsFromPath($this->eventsPath()) as $event) {
+            return $event;
+        }
+
+        return null;
+    }
+
+    /**
+     * @return \Generator<int, RunEvent>
+     */
+    public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+    {
+        if ($runId !== $this->agentRunId || $startSeq < 1 || $endSeq < $startSeq) {
+            return;
+        }
+
+        foreach ($this->streamRunEventsFromPath($this->eventsPath()) as $event) {
+            if ($event->seq > $endSeq) {
+                break;
+            }
+
+            if ($event->seq >= $startSeq) {
+                yield $event;
+            }
+        }
+    }
+
+    /**
+     * @return \Generator<int, RunEvent>
+     */
+    public function reverseFor(string $runId): iterable
+    {
+        if ($runId !== $this->agentRunId) {
+            return;
+        }
+
+        $events = $this->allFor($runId);
+        for ($index = \count($events) - 1; $index >= 0; --$index) {
+            yield $events[$index];
+        }
+    }
+
     /**
      * @return list<RunEvent>
      */

@@ -9,6 +9,16 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 
 final class InMemoryEventStore implements EventStoreInterface
 {
+    public int $allForCalls = 0;
+
+    public int $firstForCalls = 0;
+
+    public int $latestSequenceForCalls = 0;
+
+    public int $rangeForCalls = 0;
+
+    public int $reverseForCalls = 0;
+
     /** @var array<string, list<RunEvent>> */
     private array $eventsByRun = [];
 
@@ -53,8 +63,47 @@ final class InMemoryEventStore implements EventStoreInterface
         return $out;
     }
 
+    public function latestSequenceFor(string $runId): ?int
+    {
+        ++$this->latestSequenceForCalls;
+
+        return $this->highWaterByRun[$runId] ?? null;
+    }
+
+    public function firstFor(string $runId): ?RunEvent
+    {
+        ++$this->firstForCalls;
+        $events = $this->eventsByRun[$runId] ?? [];
+        usort($events, static fn (RunEvent $l, RunEvent $r): int => $l->seq <=> $r->seq);
+
+        return $events[0] ?? null;
+    }
+
+    public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+    {
+        ++$this->rangeForCalls;
+        $events = $this->eventsByRun[$runId] ?? [];
+        usort($events, static fn (RunEvent $l, RunEvent $r): int => $l->seq <=> $r->seq);
+
+        foreach ($events as $event) {
+            if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
+                yield $event;
+            }
+        }
+    }
+
+    public function reverseFor(string $runId): iterable
+    {
+        ++$this->reverseForCalls;
+        $events = $this->allFor($runId);
+        for ($index = \count($events) - 1; $index >= 0; --$index) {
+            yield $events[$index];
+        }
+    }
+
     public function allFor(string $runId): array
     {
+        ++$this->allForCalls;
         $events = $this->eventsByRun[$runId] ?? [];
         usort($events, static fn (RunEvent $l, RunEvent $r): int => $l->seq <=> $r->seq);
 

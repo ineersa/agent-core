@@ -45,6 +45,28 @@ final class JsonlCodec
     }
 
     /**
+     * Write a complete JSONL line, retrying short positive writes.
+     *
+     * @param resource $stream
+     */
+    public static function write($stream, string $line): bool
+    {
+        $offset = 0;
+        $length = \strlen($line);
+
+        while ($offset < $length) {
+            $written = @fwrite($stream, substr($line, $offset));
+            if (false === $written || 0 === $written) {
+                return false;
+            }
+
+            $offset += $written;
+        }
+
+        return true;
+    }
+
+    /**
      * @param array<string, mixed> $data
      */
     private static function encodeLine(array $data): string

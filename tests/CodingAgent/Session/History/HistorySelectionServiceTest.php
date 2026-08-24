@@ -58,6 +58,34 @@ final class HistorySelectionServiceTest extends TestCase
             {
             }
 
+            public function latestSequenceFor(string $runId): ?int
+            {
+                $events = $this->allFor($runId);
+
+                return [] === $events ? null : $events[array_key_last($events)]->seq;
+            }
+
+            public function firstFor(string $runId): ?RunEvent
+            {
+                $events = $this->allFor($runId);
+
+                return $events[0] ?? null;
+            }
+
+            public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                foreach ($this->events as $event) {
+                    if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
+                        yield $event;
+                    }
+                }
+            }
+
+            public function reverseFor(string $runId): iterable
+            {
+                return [];
+            }
+
             public function allFor(string $runId): array
             {
                 return $this->events;
@@ -166,6 +194,34 @@ final class HistorySelectionServiceTest extends TestCase
             {
             }
 
+            public function latestSequenceFor(string $runId): ?int
+            {
+                $events = $this->allFor($runId);
+
+                return [] === $events ? null : $events[array_key_last($events)]->seq;
+            }
+
+            public function firstFor(string $runId): ?RunEvent
+            {
+                $events = $this->allFor($runId);
+
+                return $events[0] ?? null;
+            }
+
+            public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                foreach ($this->events as $event) {
+                    if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
+                        yield $event;
+                    }
+                }
+            }
+
+            public function reverseFor(string $runId): iterable
+            {
+                return [];
+            }
+
             public function allFor(string $runId): array
             {
                 return $this->events;
@@ -257,6 +313,34 @@ final class HistorySelectionServiceTest extends TestCase
             {
             }
 
+            public function latestSequenceFor(string $runId): ?int
+            {
+                $events = $this->allFor($runId);
+
+                return [] === $events ? null : $events[array_key_last($events)]->seq;
+            }
+
+            public function firstFor(string $runId): ?RunEvent
+            {
+                $events = $this->allFor($runId);
+
+                return $events[0] ?? null;
+            }
+
+            public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                foreach ($this->events as $event) {
+                    if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
+                        yield $event;
+                    }
+                }
+            }
+
+            public function reverseFor(string $runId): iterable
+            {
+                return [];
+            }
+
             public function allFor(string $runId): array
             {
                 return $this->events;
@@ -312,6 +396,34 @@ final class HistorySelectionServiceTest extends TestCase
             /** @param list<RunEvent> $events */
             public function __construct(private array $events)
             {
+            }
+
+            public function latestSequenceFor(string $runId): ?int
+            {
+                $events = $this->allFor($runId);
+
+                return [] === $events ? null : $events[array_key_last($events)]->seq;
+            }
+
+            public function firstFor(string $runId): ?RunEvent
+            {
+                $events = $this->allFor($runId);
+
+                return $events[0] ?? null;
+            }
+
+            public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                foreach ($this->events as $event) {
+                    if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
+                        yield $event;
+                    }
+                }
+            }
+
+            public function reverseFor(string $runId): iterable
+            {
+                return [];
             }
 
             public function allFor(string $runId): array

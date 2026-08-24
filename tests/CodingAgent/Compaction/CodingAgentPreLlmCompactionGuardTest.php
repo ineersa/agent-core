@@ -73,8 +73,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->makeTextMessage('user', 'Hello'), // text estimator ≈ 2 tokens, well below 11000
         ];
 
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
 
         $this->assertTrue(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
@@ -92,8 +91,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->makeTextMessage('user', str_repeat('x', 50000)), // estimator ≈ 15384 > 11000
         ];
 
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(5000)]); // 5000 < 11000
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(5000)]); // 5000 < 11000
 
         $this->assertFalse(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
@@ -110,8 +108,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->makeTextMessage('user', str_repeat('x', 50000)), // would exceed if we used estimator
         ];
 
-        $this->eventStore->method('allFor')
-            ->willReturn([]); // No llm_step_completed events at all
+        $this->stubChronologicalEvents([]); // No llm_step_completed events at all
 
         $this->assertFalse(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
@@ -176,8 +173,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->makeTextMessage('user', 'Hello'),
         ];
 
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 < 50000 override
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]); // 12000 < 50000 override
 
         $this->assertFalse(
             $guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
@@ -200,8 +196,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->makeTextMessage('user', 'Hello'),
         ];
 
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
 
         // First call → true (no dedup yet).
         $this->assertTrue(
@@ -226,8 +221,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->makeTextMessage('user', 'Hello'),
         ];
 
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
 
         // Turn 1 → true.
         $this->assertTrue(
@@ -256,27 +250,26 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         ];
 
         // Provider measurement at seq 1, auto started at seq 2.
-        $this->eventStore->method('allFor')
-            ->willReturn([
-                $this->makeLlmStepCompletedEvent(12000),
-                new RunEvent(
-                    runId: 'run-1',
-                    seq: 2,
-                    turnNo: 1,
-                    type: RunEventTypeEnum::ContextCompactionStarted->value,
-                    payload: [
-                        'step_id' => 'compact-99',
-                        'trigger' => 'auto',
-                        'estimated_tokens' => 12000,
-                        'keep_recent_tokens' => 10,
-                        'messages_before' => 10,
-                        'messages_to_summarize' => 5,
-                        'messages_retained' => 5,
-                        'first_retained_index' => 5,
-                        'prior_summary_present' => false,
-                    ],
-                ),
-            ]);
+        $this->stubChronologicalEvents([
+            $this->makeLlmStepCompletedEvent(12000),
+            new RunEvent(
+                runId: 'run-1',
+                seq: 2,
+                turnNo: 1,
+                type: RunEventTypeEnum::ContextCompactionStarted->value,
+                payload: [
+                    'step_id' => 'compact-99',
+                    'trigger' => 'auto',
+                    'estimated_tokens' => 12000,
+                    'keep_recent_tokens' => 10,
+                    'messages_before' => 10,
+                    'messages_to_summarize' => 5,
+                    'messages_retained' => 5,
+                    'first_retained_index' => 5,
+                    'prior_summary_present' => false,
+                ],
+            ),
+        ]);
 
         $this->assertFalse(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
@@ -301,22 +294,21 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         ];
 
         // Provider measurement at seq 74, auto failed-only at seq 79.
-        $this->eventStore->method('allFor')
-            ->willReturn([
-                $this->makeLlmStepCompletedEvent(12000),
-                new RunEvent(
-                    runId: 'run-1',
-                    seq: 2,
-                    turnNo: 1,
-                    type: RunEventTypeEnum::ContextCompactionFailed->value,
-                    payload: [
-                        'reason' => 'no_safe_boundary',
-                        'trigger' => 'auto',
-                        'step_id' => null,
-                        'messages_replaced' => false,
-                    ],
-                ),
-            ]);
+        $this->stubChronologicalEvents([
+            $this->makeLlmStepCompletedEvent(12000),
+            new RunEvent(
+                runId: 'run-1',
+                seq: 2,
+                turnNo: 1,
+                type: RunEventTypeEnum::ContextCompactionFailed->value,
+                payload: [
+                    'reason' => 'no_safe_boundary',
+                    'trigger' => 'auto',
+                    'step_id' => null,
+                    'messages_replaced' => false,
+                ],
+            ),
+        ]);
 
         // Fresh guard instance — no in-memory state.
         $freshGuard = new CodingAgentPreLlmCompactionGuard(
@@ -342,43 +334,42 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->makeTextMessage('user', 'Hello'),
         ];
 
-        $this->eventStore->method('allFor')
-            ->willReturn([
-                $this->makeLlmStepCompletedEvent(12000), // seq 1 (made by makeLlmStepCompletedEvent)
-                new RunEvent(
-                    runId: 'run-1',
-                    seq: 2,
-                    turnNo: 1,
-                    type: RunEventTypeEnum::ContextCompactionStarted->value,
-                    payload: [
-                        'step_id' => 'compact-1',
-                        'trigger' => 'auto',
-                        'estimated_tokens' => 12000,
-                        'keep_recent_tokens' => 10,
-                        'messages_before' => 10,
-                        'messages_to_summarize' => 5,
-                        'messages_retained' => 5,
-                        'first_retained_index' => 5,
-                        'prior_summary_present' => false,
+        $this->stubChronologicalEvents([
+            $this->makeLlmStepCompletedEvent(12000), // seq 1 (made by makeLlmStepCompletedEvent)
+            new RunEvent(
+                runId: 'run-1',
+                seq: 2,
+                turnNo: 1,
+                type: RunEventTypeEnum::ContextCompactionStarted->value,
+                payload: [
+                    'step_id' => 'compact-1',
+                    'trigger' => 'auto',
+                    'estimated_tokens' => 12000,
+                    'keep_recent_tokens' => 10,
+                    'messages_before' => 10,
+                    'messages_to_summarize' => 5,
+                    'messages_retained' => 5,
+                    'first_retained_index' => 5,
+                    'prior_summary_present' => false,
+                ],
+            ),
+            // Newer measurement at seq 5, after auto start.
+            new RunEvent(
+                runId: 'run-1',
+                seq: 5,
+                turnNo: 2,
+                type: RunEventTypeEnum::LlmStepCompleted->value,
+                payload: [
+                    'step_id' => 'step-2',
+                    'stop_reason' => 'stop',
+                    'usage' => [
+                        'input_tokens' => 20000,
+                        'output_tokens' => 100,
+                        'total_tokens' => 20100,
                     ],
-                ),
-                // Newer measurement at seq 5, after auto start.
-                new RunEvent(
-                    runId: 'run-1',
-                    seq: 5,
-                    turnNo: 2,
-                    type: RunEventTypeEnum::LlmStepCompleted->value,
-                    payload: [
-                        'step_id' => 'step-2',
-                        'stop_reason' => 'stop',
-                        'usage' => [
-                            'input_tokens' => 20000,
-                            'output_tokens' => 100,
-                            'total_tokens' => 20100,
-                        ],
-                    ],
-                ),
-            ]);
+                ],
+            ),
+        ]);
 
         $this->assertTrue(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 2, $messages, null),
@@ -394,39 +385,46 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
     {
         // Child gate reads RunStarted; usage resolver would also see this store,
         // but the child check short-circuits before threshold evaluation.
-        $this->eventStore->method('allFor')->willReturn([
-            new RunEvent(
-                runId: 'child-run',
-                seq: 1,
-                turnNo: 0,
-                type: RunEventTypeEnum::RunStarted->value,
-                payload: [
-                    'step_id' => 'start-1',
-                    'payload' => [
-                        'system_prompt' => 'child',
-                        'messages' => [],
-                        'metadata' => [
-                            'session' => [
-                                'kind' => 'agent_child',
-                                'parent_run_id' => 'parent-1',
-                                'agent_name' => 'scout',
-                                'artifact_id' => 'agent_child1',
-                            ],
-                            'model' => 'deepseek/deepseek-v4-flash',
-                            'reasoning' => 'medium',
-                            'tools_scope' => ['allowed_tools' => []],
+        $runStarted = new RunEvent(
+            runId: 'child-run',
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'step_id' => 'start-1',
+                'payload' => [
+                    'system_prompt' => 'child',
+                    'messages' => [],
+                    'metadata' => [
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'parent_run_id' => 'parent-1',
+                            'agent_name' => 'scout',
+                            'artifact_id' => 'agent_child1',
                         ],
+                        'model' => 'deepseek/deepseek-v4-flash',
+                        'reasoning' => 'medium',
+                        'tools_scope' => ['allowed_tools' => []],
                     ],
                 ],
-            ),
-            $this->makeLlmStepCompletedEvent(12000),
-        ]);
+            ],
+        );
+        $this->eventStore->method('firstFor')->willReturn($runStarted);
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         $messages = [$this->makeTextMessage('user', 'Hello')];
         $this->assertFalse(
             $this->guard->shouldCompactBeforeLlmStep('child-run', 1, $messages, null),
             'Agent child runs must not trigger pre-LLM compaction.',
         );
+    }
+
+    /**
+     * @param list<RunEvent> $events chronological canonical event order
+     */
+    private function stubChronologicalEvents(array $events): void
+    {
+        $this->eventStore->method('reverseFor')->willReturn(array_reverse($events));
     }
 
     private function makeTextMessage(string $role, string $text): AgentMessage

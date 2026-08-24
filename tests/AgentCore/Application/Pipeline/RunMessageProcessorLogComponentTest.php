@@ -205,10 +205,10 @@ final class RunMessageProcessorLogComponentTest extends IsolatedKernelTestCase
                 eventStore: $eventStore,
                 commandStore: $commandStore,
                 hotPromptStateRebuilder: new class implements HotPromptStateRebuilderInterface {
-                    public function rebuildHotPromptState(string $runId): PromptState
+                    public function rebuildHotPromptState(RunState $state): PromptState
                     {
                         return new PromptState(
-                            runId: $runId,
+                            runId: $state->runId,
                             source: 'test',
                             eventCount: 0,
                             lastSeq: 0,

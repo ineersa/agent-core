@@ -27,6 +27,9 @@ final class SubagentLiveChildViewPoller
 
     private readonly TuiRuntimeEventApplier $eventApplier;
 
+    /** @var list<RuntimeEvent> */
+    private array $pendingEvents = [];
+
     public function __construct(
         private readonly TranscriptProjectorInterface $projector,
         private readonly LoggerInterface $logger,
@@ -113,7 +116,13 @@ final class SubagentLiveChildViewPoller
         }
         $live->childLastPoll = $now;
 
-        $events = RuntimeEventCallbacks::eventList($client, $live->selected->agentRunId);
+        if ([] !== $this->pendingEvents && $this->pendingEvents[0]->runId !== $live->selected->agentRunId) {
+            $this->pendingEvents = [];
+        }
+
+        $events = [] !== $this->pendingEvents
+            ? $this->pendingEvents
+            : RuntimeEventCallbacks::eventList($client, $live->selected->agentRunId);
         if ([] === $events) {
             return null;
         }
@@ -125,21 +134,28 @@ final class SubagentLiveChildViewPoller
 
         $callbacks = $this->makeCallbacks($onHumanInputRequested, $onToolQuestionRequested, $onToolTerminal);
 
-        foreach ($events as $event) {
+        foreach ($events as $index => $event) {
             $seq = $event->seq;
             if (0 !== $seq && $seq <= $live->childLastSeq) {
                 continue;
             }
+
+            try {
+                $this->eventApplier->apply($scratch, $event);
+                $callbacks->dispatch($event, $live->selected->agentRunId);
+            } catch (\Throwable $exception) {
+                $this->pendingEvents = \array_slice($events, $index);
+
+                throw $exception;
+            }
+
             if (0 !== $seq) {
                 $live->childLastSeq = $seq;
             }
-
-            $this->eventApplier->apply($scratch, $event);
             $live->childReplayEvents[] = $event;
             $changed = true;
-
-            $callbacks->dispatch($event, $live->selected->agentRunId);
         }
+        $this->pendingEvents = [];
 
         if ($changed) {
             $live->childActivity = $scratch->activity;

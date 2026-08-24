@@ -8,6 +8,8 @@ use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\ConsumerStdoutPoller;
 use Ineersa\CodingAgent\Runtime\Controller\ConsumerStdoutSourceInterface;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
+use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -46,6 +48,79 @@ final class ConsumerStdoutPollerTest extends TestCase
         $this->assertStringContainsString('assistant.text.delta', $raw);
         $this->assertStringContainsString('turn.started', $raw);
         $this->assertStringNotContainsString('not-json', $raw);
+    }
+
+    public function testCoalescesMatchingStreamChunksBeforeCompletionAndControl(): void
+    {
+        $source = new FakeConsumerStdoutSource([
+            'llm#0' => $this->line('assistant.text_delta', ['block_id' => 'text-1', 'text' => 'Hello '])
+                .$this->line('assistant.text_delta', ['block_id' => 'text-1', 'text' => 'world'])
+                .$this->line('assistant.text_completed', ['block_id' => 'text-1'])
+                .$this->line('human_input.requested', ['question_id' => 'q-1']),
+        ]);
+        $emitter = $this->createEmitter();
+        $emitter->openStdout();
+        $this->replaceStdoutWithMemory($emitter);
+        $poller = new ConsumerStdoutPoller(
+            $source,
+            $emitter,
+            new RuntimeExceptionBoundary(new EventDispatcher()),
+            $this->createStub(LoggerInterface::class),
+        );
+
+        $poller->pollOnce();
+
+        $events = $this->eventsFromStdout($emitter);
+        $this->assertSame(['assistant.text_delta', 'assistant.text_completed', 'human_input.requested'], array_map(
+            static fn (RuntimeEvent $event): string => $event->type,
+            $events,
+        ));
+        $this->assertSame('Hello world', $events[0]->payload['text']);
+    }
+
+    public function testDoesNotReorderDistinctStreamKeysOrRetainFramesBetweenPolls(): void
+    {
+        $source = new FakeConsumerStdoutSource([
+            'llm#0' => $this->line('assistant.text_delta', ['block_id' => 'text-1', 'text' => 'a'])
+                .$this->line('assistant.text_delta', ['block_id' => 'text-2', 'text' => 'b'])
+                .$this->line('assistant.text_delta', ['block_id' => 'text-1', 'text' => 'c']),
+        ]);
+        $emitter = $this->createEmitter();
+        $emitter->openStdout();
+        $this->replaceStdoutWithMemory($emitter);
+        $poller = new ConsumerStdoutPoller(
+            $source,
+            $emitter,
+            new RuntimeExceptionBoundary(new EventDispatcher()),
+            $this->createStub(LoggerInterface::class),
+        );
+
+        $poller->pollOnce();
+        $source->chunks = [
+            'llm#0' => $this->line('assistant.text_delta', ['block_id' => 'text-1', 'text' => 'd']),
+        ];
+        $poller->pollOnce();
+
+        $events = $this->eventsFromStdout($emitter);
+        $this->assertSame(['a', 'b', 'c', 'd'], array_map(
+            static fn (RuntimeEvent $event): string => $event->payload['text'],
+            $events,
+        ));
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function line(string $type, array $payload): string
+    {
+        return JsonlCodec::encodeEvent(new RuntimeEvent($type, 'run-1', 0, $payload));
+    }
+
+    /** @return list<RuntimeEvent> */
+    private function eventsFromStdout(RuntimeEventEmitter $emitter): array
+    {
+        return array_map(
+            static fn (string $line): RuntimeEvent => JsonlCodec::decodeEvent($line),
+            array_filter(explode("\n", $this->readStdout($emitter))),
+        );
     }
 
     private function createEmitter(): RuntimeEventEmitter

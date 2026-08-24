@@ -53,7 +53,7 @@ final readonly class RunStateReplayResult
             maxEventSeq: $maxEventSeq,
             eventCount: $eventCount,
             isContiguous: true,
-            hadEvents: $eventCount > 0,
+            hadEvents: true,
         );
     }
 

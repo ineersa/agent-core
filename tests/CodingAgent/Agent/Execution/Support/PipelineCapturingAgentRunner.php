@@ -56,9 +56,6 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
                 new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore(),
                 new \Ineersa\AgentCore\Application\Replay\PromptStateReplayService(),
                 new \Ineersa\AgentCore\Application\Replay\ReplayEventPreparer(),
-                new \Ineersa\CodingAgent\Session\History\HistoryReplayFilter(
-                    new \Ineersa\CodingAgent\Session\History\HistoryProjector(),
-                ),
             ),
             stepDispatcher: new StepDispatcher($executionBus),
             logger: new NullLogger(),

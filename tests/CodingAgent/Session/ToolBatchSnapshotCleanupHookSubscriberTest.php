@@ -207,6 +207,30 @@ final class CleanupHookSubscriberNoOpEventStore implements EventStoreInterface
         return $events;
     }
 
+    public function latestSequenceFor(string $runId): ?int
+    {
+        $events = $this->allFor($runId);
+
+        return [] === $events ? null : $events[array_key_last($events)]->seq;
+    }
+
+    public function firstFor(string $runId): ?RunEvent
+    {
+        $events = $this->allFor($runId);
+
+        return $events[0] ?? null;
+    }
+
+    public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+    {
+        return [];
+    }
+
+    public function reverseFor(string $runId): iterable
+    {
+        return [];
+    }
+
     public function allFor(string $runId): array
     {
         return [];
@@ -215,10 +239,10 @@ final class CleanupHookSubscriberNoOpEventStore implements EventStoreInterface
 
 final class CleanupHookSubscriberNoOpHotPromptRebuilder implements HotPromptStateRebuilderInterface
 {
-    public function rebuildHotPromptState(string $runId): PromptState
+    public function rebuildHotPromptState(RunState $state): PromptState
     {
         return new PromptState(
-            runId: $runId,
+            runId: $state->runId,
             source: 'test',
             eventCount: 0,
             lastSeq: 0,

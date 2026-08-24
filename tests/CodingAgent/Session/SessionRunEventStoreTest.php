@@ -100,6 +100,112 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertSame('tool_execution_start', $events[2]->type);
     }
 
+    public function testRangeForStreamsInclusiveOrderedBoundsAcrossHolesWithoutAllForSnapshot(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'turn_advanced'));
+        $this->store->allFor($runId);
+
+        $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        file_put_contents($eventsPath, json_encode([
+            'schema_version' => SchemaVersion::CURRENT,
+            'run_id' => $runId,
+            'seq' => 5,
+            'turn_no' => 2,
+            'type' => 'agent_end',
+            'payload' => [],
+            'ts' => '2026-01-01T00:00:00+00:00',
+        ], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+
+        $events = iterator_to_array($this->store->rangeFor($runId, 2, 5));
+
+        $this->assertSame([2, 5], array_map(static fn (RunEvent $event): int => $event->seq, $events));
+        $this->assertSame(['turn_advanced', 'agent_end'], array_map(static fn (RunEvent $event): string => $event->type, $events));
+    }
+
+    public function testRangeForDoesNotReadMalformedRecordAfterRequestedRange(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'turn_advanced'));
+        file_put_contents(
+            $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl',
+            "{\"partial\":\n",
+            \FILE_APPEND,
+        );
+
+        $events = iterator_to_array($this->store->rangeFor($runId, 1, 1));
+
+        $this->assertSame([1], array_map(static fn (RunEvent $event): int => $event->seq, $events));
+    }
+
+    public function testRangeForReturnsEmptyForInvalidRangeAndMissingRun(): void
+    {
+        $this->assertSame([], iterator_to_array($this->store->rangeFor('missing', 1, 1)));
+        $this->assertSame([], iterator_to_array($this->store->rangeFor('missing', 0, 1)));
+        $this->assertSame([], iterator_to_array($this->store->rangeFor('missing', 2, 1)));
+    }
+
+    public function testFirstAndLatestReadCanonicalHeadAndTail(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $first = $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
+        $last = $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'turn_advanced'));
+
+        $this->assertSame($first->seq, $this->store->firstFor($runId)?->seq);
+        $this->assertSame($last->seq, $this->store->latestSequenceFor($runId));
+    }
+
+    public function testLatestSequenceSkipsTrailingIncompatibleRecord(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $last = $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
+        file_put_contents($this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl', json_encode([
+            'schema_version' => '999.0',
+            'run_id' => $runId,
+            'seq' => $last->seq + 1,
+            'turn_no' => 1,
+            'type' => 'future_event',
+            'payload' => [],
+        ], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+
+        $this->assertSame($last->seq, $this->store->latestSequenceFor($runId));
+    }
+
+    public function testReverseForReadsNewestRelevantTailBeforeLargePrefix(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $path = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        mkdir(\dirname($path), 0777, true);
+        file_put_contents($path, str_repeat("{\"ignored\":true}\n", 20000));
+        file_put_contents($path, json_encode([
+            'schema_version' => SchemaVersion::CURRENT,
+            'run_id' => $runId,
+            'seq' => 7,
+            'turn_no' => 1,
+            'type' => 'turn_advanced',
+            'payload' => [],
+            'ts' => '2026-01-01T00:00:00+00:00',
+        ], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+
+        foreach ($this->store->reverseFor($runId) as $event) {
+            $this->assertSame(7, $event->seq);
+            break;
+        }
+    }
+
+    public function testLatestSequenceRejectsTrailingPartialRecordLikeAllFor(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
+        file_put_contents($this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl', '{"partial":', \FILE_APPEND);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('not parseable as JSON');
+        $this->store->latestSequenceFor($runId);
+    }
+
     public function testEventsSurviveStoreRecreation(): void
     {
         // Simulate process restart: write events, create new store, read back

@@ -35,7 +35,6 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
-use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Ineersa\CodingAgent\Skills\SkillContextRenderer;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
@@ -71,32 +70,30 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->once())
-            ->method('allFor')
+            ->method('firstFor')
             ->with('parent-child-run')
-            ->willReturn([
-                new RunEvent(
-                    runId: 'parent-child-run',
-                    seq: 1,
-                    turnNo: 0,
-                    type: RunEventTypeEnum::RunStarted->value,
-                    payload: [
-                        'step_id' => 's',
-                        'payload' => [
-                            'metadata' => [
-                                'session' => [
-                                    'kind' => 'agent_child',
-                                    'parent_run_id' => 'grandparent',
-                                    'agent_name' => 'scout',
-                                    'artifact_id' => 'agent_abc',
-                                ],
-                                'model' => 'deepseek/deepseek-v4-flash',
-                                'reasoning' => 'medium',
-                                'tools_scope' => ['allowed_tools' => []],
+            ->willReturn(new RunEvent(
+                runId: 'parent-child-run',
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: [
+                    'step_id' => 's',
+                    'payload' => [
+                        'metadata' => [
+                            'session' => [
+                                'kind' => 'agent_child',
+                                'parent_run_id' => 'grandparent',
+                                'agent_name' => 'scout',
+                                'artifact_id' => 'agent_abc',
                             ],
+                            'model' => 'deepseek/deepseek-v4-flash',
+                            'reasoning' => 'medium',
+                            'tools_scope' => ['allowed_tools' => []],
                         ],
                     ],
-                ),
-            ]);
+                ],
+            ));
 
         $metadataReader = new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
 
@@ -111,7 +108,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'runStore' => $runStore,
             'parentRunStore' => $parentRunStore,
             'eventStore' => $eventStore,
-            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class), self::getContainer()->get(\Symfony\Component\Serializer\Normalizer\NormalizerInterface::class), self::getContainer()->get(\Symfony\Component\Validator\Validator\ValidatorInterface::class)),
+            'committedRunEventAppender' => self::getContainer()->get(SubagentProgressEventAppender::class),
             'metadataReader' => $metadataReader,
             'childRunDirectory' => $directory,
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -147,7 +144,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'runStore' => $this->createStub(RunStoreInterface::class),
             'parentRunStore' => $this->createStub(RunStoreInterface::class),
             'eventStore' => $eventStore,
-            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class), self::getContainer()->get(\Symfony\Component\Serializer\Normalizer\NormalizerInterface::class), self::getContainer()->get(\Symfony\Component\Validator\Validator\ValidatorInterface::class)),
+            'committedRunEventAppender' => self::getContainer()->get(SubagentProgressEventAppender::class),
             'metadataReader' => new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
             'childRunDirectory' => $directory,
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -246,7 +243,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'runStore' => $this->createStub(RunStoreInterface::class),
             'parentRunStore' => $this->createStub(RunStoreInterface::class),
             'eventStore' => $this->createStub(EventStoreInterface::class),
-            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class), self::getContainer()->get(\Symfony\Component\Serializer\Normalizer\NormalizerInterface::class), self::getContainer()->get(\Symfony\Component\Validator\Validator\ValidatorInterface::class)),
+            'committedRunEventAppender' => self::getContainer()->get(SubagentProgressEventAppender::class),
             'metadataReader' => new SubagentRunMetadataReader($this->createStub(EventStoreInterface::class), AttributeSerializerValidatorTestFactory::denormalizer()),
             'childRunDirectory' => self::getContainer()->get(AgentChildRunDirectory::class),
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -296,6 +293,30 @@ final class ProgressAppendInputRecordingEventStore implements EventStoreInterfac
         }
 
         return $out;
+    }
+
+    public function latestSequenceFor(string $runId): ?int
+    {
+        $events = $this->allFor($runId);
+
+        return [] === $events ? null : $events[array_key_last($events)]->seq;
+    }
+
+    public function firstFor(string $runId): ?RunEvent
+    {
+        $events = $this->allFor($runId);
+
+        return $events[0] ?? null;
+    }
+
+    public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+    {
+        return $this->inner->rangeFor($runId, $startSeq, $endSeq);
+    }
+
+    public function reverseFor(string $runId): iterable
+    {
+        return [];
     }
 
     public function allFor(string $runId): array

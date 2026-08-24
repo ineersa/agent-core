@@ -78,6 +78,104 @@ final class JsonlRunEventLog
     }
 
     /**
+     * Reads only the final non-empty JSONL record. A final partial record is returned
+     * unchanged so callers apply the same corruption policy as whole-log reads.
+     */
+    public function lastNonEmptyLine(string $path): string
+    {
+        $handle = @fopen($path, 'rb');
+        if (false === $handle) {
+            return '';
+        }
+
+        try {
+            $size = filesize($path);
+            if (false === $size || 0 === $size) {
+                return '';
+            }
+
+            $position = $size;
+            $tail = '';
+            while ($position > 0) {
+                $length = min(8192, $position);
+                $position -= $length;
+                fseek($handle, $position);
+                $chunk = fread($handle, $length);
+                if (false === $chunk) {
+                    return '';
+                }
+
+                $tail = $chunk.$tail;
+                $tail = rtrim($tail, "\r\n");
+                $newline = strrpos($tail, "\n");
+                if (false === $newline) {
+                    continue;
+                }
+
+                $line = substr($tail, $newline + 1);
+                if ('' !== trim($line)) {
+                    return $line;
+                }
+
+                $tail = substr($tail, 0, $newline);
+            }
+
+            return $tail;
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /**
+     * Streams non-empty lines from the file tail toward its head. A partial final
+     * line is yielded unchanged so callers preserve their normal corruption policy.
+     *
+     * @return \Generator<int, string>
+     */
+    public function reverseLines(string $path): iterable
+    {
+        $handle = @fopen($path, 'rb');
+        if (false === $handle) {
+            return;
+        }
+
+        try {
+            $size = filesize($path);
+            if (false === $size || 0 === $size) {
+                return;
+            }
+
+            $position = $size;
+            $tail = '';
+            while ($position > 0) {
+                $length = min(8192, $position);
+                $position -= $length;
+                fseek($handle, $position);
+                $chunk = fread($handle, $length);
+                if (false === $chunk) {
+                    return;
+                }
+
+                $tail = $chunk.$tail;
+                $lines = explode("\n", $tail);
+                $tail = array_shift($lines);
+                for ($index = \count($lines) - 1; $index >= 0; --$index) {
+                    $line = rtrim($lines[$index], "\r");
+                    if ('' !== trim($line)) {
+                        yield $line;
+                    }
+                }
+            }
+
+            if ('' !== trim($tail)) {
+                yield $tail;
+            }
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /**
      * Decodes one JSONL line. Throws {@see \JsonException} on malformed JSON.
      *
      * @return mixed decoded value; callers decide how to treat non-associative lines

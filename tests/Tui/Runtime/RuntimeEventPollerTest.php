@@ -1020,4 +1020,85 @@ final class RuntimeEventPollerTest extends TestCase
         // lastSeq advanced to the highest seq in the batch (35, not 20)
         $this->assertSame(35, $this->state->lastSeq);
     }
+
+    public function testAlwaysFailingRetainedEventReachesFatalBoundaryAndReleasesSuffix(): void
+    {
+        $event = new RuntimeEvent(type: RuntimeEventTypeEnum::TurnStarted->value, runId: 'test-run', seq: 1);
+        $attempts = 0;
+        $next = new RuntimeEvent(type: RuntimeEventTypeEnum::TurnStarted->value, runId: 'test-run', seq: 2);
+
+        $this->client->expects($this->exactly(2))
+            ->method('events')
+            ->with('test-run')
+            ->willReturnOnConsecutiveCalls([$event], [$next]);
+        $this->projector->method('accept')->willReturnCallback(static function () use (&$attempts): void {
+            ++$attempts;
+            if ($attempts <= 3) {
+                throw new \RuntimeException('projection failed');
+            }
+        });
+
+        $this->assertNull($this->poller->poll($this->state, $this->client));
+        $this->assertSame(0, $this->state->lastSeq);
+        $this->state->lastPoll = 0.0;
+        $this->assertNull($this->poller->poll($this->state, $this->client));
+        $this->assertSame(0, $this->state->lastSeq);
+        $this->state->lastPoll = 0.0;
+        $this->assertInstanceOf(TranscriptChangeSet::class, $this->poller->poll($this->state, $this->client));
+        $this->assertSame(0, $this->state->lastSeq, 'The cursor must not advance past the failed event.');
+        $this->assertSame(3, $attempts, 'Retained failures must reach the three-strike boundary.');
+
+        $this->state->lastPoll = 0.0;
+        $this->poller->poll($this->state, $this->client);
+        $this->assertSame(2, $this->state->lastSeq, 'Fatal handling must release the retained suffix for fresh pipe frames.');
+    }
+
+    public function testRunSwitchDropsRetainedEventsFromThePreviousRun(): void
+    {
+        $old = new RuntimeEvent(type: RuntimeEventTypeEnum::TurnStarted->value, runId: 'test-run', seq: 1);
+        $new = new RuntimeEvent(type: RuntimeEventTypeEnum::TurnStarted->value, runId: 'new-run', seq: 2);
+
+        $this->client->expects($this->exactly(2))
+            ->method('events')
+            ->willReturnCallback(static fn (string $runId): array => 'test-run' === $runId ? [$old] : [$new]);
+        $this->projector->method('accept')->willReturnOnConsecutiveCalls(
+            $this->throwException(new \RuntimeException('projection failed')),
+            null,
+        );
+
+        $this->poller->poll($this->state, $this->client);
+        $this->state->handle = new RunHandle(runId: 'new-run');
+        $this->state->lastSeq = 0;
+        $this->state->lastPoll = 0.0;
+
+        $this->poller->poll($this->state, $this->client);
+
+        $this->assertSame(2, $this->state->lastSeq);
+    }
+
+    public function testFailedEventKeepsCursorAndRetriesTheRemainingBatch(): void
+    {
+        $first = new RuntimeEvent(type: RuntimeEventTypeEnum::TurnStarted->value, runId: 'test-run', seq: 1);
+        $second = new RuntimeEvent(type: RuntimeEventTypeEnum::TurnStarted->value, runId: 'test-run', seq: 2);
+        $attempts = 0;
+
+        $this->client->expects($this->once())
+            ->method('events')
+            ->with('test-run')
+            ->willReturn([$first, $second]);
+        $this->projector->method('accept')->willReturnCallback(static function () use (&$attempts): void {
+            ++$attempts;
+            if (1 === $attempts) {
+                throw new \RuntimeException('projection failed');
+            }
+        });
+
+        $this->assertNull($this->poller->poll($this->state, $this->client));
+        $this->assertSame(0, $this->state->lastSeq, 'A failed event must not advance the canonical cursor.');
+
+        $this->state->lastPoll = 0.0;
+        $this->assertNull($this->poller->poll($this->state, $this->client));
+        $this->assertSame(2, $this->state->lastSeq, 'The retained suffix must be applied after the failed event succeeds.');
+        $this->assertSame(3, $attempts, 'The failed event and its following event must both be retried.');
+    }
 }

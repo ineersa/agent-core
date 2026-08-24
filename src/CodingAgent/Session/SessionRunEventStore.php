@@ -77,6 +77,90 @@ final class SessionRunEventStore implements EventStoreInterface
         return $this->eventLog->appendMany($path, $events, onWritten: $this->invalidateAllForCache(...));
     }
 
+    public function latestSequenceFor(string $runId): ?int
+    {
+        foreach ($this->reverseFor($runId) as $event) {
+            return $event->seq;
+        }
+
+        return null;
+    }
+
+    public function firstFor(string $runId): ?RunEvent
+    {
+        $path = $this->eventsPath($runId);
+        $handle = @fopen($path, 'rb');
+        if (false === $handle) {
+            return null;
+        }
+
+        try {
+            while (false !== ($line = fgets($handle))) {
+                $event = $this->eventFromLine($runId, $line);
+                if (null !== $event) {
+                    return $event;
+                }
+            }
+
+            return null;
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /**
+     * Streams events one JSONL line at a time without populating the allFor snapshot cache.
+     *
+     * Events are physically appended under the per-run sequence lock, so durable file order
+     * is canonical sequence order (with possible sequence holes). The scan stops at the first
+     * sequence above endSeq; allFor() remains responsible for full-log validation.
+     *
+     * @return \Generator<int, RunEvent>
+     */
+    public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+    {
+        if ($startSeq < 1 || $endSeq < $startSeq) {
+            return;
+        }
+
+        $handle = @fopen($this->eventsPath($runId), 'rb');
+        if (false === $handle) {
+            return;
+        }
+
+        try {
+            while (false !== ($line = fgets($handle))) {
+                $event = $this->eventFromLine($runId, $line);
+                if (null === $event) {
+                    continue;
+                }
+
+                if ($event->seq > $endSeq) {
+                    break;
+                }
+
+                if ($event->seq >= $startSeq) {
+                    yield $event;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /**
+     * @return \Generator<int, RunEvent>
+     */
+    public function reverseFor(string $runId): iterable
+    {
+        foreach ($this->eventLog->reverseLines($this->eventsPath($runId)) as $line) {
+            $event = $this->eventFromLine($runId, $line);
+            if (null !== $event) {
+                yield $event;
+            }
+        }
+    }
+
     /**
      * @return list<RunEvent>
      */
@@ -109,47 +193,10 @@ final class SessionRunEventStore implements EventStoreInterface
         $events = [];
 
         foreach (explode("\n", $contents) as $line) {
-            $trimmedLine = trim($line);
-            if ('' === $trimmedLine) {
-                continue;
+            $event = $this->eventFromLine($runId, $line);
+            if (null !== $event) {
+                $events[] = $event;
             }
-
-            try {
-                $payload = $this->eventLog->decodeLine($trimmedLine);
-            } catch (\JsonException $e) {
-                throw new \RuntimeException(\sprintf('Corrupt event JSONL line for run "%s" — not parseable as JSON: %s', $runId, $e->getMessage()), previous: $e);
-            }
-
-            if (!\is_array($payload)) {
-                $this->logger->warning('SessionRunEventStore skipped non-associative JSONL line', [
-                    'run_id' => $runId,
-                    'line' => mb_substr($trimmedLine, 0, 200),
-                ]);
-
-                continue;
-            }
-
-            $event = $this->eventLog->denormalizeRunEvent($payload);
-            if (null === $event) {
-                if (!$this->eventLog->isIncompatibleSchemaVersion($payload)) {
-                    throw new \RuntimeException(\sprintf('Corrupt event JSONL for run "%s": denormalization returned null for compatible or missing schema — line: %s', $runId, mb_substr($trimmedLine, 0, 200)));
-                }
-
-                $this->logger->error('Skipping incompatible schema version in event JSONL', [
-                    'run_id' => $runId,
-                    'schema_version' => $payload['schema_version'] ?? null,
-                    'component' => 'session.event_store',
-                    'event_type' => 'session.incompatible_schema_skipped',
-                ]);
-
-                continue;
-            }
-
-            if ($event->runId !== $runId) {
-                throw new \RuntimeException(\sprintf('RunEvent integrity error at seq %d: embedded runId "%s" does not match directory "%s".', $event->seq, $event->runId, $runId));
-            }
-
-            $events[] = $event;
         }
 
         $events = $this->eventLog->sortBySeq($events);
@@ -171,6 +218,51 @@ final class SessionRunEventStore implements EventStoreInterface
         }
 
         return $events;
+    }
+
+    private function eventFromLine(string $runId, string $line): ?RunEvent
+    {
+        $trimmedLine = trim($line);
+        if ('' === $trimmedLine) {
+            return null;
+        }
+
+        try {
+            $payload = $this->eventLog->decodeLine($trimmedLine);
+        } catch (\JsonException $e) {
+            throw new \RuntimeException(\sprintf('Corrupt event JSONL line for run "%s" — not parseable as JSON: %s', $runId, $e->getMessage()), previous: $e);
+        }
+
+        if (!\is_array($payload)) {
+            $this->logger->warning('SessionRunEventStore skipped non-associative JSONL line', [
+                'run_id' => $runId,
+                'line' => mb_substr($trimmedLine, 0, 200),
+            ]);
+
+            return null;
+        }
+
+        $event = $this->eventLog->denormalizeRunEvent($payload);
+        if (null === $event) {
+            if (!$this->eventLog->isIncompatibleSchemaVersion($payload)) {
+                throw new \RuntimeException(\sprintf('Corrupt event JSONL for run "%s": denormalization returned null for compatible or missing schema — line: %s', $runId, mb_substr($trimmedLine, 0, 200)));
+            }
+
+            $this->logger->error('Skipping incompatible schema version in event JSONL', [
+                'run_id' => $runId,
+                'schema_version' => $payload['schema_version'] ?? null,
+                'component' => 'session.event_store',
+                'event_type' => 'session.incompatible_schema_skipped',
+            ]);
+
+            return null;
+        }
+
+        if ($event->runId !== $runId) {
+            throw new \RuntimeException(\sprintf('RunEvent integrity error at seq %d: embedded runId "%s" does not match directory "%s".', $event->seq, $event->runId, $runId));
+        }
+
+        return $event;
     }
 
     /**

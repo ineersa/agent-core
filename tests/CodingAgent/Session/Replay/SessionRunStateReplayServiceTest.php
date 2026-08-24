@@ -68,6 +68,8 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertFalse($result->rebuilt);
         $this->assertTrue($result->hadEvents);
         $this->assertNull($result->rebuiltState);
+        $this->assertSame(1, $this->eventStore->latestSequenceForCalls);
+        $this->assertSame(0, $this->eventStore->allForCalls);
     }
 
     public function testStaleStateIsRebuilt(): void
@@ -88,6 +90,8 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertNotNull($result->rebuiltState);
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status);
         $this->assertSame(1, $result->rebuiltState->lastSeq);
+        $this->assertSame(1, $this->eventStore->latestSequenceForCalls);
+        $this->assertSame(1, $this->eventStore->allForCalls);
     }
 
     public function testMissingStateWithEventsIsRebuilt(): void

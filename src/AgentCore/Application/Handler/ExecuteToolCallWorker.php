@@ -29,6 +29,7 @@ final readonly class ExecuteToolCallWorker
         private ToolExecutorInterface $toolExecutor,
         private MessageBusInterface $commandBus,
         private DeferredToolCompletionRepositoryInterface $deferredToolCompletionRepository,
+        private ToolExecutionResultStore $resultStore,
         private ?RunStoreInterface $runStore = null,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
@@ -63,6 +64,13 @@ final readonly class ExecuteToolCallWorker
                 } catch (ExceptionInterface $exception) {
                     throw new \RuntimeException('Failed to dispatch tool result to command bus.', previous: $exception);
                 }
+
+                $this->resultStore->releaseCompleted(
+                    $message->runId(),
+                    $message->toolCallId,
+                    $message->toolName,
+                    $message->toolIdempotencyKey,
+                );
             };
 
             if (null === $this->tracer) {
@@ -154,6 +162,14 @@ final readonly class ExecuteToolCallWorker
 
             if ($this->isDeferredOutcome($toolResult)) {
                 $correlation = $this->registerDeferredExecution($message, $toolResult);
+                // The repository is now the durable dedupe source for deferred
+                // re-delivery; retaining the process-local marker would leak it.
+                $this->resultStore->releaseCompleted(
+                    $message->runId(),
+                    $message->toolCallId,
+                    $message->toolName,
+                    $message->toolIdempotencyKey,
+                );
                 $this->dispatchDeferredRegistered($correlation);
 
                 return null;

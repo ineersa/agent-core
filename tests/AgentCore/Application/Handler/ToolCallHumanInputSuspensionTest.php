@@ -58,6 +58,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             new ToolExecutor('parallel', 2, $store, toolbox: $toolbox),
             $bus,
             new InMemoryDeferredToolCompletionRepository(),
+            $store,
         ))(new ExecuteToolCall('run-susp', 2, 'turn-2-tools-1', 1, 'idemp', 'call-susp', 'bash', ['command' => 'env'], 0));
 
         $this->assertInstanceOf(ToolCallResult::class, $bus->messages[0] ?? null);
@@ -345,10 +346,10 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 eventStore: $eventStore,
                 commandStore: $commandStore,
                 hotPromptStateRebuilder: new class implements \Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface {
-                    public function rebuildHotPromptState(string $runId): \Ineersa\AgentCore\Domain\Run\PromptState
+                    public function rebuildHotPromptState(RunState $state): \Ineersa\AgentCore\Domain\Run\PromptState
                     {
                         return new \Ineersa\AgentCore\Domain\Run\PromptState(
-                            runId: $runId,
+                            runId: $state->runId,
                             source: 'test',
                             eventCount: 0,
                             lastSeq: 0,
@@ -485,10 +486,10 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 eventStore: $eventStore,
                 commandStore: $commandStore,
                 hotPromptStateRebuilder: new class implements \Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface {
-                    public function rebuildHotPromptState(string $runId): \Ineersa\AgentCore\Domain\Run\PromptState
+                    public function rebuildHotPromptState(RunState $state): \Ineersa\AgentCore\Domain\Run\PromptState
                     {
                         return new \Ineersa\AgentCore\Domain\Run\PromptState(
-                            runId: $runId,
+                            runId: $state->runId,
                             source: 'test',
                             eventCount: 0,
                             lastSeq: 0,
@@ -611,10 +612,10 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 eventStore: $eventStore,
                 commandStore: $commandStore,
                 hotPromptStateRebuilder: new class implements \Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface {
-                    public function rebuildHotPromptState(string $runId): \Ineersa\AgentCore\Domain\Run\PromptState
+                    public function rebuildHotPromptState(RunState $state): \Ineersa\AgentCore\Domain\Run\PromptState
                     {
                         return new \Ineersa\AgentCore\Domain\Run\PromptState(
-                            runId: $runId,
+                            runId: $state->runId,
                             source: 'test',
                             eventCount: 0,
                             lastSeq: 0,

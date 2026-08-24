@@ -46,9 +46,9 @@ final class SubagentToolSetResolverTest extends TestCase
 
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->atLeastOnce())
-            ->method('allFor')
+            ->method('firstFor')
             ->with('parent-run')
-            ->willReturn([]); // No RunStarted event at all
+            ->willReturn(null); // No RunStarted event at all
 
         $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'parent-run');
@@ -74,17 +74,15 @@ final class SubagentToolSetResolverTest extends TestCase
 
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->atLeastOnce())
-            ->method('allFor')
+            ->method('firstFor')
             ->with('child-run')
-            ->willReturn([
-                new RunEvent(
-                    runId: 'child-run',
-                    seq: 1,
-                    turnNo: 0,
-                    type: RunEventTypeEnum::RunStarted->value,
-                    payload: $this->childRunStartedPayload(['read', 'bash']),
-                ),
-            ]);
+            ->willReturn(new RunEvent(
+                runId: 'child-run',
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: $this->childRunStartedPayload(['read', 'bash']),
+            ));
 
         $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'child-run');
@@ -111,17 +109,15 @@ final class SubagentToolSetResolverTest extends TestCase
 
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->atLeastOnce())
-            ->method('allFor')
+            ->method('firstFor')
             ->with('child-run')
-            ->willReturn([
-                new RunEvent(
-                    runId: 'child-run',
-                    seq: 1,
-                    turnNo: 0,
-                    type: RunEventTypeEnum::RunStarted->value,
-                    payload: $this->childRunStartedPayload(['bash_only']),
-                ),
-            ]);
+            ->willReturn(new RunEvent(
+                runId: 'child-run',
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: $this->childRunStartedPayload(['bash_only']),
+            ));
 
         $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'child-run');
@@ -143,17 +139,15 @@ final class SubagentToolSetResolverTest extends TestCase
 
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->atLeastOnce())
-            ->method('allFor')
+            ->method('firstFor')
             ->with('child-run')
-            ->willReturn([
-                new RunEvent(
-                    runId: 'child-run',
-                    seq: 1,
-                    turnNo: 0,
-                    type: RunEventTypeEnum::RunStarted->value,
-                    payload: $this->childRunStartedPayload(['read', 'write']),
-                ),
-            ]);
+            ->willReturn(new RunEvent(
+                runId: 'child-run',
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: $this->childRunStartedPayload(['read', 'write']),
+            ));
 
         $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'child-run');

@@ -781,8 +781,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         }
 
         $line = JsonlCodec::encodeCommand($command);
-        $written = @fwrite($this->pipes[0], $line);
-        if (false === $written || $written < \strlen($line)) {
+        if (!JsonlCodec::write($this->pipes[0], $line)) {
             throw new RuntimeTransportException('Failed to write command to controller stdin. '.$this->diagnosticOutput());
         }
 

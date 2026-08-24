@@ -6,7 +6,10 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -25,6 +28,9 @@ class SubagentProgressEventAppender
         private CommittedRunEventAppender $committedRunEventAppender,
         private NormalizerInterface $normalizer,
         private ValidatorInterface $validator,
+        private RuntimeEventSinkInterface $transientSink,
+        private RuntimeEventMapper $runtimeEventMapper,
+        private bool $streamCommittedEventsToStdout,
     ) {
     }
 
@@ -62,8 +68,17 @@ class SubagentProgressEventAppender
             ],
         );
 
-        // seq 0 is deliberately unallocated; the committed store atomically assigns persisted seq
-        // and CommittedRunEventAppender synchronizes parent RunState.lastSeq.
+        $status = RunStatus::from($progress->status());
+        if ($this->streamCommittedEventsToStdout && !$status->isTerminal()) {
+            $runtimeEvent = $this->runtimeEventMapper->toRuntimeEvent($event);
+            if (null !== $runtimeEvent) {
+                $this->transientSink->emit($runtimeEvent);
+            }
+
+            return $event;
+        }
+
+        // Terminal snapshots remain canonical for replay and artifact recovery.
         return $this->committedRunEventAppender->append($event);
     }
 }

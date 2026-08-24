@@ -489,6 +489,11 @@ services:
       $sink: '@Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink'
       $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
 
+  Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender:
+    arguments:
+      $transientSink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
+      $streamCommittedEventsToStdout: '%env(bool:HATFIELD_CONSUMER_STDOUT_EVENTS)%'
+
   # extension_agent permanent failures write transient JSONL via STDOUT from the
   # messenger:consume extension_agent child (same pipe as stream deltas).
   Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobFailedEventSubscriber:

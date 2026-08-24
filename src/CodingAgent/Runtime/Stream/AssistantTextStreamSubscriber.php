@@ -17,9 +17,9 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * Subsequent TextDelta values → assistant.text_delta.
  * Resets per-stream state on llm_stream.start.
  *
- * Events are emitted both to the runtime event sink (in-process) and
- * the StdoutRuntimeEventSink (cross-process via LLM consumer stdout pipe
- * in async mode).
+ * Events use the in-process sink in TUI mode or the controller pipe in an
+ * async consumer. They must not be copied into the undrained in-process queue
+ * from a long-lived messenger worker.
  *
  * @internal
  */
@@ -116,12 +116,13 @@ final class AssistantTextStreamSubscriber implements EventSubscriberInterface
             payload: $merged,
         );
 
-        // In-process sink (active in all modes).
-        $this->sink->emit($event);
+        if ($this->stdoutSink instanceof StdoutRuntimeEventSink && $this->stdoutSink->isPipe()) {
+            $this->stdoutSink->emit($event);
 
-        // Cross-process STDOUT sink (active in async/controller mode
-        // inside the LLM consumer child process).
-        $this->stdoutSink?->emit($event);
+            return;
+        }
+
+        $this->sink->emit($event);
     }
 
     private function blockId(string $runId, ?string $stepId, string $kind): string

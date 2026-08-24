@@ -152,8 +152,13 @@ final class AssistantThinkingStreamSubscriber implements EventSubscriberInterfac
             payload: $merged,
         );
 
+        if ($this->stdoutSink instanceof StdoutRuntimeEventSink && $this->stdoutSink->isPipe()) {
+            $this->stdoutSink->emit($event);
+
+            return;
+        }
+
         $this->sink->emit($event);
-        $this->stdoutSink?->emit($event);
     }
 
     private function blockId(string $runId, ?string $stepId, string $kind): string

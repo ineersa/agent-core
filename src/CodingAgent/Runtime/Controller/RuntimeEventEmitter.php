@@ -287,10 +287,10 @@ final class RuntimeEventEmitter
         }
 
         $line = JsonlCodec::encodeEvent($event);
-        $written = @fwrite($this->stdout, $line);
+        $written = JsonlCodec::write($this->stdout, $line);
         $writeError = error_get_last();
 
-        if (false === $written || 0 === $written) {
+        if (!$written) {
             $error = $writeError;
             $logContext = [
                 'component' => 'RuntimeEventEmitter',

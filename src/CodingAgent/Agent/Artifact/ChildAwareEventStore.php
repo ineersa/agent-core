@@ -61,6 +61,46 @@ final class ChildAwareEventStore implements EventStoreInterface
         return $this->parentStore->appendMany($events);
     }
 
+    public function latestSequenceFor(string $runId): ?int
+    {
+        $childStore = $this->resolveChildStore($runId);
+        if (null !== $childStore) {
+            return $childStore->latestSequenceFor($runId);
+        }
+
+        return $this->parentStore->latestSequenceFor($runId);
+    }
+
+    public function firstFor(string $runId): ?RunEvent
+    {
+        $childStore = $this->resolveChildStore($runId);
+        if (null !== $childStore) {
+            return $childStore->firstFor($runId);
+        }
+
+        return $this->parentStore->firstFor($runId);
+    }
+
+    public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+    {
+        $childStore = $this->resolveChildStore($runId);
+        if (null !== $childStore) {
+            return $childStore->rangeFor($runId, $startSeq, $endSeq);
+        }
+
+        return $this->parentStore->rangeFor($runId, $startSeq, $endSeq);
+    }
+
+    public function reverseFor(string $runId): iterable
+    {
+        $childStore = $this->resolveChildStore($runId);
+        if (null !== $childStore) {
+            return $childStore->reverseFor($runId);
+        }
+
+        return $this->parentStore->reverseFor($runId);
+    }
+
     public function allFor(string $runId): array
     {
         $childStore = $this->resolveChildStore($runId);

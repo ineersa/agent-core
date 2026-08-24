@@ -28,19 +28,18 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
 
     public function rebuildIfStale(RunState $state, string $runId): RunStateReplayResult
     {
-        $events = $this->eventStore->allFor($runId);
-
-        if ([] === $events) {
+        $maxEventSeq = $this->eventStore->latestSequenceFor($runId);
+        if (null === $maxEventSeq) {
             return RunStateReplayResult::noEvents();
         }
 
-        $sortedEvents = $this->replayEventPreparer->sortBySequence($events);
-        $maxEventSeq = $this->replayEventPreparer->maxSequence($sortedEvents);
-
-        // Stored state is current — no rebuild needed.
+        // Stored state is current — avoid decoding the full canonical history.
         if ($state->lastSeq >= $maxEventSeq) {
-            return RunStateReplayResult::current($maxEventSeq, \count($sortedEvents));
+            return RunStateReplayResult::current($maxEventSeq, 0);
         }
+
+        $events = $this->eventStore->allFor($runId);
+        $sortedEvents = $this->replayEventPreparer->sortBySequence($events);
 
         RunLogContext::enter(['run_id' => $runId, 'component' => 'replay']);
 

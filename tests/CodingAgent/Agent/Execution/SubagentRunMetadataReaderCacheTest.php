@@ -27,7 +27,7 @@ final class SubagentRunMetadataReaderCacheTest extends TestCase
         $this->denormalizer = AttributeSerializerValidatorTestFactory::denormalizer();
     }
 
-    public function testRepeatedSuccessfulReadsCallAllForOnce(): void
+    public function testRepeatedSuccessfulReadsCallFirstForOnce(): void
     {
         $inner = new InMemoryEventStore();
         $inner->seed($this->runStarted('child-1', child: true));
@@ -40,7 +40,7 @@ final class SubagentRunMetadataReaderCacheTest extends TestCase
         $this->assertSame([], $reader->readAllowedExtensions('child-1'));
         $this->assertNotNull($reader->readRunStartedMetadata('child-1'));
 
-        $this->assertSame(1, $store->allForCounts['child-1'] ?? 0);
+        $this->assertSame(1, $store->firstForCounts['child-1'] ?? 0);
     }
 
     public function testValidParentAndChildCacheIndependently(): void
@@ -56,8 +56,8 @@ final class SubagentRunMetadataReaderCacheTest extends TestCase
         $this->assertFalse($reader->isAgentChild('parent-1'));
         $this->assertTrue($reader->isAgentChild('child-2'));
 
-        $this->assertSame(1, $store->allForCounts['parent-1'] ?? 0);
-        $this->assertSame(1, $store->allForCounts['child-2'] ?? 0);
+        $this->assertSame(1, $store->firstForCounts['parent-1'] ?? 0);
+        $this->assertSame(1, $store->firstForCounts['child-2'] ?? 0);
     }
 
     public function testMissingResultIsNotCachedAndBecomesVisibleAfterAppend(): void
@@ -68,16 +68,16 @@ final class SubagentRunMetadataReaderCacheTest extends TestCase
 
         $this->assertNull($reader->readRunStartedMetadata('late-child'));
         $this->assertFalse($reader->isAgentChild('late-child'));
-        $this->assertSame(2, $store->allForCounts['late-child'] ?? 0);
+        $this->assertSame(2, $store->firstForCounts['late-child'] ?? 0);
 
         $inner->seed($this->runStarted('late-child', child: true));
 
         $this->assertTrue($reader->isAgentChild('late-child'));
         $this->assertSame(['bash'], $reader->readAllowedTools('late-child'));
-        $this->assertSame(3, $store->allForCounts['late-child'] ?? 0);
+        $this->assertSame(3, $store->firstForCounts['late-child'] ?? 0);
         // Successful decode is now cached.
         $this->assertTrue($reader->isAgentChild('late-child'));
-        $this->assertSame(3, $store->allForCounts['late-child'] ?? 0);
+        $this->assertSame(3, $store->firstForCounts['late-child'] ?? 0);
     }
 
     public function testMalformedResultIsNotCachedAndRetriesAfterRepair(): void
@@ -114,7 +114,7 @@ final class SubagentRunMetadataReaderCacheTest extends TestCase
                 $first::class,
             );
         }
-        $this->assertSame(1, $store->allForCounts['broken-child'] ?? 0);
+        $this->assertSame(1, $store->firstForCounts['broken-child'] ?? 0);
 
         // Simulate repair by replacing the store contents with a valid event.
         $repaired = new InMemoryEventStore();
@@ -122,7 +122,7 @@ final class SubagentRunMetadataReaderCacheTest extends TestCase
         $store->replaceInner($repaired);
 
         $this->assertTrue($reader->isAgentChild('broken-child'));
-        $this->assertSame(2, $store->allForCounts['broken-child'] ?? 0);
+        $this->assertSame(2, $store->firstForCounts['broken-child'] ?? 0);
     }
 
     public function testCacheIsBoundedAndEvictionCausesReread(): void
@@ -137,15 +137,15 @@ final class SubagentRunMetadataReaderCacheTest extends TestCase
         for ($i = 0; $i < 65; ++$i) {
             $reader->isAgentChild('run-'.$i);
         }
-        $this->assertSame(1, $store->allForCounts['run-0'] ?? 0);
-        $this->assertSame(1, $store->allForCounts['run-64'] ?? 0);
+        $this->assertSame(1, $store->firstForCounts['run-0'] ?? 0);
+        $this->assertSame(1, $store->firstForCounts['run-64'] ?? 0);
 
         // run-0 should have been FIFO-evicted by inserting run-64.
         $this->assertTrue($reader->isAgentChild('run-0'));
-        $this->assertSame(2, $store->allForCounts['run-0'] ?? 0);
+        $this->assertSame(2, $store->firstForCounts['run-0'] ?? 0);
         // Still-cached entry should not reread.
         $this->assertTrue($reader->isAgentChild('run-64'));
-        $this->assertSame(1, $store->allForCounts['run-64'] ?? 0);
+        $this->assertSame(1, $store->firstForCounts['run-64'] ?? 0);
     }
 
     /**
@@ -217,7 +217,7 @@ final class SubagentRunMetadataReaderCacheTest extends TestCase
 final class CountingEventStore implements EventStoreInterface
 {
     /** @var array<string, int> */
-    public array $allForCounts = [];
+    public array $firstForCounts = [];
 
     public function __construct(
         private EventStoreInterface $inner,
@@ -239,10 +239,30 @@ final class CountingEventStore implements EventStoreInterface
         return $this->inner->appendMany($events);
     }
 
+    public function latestSequenceFor(string $runId): ?int
+    {
+        return $this->inner->latestSequenceFor($runId);
+    }
+
+    public function firstFor(string $runId): ?RunEvent
+    {
+        $this->firstForCounts[$runId] = ($this->firstForCounts[$runId] ?? 0) + 1;
+
+        return $this->inner->firstFor($runId);
+    }
+
+    public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+    {
+        return $this->inner->rangeFor($runId, $startSeq, $endSeq);
+    }
+
+    public function reverseFor(string $runId): iterable
+    {
+        return [];
+    }
+
     public function allFor(string $runId): array
     {
-        $this->allForCounts[$runId] = ($this->allForCounts[$runId] ?? 0) + 1;
-
         return $this->inner->allFor($runId);
     }
 }
