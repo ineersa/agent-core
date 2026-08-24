@@ -101,6 +101,7 @@ final class AgentArtifactRegistry
             $entry = $this->buildPendingEntry($parentRunId, $artifactId, $agentRunId, $agentName, $kind);
             $entries[] = $entry;
             $this->persistPendingEntry($parentRunId, $artifactId, $entry, $entries);
+            $this->bindArtifactToCurrentParentLifetime($parentRunId, $artifactId);
 
             return $entry;
         } finally {
@@ -149,6 +150,7 @@ final class AgentArtifactRegistry
             $entry = $this->buildPendingEntry($parentRunId, $artifactId, $agentRunId, $agentName, $kind);
             $entries[] = $entry;
             $this->persistPendingEntry($parentRunId, $artifactId, $entry, $entries);
+            $this->bindArtifactToCurrentParentLifetime($parentRunId, $artifactId);
 
             return $entry;
         } finally {
@@ -435,6 +437,41 @@ final class AgentArtifactRegistry
         }
 
         return $this->readHandoffFile($parentRunId, $artifactId, $latest['id']);
+    }
+
+    /**
+     * Starts a new parent invocation lifetime without touching persistent artifacts.
+     *
+     * New artifacts are bound to this lifetime; agent_resume accepts only matching
+     * bindings, while agent_retrieve remains able to read every artifact.
+     */
+    public function beginParentLifetime(string $parentRunId): void
+    {
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
+        $lock->acquire(true);
+
+        try {
+            $lifetime = $this->readParentLifetimes($parentRunId);
+            $lifetime['current_id'] = UuidV7::v7()->toRfc4122();
+            $this->writeParentLifetimes($parentRunId, $lifetime);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * True only when the artifact was launched in the current parent invocation.
+     */
+    public function belongsToCurrentParentLifetime(string $parentRunId, string $artifactId): bool
+    {
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
+        $lifetime = $this->readParentLifetimes($parentRunId);
+        $currentId = $lifetime['current_id'] ?? null;
+
+        return \is_string($currentId) && '' !== $currentId
+            && $currentId === ($lifetime['artifact_lifetimes'][$artifactId] ?? null);
     }
 
     /**
@@ -832,6 +869,76 @@ final class AgentArtifactRegistry
         } catch (AtomicFileWriterException|\JsonException $exception) {
             throw new \RuntimeException(\sprintf('Failed to write handoffs/index.json for artifact "%s" parent "%s".', $artifactId, $parentRunId), previous: $exception);
         }
+    }
+
+    /**
+     * @param array{current_id?: string, artifact_lifetimes?: array<string, string>} $lifetime
+     */
+    private function writeParentLifetimes(string $parentRunId, array $lifetime): void
+    {
+        $directory = $this->pathResolver->resolveArtifactsBasePath($parentRunId);
+        if (!is_dir($directory) && !@mkdir($directory, SessionAgentArtifactPathResolver::DIR_PERMISSIONS, true) && !is_dir($directory)) {
+            throw new \RuntimeException(\sprintf('Failed to create agent artifact directory for parent run "%s".', $parentRunId));
+        }
+
+        try {
+            AtomicFileWriter::write(
+                $this->parentLifetimesPath($parentRunId),
+                json_encode($lifetime, \JSON_THROW_ON_ERROR | \JSON_PRETTY_PRINT)."\n",
+                fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS,
+            );
+        } catch (AtomicFileWriterException|\JsonException $exception) {
+            throw new \RuntimeException(\sprintf('Failed to write agent parent lifetime for "%s".', $parentRunId), previous: $exception);
+        }
+    }
+
+    private function bindArtifactToCurrentParentLifetime(string $parentRunId, string $artifactId): void
+    {
+        $lifetime = $this->readParentLifetimes($parentRunId);
+        $currentId = $lifetime['current_id'] ?? null;
+        if (!\is_string($currentId) || '' === $currentId) {
+            $currentId = UuidV7::v7()->toRfc4122();
+            $lifetime['current_id'] = $currentId;
+        }
+        $lifetime['artifact_lifetimes'][$artifactId] = $currentId;
+        $this->writeParentLifetimes($parentRunId, $lifetime);
+    }
+
+    /**
+     * @return array{current_id?: string, artifact_lifetimes: array<string, string>}
+     */
+    private function readParentLifetimes(string $parentRunId): array
+    {
+        $path = $this->parentLifetimesPath($parentRunId);
+        if (!is_file($path) || !is_readable($path)) {
+            return ['artifact_lifetimes' => []];
+        }
+
+        try {
+            $decoded = json_decode((string) file_get_contents($path), true, 512, \JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return ['artifact_lifetimes' => []];
+        }
+        if (!\is_array($decoded)) {
+            return ['artifact_lifetimes' => []];
+        }
+
+        $artifactLifetimes = [];
+        foreach (($decoded['artifact_lifetimes'] ?? []) as $artifactId => $lifetimeId) {
+            if (\is_string($artifactId) && \is_string($lifetimeId) && '' !== $lifetimeId) {
+                $artifactLifetimes[$artifactId] = $lifetimeId;
+            }
+        }
+
+        return [
+            'current_id' => \is_string($decoded['current_id'] ?? null) ? $decoded['current_id'] : null,
+            'artifact_lifetimes' => $artifactLifetimes,
+        ];
+    }
+
+    private function parentLifetimesPath(string $parentRunId): string
+    {
+        return $this->pathResolver->absolutePath($parentRunId, 'artifacts/agents/lifetimes.json');
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

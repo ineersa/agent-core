@@ -28,9 +28,10 @@ final class AgentToolPolicyResolverTest extends TestCase
     public function testResolveExcludesSubagentByDefault(): void
     {
         $resolver = new AgentToolPolicyResolver($this->registry(['read']), $this->mcpResolver([]), new AgentsConfig());
-        $policy = $resolver->resolve($this->definition(['read', 'subagent', 'fork']), 'run-1');
+        $policy = $resolver->resolve($this->definition(['read', 'subagent', 'fork', 'agent_resume']), 'run-1');
         $this->assertNotContains('subagent', $policy['tools']);
         $this->assertNotContains('fork', $policy['tools']);
+        $this->assertNotContains('agent_resume', $policy['tools']);
     }
 
     public function testOmittedToolsInheritsRegistryAndGlobalMcpOnly(): void

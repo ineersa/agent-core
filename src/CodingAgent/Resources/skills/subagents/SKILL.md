@@ -84,7 +84,7 @@ Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<a
 2. **Define agent** — `.hatfield/agents/<name>.md` with frontmatter + instructions.
 3. **Delegate** — parent calls `subagent` with `agent`+`task` or `tasks`.
 4. **Continue** — use `agent_resume` for an existing child artifact/run rather than launching a duplicate.
-5. **Retrieve** — `agent_retrieve` with `artifact_id` and/or `agent_run_id`, optional `mode` / `limit` / `index` (1–100, default 20).
+5. **Retrieve** — `agent_retrieve` with `artifact_id` and/or `agent_run_id`, optional `mode` / `limit`; for `handoff_history`, pass `handoff_id=<uuid>` to fetch one immutable handoff.
 
 ## TUI (parent)
 

@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\ModelResolver;
@@ -60,6 +61,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
         private readonly ?McpSessionLifecycleDispatcher $mcpDispatcher = null,
+        private readonly ?AgentArtifactRegistry $artifactRegistry = null,
     ) {
     }
 
@@ -188,6 +190,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         );
 
         $runId = $this->runner->start($input);
+        $this->artifactRegistry?->beginParentLifetime($runId);
 
         // Dispatch MCP session initialize after the run has started.
         // Failure is non-fatal — MCP is optional infrastructure.
@@ -200,6 +203,10 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     {
         // Passive attach only — do not call runner->continue(); opening a session
         // must not reanimate or advance AgentCore state.
+
+        // Attaching is a new parent lifetime: existing artifacts stay retrievable
+        // but agent_resume must not continue children launched before /resume.
+        $this->artifactRegistry?->beginParentLifetime($runId);
 
         // Dispatch MCP session initialize on attach so reopened sessions
         // also benefit from MCP tools (Phase 3+).

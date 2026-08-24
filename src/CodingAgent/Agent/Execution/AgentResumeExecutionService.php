@@ -261,13 +261,27 @@ final class AgentResumeExecutionService
         }
 
         $launchedIndices = array_map(static fn (array $item): int => $item['batchIndex'], $resolved);
-        $this->batchRepository->applyLaunchSuccessState(
-            $parentRunId,
-            $toolCallId,
-            $lifecycleId,
-            Clock::get()->now(),
-            $launchedIndices,
-        );
+        try {
+            $this->batchRepository->applyLaunchSuccessState(
+                $parentRunId,
+                $toolCallId,
+                $lifecycleId,
+                Clock::get()->now(),
+                $launchedIndices,
+            );
+        } catch (\Throwable $persistFailure) {
+            // follow_up already dispatched; leave the Reserved batch recoverable for the
+            // deferred recovery path instead of incorrectly failing the parent tool call.
+            $this->logger->warning('agent_resume.launch_success_persist_failed', [
+                'run_id' => $parentRunId,
+                'session_id' => $parentRunId,
+                'tool_call_id' => $toolCallId,
+                'lifecycle_id' => $lifecycleId,
+                'component' => 'agent.execution',
+                'event_type' => 'agent_resume.launch_success_persist_failed',
+                'exception_class' => $persistFailure::class,
+            ]);
+        }
 
         return new DeferredToolCompletionOutcome($lifecycleId);
     }
@@ -310,6 +324,10 @@ final class AgentResumeExecutionService
         $entry = $byArtifact ?? $byRun;
         if (null === $entry) {
             throw new ToolCallException('Unable to resolve artifact for agent_resume.', retryable: false);
+        }
+
+        if (!$this->artifactRegistry->belongsToCurrentParentLifetime($parentRunId, $entry->artifactId)) {
+            throw new ToolCallException(\sprintf('Artifact "%s" belongs to a previous parent lifetime and cannot be resumed after parent /resume.', $entry->artifactId), retryable: false);
         }
 
         if (AgentArtifactKindEnum::Fork === $entry->kind) {

@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
@@ -33,6 +34,7 @@ use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
+use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Psr\Log\NullLogger;
@@ -343,6 +345,71 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         );
     }
 
+    public function testLaunchSuccessPersistenceFailureLeavesDeferredResumeRecoverable(): void
+    {
+        $parent = 'parent-launch-success-persist-failure';
+        $artifactId = 'agent_launch_success_persist_failure';
+        $childRunId = 'child-launch-success-persist-failure';
+        $toolCallId = 'tc-launch-success-persist-failure';
+        $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 10, contextWindow: 200_000);
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->once())->method('followUp')->willReturnCallback(
+            static function () use ($childRunId): void {
+                self::getContainer()->get('doctrine')->getManager()->getConnection()->executeStatement(
+                    'DELETE FROM deferred_subagent_child WHERE child_run_id = :child_run_id',
+                    ['child_run_id' => $childRunId],
+                );
+            },
+        );
+        $logger = new TestLogger();
+
+        $outcome = $this->resume(
+            parentRunId: $parent,
+            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            childRunId: $childRunId,
+            agentRunner: $agentRunner,
+            toolCallId: $toolCallId,
+            logger: $logger,
+        );
+
+        $this->assertNotSame('', $outcome->deferredId);
+        $batch = self::getContainer()->get(DeferredSubagentBatchRepository::class)
+            ->findByParentRunAndToolCall($parent, $toolCallId);
+        $this->assertNotNull($batch);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $batch->launchStatus);
+        $this->assertSame('agent_resume.launch_success_persist_failed', $logger->records[0]['message'] ?? null);
+        $this->assertSame($parent, $logger->records[0]['context']['session_id'] ?? null);
+        $this->assertSame($toolCallId, $logger->records[0]['context']['tool_call_id'] ?? null);
+    }
+
+    public function testArtifactCanResumeDuringCurrentParentLifetimeButNotAfterAttach(): void
+    {
+        $parent = 'parent-lifetime';
+        $artifactId = 'agent_lifetime';
+        $childRunId = 'child-lifetime';
+        $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 10, contextWindow: 200_000);
+
+        $this->resume(
+            parentRunId: $parent,
+            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            childRunId: $childRunId,
+            toolCallId: 'tc-lifetime-before-attach',
+        );
+        $this->registry()->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed);
+
+        self::getContainer()->get(InProcessAgentSessionClient::class)->attach($parent);
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('belongs to a previous parent lifetime');
+        $this->resume(
+            parentRunId: $parent,
+            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue after attach')],
+            childRunId: $childRunId,
+            toolCallId: 'tc-lifetime-after-attach',
+        );
+    }
+
     public function testRejectsDuplicateResolvedArtifactViaMixedIdentifiers(): void
     {
         $parent = 'parent-dup-mixed';
@@ -381,7 +448,8 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         ?AgentRunnerInterface $agentRunner = null,
         string $toolCallId = 'tc-resume-1',
         ChildRunBatchExecutionModeEnum $executionMode = ChildRunBatchExecutionModeEnum::Single,
-    ): void {
+        ?TestLogger $logger = null,
+    ): \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome {
         $contextAccessor = new StackToolExecutionContextAccessor();
         $runStore = $this->createStub(RunStoreInterface::class);
         $runStore->method('get')->willReturnCallback(
@@ -407,10 +475,10 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             depthGuard: new AgentDepthGuard(),
             contextAccessor: $contextAccessor,
             agentsConfig: new AgentsConfig(maxAgents: 4),
-            logger: new NullLogger(),
+            logger: $logger ?? new NullLogger(),
         );
 
-        $contextAccessor->with(
+        return $contextAccessor->with(
             new ToolContext(
                 runId: $parentRunId,
                 turnNo: 1,
@@ -421,8 +489,8 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
                 orderIndex: 0,
                 parentModel: 'test/model',
             ),
-            static function () use ($service, $parentRunId, $tasks, $executionMode): void {
-                $service->resume($parentRunId, $tasks, $executionMode);
+            static function () use ($service, $parentRunId, $tasks, $executionMode): \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome {
+                return $service->resume($parentRunId, $tasks, $executionMode);
             },
         );
     }
