@@ -108,7 +108,8 @@ final class AgentArtifactRegistryTest extends TestCase
         $base = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents';
         $this->assertFileExists($base.'/registry.json');
         $this->assertFileExists($base.'/'.$artifactId.'/metadata.json');
-        $this->assertFileExists($base.'/'.$artifactId.'/handoff.md');
+        $this->assertFileDoesNotExist($base.'/'.$artifactId.'/handoff.md');
+        $this->assertFileExists($base.'/'.$artifactId.'/handoffs/index.json');
         $this->assertDirectoryExists($base.'/'.$artifactId);
 
         // Verify no top-level child session directory was created
@@ -569,14 +570,16 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->assertSame('artifacts/agents/agent_01HX', $meta['paths']['artifact_dir']);
     }
 
-    public function testHandoffMdIsCreatedEmpty(): void
+    public function testHandoffsIndexIsCreatedEmpty(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
         $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
-        $handoffPath = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/agent_01HX/handoff.md';
-        $this->assertFileExists($handoffPath);
-        $this->assertSame('', file_get_contents($handoffPath));
+        $indexPath = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/agent_01HX/handoffs/index.json';
+        $this->assertFileExists($indexPath);
+        $decoded = json_decode((string) file_get_contents($indexPath), true, 512, \JSON_THROW_ON_ERROR);
+        $this->assertSame(['schema_version' => 1, 'entries' => []], $decoded);
+        $this->assertSame('', $this->registry->readHandoff($parentRunId, 'agent_01HX'));
     }
 
     // ── Corrupt registry / malformed entry resilience ────────────────────
@@ -661,7 +664,6 @@ final class AgentArtifactRegistryTest extends TestCase
                 'created_at' => '2026-06-22T12:00:00+00:00',
                 'paths' => [
                     'artifact_dir' => 'artifacts/agents/agent_01HX',
-                    'handoff_path' => 'artifacts/agents/agent_01HX/handoff.md',
                     'metadata_path' => 'artifacts/agents/agent_01HX/metadata.json',
                     'events_path' => 'artifacts/agents/agent_01HX/events.jsonl',
                     'state_path' => 'artifacts/agents/agent_01HX/state.json',
@@ -743,7 +745,6 @@ final class AgentArtifactRegistryTest extends TestCase
                 'created_at' => '2026-06-22T12:00:00+00:00',
                 'paths' => [
                     'artifact_dir' => 'artifacts/agents/',
-                    'handoff_path' => 'artifacts/agents//handoff.md',
                     'metadata_path' => 'artifacts/agents//metadata.json',
                     'events_path' => 'artifacts/agents//events.jsonl',
                     'state_path' => 'artifacts/agents//state.json',
@@ -777,7 +778,6 @@ final class AgentArtifactRegistryTest extends TestCase
                 'created_at' => '2026-06-22T12:00:00+00:00',
                 'paths' => [
                     'artifact_dir' => 'artifacts/agents/evil_dir',
-                    'handoff_path' => 'artifacts/agents/agent_01HX/handoff.md',
                     'metadata_path' => 'artifacts/agents/agent_01HX/metadata.json',
                     'events_path' => 'artifacts/agents/agent_01HX/events.jsonl',
                     'state_path' => 'artifacts/agents/agent_01HX/state.json',
@@ -805,6 +805,74 @@ Done.');
         $this->assertSame('# Handoff
 
 Done.', $this->registry->readHandoff($parentRunId, $artifactId));
+    }
+
+    public function testWriteHandoffAppendsImmutableUuidEntries(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $artifactId = 'agent_hist_01';
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+
+        $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
+        $firstId = $this->registry->writeHandoff(
+            $parentRunId,
+            $artifactId,
+            '# First',
+            status: AgentArtifactStatusEnum::Completed,
+            summary: 'first done',
+        );
+        $secondId = $this->registry->writeHandoff(
+            $parentRunId,
+            $artifactId,
+            '# Second',
+            status: AgentArtifactStatusEnum::Completed,
+            summary: 'second done',
+        );
+
+        $this->assertNotSame($firstId, $secondId);
+        $this->assertSame('# Second', $this->registry->readHandoff($parentRunId, $artifactId));
+
+        $history = $this->registry->listHandoffHistory($parentRunId, $artifactId);
+        $this->assertCount(2, $history);
+        $this->assertSame($firstId, $history[0]['id']);
+        $this->assertSame(AgentArtifactStatusEnum::Completed->value, $history[0]['status']);
+        $this->assertSame('first done', $history[0]['summary']);
+        $this->assertSame($secondId, $history[1]['id']);
+        $this->assertSame('second done', $history[1]['summary']);
+
+        $base = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/'.$artifactId.'/handoffs';
+        $this->assertFileExists($base.'/'.$firstId.'.md');
+        $this->assertFileExists($base.'/'.$secondId.'.md');
+        $this->assertSame('# First', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, $firstId));
+        $this->assertSame('# Second', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, $secondId));
+    }
+
+    public function testReadHandoffIgnoresTamperedIndexPath(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $artifactId = 'agent_path_01';
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+
+        $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
+        $handoffId = $this->registry->writeHandoff(
+            $parentRunId,
+            $artifactId,
+            '# Canonical body',
+            status: AgentArtifactStatusEnum::Completed,
+            summary: 'ok',
+        );
+
+        $indexPath = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/'.$artifactId.'/handoffs/index.json';
+        $index = json_decode((string) file_get_contents($indexPath), true, 512, \JSON_THROW_ON_ERROR);
+        $this->assertIsArray($index['entries'][0] ?? null);
+        $index['entries'][0]['path'] = 'artifacts/agents/'.$artifactId.'/handoffs/../../evil.md';
+        file_put_contents(
+            $indexPath,
+            json_encode($index, \JSON_THROW_ON_ERROR | \JSON_PRETTY_PRINT)."\n",
+        );
+
+        $this->assertSame('# Canonical body', $this->registry->readHandoff($parentRunId, $artifactId));
+        $this->assertSame('# Canonical body', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, $handoffId));
     }
 
     public function testReadHandoffRejectsPathTraversalArtifactId(): void

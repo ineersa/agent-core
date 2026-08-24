@@ -53,6 +53,10 @@ tools:
 
 Every valid discovered definition is foreground-launchable. Background launch is not implemented. Frontmatter `disabled` is rejected as unknown — remove an agent by deleting/moving its file.
 
+## Launch versus continue
+
+`subagent` starts a new named child. `agent_resume` continues an existing child using its artifact/run identifier and must not be used to create fresh work. When relevant child context exists, resume it instead of launching a duplicate. Resume is parent-scoped; child runs cannot resume or launch children. Fork children are not resumable.
+
 ## Example (project scout)
 
 ```yaml
@@ -84,6 +88,7 @@ Explore read-only. Return dense bullets and file paths.
 
 - Parent session only. Provide `artifact_id` and/or `agent_run_id` (both must refer to the same artifact when set).
 - Modes: `handoff` (default), `metadata`, `events`, `history`, `debug`.
+- Additional mode: `handoff_history` lists prior handoffs; pass `handoff_id=<uuid>` to fetch one body. `mode=handoff` remains latest only.
 - `limit` accepted range **1–100**, default **20** (events/history row bounds; fixed constants, not settings).
 - `history` skips system, user-context, and tool roles; bounded text only (summary chars **240**).
 - `debug` returns **relative** artifact paths under the parent session, not absolute filesystem paths.

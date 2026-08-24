@@ -34,11 +34,14 @@ final class AgentRetrieveArgumentsDTO
         )]
         public readonly ?string $agent_run_id = null,
         #[Schema(description: 'Output mode. Default handoff.')]
-        #[Assert\Choice(choices: ['handoff', 'metadata', 'events', 'history', 'debug'], message: 'Invalid mode "{{ value }}". Supported modes: handoff, metadata, events, history, debug.')]
+        #[Assert\Choice(choices: ['handoff', 'metadata', 'events', 'history', 'handoff_history', 'debug'], message: 'Invalid mode "{{ value }}". Supported modes: handoff, metadata, events, history, handoff_history, debug.')]
         public readonly ?string $mode = null,
         #[Schema(description: 'Max rows for events/history modes (default '.AgentArtifactRetrievalService::DEFAULT_LIMIT.').')]
         #[Assert\Range(min: 1, max: AgentArtifactRetrievalService::MAX_LIMIT)]
         public readonly ?int $limit = null,
+        #[Schema(description: 'Optional handoff id (uuid) for mode=handoff_history. Omit to list handoffs.')]
+        #[Assert\Length(min: 1)]
+        public readonly ?string $handoff_id = null,
     ) {
     }
 
@@ -64,6 +67,17 @@ final class AgentRetrieveArgumentsDTO
         return '' === $trimmed ? null : $trimmed;
     }
 
+    public function trimmedHandoffId(): ?string
+    {
+        if (null === $this->handoff_id) {
+            return null;
+        }
+
+        $trimmed = trim($this->handoff_id);
+
+        return '' === $trimmed ? null : $trimmed;
+    }
+
     public function resolvedMode(): AgentRetrieveModeEnum
     {
         $raw = $this->mode;
@@ -73,7 +87,7 @@ final class AgentRetrieveArgumentsDTO
 
         $mode = AgentRetrieveModeEnum::tryFrom(trim($raw));
         if (null === $mode) {
-            throw new \InvalidArgumentException(\sprintf('Invalid mode "%s". Supported modes: handoff, metadata, events, history, debug.', $raw));
+            throw new \InvalidArgumentException(\sprintf('Invalid mode "%s". Supported modes: handoff, metadata, events, history, handoff_history, debug.', $raw));
         }
 
         return $mode;

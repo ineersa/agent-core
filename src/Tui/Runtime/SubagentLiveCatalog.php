@@ -136,8 +136,13 @@ final class SubagentLiveCatalog
         $status = SubagentLiveStatusEnum::fromProgressString($row->status);
         $existing = $this->byArtifactId[$artifactId] ?? null;
         if (null !== $existing && $existing->status->isTerminal() && !$status->isTerminal()) {
-            // Stale in-flight progress rows must not downgrade terminal/cancelled catalog entries.
-            return;
+            // Stale same-task in-flight progress must not reopen terminal rows.
+            // Resume rebind updates task_summary; allow Running/WaitingHuman only when the task changed.
+            $isResumeReopen = (SubagentLiveStatusEnum::Running === $status || SubagentLiveStatusEnum::WaitingHuman === $status)
+                && $row->taskSummary !== $existing->taskSummary;
+            if (!$isResumeReopen) {
+                return;
+            }
         }
 
         $latestInputTokens = $row->latestInputTokens > 0

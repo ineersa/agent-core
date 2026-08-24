@@ -44,7 +44,14 @@ final class SubagentChildRunArtifactFinalizer
             childState: $outcome->childState,
         );
 
-        $this->artifactRegistry->writeHandoff($identity->parentRunId, $identity->artifactId, $handoff);
+        // Append immutable handoff with the status/summary known at this finalize.
+        $this->artifactRegistry->writeHandoff(
+            $identity->parentRunId,
+            $identity->artifactId,
+            $handoff,
+            status: $outcome->status,
+            summary: $outcome->summary,
+        );
     }
 
     public function logChildCancelled(ChildRunIdentityDTO $identity): void

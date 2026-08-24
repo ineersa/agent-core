@@ -1,11 +1,11 @@
 ---
 name: subagents
-description: Foreground Hatfield subagent delegation via the subagent and agent_retrieve tools, agent definition frontmatter, child tool/MCP/extension policy, and parent-scoped artifacts. Use when calling subagent or agent_retrieve, choosing single vs parallel tasks, authoring or debugging agent definitions under .hatfield/agents or .agents, or configuring child tools, MCP selectors, extensions, SafeGuard, skills, context inheritance, or timeouts.
+description: Foreground Hatfield subagent delegation via the subagent, agent_resume, and agent_retrieve tools, agent definition frontmatter, child tool/MCP/extension policy, and parent-scoped artifacts. Use when calling subagent, agent_resume, or agent_retrieve, choosing single vs parallel tasks, authoring or debugging agent definitions under .hatfield/agents or .agents, or configuring child tools, MCP selectors, extensions, SafeGuard, skills, context inheritance, or timeouts.
 ---
 
 # Subagents (Hatfield)
 
-Model-visible tools: **`subagent`** (launch) and **`agent_retrieve`** (read artifacts). Child runs are scoped to the **current parent session**. Nested subagents and background launches are not supported.
+Model-visible tools: **`subagent`** (launch), **`agent_resume`** (continue), and **`agent_retrieve`** (read artifacts). Child runs are scoped to the **current parent session**. Nested subagents and background launches are not supported.
 
 ## Quick start
 
@@ -32,6 +32,12 @@ Exceeding `max_agents` fails fast — split only for cap overflow or true depend
 
 After a run, copy **`Artifact: agent_<hex>`** from the tool result. Single-mode success includes the full handoff inline; parallel results are bounded summaries — use **`agent_retrieve`** for complete handoffs. Cancelled/failed/timed-out results still include **`Artifact:`** (and **`Status: cancelled`** when cancelled).
 
+## Launch versus continue
+
+Launch a new child with `subagent` only when the work has no existing child context. If a child has already produced progress or ended with an incomplete handoff, use `agent_resume` with its artifact/run identifier and a focused continuation task. Do not duplicate an existing child by calling `subagent` again.
+
+`agent_resume` continues an existing parent-scoped child; it is not a fresh launch mechanism. Children cannot resume themselves or launch nested children. Fork children are not resumable.
+
 ## Where agents live
 
 Discovery load order (lowest → highest; later overrides earlier on name collision):
@@ -48,7 +54,7 @@ Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<a
 
 ## Child safety (always enforced)
 
-- **`subagent` and `fork` are never available inside child runs** (hard strip after tool/MCP merge).
+- **`subagent`, `fork`, and `agent_resume` are never available inside child runs** (hard strip after tool/MCP merge).
 - **`agents.subagent_excluded_tools`** (default: `settings`, `hatfield_docs`) is stripped from every child, inherit-all and explicit lists.
 - Child extensions: effective allowlist = `agents.extensions.always_on` ∪ frontmatter `extensions`. Default `always_on` is **SafeGuard**. Omitted frontmatter `extensions` means **only always_on** — children do **not** inherit optional entries from global `extensions.enabled`.
 - Nested launch is also blocked when parent `session.kind` is `agent_child`.
@@ -77,7 +83,8 @@ Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<a
 1. **Optional starters** — `hatfield agents:init` copies bundled `scout`/`reviewer`/`researcher`/`architect`/`browser` into `~/.hatfield/agents/` (fails on collisions unless `--force`; opinionated model/MCP/skill pins).
 2. **Define agent** — `.hatfield/agents/<name>.md` with frontmatter + instructions.
 3. **Delegate** — parent calls `subagent` with `agent`+`task` or `tasks`.
-3. **Retrieve** — `agent_retrieve` with `artifact_id` and/or `agent_run_id`, optional `mode` / `limit` (1–100, default 20).
+4. **Continue** — use `agent_resume` for an existing child artifact/run rather than launching a duplicate.
+5. **Retrieve** — `agent_retrieve` with `artifact_id` and/or `agent_run_id`, optional `mode` / `limit`; for `handoff_history`, pass `handoff_id=<uuid>` to fetch one immutable handoff.
 
 ## TUI (parent)
 

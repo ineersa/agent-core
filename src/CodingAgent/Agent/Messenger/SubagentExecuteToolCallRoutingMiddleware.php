@@ -12,7 +12,8 @@ use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 
 /**
- * Routes built-in {@see ExecuteToolCall} for tool name "subagent" to the dedicated
+ * Routes built-in {@see ExecuteToolCall} for tool names "subagent" and "agent_resume"
+ * to the dedicated
  * agent transport so foreground subagent orchestration does not occupy generic
  * tool workers (which child agents need for read/write/shell/etc.).
  *
@@ -22,6 +23,7 @@ use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 final readonly class SubagentExecuteToolCallRoutingMiddleware implements MiddlewareInterface
 {
     public const string SUBAGENT_TOOL_NAME = 'subagent';
+    public const string AGENT_RESUME_TOOL_NAME = 'agent_resume';
 
     public function handle(Envelope $envelope, StackInterface $stack): Envelope
     {
@@ -39,7 +41,7 @@ final readonly class SubagentExecuteToolCallRoutingMiddleware implements Middlew
             return $stack->next()->handle($envelope, $stack);
         }
 
-        if (self::SUBAGENT_TOOL_NAME !== $message->toolName) {
+        if (!\in_array($message->toolName, [self::SUBAGENT_TOOL_NAME, self::AGENT_RESUME_TOOL_NAME], true)) {
             return $stack->next()->handle($envelope, $stack);
         }
 
