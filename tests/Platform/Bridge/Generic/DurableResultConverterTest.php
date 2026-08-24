@@ -808,12 +808,33 @@ final class DurableResultConverterTest extends TestCase
     #[Test]
     public function streamingConvertThrowsRuntimeExceptionOnGeneric4xx(): void
     {
-        $result = $this->streamResultWithStatus(403, '{"error":{"message":"forbidden"}}', []);
+        $result = $this->streamResultWithStatus(403, json_encode([
+            'error' => [
+                'code' => 'permission_denied',
+                'type' => 'auth_error',
+                'param' => 'scope',
+                'message' => 'forbidden',
+            ],
+        ]), []);
 
         $this->expectException(PlatformRuntimeException::class);
-        $this->expectExceptionMessage('Unexpected response code 403');
+        $this->expectExceptionMessage('Unexpected response code 403: [permission_denied/auth_error/scope]: forbidden');
 
         $this->converter->convert($result, ['stream' => true]);
+    }
+
+    #[Test]
+    public function streamingConvertBoundsNonJsonErrorBody(): void
+    {
+        $result = $this->streamResultWithStatus(403, str_repeat("denied\n", 100), []);
+
+        try {
+            $this->converter->convert($result, ['stream' => true]);
+            $this->fail('Expected RuntimeException');
+        } catch (PlatformRuntimeException $exception) {
+            $this->assertStringStartsWith('Unexpected response code 403: denied denied', $exception->getMessage());
+            $this->assertLessThanOrEqual(230, \strlen($exception->getMessage()));
+        }
     }
 
     #[Test]
@@ -852,10 +873,15 @@ final class DurableResultConverterTest extends TestCase
     public function streamErrorChunkGenericRaisesRuntimeException(): void
     {
         $this->expectException(PlatformRuntimeException::class);
-        $this->expectExceptionMessage('Stream error');
+        $this->expectExceptionMessage('Stream error: [invalid_request/request_error/model]: Something broke');
 
         $this->collectStream($this->streamResult([
-            $this->chunk(['error' => ['message' => 'Something broke']]),
+            $this->chunk(['error' => [
+                'code' => 'invalid_request',
+                'type' => 'request_error',
+                'param' => 'model',
+                'message' => 'Something broke',
+            ]]),
         ]));
     }
 

@@ -30,6 +30,15 @@ final class ProviderErrorFormatter
         return \is_array($data['error'] ?? null) ? $data['error'] : [];
     }
 
+    public static function formatBody(string $body): string
+    {
+        $formatted = self::format(self::decodeError($body));
+
+        return '' !== $formatted
+            ? $formatted
+            : mb_substr(trim(preg_replace('/\s+/', ' ', $body) ?? ''), 0, 200);
+    }
+
     /**
      * Format only the structured code/type/param fields as "[code/type/param]".
      *

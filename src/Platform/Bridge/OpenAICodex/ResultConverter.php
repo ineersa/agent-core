@@ -106,12 +106,7 @@ final class ResultConverter implements ResultConverterInterface
         }
     }
 
-    /**
-     * Extract a privacy-safe diagnostic message from an HTTP error response.
-     *
-     * Returns the most informative available detail while keeping the result
-     * safe for logging (truncated, no tokens/account IDs/prompts).
-     */
+    /** Extract the most useful bounded diagnostic from an HTTP error response. */
     private function extractErrorDiagnostics(ResponseInterface $response): string
     {
         $statusCode = $response->getStatusCode();
@@ -169,34 +164,17 @@ final class ResultConverter implements ResultConverterInterface
         return \sprintf('"%s"', $preview);
     }
 
-    /**
-     * Privacy-safe exception text for generic non-2xx statuses (not 400/401/429).
-     *
-     * Never includes provider-controlled message bodies, error_description, detail,
-     * or non-JSON body previews.
-     */
     private function formatGenericHttpExceptionMessage(int $statusCode, ResponseInterface $response): string
     {
-        $structural = $this->extractAllowlistedStructuralErrorMetadata($response);
-        if ('' !== $structural) {
-            return \sprintf('HTTP %d: %s', $statusCode, $structural);
-        }
-
-        return \sprintf('HTTP %d', $statusCode);
-    }
-
-    /**
-     * Allowlisted JSON error metadata only (code, type, param) — bounded, no free-text message.
-     */
-    private function extractAllowlistedStructuralErrorMetadata(ResponseInterface $response): string
-    {
         try {
-            $body = $response->getContent(false);
+            $diagnostic = ProviderErrorFormatter::formatBody($response->getContent(false));
         } catch (\Throwable) {
-            return '';
+            $diagnostic = '';
         }
 
-        return ProviderErrorFormatter::formatFields(ProviderErrorFormatter::decodeError($body));
+        return '' !== $diagnostic
+            ? \sprintf('HTTP %d: %s', $statusCode, $diagnostic)
+            : \sprintf('HTTP %d', $statusCode);
     }
 
     /**
@@ -464,14 +442,7 @@ final class ResultConverter implements ResultConverterInterface
         ];
     }
 
-    /**
-     * Privacy-safe stream error text: allowlisted code/type/param plus a
-     * bounded provider message.  An invalid request keeps its structured
-     * identity and actionable message instead of collapsing to a bare
-     * "[code/type/param]" token.
-     *
-     * @param array{code?: string|null, type?: string|null, param?: string|null, message?: string|null} $error
-     */
+    /** @param array{code?: string|null, type?: string|null, param?: string|null, message?: string|null} $error */
     private function generateErrorMessage(array $error): string
     {
         $text = ProviderErrorFormatter::format($error);
