@@ -1020,4 +1020,30 @@ final class RuntimeEventPollerTest extends TestCase
         // lastSeq advanced to the highest seq in the batch (35, not 20)
         $this->assertSame(35, $this->state->lastSeq);
     }
+
+    public function testFailedEventKeepsCursorAndRetriesTheRemainingBatch(): void
+    {
+        $first = new RuntimeEvent(type: RuntimeEventTypeEnum::TurnStarted->value, runId: 'test-run', seq: 1);
+        $second = new RuntimeEvent(type: RuntimeEventTypeEnum::TurnStarted->value, runId: 'test-run', seq: 2);
+        $attempts = 0;
+
+        $this->client->expects($this->once())
+            ->method('events')
+            ->with('test-run')
+            ->willReturn([$first, $second]);
+        $this->projector->method('accept')->willReturnCallback(static function () use (&$attempts): void {
+            ++$attempts;
+            if (1 === $attempts) {
+                throw new \RuntimeException('projection failed');
+            }
+        });
+
+        $this->assertNull($this->poller->poll($this->state, $this->client));
+        $this->assertSame(0, $this->state->lastSeq, 'A failed event must not advance the canonical cursor.');
+
+        $this->state->lastPoll = 0.0;
+        $this->assertNull($this->poller->poll($this->state, $this->client));
+        $this->assertSame(2, $this->state->lastSeq, 'The retained suffix must be applied after the failed event succeeds.');
+        $this->assertSame(3, $attempts, 'The failed event and its following event must both be retried.');
+    }
 }

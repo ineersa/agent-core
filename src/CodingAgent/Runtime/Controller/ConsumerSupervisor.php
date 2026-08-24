@@ -71,6 +71,12 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
      */
     private const int CONSUMER_KEEPALIVE_SECONDS = 5;
 
+    /**
+     * Idle poll delay passed to messenger:consume in seconds (10ms).
+     * Symfony converts this CLI value to microseconds for Worker::run().
+     */
+    private const float CONSUMER_SLEEP_SECONDS = 0.01;
+
     /** Max bytes of stderr tail retained per consumer for crash diagnostics. */
     private const int STDERR_TAIL_MAX_BYTES = 16_384;
 
@@ -131,9 +137,9 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
                     $transportName,
                     '--no-interaction',
                     '--memory-limit='.self::CONSUMER_MEMORY_LIMIT,
-                    // Explicit value keeps argv stable for tests and avoids relying on
-                    // Symfony's optional-default parsing when the option is present.
+                    // Explicit values avoid Symfony's one-second default idle sleep.
                     '--keepalive='.self::CONSUMER_KEEPALIVE_SECONDS,
+                    '--sleep='.self::CONSUMER_SLEEP_SECONDS,
                 ],
                 cwd: $cwd,
                 env: $env,

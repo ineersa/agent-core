@@ -29,6 +29,15 @@ final class RuntimeEventPoller
     /** Polling interval in seconds (50ms). */
     private const float POLL_INTERVAL = 0.05;
 
+    /**
+     * Events already consumed from the process pipe but not yet successfully
+     * applied. Retain only a failed suffix so a projector failure cannot lose
+     * a canonical event before its sequence cursor advances.
+     *
+     * @var list<RuntimeEvent>
+     */
+    private array $pendingEvents = [];
+
     public function __construct(
         private readonly TuiRuntimeEventApplier $eventApplier,
         private readonly LoggerInterface $logger,
@@ -65,7 +74,9 @@ final class RuntimeEventPoller
         $state->lastPoll = $now;
 
         try {
-            $events = RuntimeEventCallbacks::eventList($client, $state->handle->runId);
+            $events = [] === $this->pendingEvents
+                ? RuntimeEventCallbacks::eventList($client, $state->handle->runId)
+                : $this->pendingEvents;
             if ([] === $events) {
                 $state->runtimePollErrorCount = 0;
                 $state->lastRuntimePollError = '';
@@ -91,7 +102,7 @@ final class RuntimeEventPoller
                 $onToolTerminal,
             );
 
-            foreach ($events as $runtimeEvent) {
+            foreach ($events as $index => $runtimeEvent) {
                 $seq = $runtimeEvent->seq;
 
                 // Seq 0 marks transient streaming events that do not
@@ -101,12 +112,10 @@ final class RuntimeEventPoller
                     continue;
                 }
 
-                if (0 !== $seq) {
-                    $state->lastSeq = $seq;
-                }
                 $hasNew = true;
 
-                $this->eventApplier->apply($state, $runtimeEvent);
+                try {
+                    $this->eventApplier->apply($state, $runtimeEvent);
 
                 // ── History position change: rebuild transcript wholesale ──
                 // The applier resets live projector state; projected blocks come from
@@ -160,6 +169,9 @@ final class RuntimeEventPoller
                     // Skip queued follow-up dispatch, callback handlers, and processing
                     // placeholder removal — all already handled by the applier's early
                     // return. The transcript has been wholesale-replaced above.
+                    if (0 !== $seq) {
+                        $state->lastSeq = $seq;
+                    }
                     continue;
                 }
 
@@ -212,15 +224,27 @@ final class RuntimeEventPoller
                 // Projection is handled by TuiRuntimeEventApplier::apply() above.
                 $callbacks->dispatch($runtimeEvent, $state->handle->runId);
 
-                if (!$processingRemoved) {
-                    $beforeCount = \count($state->transcript);
-                    $state->removeTrailingProcessingPlaceholder();
-                    if (\count($state->transcript) < $beforeCount) {
-                        $removedProcessing = true;
+                    if (!$processingRemoved) {
+                        $beforeCount = \count($state->transcript);
+                        $state->removeTrailingProcessingPlaceholder();
+                        if (\count($state->transcript) < $beforeCount) {
+                            $removedProcessing = true;
+                        }
+                        $processingRemoved = true;
                     }
-                    $processingRemoved = true;
+
+                    // Advance only after projection, callbacks, and local state changes
+                    // have all succeeded. A failed event and its suffix stay retryable.
+                    if (0 !== $seq) {
+                        $state->lastSeq = $seq;
+                    }
+                } catch (\Throwable $e) {
+                    $this->pendingEvents = \array_slice($events, $index);
+
+                    throw $e;
                 }
             }
+            $this->pendingEvents = [];
 
             if ($hasRunHistoryPositionChanged) {
                 // Wholesale position replace already applied; drain projector dirty set for any
