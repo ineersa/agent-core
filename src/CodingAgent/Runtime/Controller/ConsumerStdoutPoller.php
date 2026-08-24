@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
+use Ineersa\CodingAgent\Runtime\Process\RuntimeEventPerRunCompactBuffer;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
@@ -83,6 +84,11 @@ final class ConsumerStdoutPoller
         $complete = substr($buffer, 0, $lastNewline + 1);
         $this->stdoutBuffers[$consumerKey] = substr($buffer, $lastNewline + 1);
 
+        $streamBuffer = new RuntimeEventPerRunCompactBuffer();
+        $pendingRunId = '';
+        $pendingType = '';
+        $pendingKey = '';
+
         foreach (explode("\n", $complete) as $line) {
             $trimmed = trim($line);
             if ('' === $trimmed) {
@@ -96,9 +102,31 @@ final class ConsumerStdoutPoller
 
             try {
                 $event = RuntimeEvent::fromArray($data);
-                $this->emitter->emit($event);
+                if ('' === $event->runId || !RuntimeEventPerRunCompactBuffer::isCoalescableStreamEvent($event)) {
+                    if ('' !== $pendingRunId) {
+                        $this->flushStreamBuffer($streamBuffer, $pendingRunId);
+                        $pendingRunId = '';
+                    }
+                    $this->emitter->emit($event);
+                } else {
+                    $key = RuntimeEventPerRunCompactBuffer::streamCoalesceKey($event);
+                    if ('' !== $pendingRunId
+                        && ($pendingRunId !== $event->runId || $pendingType !== $event->type || $pendingKey !== $key)) {
+                        $this->flushStreamBuffer($streamBuffer, $pendingRunId);
+                        $pendingRunId = '';
+                    }
+
+                    $streamBuffer->ingest($event);
+                    $pendingRunId = $event->runId;
+                    $pendingType = $event->type;
+                    $pendingKey = $key;
+                }
                 $this->consecutiveBadLines[$consumerKey] = 0;
             } catch (\Throwable $e) {
+                if ('' !== $pendingRunId) {
+                    $this->flushStreamBuffer($streamBuffer, $pendingRunId);
+                    $pendingRunId = '';
+                }
                 $bad = ($this->consecutiveBadLines[$consumerKey] ?? 0) + 1;
                 $this->consecutiveBadLines[$consumerKey] = $bad;
 
@@ -133,6 +161,17 @@ final class ConsumerStdoutPoller
                     $this->consecutiveBadLines[$consumerKey] = 0;
                 }
             }
+        }
+
+        if ('' !== $pendingRunId) {
+            $this->flushStreamBuffer($streamBuffer, $pendingRunId);
+        }
+    }
+
+    private function flushStreamBuffer(RuntimeEventPerRunCompactBuffer $streamBuffer, string $runId): void
+    {
+        foreach ($streamBuffer->drain($runId) as $event) {
+            $this->emitter->emit($event);
         }
     }
 }

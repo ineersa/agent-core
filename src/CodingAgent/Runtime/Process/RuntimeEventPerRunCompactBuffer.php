@@ -129,6 +129,33 @@ final class RuntimeEventPerRunCompactBuffer
         $this->tailByRunId = [];
     }
 
+    public static function isCoalescableStreamEvent(RuntimeEvent $event): bool
+    {
+        return \in_array($event->type, [
+            RuntimeEventTypeEnum::AssistantTextStarted->value,
+            RuntimeEventTypeEnum::AssistantTextDelta->value,
+            RuntimeEventTypeEnum::AssistantThinkingStarted->value,
+            RuntimeEventTypeEnum::AssistantThinkingDelta->value,
+            RuntimeEventTypeEnum::ToolCallArgumentsDelta->value,
+            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+        ], true);
+    }
+
+    public static function streamCoalesceKey(RuntimeEvent $event): string
+    {
+        $blockId = self::payloadString($event->payload, 'block_id');
+        if ('' !== $blockId) {
+            return 'block:'.$blockId;
+        }
+
+        $toolCallId = self::payloadString($event->payload, 'tool_call_id');
+        if ('' !== $toolCallId) {
+            return 'tool:'.$toolCallId;
+        }
+
+        return '';
+    }
+
     private function isProtectedControlEvent(RuntimeEvent $event): bool
     {
         return self::isProtectedControlEventStatic($event);
@@ -317,7 +344,7 @@ final class RuntimeEventPerRunCompactBuffer
             $this->tailByRunId[$runId] = [];
         }
 
-        if ($this->isCoalescableStreamEvent($event)) {
+        if (self::isCoalescableStreamEvent($event)) {
             $key = self::streamCoalesceKey($event);
             foreach ($this->tailByRunId[$runId] as $index => $existing) {
                 if (0 !== $existing->seq
@@ -342,18 +369,6 @@ final class RuntimeEventPerRunCompactBuffer
         }
 
         $this->tailByRunId[$runId][] = $event;
-    }
-
-    private function isCoalescableStreamEvent(RuntimeEvent $event): bool
-    {
-        return \in_array($event->type, [
-            RuntimeEventTypeEnum::AssistantTextStarted->value,
-            RuntimeEventTypeEnum::AssistantTextDelta->value,
-            RuntimeEventTypeEnum::AssistantThinkingStarted->value,
-            RuntimeEventTypeEnum::AssistantThinkingDelta->value,
-            RuntimeEventTypeEnum::ToolCallArgumentsDelta->value,
-            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
-        ], true);
     }
 
     private function mergeCoalescedStreamEvent(RuntimeEvent $existing, RuntimeEvent $incoming): RuntimeEvent
@@ -419,21 +434,6 @@ final class RuntimeEventPerRunCompactBuffer
             seq: 0,
             payload: self::mergePayloadChunk($base, $chunk, 'delta'),
         );
-    }
-
-    private static function streamCoalesceKey(RuntimeEvent $event): string
-    {
-        $blockId = self::payloadString($event->payload, 'block_id');
-        if ('' !== $blockId) {
-            return 'block:'.$blockId;
-        }
-
-        $toolCallId = self::payloadString($event->payload, 'tool_call_id');
-        if ('' !== $toolCallId) {
-            return 'tool:'.$toolCallId;
-        }
-
-        return '';
     }
 
     /**

@@ -57,7 +57,7 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
     /**
      * Writes one event to STDOUT when it is a pipe, encoded via {@see JsonlCodec::encodeEvent()}.
      *
-     * @return bool|null null when STDOUT is not a pipe or the handle could not be opened; false when fwrite failed or wrote zero bytes; true when written and flushed
+     * @return bool|null null when STDOUT is not a pipe or the handle could not be opened; false when a write failed or wrote zero bytes; true when written and flushed
      */
     public function write(RuntimeEvent $event): ?bool
     {
@@ -75,9 +75,7 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
         }
 
         $line = JsonlCodec::encodeEvent($event);
-
-        $written = @fwrite(self::$stdout, $line);
-        if (false === $written || 0 === $written) {
+        if (!JsonlCodec::write(self::$stdout, $line)) {
             return false;
         }
 
