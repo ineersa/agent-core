@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
@@ -200,6 +201,46 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             childRunId: $childRunId,
             runStatus: RunStatus::Completed,
         );
+    }
+
+    public function testResumesDistinctFailedAndCancelledArtifactsInParallelViaExistingChildRuns(): void
+    {
+        $parent = 'parent-parallel';
+        $failedArtifactId = 'agent_failed';
+        $failedChildRunId = 'child-failed';
+        $cancelledArtifactId = 'agent_cancelled';
+        $cancelledChildRunId = 'child-cancelled';
+        $this->seedTerminalChild($parent, $failedArtifactId, $failedChildRunId, latestInputTokens: 10, contextWindow: 200_000, artifactStatus: AgentArtifactStatusEnum::Failed);
+        $this->seedTerminalChild($parent, $cancelledArtifactId, $cancelledChildRunId, latestInputTokens: 10, contextWindow: 200_000, artifactStatus: AgentArtifactStatusEnum::Cancelled);
+
+        $followUps = [];
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->exactly(2))
+            ->method('followUp')
+            ->willReturnCallback(static function (string $runId, AgentMessage $message) use (&$followUps): void {
+                $followUps[$runId] = $message;
+            });
+
+        $this->resume(
+            parentRunId: $parent,
+            tasks: [
+                new AgentResumeTaskDTO(artifact_id: $failedArtifactId, task: 'verify failure fix'),
+                new AgentResumeTaskDTO(artifact_id: $cancelledArtifactId, task: 'continue cancellation-safe work'),
+            ],
+            agentRunner: $agentRunner,
+            toolCallId: 'tc-parallel',
+            executionMode: ChildRunBatchExecutionModeEnum::Parallel,
+        );
+
+        $this->assertSame('verify failure fix', $followUps[$failedChildRunId]->content[0]['text']);
+        $this->assertSame('continue cancellation-safe work', $followUps[$cancelledChildRunId]->content[0]['text']);
+        $this->assertSame(AgentArtifactStatusEnum::Running, $this->registry()->get($parent, $failedArtifactId)?->status);
+        $this->assertSame(AgentArtifactStatusEnum::Running, $this->registry()->get($parent, $cancelledArtifactId)?->status);
+
+        $batch = self::getContainer()->get(DeferredSubagentBatchRepository::class)
+            ->findByParentRunAndToolCall($parent, 'tc-parallel');
+        $this->assertNotNull($batch);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $batch->launchStatus);
     }
 
     public function testRejectsNestedParentCaller(): void
@@ -392,9 +433,10 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         string $childRunId,
         int $latestInputTokens,
         ?int $contextWindow,
+        AgentArtifactStatusEnum $artifactStatus = AgentArtifactStatusEnum::Completed,
     ): void {
         $this->registry()->create($parent, $artifactId, $childRunId, 'scout', AgentArtifactKindEnum::Subagent);
-        $this->registry()->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'done');
+        $this->registry()->update($parent, $artifactId, status: $artifactStatus, summary: 'done');
 
         /** @var SerializerInterface $serializer */
         $serializer = self::getContainer()->get(SerializerInterface::class);
