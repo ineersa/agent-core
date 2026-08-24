@@ -33,6 +33,7 @@ final readonly class ExecuteToolCallWorker
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
         private ?EventDispatcherInterface $eventDispatcher = null,
+        private ?ToolExecutionResultStore $resultStore = null,
     ) {
     }
 
@@ -63,6 +64,13 @@ final readonly class ExecuteToolCallWorker
                 } catch (ExceptionInterface $exception) {
                     throw new \RuntimeException('Failed to dispatch tool result to command bus.', previous: $exception);
                 }
+
+                $this->resultStore?->releaseCompleted(
+                    $message->runId(),
+                    $message->toolCallId,
+                    $message->toolName,
+                    $message->toolIdempotencyKey,
+                );
             };
 
             if (null === $this->tracer) {
