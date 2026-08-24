@@ -122,7 +122,8 @@ final class DurableResultConverter extends ResultConverter
 
         if (true === ($options['stream'] ?? false)) {
             if (($code = $response->getStatusCode()) >= 400) {
-                throw new RuntimeException(\sprintf('Unexpected response code %d: "%s"', $code, $response->getContent(false)));
+                $diagnostic = ProviderErrorFormatter::formatBody($response->getContent(false));
+                throw new RuntimeException('' !== $diagnostic ? \sprintf('Unexpected response code %d: %s', $code, $diagnostic) : \sprintf('Unexpected response code %d', $code));
             }
 
             return new StreamResult($this->convertStream($result));
@@ -159,10 +160,13 @@ final class DurableResultConverter extends ResultConverter
                 $this->emit('raw_chunk', $chunkOrdinal, ['data' => $data]);
 
                 if (isset($data['error'])) {
-                    $message = \is_array($data['error']) ? ($data['error']['message'] ?? 'Unknown error') : (string) $data['error'];
-                    $code = \is_array($data['error']) ? ($data['error']['code'] ?? null) : null;
-                    $type = \is_array($data['error']) ? ($data['error']['type'] ?? null) : null;
-                    $errorMessage = \sprintf('Stream error: "%s".', $message);
+                    $error = $data['error'];
+                    $code = \is_array($error) ? ($error['code'] ?? null) : null;
+                    $type = \is_array($error) ? ($error['type'] ?? null) : null;
+                    $diagnostic = \is_array($error)
+                        ? ProviderErrorFormatter::format($error)
+                        : mb_substr(trim((string) $error), 0, 500);
+                    $errorMessage = '' !== $diagnostic ? 'Stream error: '.$diagnostic : 'Stream error.';
 
                     if ($this->vendorIsRateLimitError($code, $type)) {
                         throw new RateLimitExceededException(null, $errorMessage);

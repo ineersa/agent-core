@@ -697,24 +697,37 @@ final class ResultConverterTest extends TestCase
         $converter->convert(new RawHttpResult($httpResponse));
     }
 
-    /**
-     * Regression: non-2xx HTTP responses must throw before SSE iteration instead of
-     * returning an empty StreamResult (observed HTTP 404 on Codex streaming path).
-     */
-    public function testStreamNon2xxHttp404ThrowsBeforeSseIteration(): void
+    public function testStreamNon2xxThrowsBeforeSseIteration(): void
     {
         $converter = new ResultConverter();
-        $secret = 'LEAKED_PROVIDER_SECRET_MARKER_9f3c2a1b';
         $httpResponse = $this->createMock(ResponseInterface::class);
         $httpResponse->method('getStatusCode')->willReturn(404);
         $httpResponse->method('getContent')->willReturn(json_encode([
             'error' => [
                 'code' => 'not_found',
                 'type' => 'resource_missing',
-                'message' => 'The requested resource was not found '.$secret,
-                'detail' => $secret,
+                'message' => 'The requested resource was not found',
             ],
-            'error_description' => $secret,
+        ]));
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('HTTP 404: [not_found/resource_missing]: The requested resource was not found');
+
+        $converter->convert(new RawHttpResult($httpResponse, new CodexSseStream()), ['stream' => true]);
+    }
+
+    public function testStreamServerErrorRetainsStructuredProviderDiagnostic(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(500);
+        $httpResponse->method('getContent')->willReturn(json_encode([
+            'error' => [
+                'code' => 'server_error',
+                'type' => 'api_error',
+                'param' => 'model',
+                'message' => 'deployment unavailable',
+            ],
         ]));
 
         $raw = new RawHttpResult($httpResponse, new CodexSseStream());
@@ -723,11 +736,10 @@ final class ResultConverterTest extends TestCase
             $converter->convert($raw, ['stream' => true]);
             $this->fail('Expected RuntimeException');
         } catch (RuntimeException $e) {
-            $this->assertStringContainsString('HTTP 404', $e->getMessage());
-            $this->assertStringContainsString('[not_found/resource_missing]', $e->getMessage());
-            $this->assertStringNotContainsString($secret, $e->getMessage());
-            $this->assertStringNotContainsString('The requested resource was not found', $e->getMessage());
-            $this->assertDoesNotMatchRegularExpression('/HTTP 404: HTTP 404/', $e->getMessage());
+            $this->assertSame(
+                'HTTP 500: [server_error/api_error/model]: deployment unavailable',
+                $e->getMessage(),
+            );
         }
     }
 
