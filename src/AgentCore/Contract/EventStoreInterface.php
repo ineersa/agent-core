@@ -18,6 +18,16 @@ interface EventStoreInterface
     public function appendMany(array $events): array;
 
     /**
+     * Latest durably appended canonical sequence, or null when the run has no events.
+     */
+    public function latestSequenceFor(string $runId): ?int;
+
+    /**
+     * First canonical event, or null when the run has no events.
+     */
+    public function firstFor(string $runId): ?RunEvent;
+
+    /**
      * Retrieves all events associated with a specific run ID.
      *
      * @return list<RunEvent>

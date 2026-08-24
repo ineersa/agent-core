@@ -37,6 +37,16 @@ final class StreamingCommittedRuntimeEventStore implements EventStoreInterface
         return $persisted;
     }
 
+    public function latestSequenceFor(string $runId): ?int
+    {
+        return $this->inner->latestSequenceFor($runId);
+    }
+
+    public function firstFor(string $runId): ?RunEvent
+    {
+        return $this->inner->firstFor($runId);
+    }
+
     public function allFor(string $runId): array
     {
         return $this->inner->allFor($runId);

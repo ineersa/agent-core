@@ -19,8 +19,6 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
-use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use PHPUnit\Framework\TestCase;
 
@@ -42,7 +40,6 @@ final class RunCommitLoggingTest extends TestCase
             promptStateStore: new InMemoryPromptStateStore(),
             promptStateReplayService: new PromptStateReplayService(),
             replayEventPreparer: new ReplayEventPreparer(),
-            historyReplayFilter: new HistoryReplayFilter(new HistoryProjector()),
         );
 
         $stepDispatcher = new StepDispatcher(new TestMessageBus());
@@ -102,7 +99,6 @@ final class RunCommitLoggingTest extends TestCase
             promptStateStore: new InMemoryPromptStateStore(),
             promptStateReplayService: new PromptStateReplayService(),
             replayEventPreparer: new ReplayEventPreparer(),
-            historyReplayFilter: new HistoryReplayFilter(new HistoryProjector()),
         );
 
         $commit = new RunCommit(
@@ -169,7 +165,6 @@ final class RunCommitLoggingTest extends TestCase
                 promptStateStore: new InMemoryPromptStateStore(),
                 promptStateReplayService: new PromptStateReplayService(),
                 replayEventPreparer: new ReplayEventPreparer(),
-                historyReplayFilter: new HistoryReplayFilter(new HistoryProjector()),
             ),
             stepDispatcher: new StepDispatcher(new TestMessageBus()),
             logger: $logger,
@@ -293,6 +288,20 @@ final class RecordingEventStore implements EventStoreInterface
         }
 
         return $out;
+    }
+
+    public function latestSequenceFor(string $runId): ?int
+    {
+        $events = $this->allFor($runId);
+
+        return [] === $events ? null : $events[array_key_last($events)]->seq;
+    }
+
+    public function firstFor(string $runId): ?RunEvent
+    {
+        $events = $this->allFor($runId);
+
+        return $events[0] ?? null;
     }
 
     public function allFor(string $runId): array

@@ -394,31 +394,33 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
     {
         // Child gate reads RunStarted; usage resolver would also see this store,
         // but the child check short-circuits before threshold evaluation.
-        $this->eventStore->method('allFor')->willReturn([
-            new RunEvent(
-                runId: 'child-run',
-                seq: 1,
-                turnNo: 0,
-                type: RunEventTypeEnum::RunStarted->value,
-                payload: [
-                    'step_id' => 'start-1',
-                    'payload' => [
-                        'system_prompt' => 'child',
-                        'messages' => [],
-                        'metadata' => [
-                            'session' => [
-                                'kind' => 'agent_child',
-                                'parent_run_id' => 'parent-1',
-                                'agent_name' => 'scout',
-                                'artifact_id' => 'agent_child1',
-                            ],
-                            'model' => 'deepseek/deepseek-v4-flash',
-                            'reasoning' => 'medium',
-                            'tools_scope' => ['allowed_tools' => []],
+        $runStarted = new RunEvent(
+            runId: 'child-run',
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'step_id' => 'start-1',
+                'payload' => [
+                    'system_prompt' => 'child',
+                    'messages' => [],
+                    'metadata' => [
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'parent_run_id' => 'parent-1',
+                            'agent_name' => 'scout',
+                            'artifact_id' => 'agent_child1',
                         ],
+                        'model' => 'deepseek/deepseek-v4-flash',
+                        'reasoning' => 'medium',
+                        'tools_scope' => ['allowed_tools' => []],
                     ],
                 ],
-            ),
+            ],
+        );
+        $this->eventStore->method('firstFor')->willReturn($runStarted);
+        $this->eventStore->method('allFor')->willReturn([
+            $runStarted,
             $this->makeLlmStepCompletedEvent(12000),
         ]);
 

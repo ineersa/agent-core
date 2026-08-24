@@ -131,7 +131,7 @@ final readonly class RunCommit
 
             if ($eventsPersisted) {
                 try {
-                    $this->hotPromptStateRebuilder->rebuildHotPromptState($resolvedNextState->runId);
+                    $this->hotPromptStateRebuilder->rebuildHotPromptState($resolvedNextState);
                 } catch (\Throwable $exception) {
                     // Hot prompt rebuild is best-effort — the previous
                     // hot state is still valid. Log the failure so

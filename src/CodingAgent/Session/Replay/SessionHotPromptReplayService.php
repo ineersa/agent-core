@@ -15,8 +15,9 @@ use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\HotPromptIntegrityVerifierInterface;
 use Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\PromptState;
-use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
+use Ineersa\AgentCore\Domain\Run\RunState;
 
 final readonly class SessionHotPromptReplayService implements HotPromptStateRebuilderInterface, HotPromptIntegrityVerifierInterface
 {
@@ -25,38 +26,28 @@ final readonly class SessionHotPromptReplayService implements HotPromptStateRebu
         private PromptStateStoreInterface $promptStateStore,
         private PromptStateReplayService $promptStateReplayService,
         private ReplayEventPreparer $replayEventPreparer,
-        private HistoryReplayFilter $historyReplayFilter,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
     ) {
     }
 
-    public function rebuildHotPromptState(string $runId): PromptState
+    public function rebuildHotPromptState(RunState $state): PromptState
     {
-        $rebuild = function () use ($runId): PromptState {
-            $resolvedReplayEvents = $this->eventsForReplay($runId);
-
-            // Filter to retained history. Messages come from filtered events;
-            // integrity describes the full canonical stream.
-            $canonicalEvents = $resolvedReplayEvents->events;
-            $filteredEvents = $this->historyReplayFilter->filter($canonicalEvents);
-
-            $messages = $this->promptStateReplayService->replayMessages($filteredEvents);
-            $integrity = $this->integrityFromResolvedReplayEvents($runId, $resolvedReplayEvents);
-
+        $rebuild = function () use ($state): PromptState {
+            $messages = array_map(static fn (AgentMessage $message): array => $message->toArray(), $state->messages);
             $promptState = new PromptState(
-                runId: $runId,
-                source: $resolvedReplayEvents->source,
-                eventCount: $integrity->eventCount,
-                lastSeq: $integrity->lastSeq,
-                missingSequences: $integrity->missingSequences,
-                isContiguous: $integrity->isContiguous,
+                runId: $state->runId,
+                source: 'run_state',
+                eventCount: 0,
+                lastSeq: $state->lastSeq,
+                missingSequences: [],
+                isContiguous: true,
                 tokenEstimate: $this->promptStateReplayService->estimateTokens($messages),
                 messages: $messages,
             );
 
-            $this->promptStateStore->save($runId, $promptState);
-            $this->metrics?->incrementReplayRebuildCount($resolvedReplayEvents->source);
+            $this->promptStateStore->save($state->runId, $promptState);
+            $this->metrics?->incrementReplayRebuildCount('run_state');
 
             return $promptState;
         };
@@ -66,7 +57,7 @@ final readonly class SessionHotPromptReplayService implements HotPromptStateRebu
         }
 
         return $this->tracer->inSpan('replay.rebuild_hot_prompt_state', [
-            'run_id' => $runId,
+            'run_id' => $state->runId,
         ], $rebuild);
     }
 

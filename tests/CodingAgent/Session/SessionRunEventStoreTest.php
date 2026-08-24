@@ -100,6 +100,27 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertSame('tool_execution_start', $events[2]->type);
     }
 
+    public function testFirstAndLatestReadCanonicalHeadAndTail(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $first = $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
+        $last = $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'turn_advanced'));
+
+        $this->assertSame($first->seq, $this->store->firstFor($runId)?->seq);
+        $this->assertSame($last->seq, $this->store->latestSequenceFor($runId));
+    }
+
+    public function testLatestSequenceRejectsTrailingPartialRecordLikeAllFor(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
+        file_put_contents($this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl', '{"partial":', \FILE_APPEND);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('not parseable as JSON');
+        $this->store->latestSequenceFor($runId);
+    }
+
     public function testEventsSurviveStoreRecreation(): void
     {
         // Simulate process restart: write events, create new store, read back

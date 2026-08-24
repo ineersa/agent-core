@@ -121,6 +121,26 @@ final class AgentChildRunEventStore implements EventStoreInterface
         }
     }
 
+    public function latestSequenceFor(string $runId): ?int
+    {
+        $events = $this->allFor($runId);
+
+        return [] === $events ? null : $events[array_key_last($events)]->seq;
+    }
+
+    public function firstFor(string $runId): ?RunEvent
+    {
+        if ($runId !== $this->agentRunId) {
+            return null;
+        }
+
+        foreach ($this->streamRunEventsFromPath($this->eventsPath()) as $event) {
+            return $event;
+        }
+
+        return null;
+    }
+
     /**
      * @return list<RunEvent>
      */

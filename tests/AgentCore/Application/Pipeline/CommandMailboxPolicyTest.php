@@ -39,8 +39,6 @@ use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
-use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -578,7 +576,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $eventStore = new InMemoryEventStore();
         $commandStore = new InMemoryCommandStore();
 
-        $replayService = new SessionHotPromptReplayService($eventStore, new InMemoryPromptStateStore(), new PromptStateReplayService(), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
+        $replayService = new SessionHotPromptReplayService($eventStore, new InMemoryPromptStateStore(), new PromptStateReplayService(), new ReplayEventPreparer());
 
         $commandBus = new TestMessageBus();
         $executionBus = new TestMessageBus();

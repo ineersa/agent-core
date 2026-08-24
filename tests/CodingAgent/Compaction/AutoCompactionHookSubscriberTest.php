@@ -1152,32 +1152,30 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         // Metadata reader uses its own event store with RunStarted child shape.
         // Provider usage resolver keeps the shared eventStore mock for threshold.
         $childEventStore = $this->createMock(EventStoreInterface::class);
-        $childEventStore->method('allFor')->willReturn([
-            new RunEvent(
-                runId: 'run-1',
-                seq: 1,
-                turnNo: 0,
-                type: RunEventTypeEnum::RunStarted->value,
-                payload: [
-                    'step_id' => 'start-1',
-                    'payload' => [
-                        'system_prompt' => 'child',
-                        'messages' => [],
-                        'metadata' => [
-                            'session' => [
-                                'kind' => 'agent_child',
-                                'parent_run_id' => 'parent-1',
-                                'agent_name' => 'scout',
-                                'artifact_id' => 'agent_child1',
-                            ],
-                            'model' => 'deepseek/deepseek-v4-flash',
-                            'reasoning' => 'medium',
-                            'tools_scope' => ['allowed_tools' => []],
+        $childEventStore->method('firstFor')->willReturn(new RunEvent(
+            runId: 'run-1',
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'step_id' => 'start-1',
+                'payload' => [
+                    'system_prompt' => 'child',
+                    'messages' => [],
+                    'metadata' => [
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'parent_run_id' => 'parent-1',
+                            'agent_name' => 'scout',
+                            'artifact_id' => 'agent_child1',
                         ],
+                        'model' => 'deepseek/deepseek-v4-flash',
+                        'reasoning' => 'medium',
+                        'tools_scope' => ['allowed_tools' => []],
                     ],
                 ],
-            ),
-        ]);
+            ],
+        ));
         $childReader = new SubagentRunMetadataReader($childEventStore, AttributeSerializerValidatorTestFactory::denormalizer());
 
         // Fresh mock: child gate must return before prepare().

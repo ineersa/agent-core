@@ -400,8 +400,8 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         );
 
         $eventStore = $this->createStub(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
-        $eventStore->method('allFor')->willReturnCallback(
-            static fn (string $runId): array => $childRunId === $runId ? [$event] : [],
+        $eventStore->method('firstFor')->willReturnCallback(
+            static fn (string $runId): ?\Ineersa\AgentCore\Domain\Event\RunEvent => $childRunId === $runId ? $event : null,
         );
 
         return new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
@@ -419,7 +419,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
     private function metadataReader(): SubagentRunMetadataReader
     {
         $eventStore = $this->createStub(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
-        $eventStore->method('allFor')->willReturn([]);
+        $eventStore->method('firstFor')->willReturn(null);
 
         return new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
     }

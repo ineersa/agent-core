@@ -50,34 +50,32 @@ final class ChildExtensionOmIsolationTest extends TestCase
         });
 
         $eventStore = $this->createStub(EventStoreInterface::class);
-        $eventStore->method('allFor')->willReturn([
-            new RunEvent(
-                runId: 'child-om-1',
-                seq: 1,
-                turnNo: 0,
-                type: RunEventTypeEnum::RunStarted->value,
-                payload: [
-                    'step_id' => 's',
-                    'payload' => [
-                        'metadata' => [
-                            'session' => [
-                                'kind' => 'agent_child',
-                                'parent_run_id' => 'parent',
-                                'agent_name' => 'scout',
-                                'artifact_id' => 'agent_om',
-                            ],
-                            'model' => 'deepseek/deepseek-v4-flash',
-                            'reasoning' => 'medium',
-                            'tools_scope' => ['allowed_tools' => []],
-                            // SafeGuard only — OM absent.
-                            'extensions' => [
-                                'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
-                            ],
+        $eventStore->method('firstFor')->willReturn(new RunEvent(
+            runId: 'child-om-1',
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'step_id' => 's',
+                'payload' => [
+                    'metadata' => [
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'parent_run_id' => 'parent',
+                            'agent_name' => 'scout',
+                            'artifact_id' => 'agent_om',
+                        ],
+                        'model' => 'deepseek/deepseek-v4-flash',
+                        'reasoning' => 'medium',
+                        'tools_scope' => ['allowed_tools' => []],
+                        // SafeGuard only — OM absent.
+                        'extensions' => [
+                            'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
                         ],
                     ],
                 ],
-            ),
-        ]);
+            ],
+        ));
 
         $subscriber = new ExtensionAfterTurnCommitHookSubscriber(
             $registry,
@@ -115,33 +113,31 @@ final class ChildExtensionOmIsolationTest extends TestCase
         });
 
         $eventStore = $this->createStub(EventStoreInterface::class);
-        $eventStore->method('allFor')->willReturn([
-            new RunEvent(
-                runId: 'child-om-2',
-                seq: 1,
-                turnNo: 0,
-                type: RunEventTypeEnum::RunStarted->value,
-                payload: [
-                    'step_id' => 's',
-                    'payload' => [
-                        'metadata' => [
-                            'session' => [
-                                'kind' => 'agent_child',
-                                'parent_run_id' => 'parent',
-                                'agent_name' => 'scout',
-                                'artifact_id' => 'agent_om',
-                            ],
-                            'model' => 'deepseek/deepseek-v4-flash',
-                            'reasoning' => 'medium',
-                            'tools_scope' => ['allowed_tools' => []],
-                            'extensions' => [
-                                'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
-                            ],
+        $eventStore->method('firstFor')->willReturn(new RunEvent(
+            runId: 'child-om-2',
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'step_id' => 's',
+                'payload' => [
+                    'metadata' => [
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'parent_run_id' => 'parent',
+                            'agent_name' => 'scout',
+                            'artifact_id' => 'agent_om',
+                        ],
+                        'model' => 'deepseek/deepseek-v4-flash',
+                        'reasoning' => 'medium',
+                        'tools_scope' => ['allowed_tools' => []],
+                        'extensions' => [
+                            'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
                         ],
                     ],
                 ],
-            ),
-        ]);
+            ],
+        ));
 
         $worker = new ExtensionAgentJobWorker(
             $jobs,

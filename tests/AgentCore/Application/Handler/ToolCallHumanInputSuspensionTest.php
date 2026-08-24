@@ -345,10 +345,10 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 eventStore: $eventStore,
                 commandStore: $commandStore,
                 hotPromptStateRebuilder: new class implements \Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface {
-                    public function rebuildHotPromptState(string $runId): \Ineersa\AgentCore\Domain\Run\PromptState
+                    public function rebuildHotPromptState(RunState $state): \Ineersa\AgentCore\Domain\Run\PromptState
                     {
                         return new \Ineersa\AgentCore\Domain\Run\PromptState(
-                            runId: $runId,
+                            runId: $state->runId,
                             source: 'test',
                             eventCount: 0,
                             lastSeq: 0,
@@ -485,10 +485,10 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 eventStore: $eventStore,
                 commandStore: $commandStore,
                 hotPromptStateRebuilder: new class implements \Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface {
-                    public function rebuildHotPromptState(string $runId): \Ineersa\AgentCore\Domain\Run\PromptState
+                    public function rebuildHotPromptState(RunState $state): \Ineersa\AgentCore\Domain\Run\PromptState
                     {
                         return new \Ineersa\AgentCore\Domain\Run\PromptState(
-                            runId: $runId,
+                            runId: $state->runId,
                             source: 'test',
                             eventCount: 0,
                             lastSeq: 0,
@@ -611,10 +611,10 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 eventStore: $eventStore,
                 commandStore: $commandStore,
                 hotPromptStateRebuilder: new class implements \Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface {
-                    public function rebuildHotPromptState(string $runId): \Ineersa\AgentCore\Domain\Run\PromptState
+                    public function rebuildHotPromptState(RunState $state): \Ineersa\AgentCore\Domain\Run\PromptState
                     {
                         return new \Ineersa\AgentCore\Domain\Run\PromptState(
-                            runId: $runId,
+                            runId: $state->runId,
                             source: 'test',
                             eventCount: 0,
                             lastSeq: 0,

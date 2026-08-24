@@ -190,6 +190,20 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
             /**
              * @return list<RunEvent>
              */
+            public function latestSequenceFor(string $runId): ?int
+            {
+                $events = $this->allFor($runId);
+
+                return [] === $events ? null : $events[array_key_last($events)]->seq;
+            }
+
+            public function firstFor(string $runId): ?RunEvent
+            {
+                $events = $this->allFor($runId);
+
+                return $events[0] ?? null;
+            }
+
             public function allFor(string $runId): array
             {
                 return array_values(

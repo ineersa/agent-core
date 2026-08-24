@@ -103,20 +103,15 @@ final class SubagentRunMetadataReader implements ChildRunExtensionAllowlistReade
             return $this->resolved[$runId];
         }
 
-        $events = $this->eventStore->allFor($runId);
-
-        foreach ($events as $event) {
-            if (RunEventTypeEnum::RunStarted->value !== $event->type) {
-                continue;
-            }
-
-            $metadata = $this->denormalizer->denormalize($event->payload, RunStartedMetadataDTO::class);
-            $this->remember($runId, $metadata);
-
-            return $metadata;
+        $event = $this->eventStore->firstFor($runId);
+        if (null === $event || RunEventTypeEnum::RunStarted->value !== $event->type) {
+            return null;
         }
 
-        return null;
+        $metadata = $this->denormalizer->denormalize($event->payload, RunStartedMetadataDTO::class);
+        $this->remember($runId, $metadata);
+
+        return $metadata;
     }
 
     private function remember(string $runId, RunStartedMetadataDTO $metadata): void

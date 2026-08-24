@@ -71,32 +71,30 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->once())
-            ->method('allFor')
+            ->method('firstFor')
             ->with('parent-child-run')
-            ->willReturn([
-                new RunEvent(
-                    runId: 'parent-child-run',
-                    seq: 1,
-                    turnNo: 0,
-                    type: RunEventTypeEnum::RunStarted->value,
-                    payload: [
-                        'step_id' => 's',
-                        'payload' => [
-                            'metadata' => [
-                                'session' => [
-                                    'kind' => 'agent_child',
-                                    'parent_run_id' => 'grandparent',
-                                    'agent_name' => 'scout',
-                                    'artifact_id' => 'agent_abc',
-                                ],
-                                'model' => 'deepseek/deepseek-v4-flash',
-                                'reasoning' => 'medium',
-                                'tools_scope' => ['allowed_tools' => []],
+            ->willReturn(new RunEvent(
+                runId: 'parent-child-run',
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: [
+                    'step_id' => 's',
+                    'payload' => [
+                        'metadata' => [
+                            'session' => [
+                                'kind' => 'agent_child',
+                                'parent_run_id' => 'grandparent',
+                                'agent_name' => 'scout',
+                                'artifact_id' => 'agent_abc',
                             ],
+                            'model' => 'deepseek/deepseek-v4-flash',
+                            'reasoning' => 'medium',
+                            'tools_scope' => ['allowed_tools' => []],
                         ],
                     ],
-                ),
-            ]);
+                ],
+            ));
 
         $metadataReader = new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
 
@@ -296,6 +294,20 @@ final class ProgressAppendInputRecordingEventStore implements EventStoreInterfac
         }
 
         return $out;
+    }
+
+    public function latestSequenceFor(string $runId): ?int
+    {
+        $events = $this->allFor($runId);
+
+        return [] === $events ? null : $events[array_key_last($events)]->seq;
+    }
+
+    public function firstFor(string $runId): ?RunEvent
+    {
+        $events = $this->allFor($runId);
+
+        return $events[0] ?? null;
     }
 
     public function allFor(string $runId): array
