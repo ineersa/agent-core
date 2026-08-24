@@ -39,6 +39,29 @@ final class ChildAwareEventStoreTest extends IsolatedKernelTestCase
         $this->assertSame([], $events);
     }
 
+    public function testRangeForDelegatesParentEvents(): void
+    {
+        $store = self::getContainer()->get(ChildAwareEventStore::class);
+        $store->append(new RunEvent(
+            runId: 'parent-range-router',
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: [],
+        ));
+        $store->append(new RunEvent(
+            runId: 'parent-range-router',
+            seq: 2,
+            turnNo: 1,
+            type: RunEventTypeEnum::TurnAdvanced->value,
+            payload: [],
+        ));
+
+        $events = iterator_to_array($store->rangeFor('parent-range-router', 2, 2));
+
+        $this->assertSame([2], array_map(static fn (RunEvent $event): int => $event->seq, $events));
+    }
+
     public function testAppendManyHandlesMultipleParentEvents(): void
     {
         $store = self::getContainer()->get(ChildAwareEventStore::class);

@@ -304,6 +304,15 @@ final class RecordingEventStore implements EventStoreInterface
         return $events[0] ?? null;
     }
 
+    public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+    {
+        foreach ($this->appended as $event) {
+            if ($event->runId === $runId && $event->seq >= $startSeq && $event->seq <= $endSeq) {
+                yield $event;
+            }
+        }
+    }
+
     public function allFor(string $runId): array
     {
         return array_values(array_filter(

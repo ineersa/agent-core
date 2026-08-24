@@ -68,6 +68,15 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
                 return $events[0] ?? null;
             }
 
+            public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                foreach ($this->events as $event) {
+                    if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
+                        yield $event;
+                    }
+                }
+            }
+
             public function allFor(string $runId): array
             {
                 return $this->events;

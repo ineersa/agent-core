@@ -14,6 +14,9 @@ final class InMemoryEventStore implements EventStoreInterface
     public int $firstForCalls = 0;
 
     public int $latestSequenceForCalls = 0;
+
+    public int $rangeForCalls = 0;
+
     /** @var array<string, list<RunEvent>> */
     private array $eventsByRun = [];
 
@@ -72,6 +75,19 @@ final class InMemoryEventStore implements EventStoreInterface
         usort($events, static fn (RunEvent $l, RunEvent $r): int => $l->seq <=> $r->seq);
 
         return $events[0] ?? null;
+    }
+
+    public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+    {
+        ++$this->rangeForCalls;
+        $events = $this->eventsByRun[$runId] ?? [];
+        usort($events, static fn (RunEvent $l, RunEvent $r): int => $l->seq <=> $r->seq);
+
+        foreach ($events as $event) {
+            if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
+                yield $event;
+            }
+        }
     }
 
     public function allFor(string $runId): array

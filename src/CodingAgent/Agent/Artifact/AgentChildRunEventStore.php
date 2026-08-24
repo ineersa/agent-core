@@ -142,6 +142,22 @@ final class AgentChildRunEventStore implements EventStoreInterface
     }
 
     /**
+     * @return \Generator<int, RunEvent>
+     */
+    public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+    {
+        if ($runId !== $this->agentRunId || $startSeq < 1 || $endSeq < $startSeq) {
+            return;
+        }
+
+        foreach ($this->streamRunEventsFromPath($this->eventsPath()) as $event) {
+            if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
+                yield $event;
+            }
+        }
+    }
+
+    /**
      * @return list<RunEvent>
      */
     public function allFor(string $runId): array

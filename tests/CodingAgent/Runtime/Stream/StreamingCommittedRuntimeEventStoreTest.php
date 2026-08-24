@@ -67,6 +67,19 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
         $this->assertSame([1, 2], array_map(static fn (RuntimeEvent $e): int => $e->seq, $sink->emitted));
     }
 
+    public function testRangeForDelegatesWithoutEmitting(): void
+    {
+        $inner = new RecordingEventStore();
+        $sink = new RecordingCommittedStdoutSink();
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
+        $store = new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, true);
+
+        iterator_to_array($store->rangeFor('run-a', 1, 1));
+
+        $this->assertSame(1, $inner->rangeForCalls);
+        $this->assertSame([], $sink->emitted);
+    }
+
     public function testStreamingDisabledSkipsStdoutEmit(): void
     {
         $inner = new RecordingEventStore();
@@ -88,6 +101,8 @@ final class RecordingEventStore implements EventStoreInterface
 {
     /** @var list<RunEvent> */
     public array $appended = [];
+
+    public int $rangeForCalls = 0;
 
     public function append(RunEvent $event): RunEvent
     {
@@ -119,6 +134,13 @@ final class RecordingEventStore implements EventStoreInterface
         $events = $this->allFor($runId);
 
         return $events[0] ?? null;
+    }
+
+    public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+    {
+        ++$this->rangeForCalls;
+
+        return [];
     }
 
     public function allFor(string $runId): array

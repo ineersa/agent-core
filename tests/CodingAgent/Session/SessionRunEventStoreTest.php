@@ -100,6 +100,37 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertSame('tool_execution_start', $events[2]->type);
     }
 
+    public function testRangeForStreamsInclusiveOrderedBoundsAcrossHolesWithoutAllForSnapshot(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'turn_advanced'));
+        $this->store->allFor($runId);
+
+        $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        file_put_contents($eventsPath, json_encode([
+            'schema_version' => SchemaVersion::CURRENT,
+            'run_id' => $runId,
+            'seq' => 5,
+            'turn_no' => 2,
+            'type' => 'agent_end',
+            'payload' => [],
+            'ts' => '2026-01-01T00:00:00+00:00',
+        ], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+
+        $events = iterator_to_array($this->store->rangeFor($runId, 2, 5));
+
+        $this->assertSame([2, 5], array_map(static fn (RunEvent $event): int => $event->seq, $events));
+        $this->assertSame(['turn_advanced', 'agent_end'], array_map(static fn (RunEvent $event): string => $event->type, $events));
+    }
+
+    public function testRangeForReturnsEmptyForInvalidRangeAndMissingRun(): void
+    {
+        $this->assertSame([], iterator_to_array($this->store->rangeFor('missing', 1, 1)));
+        $this->assertSame([], iterator_to_array($this->store->rangeFor('missing', 0, 1)));
+        $this->assertSame([], iterator_to_array($this->store->rangeFor('missing', 2, 1)));
+    }
+
     public function testFirstAndLatestReadCanonicalHeadAndTail(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
