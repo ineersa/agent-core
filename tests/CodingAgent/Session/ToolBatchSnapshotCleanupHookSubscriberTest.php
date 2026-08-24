@@ -226,6 +226,11 @@ final class CleanupHookSubscriberNoOpEventStore implements EventStoreInterface
         return [];
     }
 
+    public function reverseFor(string $runId): iterable
+    {
+        return [];
+    }
+
     public function allFor(string $runId): array
     {
         return [];

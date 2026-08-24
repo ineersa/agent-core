@@ -77,6 +77,11 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
                 }
             }
 
+            public function reverseFor(string $runId): iterable
+            {
+                return [];
+            }
+
             public function allFor(string $runId): array
             {
                 return $this->events;

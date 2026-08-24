@@ -62,6 +62,11 @@ final class ExtensionSessionEventReaderTest extends TestCase
                 throw new \RuntimeException('store failure');
             }
 
+            public function reverseFor(string $runId): iterable
+            {
+                return [];
+            }
+
             public function allFor(string $runId): array
             {
                 throw new \LogicException('allFor must not be used');

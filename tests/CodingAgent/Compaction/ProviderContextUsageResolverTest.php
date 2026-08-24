@@ -380,15 +380,14 @@ final class ProviderContextUsageResolverTest extends TestCase
     }
 
     /**
-     * Configure the mock to return events for allFor() calls.
+     * Configure the mock to stream canonical events from newest to oldest.
      *
-     * The resolver may call allFor() multiple times per method
-     * (once for provider measurement, once for auto start lookup).
+     * @param list<RunEvent> $events
      */
     private function mockEvents(array $events): void
     {
-        $this->eventStore->method('allFor')
-            ->willReturn($events);
+        $this->eventStore->method('reverseFor')
+            ->willReturn(array_reverse($events));
     }
 
     // ── Helpers ───────────────────────────────────────────────────

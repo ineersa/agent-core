@@ -162,6 +162,14 @@ final readonly class ExecuteToolCallWorker
 
             if ($this->isDeferredOutcome($toolResult)) {
                 $correlation = $this->registerDeferredExecution($message, $toolResult);
+                // The repository is now the durable dedupe source for deferred
+                // re-delivery; retaining the process-local marker would leak it.
+                $this->resultStore->releaseCompleted(
+                    $message->runId(),
+                    $message->toolCallId,
+                    $message->toolName,
+                    $message->toolIdempotencyKey,
+                );
                 $this->dispatchDeferredRegistered($correlation);
 
                 return null;

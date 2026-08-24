@@ -91,6 +91,16 @@ final class ChildAwareEventStore implements EventStoreInterface
         return $this->parentStore->rangeFor($runId, $startSeq, $endSeq);
     }
 
+    public function reverseFor(string $runId): iterable
+    {
+        $childStore = $this->resolveChildStore($runId);
+        if (null !== $childStore) {
+            return $childStore->reverseFor($runId);
+        }
+
+        return $this->parentStore->reverseFor($runId);
+    }
+
     public function allFor(string $runId): array
     {
         $childStore = $this->resolveChildStore($runId);

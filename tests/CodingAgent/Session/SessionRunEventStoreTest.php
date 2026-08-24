@@ -157,6 +157,44 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertSame($last->seq, $this->store->latestSequenceFor($runId));
     }
 
+    public function testLatestSequenceSkipsTrailingIncompatibleRecord(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $last = $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
+        file_put_contents($this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl', json_encode([
+            'schema_version' => '999.0',
+            'run_id' => $runId,
+            'seq' => $last->seq + 1,
+            'turn_no' => 1,
+            'type' => 'future_event',
+            'payload' => [],
+        ], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+
+        $this->assertSame($last->seq, $this->store->latestSequenceFor($runId));
+    }
+
+    public function testReverseForReadsNewestRelevantTailBeforeLargePrefix(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $path = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        mkdir(\dirname($path), 0777, true);
+        file_put_contents($path, str_repeat("{\"ignored\":true}\n", 20000));
+        file_put_contents($path, json_encode([
+            'schema_version' => SchemaVersion::CURRENT,
+            'run_id' => $runId,
+            'seq' => 7,
+            'turn_no' => 1,
+            'type' => 'turn_advanced',
+            'payload' => [],
+            'ts' => '2026-01-01T00:00:00+00:00',
+        ], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+
+        foreach ($this->store->reverseFor($runId) as $event) {
+            $this->assertSame(7, $event->seq);
+            break;
+        }
+    }
+
     public function testLatestSequenceRejectsTrailingPartialRecordLikeAllFor(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));

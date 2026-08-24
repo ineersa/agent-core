@@ -117,28 +117,22 @@ final class ProviderContextUsageResolver
      */
     private function findLatestProviderMeasurement(string $runId): array
     {
-        $events = $this->eventStore->allFor($runId);
-
-        for ($i = \count($events) - 1; $i >= 0; --$i) {
-            $event = $events[$i];
-
+        foreach ($this->eventStore->reverseFor($runId) as $event) {
             if (
-                RunEventTypeEnum::LlmStepCompleted->value === $event->type
-                || RunEventTypeEnum::LlmStepAborted->value === $event->type
+                RunEventTypeEnum::LlmStepCompleted->value !== $event->type
+                && RunEventTypeEnum::LlmStepAborted->value !== $event->type
             ) {
-                $usage = $event->payload['usage'] ?? [];
+                continue;
+            }
 
-                $tokens = $usage['input_tokens']
-                    ?? $usage['prompt_tokens']
-                    ?? null;
-
-                if (\is_int($tokens) && $tokens > 0) {
-                    return [
-                        'seq' => $event->seq,
-                        'tokens' => $tokens,
-                        'event' => $event,
-                    ];
-                }
+            $usage = $event->payload['usage'] ?? [];
+            $tokens = $usage['input_tokens'] ?? $usage['prompt_tokens'] ?? null;
+            if (\is_int($tokens) && $tokens > 0) {
+                return [
+                    'seq' => $event->seq,
+                    'tokens' => $tokens,
+                    'event' => $event,
+                ];
             }
         }
 
@@ -170,17 +164,12 @@ final class ProviderContextUsageResolver
             RunEventTypeEnum::ContextCompactionFailed->value,
         ];
 
-        $events = $this->eventStore->allFor($runId);
-
-        for ($i = \count($events) - 1; $i >= 0; --$i) {
-            $event = $events[$i];
-
+        foreach ($this->eventStore->reverseFor($runId) as $event) {
             if (!\in_array($event->type, $attemptTypes, true)) {
                 continue;
             }
 
-            $trigger = $event->payload['trigger'] ?? null;
-            if ('auto' === $trigger) {
+            if ('auto' === ($event->payload['trigger'] ?? null)) {
                 return $event->seq;
             }
         }

@@ -162,6 +162,21 @@ final class AgentChildRunEventStore implements EventStoreInterface
     }
 
     /**
+     * @return \Generator<int, RunEvent>
+     */
+    public function reverseFor(string $runId): iterable
+    {
+        if ($runId !== $this->agentRunId) {
+            return;
+        }
+
+        $events = $this->allFor($runId);
+        for ($index = \count($events) - 1; $index >= 0; --$index) {
+            yield $events[$index];
+        }
+    }
+
+    /**
      * @return list<RunEvent>
      */
     public function allFor(string $runId): array

@@ -51,14 +51,12 @@ final readonly class ContextBudgetReminderHookSubscriber implements HookSubscrib
             return $context;
         }
 
-        $events = $this->eventStore->allFor($context->runId);
-        $contextWindow = $this->resolveContextWindow($events, $context->runId);
+        $contextWindow = $this->resolveContextWindow($context->runId);
         if (null === $contextWindow) {
             return $context;
         }
 
-        $barrierSeq = $this->latestSuccessfulCompactionSeq($events);
-        $issued = $this->issuedReminderKeysAfterBarrier($events, $barrierSeq);
+        $issued = $this->issuedReminderKeysAfterLatestCompaction($context->runId);
 
         $earlyEligible = $inputTokens >= $this->config->earlyInputTokens
             && !\in_array('early', $issued, true)
@@ -123,36 +121,20 @@ final readonly class ContextBudgetReminderHookSubscriber implements HookSubscrib
     }
 
     /**
-     * @param list<RunEvent> $events
-     */
-    private function latestSuccessfulCompactionSeq(array $events): int
-    {
-        for ($i = \count($events) - 1; $i >= 0; --$i) {
-            if (RunEventTypeEnum::ContextCompacted->value === $events[$i]->type) {
-                return $events[$i]->seq;
-            }
-        }
-
-        return 0;
-    }
-
-    /**
-     * Detect already queued/applied reminder messages after the compaction
-     * barrier by exact wrapped text in generic command payloads.
-     *
-     * @param list<RunEvent> $events
+     * Detect already queued/applied reminder messages after the latest successful
+     * compaction barrier by exact wrapped text in generic command payloads.
      *
      * @return list<string>
      */
-    private function issuedReminderKeysAfterBarrier(array $events, int $barrierSeq): array
+    private function issuedReminderKeysAfterLatestCompaction(string $runId): array
     {
         $earlyWrapped = self::wrapSystemReminder(self::EARLY_TEXT);
         $urgentWrapped = self::wrapSystemReminder(self::URGENT_TEXT);
         $keys = [];
 
-        foreach ($events as $event) {
-            if ($event->seq <= $barrierSeq) {
-                continue;
+        foreach ($this->eventStore->reverseFor($runId) as $event) {
+            if (RunEventTypeEnum::ContextCompacted->value === $event->type) {
+                break;
             }
 
             if (
@@ -203,12 +185,9 @@ final readonly class ContextBudgetReminderHookSubscriber implements HookSubscrib
         return implode('', $parts);
     }
 
-    /**
-     * @param list<RunEvent> $events
-     */
-    private function resolveContextWindow(array $events, string $runId): ?int
+    private function resolveContextWindow(string $runId): ?int
     {
-        $fromRun = $this->contextWindowFromRunStarted($events);
+        $fromRun = $this->contextWindowFromRunStarted($this->eventStore->firstFor($runId));
         if (null !== $fromRun) {
             return $fromRun;
         }
@@ -219,33 +198,25 @@ final readonly class ContextBudgetReminderHookSubscriber implements HookSubscrib
         return $this->contextWindowFromCatalog('' !== $model ? $model : null);
     }
 
-    /**
-     * @param list<RunEvent> $events
-     */
-    private function contextWindowFromRunStarted(array $events): ?int
+    private function contextWindowFromRunStarted(?RunEvent $event): ?int
     {
-        foreach ($events as $event) {
-            if (RunEventTypeEnum::RunStarted->value !== $event->type) {
-                continue;
-            }
-
-            $inner = $event->payload['payload'] ?? null;
-            if (!\is_array($inner)) {
-                continue;
-            }
-
-            $metadata = $inner['metadata'] ?? null;
-            if (!\is_array($metadata)) {
-                continue;
-            }
-
-            $window = $metadata['context_window'] ?? null;
-            if (\is_int($window) && $window > 0) {
-                return $window;
-            }
+        if (null === $event || RunEventTypeEnum::RunStarted->value !== $event->type) {
+            return null;
         }
 
-        return null;
+        $inner = $event->payload['payload'] ?? null;
+        if (!\is_array($inner)) {
+            return null;
+        }
+
+        $metadata = $inner['metadata'] ?? null;
+        if (!\is_array($metadata)) {
+            return null;
+        }
+
+        $window = $metadata['context_window'] ?? null;
+
+        return \is_int($window) && $window > 0 ? $window : null;
     }
 
     private function contextWindowFromCatalog(?string $activeModel): ?int

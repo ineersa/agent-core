@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
@@ -314,6 +315,44 @@ final class ExecutionWorkerTest extends TestCase
             $this->assertSame($stored, $store->findByRunToolCall('run-retain-1', 'call-retain-1'));
             $this->assertSame($stored, $store->findByToolAndIdempotencyKey('web_search', 'tool-retain-1'));
         }
+    }
+
+    public function testToolWorkerReleasesDeferredMarkerAfterDurableRegistration(): void
+    {
+        $store = new ToolExecutionResultStore();
+        $marker = new ToolResult(
+            toolCallId: 'call-deferred-1',
+            toolName: 'fork',
+            content: [],
+            details: ['raw_result' => new DeferredToolCompletionOutcome('deferred-1')],
+            isError: false,
+        );
+        $store->remember('run-deferred-1', 'call-deferred-1', 'fork', 'tool-deferred-1', $marker);
+        $executor = new class($marker) implements ToolExecutorInterface {
+            public function __construct(private ToolResult $result)
+            {
+            }
+
+            public function execute(ToolCall $toolCall): ToolResult
+            {
+                return $this->result;
+            }
+        };
+
+        $worker = new ExecuteToolCallWorker(
+            $executor,
+            new TestMessageBus(),
+            new InMemoryDeferredToolCompletionRepository(),
+            $store,
+        );
+        $worker(new ExecuteToolCall(
+            runId: 'run-deferred-1', turnNo: 1, stepId: 'step-1', attempt: 1,
+            idempotencyKey: 'idempotency-1', toolCallId: 'call-deferred-1', toolName: 'fork',
+            args: [], orderIndex: 0, toolIdempotencyKey: 'tool-deferred-1',
+        ));
+
+        $this->assertNull($store->findByRunToolCall('run-deferred-1', 'call-deferred-1'));
+        $this->assertNull($store->findByToolAndIdempotencyKey('fork', 'tool-deferred-1'));
     }
 
     /**

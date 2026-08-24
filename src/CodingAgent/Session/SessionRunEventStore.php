@@ -79,9 +79,11 @@ final class SessionRunEventStore implements EventStoreInterface
 
     public function latestSequenceFor(string $runId): ?int
     {
-        $event = $this->eventFromLine($runId, $this->eventLog->lastNonEmptyLine($this->eventsPath($runId)));
+        foreach ($this->reverseFor($runId) as $event) {
+            return $event->seq;
+        }
 
-        return $event?->seq;
+        return null;
     }
 
     public function firstFor(string $runId): ?RunEvent
@@ -143,6 +145,19 @@ final class SessionRunEventStore implements EventStoreInterface
             }
         } finally {
             fclose($handle);
+        }
+    }
+
+    /**
+     * @return \Generator<int, RunEvent>
+     */
+    public function reverseFor(string $runId): iterable
+    {
+        foreach ($this->eventLog->reverseLines($this->eventsPath($runId)) as $line) {
+            $event = $this->eventFromLine($runId, $line);
+            if (null !== $event) {
+                yield $event;
+            }
         }
     }
 

@@ -34,10 +34,11 @@ final class LogContextProcessor implements ProcessorInterface
 
         // Record both live PHP memory and allocator-reserved memory; Messenger
         // uses the latter for its worker memory limit.
+        $pid = getmypid();
         foreach ([
-            'pid' => \getmypid(),
-            'memory_usage' => \memory_get_usage(false),
-            'memory_allocated' => \memory_get_usage(true),
+            'pid' => false !== $pid ? $pid : null,
+            'memory_usage' => memory_get_usage(false),
+            'memory_allocated' => memory_get_usage(true),
         ] as $key => $value) {
             if (!\array_key_exists($key, $extra) && !\array_key_exists($key, $record->context)) {
                 $extra[$key] = $value;

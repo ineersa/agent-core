@@ -81,6 +81,11 @@ final class HistorySelectionServiceTest extends TestCase
                 }
             }
 
+            public function reverseFor(string $runId): iterable
+            {
+                return [];
+            }
+
             public function allFor(string $runId): array
             {
                 return $this->events;
@@ -212,6 +217,11 @@ final class HistorySelectionServiceTest extends TestCase
                 }
             }
 
+            public function reverseFor(string $runId): iterable
+            {
+                return [];
+            }
+
             public function allFor(string $runId): array
             {
                 return $this->events;
@@ -326,6 +336,11 @@ final class HistorySelectionServiceTest extends TestCase
                 }
             }
 
+            public function reverseFor(string $runId): iterable
+            {
+                return [];
+            }
+
             public function allFor(string $runId): array
             {
                 return $this->events;
@@ -404,6 +419,11 @@ final class HistorySelectionServiceTest extends TestCase
                         yield $event;
                     }
                 }
+            }
+
+            public function reverseFor(string $runId): iterable
+            {
+                return [];
             }
 
             public function allFor(string $runId): array

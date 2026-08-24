@@ -213,6 +213,11 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
                 }
             }
 
+            public function reverseFor(string $runId): iterable
+            {
+                return [];
+            }
+
             public function allFor(string $runId): array
             {
                 return array_values(

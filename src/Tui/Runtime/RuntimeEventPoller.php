@@ -74,9 +74,14 @@ final class RuntimeEventPoller
         $state->lastPoll = $now;
 
         try {
-            $events = [] === $this->pendingEvents
-                ? RuntimeEventCallbacks::eventList($client, $state->handle->runId)
-                : $this->pendingEvents;
+            if ([] !== $this->pendingEvents && $this->pendingEvents[0]->runId !== $state->handle->runId) {
+                $this->pendingEvents = [];
+            }
+
+            $retryingPendingEvents = [] !== $this->pendingEvents;
+            $events = $retryingPendingEvents
+                ? $this->pendingEvents
+                : RuntimeEventCallbacks::eventList($client, $state->handle->runId);
             if ([] === $events) {
                 $state->runtimePollErrorCount = 0;
                 $state->lastRuntimePollError = '';
@@ -84,8 +89,13 @@ final class RuntimeEventPoller
                 return null;
             }
 
-            $state->runtimePollErrorCount = 0;
-            $state->lastRuntimePollError = '';
+            // A fresh pipe read clears an old error episode. Retained suffixes
+            // deliberately do not: a deterministic apply failure must reach the
+            // existing three-strike escape rather than retry forever.
+            if (!$retryingPendingEvents) {
+                $state->runtimePollErrorCount = 0;
+                $state->lastRuntimePollError = '';
+            }
 
             $hasNew = false;
             $processingRemoved = false;
@@ -299,6 +309,10 @@ final class RuntimeEventPoller
 
                 return null;
             }
+
+            // The retained suffix has reached its terminal handling boundary.
+            // Release it so subsequent polls can drain fresh controller frames.
+            $this->pendingEvents = [];
 
             // Delegate capture=0 rethrow to boundary.
             // If we reach here, capture mode is enabled.

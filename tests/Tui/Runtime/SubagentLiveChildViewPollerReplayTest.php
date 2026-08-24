@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
@@ -217,6 +218,40 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
         $this->assertContains('live tail', $texts);
         $this->assertCount(2, $live->childReplayEvents);
         $this->assertCount(2, $live->childCaches[self::CHILD_RUN_ID]['replayEvents']);
+    }
+
+    #[Test]
+    public function pollRetainsFailedSuffixUntilItApplies(): void
+    {
+        $projector = $this->createMock(TranscriptProjectorInterface::class);
+        $projector->method('reset');
+        $projector->method('blocks')->willReturn([]);
+        $projector->expects($this->exactly(2))->method('accept')->willReturnOnConsecutiveCalls(
+            $this->throwException(new \RuntimeException('projection failed')),
+            null,
+        );
+        $poller = new SubagentLiveChildViewPoller($projector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
+        $live = $this->liveState();
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::AssistantTextDelta->value,
+            runId: self::CHILD_RUN_ID,
+            seq: 2,
+            payload: ['block_id' => 'text-1', 'delta' => 'text'],
+        );
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())->method('events')->with(self::CHILD_RUN_ID)->willReturn([$event]);
+        try {
+            $poller->poll($live, $client);
+            $this->fail('Expected projection failure.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('projection failed', $exception->getMessage());
+        }
+        $this->assertSame(0, $live->childLastSeq);
+
+        $live->childLastPoll = 0.0;
+        $poller->poll($live, $client);
+
+        $this->assertSame(2, $live->childLastSeq);
     }
 
     private function childLiveProjector(): TranscriptProjector
