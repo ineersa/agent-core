@@ -31,6 +31,9 @@ final readonly class AgentContextRenderer
         $parts[] = '<agents_instructions>';
         $parts[] = 'The following agent definitions can be launched via the subagent tool.';
         $parts[] = 'Use the listed agent name and a clear task description. Do not guess agent names.';
+        $parts[] = 'Use subagent to launch a new child only when no existing child has relevant context.';
+        $parts[] = 'Use agent_resume to continue an existing child by artifact or run identifier; do not duplicate it with subagent.';
+        $parts[] = 'Child runs cannot launch or resume other children.';
         $parts[] = 'Agent bodies and full instructions are not included here; only name and description are shown.';
         $parts[] = '';
         $parts[] = '<available_agents>';

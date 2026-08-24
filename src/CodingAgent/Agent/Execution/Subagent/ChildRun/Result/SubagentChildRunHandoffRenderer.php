@@ -107,7 +107,7 @@ TXT;
     public function formatCompletedResult(string $displayName, string $artifactId, string $finalMessages): string
     {
         return \sprintf(
-            "Subagent %s completed.\nArtifact: %s\n\nComplete handoff:\n\n%s",
+            "Subagent %s completed.\nArtifact: %s\n\nHandoff:\n\n%s",
             $displayName,
             $artifactId,
             $finalMessages,

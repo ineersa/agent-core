@@ -51,7 +51,7 @@ final readonly class AgentToolPolicyResolver
         // after MCP merge so neither inherit-all nor explicit lists can reintroduce them.
         $tools = array_values(array_filter(
             $tools,
-            static fn (string $name): bool => 'subagent' !== $name && 'fork' !== $name,
+            static fn (string $name): bool => 'subagent' !== $name && 'fork' !== $name && 'agent_resume' !== $name,
         ));
 
         // Parent-only tools (settings, hatfield_docs, …) are stripped for every child,

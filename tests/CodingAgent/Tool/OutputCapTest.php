@@ -216,6 +216,12 @@ final class OutputCapTest extends TestCase
             true,
             null,
         ];
+        yield 'agent_resume handoff is document' => [
+            'agent_resume',
+            ['artifact_id' => 'agent_abc', 'task' => 'continue'],
+            false,
+            'handoff-report.md',
+        ];
         yield 'agent_retrieve handoff is document' => [
             'agent_retrieve',
             ['artifact_id' => 'agent_abc'],

@@ -14,13 +14,15 @@ use Symfony\Component\Validator\Constraints as Assert;
  * paths should use {@see \Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver}.
  *
  * Immutable value object assembled during artifact creation.
+ *
+ * Handoffs live under {@see $artifactDir}/handoffs/<uuid>.md with index.json;
+ * there is no mutable latest handoff.md path.
  */
 final readonly class AgentArtifactPathsDTO
 {
     /**
      * @param string $artifactDir  Relative: artifacts/agents/<artifact_id>/
      * @param string $metadataPath Relative: artifacts/agents/<artifact_id>/metadata.json
-     * @param string $handoffPath  Relative: artifacts/agents/<artifact_id>/handoff.md
      * @param string $eventsPath   Relative: artifacts/agents/<artifact_id>/events.jsonl
      * @param string $statePath    Relative: artifacts/agents/<artifact_id>/state.json
      */
@@ -29,8 +31,6 @@ final readonly class AgentArtifactPathsDTO
         public string $artifactDir,
         #[Assert\NotBlank(normalizer: 'trim', message: 'metadata_path must not be blank')]
         public string $metadataPath,
-        #[Assert\NotBlank(normalizer: 'trim', message: 'handoff_path must not be blank')]
-        public string $handoffPath,
         #[Assert\NotBlank(normalizer: 'trim', message: 'events_path must not be blank')]
         public string $eventsPath,
         #[Assert\NotBlank(normalizer: 'trim', message: 'state_path must not be blank')]
@@ -51,7 +51,6 @@ final readonly class AgentArtifactPathsDTO
         return new self(
             artifactDir: $dir,
             metadataPath: "{$dir}/metadata.json",
-            handoffPath: "{$dir}/handoff.md",
             eventsPath: "{$dir}/events.jsonl",
             statePath: "{$dir}/state.json",
         );

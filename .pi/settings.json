@@ -19,7 +19,7 @@
         "reserveTokens": 16384
     },
     "pi-fork": {
-        "defaultModel": "gpt-5.6-terra",
+        "defaultModel": "openai-codex/gpt-5.6-terra",
         "defaultThinking": "medium"
     },
     "taskWorkflow": {

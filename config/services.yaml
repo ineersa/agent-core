@@ -804,6 +804,11 @@ services:
       $executionServiceLocator: !service_locator
         execution: '@Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService'
 
+  Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler:
+    arguments:
+      $executionServiceLocator: !service_locator
+        execution: '@Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService'
+
   Ineersa\CodingAgent\Agent\Tool\ForkToolHandler:
     arguments:
       $executionServiceLocator: !service_locator
@@ -898,6 +903,7 @@ services:
       $providers:
         Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider: '@Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider'
         Ineersa\CodingAgent\Tool\Schema\SubagentTasksSchemaProvider: '@Ineersa\CodingAgent\Tool\Schema\SubagentTasksSchemaProvider'
+        Ineersa\CodingAgent\Tool\Schema\AgentResumeTasksSchemaProvider: '@Ineersa\CodingAgent\Tool\Schema\AgentResumeTasksSchemaProvider'
 
   # Same default chain as Describer(null) plus the provider-aware describer.
   # The chain members are vendor classes outside the autowire resource, so
