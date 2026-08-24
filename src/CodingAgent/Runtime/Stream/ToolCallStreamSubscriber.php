@@ -152,7 +152,12 @@ final class ToolCallStreamSubscriber implements EventSubscriberInterface
             payload: $merged,
         );
 
+        if ($this->stdoutSink instanceof StdoutRuntimeEventSink && $this->stdoutSink->isPipe()) {
+            $this->stdoutSink->emit($event);
+
+            return;
+        }
+
         $this->sink->emit($event);
-        $this->stdoutSink?->emit($event);
     }
 }
