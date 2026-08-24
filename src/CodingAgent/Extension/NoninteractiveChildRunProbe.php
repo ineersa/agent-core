@@ -29,20 +29,17 @@ final readonly class NoninteractiveChildRunProbe
             return false;
         }
 
-        foreach ($this->eventStore->allFor($runId) as $event) {
-            if (RunEventTypeEnum::RunStarted->value !== $event->type) {
-                continue;
-            }
-
-            $metadata = $this->denormalizer->denormalize($event->payload, RunStartedMetadataDTO::class);
-            if (!$metadata->isAgentChild()) {
-                return false;
-            }
-
-            // Child session.interactive defaults to true when omitted.
-            return false === $metadata->session->interactive;
+        $event = $this->eventStore->firstFor($runId);
+        if (null === $event || RunEventTypeEnum::RunStarted->value !== $event->type) {
+            return false;
         }
 
-        return false;
+        $metadata = $this->denormalizer->denormalize($event->payload, RunStartedMetadataDTO::class);
+        if (!$metadata->isAgentChild()) {
+            return false;
+        }
+
+        // Child session.interactive defaults to true when omitted.
+        return false === $metadata->session->interactive;
     }
 }
