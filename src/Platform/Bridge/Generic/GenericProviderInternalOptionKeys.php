@@ -21,6 +21,7 @@ final class GenericProviderInternalOptionKeys
      * @var list<string>
      */
     public const array ALL = [
+        '_agent_core_invocation',
         'run_id',
         'provider_cache_key',
         'tools_ref',
