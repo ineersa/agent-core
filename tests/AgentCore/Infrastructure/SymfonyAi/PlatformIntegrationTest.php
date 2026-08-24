@@ -174,7 +174,7 @@ final class PlatformIntegrationTest extends TestCase
             convertToLlmHooks: [$convertHook],
             streamObserver: null,
             costCalculator: null,
-            modelResolver: null,
+            modelResolver: $modelResolver,
             logger: new NullLogger(),
             denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );

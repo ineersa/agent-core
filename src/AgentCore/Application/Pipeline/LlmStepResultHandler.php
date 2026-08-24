@@ -224,6 +224,8 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'step_id' => $message->stepId(),
                 'retry_attempt' => $canAutoRetry || $retriesExhausted ? $nextRetryAttempt : $currentAttempts,
                 'max_retries' => $maxAttempts,
+                'model' => $message->model,
+                'reasoning' => $message->reasoning,
                 ...$this->availableToolsPayload($message),
             ];
             if ($retriesExhausted) {
@@ -320,6 +322,8 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             'payload' => [
                 'step_id' => $message->stepId(),
                 'stop_reason' => $message->stopReason,
+                'model' => $message->model,
+                'reasoning' => $message->reasoning,
                 'usage' => $message->usage,
                 'tool_calls_count' => \count($toolCalls),
                 'assistant_message' => $assistantMessagePayload,

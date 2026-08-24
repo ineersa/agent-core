@@ -141,7 +141,7 @@ final class TraceReplayTest extends KernelTestCase
             convertToLlmHooks: [],
             streamObserver: null,
             costCalculator: null,
-            modelResolver: null,
+            modelResolver: $modelResolver,
             logger: new NullLogger(),
             denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
@@ -356,7 +356,7 @@ final class TraceReplayTest extends KernelTestCase
             convertToLlmHooks: [],
             streamObserver: null,
             costCalculator: null,
-            modelResolver: null,
+            modelResolver: $modelResolver,
             logger: new NullLogger(),
             denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );

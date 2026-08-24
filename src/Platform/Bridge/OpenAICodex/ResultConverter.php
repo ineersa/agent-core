@@ -478,7 +478,7 @@ final class ResultConverter implements ResultConverterInterface
      *
      * @param array<string, mixed> $event
      *
-     * @return array{code?: string|null, type?: string|null, param?: string|null}
+     * @return array{code?: string|null, type?: string|null, param?: string|null, message?: string|null}
      */
     private function extractStreamError(array $event): array
     {
@@ -486,17 +486,23 @@ final class ResultConverter implements ResultConverterInterface
             $event = $event['error'];
         }
 
+        $message = $event['message'] ?? null;
+
         return [
             'code' => \is_string($event['code'] ?? null) ? $event['code'] : null,
             'type' => \is_string($event['type'] ?? null) && 'error' !== $event['type'] ? $event['type'] : null,
             'param' => \is_string($event['param'] ?? null) ? $event['param'] : null,
+            'message' => \is_string($message) && '' !== trim($message) ? mb_substr(trim($message), 0, 500) : null,
         ];
     }
 
     /**
-     * Privacy-safe stream error text: allowlisted code/type/param only (bounded).
+     * Privacy-safe stream error text: allowlisted code/type/param plus a
+     * bounded provider message.  An invalid request keeps its structured
+     * identity and actionable message instead of collapsing to a bare
+     * "[code/type/param]" token.
      *
-     * @param array{code?: string|null, type?: string|null, param?: string|null} $error
+     * @param array{code?: string|null, type?: string|null, param?: string|null, message?: string|null} $error
      */
     private function generateErrorMessage(array $error): string
     {
@@ -512,11 +518,18 @@ final class ResultConverter implements ResultConverterInterface
             }
         }
 
-        if ([] === $parts) {
-            return 'Codex stream error.';
+        $message = '';
+        if (\is_string($error['message'] ?? null) && '' !== trim($error['message'])) {
+            $message = mb_substr(trim($error['message']), 0, 500);
         }
 
-        return \sprintf('[%s]', implode('/', $parts));
+        if ([] === $parts) {
+            return '' !== $message ? $message : 'Codex stream error.';
+        }
+
+        $prefix = \sprintf('[%s]', implode('/', $parts));
+
+        return '' !== $message ? \sprintf('%s: %s', $prefix, $message) : $prefix;
     }
 
     private function sanitizeIncompleteReason(mixed $reason): string

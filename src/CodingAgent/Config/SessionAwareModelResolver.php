@@ -37,6 +37,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         private readonly ModelSelectionService $selectionService,
         private readonly HatfieldModelCatalog $catalog,
         private readonly HatfieldSessionStore $sessionMetadataStore,
+        private readonly ?ChildRunModelMetadataProviderInterface $childModelProvider = null,
     ) {
     }
 
@@ -51,17 +52,9 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         $sessionId = $input->runId ?? '';
 
         // Non-empty $defaultModel is an explicit override (e.g. compaction
-        // model, background summarization). Empty string means no override —
-        // resolve from session metadata / defaults as before.  The legacy
-        // container parameter was emptied in an earlier change, so this is
-        // now a safe discriminator: empty = default path, non-empty = caller
-        // explicitly chose a model.
+        // model, background summarization, extension agent runs). Empty string
+        // means no override — resolve from session metadata / defaults.
         $explicitModel = '' !== $defaultModel ? $defaultModel : null;
-
-        $modelRef = $this->selectionService->resolveInitialModel(
-            explicitModel: $explicitModel,
-            sessionId: $sessionId,
-        );
 
         // Read thinking_level from ModelResolutionOptions when non-empty.
         // This allows compaction (and future summarization callers) to pass
@@ -71,6 +64,30 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         $explicitReasoning = \is_string($options->values['thinking_level'] ?? null) && '' !== $options->values['thinking_level']
             ? $options->values['thinking_level']
             : null;
+
+        // Agent child runs (fork/subagent) carry their execution model and
+        // reasoning in RunStarted metadata.  Ordinary sessions resolve from
+        // mutable session metadata (the hatfield_session DB row) so a model
+        // picked during a resumed session wins over the historical run_started
+        // value.  Children have no session row and must keep their definition
+        // model — consult RunStarted metadata when no explicit override is
+        // given.  Persisted sessions use numeric ids; only ephemeral
+        // child/controller run ids are non-numeric, so the event-store read is
+        // skipped for ordinary sessions.
+        if (null === $explicitModel && null !== $this->childModelProvider && !ctype_digit($sessionId)) {
+            $childModel = $this->childModelProvider->childRunModel($sessionId);
+            if (null !== $childModel) {
+                $explicitModel = $childModel->model;
+                if (null === $explicitReasoning && null !== $childModel->reasoning) {
+                    $explicitReasoning = $childModel->reasoning;
+                }
+            }
+        }
+
+        $modelRef = $this->selectionService->resolveInitialModel(
+            explicitModel: $explicitModel,
+            sessionId: $sessionId,
+        );
 
         $reasoning = $this->selectionService->resolveInitialReasoning(
             explicitReasoning: $explicitReasoning,

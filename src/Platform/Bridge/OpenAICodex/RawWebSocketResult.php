@@ -176,13 +176,58 @@ final class RawWebSocketResult implements CancellableRawResultInterface
                     return;
                 }
 
-                throw new \RuntimeException('Codex WebSocket stream ended with a non-success terminal event.');
+                throw new \RuntimeException($this->terminalErrorMessage($type, $event));
             }
 
             if ('response.failed' === $type || 'response.incomplete' === $type || str_starts_with((string) $type, 'error')) {
-                throw new \RuntimeException('Codex WebSocket stream ended with a non-success terminal event.');
+                throw new \RuntimeException($this->terminalErrorMessage($type, $event));
             }
         }
+    }
+
+    /**
+     * Build a privacy-safe terminal error message from a failed stream event.
+     *
+     * Retains the provider's structured diagnostics (code, type, param) and a
+     * bounded free-text message so an invalid request is not collapsed to a
+     * generic "non-success terminal event". Provider messages are bounded and
+     * never contain prompts, tool outputs, or request bodies.
+     *
+     * @param array<string, mixed> $event
+     */
+    private function terminalErrorMessage(string $type, array $event): string
+    {
+        $error = [];
+        $response = $event['response'] ?? null;
+        if (\is_array($response) && \is_array($response['error'] ?? null)) {
+            $error = $response['error'];
+        } elseif (\is_array($event['error'] ?? null)) {
+            $error = $event['error'];
+        }
+
+        $parts = [];
+        foreach (['code', 'type', 'param'] as $key) {
+            $value = $error[$key] ?? null;
+            if (!\is_string($value) || '' === trim($value)) {
+                continue;
+            }
+            $sanitized = mb_substr(trim($value), 0, 64);
+            if ('' !== $sanitized) {
+                $parts[] = $sanitized;
+            }
+        }
+
+        $message = '';
+        if (\is_string($error['message'] ?? null) && '' !== trim($error['message'])) {
+            $message = mb_substr(trim($error['message']), 0, 500);
+        }
+
+        $prefix = [] !== $parts ? \sprintf('[%s]', implode('/', $parts)) : \sprintf('non-success terminal event (%s)', $type);
+        if ('' !== $message) {
+            return \sprintf('%s: %s', $prefix, $message);
+        }
+
+        return \sprintf('Codex WebSocket stream ended with %s.', $prefix);
     }
 
     private function logIoTimeout(string $phase): void

@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Ineersa\AgentCore\Domain\Model\ProviderRequestOptionKeys;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\Platform\Result\CancellableRawResultInterface;
@@ -87,9 +88,30 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         $baseOptions = $this->buildInputOptions($request);
 
-        $messageBag = $this->applyConvertHooks($messages, $cancelToken, $request->model);
+        // Resolve ordinary turns from current session metadata at the provider
+        // boundary. RunState is historical and must not be an execution override.
+        $resolvedModel = null !== $this->modelResolver
+            ? $this->modelResolver->resolve(
+                defaultModel: $request->model,
+                messages: $this->messageConverter->toMessageBag($messages),
+                input: $request->input,
+                options: new ModelResolutionOptions($baseOptions),
+            )
+            : new \Ineersa\AgentCore\Domain\Model\ResolvedModel($request->model);
+        $resolvedOptions = array_replace($baseOptions, $resolvedModel->options);
+        if ('' !== $resolvedModel->reasoning) {
+            $resolvedOptions[ProviderRequestOptionKeys::REASONING] = $resolvedModel->reasoning;
+        }
+        if ([] !== $resolvedModel->compatFeatures) {
+            $resolvedOptions[ProviderRequestOptionKeys::COMPAT_FEATURES] = $resolvedModel->compatFeatures;
+        }
+        if ([] !== $resolvedModel->reasoningOptions) {
+            $resolvedOptions[ProviderRequestOptionKeys::REASONING_OPTIONS] = $resolvedModel->reasoningOptions;
+        }
 
-        $input = new Input($request->model, $messageBag, $baseOptions);
+        $messageBag = $this->applyConvertHooks($messages, $cancelToken, $resolvedModel->model);
+
+        $input = new Input($resolvedModel->model, $messageBag, $resolvedOptions);
         $this->toolDescriptionProcessor->processInput($input);
 
         // Build a privacy-safe request summary for error diagnostics.
@@ -97,30 +119,15 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $inputOptions = $input->getOptions();
         $availableToolsSnapshot = $this->captureAvailableToolsSnapshot($inputOptions);
         $requestSummary = [
-            'model' => $request->model,
+            'model' => $resolvedModel->model,
+            'reasoning' => $resolvedModel->reasoning,
             'input_count' => \count($messageBag->withoutSystemMessage()->getMessages()),
             'has_instructions' => null !== $messageBag->getSystemMessage(),
             'has_tools' => isset($inputOptions['tools']),
             'tool_count' => \is_array($inputOptions['tools'] ?? null) ? \count($inputOptions['tools']) : 0,
         ];
 
-        // Resolve the effective model ref for cost calculation and any
-        // model-aware logic.  Normal LLM steps pass the empty-string
-        // container parameter (empty model string) as a sentinel —
-        // SessionAwareModelResolver interprets '' as "no override" and
-        // picks the real model from session metadata / provider defaults.
-        // Compaction and background summarization calls may pass a
-        // non-empty explicit model override, which the resolver honours
-        // directly.
-        $effectiveModel = $request->model;
-        if (null !== $this->modelResolver) {
-            $effectiveModel = $this->modelResolver->resolve(
-                defaultModel: $request->model,
-                messages: $messageBag,
-                input: $request->input,
-                options: new ModelResolutionOptions($inputOptions),
-            )->model;
-        }
+        $effectiveModel = $resolvedModel->model;
 
         // Provider transport can fail synchronously during invoke (e.g. Codex WS
         // send_failure before asStream()). Classify here so bounded LLM retry sees
@@ -131,7 +138,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $input->getMessageBag(),
                 PlatformInvocationMetadata::inject(
                     array_replace($inputOptions, ['stream' => true]),
-                    new PlatformInvocationMetadata($request->input, $cancelToken),
+                    new PlatformInvocationMetadata($request->input, $cancelToken, $resolvedModel),
                 ),
             );
         } catch (\Throwable $exception) {
@@ -481,6 +488,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             usage: $this->extractUsage($deferredResult, $modelName),
             stopReason: $aborted ? 'aborted' : $this->resolveStopReason($assistantMessage, $deferredResult),
             error: null,
+            model: $modelName,
+            reasoning: (string) ($requestSummary['reasoning'] ?? ''),
             modelNotifications: $modelNotifications,
             availableTools: $availableTools,
             availableToolsSchemaTokensEstimate: $availableToolsSchemaTokensEstimate,
@@ -526,10 +535,11 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     /**
      * Extract privacy-safe response diagnostics from a DeferredResult.
      *
-     * Returns structural HTTP metadata only. Provider-controlled free-text fields
-     * (error.message, error_description, detail, raw body) are never copied into
-     * diagnostics — response_error_message stays null here. Downstream classifiers
-     * may still consume response_error_message when another caller supplies it.
+     * Returns structural HTTP metadata plus bounded structured provider error
+     * fields (code/type/param). The provider's free-text error.message is
+     * copied only when it is a string, bounded to 500 chars, and never
+     * contains prompts, tool outputs, or request bodies — it is a bounded
+     * diagnostic, not raw body content. Non-JSON bodies are never stored.
      *
      * @return array<string, mixed>
      */
@@ -602,6 +612,10 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $diag['response_error_code'] = isset($error['code']) && '' !== $error['code'] ? $error['code'] : null;
                 $diag['response_error_type'] = $error['type'] ?? null;
                 $diag['response_error_param'] = $error['param'] ?? null;
+                $providerMessage = $error['message'] ?? null;
+                if (\is_string($providerMessage) && '' !== trim($providerMessage)) {
+                    $diag['response_error_message'] = mb_substr($providerMessage, 0, 500);
+                }
             }
         } else {
             // Non-JSON body — never store raw body content.
@@ -735,6 +749,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             usage: null !== $deferredResult ? $this->extractUsage($deferredResult, $modelName) : [],
             stopReason: 'error',
             error: $error,
+            model: $modelName,
+            reasoning: (string) ($requestSummary['reasoning'] ?? ''),
             modelNotifications: $modelNotifications,
             availableTools: $availableTools,
             availableToolsSchemaTokensEstimate: $availableToolsSchemaTokensEstimate,

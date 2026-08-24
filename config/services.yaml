@@ -974,6 +974,11 @@ services:
   Ineersa\AgentCore\Contract\Model\ModelResolverInterface:
     alias: Ineersa\CodingAgent\Config\SessionAwareModelResolver
 
+  # AppConfig-side port for child RunStarted model/reasoning, implemented by
+  # the AppAgent metadata reader (AppAgent → AppConfig is a deptrac-approved edge).
+  Ineersa\CodingAgent\Config\ChildRunModelMetadataProviderInterface:
+    alias: Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader
+
   Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface:
     alias: Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderRegistry
 

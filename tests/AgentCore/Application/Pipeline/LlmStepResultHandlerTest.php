@@ -390,6 +390,8 @@ final class LlmStepResultHandlerTest extends TestCase
                 'message' => 'LLM provider returned reasoning without a final assistant response.',
                 'retryable' => false,
             ],
+            model: 'runpod/Qwen3.6-27B',
+            reasoning: 'medium',
         );
 
         $result = $handler->handle($message, $state);
@@ -428,6 +430,9 @@ final class LlmStepResultHandlerTest extends TestCase
             $llmStepFailed->payload['retryable'] ?? true,
             'empty_assistant_content must be non-retryable.',
         );
+        // The failed event must carry the actual resolved execution identity.
+        $this->assertSame('runpod/Qwen3.6-27B', $llmStepFailed->payload['model'] ?? null);
+        $this->assertSame('medium', $llmStepFailed->payload['reasoning'] ?? null);
     }
 
     public function testRetryableErrorBelowCapSchedulesAutomaticContinue(): void

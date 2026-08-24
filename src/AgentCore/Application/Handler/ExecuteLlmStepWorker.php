@@ -18,10 +18,12 @@ use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
- * Executes one LLM step using only the immutable model carried by
- * {@see ExecuteLlmStep}. Model identity is resolved at schedule time by
- * {@see \Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler}; this
- * worker must never re-resolve session/default models.
+ * Executes one LLM step.  Ordinary turns carry no model on
+ * {@see ExecuteLlmStep}: the provider boundary
+ * ({@see \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter})
+ * resolves the current session model and reasoning at invocation time, and
+ * this worker propagates the actually-resolved identity onto the
+ * {@see LlmStepResult} for canonical completion/failure events.
  */
 final readonly class ExecuteLlmStepWorker
 {
@@ -70,7 +72,7 @@ final readonly class ExecuteLlmStepWorker
                 'turn_no' => $message->turnNo(),
                 'step_id' => $message->stepId(),
                 'worker' => 'llm',
-                'model' => $message->model,
+                'model' => '',
             ], $execute, root: true);
         } finally {
             RunLogContext::leave();
@@ -81,8 +83,9 @@ final readonly class ExecuteLlmStepWorker
     {
         $startedAt = hrtime(true);
 
-        // Message model is the sole execution identity — never re-resolve.
-        $invocationModel = $message->model;
+        // Empty model delegates model and reasoning resolution to the provider
+        // boundary, where current session metadata is authoritative.
+        $invocationModel = '';
 
         RunLogContext::enter([
             'event_type' => 'llm.request.started',
@@ -167,6 +170,8 @@ final readonly class ExecuteLlmStepWorker
                         'message' => 'LLM provider returned reasoning without a final assistant response.',
                         'retryable' => false,
                     ],
+                    model: $response->model,
+                    reasoning: $response->reasoning,
                     modelNotifications: $response->modelNotifications,
                     availableTools: $response->availableTools,
                     availableToolsSchemaTokensEstimate: $response->availableToolsSchemaTokensEstimate,
@@ -192,6 +197,8 @@ final readonly class ExecuteLlmStepWorker
                     deltas: $response->deltas,
                     usage: $response->usage,
                     stopReason: $response->stopReason,
+                    model: $response->model,
+                    reasoning: $response->reasoning,
                     modelNotifications: $response->modelNotifications,
                     availableTools: $response->availableTools,
                     availableToolsSchemaTokensEstimate: $response->availableToolsSchemaTokensEstimate,
@@ -210,7 +217,8 @@ final readonly class ExecuteLlmStepWorker
                 $logCtx = [
                     'duration_ms' => round($durationMs, 3),
                     'event_type' => 'llm.request.failed',
-                    'model' => $invocationModel,
+                    'model' => $response->model,
+                    'reasoning' => $response->reasoning,
                     'error_type' => $response->error['type'] ?? 'unknown',
                     'error_message' => mb_substr($response->error['message'] ?? 'Unknown error', 0, 500),
                 ];
@@ -234,7 +242,8 @@ final readonly class ExecuteLlmStepWorker
                 $this->logger->info('llm.request.completed', [
                     'duration_ms' => round($durationMs, 3),
                     'event_type' => 'llm.request.completed',
-                    'model' => $invocationModel,
+                    'model' => $response->model,
+                    'reasoning' => $response->reasoning,
                 ]);
             }
 
@@ -249,6 +258,8 @@ final readonly class ExecuteLlmStepWorker
                 stopReason: $response->stopReason,
                 error: $response->error,
                 toolsRef: $message->toolsRef,
+                model: $response->model,
+                reasoning: $response->reasoning,
                 modelNotifications: $response->modelNotifications,
                 availableTools: $response->availableTools,
                 availableToolsSchemaTokensEstimate: $response->availableToolsSchemaTokensEstimate,
@@ -282,6 +293,7 @@ final readonly class ExecuteLlmStepWorker
                     'message' => $exception->getMessage(),
                 ],
                 toolsRef: $message->toolsRef,
+                model: $invocationModel,
                 modelNotifications: [],
             );
         } finally {

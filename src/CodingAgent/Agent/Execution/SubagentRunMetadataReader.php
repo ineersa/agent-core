@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\CodingAgent\Config\ChildRunModelMetadataProviderInterface;
+use Ineersa\CodingAgent\Config\ChildRunModelSnapshot;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
@@ -21,7 +23,7 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  * Missing metadata is never cached (it may appear later). Malformed
  * payloads still raise Serializer type errors and are not cached.
  */
-final class SubagentRunMetadataReader implements ChildRunExtensionAllowlistReaderInterface
+final class SubagentRunMetadataReader implements ChildRunExtensionAllowlistReaderInterface, ChildRunModelMetadataProviderInterface
 {
     private const int CACHE_LIMIT = 64;
 
@@ -117,6 +119,16 @@ final class SubagentRunMetadataReader implements ChildRunExtensionAllowlistReade
         }
 
         return null;
+    }
+
+    public function childRunModel(string $runId): ?ChildRunModelSnapshot
+    {
+        $metadata = $this->readRunStartedMetadata($runId);
+        if (null === $metadata || !$metadata->isAgentChild()) {
+            return null;
+        }
+
+        return new ChildRunModelSnapshot($metadata->model, $metadata->reasoning);
     }
 
     private function remember(string $runId, RunStartedMetadataDTO $metadata): void

@@ -4,8 +4,37 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config;
 
+use Ineersa\AgentCore\Application\Handler\CommandRouter;
+use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
+use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
+use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
+use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
+use Ineersa\AgentCore\Application\Replay\RunStateReducer;
+use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
+use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
+use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\Fake\FakeStreamResultConverter;
+use Ineersa\AgentCore\Tests\Support\Fake\FakeSymfonyModelClient;
+use Ineersa\AgentCore\Tests\Support\Fake\FakeTokenUsage;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -22,6 +51,10 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\AI\Platform\Message\MessageBag;
+use Symfony\AI\Platform\Platform;
+use Symfony\AI\Platform\Provider;
+use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Uid\Uuid;
@@ -335,9 +368,196 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertContains('reasoning', $result->compatFeatures);
     }
 
+    /**
+     * Session-41 regression: the resumed session DB row says Sol/high while the
+     * historical run_started event says Grok/minimal.  Ordinary execution must
+     * use the current session selection — the actual provider request and the
+     * resulting llm_step_completed event carry Sol/high.
+     */
+    public function testSessionDbSelectionDrivesProviderRequestAndCompletionEvent(): void
+    {
+        $resolver = $this->createResolver($this->codexAiData());
+        $sessionId = $this->writeSessionMetadata('sess-41', [
+            'model' => 'openai-codex/gpt-5.6-sol',
+            'reasoning' => 'high',
+        ]);
+
+        // Current session selection wins at the provider boundary.
+        $resolved = $resolver->resolve(
+            '',
+            new MessageBag(),
+            new ModelInvocationInput(runId: $sessionId),
+            new ModelResolutionOptions(),
+        );
+        $this->assertSame('openai-codex/gpt-5.6-sol', $resolved->model);
+        $this->assertSame('high', $resolved->reasoning);
+
+        // Historical run_started says Grok — replay projection only, no
+        // execution override.
+        $state = (new RunStateReducer())->replay(RunState::queued($sessionId), [
+            new RunEvent(
+                runId: $sessionId,
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: [
+                    'step_id' => 'start',
+                    'payload' => [
+                        'messages' => [],
+                        'metadata' => ['model' => 'grok-cli/grok-composer-2.5-fast'],
+                    ],
+                ],
+            ),
+        ]);
+        $this->assertSame('grok-cli/grok-composer-2.5-fast', $state->model, 'Historical model stays a replay projection.');
+
+        // Scheduling carries no model snapshot.
+        $advanceHandler = new AdvanceRunHandler(
+            commandMailboxPolicy: new CommandMailboxPolicy(
+                commandStore: new InMemoryCommandStore(),
+                commandRouter: new CommandRouter([]),
+            ),
+            eventFactory: new EventFactory(),
+        );
+        $advanceResult = $advanceHandler->handle(
+            new AdvanceRun($sessionId, 0, 'adv-41', 1, 'ik-adv-41'),
+            $state,
+        );
+
+        $effect = null;
+        foreach ($advanceResult->effects as $candidate) {
+            if ($candidate instanceof ExecuteLlmStep) {
+                $effect = $candidate;
+            }
+        }
+        $this->assertInstanceOf(ExecuteLlmStep::class, $effect);
+        $this->assertFalse(property_exists($effect, 'model'), 'Scheduling must not snapshot a model onto ExecuteLlmStep.');
+
+        // Provider boundary: the actual provider request is Sol/high.
+        $client = new FakeSymfonyModelClient(new FakeTokenUsage(promptTokens: 5, completionTokens: 3, totalTokens: 8));
+        $adapter = $this->createCodexAdapter($resolver, $client);
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: '',
+            input: new ModelInvocationInput(runId: $sessionId, turnNo: $advanceResult->nextState->turnNo, stepId: $effect->stepId()),
+        ));
+
+        $this->assertSame('openai-codex/gpt-5.6-sol', $client->capturedModel);
+        $this->assertSame('high', $client->capturedOptions['_hatfield_reasoning'] ?? null);
+        $this->assertSame('openai-codex/gpt-5.6-sol', $response->model);
+        $this->assertSame('high', $response->reasoning);
+
+        // Completion event carries the actual resolved identity.
+        $resultHandler = new LlmStepResultHandler(
+            toolBatchCollector: new ToolBatchCollector(),
+            commandMailboxPolicy: new CommandMailboxPolicy(
+                commandStore: new InMemoryCommandStore(),
+                commandRouter: new CommandRouter([]),
+            ),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            stepDispatcher: new StepDispatcher(new TestMessageBus()),
+            normalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        $stepResult = new LlmStepResult(
+            runId: $sessionId,
+            turnNo: $advanceResult->nextState->turnNo,
+            stepId: $effect->stepId(),
+            attempt: 1,
+            idempotencyKey: 'ik-llm-41',
+            assistantMessage: $response->assistantMessage,
+            usage: $response->usage,
+            stopReason: $response->stopReason,
+            toolsRef: $effect->toolsRef,
+            model: $response->model,
+            reasoning: $response->reasoning,
+            modelNotifications: $response->modelNotifications,
+            availableTools: $response->availableTools,
+            availableToolsSchemaTokensEstimate: $response->availableToolsSchemaTokensEstimate,
+        );
+        $result = $resultHandler->handle($stepResult, $advanceResult->nextState);
+
+        $completed = null;
+        foreach ($result->events as $event) {
+            if (RunEventTypeEnum::LlmStepCompleted->value === $event->type) {
+                $completed = $event;
+            }
+        }
+        $this->assertNotNull($completed, 'llm_step_completed must be emitted.');
+        $this->assertSame('openai-codex/gpt-5.6-sol', $completed->payload['model'] ?? null);
+        $this->assertSame('high', $completed->payload['reasoning'] ?? null);
+    }
+
     // ──────────────────────────────────────────────
     //  Helpers
     // ──────────────────────────────────────────────
+
+    private function createCodexAdapter(SessionAwareModelResolver $resolver, FakeSymfonyModelClient $client): LlmPlatformAdapter
+    {
+        $eventDispatcher = new EventDispatcher();
+        $eventDispatcher->addSubscriber(new ModelResolverRoutingSubscriber($resolver));
+
+        $platform = new Platform(
+            providers: [new Provider(
+                name: 'fake',
+                modelClients: [$client],
+                resultConverters: [new FakeStreamResultConverter(static fn (): iterable => [new TextDelta('ok')])],
+                modelCatalog: new \Symfony\AI\Platform\ModelCatalog\FallbackModelCatalog(),
+                eventDispatcher: $eventDispatcher,
+            )],
+            eventDispatcher: $eventDispatcher,
+        );
+
+        return new LlmPlatformAdapter(
+            runStore: new InMemoryRunStore(),
+            messageConverter: new AgentMessageConverter(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            platform: $platform,
+            transformContextHooks: [],
+            convertToLlmHooks: [],
+            streamObserver: null,
+            costCalculator: null,
+            modelResolver: $resolver,
+            logger: new TestLogger(),
+            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+    }
+
+    private function codexAiData(): array
+    {
+        return [
+            'default_model' => 'openai-codex/gpt-5.6-sol',
+            'default_reasoning' => 'medium',
+            'providers' => [
+                'openai-codex' => [
+                    'type' => 'codex',
+                    'enabled' => true,
+                    'base_url' => 'https://chatgpt.com/backend-api',
+                    'completions_path' => '/codex/responses',
+                    'models' => [
+                        'gpt-5.6-sol' => [
+                            'id' => 'gpt-5.6-sol',
+                            'name' => 'GPT-5.6 Sol',
+                            'context_window' => 272000,
+                            'max_tokens' => 128000,
+                            'input' => ['text', 'image'],
+                            'tool_calling' => true,
+                            'reasoning' => true,
+                        ],
+                        'gpt-5.6-luna' => [
+                            'id' => 'gpt-5.6-luna',
+                            'name' => 'GPT-5.6 Luna',
+                            'context_window' => 272000,
+                            'max_tokens' => 128000,
+                            'input' => ['text', 'image'],
+                            'tool_calling' => true,
+                            'reasoning' => true,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+    }
 
     private function createResolver(array $aiData): SessionAwareModelResolver
     {

@@ -48,7 +48,6 @@ final class ExecutionWorkerTest extends TestCase
             idempotencyKey: 'llm-idemp-1',
             contextRef: 'hot:run:run-worker-1',
             toolsRef: 'toolset:run:run-worker-1:turn:4',
-            model: 'test-model',
         ));
 
         $this->assertCount(1, $commandBus->messages);
@@ -85,7 +84,6 @@ final class ExecutionWorkerTest extends TestCase
             idempotencyKey: 'llm-malformed-1',
             contextRef: 'hot:run:run-malformed-1',
             toolsRef: 'toolset:run:run-malformed-1:turn:3',
-            model: 'test-model',
         ));
 
         $this->assertCount(1, $commandBus->messages);
@@ -129,7 +127,6 @@ final class ExecutionWorkerTest extends TestCase
             idempotencyKey: 'llm-obs-1',
             contextRef: 'hot:run:run-worker-obs-1',
             toolsRef: 'toolset:run:run-worker-obs-1:turn:2',
-            model: 'test-model',
         ));
 
         $snapshot = $metrics->snapshot();
@@ -276,7 +273,6 @@ final class ExecutionWorkerTest extends TestCase
             idempotencyKey: 'llm-empty-metrics-1',
             contextRef: 'hot:run:run-empty-metrics-1',
             toolsRef: 'toolset:run:run-empty-metrics-1:turn:3',
-            model: 'test-model',
         ));
 
         // Metrics: the empty response should be counted as an error call.
@@ -338,7 +334,6 @@ final class ExecutionWorkerTest extends TestCase
             idempotencyKey: 'llm-empty-1',
             contextRef: 'hot:run:run-empty-1',
             toolsRef: 'toolset:run:run-empty-1:turn:3',
-            model: 'test-model',
         ));
 
         $this->assertCount(1, $commandBus->messages);
@@ -387,7 +382,6 @@ final class ExecutionWorkerTest extends TestCase
             idempotencyKey: 'llm-finish-only-1',
             contextRef: 'hot:run:run-finish-only-1',
             toolsRef: 'toolset:run:run-finish-only-1:turn:1',
-            model: 'test-model',
         ));
 
         $this->assertCount(1, $commandBus->messages);
