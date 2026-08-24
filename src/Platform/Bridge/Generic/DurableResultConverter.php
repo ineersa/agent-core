@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Platform\Bridge\Generic;
 
+use Ineersa\Platform\Error\ProviderErrorFormatter;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\Generic\Completions\CompletionsConversionTrait;
 use Symfony\AI\Platform\Bridge\Generic\Completions\FinishReasonMapper;
@@ -90,13 +91,15 @@ final class DurableResultConverter extends ResultConverter
         $response = $result->getObject();
 
         if (401 === $response->getStatusCode()) {
-            $errorMessage = json_decode($response->getContent(false), true)['error']['message'] ?? 'Authentication failed.';
+            $formatted = ProviderErrorFormatter::format(ProviderErrorFormatter::decodeError($response->getContent(false)));
+            $errorMessage = '' !== $formatted ? $formatted : 'Authentication failed.';
             throw new AuthenticationException($errorMessage);
         }
 
         if (400 === $response->getStatusCode()) {
-            $error = json_decode($response->getContent(false), true)['error'] ?? [];
-            $errorMessage = $error['message'] ?? 'Bad Request';
+            $error = ProviderErrorFormatter::decodeError($response->getContent(false));
+            $formatted = ProviderErrorFormatter::format($error);
+            $errorMessage = '' !== $formatted ? $formatted : 'Bad Request';
 
             if ('context_length_exceeded' === ($error['code'] ?? null) || preg_match('/context[_ ]length[_ ]exceeded/i', $errorMessage)) {
                 throw new ExceedContextSizeException($errorMessage);
@@ -106,12 +109,14 @@ final class DurableResultConverter extends ResultConverter
         }
 
         if (429 === $response->getStatusCode()) {
-            $errorMessage = json_decode($response->getContent(false), true)['error']['message'] ?? null;
+            $formatted = ProviderErrorFormatter::format(ProviderErrorFormatter::decodeError($response->getContent(false)));
+            $errorMessage = '' !== $formatted ? $formatted : null;
             throw new RateLimitExceededException(null, $errorMessage);
         }
 
         if (($code = $response->getStatusCode()) >= 500) {
-            $errorMessage = json_decode($response->getContent(false), true)['error']['message'] ?? null;
+            $formatted = ProviderErrorFormatter::format(ProviderErrorFormatter::decodeError($response->getContent(false)));
+            $errorMessage = '' !== $formatted ? $formatted : null;
             throw new ServerException($code, $errorMessage);
         }
 

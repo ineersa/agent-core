@@ -49,12 +49,20 @@ final readonly class ModelResolverRoutingSubscriber implements EventSubscriberIn
         }
 
         $options = PlatformInvocationMetadata::strip($event->getOptions());
-        $resolvedModel = $this->modelResolver->resolve(
-            $event->getModel(),
-            $messageBag,
-            $metadata->input,
-            new ModelResolutionOptions($options),
-        );
+
+        // LlmPlatformAdapter resolves ordinary turns once at the provider
+        // boundary and carries the identity on the metadata. Reuse it so the
+        // ModelRoutingEvent boundary never re-reads mutable session/default
+        // state — a single resolution per provider call. When the metadata has
+        // no resolved identity (invocations that did not go through the
+        // adapter, e.g. the extension AgentRunner), fall back to resolving here.
+        $resolvedModel = $metadata->resolvedModel
+            ?? $this->modelResolver->resolve(
+                $event->getModel(),
+                $messageBag,
+                $metadata->input,
+                new ModelResolutionOptions($options),
+            );
 
         $event->setModel($resolvedModel->model);
 

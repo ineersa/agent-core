@@ -390,6 +390,8 @@ final class LlmStepResultHandlerTest extends TestCase
                 'message' => 'LLM provider returned reasoning without a final assistant response.',
                 'retryable' => false,
             ],
+            model: 'runpod/Qwen3.6-27B',
+            reasoning: 'medium',
         );
 
         $result = $handler->handle($message, $state);
@@ -428,6 +430,9 @@ final class LlmStepResultHandlerTest extends TestCase
             $llmStepFailed->payload['retryable'] ?? true,
             'empty_assistant_content must be non-retryable.',
         );
+        // The failed event must carry the actual resolved execution identity.
+        $this->assertSame('runpod/Qwen3.6-27B', $llmStepFailed->payload['model'] ?? null);
+        $this->assertSame('medium', $llmStepFailed->payload['reasoning'] ?? null);
     }
 
     public function testRetryableErrorBelowCapSchedulesAutomaticContinue(): void
@@ -735,7 +740,8 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 4,
             activeStepId: 'turn-1-step',
-            model: 'test-model');
+            // Historical run identity (stale after a session-level model change).
+            model: 'grok-cli/grok-composer-2.5-fast');
 
         $message = new LlmStepResult(
             runId: 'run-parallel-max',
@@ -751,6 +757,9 @@ final class LlmStepResultHandlerTest extends TestCase
             stopReason: 'tool_call',
             error: null,
             toolsRef: 'default',
+            // Actual model that produced this result (session 41 regression:
+            // RunState.model stayed Grok, the executed result was Sol).
+            model: 'openai-codex/gpt-5.6-sol',
         );
 
         $result = $handler->handle($message, $state);
@@ -761,6 +770,9 @@ final class LlmStepResultHandlerTest extends TestCase
             $this->assertInstanceOf(ExecuteToolCall::class, $dispatched);
             $this->assertSame(4, $dispatched->maxParallelism);
             $this->assertSame('parallel', $dispatched->mode);
+            // Tool-launched children inherit the executed result model, not the
+            // historical RunState model.
+            $this->assertSame('openai-codex/gpt-5.6-sol', $dispatched->parentModel);
         }
     }
 

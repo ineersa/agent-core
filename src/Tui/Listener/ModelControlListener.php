@@ -70,18 +70,16 @@ final class ModelControlListener implements TuiListenerRegistrar, SlashCommandCa
         $favPickerController = $services->favoritePicker;
 
         // ── Bind /model slash command to the session handler ──
-        $modelHandler = new ModelCommandHandler($modelService, $appConfig, $state, $pickerController, $favPickerController, $this->logger, $screen, sessionClient: $context->client);
+        $modelHandler = new ModelCommandHandler($modelService, $appConfig, $state, $pickerController, $favPickerController, $this->logger, $screen);
         $commandRegistry->bind('model', $modelHandler);
 
         // ── Bind /model-favourites slash command ──
-        $favCmdHandler = new ModelCommandHandler($modelService, $appConfig, $state, $pickerController, $favPickerController, $this->logger, $screen, isFavourites: true, sessionClient: $context->client);
+        $favCmdHandler = new ModelCommandHandler($modelService, $appConfig, $state, $pickerController, $favPickerController, $this->logger, $screen, isFavourites: true);
         $commandRegistry->bind('model-favourites', $favCmdHandler);
 
         // ── Register Ctrl+P — cycle favorite models ──
-        $sessionClient = $context->client;
-        $logger = $this->logger;
         $tui->addListener(static function (InputEvent $event) use (
-            $modelService, $state, $appConfig, $screen, $sessionClient, $logger,
+            $modelService, $state, $appConfig, $screen,
         ): void {
             // Ctrl+P is \x10
             if ("\x10" !== $event->getData()) {
@@ -101,29 +99,6 @@ final class ModelControlListener implements TuiListenerRegistrar, SlashCommandCa
 
             // Apply editor border colour matching the new reasoning level.
             $screen->applyEditorBorderColor($state->footerReasoning);
-
-            if ('' !== $state->sessionId) {
-                try {
-                    $sessionClient->send(
-                        $state->sessionId,
-                        new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(
-                            type: 'change_model',
-                            text: null,
-                            payload: ['model' => $nextRef->toString()],
-                        ),
-                    );
-                } catch (\Throwable $exception) {
-                    // Intentional local degradation: settings/footer already updated;
-                    // durable run model change is best-effort and must not block the hotkey path.
-                    $logger->warning('tui.model_control.change_model_send_failed', [
-                        'session_id' => $state->sessionId,
-                        'component' => 'tui.model_control',
-                        'event_type' => 'tui.model_control.change_model_send_failed',
-                        'model' => $nextRef->toString(),
-                        'exception_class' => $exception::class,
-                    ]);
-                }
-            }
 
             // For draft sessions, carry the model into the request so it is
             // used when the draft is promoted on first submit.  Without this,

@@ -93,8 +93,4 @@ final class ContinueCountingAgentRunner implements AgentRunnerInterface
     public function compact(string $runId, ?string $customInstructions = null): void
     {
     }
-
-    public function changeModel(string $runId, string $model): void
-    {
-    }
 }

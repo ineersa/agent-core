@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
+use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 
 final readonly class PlatformInvocationMetadata
 {
@@ -14,6 +15,15 @@ final readonly class PlatformInvocationMetadata
     public function __construct(
         public ModelInvocationInput $input,
         public CancellationTokenInterface $cancelToken,
+        /**
+         * The model identity already resolved for this invocation.
+         *
+         * Set by LlmPlatformAdapter (single resolution per provider call).
+         * ModelResolverRoutingSubscriber reuses it instead of re-resolving
+         * mutable session/default state at the ModelRoutingEvent boundary.
+         * Null when the invocation did not go through the adapter.
+         */
+        public ?ResolvedModel $resolvedModel = null,
     ) {
     }
 

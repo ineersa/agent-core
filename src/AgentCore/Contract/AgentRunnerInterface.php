@@ -29,6 +29,4 @@ interface AgentRunnerInterface
     public function answerHuman(string $runId, string $questionId, mixed $answer): void;
 
     public function compact(string $runId, ?string $customInstructions = null): void;
-
-    public function changeModel(string $runId, string $model): void;
 }

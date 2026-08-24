@@ -18,9 +18,17 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use PHPUnit\Framework\TestCase;
 
+/**
+ * Execution identity is resolved at the provider boundary, not scheduled from
+ * RunState.  RunState.model remains a historical replay projection (run_started
+ * / model_changed) for resume display and diagnostics, but AdvanceRun schedules
+ * {@see ExecuteLlmStep} without any model snapshot: the current session
+ * metadata wins for ordinary turns (session-41 regression: DB said Sol/high,
+ * historical run_started said Grok/minimal — execution must use Sol/high).
+ */
 final class RunStateModelIdentityTest extends TestCase
 {
-    public function testRunStartedModelSurvivesReplayAndSchedulesExecuteLlmStep(): void
+    public function testRunStartedModelReplaysIntoStateButSchedulingCarriesNoModel(): void
     {
         $runId = 'run-model-1';
         $events = [
@@ -40,7 +48,7 @@ final class RunStateModelIdentityTest extends TestCase
         ];
 
         $state = (new RunStateReducer())->replay(RunState::queued($runId), $events);
-        $this->assertSame('deepseek/deepseek-v4-flash', $state->model);
+        $this->assertSame('deepseek/deepseek-v4-flash', $state->model, 'Historical model still replays for diagnostics.');
 
         $commandStore = new InMemoryCommandStore();
         $handler = new AdvanceRunHandler(
@@ -62,24 +70,13 @@ final class RunStateModelIdentityTest extends TestCase
             }
         }
         $this->assertInstanceOf(ExecuteLlmStep::class, $step);
-        $this->assertSame('deepseek/deepseek-v4-flash', $step->model);
-        $this->assertSame('deepseek/deepseek-v4-flash', $result->nextState?->model);
+        $this->assertFalse(property_exists($step, 'model'), 'Scheduling must not snapshot RunState model.');
+        $this->assertSame('deepseek/deepseek-v4-flash', $result->nextState?->model, 'Replay projection stays intact.');
     }
 
-    public function testModelChangedEventReplaysIntoStateAndNextScheduleUsesNewModel(): void
+    public function testModelChangedEventReplaysIntoStateButSchedulingStillCarriesNoModel(): void
     {
         $runId = 'run-model-2';
-        $queuedStep = new ExecuteLlmStep(
-            runId: $runId,
-            turnNo: 1,
-            stepId: 'queued-old',
-            attempt: 1,
-            idempotencyKey: 'ik-old',
-            contextRef: 'hot:run:'.$runId,
-            toolsRef: 'toolset:run:'.$runId.':turn:1',
-            model: 'deepseek/deepseek-v4-flash',
-        );
-
         $replayed = (new RunStateReducer())->replay(
             RunState::queued($runId),
             [
@@ -104,8 +101,6 @@ final class RunStateModelIdentityTest extends TestCase
         );
 
         $this->assertSame('openai-codex/gpt-5.6-sol', $replayed->model);
-        // Already-queued ExecuteLlmStep remains immutable on the old model.
-        $this->assertSame('deepseek/deepseek-v4-flash', $queuedStep->model);
 
         $commandStore = new InMemoryCommandStore();
         $handler = new AdvanceRunHandler(
@@ -127,11 +122,11 @@ final class RunStateModelIdentityTest extends TestCase
             }
         }
         $this->assertInstanceOf(ExecuteLlmStep::class, $step);
-        $this->assertSame('openai-codex/gpt-5.6-sol', $step->model);
+        $this->assertFalse(property_exists($step, 'model'), 'Historical model_changed must not become an execution override.');
         $this->assertSame('openai-codex/gpt-5.6-sol', $result->nextState?->model);
     }
 
-    public function testMissingRunModelFailsClosedBeforeScheduling(): void
+    public function testMissingRunModelSchedulesWithNoModelInsteadOfFailingClosed(): void
     {
         $runId = 'run-model-missing';
         $state = new RunState(runId: $runId, status: RunStatus::Running, model: null);
@@ -142,9 +137,15 @@ final class RunStateModelIdentityTest extends TestCase
             ),
             eventFactory: new EventFactory(),
         );
+        $result = $handler->handle(new AdvanceRun($runId, 0, 'adv-missing', 1, 'ik-missing'), $state);
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('run model is absent');
-        $handler->handle(new AdvanceRun($runId, 0, 'adv-missing', 1, 'ik-missing'), $state);
+        $step = null;
+        foreach ($result->effects as $effect) {
+            if ($effect instanceof ExecuteLlmStep) {
+                $step = $effect;
+            }
+        }
+        $this->assertInstanceOf(ExecuteLlmStep::class, $step);
+        $this->assertFalse(property_exists($step, 'model'), 'Missing RunState model is not a scheduling failure: the provider boundary resolves it.');
     }
 }
