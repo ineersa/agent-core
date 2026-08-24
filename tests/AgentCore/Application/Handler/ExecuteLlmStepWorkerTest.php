@@ -50,7 +50,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-1',
             contextRef: 'ctx-1',
             toolsRef: 'tools-1',
-            model: 'test-model',
         ));
 
         $this->assertCount(1, $testBus->messages);
@@ -88,7 +87,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-2',
             contextRef: 'ctx-2',
             toolsRef: 'tools-2',
-            model: 'test-model',
         ));
 
         $this->assertCount(1, $testBus->messages);
@@ -127,7 +125,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-3',
             contextRef: 'ctx-3',
             toolsRef: 'tools-3',
-            model: 'test-model',
         ));
 
         $this->assertCount(1, $testBus->messages);
@@ -169,7 +166,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-4',
             contextRef: 'ctx-4',
             toolsRef: 'tools-4',
-            model: 'test-model',
         ));
 
         $this->assertCount(1, $testBus->messages);
@@ -185,32 +181,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         // No retry warning.
         $retryLogs = $this->filterLogsByEventType($testLogger, 'llm.request.retrying_thinking_only');
         $this->assertCount(0, $retryLogs, 'No retry on provider error.');
-    }
-
-    public function testInvokesPlatformWithMessageModel(): void
-    {
-        $validResponse = new AssistantMessage(new Text('ok'));
-        $platform = $this->createAlternatingPlatform([$validResponse]);
-        $testBus = new TestMessageBus();
-
-        $worker = new ExecuteLlmStepWorker(
-            $platform,
-            $testBus,
-            logger: new TestLogger(),
-        );
-
-        $worker(new ExecuteLlmStep(
-            runId: 'session-42',
-            turnNo: 1,
-            stepId: 'step-vision',
-            attempt: 1,
-            idempotencyKey: 'key-vision',
-            contextRef: 'ctx',
-            toolsRef: 'tools',
-            model: 'llama_cpp/flash',
-        ));
-
-        $this->assertSame('llama_cpp/flash', $platform->lastRequestModel);
     }
 
     public function testThinkingOnlyRetryReusesMessageModel(): void
@@ -234,11 +204,10 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-retry',
             contextRef: 'ctx',
             toolsRef: 'tools',
-            model: 'runpod/Qwen3.6-27B',
         ));
 
         $this->assertSame(2, $platform->invocationCount);
-        $this->assertSame(['runpod/Qwen3.6-27B', 'runpod/Qwen3.6-27B'], $platform->requestModels);
+        $this->assertSame(['', ''], $platform->requestModels);
     }
 
     // ── helpers ──

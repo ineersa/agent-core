@@ -22,7 +22,9 @@ final class SanitizedGenericModelClientTest extends TestCase
         $model = new CompletionsModel('test', [Capability::INPUT_TEXT]);
 
         $client->request($model, ['messages' => []], [
+            '_agent_core_invocation' => new \stdClass(),
             'run_id' => 'session-stable-uuid',
+            'provider_cache_key' => 'provider-cache-uuid',
             'tools_ref' => 'default',
             'turn_no' => 3,
             'stream' => true,

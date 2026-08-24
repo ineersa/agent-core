@@ -731,19 +731,22 @@ final class ResultConverterTest extends TestCase
         }
     }
 
-    public function testStreamErrorMessageDoesNotLeakProviderSecret(): void
+    public function testStreamErrorMessageRetainsBoundedProviderMessageButOmitsOtherFreeText(): void
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createStub(ResponseInterface::class);
         $httpResponse->method('getStatusCode')->willReturn(200);
 
         $secret = 'LEAKED_STREAM_SECRET_MARKER_7f3a91c2';
+        $descriptionMarker = 'LEAKED_DESCRIPTION_MARKER_7f3a91c2';
         $events = [
             ['type' => 'error', 'error' => [
                 'code' => 'invalid_request_error',
                 'type' => 'invalid_request',
                 'param' => 'model',
                 'message' => $secret,
+                'error_description' => $descriptionMarker,
+                'detail' => $descriptionMarker,
             ]],
         ];
 
@@ -755,7 +758,11 @@ final class ResultConverterTest extends TestCase
             $this->fail('Expected stream error');
         } catch (RuntimeException $e) {
             $this->assertStringContainsString('[invalid_request_error/invalid_request/model]', $e->getMessage());
-            $this->assertStringNotContainsString($secret, $e->getMessage());
+            // The bounded provider error.message is retained so an invalid
+            // request keeps its actionable diagnostic; alternative free-text
+            // keys (error_description, detail) never leak.
+            $this->assertStringContainsString($secret, $e->getMessage());
+            $this->assertStringNotContainsString($descriptionMarker, $e->getMessage());
         }
     }
 
@@ -792,8 +799,9 @@ final class ResultConverterTest extends TestCase
             iterator_to_array($streamResult->getContent());
             $this->fail('Expected stream error');
         } catch (RuntimeException $e) {
-            $this->assertSame('[server_is_overloaded/service_unavailable_error]', $e->getMessage());
-            $this->assertStringNotContainsString($secret, $e->getMessage());
+            $this->assertStringContainsString('[server_is_overloaded/service_unavailable_error]', $e->getMessage());
+            // Bounded provider message is retained for diagnostics.
+            $this->assertStringContainsString($secret, $e->getMessage());
         }
     }
 

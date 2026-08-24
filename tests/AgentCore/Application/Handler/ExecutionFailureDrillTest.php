@@ -49,7 +49,6 @@ final class ExecutionFailureDrillTest extends TestCase
             idempotencyKey: 'llm-failure-worker-1',
             contextRef: 'hot:run:run-failure-worker-1',
             toolsRef: 'toolset:run:run-failure-worker-1:turn:1',
-            model: 'test-model',
         );
 
         $failingWorker = new ExecuteLlmStepWorker(

@@ -130,7 +130,7 @@ final class HistoryTailDiscardServiceTest extends TestCase
             stepId: 's',
             attempt: 1,
             idempotencyKey: 'k',
-            kind: 'change_model',
+            kind: 'select_history_turn',
             payload: [],
         )));
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Symfony\AI\Platform\Bridge\OpenAICodex;
 
+use Ineersa\Platform\Error\ProviderErrorFormatter;
 use Symfony\AI\Platform\Bridge\OpenResponses\TokenUsageExtractor;
 use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Exception\BadRequestException;
@@ -119,22 +120,10 @@ final class ResultConverter implements ResultConverterInterface
         $data = json_decode($body, true);
 
         if (null !== $data && isset($data['error']) && \is_array($data['error'])) {
-            $error = $data['error'];
-            $parts = [];
-            if (isset($error['code']) && '' !== $error['code']) {
-                $parts[] = (string) $error['code'];
+            $text = ProviderErrorFormatter::format($data['error']);
+            if ('' !== $text) {
+                return $text;
             }
-            if (isset($error['type']) && '' !== $error['type']) {
-                $parts[] = (string) $error['type'];
-            }
-            if (isset($error['param']) && '' !== $error['param']) {
-                $parts[] = (string) $error['param'];
-            }
-
-            $prefix = [] !== $parts ? '['.implode('/', $parts).']: ' : '';
-            $message = $error['message'] ?? '-';
-
-            return $prefix.$message;
         }
 
         // Alternative top-level error keys (Hydra, OAuth, or Codex-specific shapes).
@@ -207,28 +196,7 @@ final class ResultConverter implements ResultConverterInterface
             return '';
         }
 
-        $data = json_decode($body, true);
-        if (!\is_array($data) || !isset($data['error']) || !\is_array($data['error'])) {
-            return '';
-        }
-
-        $error = $data['error'];
-        $parts = [];
-        foreach (['code', 'type', 'param'] as $key) {
-            if (!isset($error[$key]) || '' === $error[$key]) {
-                continue;
-            }
-            $sanitized = mb_substr(trim((string) $error[$key]), 0, 64);
-            if ('' !== $sanitized) {
-                $parts[] = $sanitized;
-            }
-        }
-
-        if ([] === $parts) {
-            return '';
-        }
-
-        return '['.implode('/', $parts).']';
+        return ProviderErrorFormatter::formatFields(ProviderErrorFormatter::decodeError($body));
     }
 
     /**
@@ -478,7 +446,7 @@ final class ResultConverter implements ResultConverterInterface
      *
      * @param array<string, mixed> $event
      *
-     * @return array{code?: string|null, type?: string|null, param?: string|null}
+     * @return array{code?: string|null, type?: string|null, param?: string|null, message?: string|null}
      */
     private function extractStreamError(array $event): array
     {
@@ -486,37 +454,29 @@ final class ResultConverter implements ResultConverterInterface
             $event = $event['error'];
         }
 
+        $message = $event['message'] ?? null;
+
         return [
             'code' => \is_string($event['code'] ?? null) ? $event['code'] : null,
             'type' => \is_string($event['type'] ?? null) && 'error' !== $event['type'] ? $event['type'] : null,
             'param' => \is_string($event['param'] ?? null) ? $event['param'] : null,
+            'message' => \is_string($message) && '' !== trim($message) ? mb_substr(trim($message), 0, 500) : null,
         ];
     }
 
     /**
-     * Privacy-safe stream error text: allowlisted code/type/param only (bounded).
+     * Privacy-safe stream error text: allowlisted code/type/param plus a
+     * bounded provider message.  An invalid request keeps its structured
+     * identity and actionable message instead of collapsing to a bare
+     * "[code/type/param]" token.
      *
-     * @param array{code?: string|null, type?: string|null, param?: string|null} $error
+     * @param array{code?: string|null, type?: string|null, param?: string|null, message?: string|null} $error
      */
     private function generateErrorMessage(array $error): string
     {
-        $parts = [];
-        foreach (['code', 'type', 'param'] as $key) {
-            $value = $error[$key] ?? null;
-            if (!\is_string($value) || '' === trim($value)) {
-                continue;
-            }
-            $sanitized = mb_substr(trim($value), 0, 64);
-            if ('' !== $sanitized) {
-                $parts[] = $sanitized;
-            }
-        }
+        $text = ProviderErrorFormatter::format($error);
 
-        if ([] === $parts) {
-            return 'Codex stream error.';
-        }
-
-        return \sprintf('[%s]', implode('/', $parts));
+        return '' !== $text ? $text : 'Codex stream error.';
     }
 
     private function sanitizeIncompleteReason(mixed $reason): string

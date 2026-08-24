@@ -2,17 +2,22 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tests\Config;
+namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
-use Ineersa\CodingAgent\Config\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
@@ -241,6 +246,54 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertSame([], $result->options);
     }
 
+    public function testChildRunStartedMetadataModelAndReasoningSelected(): void
+    {
+        $childRunId = UuidV7::v7()->toRfc4122();
+
+        $eventStore = new InMemoryEventStore();
+        $eventStore->seed(new RunEvent(
+            runId: $childRunId,
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'step_id' => 'start-child',
+                'payload' => [
+                    'messages' => [],
+                    'metadata' => [
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'parent_run_id' => '1',
+                            'agent_name' => 'scout',
+                            'artifact_id' => 'agent_abc123',
+                        ],
+                        'model' => 'llama_cpp/flash',
+                        'reasoning' => 'high',
+                        'tools_scope' => ['allowed_tools' => []],
+                    ],
+                ],
+            ],
+            createdAt: new \DateTimeImmutable(),
+        ));
+        $reader = new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
+
+        // Child runs keep their RunStarted definition model/reasoning instead
+        // of the defaults (deepseek-v4-pro/medium) and have no session row, so
+        // no provider_cache_key is resolved.
+        $resolver = $this->createResolver($this->standardAiData(), $reader);
+        $result = $resolver->resolve(
+            '',
+            new MessageBag(),
+            new ModelInvocationInput(runId: $childRunId),
+            new ModelResolutionOptions(),
+        );
+
+        $this->assertSame('llama_cpp/flash', $result->model);
+        $this->assertSame('llama_cpp', $result->providerId);
+        $this->assertSame('high', $result->reasoning);
+        $this->assertSame([], $result->options);
+    }
+
     public function testEphemeralHexRunWithoutSessionRowResolvesWithoutProviderCacheKey(): void
     {
         $resolver = $this->createResolver($this->standardAiData());
@@ -339,7 +392,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
     //  Helpers
     // ──────────────────────────────────────────────
 
-    private function createResolver(array $aiData): SessionAwareModelResolver
+    private function createResolver(array $aiData, ?SubagentRunMetadataReader $childMetadataReader = null): SessionAwareModelResolver
     {
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(
@@ -358,7 +411,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $catalog = $appConfig->catalog ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
-        return new SessionAwareModelResolver($selectionService, $catalog, $sessionMetaStore);
+        return new SessionAwareModelResolver($selectionService, $catalog, $sessionMetaStore, $childMetadataReader);
     }
 
     private function makeAppConfig(array $aiData): AppConfig

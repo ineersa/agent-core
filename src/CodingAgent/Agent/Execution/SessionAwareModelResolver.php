@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Config;
+namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
@@ -13,6 +13,8 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningOptionsFeatureShaper;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ZaiToolStreamFeatureShaper;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Ineersa\CodingAgent\Config\ReasoningOptionsResolver;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\Component\Uid\Uuid;
@@ -37,6 +39,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         private readonly ModelSelectionService $selectionService,
         private readonly HatfieldModelCatalog $catalog,
         private readonly HatfieldSessionStore $sessionMetadataStore,
+        private readonly ?SubagentRunMetadataReader $childMetadataReader = null,
     ) {
     }
 
@@ -51,17 +54,9 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         $sessionId = $input->runId ?? '';
 
         // Non-empty $defaultModel is an explicit override (e.g. compaction
-        // model, background summarization). Empty string means no override —
-        // resolve from session metadata / defaults as before.  The legacy
-        // container parameter was emptied in an earlier change, so this is
-        // now a safe discriminator: empty = default path, non-empty = caller
-        // explicitly chose a model.
+        // model, background summarization, extension agent runs). Empty string
+        // means no override — resolve from session metadata / defaults.
         $explicitModel = '' !== $defaultModel ? $defaultModel : null;
-
-        $modelRef = $this->selectionService->resolveInitialModel(
-            explicitModel: $explicitModel,
-            sessionId: $sessionId,
-        );
 
         // Read thinking_level from ModelResolutionOptions when non-empty.
         // This allows compaction (and future summarization callers) to pass
@@ -71,6 +66,24 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         $explicitReasoning = \is_string($options->values['thinking_level'] ?? null) && '' !== $options->values['thinking_level']
             ? $options->values['thinking_level']
             : null;
+
+        // Agent child runs (fork/subagent) keep their RunStarted definition
+        // model/reasoning; ordinary sessions (numeric ids) resolve mutable
+        // session metadata so a picked model wins over historical run_started.
+        if (null === $explicitModel && null !== $this->childMetadataReader && !ctype_digit($sessionId)) {
+            $childMetadata = $this->childMetadataReader->readRunStartedMetadata($sessionId);
+            if (null !== $childMetadata && $childMetadata->isAgentChild()) {
+                $explicitModel = $childMetadata->model;
+                if (null === $explicitReasoning && null !== $childMetadata->reasoning) {
+                    $explicitReasoning = $childMetadata->reasoning;
+                }
+            }
+        }
+
+        $modelRef = $this->selectionService->resolveInitialModel(
+            explicitModel: $explicitModel,
+            sessionId: $sessionId,
+        );
 
         $reasoning = $this->selectionService->resolveInitialReasoning(
             explicitReasoning: $explicitReasoning,

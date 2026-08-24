@@ -249,10 +249,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             'answer_tool_question' => $this->handleAnswerToolQuestion($runId, $command),
             'shell_command' => $this->handleShellCommandSend($runId, $command),
             'select_history_turn' => $this->handleInProcessSelectHistoryTurn($runId, $command),
-            'change_model' => $this->runner->changeModel(
-                $runId,
-                (string) ($command->payload['model'] ?? ''),
-            ),
             default => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type)),
         };
     }
