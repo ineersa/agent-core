@@ -1175,6 +1175,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $runState = $this->createRunState($messages);
 
         $this->runStore->method('get')->willReturn($runState);
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         $subscriber->handleAfterTurnCommit($this->createHookContext());
 

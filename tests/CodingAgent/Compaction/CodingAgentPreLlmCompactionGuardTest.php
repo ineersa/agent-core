@@ -410,6 +410,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             ],
         );
         $this->eventStore->method('firstFor')->willReturn($runStarted);
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         $messages = [$this->makeTextMessage('user', 'Hello')];
         $this->assertFalse(
