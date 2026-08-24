@@ -313,7 +313,11 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 assistantMessage: $assistantMessagePayload,
                 argSchema: $toolSchemas[$toolCall['name']] ?? null,
                 toolsRef: $message->toolsRef,
-                parentModel: $state->model,
+                // The parent model inherited by tool-launched children must
+                // be the model that actually produced this LLM result, not
+                // the historical RunState model (which may be stale after a
+                // session-level model change).
+                parentModel: $message->model,
             );
         }
 
