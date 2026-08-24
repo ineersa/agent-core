@@ -11,13 +11,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(ThemePalette::class)]
 final class ThemePaletteTest extends TestCase
 {
-    public function testName(): void
-    {
-        $palette = new ThemePalette('test');
-
-        $this->assertSame('test', $palette->name);
-    }
-
     public function testGetKnownColor(): void
     {
         $palette = new ThemePalette('test', ['accent' => '#ff00ff']);
@@ -30,20 +23,6 @@ final class ThemePaletteTest extends TestCase
         $palette = new ThemePalette('test', []);
 
         $this->assertSame('', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
-    }
-
-    public function testHasReturnsTrueForNonEmpty(): void
-    {
-        $palette = new ThemePalette('test', ['accent' => 'cyan']);
-
-        $this->assertTrue($palette->has(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
-    }
-
-    public function testHasReturnsFalseForEmpty(): void
-    {
-        $palette = new ThemePalette('test', []);
-
-        $this->assertFalse($palette->has(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
     }
 
     public function testWithOverrides(): void
@@ -109,7 +88,8 @@ final class ThemePaletteTest extends TestCase
             'colors' => [
                 'muted' => 'nord3',
                 'text' => '',
-                'tool_argument_key' => 'muted',
+                'tool_argument_key' => 'warning',
+                'warning' => '#ebcb8b',
                 'tool_argument_value' => 'text',
             ],
         ];
@@ -118,7 +98,7 @@ final class ThemePaletteTest extends TestCase
 
         $this->assertSame('#4c566a', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Muted));
         $this->assertSame('', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Text));
-        $this->assertSame('#4c566a', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::ToolArgumentKey));
+        $this->assertSame('#ebcb8b', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::ToolArgumentKey));
         $this->assertSame('', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::ToolArgumentValue));
     }
 

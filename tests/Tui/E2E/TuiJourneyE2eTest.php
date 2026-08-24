@@ -20,7 +20,7 @@ use PHPUnit\Framework\TestCase;
  *  - Launches the TUI once with APP_ENV=test + replay fixtures so
  *    model-dependent steps are deterministic and require no live
  *    llama.cpp.
- *  - UI-only tmux steps (/hotkeys, shell) run before model interaction.
+ *  - Real shell prefix + follow-up after completed shell run.
  *  - A single model-interaction step submits a prompt and verifies
  *    the replay-backed assistant block appears.
  *  - Teardown sends Ctrl+D for a clean exit; TmuxHarness destructor
@@ -62,25 +62,12 @@ final class TuiJourneyE2eTest extends TestCase
      *
      * Exercises in order (tmux integration smoke):
      *  1. Startup layout (logo, status, footer)
-     *  2. /hotkeys — real registrars → SubmitListener → mounted HotkeyTableWidget
-     *  3. Slash completion — /he opens Completions with /help, Tab accepts, overlay closes
-     *  4. Shell !ls prefix — real command output proof + ordering
-     *  5. Inline shell on completed run + follow-up (issue #183 repro)
-     *  6. Clean exit via Ctrl+D
+     *  2. Shell !ls prefix — real command output proof + ordering
+     *  3. Inline shell on completed run + follow-up (issue #183 repro)
+     *  4. Clean exit via Ctrl+D
      *
-     * Virtual-only (not in this journey): startup detail {@see TuiStartupVirtualRenderTest},
-     * Shift+Tab reasoning status/border {@see TuiReasoningCycleTest},
-     *
-     * @ file completion menu/accept {@see TuiFileCompletionRenderTest},
-     * /export local confirmation {@see TuiExportCommandVirtualTest}; available-tools HTML {@see TuiExportCommandE2eTest},
-     * model replay assistant block + cache footer {@see TuiModelInteractionVirtualTest},
-     * !! rejection — {@see TuiVirtualInputTest}.
-     *
-     * !! double-bang rejection is covered by {@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest}.
-     *
-     * Ctrl+J newline is tested separately in HotkeySmokeTest
-     * (it is sensitive to terminal configuration and a race
-     * with replay-mode tmux session startup).
+     * Virtual-only: /hotkeys, slash completion/cursor, chrome ordering,
+     * !! rejection ({@see TuiVirtualInputTest}, {@see TuiStartupVirtualRenderTest}).
      */
     public function testJourneyCoversCoreTuiBehavior(): void
     {
@@ -94,11 +81,8 @@ final class TuiJourneyE2eTest extends TestCase
 
         try {
             $this->journeyPhase1StartupLayout($pane);
-            $this->journeyPhaseHotkeysCatalog($pane);
-            $this->journeyPhaseSlashCompletion($pane);
             $this->journeyPhase4ShellPrefixOutput($pane);
             $this->journeyPhase9InlineShellOnCompletedRun($pane);
-            $this->journeyPhase10ChromeStructureAfterAssistantOutput($pane);
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
@@ -125,9 +109,7 @@ final class TuiJourneyE2eTest extends TestCase
      */
     private function journeyPhase1StartupLayout(TmuxPane $pane): void
     {
-        $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-
-        $capture = $this->tmux->waitForTuiReadyAfterLogo($pane);
+        $capture = $this->tmux->waitForTuiReady($pane);
 
         $this->assertStringContainsString('█', $capture, 'Hatfield logo missing');
         $this->assertTrue(
@@ -137,124 +119,6 @@ final class TuiJourneyE2eTest extends TestCase
         $this->assertStringContainsString('◆', $capture, 'Footer widget missing');
         // Session ID in footer is covered by {@see TuiModelInteractionVirtualTest}.
         // At startup the footer shows model, token, timer, CWD, branch.
-    }
-
-    /**
-     * Phase hotkeys: real /hotkeys slash path through InteractiveMode registrars,
-     * SubmitListener structured meta, TranscriptBlockWidgetFactory, and mounted
-     * HotkeyTableWidget. Leaves the editor clean for later shell phases.
-     */
-    private function journeyPhaseHotkeysCatalog(TmuxPane $pane): void
-    {
-        $this->tmux->sendKey($pane, 'C-u');
-        $this->tmux->sendLiteral($pane, '/hotkeys');
-        $this->tmux->sendKey($pane, 'Enter');
-
-        $this->tmux->waitForCallback(
-            $pane,
-            static function (string $cap): bool {
-                return str_contains($cap, 'Keyboard shortcuts')
-                    && str_contains($cap, 'Ctrl+C')
-                    && (str_contains($cap, '┌') || str_contains($cap, '│'));
-            },
-            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-            message: '/hotkeys must render Keyboard shortcuts heading, Ctrl+C, and table borders',
-            history: 2000,
-        );
-
-        $capture = $this->tmux->capturePlainWithHistory($pane, 2000);
-        $this->assertStringContainsString('Keyboard shortcuts', $capture);
-        $this->assertStringContainsString('Ctrl+C', $capture);
-        $this->assertTrue(
-            str_contains($capture, 'Global') || str_contains($capture, 'Editor'),
-            '/hotkeys table must show a real registrar context group',
-        );
-        $this->assertTrue(
-            str_contains($capture, '┌') || str_contains($capture, '│') || str_contains($capture, '└'),
-            '/hotkeys table must show border chrome',
-        );
-
-        $this->tmux->saveAnsiSnapshot($pane, 'journey-hotkeys');
-
-        // Clear any residual editor text so later shell phases start clean.
-        $this->tmux->sendKey($pane, 'C-u');
-    }
-
-    /**
-     * Phase completion: slash-command completion through the real
-     * CompletionListener → CompletionMenu path (replay-backed, no model
-     * interaction needed).
-     *
-     * Types "/he" — live completion opens the Completions overlay showing
-     * the /help suggestion. First Tab accepts it (editor becomes "/help",
-     * overlay disappears). Second Tab with the overlay gone must not reopen
-     * it. Additional literal text must append after the accepted completion
-     * (cursor-at-end contract). Ends with C-u so later shell phases start
-     * clean.
-     */
-    private function journeyPhaseSlashCompletion(TmuxPane $pane): void
-    {
-        $this->tmux->sendKey($pane, 'C-u'); // Clear editor
-        $this->tmux->sendLiteral($pane, '/he');
-
-        // Live completion overlay must appear with the /help suggestion.
-        $this->tmux->waitForCallback(
-            $pane,
-            static function (string $cap): bool {
-                return str_contains($cap, 'Completions')
-                    && str_contains($cap, '/help');
-            },
-            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-            message: 'Typing "/he" must open the Completions overlay showing /help',
-            history: 2000,
-        );
-
-        $this->tmux->saveAnsiSnapshot($pane, 'journey-slash-completion-open');
-
-        // First Tab accepts the selected /help suggestion and closes the overlay.
-        $this->tmux->sendKey($pane, 'Tab');
-        $this->tmux->waitForCallback(
-            $pane,
-            static function (string $cap): bool {
-                return !str_contains($cap, 'Completions')
-                    && str_contains($cap, '/help');
-            },
-            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-            message: 'Tab must accept /help and remove the Completions overlay',
-            history: 2000,
-        );
-
-        // Second Tab: overlay already gone — must not reopen or submit.
-        $this->tmux->sendKey($pane, 'Tab');
-        $this->tmux->waitForCallback(
-            $pane,
-            static function (string $cap): bool {
-                return !str_contains($cap, 'Completions');
-            },
-            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-            message: 'Second Tab must not reopen the Completions overlay',
-            history: 2000,
-        );
-
-        // Cursor-at-end proof: after Tab accepted "/help ", additional literal
-        // text must appear AFTER the accepted completion in the visible editor.
-        // This exercises the real terminal → InputEvent → CompletionListener →
-        // EditorWidget path; a cursor left at the start would render "xyz/help ".
-        $this->tmux->sendLiteral($pane, 'xyz');
-        $this->tmux->waitForCallback(
-            $pane,
-            static function (string $cap): bool {
-                return str_contains($cap, '/help xyz');
-            },
-            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-            message: 'Typing after the accepted completion must append after /help (cursor at end)',
-            history: 2000,
-        );
-
-        $this->tmux->saveAnsiSnapshot($pane, 'journey-slash-completion-cursor-at-end');
-
-        // Clear editor so later shell phases start clean.
-        $this->tmux->sendKey($pane, 'C-u');
     }
 
     /**
@@ -443,68 +307,6 @@ final class TuiJourneyE2eTest extends TestCase
         $this->tmux->saveAnsiSnapshot($pane, 'journey-inline-shell');
     }
 
-    /**
-     * Phase 10: migrated chrome structure/order after replay-backed assistant
-     * output (tui-05).
-     *
-     * After the phase-9 follow-up assistant block the terminal must show the
-     * directly mounted native chrome in display order: header logo →
-     * transcript/assistant → working/status row → compact header (the journey
-     * project ships one skill, so CompactHeaderRegistrar's first-tick snapshot
-     * renders a real skills row) → footer. Separator rows (bounded
-     * LiveTextWidget KEEP) must still span the full width.
-     */
-    private function journeyPhase10ChromeStructureAfterAssistantOutput(TmuxPane $pane): void
-    {
-        $capture = $this->tmux->waitForCallback(
-            $pane,
-            static fn (string $cap): bool => str_contains($cap, '● idle')
-                && str_contains($cap, '◇'),
-            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-            message: 'Chrome proof requires an idle terminal with the assistant block visible',
-            history: 2000,
-        );
-
-        $this->assertStringContainsString('█', $capture, 'Native header logo missing after assistant output');
-        $this->assertStringContainsString('◇', $capture, 'Assistant block missing');
-        $this->assertStringContainsString('● idle', $capture, 'Native working/status row missing');
-        $this->assertStringContainsString('◆', $capture, 'Native footer missing');
-
-        // Compact header: the directly mounted CompactHeaderWidget must show
-        // the journey skill. strrpos targets the compact-header occurrence
-        // (the loaded-resources startup block may list the same skill above
-        // the transcript).
-        $this->assertStringContainsString('skills', $capture, 'Compact header skills row missing');
-        $this->assertStringContainsString('journey-skill', $capture, 'Compact header skill entry missing');
-
-        $logoPos = strpos($capture, '█');
-        $assistantPos = strpos($capture, '◇');
-        $statusPos = strpos($capture, '● idle');
-        $skillPos = strrpos($capture, 'journey-skill');
-        $footerPos = strpos($capture, '◆');
-
-        $this->assertNotFalse($logoPos, 'Header logo position missing');
-        $this->assertNotFalse($assistantPos, 'Assistant block position missing');
-        $this->assertNotFalse($statusPos, 'Status row position missing');
-        $this->assertNotFalse($skillPos, 'Compact header skill position missing');
-        $this->assertNotFalse($footerPos, 'Footer position missing');
-        $this->assertLessThan($assistantPos, $logoPos, 'Header logo must render above the assistant block');
-        $this->assertLessThan($statusPos, $assistantPos, 'Assistant block must render above the status row');
-        $this->assertLessThan($skillPos, $statusPos, 'Status row must render above the compact header');
-        $this->assertLessThan($footerPos, $skillPos, 'Compact header must render above the footer');
-
-        // Separator rows (bounded LiveTextWidget KEEP) still span the width.
-        // (The `u` modifier is required: PCRE treats {10,} after a multibyte
-        // literal byte-wise without it.)
-        $this->assertMatchesRegularExpression(
-            '/─{10,}/u',
-            $capture,
-            'Full-width separator rows must remain in the chrome',
-        );
-
-        $this->tmux->saveAnsiSnapshot($pane, 'journey-chrome-order');
-    }
-
     // ── Helpers ───────────────────────────────────────────────────
 
     private function agentCommand(): string
@@ -543,7 +345,7 @@ final class TuiJourneyE2eTest extends TestCase
         return \sprintf(
             'APP_ENV=test %sHOME=%s %s %s %s agent '
                 .'--model=llama_cpp_test/test 2>&1',
-            TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
+            TuiE2eDatabaseEnv::shellPrefixWithLowLatencyMessenger($dbPath, $transportDbPath, $this->testProjectDir),
             escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
             escapeshellarg($php),

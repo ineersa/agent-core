@@ -156,13 +156,9 @@ PHP);
 
     private function waitForPidFile(): int
     {
-        $timeout = time() + 5;
-        while (!is_file($this->pidFile)) {
-            if (time() > $timeout) {
-                $this->fail('Timeout waiting for controller PID file at '.$this->pidFile);
-            }
-            usleep(50_000);
-        }
+        // Fake controller writes the PID before emitting runtime.ready; start()
+        // already waited for that event, so the PID file must exist now.
+        $this->assertFileExists($this->pidFile, 'PID file must exist after runtime.ready');
 
         $pid = (int) file_get_contents($this->pidFile);
 

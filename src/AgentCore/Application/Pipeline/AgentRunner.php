@@ -139,13 +139,6 @@ final readonly class AgentRunner implements AgentRunnerInterface
         ]);
     }
 
-    public function changeModel(string $runId, string $model): void
-    {
-        $this->applyCoreCommand($runId, CoreCommandKind::ChangeModel, [
-            'model' => $model,
-        ]);
-    }
-
     /**
      * Serializes and dispatches a core command message.
      *

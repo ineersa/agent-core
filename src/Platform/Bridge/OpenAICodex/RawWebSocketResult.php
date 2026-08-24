@@ -7,6 +7,7 @@ namespace Symfony\AI\Platform\Bridge\OpenAICodex;
 use Amp\CancelledException;
 use Amp\TimeoutCancellation;
 use Amp\Websocket\Client\WebsocketConnection;
+use Ineersa\Platform\Error\ProviderErrorFormatter;
 use Ineersa\Platform\Result\CancellableRawResultInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -176,13 +177,42 @@ final class RawWebSocketResult implements CancellableRawResultInterface
                     return;
                 }
 
-                throw new \RuntimeException('Codex WebSocket stream ended with a non-success terminal event.');
+                throw new \RuntimeException($this->terminalErrorMessage($type, $event));
             }
 
             if ('response.failed' === $type || 'response.incomplete' === $type || str_starts_with((string) $type, 'error')) {
-                throw new \RuntimeException('Codex WebSocket stream ended with a non-success terminal event.');
+                throw new \RuntimeException($this->terminalErrorMessage($type, $event));
             }
         }
+    }
+
+    /**
+     * Build a terminal error message from a failed stream event.
+     *
+     * @param array<string, mixed> $event
+     */
+    private function terminalErrorMessage(string $type, array $event): string
+    {
+        $error = [];
+        $response = $event['response'] ?? null;
+        if (\is_array($response) && \is_array($response['error'] ?? null)) {
+            $error = $response['error'];
+        } elseif (\is_array($event['error'] ?? null)) {
+            $error = $event['error'];
+        }
+
+        $text = ProviderErrorFormatter::format($error);
+        if ('' === $text) {
+            return \sprintf('Codex WebSocket stream ended with non-success terminal event (%s).', $type);
+        }
+
+        // format() returns "[code/type/param]: message" when structured fields
+        // exist and the bare bounded message otherwise.
+        if (str_starts_with($text, '[')) {
+            return $text;
+        }
+
+        return \sprintf('non-success terminal event (%s): %s', $type, $text);
     }
 
     private function logIoTimeout(string $phase): void

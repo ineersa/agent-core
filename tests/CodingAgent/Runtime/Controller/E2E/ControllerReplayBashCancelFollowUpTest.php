@@ -29,11 +29,14 @@ final class ControllerReplayBashCancelFollowUpTest extends ControllerReplayE2eTe
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => 'Run bash sleep 8 once. Do not call any other tool.',
+                'prompt' => 'Run bash sleep 1 once. Do not call any other tool.',
             ],
         ]);
 
-        $phase1 = $this->collectEventsUntil('tool_execution.started', 8.0);
+        // Positive active-tool proof: wait until the bash worker has started,
+        // then cancel. Low-latency messenger --sleep + single tool consumer keep
+        // this under the 4s safety cap without weakening to arguments_completed.
+        $phase1 = $this->collectEventsUntil('tool_execution.started', 4.0);
         $p1 = $this->indexByType($phase1);
         $this->assertStartRunAcked($phase1, $startCmdId);
         $this->assertArrayHasKey('tool_execution.started', $p1, $this->collectDiagnostics($phase1));
@@ -56,7 +59,7 @@ final class ControllerReplayBashCancelFollowUpTest extends ControllerReplayE2eTe
             'runId' => $this->runId,
         ]);
 
-        $cancelPhase = $this->collectEventsUntil('run.cancelled', 12.0);
+        $cancelPhase = $this->collectEventsUntil('run.cancelled', 6.0);
         $cancelByType = $this->indexByType($cancelPhase);
         $this->assertTrue(
             $this->foundAck($cancelPhase, $cancelCmdId),
@@ -77,7 +80,7 @@ final class ControllerReplayBashCancelFollowUpTest extends ControllerReplayE2eTe
             'payload' => ['text' => self::FOLLOW_UP_SENTINEL],
         ]);
 
-        $followUpPhase = $this->collectEventsUntil('run.completed', 15.0);
+        $followUpPhase = $this->collectEventsUntil('run.completed', 8.0);
         $fuByType = $this->indexByType($followUpPhase);
 
         $this->assertTrue(
@@ -131,7 +134,6 @@ final class ControllerReplayBashCancelFollowUpTest extends ControllerReplayE2eTe
     protected function extraSettingsYaml(): string
     {
         return <<<'YAML'
-
 tools:
     bash:
         background_prompt_threshold_seconds: 60
@@ -154,7 +156,7 @@ YAML;
      */
     protected function replayFixtures(): array
     {
-        $bashFixturePath = \dirname(__DIR__, 4).'/Tui/E2E/fixtures/tui-tool-call-bash-sleep8.json';
+        $bashFixturePath = __DIR__.'/fixtures/controller-bash-blocker.json';
         $bashFixture = json_decode(
             (string) file_get_contents($bashFixturePath),
             true,

@@ -978,7 +978,7 @@ services:
   # ─── AI-10 Per-turn model/reasoning routing ───
 
   Ineersa\AgentCore\Contract\Model\ModelResolverInterface:
-    alias: Ineersa\CodingAgent\Config\SessionAwareModelResolver
+    alias: Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver
 
   Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface:
     alias: Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderRegistry

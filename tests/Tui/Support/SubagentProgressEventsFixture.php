@@ -107,7 +107,25 @@ final class SubagentProgressEventsFixture
             'order_index' => 0,
         ], $now);
 
-        $finalResult = "Subagent scout completed.\nArtifact: {$artifactId}\n\nDone.";
+        $handoffLines = [
+            '# Handoff',
+            '',
+            'Structured scout handoff for TUI ellipsis proof.',
+            '',
+            '- finding one about transcript rendering',
+            '- finding two about muted italic collapse indicators',
+            '- finding three about MarkdownWidget ESC stripping',
+            '- finding four about sibling TextWidget ellipsis',
+            '- finding five about preview line budgets',
+            '- finding six about resume replay fixtures',
+            '- finding seven about card and handoff spacing',
+            '- finding eight about artifact retrieval',
+            '- finding nine must stay collapsed until Ctrl+O',
+            '- finding ten must stay collapsed until Ctrl+O',
+            '',
+            'Unique collapsed-tail marker: scout-handoff-tail-line',
+        ];
+        $finalResult = implode("\n", $handoffLines);
         $events[] = self::event($sessionId, 10, 1, 'tool_execution_end', [
             'tool_call_id' => $toolCallId,
             'order_index' => 0,
@@ -131,6 +149,10 @@ final class SubagentProgressEventsFixture
         }
 
         file_put_contents($sessionDir.'/events.jsonl', $jsonl);
+        // Live sessions already have a sequence.cursor from the bootstrap turn.
+        // Overwriting events.jsonl without advancing the cursor leaves allocateNext()
+        // free to reissue fixture seqs (commonly 5/6) and poison resume replay.
+        file_put_contents($sessionDir.'/sequence.cursor', "12\n");
 
         ChildAgentExportEventsFixture::write(
             $projectDir,
@@ -446,6 +468,7 @@ final class SubagentProgressEventsFixture
             $jsonl .= json_encode($event, \JSON_THROW_ON_ERROR)."\n";
         }
         file_put_contents($sessionDir.'/events.jsonl', $jsonl);
+        file_put_contents($sessionDir.'/sequence.cursor', "9\n");
     }
 
     /**

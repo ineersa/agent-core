@@ -35,7 +35,7 @@ colors:
     tool_pending_bg: "#282828"
     tool_success_bg: "#2a3028"
     tool_error_bg: "#302828"
-    tool_argument_key: "muted"
+    tool_argument_key: "orange"
     tool_argument_value: "text"
     tool_title: "aqua"
     tool_output: ""

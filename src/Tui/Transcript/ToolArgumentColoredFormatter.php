@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Yaml\Yaml;
 
 /**
  * Theme-backed key/value coloring for tool argument YAML lines (display only).
  *
- * Keys use {@see TuiTheme::muted()} for subtle labels; values use {@see TuiTheme::text()}
- * so argument bodies match default transcript foreground instead of bright accents.
+ * Keys use {@see ThemeColorEnum::ToolArgumentKey}; values use
+ * {@see ThemeColorEnum::ToolArgumentValue} so theme YAML controls the contrast.
  */
 final class ToolArgumentColoredFormatter
 {
@@ -53,11 +54,11 @@ final class ToolArgumentColoredFormatter
             $rest = $matches[3];
 
             return $indent
-                .$theme->muted($key)
+                .$theme->color(ThemeColorEnum::ToolArgumentKey, $key)
                 .':'
-                .$theme->text($rest);
+                .$theme->color(ThemeColorEnum::ToolArgumentValue, $rest);
         }
 
-        return $theme->text($line);
+        return $theme->color(ThemeColorEnum::ToolArgumentValue, $line);
     }
 }

@@ -1,7 +1,7 @@
 {
     "$schema": "LLM Replay Fixture v1 — controller E2E tool-call stream (read tool)",
-    "model": "llama_cpp/test",
-    "provider_id": "llama_cpp",
+    "model": "llama_cpp_test/test",
+    "provider_id": "llama_cpp_test",
     "reasoning": "off",
     "recorded_at": "2026-06-15T00:00:00Z",
     "recording_source": "llama_cpp_test/test",

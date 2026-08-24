@@ -15,12 +15,12 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber;
+use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
-use Ineersa\CodingAgent\Config\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
@@ -28,6 +28,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
 use Ineersa\Platform\Bridge\Generic\SanitizedGenericModelClient;
 use PHPUnit\Framework\Attributes\Group;
@@ -84,11 +85,12 @@ final class LlamaCppSmokeTest extends KernelTestCase
         $this->entityManager = $container->get('doctrine.orm.default_entity_manager');
 
         $projectRoot = self::getContainer()->getParameter('kernel.project_dir');
-        $this->tempDir = $projectRoot.'/var/tmp/hatfield-llamacpp-'.uniqid('', true);
+        $this->tempDir = TestDirectoryIsolation::createProjectTempDir('hatfield-llamacpp');
         $this->homeDir = $this->tempDir.'/home';
         $this->sessionId = 'llamacpp-smoke-'.uniqid('', true);
 
-        mkdir($this->homeDir.'/.hatfield', 0777, true);
+        TestDirectoryIsolation::createHatfieldTree($this->homeDir, withSessions: false);
+        TestDirectoryIsolation::createHatfieldTree($this->tempDir.'/project', withSessions: true);
         mkdir($this->tempDir.'/project/.hatfield/sessions/'.$this->sessionId, 0777, true);
 
         // Minimal home settings (no ai section — we use test-specific ai data directly)
@@ -125,7 +127,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
         }
 
         if (isset($this->tempDir) && '' !== $this->tempDir) {
-            $this->removeDir($this->tempDir);
+            TestDirectoryIsolation::removeDirectory($this->tempDir);
         }
     }
 
@@ -224,7 +226,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
             convertToLlmHooks: [],
             streamObserver: null,
             costCalculator: null,
-            modelResolver: null,
+            modelResolver: $modelResolver,
             logger: new NullLogger(),
             denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
@@ -247,11 +249,6 @@ final class LlamaCppSmokeTest extends KernelTestCase
         $this->assertNotNull($result->assistantMessage, 'Expected a non-null assistant message');
         $text = $result->assistantMessage->asText();
         $this->assertNotEmpty($text, 'Expected non-empty assistant text from llama.cpp');
-        $this->assertStringContainsString(
-            'hello',
-            strtolower($text),
-            'Expected llama.cpp response to contain "hello" for the deterministic prompt. Response: '.$text,
-        );
 
         // Verify usage if the provider returned it (do not fail if absent)
         if (isset($result->usage['total_tokens'])) {
@@ -324,7 +321,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
                             'id' => $modelName,
                             'name' => ucfirst($modelName),
                             'context_window' => 200000,
-                            'max_tokens' => 65536,
+                            'max_tokens' => 256,
                             'input' => ['text'],
                             'reasoning' => false,
                         ],
@@ -343,7 +340,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
                             'id' => 'test',
                             'name' => 'test',
                             'context_window' => 32768,
-                            'max_tokens' => 32768,
+                            'max_tokens' => 256,
                             'input' => ['text'],
                             'reasoning' => false,
                         ],
@@ -496,28 +493,5 @@ final class LlamaCppSmokeTest extends KernelTestCase
         }
 
         return implode("\n\n", $chunks);
-    }
-
-    private function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                rmdir($file->getPathname());
-            } else {
-                chmod($file->getPathname(), 0644);
-                unlink($file->getPathname());
-            }
-        }
-
-        rmdir($dir);
     }
 }

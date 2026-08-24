@@ -29,6 +29,8 @@ final readonly class LlmStepResult extends AbstractAgentBusMessage
         public ?string $stopReason = null,
         public ?array $error = null,
         public ?string $toolsRef = null,
+        public string $model = '',
+        public string $reasoning = '',
         public array $modelNotifications = [],
         public array $availableTools = [],
         public int $availableToolsSchemaTokensEstimate = 0,

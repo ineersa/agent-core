@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Platform\Bridge\Generic;
 
+use Ineersa\Platform\Error\ProviderErrorFormatter;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\Generic\Completions\CompletionsConversionTrait;
 use Symfony\AI\Platform\Bridge\Generic\Completions\FinishReasonMapper;
@@ -90,13 +91,15 @@ final class DurableResultConverter extends ResultConverter
         $response = $result->getObject();
 
         if (401 === $response->getStatusCode()) {
-            $errorMessage = json_decode($response->getContent(false), true)['error']['message'] ?? 'Authentication failed.';
+            $formatted = ProviderErrorFormatter::format(ProviderErrorFormatter::decodeError($response->getContent(false)));
+            $errorMessage = '' !== $formatted ? $formatted : 'Authentication failed.';
             throw new AuthenticationException($errorMessage);
         }
 
         if (400 === $response->getStatusCode()) {
-            $error = json_decode($response->getContent(false), true)['error'] ?? [];
-            $errorMessage = $error['message'] ?? 'Bad Request';
+            $error = ProviderErrorFormatter::decodeError($response->getContent(false));
+            $formatted = ProviderErrorFormatter::format($error);
+            $errorMessage = '' !== $formatted ? $formatted : 'Bad Request';
 
             if ('context_length_exceeded' === ($error['code'] ?? null) || preg_match('/context[_ ]length[_ ]exceeded/i', $errorMessage)) {
                 throw new ExceedContextSizeException($errorMessage);
@@ -106,18 +109,21 @@ final class DurableResultConverter extends ResultConverter
         }
 
         if (429 === $response->getStatusCode()) {
-            $errorMessage = json_decode($response->getContent(false), true)['error']['message'] ?? null;
+            $formatted = ProviderErrorFormatter::format(ProviderErrorFormatter::decodeError($response->getContent(false)));
+            $errorMessage = '' !== $formatted ? $formatted : null;
             throw new RateLimitExceededException(null, $errorMessage);
         }
 
         if (($code = $response->getStatusCode()) >= 500) {
-            $errorMessage = json_decode($response->getContent(false), true)['error']['message'] ?? null;
+            $formatted = ProviderErrorFormatter::format(ProviderErrorFormatter::decodeError($response->getContent(false)));
+            $errorMessage = '' !== $formatted ? $formatted : null;
             throw new ServerException($code, $errorMessage);
         }
 
         if (true === ($options['stream'] ?? false)) {
             if (($code = $response->getStatusCode()) >= 400) {
-                throw new RuntimeException(\sprintf('Unexpected response code %d: "%s"', $code, $response->getContent(false)));
+                $diagnostic = ProviderErrorFormatter::formatBody($response->getContent(false));
+                throw new RuntimeException('' !== $diagnostic ? \sprintf('Unexpected response code %d: %s', $code, $diagnostic) : \sprintf('Unexpected response code %d', $code));
             }
 
             return new StreamResult($this->convertStream($result));
@@ -154,10 +160,13 @@ final class DurableResultConverter extends ResultConverter
                 $this->emit('raw_chunk', $chunkOrdinal, ['data' => $data]);
 
                 if (isset($data['error'])) {
-                    $message = \is_array($data['error']) ? ($data['error']['message'] ?? 'Unknown error') : (string) $data['error'];
-                    $code = \is_array($data['error']) ? ($data['error']['code'] ?? null) : null;
-                    $type = \is_array($data['error']) ? ($data['error']['type'] ?? null) : null;
-                    $errorMessage = \sprintf('Stream error: "%s".', $message);
+                    $error = $data['error'];
+                    $code = \is_array($error) ? ($error['code'] ?? null) : null;
+                    $type = \is_array($error) ? ($error['type'] ?? null) : null;
+                    $diagnostic = \is_array($error)
+                        ? ProviderErrorFormatter::format($error)
+                        : mb_substr(trim((string) $error), 0, 500);
+                    $errorMessage = '' !== $diagnostic ? 'Stream error: '.$diagnostic : 'Stream error.';
 
                     if ($this->vendorIsRateLimitError($code, $type)) {
                         throw new RateLimitExceededException(null, $errorMessage);

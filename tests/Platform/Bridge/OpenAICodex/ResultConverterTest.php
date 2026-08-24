@@ -697,24 +697,37 @@ final class ResultConverterTest extends TestCase
         $converter->convert(new RawHttpResult($httpResponse));
     }
 
-    /**
-     * Regression: non-2xx HTTP responses must throw before SSE iteration instead of
-     * returning an empty StreamResult (observed HTTP 404 on Codex streaming path).
-     */
-    public function testStreamNon2xxHttp404ThrowsBeforeSseIteration(): void
+    public function testStreamNon2xxThrowsBeforeSseIteration(): void
     {
         $converter = new ResultConverter();
-        $secret = 'LEAKED_PROVIDER_SECRET_MARKER_9f3c2a1b';
         $httpResponse = $this->createMock(ResponseInterface::class);
         $httpResponse->method('getStatusCode')->willReturn(404);
         $httpResponse->method('getContent')->willReturn(json_encode([
             'error' => [
                 'code' => 'not_found',
                 'type' => 'resource_missing',
-                'message' => 'The requested resource was not found '.$secret,
-                'detail' => $secret,
+                'message' => 'The requested resource was not found',
             ],
-            'error_description' => $secret,
+        ]));
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('HTTP 404: [not_found/resource_missing]: The requested resource was not found');
+
+        $converter->convert(new RawHttpResult($httpResponse, new CodexSseStream()), ['stream' => true]);
+    }
+
+    public function testStreamServerErrorRetainsStructuredProviderDiagnostic(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(500);
+        $httpResponse->method('getContent')->willReturn(json_encode([
+            'error' => [
+                'code' => 'server_error',
+                'type' => 'api_error',
+                'param' => 'model',
+                'message' => 'deployment unavailable',
+            ],
         ]));
 
         $raw = new RawHttpResult($httpResponse, new CodexSseStream());
@@ -723,27 +736,29 @@ final class ResultConverterTest extends TestCase
             $converter->convert($raw, ['stream' => true]);
             $this->fail('Expected RuntimeException');
         } catch (RuntimeException $e) {
-            $this->assertStringContainsString('HTTP 404', $e->getMessage());
-            $this->assertStringContainsString('[not_found/resource_missing]', $e->getMessage());
-            $this->assertStringNotContainsString($secret, $e->getMessage());
-            $this->assertStringNotContainsString('The requested resource was not found', $e->getMessage());
-            $this->assertDoesNotMatchRegularExpression('/HTTP 404: HTTP 404/', $e->getMessage());
+            $this->assertSame(
+                'HTTP 500: [server_error/api_error/model]: deployment unavailable',
+                $e->getMessage(),
+            );
         }
     }
 
-    public function testStreamErrorMessageDoesNotLeakProviderSecret(): void
+    public function testStreamErrorMessageRetainsBoundedProviderMessageButOmitsOtherFreeText(): void
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createStub(ResponseInterface::class);
         $httpResponse->method('getStatusCode')->willReturn(200);
 
         $secret = 'LEAKED_STREAM_SECRET_MARKER_7f3a91c2';
+        $descriptionMarker = 'LEAKED_DESCRIPTION_MARKER_7f3a91c2';
         $events = [
             ['type' => 'error', 'error' => [
                 'code' => 'invalid_request_error',
                 'type' => 'invalid_request',
                 'param' => 'model',
                 'message' => $secret,
+                'error_description' => $descriptionMarker,
+                'detail' => $descriptionMarker,
             ]],
         ];
 
@@ -755,7 +770,11 @@ final class ResultConverterTest extends TestCase
             $this->fail('Expected stream error');
         } catch (RuntimeException $e) {
             $this->assertStringContainsString('[invalid_request_error/invalid_request/model]', $e->getMessage());
-            $this->assertStringNotContainsString($secret, $e->getMessage());
+            // The bounded provider error.message is retained so an invalid
+            // request keeps its actionable diagnostic; alternative free-text
+            // keys (error_description, detail) never leak.
+            $this->assertStringContainsString($secret, $e->getMessage());
+            $this->assertStringNotContainsString($descriptionMarker, $e->getMessage());
         }
     }
 
@@ -792,8 +811,9 @@ final class ResultConverterTest extends TestCase
             iterator_to_array($streamResult->getContent());
             $this->fail('Expected stream error');
         } catch (RuntimeException $e) {
-            $this->assertSame('[server_is_overloaded/service_unavailable_error]', $e->getMessage());
-            $this->assertStringNotContainsString($secret, $e->getMessage());
+            $this->assertStringContainsString('[server_is_overloaded/service_unavailable_error]', $e->getMessage());
+            // Bounded provider message is retained for diagnostics.
+            $this->assertStringContainsString($secret, $e->getMessage());
         }
     }
 

@@ -249,7 +249,7 @@ final class RuntimeEventTranslator
 
         // Pass through safe structured diagnostics for projection/TUI context.
         if (\is_array($error)) {
-            foreach (['retryable', 'error_category', 'http_status_code', 'retry_after_ms', 'response_error_code', 'response_error_type'] as $key) {
+            foreach (['retryable', 'error_category', 'http_status_code', 'retry_after_ms', 'response_error_code', 'response_error_type', 'response_error_param'] as $key) {
                 if (\array_key_exists($key, $error)) {
                     $payload[$key] = $error[$key];
                 }

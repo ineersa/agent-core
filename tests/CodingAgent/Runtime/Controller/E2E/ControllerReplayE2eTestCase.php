@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
+use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplayLowLatencyMessengerConsole;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 
 /**
@@ -31,25 +32,16 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
  * data.
  *
  * Process ownership: the controller and its Messenger consumer
- * children are tracked explicitly via process group PID tracking.
- * Teardown terminates the entire process group deterministically,
- * then asserts no children remain.  This replaces the previous
- * broad stale-killer cleanup for normal test runs.
+ * children are spawned under setsid so the controller is the session
+ * / process-group leader, then tracked via process-tree PID discovery.
+ * Teardown terminates the owned tree deterministically and asserts no
+ * children remain.
  *
  * MAINT-05D foundation.  This is the replay seam for controller
  * E2E tests; MAINT-05E will add similar support for TUI E2E.
  */
 abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
 {
-    /** Max wait for compaction.completed/failed after compaction.started (replay fixtures). */
-    protected const COMPACTION_TERMINAL_AFTER_STARTED_SECONDS = 4.0;
-
-    /**
-     * Quiet period after the last runtime event when compaction must not fire.
-     * Symfony messenger:consume defaults to 1s between empty polls; use a bound
-     * above that so a message queued just after an empty poll is still observable.
-     */
-    protected const COMPACTION_NO_COMPACTION_QUIET_SECONDS = 1.35;
     /** @var list<array<string, mixed>> One fixture per expected LLM call */
     protected array $replayFixtures = [];
     // ── Lifecycle ──
@@ -161,6 +153,16 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             $fixturePaths[] = $fixturePath;
         }
 
+        // ConsumerSupervisor relaunches messenger:consume via HATFIELD_BINARY_PATH.
+        // Point it at a test-only wrapper that injects a small --sleep so idle
+        // queue polls do not burn the default 1s Symfony Messenger sleep under
+        // SafeGuard multi-hop / tool-start contention. Controller itself still
+        // boots from source bin/console below.
+        $messengerConsole = ControllerReplayLowLatencyMessengerConsole::install(
+            $this->tempDir,
+            $script,
+        );
+
         $descriptors = [
             0 => ['pipe', 'r'],
             1 => ['pipe', 'w'],
@@ -191,6 +193,8 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             'HATFIELD_SESSION_ID' => $this->sessionId,
             // Replay activation — consumed by ControllerReplayHttpClientFactory
             'HATFIELD_LLM_REPLAY_FIXTURE_PATH' => implode(';', $fixturePaths),
+            // Inherited by ConsumerSupervisor children; ConfigExecutableLocator wins.
+            'HATFIELD_BINARY_PATH' => $messengerConsole,
             // Explicitly NOT setting LLAMA_CPP_SMOKE_TEST.
         ];
 
@@ -201,20 +205,16 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
 
         $pipes = [];
 
-        // Use setsid() to create a new process group for the controller
-        // and all its Messenger consumer descendants.  We track the group
-        // PGID and terminate the entire group on teardown.
         $process = @proc_open(
             array_merge(
-                [$php, $script, 'agent', '--controller', '--cwd='.$this->tempDir],
+                // setsid -w: proc_open child becomes session/PGID leader.
+                ['setsid', '-w', $php, $script, 'agent', '--controller', '--cwd='.$this->tempDir],
                 $this->controllerExtraArgs(),
             ),
             $descriptors,
             $pipes,
             $this->tempDir,
             $env,
-            // Run in a new process session so the controller + Messenger
-            // consumers share a PGID.
         );
 
         if (!\is_resource($process)) {
@@ -228,6 +228,7 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
 
+        $this->messengerTransportDbFilename = (string) ($env['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] ?? '');
         $this->trackControllerProcessTree($process);
     }
 
@@ -269,8 +270,8 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
     }
 
     /**
-     * After run.completed when compaction is expected: wait event-driven for
-     * compaction.completed/failed once compaction.started appears (bounded phase).
+     * After run.completed when compaction is expected: drain until
+     * compaction.completed/failed or the plain bounded timeout/exit.
      *
      * @return list<array<string, mixed>>
      */
@@ -278,8 +279,6 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
     {
         $events = [];
         $deadline = microtime(true) + $timeoutSeconds;
-        $compactionStartedAt = null;
-        $compactionTerminalDeadline = null;
 
         while (microtime(true) < $deadline) {
             $sawNew = false;
@@ -287,12 +286,6 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
                 $events[] = $event;
                 $sawNew = true;
                 $type = $event['type'] ?? '';
-
-                if ('compaction.started' === $type && null === $compactionStartedAt) {
-                    $compactionStartedAt = microtime(true);
-                    $compactionTerminalDeadline = $compactionStartedAt
-                        + self::COMPACTION_TERMINAL_AFTER_STARTED_SECONDS;
-                }
 
                 if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
                     return $events;
@@ -308,59 +301,6 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
                         return $events;
                     }
                 }
-                break;
-            }
-
-            if (null !== $compactionTerminalDeadline && microtime(true) > $compactionTerminalDeadline) {
-                break;
-            }
-
-            if (!$sawNew) {
-                usleep(50_000);
-            }
-        }
-
-        return $events;
-    }
-
-    /**
-     * After run.completed when compaction must NOT fire: bounded idle drain only.
-     *
-     * @return list<array<string, mixed>>
-     */
-    protected function drainUntilCompactionQuiet(float $timeoutSeconds): array
-    {
-        $events = [];
-        $deadline = microtime(true) + $timeoutSeconds;
-        $lastEventAt = microtime(true);
-
-        while (microtime(true) < $deadline) {
-            $sawNew = false;
-            foreach ($this->readEvents() as $event) {
-                $events[] = $event;
-                $sawNew = true;
-                $lastEventAt = microtime(true);
-                $type = $event['type'] ?? '';
-
-                if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
-                    return $events;
-                }
-            }
-
-            if (!$this->isRunning()) {
-                foreach ($this->readEvents() as $event) {
-                    $events[] = $event;
-                    $sawNew = true;
-                    $lastEventAt = microtime(true);
-                    $type = $event['type'] ?? '';
-                    if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
-                        return $events;
-                    }
-                }
-                break;
-            }
-
-            if (microtime(true) - $lastEventAt > self::COMPACTION_NO_COMPACTION_QUIET_SECONDS) {
                 break;
             }
 

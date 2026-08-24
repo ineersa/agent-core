@@ -315,14 +315,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             }
         }
 
-        // Canonical model is already on RunState (run_started / model_changed).
-        // Never re-resolve session/default/repository identity at schedule time.
-        $invocationModel = $preparedState->model;
-        if (null === $invocationModel || '' === trim($invocationModel)) {
-            throw new \RuntimeException(\sprintf('Cannot schedule ExecuteLlmStep: run model is absent for run_id=%s.', $runId));
-        }
-        $invocationModel = trim($invocationModel);
-
         $effect = new ExecuteLlmStep(
             runId: $runId,
             turnNo: $nextTurnNo,
@@ -331,7 +323,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             idempotencyKey: hash('sha256', \sprintf('%s|llm|%d|%s', $runId, $nextTurnNo, $nextStepId)),
             contextRef: \sprintf('hot:run:%s', $runId),
             toolsRef: \sprintf('toolset:run:%s:turn:%d', $runId, $nextTurnNo),
-            model: $invocationModel,
         );
 
         $previousTurnNo = $preparedState->turnNo > 0 ? $preparedState->turnNo : null;

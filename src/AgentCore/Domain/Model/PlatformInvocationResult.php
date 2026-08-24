@@ -25,6 +25,8 @@ final readonly class PlatformInvocationResult
         public array $usage = [],
         public ?string $stopReason = null,
         public ?array $error = null,
+        public string $model = '',
+        public string $reasoning = '',
         public array $modelNotifications = [],
         public array $availableTools = [],
         public int $availableToolsSchemaTokensEstimate = 0,

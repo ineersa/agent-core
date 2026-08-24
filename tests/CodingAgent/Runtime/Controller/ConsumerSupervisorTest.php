@@ -37,11 +37,7 @@ final class ConsumerSupervisorTest extends TestCase
 <?php
 declare(strict_types=1);
 pcntl_async_signals(true);
-$dir = getenv('HATFIELD_TERM_TEST_DIR');
-if (false === $dir || '' === $dir) {
-    fwrite(STDERR, "missing HATFIELD_TERM_TEST_DIR\n");
-    exit(2);
-}
+$dir = __DIR__;
 $role = \in_array('term_hang', $argv, true) ? 'hang' : 'exit';
 // Install handler before ready so phase-1 SIGTERM cannot race setup.
 pcntl_signal(\SIGTERM, static function () use ($role, $dir): void {
@@ -55,17 +51,12 @@ pcntl_signal(\SIGTERM, static function () use ($role, $dir): void {
     }
     // hang role intentionally stays alive after TERM so stop(0) escalation runs.
 });
-file_put_contents($dir.'/'.$role.'.ready', (string) microtime(true));
+file_put_contents($dir.'/'.$role.'.ready', (string) microtime(true), \LOCK_EX);
 while (true) {
     usleep(50_000);
 }
 PHP;
         file_put_contents($script, $scriptBody);
-
-        $prevEnv = $_ENV['HATFIELD_TERM_TEST_DIR'] ?? null;
-        $prevGetenv = getenv('HATFIELD_TERM_TEST_DIR');
-        $_ENV['HATFIELD_TERM_TEST_DIR'] = $dir;
-        putenv('HATFIELD_TERM_TEST_DIR='.$dir);
 
         $supervisor = null;
         try {
@@ -80,15 +71,13 @@ PHP;
             $supervisor->launch('term_hang', 0);
             $supervisor->launch('term_exit', 0);
 
-            $deadline = microtime(true) + 3.0;
-            while (microtime(true) < $deadline) {
-                if (is_file($hangReady) && is_file($exitReady)) {
-                    break;
-                }
-                usleep(20_000);
-            }
-            $this->assertFileExists($hangReady, 'hang consumer must write ready marker');
-            $this->assertFileExists($exitReady, 'exit consumer must write ready marker');
+            $this->waitForConsumerReadyMarkers(
+                $supervisor,
+                [
+                    'term_hang#0' => $hangReady,
+                    'term_exit#0' => $exitReady,
+                ],
+            );
 
             $supervisor->shutdown();
 
@@ -122,17 +111,6 @@ PHP;
                     }
                 }
                 $prop->setValue($supervisor, []);
-            }
-
-            if (null === $prevEnv) {
-                unset($_ENV['HATFIELD_TERM_TEST_DIR']);
-            } else {
-                $_ENV['HATFIELD_TERM_TEST_DIR'] = $prevEnv;
-            }
-            if (false === $prevGetenv) {
-                putenv('HATFIELD_TERM_TEST_DIR');
-            } else {
-                putenv('HATFIELD_TERM_TEST_DIR='.$prevGetenv);
             }
 
             TestDirectoryIsolation::removeDirectory($dir);
@@ -322,5 +300,57 @@ PHP;
         $this->assertArrayHasKey($key, $consumers);
 
         return $consumers[$key];
+    }
+
+    /**
+     * Wait for child-owned ready markers using process liveness, not a fixed wall sleep.
+     *
+     * @param array<string, string> $readyByConsumerKey
+     */
+    private function waitForConsumerReadyMarkers(ConsumerSupervisor $supervisor, array $readyByConsumerKey): void
+    {
+        $deadline = microtime(true) + 5.0;
+        while (microtime(true) < $deadline) {
+            $missing = [];
+            foreach ($readyByConsumerKey as $key => $readyPath) {
+                if (is_file($readyPath)) {
+                    continue;
+                }
+
+                $process = $this->getConsumerProcess($supervisor, $key);
+                if (!$process->isRunning()) {
+                    $this->fail(\sprintf(
+                        'Consumer %s exited before ready marker %s (exit=%s stderr=%s stdout=%s)',
+                        $key,
+                        $readyPath,
+                        (string) $process->getExitCode(),
+                        trim($process->getErrorOutput()),
+                        trim($process->getOutput()),
+                    ));
+                }
+                $missing[] = $key;
+            }
+
+            if ([] === $missing) {
+                return;
+            }
+
+            usleep(5_000);
+        }
+
+        $details = [];
+        foreach ($readyByConsumerKey as $key => $readyPath) {
+            $process = $this->getConsumerProcess($supervisor, $key);
+            $details[] = \sprintf(
+                '%s ready=%s running=%s exit=%s stderr=%s',
+                $key,
+                is_file($readyPath) ? 'yes' : 'no',
+                $process->isRunning() ? 'yes' : 'no',
+                (string) $process->getExitCode(),
+                trim($process->getErrorOutput()),
+            );
+        }
+
+        $this->fail('Consumers failed to publish ready markers: '.implode('; ', $details));
     }
 }

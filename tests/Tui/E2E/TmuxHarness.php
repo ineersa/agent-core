@@ -32,12 +32,6 @@ final class TmuxHarness
     public const float TUI_STARTUP_LOGO_TIMEOUT_PARALLEL = 20.0;
 
     /**
-     * Wait for assistant (◇) or error (✕) blocks after replay+tool work when
-     * test:tui runs under full parallel castor check load.
-     */
-    public const float TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL = 20.0;
-
-    /**
      * Generic transcript/marker/shell-output waits when test:tui runs under
      * full parallel castor check load (unit + controller-replay + llm-real).
      */
@@ -238,6 +232,22 @@ final class TmuxHarness
     }
 
     /**
+     * Capture pane scrollback with ANSI escape codes preserved.
+     */
+    public function captureAnsiWithHistory(TmuxPane $pane, int $lines = 1000): string
+    {
+        return $this->runTmux(
+            \sprintf(
+                'tmux capture-pane -p -e -S -%d -E - -t %s 2>&1',
+                $lines,
+                escapeshellarg($pane->paneId),
+            ),
+            self::TMUX_CMD_TIMEOUT,
+            throwOnTimeout: false,
+        );
+    }
+
+    /**
      * Point ANSI smoke artifacts at `<testProjectDir>/.hatfield/tmp/tui/smoke`.
      */
     public function setSnapshotDir(string $testProjectDir): void
@@ -376,6 +386,7 @@ final class TmuxHarness
         TmuxPane $pane,
         string $needle,
         float $timeout = 10.0,
+        string $message = '',
     ): string {
         $deadline = microtime(true) + $timeout;
         $lastCapture = '';
@@ -390,7 +401,21 @@ final class TmuxHarness
             usleep(100_000); // 100ms
         }
 
-        throw new \RuntimeException($this->formatCaptureTimeoutDiagnostics($pane, $needle, $timeout, $lastCapture));
+        $diagnostics = $this->formatCaptureTimeoutDiagnostics($pane, $needle, $timeout, $lastCapture);
+        if ('' !== $message) {
+            throw new \RuntimeException($message.' '.$diagnostics);
+        }
+
+        throw new \RuntimeException($diagnostics);
+    }
+
+    /**
+     * Single startup readiness wait: logo + idle/work status + footer.
+     * Prefer this over waitForCaptureContains(█) followed by waitForTuiReadyAfterLogo().
+     */
+    public function waitForTuiReady(TmuxPane $pane, float $timeout = self::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL): string
+    {
+        return $this->waitForTuiReadyAfterLogo($pane, $timeout);
     }
 
     /**

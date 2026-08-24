@@ -409,10 +409,6 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             {
                 throw new \RuntimeException('not used');
             }
-
-            public function changeModel(string $runId, string $model): void
-            {
-            }
         };
 
         // MockClock: "now" is well past the 5s deadline so timeout fires immediately
@@ -933,10 +929,6 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             public function compact(string $runId, ?string $customInstructions = null): void
             {
                 throw new \RuntimeException('not used');
-            }
-
-            public function changeModel(string $runId, string $model): void
-            {
             }
         };
         $mockClock = new MockClock((new \DateTimeImmutable())->modify('+10 seconds'));

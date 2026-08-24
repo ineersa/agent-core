@@ -11,12 +11,15 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
+use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Tui\Ansi\AnsiUtils;
 
 /**
  * Virtual product proof that {@see ChatScreen} → mounted
@@ -607,6 +610,161 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
     #[Test]
+    public function testVirtualToolCallArgumentKeysUseConfiguredThemeColorDistinctFromToolTitle(): void
+    {
+        $palette = new ThemePalette('virtual-tool-args', [
+            ThemeColorEnum::ToolTitle->value => '#00ffff',
+            ThemeColorEnum::ToolArgumentKey->value => '#ff00ff',
+            ThemeColorEnum::ToolArgumentValue->value => '',
+            ThemeColorEnum::Muted->value => '#718096',
+            ThemeColorEnum::Text->value => '',
+        ]);
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID, palette: $palette);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tc-args',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'read',
+                meta: [
+                    'tool_name' => 'read',
+                    'arguments' => ['path' => './colored.txt'],
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $ansi = $harness->ansiOutput();
+        $plain = $harness->plainScreenText();
+
+        $this->assertStringContainsString('read', $plain);
+        $this->assertStringContainsString('path:', $plain);
+        $this->assertStringContainsString("\033[38;2;0;255;255m", $ansi, 'Tool title should use configured cyan');
+        $this->assertStringContainsString("\033[38;2;255;0;255m", $ansi, 'Argument key should use configured magenta');
+        $this->assertMatchesRegularExpression(
+            '/\x1b\[38;2;255;0;255mpath\x1b\[39m:/',
+            $ansi,
+            'Argument key path must carry ToolArgumentKey ANSI, not ToolTitle',
+        );
+    }
+
+    #[Test]
+    public function testVirtualViewImageExchangeArgumentKeyUsesConfiguredThemeColor(): void
+    {
+        $palette = new ThemePalette('virtual-view-image-args', [
+            ThemeColorEnum::ToolTitle->value => '#00ffff',
+            ThemeColorEnum::ToolArgumentKey->value => '#ff00ff',
+            ThemeColorEnum::ToolArgumentValue->value => '',
+            ThemeColorEnum::ToolOutput->value => '#39ff14',
+            ThemeColorEnum::Muted->value => '#718096',
+            ThemeColorEnum::Text->value => '',
+        ]);
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID, palette: $palette);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tc-view-image',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'view_image',
+                meta: [
+                    'tool_call_id' => 'call-view-image',
+                    'tool_name' => 'view_image',
+                    'arguments' => ['path' => '/tmp/shot.png'],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-view-image',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 2,
+                text: 'view_image',
+                meta: [
+                    'tool_call_id' => 'call-view-image',
+                    'tool_name' => 'view_image',
+                    'result' => [
+                        'type' => 'view_image',
+                        'path' => '/tmp/shot.png',
+                        'media_type' => 'image/png',
+                        'width' => 10,
+                        'height' => 20,
+                        'bytes' => 99,
+                    ],
+                    'is_error' => false,
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $ansi = $harness->ansiOutput();
+        $plain = $harness->plainScreenText();
+
+        $this->assertStringContainsString('view_image', $plain);
+        $this->assertStringContainsString('path:', $plain);
+        $this->assertStringContainsString('/tmp/shot.png', $plain);
+        $this->assertMatchesRegularExpression(
+            '/\x1b\[38;2;255;0;255mpath\x1b\[39m:/',
+            $ansi,
+            'view_image exchange argument key must use ToolArgumentKey ANSI',
+        );
+        $this->assertStringContainsString("\033[38;2;0;255;255m", $ansi, 'view_image tool title should remain distinct');
+    }
+
+    #[Test]
+    public function testVirtualToolResultLiteralEllipsisKeepsToolOutputColor(): void
+    {
+        $palette = new ThemePalette('virtual-literal-ellipsis', [
+            ThemeColorEnum::ToolOutput->value => '#39ff14',
+            ThemeColorEnum::Muted->value => '#718096',
+            ThemeColorEnum::Text->value => '',
+        ]);
+        $body = implode("\n", [
+            '… literal ellipsis in tool output',
+            'line1',
+            'line2',
+            'line3',
+        ]);
+        $harness = new VirtualTuiHarness(
+            sessionId: self::SESSION_ID,
+            palette: $palette,
+            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 2),
+        );
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tr-literal-ellipsis',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: $body,
+                meta: ['tool_name' => 'read', 'result' => $body, 'is_error' => false],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $ansi = $harness->ansiOutput();
+        $plain = $harness->plainScreenText();
+
+        $this->assertStringContainsString('… literal ellipsis in tool output', $plain);
+        $this->assertStringContainsString('… 2 more lines', $plain);
+        $this->assertMatchesRegularExpression(
+            '/\x1b\[38;2;57;255;20m\s*… literal ellipsis in tool output/',
+            $ansi,
+            'Literal U+2026 tool output must keep ToolOutput color',
+        );
+        $this->assertMatchesRegularExpression(
+            '/\x1b\[3m(?:\x1b\[[0-9;]*m)*… 2 more lines/',
+            $ansi,
+            'Generated collapsed indicator must stay muted+italic',
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/\x1b\[38;2;57;255;20m\s*… 2 more lines/',
+            $ansi,
+            'Generated collapsed indicator must not inherit ToolOutput color',
+        );
+    }
+
+    #[Test]
     public function testVirtualLongToolResultPreviewsByDefault(): void
     {
         $body = implode("\n", ['v0', 'v1', 'v2', 'v3']);
@@ -925,5 +1083,145 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $this->assertSame(1, substr_count($text, 'bash'), 'Collapsed exchange should show one bash header: '.$text);
         $this->assertStringContainsString('find bin', $text);
         $this->assertStringContainsString('/path/bin/console', $text);
+    }
+
+    #[Test]
+    public function testDistinctBlocksHaveBlankLineSeparationAcrossWidths(): void
+    {
+        foreach ([80, 120] as $columns) {
+            $harness = new VirtualTuiHarness(columns: $columns, sessionId: self::SESSION_ID);
+            $harness->screen()->setTranscriptBlocks([
+                new TranscriptBlock(
+                    id: 'u-gap',
+                    kind: TranscriptBlockKindEnum::UserMessage,
+                    runId: self::SESSION_ID,
+                    seq: 1,
+                    text: 'prompt for spacing',
+                ),
+                new TranscriptBlock(
+                    id: 'a-gap',
+                    kind: TranscriptBlockKindEnum::AssistantMessage,
+                    runId: self::SESSION_ID,
+                    seq: 2,
+                    text: 'assistant spacing reply',
+                ),
+                new TranscriptBlock(
+                    id: 'tc-gap',
+                    kind: TranscriptBlockKindEnum::ToolCall,
+                    runId: self::SESSION_ID,
+                    seq: 3,
+                    text: 'bash',
+                    meta: [
+                        'tool_call_id' => 'call-gap',
+                        'tool_name' => 'bash',
+                        'arguments' => ['command' => 'echo spacing'],
+                    ],
+                ),
+            ]);
+            $harness->screen()->setWorkingVisible(false);
+
+            $text = $harness->plainScreenText();
+            $this->assertMatchesRegularExpression(
+                '/prompt for spacing\n\s*\n.*assistant spacing reply/s',
+                $text,
+                "Expected blank row between user and assistant at width {$columns}",
+            );
+            $this->assertMatchesRegularExpression(
+                '/assistant spacing reply\n\s*\n.*●/s',
+                $text,
+                "Expected blank row between assistant and tool at width {$columns}",
+            );
+        }
+    }
+
+    #[Test]
+    public function testCollapsedPreviewEllipsisIsItalicInAnsiOutput(): void
+    {
+        $body = implode("\n", ['line0', 'line1', 'line2', 'line3']);
+        $harness = new VirtualTuiHarness(
+            sessionId: self::SESSION_ID,
+            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 2),
+        );
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tr-italic',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: $body,
+                meta: ['tool_name' => 'read', 'result' => $body, 'is_error' => false],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $ansi = $harness->ansiOutput();
+        $this->assertMatchesRegularExpression(
+            '/\x1b\[3m(?:\x1b\[[0-9;]*m)*… 2 more lines/',
+            $ansi,
+            'Collapsed ellipsis must carry italic ANSI styling',
+        );
+        $this->assertStringContainsString('… 2 more lines', $harness->plainScreenText());
+        $this->assertStringNotContainsString('line3', $harness->plainScreenText());
+    }
+
+    #[Test]
+    public function testWideGlyphMarkersAlignTextColumnWithNarrowGlyphs(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tool-align',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-align',
+                    'tool_name' => 'bash',
+                    'arguments' => ['command' => 'true'],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'progress-align',
+                kind: TranscriptBlockKindEnum::Progress,
+                runId: self::SESSION_ID,
+                seq: 2,
+                text: 'working on it',
+            ),
+            new TranscriptBlock(
+                id: 'approval-align',
+                kind: TranscriptBlockKindEnum::Approval,
+                runId: self::SESSION_ID,
+                seq: 3,
+                text: 'needs approval',
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $lines = preg_split("/\n/", $harness->plainScreenText()) ?: [];
+        $toolLine = null;
+        $progressLine = null;
+        $approvalLine = null;
+        foreach ($lines as $line) {
+            if (null === $toolLine && str_contains($line, '●') && str_contains($line, 'bash')) {
+                $toolLine = $line;
+            }
+            if (null === $progressLine && str_contains($line, '⏳') && str_contains($line, 'working on it')) {
+                $progressLine = $line;
+            }
+            if (null === $approvalLine && str_contains($line, '🔐') && str_contains($line, 'needs approval')) {
+                $approvalLine = $line;
+            }
+        }
+
+        $this->assertNotNull($toolLine, 'Tool marker line missing');
+        $this->assertNotNull($progressLine, 'Progress marker line missing');
+        $this->assertNotNull($approvalLine, 'Approval marker line missing');
+
+        $toolTextCol = AnsiUtils::visibleWidth(mb_substr($toolLine, 0, (int) mb_strpos($toolLine, 'bash')));
+        $progressTextCol = AnsiUtils::visibleWidth(mb_substr($progressLine, 0, (int) mb_strpos($progressLine, 'working on it')));
+        $approvalTextCol = AnsiUtils::visibleWidth(mb_substr($approvalLine, 0, (int) mb_strpos($approvalLine, 'needs approval')));
+        $this->assertSame($toolTextCol, $progressTextCol, 'Progress text should share tool text column: '.$progressLine);
+        $this->assertSame($toolTextCol, $approvalTextCol, 'Approval text should share tool text column: '.$approvalLine);
     }
 }

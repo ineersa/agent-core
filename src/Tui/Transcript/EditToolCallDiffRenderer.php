@@ -38,7 +38,7 @@ final readonly class EditToolCallDiffRenderer
         }
 
         if (null !== $preview['ellipsis']) {
-            $coloredLines[] = $theme->color(ThemeColorEnum::DiffContext, '    '.$preview['ellipsis']);
+            $coloredLines[] = '    '.TranscriptPreviewEllipsis::style($theme, $preview['ellipsis'], ThemeColorEnum::DiffContext);
         }
 
         if ([] === $coloredLines) {

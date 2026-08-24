@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Symfony\Component\Tui\Style\Direction;
 use Symfony\Component\Tui\Style\Padding;
 use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Widget\AbstractWidget;
@@ -70,13 +71,13 @@ final readonly class SubagentResultRenderer
         SubagentProgressSnapshotInterface $progress,
         string $resultText,
     ): AbstractWidget {
-        $status = $this->resolveCardStatus($progress);
         $handoffMarkdown = $this->resolveHandoffMarkdown($progress, $resultText);
         $expandHandoffHint = ('' !== $handoffMarkdown && $this->handoffNeedsExpandHint($handoffMarkdown))
             ? 'Ctrl+O to expand handoff'
             : null;
 
         $container = new ContainerWidget();
+        $container->setStyle(new Style(direction: Direction::Vertical, gap: 1));
         $container->add(new SubagentProgressCardWidget(
             progress: $progress,
             streaming: $block->streaming,
@@ -84,7 +85,7 @@ final readonly class SubagentResultRenderer
         ));
 
         if ('' !== $handoffMarkdown) {
-            $container->add($this->buildHandoffMarkdownWidget($handoffMarkdown, $theme, $status));
+            $container->add($this->buildHandoffMarkdownWidget($handoffMarkdown, $theme));
         }
 
         return $container;
@@ -103,20 +104,7 @@ final readonly class SubagentResultRenderer
         return new TextWidget(implode("\n", array_merge([$header], $body, [$bottom])));
     }
 
-    private function buildHandoffMarkdownWidget(string $handoffMarkdown, TuiTheme $theme, string $status): MarkdownWidget
-    {
-        $preview = $this->previewHandoffLines($handoffMarkdown);
-        $mdWidget = new MarkdownWidget("### Handoff\n\n".$preview);
-        $colorSpec = $theme->getPalette()->get(ThemeColorEnum::ToolOutput);
-        $style = '' !== $colorSpec
-            ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 2]))
-            : new Style(padding: Padding::from([0, 0, 0, 2]));
-        $mdWidget->setStyle($style);
-
-        return $mdWidget;
-    }
-
-    private function previewHandoffLines(string $handoffMarkdown): string
+    private function buildHandoffMarkdownWidget(string $handoffMarkdown, TuiTheme $theme): AbstractWidget
     {
         $lines = explode("\n", $handoffMarkdown);
         $preview = $this->linePreviewService->apply(
@@ -125,12 +113,30 @@ final readonly class SubagentResultRenderer
             fullRender: false,
             displayState: $this->displayState,
         );
-        $body = implode("\n", $preview['lines']);
-        if (null !== $preview['ellipsis']) {
-            $body .= "\n".$preview['ellipsis'];
+
+        $mdWidget = new MarkdownWidget("### Handoff\n\n".implode("\n", $preview['lines']));
+        $handoffPadding = Padding::from([0, 0, 0, 2]);
+        $colorSpec = $theme->getPalette()->get(ThemeColorEnum::ToolOutput);
+        $mdWidget->setStyle(
+            '' !== $colorSpec
+                ? new Style(color: $colorSpec, padding: $handoffPadding)
+                : new Style(padding: $handoffPadding),
+        );
+
+        if (null === $preview['ellipsis']) {
+            return $mdWidget;
         }
 
-        return $body;
+        // MarkdownWidget strips ESC sequences; keep the styled ellipsis as a sibling TextWidget.
+        $ellipsis = new TextWidget(TranscriptPreviewEllipsis::style($theme, $preview['ellipsis']));
+        $ellipsis->setStyle(new Style(padding: $handoffPadding));
+
+        $handoff = new ContainerWidget();
+        $handoff->setStyle(new Style(direction: Direction::Vertical));
+        $handoff->add($mdWidget);
+        $handoff->add($ellipsis);
+
+        return $handoff;
     }
 
     private function handoffNeedsExpandHint(string $handoffMarkdown): bool

@@ -46,16 +46,14 @@ function llm_fixtures_record(): void
     }
 
     // ── TUI fixture output paths (committed locations) ───────────
-    $tuiSimpleFixture = 'tests/Tui/E2E/fixtures/tui-simple-text-response.json';
     $tuiStartupFixture = 'tests/Tui/E2E/fixtures/tui-startup-prompt-response.json';
 
-    $tuiFixtureDir = dirname($tuiSimpleFixture);
+    $tuiFixtureDir = dirname($tuiStartupFixture);
     if (!is_dir($tuiFixtureDir)) {
         mkdir($tuiFixtureDir, 0755, true);
     }
 
     $env = qa_observability_env_command().' APP_ENV=test LLAMA_CPP_SMOKE_TEST=1';
-    $env .= ' HATFIELD_RECORD_TUI_SIMPLE_FIXTURE_PATH='.escapeshellarg($tuiSimpleFixture);
     $env .= ' HATFIELD_RECORD_TUI_STARTUP_FIXTURE_PATH='.escapeshellarg($tuiStartupFixture);
 
     echo "Running recording test (ReplayRecordingTest + TUI fixture methods)...\n\n";
@@ -84,7 +82,6 @@ function llm_fixtures_record(): void
 
     echo "\n\nRecording complete. Fixtures updated.\n";
     echo "  AgentCore traces → tests/AgentCore/Fixtures/traces/\n";
-    echo "  TUI journey reply → {$tuiSimpleFixture}\n";
     echo "  TUI startup reply → {$tuiStartupFixture}\n";
     echo "\nRun 'castor test' and 'castor test:tui' to verify replays pass.\n";
 }

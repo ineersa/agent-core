@@ -15,12 +15,15 @@ use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
+use Ineersa\Tui\Transcript\ThemeStyleSheetFactory;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Render\Renderer;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\EditorWidget;
 use Symfony\Component\Tui\Widget\MarkdownWidget;
+use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
@@ -143,6 +146,80 @@ class QuestionControllerTest extends TestCase
         $this->assertStringContainsString('Describe your workflow.', $prompt);
         $this->assertStringNotContainsString('…', $prompt, 'Prompt should wrap, not ellipsis-truncate');
         $this->assertStringContainsString('[type answer and press Enter]', preg_replace('/\x1b\[[0-9;]*m/', '', $hint));
+    }
+
+    #[Test]
+    public function testChoiceOverlayUsesPromptColorAndNativeGapBetweenBlocks(): void
+    {
+        $request = new QuestionRequest(
+            requestId: 'choice-style',
+            source: QuestionSource::AgentCore,
+            kind: QuestionKind::Choice,
+            prompt: 'PROMPT_BODY_UNIQUE Choose carefully',
+            choices: [
+                new QuestionOption(label: 'ANSWER_ALPHA_UNIQUE'),
+                new QuestionOption(label: 'LONG_OPTION_BEGIN keep every word visible past thirty columns LONG_OPTION_TAIL_UNIQUE'),
+                new QuestionOption(label: 'WITH_DESC', description: 'Visible description remains mapped'),
+            ],
+            allowOther: false,
+        );
+
+        $palette = new ThemePalette(
+            name: 'test',
+            colors: [
+                ThemeColorEnum::Accent->value => 'cyan',
+                ThemeColorEnum::Prompt->value => 'magenta',
+                ThemeColorEnum::Muted->value => 'gray',
+                ThemeColorEnum::Text->value => 'white',
+            ],
+        );
+        $theme = new DefaultTheme($palette);
+        $tui = new Tui();
+        $screen = new ChatScreen($theme, 'choice-style-session', new PromptEditor());
+        $screen->mount($tui);
+        $controller = new QuestionController(new QuestionCoordinator(), $screen);
+        $controller->open($request);
+
+        $containerProp = new \ReflectionProperty($controller, 'container');
+        /** @var ContainerWidget $container */
+        $container = $containerProp->getValue($controller);
+        $this->assertInstanceOf(ContainerWidget::class, $container);
+
+        $children = $container->all();
+        $this->assertInstanceOf(SelectListWidget::class, $children[2]);
+
+        $promptProbe = $theme->color(ThemeColorEnum::Prompt, 'PROMPT_BODY_UNIQUE');
+        $accentProbe = $theme->color(ThemeColorEnum::Accent, 'PROBE');
+        $renderer = new Renderer();
+        $renderer->addStyleSheet((new ThemeStyleSheetFactory())->createQuestionChoiceList($palette));
+        $rendered = $renderer->render($container, 96, 30);
+        $joined = implode("\n", $rendered);
+        $plainLines = array_map(
+            static fn (string $line): string => trim(preg_replace('/\x1b\[[0-9;]*m/', '', $line) ?? $line, " \t\r\n"),
+            $rendered,
+        );
+        $plain = implode("\n", $plainLines);
+
+        $this->assertStringContainsString('PROMPT_BODY_UNIQUE', $plain);
+        $this->assertStringContainsString('ANSWER_ALPHA_UNIQUE', $plain);
+        $this->assertStringContainsString('LONG_OPTION_TAIL_UNIQUE', $plain);
+        $this->assertStringContainsString('Visible description remains mapped', $plain);
+        $this->assertGreaterThanOrEqual(
+            2,
+            \count(array_filter($plainLines, static fn (string $line): bool => '' === $line)),
+            'The native container gap must render separation between overlay blocks',
+        );
+        $promptPrefix = substr($promptProbe, 0, (int) strpos($promptProbe, 'PROMPT_BODY_UNIQUE'));
+        $accentPrefix = substr($accentProbe, 0, (int) strpos($accentProbe, 'PROBE'));
+        $this->assertNotSame('', $promptPrefix, 'Prompt theme color must produce an ANSI prefix');
+        $this->assertNotSame('', $accentPrefix, 'Accent theme color must produce an ANSI prefix');
+        $this->assertNotSame($accentPrefix, $promptPrefix, 'Prompt and Accent theme colors must differ');
+        $this->assertStringContainsString($promptPrefix, $joined, 'Rendered prompt must use Prompt theme ANSI prefix');
+        $this->assertStringContainsString(
+            $accentPrefix."\x1b[1m→ ANSWER_ALPHA_UNIQUE",
+            $joined,
+            'Native selected row must resolve the question-scoped Accent style',
+        );
     }
 
     #[Test]
@@ -273,15 +350,26 @@ class QuestionControllerTest extends TestCase
             prompt: 'Pick:',
             choices: [
                 new QuestionOption(label: 'NoDesc'),
+                new QuestionOption(label: 'WhitespaceDesc', description: " \t\n "),
             ],
             allowOther: false,
         );
 
         $items = $this->invokeBuildItems($request);
 
-        $this->assertCount(1, $items);
+        $this->assertCount(2, $items);
         $this->assertSame('NoDesc', $items[0]['value']);
-        $this->assertSame('', $items[0]['description']);
+        $this->assertArrayNotHasKey(
+            'description',
+            $items[0],
+            'Empty descriptions must be omitted so SelectListWidget keeps full-width labels',
+        );
+        $this->assertSame('WhitespaceDesc', $items[1]['value']);
+        $this->assertArrayNotHasKey(
+            'description',
+            $items[1],
+            'Whitespace-only descriptions must be omitted so SelectListWidget keeps full-width labels',
+        );
     }
 
     #[Test]
