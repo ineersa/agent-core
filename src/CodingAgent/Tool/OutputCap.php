@@ -42,7 +42,7 @@ final class OutputCap
      *
      * @var list<string>
      */
-    private const array DOCUMENT_REPORT_TOOL_NAMES = ['fork', 'subagent', 'agent_retrieve'];
+    private const array DOCUMENT_REPORT_TOOL_NAMES = ['fork', 'subagent', 'agent_resume', 'agent_retrieve'];
 
     private bool $cleanedUp = false;
 
@@ -100,7 +100,7 @@ final class OutputCap
      *    treated as filesystem paths even when they end in .md/.txt/.toon.
      * 2. Synthetic .md path for successful hatfield_docs read (not list).
      * 3. Synthetic .md path for successful document-report tools
-     *    (fork/subagent/agent_retrieve) so resolveCap applies docCap without
+     *    (fork/subagent/agent_resume/agent_retrieve) so resolveCap applies docCap without
      *    changing defaultCap.
      * 4. null → defaultCap.
      *

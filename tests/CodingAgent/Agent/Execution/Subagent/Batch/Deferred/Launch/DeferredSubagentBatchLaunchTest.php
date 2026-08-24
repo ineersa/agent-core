@@ -23,15 +23,20 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredS
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\SerializerInterface;
 
 /**
  * Normalized deferred batch launch and production executeParallel cutover (Piece 4C2).
@@ -445,6 +450,98 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $thirdChild = $batch->children[2];
         $this->assertNull($registry->get($parentRunId, $thirdChild->artifactId));
         $this->assertDirectoryDoesNotExist($pathResolver->resolveArtifactDir($parentRunId, $thirdChild->artifactId));
+    }
+
+    public function testInsertReservedChildrenRebindsExistingTerminalChildOntoNewBatch(): void
+    {
+        $childRunId = 'child-resume-rebind-01';
+        $oldBatchLifecycleId = 'batch-old-resume-rebind-01';
+        $newBatchLifecycleId = 'batch-new-resume-rebind-01';
+        $oldArtifactId = 'agent_old_rebind_01';
+        $newArtifactId = 'agent_new_rebind_01';
+
+        /** @var SerializerInterface $serializer */
+        $serializer = self::getContainer()->get(SerializerInterface::class);
+        $completedProjection = new DeferredChildRunLifecycleProjectionDTO(
+            childStatus: RunStatus::Completed,
+            childTurnNo: 2,
+            lastCommittedSeq: 5,
+            model: 'old/model',
+            reasoning: 'medium',
+            latestInputTokens: 12345,
+            contextWindow: 200000,
+        );
+        $projectionArray = $serializer->normalize(
+            $completedProjection,
+            null,
+            [AbstractObjectNormalizer::SKIP_NULL_VALUES => true],
+        );
+        if (!\is_array($projectionArray)) {
+            throw new \RuntimeException('Expected normalized lifecycle projection array.');
+        }
+
+        $em = self::getContainer()->get('doctrine')->getManager();
+        $seed = new DeferredSubagentChild();
+        $seed->batchLifecycleId = $oldBatchLifecycleId;
+        $seed->batchIndex = 1;
+        $seed->childRunId = $childRunId;
+        $seed->artifactId = $oldArtifactId;
+        $seed->agentName = 'scout';
+        $seed->task = 'old task';
+        $seed->launchModel = 'old/model';
+        $seed->launchReasoning = 'medium';
+        $seed->launchStatus = DeferredSubagentChildLaunchStatusEnum::Launched;
+        $seed->childEventCursor = 5;
+        $seed->childLifecycleProjection = $projectionArray;
+        $seed->terminalCompletedAt = new \DateTimeImmutable('2026-08-21T00:01:00Z');
+        $seed->terminalStatus = 'completed';
+        $em->persist($seed);
+        $em->flush();
+
+        /** @var DeferredSubagentChildRepository $childRepo */
+        $childRepo = self::getContainer()->get(DeferredSubagentChildRepository::class);
+        $intent = [
+            'batchIndex' => 1,
+            'childRunId' => $childRunId,
+            'artifactId' => $newArtifactId,
+            'agentName' => 'scout',
+            'task' => 'continue after handoff',
+            'launchModel' => 'new/model',
+            'launchReasoning' => 'high',
+        ];
+        $childRepo->insertReservedChildren($newBatchLifecycleId, [$intent]);
+        $em->clear();
+
+        $rebound = $childRepo->findEntityByChildRunId($childRunId);
+        $this->assertInstanceOf(DeferredSubagentChild::class, $rebound);
+        $this->assertSame($newBatchLifecycleId, $rebound->batchLifecycleId);
+        $this->assertSame(1, $rebound->batchIndex);
+        $this->assertSame($newArtifactId, $rebound->artifactId);
+        $this->assertSame('continue after handoff', $rebound->task);
+        $this->assertSame('new/model', $rebound->launchModel);
+        $this->assertSame('high', $rebound->launchReasoning);
+        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved, $rebound->launchStatus);
+        $this->assertSame(5, $rebound->childEventCursor);
+        $this->assertNull($rebound->terminalCompletedAt);
+        $this->assertNull($rebound->terminalStatus);
+
+        $projection = $childRepo->decodeChildLifecycleProjection($rebound->childLifecycleProjection);
+        $this->assertNotNull($projection);
+        $this->assertSame(RunStatus::Running, $projection->childStatus);
+        $this->assertSame(5, $projection->lastCommittedSeq);
+        $this->assertSame(12345, $projection->latestInputTokens);
+        $this->assertSame(200000, $projection->contextWindow);
+        $this->assertSame('new/model', $projection->model);
+        $this->assertSame('high', $projection->reasoning);
+
+        // Second reserve against the same new batch/index converges without another unique conflict.
+        $childRepo->insertReservedChildren($newBatchLifecycleId, [$intent]);
+        $em->clear();
+        $again = $childRepo->findEntityByChildRunId($childRunId);
+        $this->assertInstanceOf(DeferredSubagentChild::class, $again);
+        $this->assertSame($newBatchLifecycleId, $again->batchLifecycleId);
+        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved, $again->launchStatus);
+        $this->assertSame(5, $again->childEventCursor);
     }
 
     /**

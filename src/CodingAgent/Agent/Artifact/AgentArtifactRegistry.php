@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Utility\AtomicFileWriterException;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+use Symfony\Component\Uid\UuidV7;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
@@ -21,9 +22,11 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  *     registry.json           — canonical entry list
  *     <artifactId>/
  *       metadata.json         — per-child identity/status/timestamps
- *       handoff.md            — human-readable handoff (empty on create)
  *       events.jsonl          — canonical RunEvent stream (AgentChildRunEventStore)
  *       state.json            — hot RunState cache (AgentChildRunStore)
+ *       handoffs/
+ *         index.json          — immutable handoff entries (id, created_at, status, summary, path)
+ *         <uuid>.md           — one handoff body per finalize (append-only)
  *
  * All registry mutations are protected by a per-parent-session lock
  * (hatfield-agent-artifacts-<parentRunId>).  Per-file atomic writes use
@@ -51,7 +54,7 @@ final class AgentArtifactRegistry
 
     /**
      * Create a new agent artifact entry, its directory, metadata file,
-     * and empty handoff file.
+     * and empty handoffs/ index.
      *
      * Adds the entry to the registry.  The artifact starts in Pending
      * status; caller should transition to Running when the child run
@@ -98,6 +101,7 @@ final class AgentArtifactRegistry
             $entry = $this->buildPendingEntry($parentRunId, $artifactId, $agentRunId, $agentName, $kind);
             $entries[] = $entry;
             $this->persistPendingEntry($parentRunId, $artifactId, $entry, $entries);
+            $this->bindArtifactToCurrentParentLifetime($parentRunId, $artifactId);
 
             return $entry;
         } finally {
@@ -146,6 +150,7 @@ final class AgentArtifactRegistry
             $entry = $this->buildPendingEntry($parentRunId, $artifactId, $agentRunId, $agentName, $kind);
             $entries[] = $entry;
             $this->persistPendingEntry($parentRunId, $artifactId, $entry, $entries);
+            $this->bindArtifactToCurrentParentLifetime($parentRunId, $artifactId);
 
             return $entry;
         } finally {
@@ -384,7 +389,7 @@ final class AgentArtifactRegistry
             // Canonical registry first — readers must not see a Pending row after a successful discard.
             $this->writeRegistry($parentRunId, $filtered);
 
-            // Sidecars (metadata/handoff/events/state paths) are disposable once the row is gone.
+            // Sidecars (metadata/events/state/handoffs) are disposable once the row is gone.
             $this->removeReservedArtifactDirectory($parentRunId, $artifactId);
 
             return $agentRunId;
@@ -413,50 +418,132 @@ final class AgentArtifactRegistry
     // ── Public file writers ─────────────────────────────────────────────
 
     /**
-     * Read handoff.md for an existing artifact within a parent scope.
+     * Read the latest immutable handoff body for an artifact.
      *
-     * Returns an empty string when the file is missing or empty.
+     * Latest is the index entry with the greatest created_at, with id as a
+     * stable tie-break. Returns an empty string when no handoffs exist yet.
      *
      * @throws \InvalidArgumentException when IDs contain path separators
-     * @throws \RuntimeException         when handoff exists but is unreadable
+     * @throws \RuntimeException         when the latest handoff file is unreadable
      */
     public function readHandoff(string $parentRunId, string $artifactId): string
     {
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
 
-        $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
-        $path = $this->pathResolver->absolutePath($parentRunId, $paths->handoffPath);
-
-        if (!is_file($path)) {
+        $latest = $this->latestHandoffEntry($parentRunId, $artifactId);
+        if (null === $latest) {
             return '';
         }
 
-        if (!is_readable($path)) {
-            throw new \RuntimeException(\sprintf('handoff.md for artifact "%s" parent "%s" is not readable.', $artifactId, $parentRunId));
-        }
-
-        $content = file_get_contents($path);
-
-        return false === $content ? '' : $content;
+        return $this->readHandoffFile($parentRunId, $artifactId, $latest['id']);
     }
 
     /**
-     * Write (or overwrite) the handoff.md file for an existing artifact.
+     * Starts a new parent invocation lifetime without touching persistent artifacts.
      *
-     * This is a public interface for {@see SubagentExecutionService} to
-     * finalize child agent handoffs after run completion.
+     * New artifacts are bound to this lifetime; agent_resume accepts only matching
+     * bindings, while agent_retrieve remains able to read every artifact.
+     */
+    public function beginParentLifetime(string $parentRunId): void
+    {
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
+        $lock->acquire(true);
+
+        try {
+            $lifetime = $this->readParentLifetimes($parentRunId);
+            $lifetime['current_id'] = UuidV7::v7()->toRfc4122();
+            $this->writeParentLifetimes($parentRunId, $lifetime);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * True only when the artifact was launched in the current parent invocation.
+     */
+    public function belongsToCurrentParentLifetime(string $parentRunId, string $artifactId): bool
+    {
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
+        $lifetime = $this->readParentLifetimes($parentRunId);
+        $currentId = $lifetime['current_id'] ?? null;
+
+        return \is_string($currentId) && '' !== $currentId
+            && $currentId === ($lifetime['artifact_lifetimes'][$artifactId] ?? null);
+    }
+
+    /**
+     * Append an immutable handoff for an existing artifact.
      *
-     * Uses atomic temp-file + rename to avoid partial writes.
+     * Writes handoffs/<uuid>.md and appends an index entry using the status
+     * and summary known at finalize time. Prior handoffs are never rewritten.
      *
      * @throws \InvalidArgumentException when IDs contain path separators
      */
-    public function writeHandoff(string $parentRunId, string $artifactId, string $content): void
+    public function writeHandoff(
+        string $parentRunId,
+        string $artifactId,
+        string $content,
+        ?AgentArtifactStatusEnum $status = null,
+        ?string $summary = null,
+    ): string {
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
+
+        $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
+        $lock->acquire(true);
+
+        try {
+            return $this->appendImmutableHandoff(
+                $parentRunId,
+                $artifactId,
+                $content,
+                $status,
+                $summary,
+            );
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * List immutable handoffs for an artifact (oldest → newest by created_at, id tie-break).
+     *
+     * @return list<array{id: string, created_at: string, status: ?string, summary: ?string, path: string}>
+     */
+    public function listHandoffHistory(string $parentRunId, string $artifactId): array
     {
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
 
-        $this->writeHandoffInternal($parentRunId, $artifactId, $content);
+        return $this->normalizedHandoffEntries($parentRunId, $artifactId);
+    }
+
+    /**
+     * Read one immutable handoff body by handoff id (uuid).
+     *
+     * @throws \InvalidArgumentException when the handoff does not exist
+     */
+    public function readHandoffHistoryEntry(string $parentRunId, string $artifactId, string $handoffId): string
+    {
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
+
+        $handoffId = trim($handoffId);
+        if ('' === $handoffId) {
+            throw new \InvalidArgumentException('Handoff id must not be blank.');
+        }
+        $this->pathResolver->validatePathComponent($handoffId, 'handoffId');
+
+        foreach ($this->normalizedHandoffEntries($parentRunId, $artifactId) as $entry) {
+            if ($entry['id'] === $handoffId) {
+                return $this->readHandoffFile($parentRunId, $artifactId, $handoffId);
+            }
+        }
+
+        throw new \InvalidArgumentException(\sprintf('No handoff "%s" for artifact "%s".', $handoffId, $artifactId));
     }
 
     // ── Internal read/write methods ─────────────────────────────────────
@@ -493,7 +580,7 @@ final class AgentArtifactRegistry
         array $entries,
     ): void {
         $this->ensureArtifactDir($parentRunId, $artifactId);
-        $this->writeHandoff($parentRunId, $artifactId, '');
+        $this->ensureEmptyHandoffsIndex($parentRunId, $artifactId);
 
         // Write the canonical registry first — if a later sidecar write
         // fails, the canonical registry is still correct.  metadata.json
@@ -602,22 +689,256 @@ final class AgentArtifactRegistry
     }
 
     /**
-     * Write (or overwrite) the handoff.md file for a child artifact.
-     *
-     * An empty string creates an empty file placeholder so the path
-     * reference is always valid.  Uses atomic temp-file + rename to
-     * avoid partial writes.
+     * Append one immutable handoff file + index entry. Caller must hold the parent lock.
      */
-    private function writeHandoffInternal(string $parentRunId, string $artifactId, string $content): void
-    {
+    private function appendImmutableHandoff(
+        string $parentRunId,
+        string $artifactId,
+        string $content,
+        ?AgentArtifactStatusEnum $status,
+        ?string $summary,
+    ): string {
+        $this->ensureArtifactDir($parentRunId, $artifactId);
+
+        $handoffId = UuidV7::v7()->toRfc4122();
         $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
-        $path = $this->pathResolver->absolutePath($parentRunId, $paths->handoffPath);
+        $relative = "{$paths->artifactDir}/handoffs/{$handoffId}.md";
+        $absolute = $this->pathResolver->absolutePath($parentRunId, $relative);
 
         try {
-            AtomicFileWriter::write($path, $content, fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
+            AtomicFileWriter::write($absolute, $content, fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
         } catch (AtomicFileWriterException $exception) {
-            throw new \RuntimeException(\sprintf('Failed to write handoff.md for artifact "%s" parent "%s".', $artifactId, $parentRunId), previous: $exception);
+            throw new \RuntimeException(\sprintf('Failed to write handoff "%s" for artifact "%s" parent "%s".', $handoffId, $artifactId, $parentRunId), previous: $exception);
         }
+
+        if (null !== $summary && '' !== trim($summary)) {
+            $summary = mb_substr(preg_replace('/\s+/', ' ', $summary) ?? $summary, 0, 240);
+        } else {
+            $summary = null;
+        }
+
+        $entries = $this->normalizedHandoffEntries($parentRunId, $artifactId);
+        $entries[] = [
+            'id' => $handoffId,
+            'created_at' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+            'status' => $status?->value,
+            'summary' => $summary,
+            'path' => $relative,
+        ];
+
+        $this->writeHandoffIndex($parentRunId, $artifactId, [
+            'schema_version' => 1,
+            'entries' => $entries,
+        ]);
+
+        return $handoffId;
+    }
+
+    /**
+     * Ensure handoffs/ exists with an empty index.json (create-time placeholder).
+     * Caller must already hold the parent lock when used from persistPendingEntry.
+     */
+    private function ensureEmptyHandoffsIndex(string $parentRunId, string $artifactId): void
+    {
+        $index = $this->readHandoffIndex($parentRunId, $artifactId);
+        if ([] !== ($index['entries'] ?? [])) {
+            return;
+        }
+
+        $this->writeHandoffIndex($parentRunId, $artifactId, [
+            'schema_version' => 1,
+            'entries' => [],
+        ]);
+    }
+
+    /**
+     * @return list<array{id: string, created_at: string, status: ?string, summary: ?string, path: string}>
+     */
+    private function normalizedHandoffEntries(string $parentRunId, string $artifactId): array
+    {
+        $index = $this->readHandoffIndex($parentRunId, $artifactId);
+        $entries = $index['entries'] ?? [];
+        if (!\is_array($entries)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($entries as $entry) {
+            if (!\is_array($entry) || !isset($entry['id']) || !\is_string($entry['id']) || '' === trim($entry['id'])) {
+                continue;
+            }
+            $id = trim($entry['id']);
+            $out[] = [
+                'id' => $id,
+                'created_at' => \is_string($entry['created_at'] ?? null) ? $entry['created_at'] : '',
+                'status' => \is_string($entry['status'] ?? null) ? $entry['status'] : null,
+                'summary' => \is_string($entry['summary'] ?? null) ? $entry['summary'] : null,
+                'path' => \is_string($entry['path'] ?? null) && '' !== $entry['path']
+                    ? $entry['path']
+                    : "artifacts/agents/{$artifactId}/handoffs/{$id}.md",
+            ];
+        }
+
+        usort(
+            $out,
+            static function (array $a, array $b): int {
+                $cmp = strcmp($a['created_at'], $b['created_at']);
+                if (0 !== $cmp) {
+                    return $cmp;
+                }
+
+                return strcmp($a['id'], $b['id']);
+            },
+        );
+
+        return $out;
+    }
+
+    /**
+     * @return array{id: string, created_at: string, status: ?string, summary: ?string, path: string}|null
+     */
+    private function latestHandoffEntry(string $parentRunId, string $artifactId): ?array
+    {
+        $entries = $this->normalizedHandoffEntries($parentRunId, $artifactId);
+        if ([] === $entries) {
+            return null;
+        }
+
+        return $entries[array_key_last($entries)];
+    }
+
+    private function readHandoffFile(string $parentRunId, string $artifactId, string $handoffId): string
+    {
+        // Derive the FS path from validated components only. Index `path` is
+        // informational — never open a stored relative path from index.json.
+        $this->pathResolver->validatePathComponent($handoffId, 'handoffId');
+        $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
+        $relative = "{$paths->artifactDir}/handoffs/{$handoffId}.md";
+        $path = $this->pathResolver->absolutePath($parentRunId, $relative);
+        if (!is_file($path)) {
+            throw new \InvalidArgumentException(\sprintf('No handoff "%s" for artifact "%s".', $handoffId, $artifactId));
+        }
+        if (!is_readable($path)) {
+            throw new \RuntimeException(\sprintf('Handoff "%s" for artifact "%s" parent "%s" is not readable.', $handoffId, $artifactId, $parentRunId));
+        }
+
+        $content = file_get_contents($path);
+
+        return false === $content ? '' : $content;
+    }
+
+    /**
+     * @return array{schema_version?: int, entries?: list<mixed>}
+     */
+    private function readHandoffIndex(string $parentRunId, string $artifactId): array
+    {
+        $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
+        $indexPath = $this->pathResolver->absolutePath($parentRunId, "{$paths->artifactDir}/handoffs/index.json");
+        if (!is_file($indexPath) || !is_readable($indexPath)) {
+            return ['schema_version' => 1, 'entries' => []];
+        }
+
+        $raw = file_get_contents($indexPath);
+        if (false === $raw || '' === trim($raw)) {
+            return ['schema_version' => 1, 'entries' => []];
+        }
+
+        try {
+            $decoded = json_decode($raw, true, 512, \JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return ['schema_version' => 1, 'entries' => []];
+        }
+
+        return \is_array($decoded) ? $decoded : ['schema_version' => 1, 'entries' => []];
+    }
+
+    /**
+     * @param array{schema_version: int, entries: list<array<string, mixed>>} $index
+     */
+    private function writeHandoffIndex(string $parentRunId, string $artifactId, array $index): void
+    {
+        $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
+        $indexPath = $this->pathResolver->absolutePath($parentRunId, "{$paths->artifactDir}/handoffs/index.json");
+
+        try {
+            AtomicFileWriter::write(
+                $indexPath,
+                json_encode($index, \JSON_THROW_ON_ERROR | \JSON_PRETTY_PRINT)."\n",
+                fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS,
+            );
+        } catch (AtomicFileWriterException|\JsonException $exception) {
+            throw new \RuntimeException(\sprintf('Failed to write handoffs/index.json for artifact "%s" parent "%s".', $artifactId, $parentRunId), previous: $exception);
+        }
+    }
+
+    /**
+     * @param array{current_id?: string, artifact_lifetimes?: array<string, string>} $lifetime
+     */
+    private function writeParentLifetimes(string $parentRunId, array $lifetime): void
+    {
+        $directory = $this->pathResolver->resolveArtifactsBasePath($parentRunId);
+        if (!is_dir($directory) && !@mkdir($directory, SessionAgentArtifactPathResolver::DIR_PERMISSIONS, true) && !is_dir($directory)) {
+            throw new \RuntimeException(\sprintf('Failed to create agent artifact directory for parent run "%s".', $parentRunId));
+        }
+
+        try {
+            AtomicFileWriter::write(
+                $this->parentLifetimesPath($parentRunId),
+                json_encode($lifetime, \JSON_THROW_ON_ERROR | \JSON_PRETTY_PRINT)."\n",
+                fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS,
+            );
+        } catch (AtomicFileWriterException|\JsonException $exception) {
+            throw new \RuntimeException(\sprintf('Failed to write agent parent lifetime for "%s".', $parentRunId), previous: $exception);
+        }
+    }
+
+    private function bindArtifactToCurrentParentLifetime(string $parentRunId, string $artifactId): void
+    {
+        $lifetime = $this->readParentLifetimes($parentRunId);
+        $currentId = $lifetime['current_id'] ?? null;
+        if (!\is_string($currentId) || '' === $currentId) {
+            $currentId = UuidV7::v7()->toRfc4122();
+            $lifetime['current_id'] = $currentId;
+        }
+        $lifetime['artifact_lifetimes'][$artifactId] = $currentId;
+        $this->writeParentLifetimes($parentRunId, $lifetime);
+    }
+
+    /**
+     * @return array{current_id?: string, artifact_lifetimes: array<string, string>}
+     */
+    private function readParentLifetimes(string $parentRunId): array
+    {
+        $path = $this->parentLifetimesPath($parentRunId);
+        if (!is_file($path) || !is_readable($path)) {
+            return ['artifact_lifetimes' => []];
+        }
+
+        try {
+            $decoded = json_decode((string) file_get_contents($path), true, 512, \JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return ['artifact_lifetimes' => []];
+        }
+        if (!\is_array($decoded)) {
+            return ['artifact_lifetimes' => []];
+        }
+
+        $artifactLifetimes = [];
+        foreach (($decoded['artifact_lifetimes'] ?? []) as $artifactId => $lifetimeId) {
+            if (\is_string($artifactId) && \is_string($lifetimeId) && '' !== $lifetimeId) {
+                $artifactLifetimes[$artifactId] = $lifetimeId;
+            }
+        }
+
+        return [
+            'current_id' => \is_string($decoded['current_id'] ?? null) ? $decoded['current_id'] : null,
+            'artifact_lifetimes' => $artifactLifetimes,
+        ];
+    }
+
+    private function parentLifetimesPath(string $parentRunId): string
+    {
+        return $this->pathResolver->absolutePath($parentRunId, 'artifacts/agents/lifetimes.json');
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -716,7 +1037,6 @@ final class AgentArtifactRegistry
         // Validate stored paths match the canonical paths for this artifact ID.
         $expectedPaths = AgentArtifactPathsDTO::forArtifactId($entry->artifactId);
         if ($entry->paths->artifactDir !== $expectedPaths->artifactDir
-            || $entry->paths->handoffPath !== $expectedPaths->handoffPath
             || $entry->paths->metadataPath !== $expectedPaths->metadataPath
             || $entry->paths->eventsPath !== $expectedPaths->eventsPath
             || $entry->paths->statePath !== $expectedPaths->statePath

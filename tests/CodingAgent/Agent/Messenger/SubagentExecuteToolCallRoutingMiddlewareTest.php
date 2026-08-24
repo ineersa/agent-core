@@ -31,6 +31,19 @@ final class SubagentExecuteToolCallRoutingMiddlewareTest extends TestCase
         $this->assertSame(['agent'], $stamp->getTransportNames());
     }
 
+    public function testStampsAgentTransportForAgentResumeTool(): void
+    {
+        $middleware = new SubagentExecuteToolCallRoutingMiddleware();
+        $message = $this->makeExecuteToolCall('agent_resume');
+        $envelope = new Envelope($message);
+
+        $result = $middleware->handle($envelope, new TestStack());
+
+        $stamp = $result->last(TransportNamesStamp::class);
+        $this->assertNotNull($stamp);
+        $this->assertSame(['agent'], $stamp->getTransportNames());
+    }
+
     public function testDoesNotStampNonSubagentTool(): void
     {
         $middleware = new SubagentExecuteToolCallRoutingMiddleware();
