@@ -84,27 +84,36 @@ final class ProviderContextUsageResolver
      */
     public function getLatestEligibleInputTokens(string $runId): ?int
     {
-        $measurement = $this->findLatestProviderMeasurement($runId);
+        $hasNewerAutoAttempt = false;
 
-        $eligibleTokens = $measurement['tokens'] ?? null;
+        foreach ($this->eventStore->reverseFor($runId) as $event) {
+            if (
+                (RunEventTypeEnum::ContextCompactionStarted->value === $event->type
+                    || RunEventTypeEnum::ContextCompactionFailed->value === $event->type)
+                && 'auto' === ($event->payload['trigger'] ?? null)
+            ) {
+                $hasNewerAutoAttempt = true;
 
-        if (null === $eligibleTokens) {
-            return null;
+                continue;
+            }
+
+            if (
+                RunEventTypeEnum::LlmStepCompleted->value !== $event->type
+                && RunEventTypeEnum::LlmStepAborted->value !== $event->type
+            ) {
+                continue;
+            }
+
+            $usage = $event->payload['usage'] ?? [];
+            $tokens = $usage['input_tokens'] ?? $usage['prompt_tokens'] ?? null;
+            if (!\is_int($tokens) || $tokens <= 0) {
+                continue;
+            }
+
+            return $hasNewerAutoAttempt ? null : $tokens;
         }
 
-        $providerSeq = $measurement['seq'] ?? 0;
-        $latestAutoAttemptSeq = $this->findLatestAutoCompactionAttemptSeq($runId);
-
-        // Eligible only when provider measurement is newer than the
-        // last auto compaction attempt marker (or no attempt exists).
-        // Attempt markers include both context_compaction_started and
-        // context_compaction_failed (the prepare-failure path emits
-        // only failed, no started).
-        if (null !== $latestAutoAttemptSeq && $providerSeq <= $latestAutoAttemptSeq) {
-            return null;
-        }
-
-        return $eligibleTokens;
+        return null;
     }
 
     /**
@@ -137,43 +146,5 @@ final class ProviderContextUsageResolver
         }
 
         return [];
-    }
-
-    /**
-     * Finds the latest auto compaction attempt marker seq.
-     *
-     * Walks backward through events, returning the seq of the most
-     * recent auto-triggered compaction attempt — either
-     * context_compaction_started or context_compaction_failed with
-     * trigger=auto.
-     *
-     * The prepare-failure path in CompactRunHandler emits
-     * context_compaction_failed without a preceding started event
-     * (e.g. too_few_messages, no_safe_boundary).  Including failure
-     * as an attempt marker prevents retry loops on the same stale
-     * provider measurement.
-     *
-     * Manual /compact markers (trigger=manual or missing) are ignored —
-     * manual compaction should never block auto-compaction from a
-     * newer provider measurement.
-     */
-    private function findLatestAutoCompactionAttemptSeq(string $runId): ?int
-    {
-        $attemptTypes = [
-            RunEventTypeEnum::ContextCompactionStarted->value,
-            RunEventTypeEnum::ContextCompactionFailed->value,
-        ];
-
-        foreach ($this->eventStore->reverseFor($runId) as $event) {
-            if (!\in_array($event->type, $attemptTypes, true)) {
-                continue;
-            }
-
-            if ('auto' === ($event->payload['trigger'] ?? null)) {
-                return $event->seq;
-            }
-        }
-
-        return null;
     }
 }

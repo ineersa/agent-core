@@ -183,6 +183,19 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         ]));
     }
 
+    public function testBelowBothThresholdsSkipsReminderHistoryScan(): void
+    {
+        $this->eventStore->method('firstFor')->willReturn($this->runStarted(1, 272000));
+        $this->eventStore->expects($this->never())->method('reverseFor');
+        $this->agentRunner->expects($this->never())->method('appendMessage');
+
+        $this->subscriber->handleAfterTurnCommit($this->hookContext([
+            $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, [
+                'usage' => ['input_tokens' => 100000],
+            ]),
+        ]));
+    }
+
     public function testMissingUsageOrWindowDoesNotQueue(): void
     {
         $this->mockEvents([

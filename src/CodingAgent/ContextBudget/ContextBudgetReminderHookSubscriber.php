@@ -56,13 +56,18 @@ final readonly class ContextBudgetReminderHookSubscriber implements HookSubscrib
             return $context;
         }
 
+        $remaining = $contextWindow - $inputTokens;
+        if ($inputTokens < $this->config->earlyInputTokens
+            && $remaining >= $this->config->urgentRemainingTokens) {
+            return $context;
+        }
+
         $issued = $this->issuedReminderKeysAfterLatestCompaction($context->runId);
 
         $earlyEligible = $inputTokens >= $this->config->earlyInputTokens
             && !\in_array('early', $issued, true)
             && !\in_array('urgent', $issued, true);
 
-        $remaining = $contextWindow - $inputTokens;
         $urgentEligible = $remaining < $this->config->urgentRemainingTokens
             && !\in_array('urgent', $issued, true);
 
