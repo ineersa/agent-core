@@ -58,6 +58,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             new ToolExecutor('parallel', 2, $store, toolbox: $toolbox),
             $bus,
             new InMemoryDeferredToolCompletionRepository(),
+            $store,
         ))(new ExecuteToolCall('run-susp', 2, 'turn-2-tools-1', 1, 'idemp', 'call-susp', 'bash', ['command' => 'env'], 0));
 
         $this->assertInstanceOf(ToolCallResult::class, $bus->messages[0] ?? null);

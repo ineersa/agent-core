@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
+use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
@@ -106,6 +107,7 @@ final class ExecutionFailureDrillTest extends TestCase
             toolExecutor: $toolExecutor,
             commandBus: new FailingOnceMessageBus(new TransportException('simulated dispatch crash')),
             deferredToolCompletionRepository: new InMemoryDeferredToolCompletionRepository(),
+            resultStore: new ToolExecutionResultStore(),
         );
 
         try {
@@ -116,7 +118,7 @@ final class ExecutionFailureDrillTest extends TestCase
         }
 
         $collectingBus = new TestMessageBus();
-        $retryWorker = new ExecuteToolCallWorker($toolExecutor, $collectingBus, new InMemoryDeferredToolCompletionRepository());
+        $retryWorker = new ExecuteToolCallWorker($toolExecutor, $collectingBus, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore());
         $retryWorker($message);
 
         $this->assertCount(1, $collectingBus->messages);

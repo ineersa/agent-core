@@ -168,7 +168,7 @@ final class ExecutionWorkerTest extends TestCase
 
         $commandBus = new TestMessageBus();
         $metrics = new RunMetrics();
-        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, new InMemoryDeferredToolCompletionRepository(), null, $metrics);
+        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore(), null, $metrics);
 
         $worker(new ExecuteToolCall(
             runId: 'run-worker-obs-2',
@@ -208,7 +208,7 @@ final class ExecutionWorkerTest extends TestCase
         };
 
         $commandBus = new TestMessageBus();
-        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, new InMemoryDeferredToolCompletionRepository());
+        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore());
 
         $worker(new ExecuteToolCall(
             runId: 'run-worker-2',
@@ -250,7 +250,7 @@ final class ExecutionWorkerTest extends TestCase
             new FakeToolExecutor(),
             new TestMessageBus(),
             new InMemoryDeferredToolCompletionRepository(),
-            resultStore: $store,
+            $store,
         );
 
         $worker(new ExecuteToolCall(
@@ -291,7 +291,7 @@ final class ExecutionWorkerTest extends TestCase
                 }
             },
             new InMemoryDeferredToolCompletionRepository(),
-            resultStore: $store,
+            $store,
         );
 
         $this->expectException(\RuntimeException::class);

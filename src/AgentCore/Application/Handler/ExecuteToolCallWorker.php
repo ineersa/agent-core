@@ -29,11 +29,11 @@ final readonly class ExecuteToolCallWorker
         private ToolExecutorInterface $toolExecutor,
         private MessageBusInterface $commandBus,
         private DeferredToolCompletionRepositoryInterface $deferredToolCompletionRepository,
+        private ToolExecutionResultStore $resultStore,
         private ?RunStoreInterface $runStore = null,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
         private ?EventDispatcherInterface $eventDispatcher = null,
-        private ?ToolExecutionResultStore $resultStore = null,
     ) {
     }
 
@@ -65,7 +65,7 @@ final readonly class ExecuteToolCallWorker
                     throw new \RuntimeException('Failed to dispatch tool result to command bus.', previous: $exception);
                 }
 
-                $this->resultStore?->releaseCompleted(
+                $this->resultStore->releaseCompleted(
                     $message->runId(),
                     $message->toolCallId,
                     $message->toolName,
