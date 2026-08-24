@@ -740,7 +740,8 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 4,
             activeStepId: 'turn-1-step',
-            model: 'test-model');
+            // Historical run identity (stale after a session-level model change).
+            model: 'grok-cli/grok-composer-2.5-fast');
 
         $message = new LlmStepResult(
             runId: 'run-parallel-max',
@@ -756,6 +757,9 @@ final class LlmStepResultHandlerTest extends TestCase
             stopReason: 'tool_call',
             error: null,
             toolsRef: 'default',
+            // Actual model that produced this result (session 41 regression:
+            // RunState.model stayed Grok, the executed result was Sol).
+            model: 'openai-codex/gpt-5.6-sol',
         );
 
         $result = $handler->handle($message, $state);
@@ -766,6 +770,9 @@ final class LlmStepResultHandlerTest extends TestCase
             $this->assertInstanceOf(ExecuteToolCall::class, $dispatched);
             $this->assertSame(4, $dispatched->maxParallelism);
             $this->assertSame('parallel', $dispatched->mode);
+            // Tool-launched children inherit the executed result model, not the
+            // historical RunState model.
+            $this->assertSame('openai-codex/gpt-5.6-sol', $dispatched->parentModel);
         }
     }
 
@@ -817,65 +824,5 @@ final class LlmStepResultHandlerTest extends TestCase
         $execute = $executionBus->messages[0];
         $this->assertInstanceOf(ExecuteToolCall::class, $execute);
         $this->assertNull($execute->timeoutSeconds);
-    }
-
-    /**
-     * Tool-launched children inherit the model that actually produced the
-     * completed LLM result, not the historical RunState model. Session 41
-     * regression: RunState.model stayed Grok after a UI-level model change,
-     * so tool-launched forks/subagents without an explicit model would have
-     * inherited the stale Grok identity instead of the executed Sol model.
-     */
-    public function testToolCallParentModelUsesExecutedResultModelNotHistoricalStateModel(): void
-    {
-        $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
-        $handler = new LlmStepResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
-            commandMailboxPolicy: new CommandMailboxPolicy(
-                commandStore: new InMemoryCommandStore(),
-                commandRouter: new CommandRouter([]),
-            ),
-            eventFactory: new EventFactory(),
-            toolCallExtractor: new ToolCallExtractor(),
-            messageNormalizer: new AgentMessageNormalizer(),
-            stepDispatcher: $stepDispatcher,
-            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-        );
-
-        $state = new RunState(
-            runId: 'run-parent-model',
-            status: RunStatus::Running,
-            version: 3,
-            turnNo: 1,
-            lastSeq: 4,
-            activeStepId: 'turn-1-step',
-            // Historical run identity: stale after a session-level model change.
-            model: 'grok-cli/grok-composer-2.5-fast');
-
-        $message = new LlmStepResult(
-            runId: 'run-parent-model',
-            turnNo: 1,
-            stepId: 'turn-1-step',
-            attempt: 1,
-            idempotencyKey: 'llm-parent-model',
-            assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([
-                ['id' => 'tool-call-1', 'name' => 'search_docs', 'arguments' => ['query' => 'agent-core']],
-            ], 'I will call a tool.'),
-            usage: ['total_tokens' => 12],
-            stopReason: 'tool_call',
-            error: null,
-            // Actual model that produced this result.
-            model: 'openai-codex/gpt-5.6-sol',
-        );
-
-        $result = $handler->handle($message, $state);
-        $this->assertCount(1, $result->postCommit);
-        ($result->postCommit[0])();
-
-        $this->assertCount(1, $executionBus->messages);
-        $execute = $executionBus->messages[0];
-        $this->assertInstanceOf(ExecuteToolCall::class, $execute);
-        $this->assertSame('openai-codex/gpt-5.6-sol', $execute->parentModel);
     }
 }

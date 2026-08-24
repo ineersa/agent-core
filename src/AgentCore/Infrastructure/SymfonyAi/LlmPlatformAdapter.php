@@ -535,11 +535,10 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     /**
      * Extract privacy-safe response diagnostics from a DeferredResult.
      *
-     * Returns structural HTTP metadata plus bounded structured provider error
-     * fields (code/type/param). The provider's free-text error.message is
-     * copied only when it is a string, bounded to 500 chars, and never
-     * contains prompts, tool outputs, or request bodies — it is a bounded
-     * diagnostic, not raw body content. Non-JSON bodies are never stored.
+     * Returns structural HTTP metadata only. Provider-controlled free-text fields
+     * (error.message, error_description, detail, raw body) are never copied into
+     * diagnostics — response_error_message stays null here. Downstream classifiers
+     * may still consume response_error_message when another caller supplies it.
      *
      * @return array<string, mixed>
      */
@@ -612,10 +611,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $diag['response_error_code'] = isset($error['code']) && '' !== $error['code'] ? $error['code'] : null;
                 $diag['response_error_type'] = $error['type'] ?? null;
                 $diag['response_error_param'] = $error['param'] ?? null;
-                $providerMessage = $error['message'] ?? null;
-                if (\is_string($providerMessage) && '' !== trim($providerMessage)) {
-                    $diag['response_error_message'] = mb_substr($providerMessage, 0, 500);
-                }
             }
         } else {
             // Non-JSON body — never store raw body content.

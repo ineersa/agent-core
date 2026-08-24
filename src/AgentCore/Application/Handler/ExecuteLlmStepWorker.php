@@ -72,7 +72,6 @@ final readonly class ExecuteLlmStepWorker
                 'turn_no' => $message->turnNo(),
                 'step_id' => $message->stepId(),
                 'worker' => 'llm',
-                'model' => '',
             ], $execute, root: true);
         } finally {
             RunLogContext::leave();
@@ -83,19 +82,16 @@ final readonly class ExecuteLlmStepWorker
     {
         $startedAt = hrtime(true);
 
-        // Empty model delegates model and reasoning resolution to the provider
-        // boundary, where current session metadata is authoritative.
-        $invocationModel = '';
-
         RunLogContext::enter([
             'event_type' => 'llm.request.started',
-            'model' => $invocationModel,
             'provider' => 'symfony-ai',
         ]);
 
         try {
+            // Empty model is the existing sentinel that tells the provider
+            // boundary to resolve current session metadata at invocation time.
             $invoke = fn (): PlatformInvocationResult => $this->platform->invoke(new ModelInvocationRequest(
-                model: $invocationModel,
+                model: '',
                 input: new ModelInvocationInput(
                     runId: $message->runId(),
                     turnNo: $message->turnNo(),
@@ -111,7 +107,6 @@ final readonly class ExecuteLlmStepWorker
                     'run_id' => $message->runId(),
                     'turn_no' => $message->turnNo(),
                     'step_id' => $message->stepId(),
-                    'model' => $invocationModel,
                 ], $invoke)
             ;
 
@@ -129,7 +124,6 @@ final readonly class ExecuteLlmStepWorker
                     'run_id' => $message->runId(),
                     'turn_no' => $message->turnNo(),
                     'step_id' => $message->stepId(),
-                    'model' => $invocationModel,
                     'event_type' => 'llm.request.retrying_thinking_only',
                 ]);
 
@@ -140,7 +134,6 @@ final readonly class ExecuteLlmStepWorker
                         'run_id' => $message->runId(),
                         'turn_no' => $message->turnNo(),
                         'step_id' => $message->stepId(),
-                        'model' => $invocationModel,
                     ], $invoke)
                 ;
             }
@@ -271,7 +264,6 @@ final readonly class ExecuteLlmStepWorker
             $this->logger->warning('llm.request.failed', [
                 'duration_ms' => round($durationMs, 3),
                 'event_type' => 'llm.request.failed',
-                'model' => $invocationModel,
                 'error_type' => $exception::class,
                 'error_message' => mb_substr($exception->getMessage(), 0, 500),
                 // No request/response diagnostics available here because
@@ -293,7 +285,6 @@ final readonly class ExecuteLlmStepWorker
                     'message' => $exception->getMessage(),
                 ],
                 toolsRef: $message->toolsRef,
-                model: $invocationModel,
                 modelNotifications: [],
             );
         } finally {

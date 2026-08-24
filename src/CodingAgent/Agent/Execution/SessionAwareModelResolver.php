@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Config;
+namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
@@ -13,6 +13,8 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningOptionsFeatureShaper;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ZaiToolStreamFeatureShaper;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Ineersa\CodingAgent\Config\ReasoningOptionsResolver;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\Component\Uid\Uuid;
@@ -37,7 +39,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         private readonly ModelSelectionService $selectionService,
         private readonly HatfieldModelCatalog $catalog,
         private readonly HatfieldSessionStore $sessionMetadataStore,
-        private readonly ?ChildRunModelMetadataProviderInterface $childModelProvider = null,
+        private readonly ?SubagentRunMetadataReader $childMetadataReader = null,
     ) {
     }
 
@@ -65,21 +67,15 @@ final class SessionAwareModelResolver implements ModelResolverInterface
             ? $options->values['thinking_level']
             : null;
 
-        // Agent child runs (fork/subagent) carry their execution model and
-        // reasoning in RunStarted metadata.  Ordinary sessions resolve from
-        // mutable session metadata (the hatfield_session DB row) so a model
-        // picked during a resumed session wins over the historical run_started
-        // value.  Children have no session row and must keep their definition
-        // model — consult RunStarted metadata when no explicit override is
-        // given.  Persisted sessions use numeric ids; only ephemeral
-        // child/controller run ids are non-numeric, so the event-store read is
-        // skipped for ordinary sessions.
-        if (null === $explicitModel && null !== $this->childModelProvider && !ctype_digit($sessionId)) {
-            $childModel = $this->childModelProvider->childRunModel($sessionId);
-            if (null !== $childModel) {
-                $explicitModel = $childModel->model;
-                if (null === $explicitReasoning && null !== $childModel->reasoning) {
-                    $explicitReasoning = $childModel->reasoning;
+        // Agent child runs (fork/subagent) keep their RunStarted definition
+        // model/reasoning; ordinary sessions (numeric ids) resolve mutable
+        // session metadata so a picked model wins over historical run_started.
+        if (null === $explicitModel && null !== $this->childMetadataReader && !ctype_digit($sessionId)) {
+            $childMetadata = $this->childMetadataReader->readRunStartedMetadata($sessionId);
+            if (null !== $childMetadata && $childMetadata->isAgentChild()) {
+                $explicitModel = $childMetadata->model;
+                if (null === $explicitReasoning && null !== $childMetadata->reasoning) {
+                    $explicitReasoning = $childMetadata->reasoning;
                 }
             }
         }

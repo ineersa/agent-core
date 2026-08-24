@@ -101,7 +101,7 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertSame('openai-codex/gpt-5.6-sol', $result->error['request_model'] ?? null);
     }
 
-    public function testExtractResponseDiagnosticsRetainsBoundedErrorMessageButOmitsOtherFreeText(): void
+    public function testExtractResponseDiagnosticsOmitsProviderControlledFreeText(): void
     {
         $secret = 'LEAKED_PROVIDER_SECRET_MARKER_adapter_7e4d';
         $httpResponse = $this->createStub(ResponseInterface::class);
@@ -132,13 +132,11 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertSame(404, $diag['http_status_code']);
         $this->assertSame('not_found', $diag['response_error_code']);
         $this->assertSame('missing', $diag['response_error_type']);
-        $this->assertSame($secret, $diag['response_error_message'], 'Provider error.message is retained (bounded) for diagnostics.');
+        $this->assertNull($diag['response_error_message']);
         $this->assertTrue($diag['response_body_is_json']);
         $encoded = json_encode($diag);
         $this->assertIsString($encoded);
-        // The bounded provider message is allowed; alternative free-text keys
-        // (error_description, detail) must never leak into diagnostics.
-        $this->assertSame(1, substr_count((string) $encoded, $secret));
+        $this->assertStringNotContainsString($secret, $encoded);
     }
 
     /**
