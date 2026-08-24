@@ -151,7 +151,11 @@ final class AgentChildRunEventStore implements EventStoreInterface
         }
 
         foreach ($this->streamRunEventsFromPath($this->eventsPath()) as $event) {
-            if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
+            if ($event->seq > $endSeq) {
+                break;
+            }
+
+            if ($event->seq >= $startSeq) {
                 yield $event;
             }
         }

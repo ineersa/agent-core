@@ -110,8 +110,8 @@ final class SessionRunEventStore implements EventStoreInterface
      * Streams events one JSONL line at a time without populating the allFor snapshot cache.
      *
      * Events are physically appended under the per-run sequence lock, so durable file order
-     * is canonical sequence order (with possible sequence holes). The scan intentionally
-     * continues after endSeq so range reads keep allFor()'s corruption/schema validation.
+     * is canonical sequence order (with possible sequence holes). The scan stops at the first
+     * sequence above endSeq; allFor() remains responsible for full-log validation.
      *
      * @return \Generator<int, RunEvent>
      */
@@ -129,7 +129,15 @@ final class SessionRunEventStore implements EventStoreInterface
         try {
             while (false !== ($line = fgets($handle))) {
                 $event = $this->eventFromLine($runId, $line);
-                if (null !== $event && $event->seq >= $startSeq && $event->seq <= $endSeq) {
+                if (null === $event) {
+                    continue;
+                }
+
+                if ($event->seq > $endSeq) {
+                    break;
+                }
+
+                if ($event->seq >= $startSeq) {
                     yield $event;
                 }
             }

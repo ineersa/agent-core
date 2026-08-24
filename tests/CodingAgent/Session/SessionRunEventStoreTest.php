@@ -124,6 +124,22 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertSame(['turn_advanced', 'agent_end'], array_map(static fn (RunEvent $event): string => $event->type, $events));
     }
 
+    public function testRangeForDoesNotReadMalformedRecordAfterRequestedRange(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'turn_advanced'));
+        file_put_contents(
+            $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl',
+            "{\"partial\":\n",
+            \FILE_APPEND,
+        );
+
+        $events = iterator_to_array($this->store->rangeFor($runId, 1, 1));
+
+        $this->assertSame([1], array_map(static fn (RunEvent $event): int => $event->seq, $events));
+    }
+
     public function testRangeForReturnsEmptyForInvalidRangeAndMissingRun(): void
     {
         $this->assertSame([], iterator_to_array($this->store->rangeFor('missing', 1, 1)));

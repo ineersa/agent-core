@@ -98,6 +98,25 @@ final class AgentChildRunEventStoreTest extends TestCase
         $this->assertSame([], iterator_to_array($store->rangeFor('other-child', 1, 3)));
     }
 
+    public function testRangeForDoesNotReadMalformedRecordAfterRequestedRange(): void
+    {
+        $parentRunId = 'parent-range';
+        $agentRunId = 'child-range';
+        $artifactId = 'scout-range';
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+        $store->append(new RunEvent(runId: $agentRunId, seq: 1, turnNo: 0, type: 'run_started'));
+        $store->append(new RunEvent(runId: $agentRunId, seq: 2, turnNo: 1, type: 'turn_advanced'));
+        file_put_contents(
+            "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl",
+            "{\"partial\":\n",
+            \FILE_APPEND,
+        );
+
+        $events = iterator_to_array($store->rangeFor($agentRunId, 1, 1));
+
+        $this->assertSame([1], array_map(static fn (RunEvent $event): int => $event->seq, $events));
+    }
+
     public function testEventsStoredUnderParentArtifactPath(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
