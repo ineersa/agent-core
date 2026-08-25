@@ -103,10 +103,12 @@ Compaction rewrites the LLM-visible history while retaining a recent raw tail an
 Run-control does not maintain a receipt ledger. The run lock and CAS serialize
 transitions; committed `StartRun`, queued command mailbox entries, finalized tool
 batches, and the active LLM checkpoint are the current bounded duplicate guards.
-A stale LLM or tool result is a no-op. The current `/repair` command repairs
-canonical event corruption; it does not redispatch work merely because it may have
-been lost. Further operation-redrive coverage must not be claimed until a bounded
-checkpoint can reconstruct the exact execution message.
+A stale LLM or tool result is a no-op. Explicit `/repair` first preserves
+cancellation and canonical-event corruption repair, then may redispatch a current
+LLM, durable tool-batch, direct-shell, or advance message with its existing
+identity. It appends no completion events; workers and result handlers remain
+authoritative. Compaction recovery is refused until its exact prepared input is
+durably reconstructible.
 
 | Scope | Current authoritative evidence | Committed/stale delivery |
 |---|---|---|

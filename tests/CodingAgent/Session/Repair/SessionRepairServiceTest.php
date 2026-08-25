@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session\Repair;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -12,6 +13,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -19,6 +21,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -88,6 +91,42 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertFalse($apply->repairableStaleCancellationDetected);
         $this->assertFalse($apply->staleCancellationRepaired);
         $this->assertSame($before, $this->readEvents($runId));
+    }
+
+    public function testDryRunDoesNotDispatchAndApplyRedrivesCurrentLlmWithSameIdentity(): void
+    {
+        $runId = 'repair-llm';
+        $stepId = 'step-repair';
+        $key = hash('sha256', $runId.'|llm|1|'.$stepId);
+        $factory = new EventFactory();
+        $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 1, 1, [
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
+            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => [
+                'turn_no' => 1,
+                'step_id' => $stepId,
+                'operation_attempt' => 1,
+                'operation_idempotency_key' => $key,
+            ]],
+        ]));
+        $store = new InMemoryRunStore();
+        $store->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 2, activeStepId: $stepId), 0);
+        $bus = new TestMessageBus();
+        $service = $this->createService($store, dispatcherBus: $bus);
+
+        $dryRun = $service->repair($runId, false);
+        $this->assertSame(0, $dryRun->activeOperationsRedriven);
+        $this->assertSame([], $bus->messages);
+
+        $applied = $service->repair($runId, true);
+        $this->assertSame(1, $applied->activeOperationsRedriven);
+        $this->assertCount(1, $bus->messages);
+        $this->assertInstanceOf(ExecuteLlmStep::class, $bus->messages[0]);
+        $this->assertSame($key, $bus->messages[0]->idempotencyKey());
+
+        $service->repair($runId, true);
+        $this->assertCount(2, $bus->messages);
+        $this->assertSame($key, $bus->messages[1]->idempotencyKey());
+        $this->assertCount(2, $this->readEvents($runId));
     }
 
     public function testDryRunReportsStaleCancellation(): void
@@ -1131,7 +1170,7 @@ final class SessionRepairServiceTest extends TestCase
         return $lines;
     }
 
-    private function createService(?InMemoryRunStore $runStore = null, ?TestLogger $logger = null): SessionRepairService
+    private function createService(?InMemoryRunStore $runStore = null, ?TestLogger $logger = null, ?TestMessageBus $dispatcherBus = null): SessionRepairService
     {
         $runStore ??= new InMemoryRunStore();
 
@@ -1167,6 +1206,7 @@ final class SessionRepairServiceTest extends TestCase
             toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
             lockManager: new RunLockManager(new LockFactory(new FlockStore($lockDir))),
             logger: $logger ?? new NullLogger(),
+            stepDispatcher: null !== $dispatcherBus ? new StepDispatcher($dispatcherBus) : null,
         );
     }
 

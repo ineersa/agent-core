@@ -79,6 +79,22 @@ final class RepairCommandHandlerTest extends TestCase
     }
 
     #[Test]
+    public function reportsActiveOperationRedrive(): void
+    {
+        $service = $this->createStub(SessionRepairServiceInterface::class);
+        $service->method('repair')->willReturn(new RepairResult(false, false, 0, true, 'internal', activeOperationsRedriven: 1));
+        $state = new TuiSessionState('repair');
+        $state->handle = new RunHandle('run-redrive');
+        $handler = new RepairCommandHandler($service, $state, new NullLogger());
+
+        $result = $handler->handle(new SlashCommand('repair', '', '/repair'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('Session repaired: active operation redriven.', $result->text);
+        $this->assertSame('system', $result->style);
+    }
+
+    #[Test]
     public function logsStructuredDegradationWhenRepairThrows(): void
     {
         $service = $this->createStub(SessionRepairServiceInterface::class);

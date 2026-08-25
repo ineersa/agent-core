@@ -5,16 +5,22 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session\Repair;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
+use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
@@ -35,6 +41,8 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private AgentMessageToolCallSequenceValidator $toolCallSequenceValidator,
         private RunLockManager $lockManager,
         private LoggerInterface $logger,
+        private ?StepDispatcher $stepDispatcher = null,
+        private ?ToolBatchStoreInterface $toolBatchStore = null,
     ) {
     }
 
@@ -123,6 +131,11 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         }
 
         if (RunStatus::Cancelling !== $replayed->status) {
+            $redrive = $this->currentOperationRedrive($runId, $apply, $sorted, $replayed);
+            if (null !== $redrive) {
+                return $redrive;
+            }
+
             if ($this->hasUnresolvedPendingWork($replayed)) {
                 return $this->ambiguousRefusal($runId);
             }
@@ -812,6 +825,112 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         }
 
         return $map;
+    }
+
+    /**
+     * A manual /repair is explicit authorization to resend a bounded current
+     * operation. It never appends a synthetic completion event: workers and
+     * result handlers remain the authoritative completion path.
+     *
+     * @param list<RunEvent> $events
+     */
+    private function currentOperationRedrive(string $runId, bool $apply, array $events, RunState $state): ?RepairResult
+    {
+        $effects = [];
+        $operation = $state->currentOperation;
+
+        if (null !== $operation && CurrentOperationKindEnum::Compaction === $operation->kind) {
+            return $this->refusalResult($runId, 'Session repair refused: current compaction input cannot be reconstructed safely.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+        }
+
+        if (null !== $operation && CurrentOperationKindEnum::Llm === $operation->kind) {
+            $effects[] = new ExecuteLlmStep(
+                runId: $runId,
+                turnNo: $operation->turnNo,
+                stepId: $operation->stepId,
+                attempt: $operation->attempt,
+                idempotencyKey: $operation->idempotencyKey,
+                contextRef: \sprintf('hot:run:%s', $runId),
+                toolsRef: \sprintf('toolset:run:%s:turn:%d', $runId, $operation->turnNo),
+            );
+        }
+
+        foreach ($state->pendingShellToolCalls as $toolCallId => $_) {
+            $shell = $this->shellEffectFromEvents(
+                $runId,
+                $toolCallId,
+                $events,
+                null !== $operation && CurrentOperationKindEnum::Shell === $operation->kind,
+            );
+            if (null === $shell) {
+                return $this->refusalResult($runId, 'Session repair refused: current shell command cannot be reconstructed safely.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+            }
+            $effects[] = $shell;
+        }
+
+        if (null !== $this->toolBatchStore && null !== $state->activeStepId && [] !== $state->pendingToolCalls) {
+            $batch = $this->toolBatchStore->load($runId, $state->turnNo, $state->activeStepId);
+            if (null !== $batch && !$batch->finalized && [] === $batch->awaitingHumanInput) {
+                foreach ([...$batch->pendingQueue, ...array_keys($batch->inFlight)] as $toolCallId) {
+                    if (isset($batch->calls[$toolCallId])) {
+                        $effects[] = $batch->calls[$toolCallId];
+                    }
+                }
+            }
+        }
+
+        if ([] === $effects && null === $operation && RunStatus::Running === $state->status && [] === $state->pendingToolCalls && [] === $state->pendingShellToolCalls) {
+            $effects[] = new AdvanceRun(
+                runId: $runId,
+                turnNo: $state->turnNo,
+                stepId: \sprintf('repair-advance-%d', $state->turnNo),
+                attempt: 1,
+                idempotencyKey: hash('sha256', \sprintf('%s|repair-advance|%d|%d', $runId, $state->turnNo, $state->lastSeq)),
+            );
+        }
+
+        if ([] === $effects) {
+            return null;
+        }
+
+        if (!$apply) {
+            return new RepairResult(false, false, 0, null, 'Active operation repair available.');
+        }
+
+        if (null === $this->stepDispatcher) {
+            return $this->refusalResult($runId, 'Session repair refused: execution dispatcher is unavailable.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+        }
+
+        $this->stepDispatcher->dispatchEffects($effects);
+
+        return new RepairResult(false, false, 0, true, 'Active operation redriven.', activeOperationsRedriven: \count($effects));
+    }
+
+    /**
+     * @param list<RunEvent> $events
+     */
+    private function shellEffectFromEvents(string $runId, string $toolCallId, array $events, bool $standalone): ?ExecuteShellToolCall
+    {
+        foreach (array_reverse($events) as $event) {
+            if (RunEventTypeEnum::AgentCommandApplied->value !== $event->type || 'shell_command' !== ($event->payload['kind'] ?? null)) {
+                continue;
+            }
+            $key = $event->payload['idempotency_key'] ?? null;
+            $text = $event->payload['text'] ?? null;
+            if (!\is_string($key) || !\is_string($text) || 'sh_'.hash('sha256', $key) !== $toolCallId || !str_starts_with($text, '!')) {
+                continue;
+            }
+
+            return new ExecuteShellToolCall(
+                $runId,
+                $event->turnNo,
+                $toolCallId,
+                ltrim(substr($text, 1)),
+                $standalone,
+            );
+        }
+
+        return null;
     }
 
     private function ambiguousRefusal(string $runId): RepairResult
