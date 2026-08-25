@@ -50,6 +50,52 @@ Largest anonymized parent `811786ad1a`: 10,326 events / 41.1 MiB, 67 child dirs 
 
 **Historical:** session 45 was earlier measured at roughly 43 MiB / 10.3k events; the current 41.1 MiB maximum is a later read-only snapshot. The difference is expected from copied/live artifacts and measurement timing, not evidence of compaction or pruning.
 
+## Event-log composition and bug-adjusted footprint
+
+A second privacy-safe pass classified all 107,741 encoded JSONL records by event type without printing IDs or payload content. It found 387,713,189 bytes (369.8 MiB): 107,670,759 parent bytes and 280,042,430 child bytes, with zero malformed/non-object records.
+
+| Event type | Records | Encoded bytes | Share | Parent bytes | Child bytes |
+|---|---:|---:|---:|---:|---:|
+| `message_end` | 12,790 | 169,719,375 | 43.77% | 20,924,188 | 148,795,187 |
+| `tool_execution_update` | 13,489 | 61,664,966 | 15.90% | 61,664,966 | 0 |
+| `tool_execution_end` | 12,790 | 55,847,066 | 14.40% | 7,349,910 | 48,497,156 |
+| `run_started` | 234 | 43,359,918 | 11.18% | 218,109 | 43,141,809 |
+| `llm_step_completed` | 7,143 | 30,579,599 | 7.89% | 4,914,892 | 25,664,707 |
+| `context_compacted` | 23 | 9,805,889 | 2.53% | 9,805,889 | 0 |
+| all remaining types | — | 16,736,376 | 4.32% | — | — |
+
+The known progress-persistence bug is structurally identifiable without inspecting content: `tool_execution_update` records whose `payload.subagent_progress.status` is `running`. **Measured:** 13,290 such records / 60,828,487 bytes across five parent logs, and none in child logs. Current source emits nonterminal process-mode progress transiently and retains only terminal snapshots canonically.
+
+The exact counterfactual after excluding only those confidently bug-generated records is:
+
+- all logs: 94,451 records / 326,884,702 bytes (311.7 MiB), retaining 84.31% of the original bytes;
+- parent logs: 14,001 records / 46,842,272 bytes (44.7 MiB), down from 102.7 MiB;
+- child logs: unchanged at 80,450 records / 280,042,430 bytes (267.1 MiB).
+
+A broader sensitivity calculation removing every `tool_execution_update`, including terminal/other update-shaped records, yields 94,252 records / 326,048,223 bytes; it differs by only 836,479 bytes but is not the correctness-preserving bug-only attribution.
+
+The critical conclusion is that the historical transient-progress bug explains most excess **parent** bytes but does not explain the child footprint. After confident bug removal, `message_end` alone is 51.92% of retained bytes. Child logs remain dominated by canonical `message_end` (148,795,187 bytes), `tool_execution_end` (48,497,156), `run_started` (43,141,809), and `llm_step_completed` (25,664,707). Any child-space reduction therefore requires a separate schema/payload-retention analysis; deleting event types merely because they are large is not authorized.
+
+## Active event-log read paths and intended invariant
+
+The desired invariant is achievable: canonical parent/child `events.jsonl` should be append-only persistence during normal execution and should be fully read only for resume/recovery, repair, history selection, explicit inspect/export, or the first snapshot when entering a child live view. Process-mode live-child polling already follows this design: `ChildRunTranscriptSnapshotProvider` performs one initial child replay, while `SubagentLiveChildViewPoller` consumes runtime-pipe events afterward rather than polling the canonical child file.
+
+Remaining source-derived violations and bounded reads are:
+
+| Path | Current active behavior | Assessment |
+|---|---|---|
+| `ContextBudgetReminderHookSubscriber` → child `reverseFor()` | `AgentChildRunEventStore::reverseFor()` calls child `allFor()`, decoding/sorting the whole child log on a qualifying child LLM completion | Highest avoidable active child amplification; implement true reverse-line iteration |
+| `SessionRunStateReplayService::rebuildIfStale()` → child `latestSequenceFor()` | Every child run-control message checks freshness; child `latestSequenceFor()` currently calls `allFor()` even when state is current | Avoidable; inspect the durable JSONL tail directly, never `sequence.cursor` |
+| `InProcessAgentSessionClient::events()` | Calls `allFor()` on every active poll; process-local `(size,mtime)` cache avoids unchanged decodes but every append invalidates it | Violates the invariant in in-process mode; use existing in-memory event delivery plus a sequence cursor |
+| `SubagentRunMetadataReader` / tool-set resolution | Uses head-streaming `firstFor()` and a 64-entry positive cache | Already bounded; no full replay needed |
+| parent compaction/context-budget lookups | Use `reverseFor()` and normally stop near the newest matching event | Bounded parent behavior already improved; retain historical semantics |
+| live-child entry | One child `allFor()` snapshot, then runtime events | Appropriate, provided snapshot sequence watermark and later events deduplicate |
+| resume, history mutation/selection, repair, catalog recovery, explicit diagnostics/export | Full replay by design | Retain; these are not active steady-state reads |
+
+The smallest next optimization is concrete-store work, not another cache abstraction: implement bounded child `latestSequenceFor()` and `reverseFor()` using the same durable-tail/reverse-line principles as the parent store, then remove `allFor()` from in-process active polling. Keep canonical full reads at the explicit lifecycle boundaries above. `sequence.cursor` remains unusable as durable-tail truth because allocation can precede a failed append and leave valid gaps.
+
+Static call graphs cannot quantify actual opens, bytes read, decode time, cache-hit rate, or cross-process amplification. A later measurement pass should count method, parent/child class, operation context, bytes physically read, cache hit/miss, decoded records, and duration without recording run IDs or payloads. Optimization priority should be validated against those counters rather than inferred from file size alone.
+
 ## Parent event/state path and replay semantics
 
 `JsonlRunEventLog::appendMany()` takes the per-run Symfony lock, reserves a cursor block, appends normalized JSONL events, and invalidates the parent store's process-local snapshot after each physical write. `SessionRunEventStore::allFor()` does `file_get_contents()`, `explode("\n")`, decode/denormalize, sort, then caches decoded events by `(size,mtime)` only if the signature remained stable across the read. Any successful append invalidates that process-local cache. It does not share cache state across Messenger workers/controller/TUI processes; each process has its own cache miss/read behavior. A concurrent append is allowed to return an uncached read rather than lock/retry.
