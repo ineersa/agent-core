@@ -12,6 +12,8 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
+use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
+use Ineersa\AgentCore\Domain\Run\CurrentCompactionExecutionDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -265,6 +267,9 @@ final class CompactionStepResultHandlerTest extends TestCase
             messages: $originalMessages,
             activeStepId: 'step-1',
             currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, 5, 'step-1', 1, 'key-1'),
+            currentCompactionExecution: new CurrentCompactionExecutionDTO(new ExecuteCompactionStep(
+                'run-1', 5, 'step-1', 1, 'key-1', 'test-model', [], [], [], 0, 1, 0, 50000, 'manual',
+            )),
             model: 'test-model');
 
         $summaryMsg = $this->userMsg('Summary of prior context.');
@@ -307,6 +312,7 @@ final class CompactionStepResultHandlerTest extends TestCase
 
         // activeStepId cleared on terminal outcome.
         $this->assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->currentCompactionExecution);
 
         // Run status stays Completed — compaction does not restart the run.
         $this->assertSame(RunStatus::Completed, $result->nextState->status);

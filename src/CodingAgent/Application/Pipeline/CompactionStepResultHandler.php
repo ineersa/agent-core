@@ -397,6 +397,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             'messages' => $compactResult->compactedMessages,
             'activeStepId' => null,
             'currentOperation' => null,
+            'currentCompactionExecution' => null,
             'lastAppliedCompactionKey' => $message->idempotencyKey(),
             // Compaction replaces the conversation: explicit retry-episode reset.
             'retryAttempts' => 0,
@@ -447,6 +448,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             'lastSeq' => $state->lastSeq + $count,
             'activeStepId' => $clearActiveStepId ? null : $state->activeStepId,
             'currentOperation' => $clearActiveStepId ? null : $state->currentOperation,
+            'currentCompactionExecution' => $clearActiveStepId ? null : $state->currentCompactionExecution,
             'lastAppliedCompactionKey' => $completedRequestKey ?? $state->lastAppliedCompactionKey,
             // Compaction events restart the retry episode (context replaced).
             'retryAttempts' => 0,

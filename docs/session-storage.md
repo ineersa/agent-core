@@ -107,8 +107,9 @@ A stale LLM or tool result is a no-op. Explicit `/repair` first preserves
 cancellation and canonical-event corruption repair, then may redispatch a current
 LLM, durable tool-batch, direct-shell, or advance message with its existing
 identity. It appends no completion events; workers and result handlers remain
-authoritative. Compaction recovery is refused until its exact prepared input is
-durably reconstructible.
+authoritative. Current compaction recovery redispatches its bounded exact
+prepared worker payload without rerunning hooks; historical compaction starts
+without that payload are refused non-destructively.
 
 | Scope | Current authoritative evidence | Committed/stale delivery |
 |---|---|---|
@@ -118,7 +119,7 @@ durably reconstructible.
 | `command.advance` | expected predecessor turn plus the last committed advance key (replayed from the canonical transition event) | no-op before mailbox drain |
 | `result.llm` | active `(turn, step, attempt)` checkpoint | no-op |
 | `result.tool` | finalized batch/pending call/HITL identity | no-op |
-| `command.compact` / `result.compaction` | canonical compaction request/start events, bounded active `(turn, step, attempt, key)` checkpoint, and last completed key | stale/completed delivery is a no-op before hooks or effects |
+| `command.compact` / `result.compaction` | canonical start payload, bounded active `(turn, step, attempt, key, worker input)` checkpoint, and last completed key | stale/completed delivery is a no-op before hooks or effects; `/repair` redrives only reconstructible current input |
 
 Legacy `idempotency.jsonl` artifacts are inert user data: no migration, pruner, or
 deletion is performed. New parent and child operations never create them.

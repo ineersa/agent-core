@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
+use Ineersa\AgentCore\Domain\Run\CurrentCompactionExecutionDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -282,43 +283,14 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             'messages_to_summarize' => $preparation->messagesCompacted,
         ]);
 
-        $startedEvents = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
-            'type' => RunEventTypeEnum::ContextCompactionStarted->value,
-            'payload' => [
-                'step_id' => $message->stepId(),
-                'operation_attempt' => $message->attempt(),
-                'operation_idempotency_key' => $message->idempotencyKey(),
-                'trigger' => $message->trigger,
-                'model' => $resolvedModel,
-                'thinking_level' => $thinkingLevel,
-                'estimated_tokens' => $preparation->tokenEstimateBefore,
-                'keep_recent_tokens' => $runtimeSettings->keepRecentTokens,
-                'messages_before' => \count($state->messages),
-                'messages_to_summarize' => $preparation->messagesCompacted,
-                'messages_retained' => $preparation->messagesRetained,
-                'first_retained_index' => $preparation->firstRetainedIndex,
-                'prior_summary_present' => $preparation->priorSummaryPresent,
-                'hook_metadata' => $sanitisedHookMetadata,
-            ],
-        ]]);
-
-        $nextState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId(), status: RunStatus::Compacting)->with([
-            'currentOperation' => new CurrentOperationDTO(
-                CurrentOperationKindEnum::Compaction,
-                $state->turnNo,
-                $message->stepId(),
-                $message->attempt(),
-                $message->idempotencyKey(),
-            ),
-        ]);
-
-        // Pass typed AgentMessage lists; llm transport Symfony Serializer
-        // denormalizes them via ArrayDenormalizer + PhpDoc list types.
+        // This is the exact post-hook worker request. Persist it as bounded
+        // current state and canonical start evidence so /repair never reruns
+        // preparation or extension hooks.
         $workerRequest = new ExecuteCompactionStep(
             runId: $runId,
             turnNo: $state->turnNo,
             stepId: $message->stepId(),
-            attempt: 1,
+            attempt: $message->attempt(),
             idempotencyKey: $message->idempotencyKey(),
             model: $resolvedModel ?? '',
             modelOptions: $modelOptions,
@@ -332,6 +304,40 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             continueAfterCompaction: $message->continueAfterCompaction,
             hookMetadata: [] !== $sanitisedHookMetadata ? $sanitisedHookMetadata : null,
         );
+        $currentExecution = new CurrentCompactionExecutionDTO($workerRequest);
+
+        $startedEvents = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
+            'type' => RunEventTypeEnum::ContextCompactionStarted->value,
+            'payload' => [
+                'step_id' => $message->stepId(),
+                'turn_no' => $state->turnNo,
+                'operation_attempt' => $message->attempt(),
+                'operation_idempotency_key' => $message->idempotencyKey(),
+                'trigger' => $message->trigger,
+                'model' => $resolvedModel,
+                'thinking_level' => $thinkingLevel,
+                'estimated_tokens' => $preparation->tokenEstimateBefore,
+                'keep_recent_tokens' => $runtimeSettings->keepRecentTokens,
+                'messages_before' => \count($state->messages),
+                'messages_to_summarize' => $preparation->messagesCompacted,
+                'messages_retained' => $preparation->messagesRetained,
+                'first_retained_index' => $preparation->firstRetainedIndex,
+                'prior_summary_present' => $preparation->priorSummaryPresent,
+                'hook_metadata' => $sanitisedHookMetadata,
+                ...$currentExecution->eventPayload(),
+            ],
+        ]]);
+
+        $nextState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId(), status: RunStatus::Compacting)->with([
+            'currentOperation' => new CurrentOperationDTO(
+                CurrentOperationKindEnum::Compaction,
+                $state->turnNo,
+                $message->stepId(),
+                $message->attempt(),
+                $message->idempotencyKey(),
+            ),
+            'currentCompactionExecution' => $currentExecution,
+        ]);
 
         return new HandlerResult(
             nextState: $nextState,

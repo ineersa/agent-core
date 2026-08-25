@@ -840,7 +840,11 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $operation = $state->currentOperation;
 
         if (null !== $operation && CurrentOperationKindEnum::Compaction === $operation->kind) {
-            return $this->refusalResult($runId, 'Session repair refused: current compaction input cannot be reconstructed safely.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+            $compaction = $state->currentCompactionExecution;
+            if (null === $compaction) {
+                return $this->refusalResult($runId, 'Session repair refused: historical current compaction input cannot be reconstructed safely.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+            }
+            $effects[] = $compaction->request;
         }
 
         if (null !== $operation && CurrentOperationKindEnum::Llm === $operation->kind) {

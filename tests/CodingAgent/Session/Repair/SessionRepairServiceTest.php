@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -127,6 +128,48 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertCount(2, $bus->messages);
         $this->assertSame($key, $bus->messages[1]->idempotencyKey());
         $this->assertCount(2, $this->readEvents($runId));
+    }
+
+    public function testDryRunAndRepeatedApplyRedriveCurrentCompactionWithSamePayload(): void
+    {
+        $runId = 'repair-compaction';
+        $key = 'compact-key';
+        $factory = new EventFactory();
+        $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 4, 1, [
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
+            ['type' => RunEventTypeEnum::ContextCompactionStarted->value, 'payload' => [
+                'turn_no' => 4,
+                'step_id' => 'compact-step',
+                'operation_attempt' => 2,
+                'operation_idempotency_key' => $key,
+                'worker_request' => [
+                    'model' => 'test-model', 'model_options' => ['thinking_level' => 'low'],
+                    'summarization_messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'old']]]],
+                    'retained_tail_messages' => [['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'new']]]],
+                    'messages_compacted' => 1, 'messages_retained' => 1, 'first_retained_index' => 1,
+                    'token_estimate_before' => 42, 'trigger' => 'auto', 'continue_after_compaction' => true,
+                    'hook_metadata' => null,
+                ],
+            ]],
+        ]));
+        $store = new InMemoryRunStore();
+        $store->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Compacting, version: 1, turnNo: 4, lastSeq: 2, activeStepId: 'compact-step'), 0);
+        $bus = new TestMessageBus();
+        $service = $this->createService($store, dispatcherBus: $bus);
+        $before = $this->readEvents($runId);
+
+        $this->assertSame(0, $service->repair($runId, false)->activeOperationsRedriven);
+        $this->assertSame([], $bus->messages);
+        $this->assertSame($before, $this->readEvents($runId));
+
+        $service->repair($runId, true);
+        $service->repair($runId, true);
+        $this->assertCount(2, $bus->messages);
+        $this->assertContainsOnlyInstancesOf(ExecuteCompactionStep::class, $bus->messages);
+        $this->assertSame($key, $bus->messages[0]->idempotencyKey());
+        $this->assertSame($key, $bus->messages[1]->idempotencyKey());
+        $this->assertSame(2, $bus->messages[0]->attempt());
+        $this->assertSame($before, $this->readEvents($runId));
     }
 
     public function testDryRunReportsStaleCancellation(): void
