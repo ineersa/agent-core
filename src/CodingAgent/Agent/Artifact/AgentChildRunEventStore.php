@@ -98,6 +98,8 @@ final class AgentChildRunEventStore implements EventStoreInterface
     /**
      * Recovery-only tail read of durable child events.jsonl (not for steady-state supervision).
      *
+     * The first decoded record with seq <= $cursor stops the tail read; records before it are intentionally not decoded.
+     *
      * @return list<RunEvent> Events with seq > $cursor, sorted ascending. Sequence holes are preserved.
      */
     public function readAfterSeq(int $cursor): array
@@ -108,14 +110,20 @@ final class AgentChildRunEventStore implements EventStoreInterface
 
         try {
             $events = [];
-            foreach ($this->streamRunEventsFromPath($path) as $event) {
-                if ($event->seq <= $cursor) {
+            foreach ($this->eventLog->reverseLines($path) as $line) {
+                $event = $this->eventFromLine($line);
+                if (null === $event) {
                     continue;
                 }
+
+                if ($event->seq <= $cursor) {
+                    break;
+                }
+
                 $events[] = $event;
             }
 
-            return $this->eventLog->sortBySeq($events);
+            return array_reverse($events);
         } finally {
             $lock->release();
         }

@@ -599,8 +599,8 @@ function reports_dir(): string
 {
     $custom = getenv('HATFIELD_QA_REPORTS_DIR');
     if (false !== $custom && '' !== trim((string) $custom)) {
-        $relative = ltrim((string) $custom, '/');
-        $dir = project_root_dir().'/'.$relative;
+        $custom = rtrim(trim((string) $custom), '/');
+        $dir = str_starts_with($custom, '/') ? $custom : project_root_dir().'/'.$custom;
     } else {
         $dir = REPORTS_DIR;
     }
@@ -621,7 +621,7 @@ function relative_report_path(string $filename): string
 {
     $custom = getenv('HATFIELD_QA_REPORTS_DIR');
     if (false !== $custom && '' !== trim((string) $custom)) {
-        return rtrim((string) $custom, '/').'/'.$filename;
+        return rtrim(trim((string) $custom), '/').'/'.$filename;
     }
 
     return 'var/reports/'.$filename;

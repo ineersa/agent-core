@@ -364,8 +364,11 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->writeCommandWithRetry($cmd);
     }
 
-    public function events(string $runId): iterable
+    public function events(string $runId, int $afterSeq = 0): iterable
     {
+        // The controller emitter already forwards only canonical events newer
+        // than its acknowledged cursor. JSONL buffering remains authoritative
+        // here, so this transport intentionally does not filter by $afterSeq.
         $this->activeRunId = $runId;
 
         // Transparently restart the controller process if it died.

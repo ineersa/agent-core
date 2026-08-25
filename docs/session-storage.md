@@ -42,13 +42,13 @@ Sessions may be renamed via `/rename`. Display names are metadata only — they 
 - **`state.json`**: durable state snapshot for process/runtime recovery (not a second conversation source of truth).
 - Sequence allocation uses `sequence.cursor` so multi-writer paths do not collide.
 
-Runtime projects events into the TUI transcript. Keep transient stream deltas separate from canonical replay.
+Runtime projects events into the TUI transcript. Keep transient stream deltas separate from canonical replay. During active polling, observers pass their last successfully applied canonical sequence into the runtime client; in-process delivery reverse-reads only the unseen durable suffix, while transient deltas remain unfiltered and are delivered first. The observer advances its cursor only after successful forwarding/application, so a failed poll retries the same canonical suffix rather than losing it.
 
 ## Child artifacts
 
 Foreground subagent runs store parent-scoped artifacts under the parent session (handoff text, metadata, bounded event/history summaries). Retrieve with `agent_retrieve` (see [agents.md](agents.md)).
 
-Deferred subagent supervision (single and parallel) uses durable batch records and timeouts configured by `agents.subagent_tool_timeout_seconds` (default 24h, minimum 60s).
+Deferred subagent supervision (single and parallel) uses durable batch records and timeouts configured by `agents.subagent_tool_timeout_seconds` (default 24h, minimum 60s). Recovery reads child event logs backward from the durable tail until its stored event sequence cursor, then restores chronological order; it does not treat `sequence.cursor` as event-tail truth because allocation may leave valid sequence holes.
 
 ## Resume and new session
 
