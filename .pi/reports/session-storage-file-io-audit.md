@@ -136,10 +136,10 @@ Filesystem size/mtime and static call sites cannot tell: per-turn/per-launch `op
 
 ## Reusable read-only measurement tool
 
-`tools/session-storage-audit.py` is the consolidated, dependency-free tool. It requires an explicit existing directory named `.hatfield`, uses SQLite URI `mode=ro`, reads JSON only to aggregate event types/counts, hashes displayed directory IDs, and never writes below the audited root. It continues to measure legacy `prompt-cache.jsonl` files; those files are opt-in structural diagnostics (`HATFIELD_WRITE_PROMPT_CACHE_DIAGNOSTICS=1`, default off), not provider cache or replay state.
+`~/.hatfield/tools/session-storage-audit.py` is an untracked local, dependency-free utility. It requires an explicit existing directory named `.hatfield`, uses SQLite URI `mode=ro`, reads JSON only to aggregate event types/counts, hashes displayed directory IDs, and never writes below the audited root. It continues to measure legacy `prompt-cache.jsonl` files; those files are opt-in structural diagnostics (`HATFIELD_WRITE_PROMPT_CACHE_DIAGNOSTICS=1`, default off), not provider cache or replay state.
 
 ```bash
-python3 tools/session-storage-audit.py /absolute/path/to/.hatfield
+python3 ~/.hatfield/tools/session-storage-audit.py /absolute/path/to/.hatfield
 ```
 
 Validated against `/home/ineersa/projects/agent-core/.hatfield`: it reproduced the 219 session directories, five numeric parent candidates, 214 UUID idempotency-only candidates, 234 event logs, 27,291 parent records, 80,450 child records, 234 state files, and the six SQLite table counts above. The live file total differed from the scout by six files (90,534 vs 90,528), consistent with concurrent runtime artifact creation; no audited files were modified.
