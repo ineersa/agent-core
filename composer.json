@@ -59,7 +59,7 @@
         "symfony/process": "^8.1",
         "league/oauth2-client": "^2.8",
         "symfony/scheduler": "^8.1",
-        "mcp/sdk": "^0.6.0",
+        "mcp/sdk": "^0.7.1",
         "league/commonmark": "^2.8",
         "tempest/highlight": "^2.27",
         "amphp/websocket-client": "^2.0"
@@ -102,5 +102,10 @@
         }
     },
     "minimum-stability": "dev",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
+    }
 }
