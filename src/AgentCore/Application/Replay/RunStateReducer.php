@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Application\Replay;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Run\CurrentCompactionExecutionDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
@@ -502,7 +501,6 @@ final readonly class RunStateReducer
             'pendingShellToolCalls' => [],
             'activeStepId' => null,
             'currentOperation' => null,
-            'currentCompactionExecution' => null,
             'retryableFailure' => false,
             'retryAttempts' => 0,
         ]);
@@ -526,17 +524,18 @@ final readonly class RunStateReducer
     private function applyContextCompactionStarted(array $payload, RunState $state): RunState
     {
         $stepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : $state->activeStepId;
+        $turnNo = \is_int($payload['turn_no'] ?? null) ? $payload['turn_no'] : $state->turnNo;
 
         $attempt = \is_int($payload['operation_attempt'] ?? null) ? $payload['operation_attempt'] : 1;
         $key = \is_string($payload['operation_idempotency_key'] ?? null) ? $payload['operation_idempotency_key'] : null;
 
         return $state->with([
             'status' => RunStatus::Compacting,
+            'turnNo' => $turnNo,
             'activeStepId' => $stepId,
             'currentOperation' => null !== $stepId && null !== $key
-                ? new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, $state->turnNo, $stepId, $attempt, $key)
+                ? new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, $turnNo, $stepId, $attempt, $key)
                 : null,
-            'currentCompactionExecution' => CurrentCompactionExecutionDTO::fromStartedEvent($state->runId, $payload),
             'retryAttempts' => 0,
         ]);
     }
@@ -586,7 +585,6 @@ final readonly class RunStateReducer
             'status' => $finalStatus,
             'activeStepId' => null,
             'currentOperation' => null,
-            'currentCompactionExecution' => null,
             'lastAppliedCompactionKey' => $this->currentCompactionKey($state),
             'retryAttempts' => 0,
         ]);
@@ -657,7 +655,6 @@ final readonly class RunStateReducer
                 'status' => $resolveCompacting ?? $state->status,
                 'activeStepId' => null,
                 'currentOperation' => null,
-                'currentCompactionExecution' => null,
                 'lastAppliedCompactionKey' => $this->currentCompactionKey($state),
                 'retryAttempts' => 0,
             ]);

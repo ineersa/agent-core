@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
@@ -24,6 +25,7 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
 {
     public function __construct(
         private EventFactory $eventFactory,
+        private EventStoreInterface $eventStore,
     ) {
     }
 
@@ -36,6 +38,18 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
     {
         if (!$message instanceof ApplyShellCommand) {
             throw new \InvalidArgumentException('ApplyShellCommandHandler can only handle ApplyShellCommand messages.');
+        }
+
+        // A committed shell command is a completed command transition even
+        // after its tool lifecycle has ended. Stream newest-first so this
+        // stays bounded in the storage implementations and does not turn
+        // RunState into shell-command history.
+        foreach ($this->eventStore->reverseFor($state->runId) as $event) {
+            if (RunEventTypeEnum::AgentCommandApplied->value === $event->type
+                && 'shell_command' === ($event->payload['kind'] ?? null)
+                && $message->idempotencyKey() === ($event->payload['idempotency_key'] ?? null)) {
+                return new HandlerResult();
+            }
         }
 
         // Direct shells can attach to an active LLM, so currentOperation cannot
@@ -156,7 +170,6 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
                     $message->stepId(),
                     $message->attempt(),
                     $message->idempotencyKey(),
-                    $toolCallId,
                 )
                 : $state->currentOperation,
             'pendingShellToolCalls' => [...$state->pendingShellToolCalls, $toolCallId => true],

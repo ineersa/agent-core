@@ -20,6 +20,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Run\CurrentCompactionExecutionDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -41,8 +42,8 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private AgentMessageToolCallSequenceValidator $toolCallSequenceValidator,
         private RunLockManager $lockManager,
         private LoggerInterface $logger,
-        private ?StepDispatcher $stepDispatcher = null,
-        private ?ToolBatchStoreInterface $toolBatchStore = null,
+        private StepDispatcher $stepDispatcher,
+        private ToolBatchStoreInterface $toolBatchStore,
     ) {
     }
 
@@ -840,11 +841,26 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $operation = $state->currentOperation;
 
         if (null !== $operation && CurrentOperationKindEnum::Compaction === $operation->kind) {
-            $compaction = $state->currentCompactionExecution;
-            if (null === $compaction) {
+            foreach (array_reverse($events) as $event) {
+                if (RunEventTypeEnum::ContextCompactionStarted->value !== $event->type
+                    || $operation->turnNo !== ($event->payload['turn_no'] ?? null)
+                    || $operation->stepId !== ($event->payload['step_id'] ?? null)
+                    || $operation->attempt !== ($event->payload['operation_attempt'] ?? null)
+                    || $operation->idempotencyKey !== ($event->payload['operation_idempotency_key'] ?? null)) {
+                    continue;
+                }
+
+                $compaction = CurrentCompactionExecutionDTO::fromStartedEvent($runId, $event->payload);
+                if (null !== $compaction) {
+                    $effects[] = $compaction->request;
+
+                    break;
+                }
+            }
+
+            if ([] === $effects) {
                 return $this->refusalResult($runId, 'Session repair refused: historical current compaction input cannot be reconstructed safely.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
             }
-            $effects[] = $compaction->request;
         }
 
         if (null !== $operation && CurrentOperationKindEnum::Llm === $operation->kind) {
@@ -872,7 +888,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             $effects[] = $shell;
         }
 
-        if (null !== $this->toolBatchStore && null !== $state->activeStepId && [] !== $state->pendingToolCalls) {
+        if (null !== $state->activeStepId && [] !== $state->pendingToolCalls) {
             $batch = $this->toolBatchStore->load($runId, $state->turnNo, $state->activeStepId);
             if (null !== $batch && !$batch->finalized && [] === $batch->awaitingHumanInput) {
                 foreach ([...$batch->pendingQueue, ...array_keys($batch->inFlight)] as $toolCallId) {
@@ -899,10 +915,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 
         if (!$apply) {
             return new RepairResult(false, false, 0, null, 'Active operation repair available.');
-        }
-
-        if (null === $this->stepDispatcher) {
-            return $this->refusalResult($runId, 'Session repair refused: execution dispatcher is unavailable.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
         }
 
         $this->stepDispatcher->dispatchEffects($effects);

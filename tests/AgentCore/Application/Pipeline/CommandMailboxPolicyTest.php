@@ -173,7 +173,7 @@ final class CommandMailboxPolicyTest extends TestCase
             turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
-            idempotencyKey: 'llm-failed-1',
+            idempotencyKey: $fixture->runStore->get($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
             assistantMessage: null,
             usage: [],
             stopReason: 'error',
@@ -238,13 +238,16 @@ final class CommandMailboxPolicyTest extends TestCase
             attempt: 1,
             idempotencyKey: 'advance-idemp-1',
         ));
+        $activeState = $fixture->runStore->get($runId);
+        $this->assertNotNull($activeState);
+        $this->assertNotNull($activeState->currentOperation);
 
         $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
             runId: $runId,
             turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
-            idempotencyKey: 'llm-failed-1',
+            idempotencyKey: $activeState->currentOperation->idempotencyKey,
             assistantMessage: null,
             usage: [],
             stopReason: 'error',
@@ -309,7 +312,7 @@ final class CommandMailboxPolicyTest extends TestCase
             turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
-            idempotencyKey: 'llm-stop-1',
+            idempotencyKey: $fixture->runStore->get($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
             assistantMessage: null,
             usage: [],
             stopReason: 'stop',
@@ -363,7 +366,7 @@ final class CommandMailboxPolicyTest extends TestCase
             turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
-            idempotencyKey: 'llm-stop-2',
+            idempotencyKey: $fixture->runStore->get($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
             assistantMessage: null,
             usage: [],
             stopReason: 'stop',
@@ -434,7 +437,7 @@ final class CommandMailboxPolicyTest extends TestCase
             turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
-            idempotencyKey: 'llm-stop-3',
+            idempotencyKey: $fixture->runStore->get($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
             assistantMessage: null,
             usage: [],
             stopReason: 'stop',

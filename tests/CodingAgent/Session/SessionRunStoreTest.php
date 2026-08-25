@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session;
 
 use Doctrine\ORM\EntityManagerInterface;
-use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
-use Ineersa\AgentCore\Domain\Run\CurrentCompactionExecutionDTO;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -192,48 +190,6 @@ final class SessionRunStoreTest extends TestCase
         $this->assertSame(HumanInputContinuationKindEnum::ModelTurn, $request->continuationKind);
         $this->assertSame($payload, $request->payload);
         $this->assertNull($request->continuationRef);
-    }
-
-    public function testGetAfterRecreationPreservesCurrentCompactionExecution(): void
-    {
-        $runId = 'run-compaction-'.bin2hex(random_bytes(4));
-        $request = new ExecuteCompactionStep(
-            runId: $runId,
-            turnNo: 4,
-            stepId: 'compact-step',
-            attempt: 2,
-            idempotencyKey: 'compact-key',
-            model: 'test-model',
-            modelOptions: ['thinking_level' => 'low'],
-            summarizationMessages: [],
-            retainedTailMessages: [],
-            messagesCompacted: 3,
-            messagesRetained: 2,
-            firstRetainedIndex: 3,
-            tokenEstimateBefore: 99,
-            trigger: 'auto',
-            continueAfterCompaction: true,
-        );
-        $this->assertTrue($this->store->compareAndSwap(new RunState(
-            runId: $runId,
-            status: RunStatus::Compacting,
-            version: 1,
-            turnNo: 4,
-            activeStepId: 'compact-step',
-            currentCompactionExecution: new CurrentCompactionExecutionDTO($request),
-            model: 'test-model',
-        ), 0));
-
-        $loaded = $this->store->get($runId);
-        $this->assertNotNull($loaded);
-        $this->assertInstanceOf(CurrentCompactionExecutionDTO::class, $loaded->currentCompactionExecution);
-        $recovered = $loaded->currentCompactionExecution->request;
-        $this->assertSame('compact-key', $recovered->idempotencyKey());
-        $this->assertSame(4, $recovered->turnNo());
-        $this->assertSame('compact-step', $recovered->stepId());
-        $this->assertSame(2, $recovered->attempt());
-        $this->assertSame(['thinking_level' => 'low'], $recovered->modelOptions);
-        $this->assertSame(3, $recovered->messagesCompacted);
     }
 
     public function testGetReturnsNullForEmptyFile(): void

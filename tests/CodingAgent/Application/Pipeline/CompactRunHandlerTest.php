@@ -151,8 +151,8 @@ final class CompactRunHandlerTest extends TestCase
         $redelivery = $handler->handle($request, $first->nextState);
 
         $this->assertCount(1, $first->effects);
-        $this->assertInstanceOf(ExecuteCompactionStep::class, $first->nextState->currentCompactionExecution?->request);
-        $this->assertSame('key-1', $first->nextState->currentCompactionExecution?->request->idempotencyKey());
+        $this->assertInstanceOf(ExecuteCompactionStep::class, $first->effects[0]);
+        $this->assertSame('key-1', $first->effects[0]->idempotencyKey());
         $this->assertSame(1, $hook->calls);
         $this->assertNull($redelivery->nextState);
         $this->assertSame([], $redelivery->events);

@@ -283,9 +283,9 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             'messages_to_summarize' => $preparation->messagesCompacted,
         ]);
 
-        // This is the exact post-hook worker request. Persist it as bounded
-        // current state and canonical start evidence so /repair never reruns
-        // preparation or extension hooks.
+        // This is the exact post-hook worker request. Persist it only as
+        // canonical start evidence so /repair never reruns preparation or
+        // extension hooks.
         $workerRequest = new ExecuteCompactionStep(
             runId: $runId,
             turnNo: $state->turnNo,
@@ -336,7 +336,6 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
                 $message->attempt(),
                 $message->idempotencyKey(),
             ),
-            'currentCompactionExecution' => $currentExecution,
         ]);
 
         return new HandlerResult(

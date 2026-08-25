@@ -1394,6 +1394,8 @@ final class SessionRepairServiceTest extends TestCase
     private function createService(?InMemoryRunStore $runStore = null, ?TestLogger $logger = null, ?TestMessageBus $dispatcherBus = null, ?ToolBatchStoreInterface $toolBatchStore = null): SessionRepairService
     {
         $runStore ??= new InMemoryRunStore();
+        $dispatcherBus ??= new TestMessageBus();
+        $toolBatchStore ??= $this->createStub(ToolBatchStoreInterface::class);
 
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),
@@ -1427,7 +1429,7 @@ final class SessionRepairServiceTest extends TestCase
             toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
             lockManager: new RunLockManager(new LockFactory(new FlockStore($lockDir))),
             logger: $logger ?? new NullLogger(),
-            stepDispatcher: null !== $dispatcherBus ? new StepDispatcher($dispatcherBus) : null,
+            stepDispatcher: new StepDispatcher($dispatcherBus),
             toolBatchStore: $toolBatchStore,
         );
     }

@@ -61,15 +61,14 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
         // manufacture context_compaction_failed after the real lifecycle ended.
         if ($state->turnNo !== $message->turnNo()
             || $state->activeStepId !== $message->stepId()
-            || (null !== $state->currentOperation && (
-                !$state->currentOperation->matches(
-                    \Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum::Compaction,
-                    $message->turnNo(),
-                    $message->stepId(),
-                    $message->attempt(),
-                )
-                || $state->currentOperation->idempotencyKey !== $message->idempotencyKey()
-            ))) {
+            || null === $state->currentOperation
+            || !$state->currentOperation->matches(
+                \Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum::Compaction,
+                $message->turnNo(),
+                $message->stepId(),
+                $message->attempt(),
+                $message->idempotencyKey(),
+            )) {
             return new HandlerResult();
         }
 
@@ -397,7 +396,6 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             'messages' => $compactResult->compactedMessages,
             'activeStepId' => null,
             'currentOperation' => null,
-            'currentCompactionExecution' => null,
             'lastAppliedCompactionKey' => $message->idempotencyKey(),
             // Compaction replaces the conversation: explicit retry-episode reset.
             'retryAttempts' => 0,
@@ -448,7 +446,6 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             'lastSeq' => $state->lastSeq + $count,
             'activeStepId' => $clearActiveStepId ? null : $state->activeStepId,
             'currentOperation' => $clearActiveStepId ? null : $state->currentOperation,
-            'currentCompactionExecution' => $clearActiveStepId ? null : $state->currentCompactionExecution,
             'lastAppliedCompactionKey' => $completedRequestKey ?? $state->lastAppliedCompactionKey,
             // Compaction events restart the retry episode (context replaced).
             'retryAttempts' => 0,

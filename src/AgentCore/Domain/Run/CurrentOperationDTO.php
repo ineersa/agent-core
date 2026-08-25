@@ -18,15 +18,15 @@ final readonly class CurrentOperationDTO
         public string $stepId,
         public int $attempt,
         public string $idempotencyKey,
-        public ?string $subjectId = null,
     ) {
     }
 
-    public function matches(CurrentOperationKindEnum $kind, int $turnNo, string $stepId, int $attempt): bool
+    public function matches(CurrentOperationKindEnum $kind, int $turnNo, string $stepId, int $attempt, string $idempotencyKey): bool
     {
         return $this->kind === $kind
             && $this->turnNo === $turnNo
             && $this->stepId === $stepId
-            && $this->attempt === $attempt;
+            && $this->attempt === $attempt
+            && $this->idempotencyKey === $idempotencyKey;
     }
 }

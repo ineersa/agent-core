@@ -20,6 +20,8 @@ use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
@@ -56,6 +58,7 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 4,
             activeStepId: 'turn-1-step',
+            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Llm, 1, 'turn-1-step', 1, 'llm-idempotency-1'),
             model: 'test-model');
 
         $message = new LlmStepResult(
@@ -75,7 +78,19 @@ final class LlmStepResultHandlerTest extends TestCase
             stopReason: 'tool_call',
             error: null,
         );
+        $wrongKey = new LlmStepResult(
+            runId: 'run-llm-handler-1',
+            turnNo: 1,
+            stepId: 'turn-1-step',
+            attempt: 1,
+            idempotencyKey: 'wrong-key',
+            assistantMessage: null,
+            usage: [],
+            stopReason: null,
+            error: null,
+        );
 
+        $this->assertNull($handler->handle($wrongKey, $state)->nextState);
         $result = $handler->handle($message, $state);
 
         $this->assertNotNull($result->nextState);
@@ -129,6 +144,7 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 4,
             activeStepId: 'abort-step',
+            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Llm, 1, 'abort-step', 1, 'llm-abort-1'),
             messages: $existingMessages,
             model: 'test-model');
 
@@ -213,6 +229,7 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 3,
             activeStepId: 'abort-text-step',
+            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Llm, 1, 'abort-text-step', 1, 'llm-abort-text-1'),
             messages: $existingMessages,
             model: 'test-model');
 
@@ -294,6 +311,7 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 4,
             activeStepId: 'turn-1-step',
+            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Llm, 1, 'turn-1-step', 1, 'llm-no-tools-1'),
             model: 'test-model');
 
         // No-tool-call result triggers the stop-boundary mailbox drain
@@ -372,6 +390,7 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 4,
             activeStepId: 'turn-1-step',
+            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Llm, 1, 'turn-1-step', 1, 'empty-asst-1'),
             messages: $existingMessages,
             model: 'test-model');
 
@@ -466,6 +485,7 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 3,
             activeStepId: 'step-1',
+            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Llm, 1, 'step-1', 1, 'llm-retry-1'),
             messages: [
                 new \Ineersa\AgentCore\Domain\Message\AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Hi']]),
             ],
@@ -562,6 +582,7 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 3,
             activeStepId: 'step-1',
+            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Llm, 1, 'step-1', 1, 'llm-exhausted-1'),
             messages: [
                 new \Ineersa\AgentCore\Domain\Message\AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Hi']]),
             ],
@@ -656,6 +677,7 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 3,
             activeStepId: 'step-1',
+            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Llm, 1, 'step-1', 1, 'llm-overflow-1'),
             messages: [
                 new \Ineersa\AgentCore\Domain\Message\AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Hi']]),
             ],
@@ -739,6 +761,7 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 4,
             activeStepId: 'turn-1-step',
+            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Llm, 1, 'turn-1-step', 1, 'llm-parallel-max'),
             // Historical run identity (stale after a session-level model change).
             model: 'grok-cli/grok-composer-2.5-fast');
 
@@ -799,6 +822,7 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 1,
             activeStepId: 'step-1',
+            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Llm, 1, 'step-1', 1, 'llm-timeout-null'),
             model: 'test-model');
 
         $message = new LlmStepResult(

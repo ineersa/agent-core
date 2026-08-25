@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Pipeline\ApplyShellCommandHandler;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
@@ -13,6 +14,7 @@ use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -92,7 +94,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         array $expectedEventTypes,
         RunStatus $expectedStatus,
     ): void {
-        $handler = new ApplyShellCommandHandler(new EventFactory());
+        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore());
         $rawInput = '!printf BANG_OWNERSHIP';
         $message = new ApplyShellCommand(
             runId: 'run-shell-1',
@@ -148,7 +150,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
 
     public function testCommittedStandaloneShellRedeliveryIsANoOp(): void
     {
-        $handler = new ApplyShellCommandHandler(new EventFactory());
+        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore());
         $message = new ApplyShellCommand(
             runId: 'run-shell-duplicate',
             turnNo: 0,
@@ -172,7 +174,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
 
     public function testCommittedAttachedShellRedeliveryIsANoOpWithoutReplacingActiveLlm(): void
     {
-        $handler = new ApplyShellCommandHandler(new EventFactory());
+        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore());
         $message = new ApplyShellCommand(
             runId: 'run-attached-shell-duplicate',
             turnNo: 4,
@@ -201,9 +203,31 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertSame([], $redelivery->effects);
     }
 
+    public function testCompletedShellRedeliveryIsANoOpAfterLifecycleEnds(): void
+    {
+        $events = new InMemoryEventStore();
+        $events->seed(new RunEvent(
+            runId: 'run-completed-shell',
+            seq: 7,
+            turnNo: 4,
+            type: RunEventTypeEnum::AgentCommandApplied->value,
+            payload: ['kind' => 'shell_command', 'idempotency_key' => 'completed-shell-key', 'text' => '!printf once'],
+        ));
+        $handler = new ApplyShellCommandHandler(new EventFactory(), $events);
+        $message = new ApplyShellCommand('run-completed-shell', 4, 'shell-step', 1, 'completed-shell-key', '!printf once');
+        $state = new RunState(runId: 'run-completed-shell', status: RunStatus::Running, turnNo: 4, lastSeq: 9, activeStepId: 'llm-step');
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertNull($result->nextState);
+        $this->assertSame([], $result->events);
+        $this->assertSame([], $result->effects);
+        $this->assertSame(1, $events->reverseForCalls);
+    }
+
     public function testRejectsInvalidRawInput(): void
     {
-        $handler = new ApplyShellCommandHandler(new EventFactory());
+        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore());
         $state = new RunState(runId: 'run-shell-2', status: RunStatus::Queued, turnNo: 0, lastSeq: 0, model: 'test-model');
 
         $this->expectException(\InvalidArgumentException::class);

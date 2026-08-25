@@ -12,8 +12,6 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
-use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
-use Ineersa\AgentCore\Domain\Run\CurrentCompactionExecutionDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -267,9 +265,6 @@ final class CompactionStepResultHandlerTest extends TestCase
             messages: $originalMessages,
             activeStepId: 'step-1',
             currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, 5, 'step-1', 1, 'key-1'),
-            currentCompactionExecution: new CurrentCompactionExecutionDTO(new ExecuteCompactionStep(
-                'run-1', 5, 'step-1', 1, 'key-1', 'test-model', [], [], [], 0, 1, 0, 50000, 'manual',
-            )),
             model: 'test-model');
 
         $summaryMsg = $this->userMsg('Summary of prior context.');
@@ -312,7 +307,6 @@ final class CompactionStepResultHandlerTest extends TestCase
 
         // activeStepId cleared on terminal outcome.
         $this->assertNull($result->nextState->activeStepId);
-        $this->assertNull($result->nextState->currentCompactionExecution);
 
         // Run status stays Completed — compaction does not restart the run.
         $this->assertSame(RunStatus::Completed, $result->nextState->status);
@@ -802,6 +796,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             errorMessage: null,
             messages: [$this->userMsg('q')],
             activeStepId: 'step-1',
+            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, 5, 'step-1', 1, 'key-1'),
             retryableFailure: false,
             model: 'test-model');
 
@@ -914,6 +909,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             turnNo: 5,
             lastSeq: 20,
             activeStepId: 'step-1',
+            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, 5, 'step-1', 1, 'key-1'),
             messages: [$this->userMsg('q')],
             model: 'test-model');
 
@@ -994,6 +990,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             errorMessage: null,
             messages: $originalMessages,
             activeStepId: 'step-1',
+            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, 5, 'step-1', 1, 'key-1'),
             retryableFailure: false,
             model: 'test-model');
 
@@ -1083,7 +1080,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             $this->userMsg('old question'),
             $this->assistantMsg('old answer'),
         ];
-        $state = $this->createRunState($originalMessages, 'step-1', turnNo: 5);
+        $state = $this->createRunState($originalMessages, 'step-1', turnNo: 5, idempotencyKey: 'key-ineff');
 
         $summaryMsg = $this->userMsg('summary text');
         $retained = [$this->userMsg('recent'), $this->assistantMsg('recent answer')];
@@ -1165,7 +1162,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             $this->userMsg('question'),
             $this->assistantMsg('answer'),
         ];
-        $state = $this->createRunState($originalMessages, 'step-1', turnNo: 5);
+        $state = $this->createRunState($originalMessages, 'step-1', turnNo: 5, idempotencyKey: 'key-ineff-worse');
 
         $summaryMsg = $this->userMsg('summary');
         $retained = [$this->userMsg('recent'), $this->assistantMsg('recent answer')];
@@ -1238,6 +1235,12 @@ final class CompactionStepResultHandlerTest extends TestCase
             messagesRetained: 0, firstRetainedIndex: 1, tokenEstimateBefore: 50000,
             trigger: 'manual', model: 'test-model', modelOptions: [],
         );
+        $wrongKey = new CompactionStepResult(
+            runId: 'run-1', turnNo: 5, stepId: 'step-1', attempt: 1, idempotencyKey: 'wrong-key',
+            summaryText: 'summary', error: null, retainedTailMessages: [], messagesCompacted: 1,
+            messagesRetained: 0, firstRetainedIndex: 1, tokenEstimateBefore: 50000,
+            trigger: 'manual', model: 'test-model', modelOptions: [],
+        );
         $wrongAttempt = new CompactionStepResult(
             runId: 'run-1', turnNo: 5, stepId: 'step-1', attempt: 2, idempotencyKey: 'key-1',
             summaryText: 'summary', error: null, retainedTailMessages: [], messagesCompacted: 1,
@@ -1245,6 +1248,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             trigger: 'manual', model: 'test-model', modelOptions: [],
         );
 
+        $this->assertNull($handler->handle($wrongKey, $state)->nextState);
         $this->assertNull($handler->handle($wrongAttempt, $state)->nextState);
         $applied = $handler->handle($matching, $state);
         $this->assertCount(1, $applied->events);
@@ -1275,6 +1279,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             errorMessage: null,
             messages: $messages,
             activeStepId: $activeStepId,
+            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, 5, $activeStepId, 1, 'key-1'),
             retryableFailure: false,
             model: 'test-model');
     }
@@ -1284,7 +1289,7 @@ final class CompactionStepResultHandlerTest extends TestCase
     /**
      * @param list<AgentMessage> $messages
      */
-    private function createRunState(array $messages, string $activeStepId, int $turnNo = 5): RunState
+    private function createRunState(array $messages, string $activeStepId, int $turnNo = 5, string $idempotencyKey = 'key-1'): RunState
     {
         return new RunState(
             runId: 'run-1',
@@ -1294,6 +1299,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             lastSeq: 20,
             messages: $messages,
             activeStepId: $activeStepId,
+            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, $turnNo, $activeStepId, 1, $idempotencyKey),
             model: 'test-model');
     }
 

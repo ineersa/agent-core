@@ -30,11 +30,12 @@ final readonly class CurrentCompactionExecutionDTO
         $stepId = $payload['step_id'] ?? null;
         $attempt = $payload['operation_attempt'] ?? null;
         $key = $payload['operation_idempotency_key'] ?? null;
+        $turnNo = $payload['turn_no'] ?? null;
         $model = $worker['model'] ?? null;
         $summarizationMessages = self::messages($worker['summarization_messages'] ?? null);
         $retainedTailMessages = self::messages($worker['retained_tail_messages'] ?? null);
 
-        if (!\is_string($stepId) || !\is_int($attempt) || !\is_string($key) || !\is_string($model)
+        if (!\is_int($turnNo) || !\is_string($stepId) || !\is_int($attempt) || !\is_string($key) || !\is_string($model)
             || null === $summarizationMessages || null === $retainedTailMessages
             || !\is_array($worker['model_options'] ?? null)
             || !\is_int($worker['messages_compacted'] ?? null)
@@ -49,7 +50,7 @@ final readonly class CurrentCompactionExecutionDTO
 
         return new self(new ExecuteCompactionStep(
             runId: $runId,
-            turnNo: \is_int($payload['turn_no'] ?? null) ? $payload['turn_no'] : 0,
+            turnNo: $turnNo,
             stepId: $stepId,
             attempt: $attempt,
             idempotencyKey: $key,
