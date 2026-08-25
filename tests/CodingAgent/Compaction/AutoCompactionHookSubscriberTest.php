@@ -119,8 +119,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             ->method('get')
             ->willReturn($runState);
 
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);  // 12000 > 11000, no auto started event
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);  // 12000 > 11000, no auto started event
 
         $context = $this->createHookContext();
         $this->subscriber->handleAfterTurnCommit($context);
@@ -148,8 +147,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             ->method('get')
             ->willReturn($runState);
 
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(5000)]);  // 5000 < 11000
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(5000)]);  // 5000 < 11000
 
         $context = $this->createHookContext();
         $this->subscriber->handleAfterTurnCommit($context);
@@ -177,8 +175,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             ->willReturn($runState);
 
         // No llm_step_completed events at all.
-        $this->eventStore->method('allFor')
-            ->willReturn([]);
+        $this->stubChronologicalEvents([]);
 
         $context = $this->createHookContext();
         $this->subscriber->handleAfterTurnCommit($context);
@@ -279,8 +276,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         $this->runStore->method('get')->willReturn($runState);
 
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // exceeds 11000
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]); // exceeds 11000
 
         // First call → dispatches.
         $this->subscriber->handleAfterTurnCommit($this->createHookContext());
@@ -304,17 +300,16 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // Event store: measurement at seq 1; auto attempt at seq 5.
         // The measurement is ineligible (1 <= 5) after the attempt.
-        $this->eventStore->method('allFor')
-            ->willReturn([
-                $this->makeLlmStepCompletedEvent(12000),
-                new RunEvent(
-                    runId: 'run-1',
-                    seq: 5,
-                    turnNo: 1,
-                    type: RunEventTypeEnum::ContextCompactionFailed->value,
-                    payload: ['trigger' => 'auto', 'reason' => 'no_safe_boundary'],
-                ),
-            ]);
+        $this->stubChronologicalEvents([
+            $this->makeLlmStepCompletedEvent(12000),
+            new RunEvent(
+                runId: 'run-1',
+                seq: 5,
+                turnNo: 1,
+                type: RunEventTypeEnum::ContextCompactionFailed->value,
+                payload: ['trigger' => 'auto', 'reason' => 'no_safe_boundary'],
+            ),
+        ]);
 
         // First call — dispatches (no attempt markers yet at this point...
         // Wait, the mock always returns both events, so the auto attempt
@@ -372,8 +367,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             ->method('get')
             ->willReturn($runState);
 
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 < 50000 override
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]); // 12000 < 50000 override
 
         $context = $this->createHookContext();
         $subscriber->handleAfterTurnCommit($context);
@@ -417,8 +411,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->makeTextMessage('user', 'Hello'),
         ]);
         $this->runStore->method('get')->willReturn($runState);
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         // RunStarted clears the resolved flag and returns early (no dispatch).
         $context = $this->createHookContext([RunEventTypeEnum::RunStarted->value]);
@@ -439,8 +432,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->makeTextMessage('user', 'Hello'),
         ]);
         $this->runStore->method('get')->willReturn($runState);
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         // effectsCount > 0 means intermediate orchestration commit — skip.
         $context = $this->createHookContext(effectsCount: 2);
@@ -470,17 +462,16 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // Event store: measurement at seq 1; auto attempt at seq 5.
         // Measurement is ineligible (seq 1 <= seq 5).
-        $this->eventStore->method('allFor')
-            ->willReturn([
-                $this->makeLlmStepCompletedEvent(12000),
-                new RunEvent(
-                    runId: 'run-1',
-                    seq: 5,
-                    turnNo: 1,
-                    type: RunEventTypeEnum::ContextCompactionStarted->value,
-                    payload: ['trigger' => 'auto', 'step_id' => 'compact-1'],
-                ),
-            ]);
+        $this->stubChronologicalEvents([
+            $this->makeLlmStepCompletedEvent(12000),
+            new RunEvent(
+                runId: 'run-1',
+                seq: 5,
+                turnNo: 1,
+                type: RunEventTypeEnum::ContextCompactionStarted->value,
+                payload: ['trigger' => 'auto', 'step_id' => 'compact-1'],
+            ),
+        ]);
 
         // Pre-condition: simulate lifecycle commit (clears inFlight).
         $lifecycleContext = $this->createHookContext([RunEventTypeEnum::ContextCompactionStarted->value]);
@@ -505,8 +496,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->makeTextMessage('user', 'Hello'),
         ]);
         $this->runStore->method('get')->willReturn($runState);
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         // Pre-condition: dispatch auto-compaction, then lifecycle sets resolved.
         $this->subscriber->handleAfterTurnCommit($this->createHookContext());
@@ -538,8 +528,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->makeTextMessage('user', 'Hello'),
         ]);
         $this->runStore->method('get')->willReturn($runState);
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         $this->subscriber->handleAfterTurnCommit($this->createHookContext());
 
@@ -575,36 +564,35 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // Event log: provider measurement at seq 74, auto failed-only at
         // seq 79 (no started event — the prepare-failure path).
-        $this->eventStore->method('allFor')
-            ->willReturn([
-                new RunEvent(
-                    runId: 'run-1',
-                    seq: 74,
-                    turnNo: 1,
-                    type: RunEventTypeEnum::LlmStepCompleted->value,
-                    payload: [
-                        'step_id' => 'step-74',
-                        'stop_reason' => 'stop',
-                        'usage' => [
-                            'input_tokens' => 32660,
-                            'output_tokens' => 100,
-                            'total_tokens' => 32760,
-                        ],
+        $this->stubChronologicalEvents([
+            new RunEvent(
+                runId: 'run-1',
+                seq: 74,
+                turnNo: 1,
+                type: RunEventTypeEnum::LlmStepCompleted->value,
+                payload: [
+                    'step_id' => 'step-74',
+                    'stop_reason' => 'stop',
+                    'usage' => [
+                        'input_tokens' => 32660,
+                        'output_tokens' => 100,
+                        'total_tokens' => 32760,
                     ],
-                ),
-                new RunEvent(
-                    runId: 'run-1',
-                    seq: 79,
-                    turnNo: 1,
-                    type: RunEventTypeEnum::ContextCompactionFailed->value,
-                    payload: [
-                        'reason' => 'no_safe_boundary',
-                        'trigger' => 'auto',
-                        'step_id' => null,
-                        'messages_replaced' => false,
-                    ],
-                ),
-            ]);
+                ],
+            ),
+            new RunEvent(
+                runId: 'run-1',
+                seq: 79,
+                turnNo: 1,
+                type: RunEventTypeEnum::ContextCompactionFailed->value,
+                payload: [
+                    'reason' => 'no_safe_boundary',
+                    'trigger' => 'auto',
+                    'step_id' => null,
+                    'messages_replaced' => false,
+                ],
+            ),
+        ]);
 
         // Fresh service instance — no in-memory state.
         $freshSubscriber = new AutoCompactionHookSubscriber(
@@ -646,8 +634,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ]);
         $this->runStore->method('get')->willReturn($runState);
 
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         $context = $this->createHookContext(
             eventTypes: [RunEventTypeEnum::ToolExecutionStart->value],
@@ -692,8 +679,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // Provider usage exceeds threshold — the hook WOULD dispatch
         // auto-compaction if not for the ToolBatchCommitted guard.
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
 
         $context = $this->createHookContext(
             eventTypes: [RunEventTypeEnum::ToolBatchCommitted->value],
@@ -737,36 +723,35 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         //  - OLD provider measurement at seq 1 (12000 > 11000)
         //  - First auto attempt marker at seq 5 (context_compaction_started)
         //  - NEW provider measurement at seq 10 (15000 > 11000, seq=10 > 5)
-        $this->eventStore->method('allFor')
-            ->willReturn([
-                $this->makeLlmStepCompletedEvent(12000),
-                new RunEvent(
-                    runId: 'run-1',
-                    seq: 5,
-                    turnNo: 1,
-                    type: RunEventTypeEnum::ContextCompactionStarted->value,
-                    payload: [
-                        'trigger' => 'auto',
-                        'step_id' => 'compact-123',
-                        'reason' => 'threshold_exceeded',
+        $this->stubChronologicalEvents([
+            $this->makeLlmStepCompletedEvent(12000),
+            new RunEvent(
+                runId: 'run-1',
+                seq: 5,
+                turnNo: 1,
+                type: RunEventTypeEnum::ContextCompactionStarted->value,
+                payload: [
+                    'trigger' => 'auto',
+                    'step_id' => 'compact-123',
+                    'reason' => 'threshold_exceeded',
+                ],
+            ),
+            new RunEvent(
+                runId: 'run-1',
+                seq: 10,
+                turnNo: 2,
+                type: RunEventTypeEnum::LlmStepCompleted->value,
+                payload: [
+                    'step_id' => 'step-10',
+                    'stop_reason' => 'stop',
+                    'usage' => [
+                        'input_tokens' => 15000,
+                        'output_tokens' => 100,
+                        'total_tokens' => 15100,
                     ],
-                ),
-                new RunEvent(
-                    runId: 'run-1',
-                    seq: 10,
-                    turnNo: 2,
-                    type: RunEventTypeEnum::LlmStepCompleted->value,
-                    payload: [
-                        'step_id' => 'step-10',
-                        'stop_reason' => 'stop',
-                        'usage' => [
-                            'input_tokens' => 15000,
-                            'output_tokens' => 100,
-                            'total_tokens' => 15100,
-                        ],
-                    ],
-                ),
-            ]);
+                ],
+            ),
+        ]);
 
         // Step 1: simulate compaction lifecycle commit (sets compactionResolved on HEAD).
         $lifecycleContext = $this->createHookContext(
@@ -813,8 +798,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // Provider usage exceeds threshold — the hook WOULD dispatch
         // auto-compaction if not for the AgentCommandQueued guard.
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
 
         $context = $this->createHookContext(
             eventTypes: [RunEventTypeEnum::AgentCommandQueued->value],
@@ -849,8 +833,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // Provider usage exceeds threshold — the hook WOULD dispatch
         // auto-compaction if not for the AgentCommandApplied guard.
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
 
         $context = $this->createHookContext(
             eventTypes: [RunEventTypeEnum::AgentCommandApplied->value],
@@ -887,8 +870,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         $this->runStore->method('get')->willReturn($runState);
 
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         // Preparation: only the compact_summary message is summarized.
         // The fresh messages are in the retained tail.
@@ -978,8 +960,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         $this->runStore->method('get')->willReturn($runState);
 
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         // Use anonymous class to guarantee the exact return value
         $summaryPlusFreshService = new class($compactSummaryMsg, $freshUserMsg, $freshAssistantMsg, $recentUserMsg, $recentAssistantMsg) implements CompactionServiceInterface {
@@ -1064,8 +1045,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         $this->runStore->method('get')->willReturn($runState);
 
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         // Use anonymous class to guarantee the exact return value
         $failedService = new class implements CompactionServiceInterface {
@@ -1129,8 +1109,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         // RunState absent: no stubbed return from runStore->get()
         // Under #[AllowMockObjectsWithoutExpectations] this returns null.
 
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
 
         $context = $this->createHookContext();
         $this->subscriber->handleAfterTurnCommit($context);
@@ -1196,13 +1175,20 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $runState = $this->createRunState($messages);
 
         $this->runStore->method('get')->willReturn($runState);
-        $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // above 11000
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         $subscriber->handleAfterTurnCommit($this->createHookContext());
 
         $this->assertCount(0, $this->commandBus->messages,
             'Agent child runs must not dispatch CompactRun from after-turn auto-compaction.');
+    }
+
+    /**
+     * @param list<RunEvent> $events chronological canonical event order
+     */
+    private function stubChronologicalEvents(array $events): void
+    {
+        $this->eventStore->method('reverseFor')->willReturn(array_reverse($events));
     }
 
     private function createRunState(

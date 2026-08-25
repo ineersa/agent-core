@@ -79,9 +79,11 @@ final class SessionRunEventStore implements EventStoreInterface
 
     public function latestSequenceFor(string $runId): ?int
     {
-        $event = $this->eventFromLine($runId, $this->eventLog->lastNonEmptyLine($this->eventsPath($runId)));
+        foreach ($this->reverseFor($runId) as $event) {
+            return $event->seq;
+        }
 
-        return $event?->seq;
+        return null;
     }
 
     public function firstFor(string $runId): ?RunEvent
@@ -103,6 +105,59 @@ final class SessionRunEventStore implements EventStoreInterface
             return null;
         } finally {
             fclose($handle);
+        }
+    }
+
+    /**
+     * Streams events one JSONL line at a time without populating the allFor snapshot cache.
+     *
+     * Events are physically appended under the per-run sequence lock, so durable file order
+     * is canonical sequence order (with possible sequence holes). The scan stops at the first
+     * sequence above endSeq; allFor() remains responsible for full-log validation.
+     *
+     * @return \Generator<int, RunEvent>
+     */
+    public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+    {
+        if ($startSeq < 1 || $endSeq < $startSeq) {
+            return;
+        }
+
+        $handle = @fopen($this->eventsPath($runId), 'rb');
+        if (false === $handle) {
+            return;
+        }
+
+        try {
+            while (false !== ($line = fgets($handle))) {
+                $event = $this->eventFromLine($runId, $line);
+                if (null === $event) {
+                    continue;
+                }
+
+                if ($event->seq > $endSeq) {
+                    break;
+                }
+
+                if ($event->seq >= $startSeq) {
+                    yield $event;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /**
+     * @return \Generator<int, RunEvent>
+     */
+    public function reverseFor(string $runId): iterable
+    {
+        foreach ($this->eventLog->reverseLines($this->eventsPath($runId)) as $line) {
+            $event = $this->eventFromLine($runId, $line);
+            if (null !== $event) {
+                yield $event;
+            }
         }
     }
 

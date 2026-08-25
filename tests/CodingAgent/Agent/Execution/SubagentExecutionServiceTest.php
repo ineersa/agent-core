@@ -309,6 +309,16 @@ final class ProgressAppendInputRecordingEventStore implements EventStoreInterfac
         return $events[0] ?? null;
     }
 
+    public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+    {
+        return $this->inner->rangeFor($runId, $startSeq, $endSeq);
+    }
+
+    public function reverseFor(string $runId): iterable
+    {
+        return [];
+    }
+
     public function allFor(string $runId): array
     {
         return $this->inner->allFor($runId);

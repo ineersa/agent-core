@@ -93,9 +93,9 @@ final class ProviderContextUsageResolverTest extends TestCase
      */
     public function testIneligibleWhenAutoCompactionStartedAfterProviderMeasurement(): void
     {
-        $this->mockEvents([
-            $this->makeLlmStepCompleted(10, 30755),
+        $this->mockBoundedReverseEvents([
             $this->makeAutoCompactionStarted(11),
+            $this->makeLlmStepCompleted(10, 30755),
         ]);
 
         $this->assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
@@ -140,9 +140,9 @@ final class ProviderContextUsageResolverTest extends TestCase
      */
     public function testManualCompactionStartDoesNotBlockEligibility(): void
     {
-        $this->mockEvents([
-            $this->makeLlmStepCompleted(10, 30755),
+        $this->mockBoundedReverseEvents([
             $this->makeManualCompactionStarted(11),
+            $this->makeLlmStepCompleted(10, 30755),
         ]);
 
         // Manual start at seq 11 does NOT block provider measurement at seq 10.
@@ -380,15 +380,29 @@ final class ProviderContextUsageResolverTest extends TestCase
     }
 
     /**
-     * Configure the mock to return events for allFor() calls.
+     * Configure the mock to stream canonical events from newest to oldest.
      *
-     * The resolver may call allFor() multiple times per method
-     * (once for provider measurement, once for auto start lookup).
+     * @param list<RunEvent> $events
      */
     private function mockEvents(array $events): void
     {
-        $this->eventStore->method('allFor')
-            ->willReturn($events);
+        $this->eventStore->method('reverseFor')
+            ->willReturn(array_reverse($events));
+    }
+
+    /**
+     * @param list<RunEvent> $events newest-first events ending at the decisive provider measurement
+     */
+    private function mockBoundedReverseEvents(array $events): void
+    {
+        $this->eventStore->expects($this->once())
+            ->method('reverseFor')
+            ->with('run-1')
+            ->willReturnCallback(static function () use ($events): \Generator {
+                yield from $events;
+
+                throw new \LogicException('Resolver read past the decisive provider measurement.');
+            });
     }
 
     // ── Helpers ───────────────────────────────────────────────────

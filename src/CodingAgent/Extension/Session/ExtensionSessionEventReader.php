@@ -13,8 +13,9 @@ use Psr\Log\LoggerInterface;
 /**
  * Recovery/compaction-only adapter over the canonical EventStore.
  *
- * May scan the full events.jsonl for a run. Must not be used on the hot
- * turn/boundary path — AfterTurnCommit already exposes the committed batch.
+ * Reads the requested range without materializing the complete events.jsonl.
+ * Must not be used on every turn or boundary; AfterTurnCommit already exposes
+ * the committed batch.
  */
 final readonly class ExtensionSessionEventReader implements SessionEventReaderInterface
 {
@@ -39,7 +40,16 @@ final readonly class ExtensionSessionEventReader implements SessionEventReaderIn
         }
 
         try {
-            $events = $this->eventStore->allFor($runId);
+            foreach ($this->eventStore->rangeFor($runId, $startSeq, $endSeq) as $event) {
+                yield new SessionEventDTO(
+                    runId: $event->runId,
+                    seq: $event->seq,
+                    turnNo: $event->turnNo,
+                    type: $event->type,
+                    payload: $event->payload,
+                    createdAt: $event->createdAt->format(\DateTimeInterface::ATOM),
+                );
+            }
         } catch (\Throwable $e) {
             $this->logger->error('extension.session_event_reader.read_failed', [
                 'component' => 'extension_session_event_reader',
@@ -53,21 +63,6 @@ final readonly class ExtensionSessionEventReader implements SessionEventReaderIn
             ]);
 
             throw SessionEventReaderException::readFailed($runId, 'event store read failed.');
-        }
-
-        foreach ($events as $event) {
-            if ($event->seq < $startSeq || $event->seq > $endSeq) {
-                continue;
-            }
-
-            yield new SessionEventDTO(
-                runId: $event->runId,
-                seq: $event->seq,
-                turnNo: $event->turnNo,
-                type: $event->type,
-                payload: $event->payload,
-                createdAt: $event->createdAt->format(\DateTimeInterface::ATOM),
-            );
         }
     }
 }

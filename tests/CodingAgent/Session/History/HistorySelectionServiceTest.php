@@ -72,6 +72,20 @@ final class HistorySelectionServiceTest extends TestCase
                 return $events[0] ?? null;
             }
 
+            public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                foreach ($this->events as $event) {
+                    if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
+                        yield $event;
+                    }
+                }
+            }
+
+            public function reverseFor(string $runId): iterable
+            {
+                return [];
+            }
+
             public function allFor(string $runId): array
             {
                 return $this->events;
@@ -194,6 +208,20 @@ final class HistorySelectionServiceTest extends TestCase
                 return $events[0] ?? null;
             }
 
+            public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                foreach ($this->events as $event) {
+                    if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
+                        yield $event;
+                    }
+                }
+            }
+
+            public function reverseFor(string $runId): iterable
+            {
+                return [];
+            }
+
             public function allFor(string $runId): array
             {
                 return $this->events;
@@ -299,6 +327,20 @@ final class HistorySelectionServiceTest extends TestCase
                 return $events[0] ?? null;
             }
 
+            public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                foreach ($this->events as $event) {
+                    if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
+                        yield $event;
+                    }
+                }
+            }
+
+            public function reverseFor(string $runId): iterable
+            {
+                return [];
+            }
+
             public function allFor(string $runId): array
             {
                 return $this->events;
@@ -368,6 +410,20 @@ final class HistorySelectionServiceTest extends TestCase
                 $events = $this->allFor($runId);
 
                 return $events[0] ?? null;
+            }
+
+            public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                foreach ($this->events as $event) {
+                    if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
+                        yield $event;
+                    }
+                }
+            }
+
+            public function reverseFor(string $runId): iterable
+            {
+                return [];
             }
 
             public function allFor(string $runId): array

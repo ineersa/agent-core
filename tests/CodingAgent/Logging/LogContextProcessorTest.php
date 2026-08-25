@@ -25,7 +25,7 @@ final class LogContextProcessorTest extends TestCase
         RunLogContext::reset();
     }
 
-    public function testEmptyContextOnlyInjectsDdTraceIds(): void
+    public function testEmptyContextInjectsProcessMemoryAndOnlyOptionalDdTraceIds(): void
     {
         $record = new LogRecord(
             datetime: new \DateTimeImmutable(),
@@ -41,10 +41,14 @@ final class LogContextProcessorTest extends TestCase
         $this->assertArrayNotHasKey('run_id', $result->extra);
         $this->assertArrayNotHasKey('component', $result->extra);
 
-        // dd.trace_id and dd.span_id may or may not be present
-        // depending on whether ddtrace is loaded. We just verify
-        // nothing else leaked in.
-        $allowedKeys = ['dd.trace_id', 'dd.span_id'];
+        $this->assertSame(getmypid(), $result->extra['pid']);
+        $this->assertIsInt($result->extra['memory_usage']);
+        $this->assertIsInt($result->extra['memory_allocated']);
+        $this->assertGreaterThanOrEqual($result->extra['memory_usage'], $result->extra['memory_allocated']);
+
+        // dd.trace_id and dd.span_id may or may not be present depending on
+        // whether ddtrace is loaded. Verify nothing else leaked in.
+        $allowedKeys = ['pid', 'memory_usage', 'memory_allocated', 'dd.trace_id', 'dd.span_id'];
         foreach ($result->extra as $key => $value) {
             $this->assertContains($key, $allowedKeys, "Unexpected extra key: \"{$key}\"");
         }

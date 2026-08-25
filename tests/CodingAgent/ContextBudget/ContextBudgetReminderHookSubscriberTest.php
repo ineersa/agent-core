@@ -64,7 +64,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
 
     public function testEarlyQueuesWrappedAppendMessage(): void
     {
-        $this->eventStore->method('allFor')->willReturn([
+        $this->mockEvents([
             $this->runStarted(1, 272000),
         ]);
         $this->runStore->method('get')->willReturn($this->runState());
@@ -91,7 +91,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
 
     public function testUrgentWhenBothEligibleQueuesUrgentOnly(): void
     {
-        $this->eventStore->method('allFor')->willReturn([
+        $this->mockEvents([
             $this->runStarted(1, 272000),
         ]);
         $this->runStore->method('get')->willReturn($this->runState());
@@ -122,7 +122,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             ContextBudgetReminderHookSubscriber::EARLY_TEXT,
         );
 
-        $this->eventStore->method('allFor')->willReturn([
+        $this->mockEvents([
             $this->runStarted(1, 272000),
             $this->commandQueued(3, $earlyWrapped),
         ]);
@@ -157,7 +157,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         // Pre-compaction early was issued; after context_compacted it no longer counts.
         // But no post-compaction llm completion in historical store — the hot batch
         // completion is the fresh usage that re-enables early.
-        $this->eventStore->method('allFor')->willReturn([
+        $this->mockEvents([
             $this->runStarted(1, 272000),
             $this->commandApplied(2, $earlyWrapped),
             $this->event(3, RunEventTypeEnum::ContextCompacted->value, []),
@@ -183,9 +183,22 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         ]));
     }
 
+    public function testBelowBothThresholdsSkipsReminderHistoryScan(): void
+    {
+        $this->eventStore->method('firstFor')->willReturn($this->runStarted(1, 272000));
+        $this->eventStore->expects($this->never())->method('reverseFor');
+        $this->agentRunner->expects($this->never())->method('appendMessage');
+
+        $this->subscriber->handleAfterTurnCommit($this->hookContext([
+            $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, [
+                'usage' => ['input_tokens' => 100000],
+            ]),
+        ]));
+    }
+
     public function testMissingUsageOrWindowDoesNotQueue(): void
     {
-        $this->eventStore->method('allFor')->willReturn([
+        $this->mockEvents([
             $this->runStarted(1, null),
         ]);
         $this->runStore->method('get')->willReturn($this->runState(model: null));
@@ -209,7 +222,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
 
     public function testUnrelatedOrAbortedEventsDoNotQueue(): void
     {
-        $this->eventStore->method('allFor')->willReturn([
+        $this->mockEvents([
             $this->runStarted(1, 272000),
         ]);
         $this->runStore->method('get')->willReturn($this->runState());
@@ -232,7 +245,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             ContextBudgetReminderHookSubscriber::URGENT_TEXT,
         );
 
-        $this->eventStore->method('allFor')->willReturn([
+        $this->mockEvents([
             $this->runStarted(1, 272000),
             $this->commandQueued(2, $urgentWrapped),
         ]);
@@ -244,6 +257,13 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
                 'usage' => ['input_tokens' => 260000],
             ]),
         ]));
+    }
+
+    /** @param list<RunEvent> $events */
+    private function mockEvents(array $events): void
+    {
+        $this->eventStore->method('firstFor')->willReturn($events[0] ?? null);
+        $this->eventStore->method('reverseFor')->willReturn(array_reverse($events));
     }
 
     /**

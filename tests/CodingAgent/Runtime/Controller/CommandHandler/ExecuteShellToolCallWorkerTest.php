@@ -204,6 +204,20 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
                 return $events[0] ?? null;
             }
 
+            public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                foreach ($this->collector as $event) {
+                    if ($event->runId === $runId && $event->seq >= $startSeq && $event->seq <= $endSeq) {
+                        yield $event;
+                    }
+                }
+            }
+
+            public function reverseFor(string $runId): iterable
+            {
+                return [];
+            }
+
             public function allFor(string $runId): array
             {
                 return array_values(

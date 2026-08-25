@@ -85,36 +85,34 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->registry()->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'done');
 
         $eventStore = $this->createStub(EventStoreInterface::class);
-        $eventStore->method('allFor')->willReturnCallback(static function (string $runId) use ($childRunId, $artifactId, $parent): array {
+        $eventStore->method('firstFor')->willReturnCallback(static function (string $runId) use ($childRunId, $artifactId, $parent): ?RunEvent {
             if ($runId !== $childRunId) {
-                return [];
+                return null;
             }
 
-            return [
-                new RunEvent(
-                    runId: $childRunId,
-                    seq: 1,
-                    turnNo: 0,
-                    type: RunEventTypeEnum::RunStarted->value,
-                    payload: [
-                        'step_id' => 's',
-                        'payload' => [
-                            'metadata' => [
-                                'session' => [
-                                    'kind' => 'agent_child',
-                                    'child_kind' => 'fork',
-                                    'parent_run_id' => $parent,
-                                    'agent_name' => 'fork',
-                                    'artifact_id' => $artifactId,
-                                ],
-                                'model' => 'test/model',
-                                'reasoning' => 'medium',
-                                'tools_scope' => ['allowed_tools' => ['bash']],
+            return new RunEvent(
+                runId: $childRunId,
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: [
+                    'step_id' => 's',
+                    'payload' => [
+                        'metadata' => [
+                            'session' => [
+                                'kind' => 'agent_child',
+                                'child_kind' => 'fork',
+                                'parent_run_id' => $parent,
+                                'agent_name' => 'fork',
+                                'artifact_id' => $artifactId,
                             ],
+                            'model' => 'test/model',
+                            'reasoning' => 'medium',
+                            'tools_scope' => ['allowed_tools' => ['bash']],
                         ],
                     ],
-                ),
-            ];
+                ],
+            );
         });
 
         $this->expectException(ToolCallException::class);
@@ -254,35 +252,33 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->registry()->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'done');
 
         $parentEventStore = $this->createStub(EventStoreInterface::class);
-        $parentEventStore->method('allFor')->willReturnCallback(static function (string $runId) use ($parent): array {
+        $parentEventStore->method('firstFor')->willReturnCallback(static function (string $runId) use ($parent): ?RunEvent {
             if ($runId !== $parent) {
-                return [];
+                return null;
             }
 
-            return [
-                new RunEvent(
-                    runId: $parent,
-                    seq: 1,
-                    turnNo: 0,
-                    type: RunEventTypeEnum::RunStarted->value,
-                    payload: [
-                        'step_id' => 's',
-                        'payload' => [
-                            'metadata' => [
-                                'session' => [
-                                    'kind' => 'agent_child',
-                                    'parent_run_id' => 'grandparent',
-                                    'agent_name' => 'scout',
-                                    'artifact_id' => 'agent_parent',
-                                ],
-                                'model' => 'test/model',
-                                'reasoning' => 'medium',
-                                'tools_scope' => ['allowed_tools' => []],
+            return new RunEvent(
+                runId: $parent,
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: [
+                    'step_id' => 's',
+                    'payload' => [
+                        'metadata' => [
+                            'session' => [
+                                'kind' => 'agent_child',
+                                'parent_run_id' => 'grandparent',
+                                'agent_name' => 'scout',
+                                'artifact_id' => 'agent_parent',
                             ],
+                            'model' => 'test/model',
+                            'reasoning' => 'medium',
+                            'tools_scope' => ['allowed_tools' => []],
                         ],
                     ],
-                ),
-            ];
+                ],
+            );
         });
 
         $this->expectException(ToolCallException::class);
