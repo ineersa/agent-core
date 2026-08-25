@@ -13,4 +13,5 @@ enum CurrentOperationKindEnum: string
 {
     case Llm = 'llm';
     case Shell = 'shell';
+    case Compaction = 'compaction';
 }

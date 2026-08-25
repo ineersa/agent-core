@@ -116,7 +116,7 @@ checkpoint can reconstruct the exact execution message.
 | `command.advance` | expected predecessor turn plus the last committed advance key (replayed from the canonical transition event) | no-op before mailbox drain |
 | `result.llm` | active `(turn, step, attempt)` checkpoint | no-op |
 | `result.tool` | finalized batch/pending call/HITL identity | no-op |
-| `command.compact` / `result.compaction` | compaction state and active step | no-op for stale result |
+| `command.compact` / `result.compaction` | canonical compaction request/start events, bounded active `(turn, step, attempt, key)` checkpoint, and last completed key | stale/completed delivery is a no-op before hooks or effects |
 
 Legacy `idempotency.jsonl` artifacts are inert user data: no migration, pruner, or
 deletion is performed. New parent and child operations never create them.

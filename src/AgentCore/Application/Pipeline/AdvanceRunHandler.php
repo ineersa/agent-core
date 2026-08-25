@@ -319,18 +319,34 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     continueAfterCompaction: true,
                 );
 
-                // Emit boundary events only — do NOT emit TurnAdvanced
-                // or HistoryPositionSet (compaction does not advance the turn).
+                // Persist the request separately from actual compaction start:
+                // the CompactRun effect can be lost after commit, while replay
+                // must still reject this already-applied AdvanceRun before it
+                // drains a newer mailbox command.
+                $compactionRequestSpecs = [
+                    ...$boundaryEventSpecs,
+                    [
+                        'type' => RunEventTypeEnum::ContextCompactionRequested->value,
+                        'payload' => [
+                            'step_id' => $compactStepId,
+                            'turn_no' => $nextTurnNo,
+                            'request_idempotency_key' => $compactEffect->idempotencyKey(),
+                            'advance_idempotency_key' => $message->idempotencyKey(),
+                            'trigger' => 'auto',
+                        ],
+                    ],
+                ];
                 $events = $this->eventFactory->eventsFromSpecs(
                     $runId,
                     $preparedState->turnNo,
                     $state->lastSeq + 1,
-                    $boundaryEventSpecs,
+                    $compactionRequestSpecs,
                 );
 
                 $compactedState = $preparedState->with([
                     'version' => $state->version + 1,
                     'lastSeq' => $state->lastSeq + \count($events),
+                    'lastAppliedAdvanceKey' => $message->idempotencyKey(),
                 ]);
 
                 return new HandlerResult(

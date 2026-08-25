@@ -88,6 +88,7 @@ final readonly class RunStateReducer
             RunEventTypeEnum::AgentCommandQueued->value,
             RunEventTypeEnum::AgentCommandSuperseded->value,
             RunEventTypeEnum::StaleResultIgnored->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::ContextCompactionRequested->value => $this->applyNoMutation($event, $state),
             RunEventTypeEnum::ContextCompactionStarted->value => $this->applyContextCompactionStarted($payload, $state),
             RunEventTypeEnum::ContextCompacted->value => $this->applyContextCompacted($payload, $state, $messages),
             RunEventTypeEnum::ContextCompactionFailed->value => $this->applyContextCompactionFailed($payload, $state),
@@ -524,9 +525,15 @@ final readonly class RunStateReducer
     {
         $stepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : $state->activeStepId;
 
+        $attempt = \is_int($payload['operation_attempt'] ?? null) ? $payload['operation_attempt'] : 1;
+        $key = \is_string($payload['operation_idempotency_key'] ?? null) ? $payload['operation_idempotency_key'] : null;
+
         return $state->with([
             'status' => RunStatus::Compacting,
             'activeStepId' => $stepId,
+            'currentOperation' => null !== $stepId && null !== $key
+                ? new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, $state->turnNo, $stepId, $attempt, $key)
+                : null,
             'retryAttempts' => 0,
         ]);
     }
@@ -575,6 +582,8 @@ final readonly class RunStateReducer
         return $state->with([
             'status' => $finalStatus,
             'activeStepId' => null,
+            'currentOperation' => null,
+            'lastAppliedCompactionKey' => $state->currentOperation->idempotencyKey,
             'retryAttempts' => 0,
         ]);
     }
@@ -636,6 +645,8 @@ final readonly class RunStateReducer
             return $state->with([
                 'status' => $resolveCompacting ?? $state->status,
                 'activeStepId' => null,
+                'currentOperation' => null,
+                'lastAppliedCompactionKey' => $state->currentOperation->idempotencyKey,
                 'retryAttempts' => 0,
             ]);
         }

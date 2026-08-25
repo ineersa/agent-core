@@ -35,6 +35,8 @@ final readonly class RunState
         public ?CurrentOperationDTO $currentOperation = null,
         /** Last committed AdvanceRun token; bounded transition evidence, never a receipt history. */
         public ?string $lastAppliedAdvanceKey = null,
+        /** Last completed CompactRun token; bounded transition evidence, never a receipt history. */
+        public ?string $lastAppliedCompactionKey = null,
         public bool $retryableFailure = false,
         /** Count of completed auto-retry attempts in the active retryable-failure episode; manual continue resets to 0. May be one past max when retries are exhausted. */
         public int $retryAttempts = 0,
@@ -72,6 +74,7 @@ final readonly class RunState
      *     activeStepId?: string|null,
      *     currentOperation?: CurrentOperationDTO|null,
      *     lastAppliedAdvanceKey?: string|null,
+     *     lastAppliedCompactionKey?: string|null,
      *     retryableFailure?: bool,
      *     retryAttempts?: int,
      *     pendingHumanInputRequests?: list<PendingHumanInputRequestDTO>,
@@ -95,6 +98,7 @@ final readonly class RunState
             activeStepId: \array_key_exists('activeStepId', $overrides) ? $overrides['activeStepId'] : $this->activeStepId,
             currentOperation: \array_key_exists('currentOperation', $overrides) ? $overrides['currentOperation'] : $this->currentOperation,
             lastAppliedAdvanceKey: \array_key_exists('lastAppliedAdvanceKey', $overrides) ? $overrides['lastAppliedAdvanceKey'] : $this->lastAppliedAdvanceKey,
+            lastAppliedCompactionKey: \array_key_exists('lastAppliedCompactionKey', $overrides) ? $overrides['lastAppliedCompactionKey'] : $this->lastAppliedCompactionKey,
             retryableFailure: \array_key_exists('retryableFailure', $overrides) ? (bool) $overrides['retryableFailure'] : $this->retryableFailure,
             retryAttempts: \array_key_exists('retryAttempts', $overrides) ? (int) $overrides['retryAttempts'] : $this->retryAttempts,
             pendingHumanInputRequests: \array_key_exists('pendingHumanInputRequests', $overrides) ? $overrides['pendingHumanInputRequests'] : $this->pendingHumanInputRequests,

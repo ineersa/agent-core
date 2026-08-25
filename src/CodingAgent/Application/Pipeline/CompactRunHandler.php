@@ -15,6 +15,8 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
@@ -68,6 +70,16 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
         }
 
         $runId = $message->runId();
+
+        // A compaction request has one bounded authoritative lifecycle. Never
+        // prepare, invoke hooks, or dispatch a second worker for a committed,
+        // stale, or currently active request.
+        if ($message->turnNo() !== $state->turnNo
+            || $message->idempotencyKey() === $state->lastAppliedCompactionKey
+            || RunStatus::Compacting === $state->status
+            || (null !== $state->currentOperation && CurrentOperationKindEnum::Compaction === $state->currentOperation->kind)) {
+            return new HandlerResult();
+        }
 
         // Defensive gate: fork/subagent children never compact. Silent no-op
         // (no lifecycle events, no preparation, no worker) so manual/API
@@ -272,6 +284,8 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             'type' => RunEventTypeEnum::ContextCompactionStarted->value,
             'payload' => [
                 'step_id' => $message->stepId(),
+                'operation_attempt' => $message->attempt(),
+                'operation_idempotency_key' => $message->idempotencyKey(),
                 'trigger' => $message->trigger,
                 'model' => $resolvedModel,
                 'thinking_level' => $thinkingLevel,
@@ -286,7 +300,15 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             ],
         ]]);
 
-        $nextState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId(), status: RunStatus::Compacting);
+        $nextState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId(), status: RunStatus::Compacting)->with([
+            'currentOperation' => new CurrentOperationDTO(
+                CurrentOperationKindEnum::Compaction,
+                $state->turnNo,
+                $message->stepId(),
+                $message->attempt(),
+                $message->idempotencyKey(),
+            ),
+        ]);
 
         // Pass typed AgentMessage lists; llm transport Symfony Serializer
         // denormalizes them via ArrayDenormalizer + PhpDoc list types.
@@ -295,7 +317,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             turnNo: $state->turnNo,
             stepId: $message->stepId(),
             attempt: 1,
-            idempotencyKey: hash('sha256', \sprintf('%s|compaction|%d|%s', $runId, $state->turnNo, $message->stepId())),
+            idempotencyKey: $message->idempotencyKey(),
             model: $resolvedModel ?? '',
             modelOptions: $modelOptions,
             summarizationMessages: $summarizationMessages,
@@ -351,6 +373,8 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             'type' => RunEventTypeEnum::ContextCompactionStarted->value,
             'payload' => [
                 'step_id' => $message->stepId(),
+                'operation_attempt' => $message->attempt(),
+                'operation_idempotency_key' => $message->idempotencyKey(),
                 'trigger' => $message->trigger,
                 'model' => $resolvedModel,
                 'thinking_level' => $thinkingLevel,
@@ -398,6 +422,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
                     'trigger' => $message->trigger,
                     'hook_metadata' => $hookMetadata,
                     'replacement_summary' => true,
+                    'operation_idempotency_key' => $message->idempotencyKey(),
                 ],
             ]],
         );
@@ -417,6 +442,8 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             'lastSeq' => $afterStartState->lastSeq + \count($compactedEvents),
             'messages' => $compactResult->compactedMessages,
             'activeStepId' => null,
+            'currentOperation' => null,
+            'lastAppliedCompactionKey' => $message->idempotencyKey(),
             // Compaction replaces the conversation: the retry episode dies
             // with the summarized context (reset is explicit, not a drop).
             'retryAttempts' => 0,
