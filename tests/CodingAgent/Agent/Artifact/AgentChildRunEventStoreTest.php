@@ -117,6 +117,74 @@ final class AgentChildRunEventStoreTest extends TestCase
         $this->assertSame([1], array_map(static fn (RunEvent $event): int => $event->seq, $events));
     }
 
+    public function testLatestAndReverseReadNewestTailBeforeMalformedPrefix(): void
+    {
+        $parentRunId = 'parent-reverse';
+        $agentRunId = 'child-reverse';
+        $artifactId = 'scout-reverse';
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+        $normalizer = new EventPayloadNormalizer();
+        $path = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl";
+        mkdir(\dirname($path), 0775, true);
+        file_put_contents($path, "{\"partial\":\n");
+        foreach ([7, 8] as $seq) {
+            file_put_contents(
+                $path,
+                json_encode($normalizer->normalize($agentRunId, $seq, $seq, 'turn_advanced', []), \JSON_THROW_ON_ERROR)."\n",
+                \FILE_APPEND,
+            );
+        }
+
+        $this->assertSame(8, $store->latestSequenceFor($agentRunId));
+
+        $events = [];
+        foreach ($store->reverseFor($agentRunId) as $event) {
+            $events[] = $event->seq;
+            if (2 === \count($events)) {
+                break;
+            }
+        }
+        $this->assertSame([8, 7], $events);
+
+        $this->assertNull($store->latestSequenceFor('other-child'));
+        $this->assertSame([], iterator_to_array($store->reverseFor('other-child')));
+    }
+
+    public function testLatestSequenceSkipsTrailingIncompatibleRecord(): void
+    {
+        $parentRunId = 'parent-latest';
+        $agentRunId = 'child-latest';
+        $artifactId = 'scout-latest';
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+        $last = $store->append(new RunEvent(runId: $agentRunId, seq: 1, turnNo: 0, type: 'run_started'));
+        $path = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl";
+        file_put_contents($path, json_encode([
+            'schema_version' => '999.0',
+            'run_id' => $agentRunId,
+            'seq' => $last->seq + 1,
+            'turn_no' => 1,
+            'type' => 'future_event',
+            'payload' => [],
+        ], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+
+        $this->assertSame($last->seq, $store->latestSequenceFor($agentRunId));
+    }
+
+    public function testLatestSequenceRejectsTrailingPartialRecord(): void
+    {
+        $parentRunId = 'parent-latest';
+        $agentRunId = 'child-latest';
+        $artifactId = 'scout-latest';
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+        $store->append(new RunEvent(runId: $agentRunId, seq: 1, turnNo: 0, type: 'run_started'));
+        $path = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl";
+        file_put_contents($path, '{"partial":', \FILE_APPEND);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Corrupt event JSONL line for child run');
+        $store->latestSequenceFor($agentRunId);
+    }
+
     public function testEventsStoredUnderParentArtifactPath(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
