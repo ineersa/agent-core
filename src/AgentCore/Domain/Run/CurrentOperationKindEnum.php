@@ -12,8 +12,5 @@ namespace Ineersa\AgentCore\Domain\Run;
 enum CurrentOperationKindEnum: string
 {
     case Llm = 'llm';
-    case ToolBatch = 'tool_batch';
     case Shell = 'shell';
-    case Compaction = 'compaction';
-    case Advance = 'advance';
 }

@@ -75,6 +75,24 @@ final class StartRunHandlerTest extends TestCase
         $this->assertSame([], $result->postCommit);
     }
 
+    public function testCommittedStartRedeliveryIsANoOp(): void
+    {
+        $handler = new StartRunHandler(
+            eventFactory: new EventFactory(),
+            normalizer: TestSerializerFactory::normalizer(),
+        );
+        $message = StartRunMessageBuilder::create('run-start-duplicate')->build();
+        $committed = $handler->handle($message, RunStateBuilder::queued('run-start-duplicate')->build())->nextState;
+
+        $this->assertNotNull($committed);
+        $redelivery = $handler->handle($message, $committed);
+
+        $this->assertNull($redelivery->nextState);
+        $this->assertSame([], $redelivery->events);
+        $this->assertSame([], $redelivery->effects);
+        $this->assertSame([], $redelivery->postCommit);
+    }
+
     public function testHandleSchedulesInitialAdvanceAfterCommitWhenBusIsProvided(): void
     {
         $commandBus = new TestMessageBus();

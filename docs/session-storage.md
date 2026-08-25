@@ -100,23 +100,23 @@ Compaction rewrites the LLM-visible history while retaining a recent raw tail an
 
 ## State-transition duplicate delivery
 
-Run-control does not maintain a receipt ledger. The run lock and CAS serialize each
-transition; the bounded current `RunState` plus canonical events are authoritative.
-A committed or stale delivery is a successful no-op (no event, callback, mailbox
-drain, or effect dispatch). A matching unfinished operation remains eligible for
-Messenger redelivery. `/repair` may explicitly redispatch the current operation;
-it does not infer abandonment from time.
+Run-control does not maintain a receipt ledger. The run lock and CAS serialize
+transitions; committed `StartRun`, queued command mailbox entries, finalized tool
+batches, and the active LLM checkpoint are the current bounded duplicate guards.
+A stale LLM or tool result is a no-op. The current `/repair` command repairs
+canonical event corruption; it does not redispatch work merely because it may have
+been lost. Further operation-redrive coverage must not be claimed until a bounded
+checkpoint can reconstruct the exact execution message.
 
-| Scope | Expected active boundary | Committed/stale delivery | Matching unfinished delivery | Repair |
-|---|---|---|---|---|
-| `command.start` | queued/uninitialized run | no-op | initialize once | dispatch same start boundary |
-| `command.apply` | pending command identity and run generation | no-op | apply | redispatch pending command |
-| `command.apply_shell` | pending shell command identity and generation | no-op | execute once | redispatch same shell |
-| `command.advance` | predecessor turn/state/step/generation | no-op | advance once | redispatch successor |
-| `result.llm` | active `(run, turn, step, attempt)` | no-op | collect result | redispatch same LLM step |
-| `result.tool` | active batch, pending call, terminal/HITL identity | no-op | collect out of order | redispatch pending tool unless waiting for human |
-| `command.compact` | active compaction request/step/attempt | no-op | start compacting | redispatch same request |
-| `result.compaction` | active compaction step/attempt | no-op | apply result | redispatch same compaction step |
+| Scope | Current authoritative evidence | Committed/stale delivery |
+|---|---|---|
+| `command.start` | non-queued `RunState` | no-op |
+| `command.apply` | command mailbox idempotency key | no-op |
+| `command.apply_shell` (standalone) | bounded shell checkpoint | no-op |
+| `command.advance` | active successor checkpoint | no-op before mailbox drain |
+| `result.llm` | active `(turn, step, attempt)` checkpoint | no-op |
+| `result.tool` | finalized batch/pending call/HITL identity | no-op |
+| `command.compact` / `result.compaction` | compaction state and active step | no-op for stale result |
 
 Legacy `idempotency.jsonl` artifacts are inert user data: no migration, pruner, or
 deletion is performed. New parent and child operations never create them.

@@ -144,6 +144,30 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertSame('sh_'.hash('sha256', 'shell-idem-1'), $effect->toolCallId);
     }
 
+    public function testCommittedStandaloneShellRedeliveryIsANoOp(): void
+    {
+        $handler = new ApplyShellCommandHandler(new EventFactory());
+        $message = new ApplyShellCommand(
+            runId: 'run-shell-duplicate',
+            turnNo: 0,
+            stepId: 'shell-step-duplicate',
+            attempt: 1,
+            idempotencyKey: 'shell-idem-duplicate',
+            rawInput: '!printf once',
+        );
+        $committed = $handler->handle(
+            $message,
+            new RunState(runId: 'run-shell-duplicate', status: RunStatus::Queued, model: 'test-model'),
+        )->nextState;
+
+        $this->assertNotNull($committed);
+        $redelivery = $handler->handle($message, $committed);
+
+        $this->assertNull($redelivery->nextState);
+        $this->assertSame([], $redelivery->events);
+        $this->assertSame([], $redelivery->effects);
+    }
+
     public function testRejectsInvalidRawInput(): void
     {
         $handler = new ApplyShellCommandHandler(new EventFactory());

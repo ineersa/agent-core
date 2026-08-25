@@ -48,7 +48,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         // operation, a redelivery must stop before it can drain newer mailbox
         // work or dispatch a second successor.
         if (null !== $state->currentOperation
-            && CurrentOperationKindEnum::Advance !== $state->currentOperation->kind
             && $state->currentOperation->idempotencyKey !== $message->idempotencyKey()) {
             return new HandlerResult();
         }
