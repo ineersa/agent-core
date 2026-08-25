@@ -86,6 +86,28 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
     }
 
     #[Test]
+    public function eventsReadsOnlyLargeHistoryTailAfterCursor(): void
+    {
+        $events = [];
+        for ($seq = 1; $seq <= 2000; ++$seq) {
+            $events[] = new RunEvent(
+                self::RUN_ID,
+                $seq,
+                1,
+                RunEventTypeEnum::TurnAdvanced->value,
+                ['turn_no' => 1],
+            );
+        }
+        self::$eventStore->replace($events);
+
+        $unseen = iterator_to_array($this->client()->events(self::RUN_ID, 1997));
+
+        $this->assertSame([1998, 1999, 2000], array_map(static fn (RuntimeEvent $event): int => $event->seq, $unseen));
+        $this->assertSame(4, self::$eventStore->reverseForYieldedEvents);
+        $this->assertSame(0, self::$eventStore->allForCalls);
+    }
+
+    #[Test]
     public function eventsReplaysAllVisibleCanonicalEventsWhenCursorIsZero(): void
     {
         self::$eventStore->replace([
@@ -130,6 +152,8 @@ final class ReverseOnlyEventStore implements EventStoreInterface
 
     public int $reverseForCalls = 0;
 
+    public int $reverseForYieldedEvents = 0;
+
     /** @var list<RunEvent> */
     private array $events = [];
 
@@ -139,6 +163,7 @@ final class ReverseOnlyEventStore implements EventStoreInterface
         $this->events = $events;
         $this->allForCalls = 0;
         $this->reverseForCalls = 0;
+        $this->reverseForYieldedEvents = 0;
     }
 
     public function append(RunEvent $event): RunEvent
@@ -191,6 +216,7 @@ final class ReverseOnlyEventStore implements EventStoreInterface
         ++$this->reverseForCalls;
         for ($index = \count($this->events) - 1; $index >= 0; --$index) {
             if ($this->events[$index]->runId === $runId) {
+                ++$this->reverseForYieldedEvents;
                 yield $this->events[$index];
             }
         }

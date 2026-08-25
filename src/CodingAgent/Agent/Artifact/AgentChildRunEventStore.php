@@ -98,6 +98,8 @@ final class AgentChildRunEventStore implements EventStoreInterface
     /**
      * Recovery-only tail read of durable child events.jsonl (not for steady-state supervision).
      *
+     * The first decoded record with seq <= $cursor stops the tail read; records before it are intentionally not decoded.
+     *
      * @return list<RunEvent> Events with seq > $cursor, sorted ascending. Sequence holes are preserved.
      */
     public function readAfterSeq(int $cursor): array

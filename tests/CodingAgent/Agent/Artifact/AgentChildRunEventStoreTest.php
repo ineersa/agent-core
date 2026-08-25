@@ -400,6 +400,42 @@ final class AgentChildRunEventStoreTest extends TestCase
         $this->assertSame([4, 9], array_map(static fn (RunEvent $event): int => $event->seq, $tail));
     }
 
+    public function testReadAfterSeqReadsLargeFileFromSingleTailChunkWithoutDecodingOldMalformedPrefix(): void
+    {
+        $parentRunId = 'parent-large-tail';
+        $agentRunId = 'child-large-tail';
+        $artifactId = 'scout-large-tail';
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+        $normalizer = new EventPayloadNormalizer();
+        $path = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl";
+        mkdir(\dirname($path), 0775, true);
+
+        $content = '';
+        $malformedOffset = 0;
+        $boundaryOffset = 0;
+        for ($seq = 1; $seq <= 2000; ++$seq) {
+            if (1001 === $seq) {
+                $malformedOffset = \strlen($content);
+                $content .= "{malformed older prefix}\n";
+            }
+            if (1997 === $seq) {
+                $boundaryOffset = \strlen($content);
+            }
+            $content .= json_encode(
+                $normalizer->normalize($agentRunId, $seq, 1, 'turn_advanced', ['padding' => str_repeat('x', 300)]),
+                \JSON_THROW_ON_ERROR,
+            )."\n";
+        }
+        file_put_contents($path, $content);
+
+        $this->assertGreaterThan(256 * 1024, $malformedOffset);
+        $this->assertLessThanOrEqual(8192, \strlen($content) - $boundaryOffset);
+
+        $tail = $store->readAfterSeq(1997);
+
+        $this->assertSame([1998, 1999, 2000], array_map(static fn (RunEvent $event): int => $event->seq, $tail));
+    }
+
     public function testReadAfterSeqSkipsTrailingIncompatibleSchemaButRejectsMalformedUnseenTail(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
