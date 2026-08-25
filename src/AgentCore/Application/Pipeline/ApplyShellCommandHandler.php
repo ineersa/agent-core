@@ -38,11 +38,12 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
             throw new \InvalidArgumentException('ApplyShellCommandHandler can only handle ApplyShellCommand messages.');
         }
 
-        // A committed standalone shell owns the bounded current operation.
-        // Its exact redelivery is a no-op before transcript/event/effect work.
-        if (null !== $state->currentOperation
-            && CurrentOperationKindEnum::Shell === $state->currentOperation->kind
-            && $state->currentOperation->idempotencyKey === $message->idempotencyKey()) {
+        // Direct shells can attach to an active LLM, so currentOperation cannot
+        // represent them without invalidating that LLM result. Keep only the
+        // currently executing deterministic tool ids; this is removed by the
+        // canonical tool_execution_end reducer, never retained as a receipt.
+        $toolCallId = 'sh_'.hash('sha256', $message->idempotencyKey());
+        if (isset($state->pendingShellToolCalls[$toolCallId])) {
             return new HandlerResult();
         }
 
@@ -124,7 +125,6 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
 
         // Deterministic tool-call id keeps Messenger retries from creating a
         // second bash lifecycle for the same ApplyShellCommand message.
-        $toolCallId = 'sh_'.hash('sha256', $message->idempotencyKey());
         $effect = new ExecuteShellToolCall(
             runId: $state->runId,
             turnNo: $owningTurnNo,
@@ -159,6 +159,7 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
                     $toolCallId,
                 )
                 : $state->currentOperation,
+            'pendingShellToolCalls' => [...$state->pendingShellToolCalls, $toolCallId => true],
             'retryableFailure' => $startsChildTurn ? false : $state->retryableFailure,
             // A child turn starts a fresh retry episode; an in-place shell on
             // an active run keeps the episode counter intact.

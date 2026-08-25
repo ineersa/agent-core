@@ -92,6 +92,8 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
+                'pendingShellToolCalls' => [],
+                'currentOperation' => null,
                 'retryableFailure' => false,
                 'retryAttempts' => 0,
             ]);

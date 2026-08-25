@@ -9,6 +9,8 @@ use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -163,6 +165,37 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertNotNull($committed);
         $redelivery = $handler->handle($message, $committed);
 
+        $this->assertNull($redelivery->nextState);
+        $this->assertSame([], $redelivery->events);
+        $this->assertSame([], $redelivery->effects);
+    }
+
+    public function testCommittedAttachedShellRedeliveryIsANoOpWithoutReplacingActiveLlm(): void
+    {
+        $handler = new ApplyShellCommandHandler(new EventFactory());
+        $message = new ApplyShellCommand(
+            runId: 'run-attached-shell-duplicate',
+            turnNo: 4,
+            stepId: 'shell-step-attached',
+            attempt: 1,
+            idempotencyKey: 'shell-attached-key',
+            rawInput: '!printf once',
+        );
+        $llm = new CurrentOperationDTO(CurrentOperationKindEnum::Llm, 4, 'llm-step', 1, 'llm-key');
+        $state = new RunState(
+            runId: 'run-attached-shell-duplicate',
+            status: RunStatus::Running,
+            turnNo: 4,
+            activeStepId: 'llm-step',
+            currentOperation: $llm,
+        );
+
+        $committed = $handler->handle($message, $state)->nextState;
+        $this->assertNotNull($committed);
+        $this->assertSame($llm, $committed->currentOperation);
+        $this->assertArrayHasKey('sh_'.hash('sha256', 'shell-attached-key'), $committed->pendingShellToolCalls);
+
+        $redelivery = $handler->handle($message, $committed);
         $this->assertNull($redelivery->nextState);
         $this->assertSame([], $redelivery->events);
         $this->assertSame([], $redelivery->effects);

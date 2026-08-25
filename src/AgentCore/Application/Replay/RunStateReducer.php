@@ -71,7 +71,7 @@ final readonly class RunStateReducer
             RunEventTypeEnum::AgentCommandRejected->value => $this->applyCommandRejected($payload, $state),
             RunEventTypeEnum::LlmStepCompleted->value => $this->applyLlmStepCompleted($payload, $state, $messages, $pendingToolCalls),
             RunEventTypeEnum::LlmStepFailed->value => $this->applyLlmStepFailed($payload, $state),
-            RunEventTypeEnum::LlmStepAborted->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::LlmStepAborted->value => $state->with(['currentOperation' => null]),
             RunEventTypeEnum::ToolExecutionStart->value => $this->applyToolExecutionStart($payload, $pendingToolCalls, $state),
             RunEventTypeEnum::ToolExecutionEnd->value => $this->applyToolExecutionEnd($payload, $pendingToolCalls, $state),
             RunEventTypeEnum::ToolCallResultReceived->value => $this->applyNoMutation($event, $state),
@@ -198,6 +198,19 @@ final readonly class RunStateReducer
     private function applyAgentCommandApplied(array $payload, RunState $state, array &$messages): RunState
     {
         $kind = \is_string($payload['kind'] ?? null) ? $payload['kind'] : null;
+
+        if ('shell_command' === $kind) {
+            $key = \is_string($payload['idempotency_key'] ?? null) ? $payload['idempotency_key'] : null;
+            if (null === $key || '' === $key) {
+                return $state;
+            }
+
+            $toolCallId = 'sh_'.hash('sha256', $key);
+
+            return $state->with([
+                'pendingShellToolCalls' => [...$state->pendingShellToolCalls, $toolCallId => true],
+            ]);
+        }
 
         // steer / follow_up / append_message: append message to prompt context
         if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
@@ -392,6 +405,12 @@ final readonly class RunStateReducer
 
         if (null !== $toolCallId) {
             $pendingToolCalls[$toolCallId] = true;
+            if (isset($state->pendingShellToolCalls[$toolCallId])) {
+                $pendingShellToolCalls = $state->pendingShellToolCalls;
+                unset($pendingShellToolCalls[$toolCallId]);
+
+                return $state->with(['pendingShellToolCalls' => $pendingShellToolCalls]);
+            }
         }
 
         return $state;
@@ -472,7 +491,9 @@ final readonly class RunStateReducer
             'isStreaming' => false,
             'streamingMessage' => null,
             'pendingToolCalls' => [],
+            'pendingShellToolCalls' => [],
             'activeStepId' => null,
+            'currentOperation' => null,
             'retryableFailure' => false,
             'retryAttempts' => 0,
         ]);
