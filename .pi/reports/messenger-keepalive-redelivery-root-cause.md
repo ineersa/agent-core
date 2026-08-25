@@ -348,17 +348,11 @@ This should ideally be fixed upstream in Symfony Console because the unsafe orde
 
 A 60-second or larger lease increase is only mitigation. It widens the failure window but does not restore a dead heartbeat.
 
-### 2. Fence transient events by active step
-
-Canonical result handling already rejects stale duplicate completions. Transient runtime events need equivalent defense so a reclaimed/stale worker cannot corrupt presentation even if duplicate execution occurs for another reason.
-
-The fence should use existing run/turn/step identity if available. Do not build a timing-based reorder buffer or DeepSeek-specific workaround.
-
-### 3. Keep TUI backpressure as a separate fix
+### 2. Keep TUI backpressure as a separate fix
 
 The repeated TUI `pipe_write` stalls and brief controller stall should remain attached to the persistent-frame/flicker investigation. They should not be conflated with the alarm root fix.
 
-### 4. Remove disposable diagnostics after proof
+### 3. Remove disposable diagnostics after proof
 
 The temporary alarm-tick subscriber was useful to identify the failed boundary, but per-worker five-second informational logging is not intended permanent product behavior. Permanent observability should report heartbeat loss or duplicate receipt rather than log every healthy tick.
 
@@ -391,15 +385,6 @@ Use an isolated test transport DB with a short test-only lease and deterministic
 - all subprocesses and DB files are owned and cleaned by the test.
 
 Do not use a production setting solely for this test.
-
-### Transient fencing proof
-
-At controller/runtime protocol level:
-
-- feed transient deltas from an active step and a stale duplicate step;
-- assert only active-step text reaches transcript projection;
-- assert completion/control boundaries cannot overtake accepted pending deltas;
-- assert canonical replay produces the same final content.
 
 ### Required gates
 
@@ -439,4 +424,4 @@ A final manual session-45 run should cross the old 60-second threshold and verif
 
 The TUI did not randomly reorder one stream. It faithfully rendered arrival order from multiple workers that should never have been executing the same LLM step concurrently.
 
-The duplicate execution occurred because a live Messenger consumer permanently lost its process-local one-shot keepalive alarm. Symfony's dispatcher signal path has no failure-safe rearm, so one missed rearm silently converts a healthy consumer into a future lease violator. Fix that lifecycle first, fence stale transient events second, and treat tmux output backpressure as a related but separate presentation problem.
+The duplicate execution occurred because a live Messenger consumer permanently lost its process-local one-shot keepalive alarm. Symfony's dispatcher signal path has no failure-safe rearm, so one missed rearm silently converts a healthy consumer into a future lease violator. Fix that alarm lifecycle; treat tmux output backpressure as a related but separate presentation problem.
