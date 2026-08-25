@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Castor;
 
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -16,6 +17,9 @@ final class QaStandaloneTestCacheIsolationTest extends TestCase
 {
     /** @var array<string, string|null> */
     private array $envRestore = [];
+
+    /** @var list<string> */
+    private array $temporaryDirectories = [];
 
     protected function tearDown(): void
     {
@@ -30,6 +34,11 @@ final class QaStandaloneTestCacheIsolationTest extends TestCase
             }
         }
         $this->envRestore = [];
+
+        foreach ($this->temporaryDirectories as $directory) {
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+        $this->temporaryDirectories = [];
 
         parent::tearDown();
     }
@@ -88,6 +97,34 @@ final class QaStandaloneTestCacheIsolationTest extends TestCase
         $this->assertSame($runCache, getenv('HATFIELD_CACHE_DIR'));
     }
 
+    public function testAbsoluteCustomReportsDirRemainsAbsolute(): void
+    {
+        self::requireCastorFiles();
+
+        $work = $this->createTemporaryDirectory('castor-absolute-reports');
+        $absolute = $work.'/reports';
+        $this->setEnv('HATFIELD_QA_REPORTS_DIR', $absolute);
+
+        $this->assertSame($absolute, \CastorTasks\reports_dir());
+        $this->assertDirectoryExists($absolute);
+        $this->assertFalse(str_starts_with($absolute, ProjectDir::get().'/home/'));
+        $this->assertSame($absolute.'/phpstan.json', \CastorTasks\report_path('phpstan.json'));
+        $this->assertSame($absolute.'/phpstan.json', \CastorTasks\relative_report_path('phpstan.json'));
+    }
+
+    public function testRelativeCustomReportsDirRemainsUnderProjectRoot(): void
+    {
+        self::requireCastorFiles();
+
+        $work = $this->createTemporaryDirectory('castor-relative-reports');
+        $relative = substr($work, \strlen(ProjectDir::get()) + 1).'/reports';
+        $this->setEnv('HATFIELD_QA_REPORTS_DIR', $relative);
+
+        $this->assertSame(ProjectDir::get().'/'.$relative, \CastorTasks\reports_dir());
+        $this->assertDirectoryExists(ProjectDir::get().'/'.$relative);
+        $this->assertSame($relative.'/phpstan.json', \CastorTasks\relative_report_path('phpstan.json'));
+    }
+
     public function testStandaloneCacheReusesExistingHatfieldCacheDir(): void
     {
         self::requireCastorFiles();
@@ -100,6 +137,14 @@ final class QaStandaloneTestCacheIsolationTest extends TestCase
 
         $this->assertSame($existing, $resolved);
         $this->assertStringContainsString('HATFIELD_CACHE_DIR='.escapeshellarg($existing), $prefix);
+    }
+
+    private function createTemporaryDirectory(string $prefix): string
+    {
+        $directory = TestDirectoryIsolation::createProjectTempDir($prefix);
+        $this->temporaryDirectories[] = $directory;
+
+        return $directory;
     }
 
     private function clearCacheEnv(): void

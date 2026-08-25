@@ -104,7 +104,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
         $client = $this->createMock(AgentSessionClient::class);
         $client->expects($this->once())
             ->method('events')
-            ->with(self::CHILD_RUN_ID)
+            ->with(self::CHILD_RUN_ID, 1)
             ->willReturn([
                 new RuntimeEvent(RuntimeEventTypeEnum::ProgressUpdated->value, self::CHILD_RUN_ID, 2, ['text' => 'live only']),
             ]);
@@ -138,7 +138,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
         $client = $this->createMock(AgentSessionClient::class);
         $client->expects($this->exactly(2))
             ->method('events')
-            ->with(self::CHILD_RUN_ID)
+            ->with(self::CHILD_RUN_ID, $this->anything())
             ->willReturnOnConsecutiveCalls(
                 [
                     new RuntimeEvent(RuntimeEventTypeEnum::AssistantMessageCompleted->value, self::CHILD_RUN_ID, 3, ['text' => 'stale']),
@@ -187,7 +187,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
         $client = $this->createMock(AgentSessionClient::class);
         $client->expects($this->once())
             ->method('events')
-            ->with(self::CHILD_RUN_ID)
+            ->with(self::CHILD_RUN_ID, $this->anything())
             ->willReturn([
                 new RuntimeEvent(
                     RuntimeEventTypeEnum::HumanInputRequested->value,
@@ -239,7 +239,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
             payload: ['block_id' => 'text-1', 'delta' => 'text'],
         );
         $client = $this->createMock(AgentSessionClient::class);
-        $client->expects($this->once())->method('events')->with(self::CHILD_RUN_ID)->willReturn([$event]);
+        $client->expects($this->once())->method('events')->with(self::CHILD_RUN_ID, $this->anything())->willReturn([$event]);
         try {
             $poller->poll($live, $client);
             $this->fail('Expected projection failure.');

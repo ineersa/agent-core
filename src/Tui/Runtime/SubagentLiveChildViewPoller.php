@@ -122,7 +122,7 @@ final class SubagentLiveChildViewPoller
 
         $events = [] !== $this->pendingEvents
             ? $this->pendingEvents
-            : RuntimeEventCallbacks::eventList($client, $live->selected->agentRunId);
+            : RuntimeEventCallbacks::eventList($client, $live->selected->agentRunId, $live->childLastSeq);
         if ([] === $events) {
             return null;
         }

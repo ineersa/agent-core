@@ -86,7 +86,7 @@ final class RuntimeEventPollerTest extends TestCase
     {
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([]);
 
         $result = $this->poller->poll($this->state, $this->client);
@@ -94,6 +94,23 @@ final class RuntimeEventPollerTest extends TestCase
         $this->assertNull($result);
         $this->assertSame(0, $this->state->runtimePollErrorCount);
         $this->assertSame('', $this->state->lastRuntimePollError);
+    }
+
+    public function testPollPassesLastSuccessfullyAppliedSequenceToFreshClientDrain(): void
+    {
+        $this->state->lastSeq = 7;
+        $event = new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'test-run', 8);
+
+        $this->client->expects($this->once())
+            ->method('events')
+            ->with('test-run', 7)
+            ->willReturn([$event]);
+        $this->projector->expects($this->once())->method('accept')->with($event);
+        $this->projector->expects($this->once())->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
+
+        $this->poller->poll($this->state, $this->client);
+
+        $this->assertSame(8, $this->state->lastSeq);
     }
 
     public function testPollProcessesEventAndAdvancesSeq(): void
@@ -106,7 +123,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([$event]);
 
         $this->projector->expects($this->once())
@@ -136,7 +153,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([$event]);
 
         $this->projector->expects($this->never())
@@ -158,7 +175,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([$event]);
 
         $this->projector->expects($this->once())
@@ -189,7 +206,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([$event]);
 
         $this->projector->expects($this->once())
@@ -226,7 +243,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([$event]);
 
         $this->projector->expects($this->once())
@@ -257,7 +274,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([$event]);
 
         $this->projector->expects($this->once())
@@ -277,7 +294,7 @@ final class RuntimeEventPollerTest extends TestCase
     {
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willThrowException(new \RuntimeException('Connection timeout'));
 
         $this->logger->expects($this->once())
@@ -295,7 +312,7 @@ final class RuntimeEventPollerTest extends TestCase
     {
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willThrowException(new RuntimeTransportException('pipe broken'));
 
         $this->logger->expects($this->once())
@@ -317,7 +334,7 @@ final class RuntimeEventPollerTest extends TestCase
         // Only the typed RuntimeTransportException is fatal now.
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willThrowException(new \RuntimeException('process pipe closed while reading events'));
 
         $this->logger->expects($this->once())
@@ -337,7 +354,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willThrowException(new RuntimeTransportException($message));
 
         $this->logger->expects($this->once())
@@ -362,7 +379,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([]);
 
         $this->poller->poll($this->state, $this->client);
@@ -382,7 +399,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([$event]);
 
         $this->projector->method('accept');
@@ -411,7 +428,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([$event]);
 
         $this->projector->method('accept');
@@ -442,7 +459,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([$event]);
 
         // Expect the client to receive a follow_up command with the queued text
@@ -489,7 +506,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn($events);
 
         $this->client->expects($this->never())->method('send');
@@ -522,7 +539,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn($events);
 
         $this->client->expects($this->never())->method('send');
@@ -548,7 +565,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([$event]);
 
         $this->client->expects($this->never())
@@ -575,7 +592,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([$event]);
 
         $this->projector->method('accept');
@@ -610,7 +627,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([$event]);
 
         // Must NOT dispatch — send() should not be called
@@ -647,7 +664,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([$event]);
 
         $this->client->expects($this->never())
@@ -679,7 +696,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([$toolQuestion, $cancelled]);
 
         $this->projector->expects($this->exactly(2))
@@ -759,7 +776,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([
                 new RuntimeEvent(
                     type: RuntimeEventTypeEnum::RunHistoryPositionChanged->value,
@@ -815,7 +832,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
                     ->method('events')
-                    ->with('test-run')
+                    ->with('test-run', $this->anything())
                     ->willReturn([
                         new RuntimeEvent(
                             type: RuntimeEventTypeEnum::RunHistoryPositionChanged->value,
@@ -875,7 +892,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([
                 new RuntimeEvent(
                     type: RuntimeEventTypeEnum::RunHistoryPositionChanged->value,
@@ -989,7 +1006,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([
                 new RuntimeEvent(
                     type: RuntimeEventTypeEnum::RunHistoryPositionChanged->value,
@@ -1029,7 +1046,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->exactly(2))
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturnOnConsecutiveCalls([$event], [$next]);
         $this->projector->method('accept')->willReturnCallback(static function () use (&$attempts): void {
             ++$attempts;
@@ -1084,7 +1101,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('events')
-            ->with('test-run')
+            ->with('test-run', $this->anything())
             ->willReturn([$first, $second]);
         $this->projector->method('accept')->willReturnCallback(static function () use (&$attempts): void {
             ++$attempts;

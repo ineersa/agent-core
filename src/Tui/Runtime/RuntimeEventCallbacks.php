@@ -79,9 +79,9 @@ final readonly class RuntimeEventCallbacks
      *
      * @return list<RuntimeEvent>
      */
-    public static function eventList(AgentSessionClient $client, string $runId): array
+    public static function eventList(AgentSessionClient $client, string $runId, int $afterSeq = 0): array
     {
-        $events = $client->events($runId);
+        $events = $client->events($runId, $afterSeq);
         if ($events instanceof \Traversable) {
             return iterator_to_array($events, false);
         }
