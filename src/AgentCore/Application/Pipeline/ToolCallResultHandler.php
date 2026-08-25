@@ -54,27 +54,11 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
         $runId = $message->runId();
 
-        if (($state->turnNo !== $message->turnNo() || (null !== $state->activeStepId && $state->activeStepId !== $message->stepId()))
-            || RunStatus::Cancelled === $state->status) {
-            $nextState = $this->eventFactory->incrementStateVersion($state, eventCount: 1);
-            $event = $this->eventFactory->event(
-                runId: $runId,
-                seq: $nextState->lastSeq,
-                turnNo: $state->turnNo,
-                type: RunEventTypeEnum::StaleResultIgnored->value,
-                payload: [
-                    'result' => 'tool_call_result',
-                    'tool_call_id' => $message->toolCallId,
-                    'step_id' => $message->stepId(),
-                    'turn_no' => $message->turnNo(),
-                    'status' => $state->status->value,
-                ],
-            );
-
-            return new HandlerResult(
-                nextState: $nextState,
-                events: [$event],
-            );
+        // Completed or superseded tool results are harmless redeliveries. The
+        // collector remains the authority for active parallel calls and HITL.
+        if (($state->turnNo !== $message->turnNo() || $state->activeStepId !== $message->stepId())
+            && RunStatus::Cancelling !== $state->status) {
+            return new HandlerResult();
         }
 
         // Suspension envelopes are non-terminal: admit (or ignore) them before the

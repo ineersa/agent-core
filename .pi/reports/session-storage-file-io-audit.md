@@ -6,14 +6,14 @@
 
 ## I/O map: topology, ownership, and classification
 
-`HatfieldSessionStore` resolves `.hatfield/sessions`. The five numeric top-level directories (`41`–`45`) are the **canonical parent-session candidates**: they match the five `hatfield_session` SQLite rows and contain parent `events.jsonl`/`state.json`. The other 214 top-level UUID directories contain only `idempotency.jsonl`; they exist because `JsonlIdempotencyStore::markHandled()` independently creates `sessions/<runId>/` for any run scope. They are not session transcripts. **Measured:** 205 are referenced by at least one DB record; nine have no present DB reference and are **orphan candidates**, not proven safe to delete.
+`HatfieldSessionStore` resolves `.hatfield/sessions`. The five numeric top-level directories (`41`–`45`) are canonical parent-session candidates. The observed UUID directories containing only `idempotency.jsonl` are **legacy inert artifacts** from the removed receipt ledger, not session transcripts. They are deliberately neither migrated, pruned, nor deleted.
 
 | Location/class | Owner and operation | Classification |
 |---|---|---|
 | `sessions/<parent>/events.jsonl` | `SessionRunEventStore` / `JsonlRunEventLog`; canonical `RunEvent` append, replay, history/TUI reads | Canonical parent history |
 | `sessions/<parent>/state.json` | `SessionRunStore`; current `RunState` read and CAS replacement | Derived hot state, rebuildable from events |
 | `sessions/<parent>/sequence.cursor` | `FileRunSequenceAllocator`; next sequence high-water | Allocation state; **not** durable-tail truth |
-| `sessions/<parent>/idempotency.jsonl` | `JsonlIdempotencyStore`; handled-key lookup/append | Durable idempotency index, append-only |
+| `sessions/<parent>/idempotency.jsonl` | Legacy inert artifact | Not read or written by current architecture |
 | `sessions/<parent>/prompt-cache.jsonl` | prompt-cache diagnostics/store | Derived diagnostic/cache data, not canonical replay |
 | `sessions/<parent>/artifacts/agents/registry.json` | `AgentArtifactRegistry` | Parent-owned child-artifact index |
 | `.../artifacts/agents/<artifact>/events.jsonl` | `AgentChildRunEventStore` | Canonical child history |
@@ -26,7 +26,7 @@
 | `.hatfield/logs/` | Monolog rotating handler | Adjacent operational logs |
 | `.hatfield/cache/`, `.hatfield/tmp/`, `.hatfield/locks/`, Messenger SQLite files | framework/runtime services | Ephemeral cache, temporary, lock, and transport state; not canonical sessions |
 
-The child artifact topology explains why a parent has many nested UUID directories: one artifact directory per child/fork/subagent run, colocated under its parent rather than promoted to `sessions/`. The **top-level** UUID directories are a different phenomenon: idempotency-only directories created by the per-run file index.
+The child artifact topology explains why a parent has many nested UUID directories: one artifact directory per child/fork/subagent run, colocated under its parent rather than promoted to `sessions/`. Top-level UUID directories containing only receipts are legacy artifacts and are not created by current code.
 
 ## Measured footprint and growth
 
@@ -66,9 +66,9 @@ Static writer multiplicity is similarly structural: `SessionRunEventStore::appen
 
 `FileRunSequenceAllocator` opens `sequence.cursor` with `c+b`, takes `LOCK_EX`, reads/bootstraps, truncates/writes/flushes the high-water, then releases. Cursor allocation occurs before JSONL append under the run lock. A crash in between leaves valid sequence holes; cursor is therefore unsuitable as a durable-tail freshness source. Parent event order is append order under lock; replay permits gaps. Child `readAfterSeq()` also locks and streams from its child file. Corrupt JSONL/state JSON throws; forward-incompatible event schema records are logged and skipped by event stores. **Measured:** no empty, malformed, or partial session JSONL/state files in this snapshot; that is not a proof of crash recovery under power loss.
 
-## Idempotency and top-level UUID leakage
+## Legacy receipt artifacts
 
-`JsonlIdempotencyStore::isHandled()` opens `idempotency.jsonl`, takes `LOCK_SH`, linearly scans for `scope|runId|key`, and closes. `markHandled()` creates the top-level run directory if absent and `file_put_contents(..., FILE_APPEND|LOCK_EX)`. Thus every lookup is O(number of retained lines), every successful mark grows permanently, and cross-process correctness is lock-based. There is no measured retention/pruning frequency. The 214 UUID-only directories are explained by this behavior; DB references make most legitimate, while nine currently unreferenced directories require ownership/lifetime evidence before classification as deletable.
+`idempotency.jsonl` is legacy inert data from the removed append-only receipt ledger. Current run-control uses bounded state-transition validity under the per-run lock and CAS; it never reads or writes receipt files and fresh parent/child operations do not create receipt-only UUID directories. Existing artifacts are intentionally preserved without migration, pruning, or deletion.
 
 ## Child, fork, subagent, and live-view I/O
 
@@ -78,7 +78,7 @@ Database counts show the related lifecycle population: `deferred_subagent_child=
 
 ## Exact unknowns requiring instrumentation
 
-Filesystem size/mtime and static call sites cannot tell: per-turn/per-launch `open`, `read`, `stat`, decode, cache-hit, or write counts; bytes read versus cached; CAS attempts/retries and actual `state.json` rewrite count; cross-process cache-miss multiplicity; lock wait/hold times; `/agents-live` fallback frequency; idempotency hit/miss/line-scan distribution; background retention/deletion cadence; or partial-write/recovery incidence. Existing structured log memory fields help correlate process memory, but no counters provide these I/O facts.
+Filesystem size/mtime and static call sites cannot tell: per-turn/per-launch `open`, `read`, `stat`, decode, cache-hit, or write counts; bytes read versus cached; CAS attempts/retries and actual `state.json` rewrite count; cross-process cache-miss multiplicity; lock wait/hold times; `/agents-live` fallback frequency; background retention/deletion cadence; or partial-write/recovery incidence. Existing structured log memory fields help correlate process memory, but no counters provide these I/O facts.
 
 ## Reusable read-only measurement tool
 
@@ -92,7 +92,7 @@ Validated against `/home/ineersa/projects/agent-core/.hatfield`: it reproduced t
 
 ## Decision questions / measurement gaps
 
-1. Is the intended retention/lifetime owner for UUID idempotency-only directories and the nine unreferenced candidates known well enough to classify them, or must ownership be instrumented first?
+1. Legacy receipt-only UUID directories remain user artifacts; no ownership classification or deletion is part of the current architecture.
 2. Should a controlled replay/profile measure end-to-end `/resume` decode/projection time and peak memory for the large parent and representative child logs before ranking any change?
 3. What is the acceptable state-transition rewrite budget, and should instrumentation separately count CAS attempts, successful rewrites, bytes, and lock wait time?
 4. Does `/agents-live` materially invoke child zero-offset `readAfterSeq()`/`latestSequenceFor()` in real sessions, and at what child-log sizes?

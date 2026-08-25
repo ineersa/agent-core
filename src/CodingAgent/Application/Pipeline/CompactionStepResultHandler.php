@@ -61,6 +61,12 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
         // context_compaction_failed event so the user-visible compaction
         // state is resolved instead of leaving a dangling started event.
         //
+        // A completed compaction result is a successful redelivery, not a stale
+        // failure. In particular do not append context_compaction_failed here.
+        if ($state->activeStepId !== $message->stepId()) {
+            return new HandlerResult();
+        }
+
         // Preserve the current activeStepId — clearing it would lose a
         // newer in-flight compaction's identity (e.g. compaction B started,
         // stale result A arrives).  The active step is only cleared when

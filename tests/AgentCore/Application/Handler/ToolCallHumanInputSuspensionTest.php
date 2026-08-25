@@ -339,7 +339,6 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
             runStore: $runStore,
-            idempotency: new InMemoryIdempotencyStore(),
             runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                 runStore: $runStore,
@@ -479,7 +478,6 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
             runStore: $runStore,
-            idempotency: new InMemoryIdempotencyStore(),
             runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                 runStore: $runStore,
@@ -605,7 +603,6 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
             runStore: $runStore,
-            idempotency: new InMemoryIdempotencyStore(),
             runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                 runStore: $runStore,

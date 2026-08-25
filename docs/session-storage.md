@@ -97,3 +97,26 @@ Compaction rewrites the LLM-visible history while retaining a recent raw tail an
 - Settings: [settings.md](settings.md)
 - Agents: [agents.md](agents.md)
 - Human input: [human-input.md](human-input.md)
+
+## State-transition duplicate delivery
+
+Run-control does not maintain a receipt ledger. The run lock and CAS serialize each
+transition; the bounded current `RunState` plus canonical events are authoritative.
+A committed or stale delivery is a successful no-op (no event, callback, mailbox
+drain, or effect dispatch). A matching unfinished operation remains eligible for
+Messenger redelivery. `/repair` may explicitly redispatch the current operation;
+it does not infer abandonment from time.
+
+| Scope | Expected active boundary | Committed/stale delivery | Matching unfinished delivery | Repair |
+|---|---|---|---|---|
+| `command.start` | queued/uninitialized run | no-op | initialize once | dispatch same start boundary |
+| `command.apply` | pending command identity and run generation | no-op | apply | redispatch pending command |
+| `command.apply_shell` | pending shell command identity and generation | no-op | execute once | redispatch same shell |
+| `command.advance` | predecessor turn/state/step/generation | no-op | advance once | redispatch successor |
+| `result.llm` | active `(run, turn, step, attempt)` | no-op | collect result | redispatch same LLM step |
+| `result.tool` | active batch, pending call, terminal/HITL identity | no-op | collect out of order | redispatch pending tool unless waiting for human |
+| `command.compact` | active compaction request/step/attempt | no-op | start compacting | redispatch same request |
+| `result.compaction` | active compaction step/attempt | no-op | apply result | redispatch same compaction step |
+
+Legacy `idempotency.jsonl` artifacts are inert user data: no migration, pruner, or
+deletion is performed. New parent and child operations never create them.

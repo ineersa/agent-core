@@ -34,6 +34,12 @@ final readonly class StartRunHandler implements RunMessageHandler
             throw new \InvalidArgumentException('StartRunHandler can only handle StartRun messages.');
         }
 
+        // A committed run is authoritative evidence that this StartRun has already
+        // crossed its one-time initialization boundary. Redelivery must never reset it.
+        if (RunStatus::Queued !== $state->status) {
+            return new HandlerResult();
+        }
+
         $messages = [] === $message->payload->messages ? $state->messages : $message->payload->messages;
 
         $canonicalModel = $this->requireCanonicalModel($message);

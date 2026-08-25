@@ -4,7 +4,7 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 
 ## Command → orchestrator entry
 
-`RunOrchestrator` (`Pipeline/RunOrchestrator.php`) is the bus facade; `RunMessageProcessor` owns lock/idempotency and dispatches tagged `RunMessageHandler` implementations.
+`RunOrchestrator` (`Pipeline/RunOrchestrator.php`) is the bus facade; `RunMessageProcessor` owns the per-run lock, bounded state-transition validation, and dispatches tagged `RunMessageHandler` implementations.
 
 | Message | Bus registration | Downstream handler |
 |---|---|---|

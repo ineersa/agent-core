@@ -75,24 +75,11 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
 
         $runId = $message->runId();
 
-        if ($state->turnNo !== $message->turnNo() || (null !== $state->activeStepId && $state->activeStepId !== $message->stepId())) {
-            $nextState = $this->eventFactory->incrementStateVersion($state, eventCount: 1);
-            $event = $this->eventFactory->event(
-                runId: $runId,
-                seq: $nextState->lastSeq,
-                turnNo: $state->turnNo,
-                type: RunEventTypeEnum::StaleResultIgnored->value,
-                payload: [
-                    'result' => 'llm_step_result',
-                    'step_id' => $message->stepId(),
-                    'turn_no' => $message->turnNo(),
-                ],
-            );
-
-            return new HandlerResult(
-                nextState: $nextState,
-                events: [$event],
-            );
+        // A result is valid only while its exact LLM step remains active. Once
+        // committed, redelivery is a successful no-op: it must not append a stale
+        // event or schedule a second tool/continuation path.
+        if (!\in_array($state->status, [RunStatus::Running, RunStatus::Cancelling], true) || $state->turnNo !== $message->turnNo() || $state->activeStepId !== $message->stepId()) {
+            return new HandlerResult();
         }
 
         if ('aborted' === $message->stopReason || RunStatus::Cancelling === $state->status) {

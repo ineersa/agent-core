@@ -174,7 +174,7 @@ final class CompactionStepResultHandlerTest extends TestCase
         $this->assertSame('hi', $result->nextState->messages[0]->content[0]['text'] ?? null);
     }
 
-    public function testStaleResultEmitsFailedWhenStepIdMismatch(): void
+    public function testStaleResultIsNoOpWhenStepIdMismatch(): void
     {
         $originalMessages = [$this->userMsg('hi'), $this->assistantMsg('hello')];
         $state = $this->createRunState($originalMessages, turnNo: 5, activeStepId: 'step-5');
@@ -203,23 +203,12 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        // Stale → emits context_compaction_failed with stale_result reason.
-        $this->assertNotNull($result->nextState);
-        $this->assertCount(1, $result->events);
-        $this->assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
-        $this->assertSame('stale_result', $result->events[0]->payload['reason']);
-        $this->assertFalse($result->events[0]->payload['messages_replaced']);
-        $this->assertSame('step-1', $result->events[0]->payload['step_id']);
-
-        // Messages preserved.
-        $this->assertCount(\count($originalMessages), $result->nextState->messages);
-
-        // Stale mismatch preserves current activeStepId — clearing 'step-5'
-        // would lose a newer in-flight compaction's identity.
-        $this->assertSame('step-5', $result->nextState->activeStepId);
+        // Stale delivery is a successful no-op: canonical compaction history is not polluted.
+        $this->assertNull($result->nextState);
+        $this->assertSame([], $result->events);
     }
 
-    public function testStaleResultEmitsFailedWhenTurnNoMismatch(): void
+    public function testStaleResultIsNoOpWhenTurnNoMismatch(): void
     {
         // Fixture models a newer in-flight compaction B (step-5) while
         // stale result A (step-1) arrives on a different turn.  The guard
@@ -251,20 +240,9 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        // Stale (turnNo mismatch) → emits context_compaction_failed.
-        $this->assertNotNull($result->nextState);
-        $this->assertCount(1, $result->events);
-        $this->assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
-        $this->assertSame('stale_result', $result->events[0]->payload['reason']);
-        $this->assertFalse($result->events[0]->payload['messages_replaced']);
-        $this->assertSame('step-1', $result->events[0]->payload['step_id']);
-
-        // Messages preserved.
-        $this->assertCount(\count($originalMessages), $result->nextState->messages);
-
-        // Stale turn mismatch preserves current activeStepId — a newer
-        // compaction B (step-5) is in-flight and must not be cleared.
-        $this->assertSame('step-5', $result->nextState->activeStepId);
+        // Stale delivery is a successful no-op: canonical compaction history is not polluted.
+        $this->assertNull($result->nextState);
+        $this->assertSame([], $result->events);
     }
 
     public function testMatchingResultOnCompletedRunProcessesNormally(): void

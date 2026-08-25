@@ -43,7 +43,7 @@ def anonymize(value: str) -> str:
 
 def file_class(path: Path) -> str:
     if path.name in {
-        "events.jsonl", "state.json", "sequence.cursor", "idempotency.jsonl",
+        "events.jsonl", "state.json", "sequence.cursor",
         "prompt-cache.jsonl", "metadata.json", "handoff.md",
     }:
         return path.name
@@ -152,7 +152,7 @@ def main() -> int:
     print(
         "SESSIONS "
         f"directories={len(session_dirs)} numeric_canonical_candidates={len(numeric)} "
-        f"uuid_idempotency_only_candidates={len(idempotency_only)} bytes={fmt_size(sum(size for _, size in session_files))}"
+        f"legacy_uuid_receipt_only_candidates={len(idempotency_only)} bytes={fmt_size(sum(size for _, size in session_files))}"
     )
     print(f"EVENT_FILES parent={len(direct_parent_events)} bytes={fmt_size(sum(path.stat().st_size for path in direct_parent_events))} child={len(child_events)} bytes={fmt_size(sum(path.stat().st_size for path in child_events))}")
 

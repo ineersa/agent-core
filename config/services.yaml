@@ -88,9 +88,6 @@ services:
   Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface:
     alias: Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository
 
-  Ineersa\AgentCore\Contract\IdempotencyStoreInterface:
-    alias: Ineersa\CodingAgent\Session\JsonlIdempotencyStore
-
   # ─── Error capture (env-driven config, not a per-catch delegation service) ───
 
   Ineersa\CodingAgent\Runtime\Contract\RuntimeErrorCaptureConfig:

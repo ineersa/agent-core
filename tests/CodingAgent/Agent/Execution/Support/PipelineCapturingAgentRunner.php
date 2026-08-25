@@ -18,7 +18,6 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
-use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use Psr\Log\NullLogger;
@@ -63,7 +62,6 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
         );
         $processor = new RunMessageProcessor(
             runStore: $runStore,
-            idempotency: new InMemoryIdempotencyStore(),
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
             stepDispatcher: new StepDispatcher($executionBus),
