@@ -13,14 +13,14 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Human-readable session prompt-cache inspector.
+ * Human-readable provider cache-usage and optional prompt-cache diagnostics inspector.
  *
  * Usage:
  *   bin/console session:cache:inspect <session-id>
  */
 #[AsCommand(
     name: 'session:cache:inspect',
-    description: 'Inspect prompt-cache usage and privacy-safe request fingerprints for a session',
+    description: 'Inspect provider cache usage and optional privacy-safe request fingerprints for a session',
 )]
 final class SessionCacheInspectCommand
 {
@@ -59,8 +59,10 @@ final class SessionCacheInspectCommand
             return Command::SUCCESS;
         }
 
+        $hasStructuralDiagnostics = false;
         $summaryRows = [];
         foreach ($families as $family) {
+            $hasStructuralDiagnostics = $hasStructuralDiagnostics || true === ($family['prefix_attribution_available'] ?? false);
             $summaryRows[] = [
                 $family['role'] ?? 'unknown',
                 $this->short($family['run_id'] ?? ''),
@@ -77,6 +79,10 @@ final class SessionCacheInspectCommand
                 $this->ratioLabel($family['cache_ratio'] ?? null),
                 number_format((float) ($family['cost'] ?? 0.0), 6),
             ];
+        }
+
+        if (!$hasStructuralDiagnostics) {
+            $io->warning('Detailed prefix diagnostics were not recorded. Launch future runs with HATFIELD_WRITE_PROMPT_CACHE_DIAGNOSTICS=1; it only records future requests.');
         }
 
         $io->section('Per-family summary (not combined)');
