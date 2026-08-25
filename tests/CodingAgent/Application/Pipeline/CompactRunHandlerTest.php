@@ -155,6 +155,17 @@ final class CompactRunHandlerTest extends TestCase
         $this->assertNull($redelivery->nextState);
         $this->assertSame([], $redelivery->events);
         $this->assertSame([], $redelivery->effects);
+
+        $completed = $first->nextState->with([
+            'status' => RunStatus::Completed,
+            'activeStepId' => null,
+            'currentOperation' => null,
+            'lastAppliedCompactionKey' => 'key-1',
+        ]);
+        $completedRedelivery = $handler->handle($request, $completed);
+        $this->assertNull($completedRedelivery->nextState);
+        $this->assertSame([], $completedRedelivery->events);
+        $this->assertSame([], $completedRedelivery->effects);
     }
 
     public function testReadyPreparationEmitsStartedAndDispatchesWorker(): void
