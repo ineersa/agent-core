@@ -126,6 +126,27 @@ final class RunStateModelIdentityTest extends TestCase
         $this->assertSame('openai-codex/gpt-5.6-sol', $result->nextState?->model);
     }
 
+    public function testTurnAdvancedReplaysCommittedAdvanceToken(): void
+    {
+        $state = (new RunStateReducer())->replay(
+            RunState::queued('run-advance-replay'),
+            [new RunEvent(
+                runId: 'run-advance-replay',
+                seq: 1,
+                turnNo: 1,
+                type: RunEventTypeEnum::TurnAdvanced->value,
+                payload: [
+                    'turn_no' => 1,
+                    'step_id' => 'llm-step-1',
+                    'operation_idempotency_key' => 'llm-key-1',
+                    'advance_idempotency_key' => 'advance-key-1',
+                ],
+            )],
+        );
+
+        $this->assertSame('advance-key-1', $state->lastAppliedAdvanceKey);
+    }
+
     public function testMissingRunModelSchedulesWithNoModelInsteadOfFailingClosed(): void
     {
         $runId = 'run-model-missing';

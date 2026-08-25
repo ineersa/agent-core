@@ -113,7 +113,7 @@ checkpoint can reconstruct the exact execution message.
 | `command.start` | non-queued `RunState` | no-op |
 | `command.apply` | command mailbox idempotency key | no-op |
 | `command.apply_shell` (standalone) | bounded shell checkpoint | no-op |
-| `command.advance` | active successor checkpoint | no-op before mailbox drain |
+| `command.advance` | expected predecessor turn plus the last committed advance key (replayed from the canonical transition event) | no-op before mailbox drain |
 | `result.llm` | active `(turn, step, attempt)` checkpoint | no-op |
 | `result.tool` | finalized batch/pending call/HITL identity | no-op |
 | `command.compact` / `result.compaction` | compaction state and active step | no-op for stale result |

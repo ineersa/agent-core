@@ -63,7 +63,7 @@ final readonly class RunStateReducer
     ): RunState {
         $payload = $event->payload;
 
-        return match ($event->type) {
+        $nextState = match ($event->type) {
             RunEventTypeEnum::RunStarted->value => $this->applyRunStarted($event, $state, $messages),
             RunEventTypeEnum::ModelChanged->value => $this->applyModelChanged($payload, $state),
             RunEventTypeEnum::TurnAdvanced->value => $this->applyTurnAdvanced($payload, $state),
@@ -95,6 +95,12 @@ final readonly class RunStateReducer
             RunEventTypeEnum::HistoryTailDiscarded->value => $this->applyNoMutation($event, $state),
             default => $this->applyNoMutation($event, $state),
         };
+
+        $advanceKey = $payload['advance_idempotency_key'] ?? null;
+
+        return \is_string($advanceKey) && '' !== $advanceKey
+            ? $nextState->with(['lastAppliedAdvanceKey' => $advanceKey])
+            : $nextState;
     }
 
     // ── Event reducers ──────────────────────────────────────────────────────

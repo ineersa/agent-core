@@ -394,7 +394,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 ...$this->turnCompletedCallbacks($runId, $state->turnNo),
             ];
 
-            $followUpAdvance = $shouldContinue ? $this->followUpAdvanceCallback($runId, 'stop-boundary-follow-up') : null;
+            $followUpAdvance = $shouldContinue ? $this->followUpAdvanceCallback($runId, $state->turnNo, 'stop-boundary-follow-up') : null;
             if (null !== $followUpAdvance) {
                 $postCommit[] = $followUpAdvance;
             }
@@ -532,13 +532,13 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         return null === $this->metrics ? [] : $this->metrics->turnCompletedCallback($runId, $turnNo);
     }
 
-    private function followUpAdvanceCallback(string $runId, string $prefix): ?callable
+    private function followUpAdvanceCallback(string $runId, int $turnNo, string $prefix): ?callable
     {
         if (null === $this->commandBus) {
             return null;
         }
 
-        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $prefix, 'Failed to dispatch follow-up AdvanceRun command.');
+        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, $prefix, 'Failed to dispatch follow-up AdvanceRun command.');
     }
 
     /**

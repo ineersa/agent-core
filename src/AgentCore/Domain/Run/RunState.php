@@ -33,6 +33,8 @@ final readonly class RunState
         public ?string $activeStepId = null,
         /** Bounded current operation identity; never an operation history. */
         public ?CurrentOperationDTO $currentOperation = null,
+        /** Last committed AdvanceRun token; bounded transition evidence, never a receipt history. */
+        public ?string $lastAppliedAdvanceKey = null,
         public bool $retryableFailure = false,
         /** Count of completed auto-retry attempts in the active retryable-failure episode; manual continue resets to 0. May be one past max when retries are exhausted. */
         public int $retryAttempts = 0,
@@ -69,6 +71,7 @@ final readonly class RunState
      *     messages?: list<AgentMessage>,
      *     activeStepId?: string|null,
      *     currentOperation?: CurrentOperationDTO|null,
+     *     lastAppliedAdvanceKey?: string|null,
      *     retryableFailure?: bool,
      *     retryAttempts?: int,
      *     pendingHumanInputRequests?: list<PendingHumanInputRequestDTO>,
@@ -91,6 +94,7 @@ final readonly class RunState
             messages: \array_key_exists('messages', $overrides) ? $overrides['messages'] : $this->messages,
             activeStepId: \array_key_exists('activeStepId', $overrides) ? $overrides['activeStepId'] : $this->activeStepId,
             currentOperation: \array_key_exists('currentOperation', $overrides) ? $overrides['currentOperation'] : $this->currentOperation,
+            lastAppliedAdvanceKey: \array_key_exists('lastAppliedAdvanceKey', $overrides) ? $overrides['lastAppliedAdvanceKey'] : $this->lastAppliedAdvanceKey,
             retryableFailure: \array_key_exists('retryableFailure', $overrides) ? (bool) $overrides['retryableFailure'] : $this->retryableFailure,
             retryAttempts: \array_key_exists('retryAttempts', $overrides) ? (int) $overrides['retryAttempts'] : $this->retryAttempts,
             pendingHumanInputRequests: \array_key_exists('pendingHumanInputRequests', $overrides) ? $overrides['pendingHumanInputRequests'] : $this->pendingHumanInputRequests,

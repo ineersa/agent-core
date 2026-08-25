@@ -217,7 +217,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             ]);
 
             $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
-            $postCancelAdvance = $this->postCancelAdvanceCallback($runId);
+            $postCancelAdvance = $this->postCancelAdvanceCallback($runId, $state->turnNo);
             if (null !== $postCancelAdvance) {
                 $postCommit[] = $postCancelAdvance;
             }
@@ -355,7 +355,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
 
             if (null === $interruptPayload) {
-                $followUpAdvance = $this->followUpAdvanceCallback($runId);
+                $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo);
                 if (null !== $followUpAdvance) {
                     $postCommit[] = $followUpAdvance;
                 }
@@ -656,22 +656,22 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         ];
     }
 
-    private function postCancelAdvanceCallback(string $runId): ?callable
+    private function postCancelAdvanceCallback(string $runId, int $turnNo): ?callable
     {
         if (null === $this->commandBus) {
             return null;
         }
 
-        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, 'post-cancel-advance', 'Failed to dispatch AdvanceRun after cancellation terminalized.');
+        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, 'post-cancel-advance', 'Failed to dispatch AdvanceRun after cancellation terminalized.');
     }
 
-    private function followUpAdvanceCallback(string $runId): ?callable
+    private function followUpAdvanceCallback(string $runId, int $turnNo): ?callable
     {
         if (null === $this->commandBus) {
             return null;
         }
 
-        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, 'advance-after-tools', 'Failed to dispatch AdvanceRun after tool batch completion.');
+        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, 'advance-after-tools', 'Failed to dispatch AdvanceRun after tool batch completion.');
     }
 
     /**

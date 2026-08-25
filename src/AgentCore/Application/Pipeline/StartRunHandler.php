@@ -72,7 +72,7 @@ final readonly class StartRunHandler implements RunMessageHandler
         );
 
         $postCommit = [];
-        $initialAdvance = $this->initialAdvanceCallback($message->runId(), 'start-follow-up');
+        $initialAdvance = $this->initialAdvanceCallback($message->runId(), $nextState->turnNo, 'start-follow-up');
         if (null !== $initialAdvance) {
             $postCommit[] = $initialAdvance;
         }
@@ -84,13 +84,13 @@ final readonly class StartRunHandler implements RunMessageHandler
         );
     }
 
-    private function initialAdvanceCallback(string $runId, string $prefix): ?callable
+    private function initialAdvanceCallback(string $runId, int $turnNo, string $prefix): ?callable
     {
         if (null === $this->commandBus) {
             return null;
         }
 
-        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $prefix, 'Failed to dispatch initial AdvanceRun command.');
+        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, $prefix, 'Failed to dispatch initial AdvanceRun command.');
     }
 
     private function requireCanonicalModel(StartRun $message): string
