@@ -91,7 +91,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertSame([], $result->effects);
         $this->assertSame([], $result->postCommitEffects);
         $this->assertCount(1, $result->postCommit);
-        $this->assertTrue($result->markHandled);
 
         ($result->postCommit[0])();
 

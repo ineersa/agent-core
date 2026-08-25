@@ -231,11 +231,11 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
         $outcome = $this->toolBatchCollector->collect($message);
         if ($outcome->duplicate) {
-            return new HandlerResult(markHandled: true);
+            return new HandlerResult();
         }
 
         if ($outcome->complete && $this->canonicalBatchAlreadyCommitted($state, $message, $outcome->orderedResults)) {
-            return new HandlerResult(markHandled: true);
+            return new HandlerResult();
         }
 
         if (!$outcome->accepted) {

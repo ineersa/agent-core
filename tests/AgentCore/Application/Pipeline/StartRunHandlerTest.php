@@ -73,7 +73,6 @@ final class StartRunHandlerTest extends TestCase
         $this->assertSame([], $result->effects);
         $this->assertSame([], $result->postCommitEffects);
         $this->assertSame([], $result->postCommit);
-        $this->assertTrue($result->markHandled);
     }
 
     public function testHandleSchedulesInitialAdvanceAfterCommitWhenBusIsProvided(): void

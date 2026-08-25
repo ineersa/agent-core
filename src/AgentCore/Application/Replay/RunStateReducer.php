@@ -7,6 +7,8 @@ namespace Ineersa\AgentCore\Application\Replay;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -174,11 +176,17 @@ final readonly class RunStateReducer
         $turnNo = \is_int($payload['turn_no'] ?? null) ? $payload['turn_no'] : $state->turnNo;
         $stepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : $state->activeStepId;
 
+        $attempt = \is_int($payload['operation_attempt'] ?? null) ? $payload['operation_attempt'] : 1;
+        $key = \is_string($payload['operation_idempotency_key'] ?? null)
+            ? $payload['operation_idempotency_key']
+            : hash('sha256', \sprintf('%s|llm|%d|%s', $state->runId, $turnNo, $stepId));
+
         return $state->with([
             'status' => RunStatus::Running,
             'turnNo' => $turnNo,
             'errorMessage' => null,
             'activeStepId' => $stepId,
+            'currentOperation' => new CurrentOperationDTO(CurrentOperationKindEnum::Llm, $turnNo, $stepId, $attempt, $key),
             'retryableFailure' => false,
         ]);
     }
@@ -322,6 +330,7 @@ final readonly class RunStateReducer
             'errorMessage' => null,
             'retryableFailure' => false,
             'retryAttempts' => 0,
+            'currentOperation' => null,
         ]);
     }
 
@@ -342,6 +351,7 @@ final readonly class RunStateReducer
             'isStreaming' => false,
             'streamingMessage' => null,
             'pendingToolCalls' => [],
+            'currentOperation' => null,
             'errorMessage' => $errorMessage,
             'retryableFailure' => $retryable,
             'retryAttempts' => $retryAttempt,

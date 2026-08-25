@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 
@@ -34,6 +36,14 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
     {
         if (!$message instanceof ApplyShellCommand) {
             throw new \InvalidArgumentException('ApplyShellCommandHandler can only handle ApplyShellCommand messages.');
+        }
+
+        // A committed standalone shell owns the bounded current operation.
+        // Its exact redelivery is a no-op before transcript/event/effect work.
+        if (null !== $state->currentOperation
+            && CurrentOperationKindEnum::Shell === $state->currentOperation->kind
+            && $state->currentOperation->idempotencyKey === $message->idempotencyKey()) {
+            return new HandlerResult();
         }
 
         $rawInput = $message->rawInput;
@@ -135,6 +145,20 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
             'activeStepId' => $startsChildTurn || RunStatus::Queued === $state->status
                 ? $message->stepId()
                 : $state->activeStepId,
+            // An attached shell must not replace the active LLM token: its
+            // result still authorizes the in-flight LLM completion. Standalone
+            // shells have no competing model operation and are recoverable by
+            // this bounded descriptor.
+            'currentOperation' => $startsChildTurn || RunStatus::Queued === $state->status
+                ? new CurrentOperationDTO(
+                    CurrentOperationKindEnum::Shell,
+                    $owningTurnNo,
+                    $message->stepId(),
+                    $message->attempt(),
+                    $message->idempotencyKey(),
+                    $toolCallId,
+                )
+                : $state->currentOperation,
             'retryableFailure' => $startsChildTurn ? false : $state->retryableFailure,
             // A child turn starts a fresh retry episode; an in-place shell on
             // an active run keeps the episode counter intact.

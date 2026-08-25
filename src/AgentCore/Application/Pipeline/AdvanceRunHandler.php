@@ -13,6 +13,8 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -41,6 +43,15 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         }
 
         $runId = $message->runId();
+
+        // AdvanceRun is a successor token. Once it has committed a new active
+        // operation, a redelivery must stop before it can drain newer mailbox
+        // work or dispatch a second successor.
+        if (null !== $state->currentOperation
+            && CurrentOperationKindEnum::Advance !== $state->currentOperation->kind
+            && $state->currentOperation->idempotencyKey !== $message->idempotencyKey()) {
+            return new HandlerResult();
+        }
 
         // Safety guard: do not advance the run while there are still
         // unresolved tool calls in flight.  An AdvanceRun dispatched
@@ -335,6 +346,8 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 'payload' => [
                     'step_id' => $nextStepId,
                     'turn_no' => $nextTurnNo,
+                    'operation_attempt' => 1,
+                    'operation_idempotency_key' => $effect->idempotencyKey(),
                 ],
             ],
             [
@@ -361,6 +374,13 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             'isStreaming' => false,
             'streamingMessage' => null,
             'activeStepId' => $nextStepId,
+            'currentOperation' => new CurrentOperationDTO(
+                CurrentOperationKindEnum::Llm,
+                $nextTurnNo,
+                $nextStepId,
+                1,
+                $effect->idempotencyKey(),
+            ),
             'retryableFailure' => false,
         ]);
 

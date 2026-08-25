@@ -28,6 +28,8 @@ final readonly class RunState
         public ?string $errorMessage = null,
         public array $messages = [],
         public ?string $activeStepId = null,
+        /** Bounded current operation identity; never an operation history. */
+        public ?CurrentOperationDTO $currentOperation = null,
         public bool $retryableFailure = false,
         /** Count of completed auto-retry attempts in the active retryable-failure episode; manual continue resets to 0. May be one past max when retries are exhausted. */
         public int $retryAttempts = 0,
@@ -62,6 +64,7 @@ final readonly class RunState
      *     errorMessage?: string|null,
      *     messages?: list<AgentMessage>,
      *     activeStepId?: string|null,
+     *     currentOperation?: CurrentOperationDTO|null,
      *     retryableFailure?: bool,
      *     retryAttempts?: int,
      *     pendingHumanInputRequests?: list<PendingHumanInputRequestDTO>,
@@ -82,6 +85,7 @@ final readonly class RunState
             errorMessage: \array_key_exists('errorMessage', $overrides) ? $overrides['errorMessage'] : $this->errorMessage,
             messages: \array_key_exists('messages', $overrides) ? $overrides['messages'] : $this->messages,
             activeStepId: \array_key_exists('activeStepId', $overrides) ? $overrides['activeStepId'] : $this->activeStepId,
+            currentOperation: \array_key_exists('currentOperation', $overrides) ? $overrides['currentOperation'] : $this->currentOperation,
             retryableFailure: \array_key_exists('retryableFailure', $overrides) ? (bool) $overrides['retryableFailure'] : $this->retryableFailure,
             retryAttempts: \array_key_exists('retryAttempts', $overrides) ? (int) $overrides['retryAttempts'] : $this->retryAttempts,
             pendingHumanInputRequests: \array_key_exists('pendingHumanInputRequests', $overrides) ? $overrides['pendingHumanInputRequests'] : $this->pendingHumanInputRequests,

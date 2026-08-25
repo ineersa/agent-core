@@ -21,6 +21,7 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
@@ -78,7 +79,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         // A result is valid only while its exact LLM step remains active. Once
         // committed, redelivery is a successful no-op: it must not append a stale
         // event or schedule a second tool/continuation path.
-        if (!\in_array($state->status, [RunStatus::Running, RunStatus::Cancelling], true) || $state->turnNo !== $message->turnNo() || $state->activeStepId !== $message->stepId()) {
+        if (!\in_array($state->status, [RunStatus::Running, RunStatus::Cancelling], true) || $state->turnNo !== $message->turnNo() || $state->activeStepId !== $message->stepId() || (null !== $state->currentOperation && !$state->currentOperation->matches(CurrentOperationKindEnum::Llm, $message->turnNo(), $message->stepId(), $message->attempt()))) {
             return new HandlerResult();
         }
 
@@ -145,6 +146,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
+                'currentOperation' => null,
                 // Keep existing messages unchanged (no aborted assistant
                 // message appended).
                 'errorMessage' => $state->errorMessage ?? 'Run cancelled during LLM streaming.',
@@ -235,6 +237,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
+                'currentOperation' => null,
                 'errorMessage' => $userMessage,
                 'retryableFailure' => $canAutoRetry,
                 'retryAttempts' => $canAutoRetry ? $nextRetryAttempt : ($retriesExhausted ? $nextRetryAttempt : $currentAttempts),
@@ -381,6 +384,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
+                'currentOperation' => null,
                 'errorMessage' => null,
                 'retryableFailure' => false,
                 'retryAttempts' => 0,
@@ -424,6 +428,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             'isStreaming' => false,
             'streamingMessage' => null,
             'pendingToolCalls' => $pendingToolCalls,
+            'currentOperation' => null,
             'errorMessage' => null,
             'messages' => $messages,
             'retryableFailure' => false,

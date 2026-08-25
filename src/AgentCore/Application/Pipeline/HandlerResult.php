@@ -21,7 +21,6 @@ final readonly class HandlerResult
         public array $effects = [],
         public array $postCommitEffects = [],
         public array $postCommit = [],
-        public bool $markHandled = true,
     ) {
     }
 }

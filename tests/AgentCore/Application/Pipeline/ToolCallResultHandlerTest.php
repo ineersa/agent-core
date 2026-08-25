@@ -138,7 +138,6 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertInstanceOf(ExecuteToolCall::class, $result->postCommitEffects[0]);
         $this->assertSame('tool-b', $result->postCommitEffects[0]->toolCallId);
         $this->assertSame([], $result->postCommit);
-        $this->assertTrue($result->markHandled);
     }
 
     public function testExtractResultTextSinglePart(): void
@@ -1301,7 +1300,6 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertSame([], $redelivery->events);
         $this->assertSame([], $redelivery->postCommit);
         $this->assertSame([], $redelivery->postCommitEffects);
-        $this->assertTrue($redelivery->markHandled);
     }
 
     public function testFinalizedRedeliveryBeforeCanonicalCommitRecoversOnce(): void
