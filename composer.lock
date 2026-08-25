@@ -2764,7 +2764,7 @@
         },
         {
             "name": "ineersa/hatfield-extension-api",
-            "version": "dev-task/use-symfony-ai-native-tool-argument-resolution-and-validation",
+            "version": "dev-task/2026-08-24-fix-out-of-order-deepseek-stream-deltas",
             "dist": {
                 "type": "path",
                 "url": ".hatfield/extensions/extension-api",
@@ -6044,16 +6044,16 @@
         },
         {
             "name": "symfony/doctrine-messenger",
-            "version": "v8.1.0",
+            "version": "v8.1.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/doctrine-messenger.git",
-                "reference": "cafeac0dccfd4e971c9a5c646652d1037de469f8"
+                "reference": "a2d57cd7caf9160ce3e19a9da501e54b234cff72"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/doctrine-messenger/zipball/cafeac0dccfd4e971c9a5c646652d1037de469f8",
-                "reference": "cafeac0dccfd4e971c9a5c646652d1037de469f8",
+                "url": "https://api.github.com/repos/symfony/doctrine-messenger/zipball/a2d57cd7caf9160ce3e19a9da501e54b234cff72",
+                "reference": "a2d57cd7caf9160ce3e19a9da501e54b234cff72",
                 "shasum": ""
             },
             "require": {
@@ -6098,7 +6098,7 @@
             "description": "Symfony Doctrine Messenger Bridge",
             "homepage": "https://symfony.com",
             "support": {
-                "source": "https://github.com/symfony/doctrine-messenger/tree/v8.1.0"
+                "source": "https://github.com/symfony/doctrine-messenger/tree/v8.1.4"
             },
             "funding": [
                 {
@@ -6118,7 +6118,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-05-29T05:06:50+00:00"
+            "time": "2026-08-07T13:15:43+00:00"
         },
         {
             "name": "symfony/dotenv",
