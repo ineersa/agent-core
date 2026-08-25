@@ -95,14 +95,16 @@ final class RuntimeEventEmitter
 
         $this->registerChildRunsFromSubagentProgress($event);
 
+        if (!$this->emitInternal($event)) {
+            return;
+        }
+
         if ($event->seq > 0 && '' !== $event->runId) {
             $this->runEventCursors[$event->runId] = max(
                 $this->runEventCursors[$event->runId] ?? 0,
                 $event->seq,
             );
         }
-
-        $this->emitInternal($event);
     }
 
     /**
@@ -159,7 +161,7 @@ final class RuntimeEventEmitter
             }
 
             try {
-                foreach ($this->eventClient->events($runId) as $event) {
+                foreach ($this->eventClient->events($runId, $cursor) as $event) {
                     // Skip transient streaming deltas (seq=0) — these are
                     // delivered via LLM consumer stdout pipe, not canonical events.
                     if (0 === $event->seq) {
@@ -171,7 +173,9 @@ final class RuntimeEventEmitter
                     }
 
                     $this->registerChildRunsFromSubagentProgress($event);
-                    $this->emitInternal($event);
+                    if (!$this->emitInternal($event)) {
+                        break;
+                    }
 
                     if ($event->seq > 0) {
                         $this->runEventCursors[$runId] = max($cursor, $event->seq);
@@ -280,10 +284,10 @@ final class RuntimeEventEmitter
 
     // ── Internal ────────────────────────────────────────────────────────
 
-    private function emitInternal(RuntimeEvent $event): void
+    private function emitInternal(RuntimeEvent $event): bool
     {
         if (null === $this->stdout) {
-            return;
+            return false;
         }
 
         $line = JsonlCodec::encodeEvent($event);
@@ -311,9 +315,11 @@ final class RuntimeEventEmitter
 
             EventLoop::getDriver()->stop();
 
-            return;
+            return false;
         }
 
         fflush($this->stdout);
+
+        return true;
     }
 }

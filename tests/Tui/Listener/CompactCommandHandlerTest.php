@@ -109,7 +109,7 @@ final class CompactCommandSpyClient implements AgentSessionClient
     {
     }
 
-    public function events(string $runId): iterable
+    public function events(string $runId, int $afterSeq = 0): iterable
     {
         return [];
     }

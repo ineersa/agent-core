@@ -123,6 +123,7 @@ final class RuntimeEventEmitterTest extends TestCase
 
         $emitter->drainRegisteredRunsOnce();
         $this->assertSame(3, $client->eventsCallCount);
+        $this->assertSame([1, 148, 148], $client->afterSeqByCall);
 
         $stdout = $this->stdoutHandle($emitter);
         rewind($stdout);
@@ -291,6 +292,9 @@ final class FlakySeqDrainAgentSessionClient implements AgentSessionClient
 {
     public int $eventsCallCount = 0;
 
+    /** @var list<int> */
+    public array $afterSeqByCall = [];
+
     /** @var array<int, list<RuntimeEvent>> */
     private array $eventsByCall;
 
@@ -326,9 +330,10 @@ final class FlakySeqDrainAgentSessionClient implements AgentSessionClient
     {
     }
 
-    public function events(string $runId): iterable
+    public function events(string $runId, int $afterSeq = 0): iterable
     {
         ++$this->eventsCallCount;
+        $this->afterSeqByCall[] = $afterSeq;
         if ($this->eventsCallCount === $this->throwOnCall) {
             throw new \RuntimeException('transient event store read failure');
         }

@@ -240,7 +240,7 @@ final class ParentEventClient implements AgentSessionClient
     {
     }
 
-    public function events(string $runId): iterable
+    public function events(string $runId, int $afterSeq = 0): iterable
     {
         if ($runId === $this->parentRun && !$this->yielded) {
             $this->yielded = true;

@@ -7,6 +7,12 @@ parameters:
     # Services read this parameter — not the raw env directly.
     app.capture_errors: '%env(bool:HATFIELD_CAPTURE_ERRORS)%'
 
+    # Prompt-cache structural diagnostics are opt-in because they append one sidecar
+    # record per shaped provider request. This is not provider cache or replay state.
+    env(HATFIELD_WRITE_PROMPT_CACHE_DIAGNOSTICS): '0'
+
+    app.write_prompt_cache_diagnostics: '%env(bool:HATFIELD_WRITE_PROMPT_CACHE_DIAGNOSTICS)%'
+
     # Default session ID for background process completion polling.
     # Empty means unscoped (operates across all sessions) in
     # non-controller or test environments. HeadlessController sets
@@ -77,6 +83,10 @@ services:
 
   Ineersa\CodingAgent\:
     resource: '%kernel.project_dir%/src/CodingAgent/**/*.php'
+
+  Ineersa\CodingAgent\Agent\Diagnostics\PromptCacheDiagnosticsInvocationSubscriber:
+    arguments:
+      $writeDiagnostics: '%app.write_prompt_cache_diagnostics%'
 
   Ineersa\AgentCore\:
     resource: '%kernel.project_dir%/src/AgentCore/**/*.php'

@@ -89,13 +89,16 @@ final class RuntimeEventCallbacksTest extends TestCase
 
     public function testEventListNormalizesTraversable(): void
     {
-        $client = $this->createStub(AgentSessionClient::class);
-        $client->method('events')->willReturn(new \ArrayIterator([
-            $this->event('run.started', 1),
-            $this->event('run.completed', 2),
-        ]));
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())
+            ->method('events')
+            ->with('run-9', 7)
+            ->willReturn(new \ArrayIterator([
+                $this->event('run.started', 1),
+                $this->event('run.completed', 2),
+            ]));
 
-        $this->assertSame([1, 2], array_column(RuntimeEventCallbacks::eventList($client, 'run-9'), 'seq'));
+        $this->assertSame([1, 2], array_column(RuntimeEventCallbacks::eventList($client, 'run-9', 7), 'seq'));
     }
 
     private function event(string $type, int $seq): RuntimeEvent
