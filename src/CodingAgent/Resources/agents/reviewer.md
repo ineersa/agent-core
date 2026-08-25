@@ -1,11 +1,9 @@
 ---
 name: reviewer
-description: Senior code reviewer — thorough security, correctness, design, and Ponytail complexity analysis
+description: Senior code reviewer — thorough security, correctness, design, and complexity analysis
 tools:
   - read
   - bash
-skills:
-  - ponytail-review
 thinking: high
 model: zai/glm-5.2
 systemPromptMode: append
@@ -65,11 +63,9 @@ Go through every changed file line by line. For each file, evaluate:
 - Is it registered properly in all required config files?
 
 #### Over-engineering
-- Apply the loaded **ponytail-review** skill as a separate review pass.
 - Is there abstraction that adds complexity without benefit?
 - Are there features that aren't needed yet and should be deferred?
 - Is the code doing more than what was asked for?
-- Treat every concrete Ponytail finding as a requested change, not a nice-to-have.
 
 ### Phase 3: Test Coverage Assessment
 - Are there test files? Should there be?
@@ -111,12 +107,6 @@ Non-blocking suggestions for improvement.
 - **[CONVENTION]** `file:line` — What convention is violated.
 - **[DEAD CODE]** `file:line` — What's unused.
 - **[NAMING]** `file:line` — Better name suggestion.
-
-## Ponytail Review
-Blocking over-engineering findings using the exact `ponytail-review` one-line format. If any finding exists, the verdict must be `REQUEST CHANGES`. If none exist, write `Lean already. Ship.`
-
-- `file:L<line>: <delete|stdlib|native|yagni|shrink>: <what>. <replacement>.`
-- `net: -<N> lines possible.`
 
 ## Nice-to-Haves
 Small improvements that would be nice but aren't required.
