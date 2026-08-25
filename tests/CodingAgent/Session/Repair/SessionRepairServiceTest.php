@@ -8,16 +8,21 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
+use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
@@ -169,6 +174,135 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame($key, $bus->messages[0]->idempotencyKey());
         $this->assertSame($key, $bus->messages[1]->idempotencyKey());
         $this->assertSame(2, $bus->messages[0]->attempt());
+        $this->assertSame($before, $this->readEvents($runId));
+    }
+
+    public function testDryRunAndRepeatedApplyRedriveDirectShellFromCanonicalCommand(): void
+    {
+        $runId = 'repair-shell';
+        $key = 'shell-command-key';
+        $toolCallId = 'sh_'.hash('sha256', $key);
+        $factory = new EventFactory();
+        $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 2, 1, [
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
+            ['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => [
+                'kind' => 'shell_command',
+                'text' => '!printf repair-shell',
+                'idempotency_key' => $key,
+            ]],
+        ]));
+        $store = new InMemoryRunStore();
+        $store->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 2), 0);
+        $bus = new TestMessageBus();
+        $service = $this->createService($store, dispatcherBus: $bus);
+        $before = $this->readEvents($runId);
+
+        $this->assertSame(0, $service->repair($runId, false)->activeOperationsRedriven);
+        $this->assertSame([], $bus->messages);
+
+        $service->repair($runId, true);
+        $service->repair($runId, true);
+        $this->assertCount(2, $bus->messages);
+        $this->assertContainsOnlyInstancesOf(ExecuteShellToolCall::class, $bus->messages);
+        foreach ($bus->messages as $message) {
+            $this->assertSame($toolCallId, $message->toolCallId);
+            $this->assertSame('printf repair-shell', $message->commandText);
+            $this->assertSame(hash('sha256', $runId.'|'.$toolCallId), $message->idempotencyKey());
+        }
+        $this->assertSame($before, $this->readEvents($runId));
+    }
+
+    public function testRepeatedApplyRedrivesDurablePendingAndInFlightToolCalls(): void
+    {
+        $runId = 'repair-tools';
+        $stepId = 'tool-step';
+        $pending = new ExecuteToolCall($runId, 3, $stepId, 1, 'tool-pending-key', 'call-pending', 'read', ['path' => 'a.txt'], 0);
+        $inFlight = new ExecuteToolCall($runId, 3, $stepId, 1, 'tool-in-flight-key', 'write', 'write', ['path' => 'b.txt', 'content' => 'b'], 1);
+        $batchStore = $this->createStub(ToolBatchStoreInterface::class);
+        $batchStore->method('load')->willReturn(new ToolBatchStateDTO(
+            expectedOrder: ['call-pending' => 0, 'write' => 1],
+            calls: ['call-pending' => $pending, 'write' => $inFlight],
+            pendingQueue: ['call-pending'],
+            inFlight: ['write' => true],
+            results: [],
+            finalized: false,
+            maxParallelism: 2,
+        ));
+        $this->persistActiveToolBatchEvents($runId, $stepId);
+        $store = new InMemoryRunStore();
+        $store->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 3, activeStepId: $stepId), 0);
+        $bus = new TestMessageBus();
+        $service = $this->createService($store, dispatcherBus: $bus, toolBatchStore: $batchStore);
+        $before = $this->readEvents($runId);
+
+        $this->assertSame(0, $service->repair($runId, false)->activeOperationsRedriven);
+        $this->assertSame([], $bus->messages);
+
+        $service->repair($runId, true);
+        $service->repair($runId, true);
+        $this->assertCount(4, $bus->messages);
+        $this->assertContainsOnlyInstancesOf(ExecuteToolCall::class, $bus->messages);
+        $this->assertSame(['tool-in-flight-key', 'tool-pending-key'], $this->toolKeys($bus->messages, 0, 2));
+        $this->assertSame(['tool-in-flight-key', 'tool-pending-key'], $this->toolKeys($bus->messages, 2, 2));
+        $this->assertSame($before, $this->readEvents($runId));
+    }
+
+    public function testWaitingHumanToolBatchIsNotRedrivenOrMutated(): void
+    {
+        $runId = 'repair-waiting-human';
+        $stepId = 'human-tool-step';
+        $call = new ExecuteToolCall($runId, 3, $stepId, 1, 'human-tool-key', 'call-human', 'ask_human', [], 0);
+        $batchStore = $this->createStub(ToolBatchStoreInterface::class);
+        $batchStore->method('load')->willReturn(new ToolBatchStateDTO(
+            expectedOrder: ['call-human' => 0],
+            calls: ['call-human' => $call],
+            pendingQueue: ['call-human'],
+            inFlight: [],
+            results: [],
+            finalized: false,
+            maxParallelism: 1,
+            awaitingHumanInput: ['call-human' => 'question-1'],
+        ));
+        $this->persistActiveToolBatchEvents($runId, $stepId, waitingHuman: true);
+        $store = new InMemoryRunStore();
+        $store->compareAndSwap(new RunState(runId: $runId, status: RunStatus::WaitingHuman, version: 1, turnNo: 3, lastSeq: 4, activeStepId: $stepId), 0);
+        $bus = new TestMessageBus();
+        $service = $this->createService($store, dispatcherBus: $bus, toolBatchStore: $batchStore);
+        $before = $this->readEvents($runId);
+
+        $result = $service->repair($runId, true);
+        $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $result->refusalReason);
+        $this->assertSame([], $bus->messages);
+        $this->assertSame($before, $this->readEvents($runId));
+    }
+
+    public function testDryRunAndRepeatedApplyRedriveIdleRunningStateWithoutEvents(): void
+    {
+        $runId = 'repair-idle';
+        $factory = new EventFactory();
+        $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 0, 1, [
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
+        ]));
+        $store = new InMemoryRunStore();
+        $store->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 1), 0);
+        $bus = new TestMessageBus();
+        $service = $this->createService($store, dispatcherBus: $bus);
+        $before = $this->readEvents($runId);
+        $key = hash('sha256', $runId.'|repair-advance|0|1');
+
+        $this->assertSame(0, $service->repair($runId, false)->activeOperationsRedriven);
+        $this->assertSame([], $bus->messages);
+
+        $service->repair($runId, true);
+        $service->repair($runId, true);
+        $this->assertCount(2, $bus->messages);
+        $this->assertContainsOnlyInstancesOf(AdvanceRun::class, $bus->messages);
+        foreach ($bus->messages as $message) {
+            $this->assertSame(0, $message->turnNo());
+            $this->assertSame('repair-advance-0', $message->stepId());
+            $this->assertSame(1, $message->attempt());
+            $this->assertSame($key, $message->idempotencyKey());
+        }
         $this->assertSame($before, $this->readEvents($runId));
     }
 
@@ -1213,7 +1347,51 @@ final class SessionRepairServiceTest extends TestCase
         return $lines;
     }
 
-    private function createService(?InMemoryRunStore $runStore = null, ?TestLogger $logger = null, ?TestMessageBus $dispatcherBus = null): SessionRepairService
+    /**
+     * @param list<object> $messages
+     *
+     * @return list<string>
+     */
+    private function toolKeys(array $messages, int $offset, int $length): array
+    {
+        $keys = [];
+        foreach (\array_slice($messages, $offset, $length) as $message) {
+            $this->assertInstanceOf(ExecuteToolCall::class, $message);
+            $keys[] = $message->idempotencyKey();
+        }
+        sort($keys);
+
+        return $keys;
+    }
+
+    private function persistActiveToolBatchEvents(string $runId, string $stepId, bool $waitingHuman = false): void
+    {
+        $factory = new EventFactory();
+        $specs = [
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
+            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 3, 'step_id' => $stepId]],
+            ['type' => RunEventTypeEnum::LlmStepCompleted->value, 'payload' => ['assistant_message' => [
+                'role' => 'assistant',
+                'content' => null,
+                'tool_calls' => [['id' => 'call-pending', 'type' => 'function', 'function' => ['name' => 'read', 'arguments' => '{}']]],
+            ]]],
+        ];
+        if ($waitingHuman) {
+            $specs[] = ['type' => RunEventTypeEnum::WaitingHuman->value, 'payload' => [
+                'kind' => 'tool_call',
+                'tool_call_id' => 'call-human',
+                'tool_name' => 'ask_human',
+                'question_id' => 'question-1',
+                'prompt' => 'Continue?',
+                'schema' => ['type' => 'string'],
+                'continuation_ref' => [],
+            ]];
+        }
+
+        $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 3, 1, $specs));
+    }
+
+    private function createService(?InMemoryRunStore $runStore = null, ?TestLogger $logger = null, ?TestMessageBus $dispatcherBus = null, ?ToolBatchStoreInterface $toolBatchStore = null): SessionRepairService
     {
         $runStore ??= new InMemoryRunStore();
 
@@ -1250,6 +1428,7 @@ final class SessionRepairServiceTest extends TestCase
             lockManager: new RunLockManager(new LockFactory(new FlockStore($lockDir))),
             logger: $logger ?? new NullLogger(),
             stepDispatcher: null !== $dispatcherBus ? new StepDispatcher($dispatcherBus) : null,
+            toolBatchStore: $toolBatchStore,
         );
     }
 
