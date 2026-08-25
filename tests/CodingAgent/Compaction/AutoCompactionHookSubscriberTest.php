@@ -126,6 +126,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         $this->assertCount(1, $this->commandBus->messages);
         $this->assertSame('auto', $this->commandBus->messages[0]->trigger);
+        $this->assertSame($runState->turnNo, $this->commandBus->messages[0]->turnNo());
     }
 
     /**

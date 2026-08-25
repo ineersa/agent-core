@@ -897,7 +897,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             );
 
             $postCommit = [];
-            $compactCallback = $this->compactCallback($runId, $message->payload['custom_instructions'] ?? null);
+            $compactCallback = $this->compactCallback($runId, $state->turnNo, $message->payload['custom_instructions'] ?? null);
             if (null !== $compactCallback) {
                 $postCommit[] = $compactCallback;
             }
@@ -953,19 +953,19 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, $prefix, 'Failed to dispatch follow-up AdvanceRun command.');
     }
 
-    private function compactCallback(string $runId, ?string $customInstructions = null): ?callable
+    private function compactCallback(string $runId, int $turnNo, ?string $customInstructions = null): ?callable
     {
         if (null === $this->commandBus) {
             return null;
         }
 
-        return function () use ($runId, $customInstructions): void {
+        return function () use ($runId, $turnNo, $customInstructions): void {
             $stepId = \sprintf('compact-%d', hrtime(true));
 
             try {
                 $this->commandBus->dispatch(new CompactRun(
                     runId: $runId,
-                    turnNo: 0,
+                    turnNo: $turnNo,
                     stepId: $stepId,
                     attempt: 1,
                     idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
