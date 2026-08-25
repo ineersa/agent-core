@@ -14,7 +14,7 @@
 | `sessions/<parent>/state.json` | `SessionRunStore`; current `RunState` read and CAS replacement | Derived hot state, rebuildable from events |
 | `sessions/<parent>/sequence.cursor` | `FileRunSequenceAllocator`; next sequence high-water | Allocation state; **not** durable-tail truth |
 | `sessions/<parent>/idempotency.jsonl` | `JsonlIdempotencyStore`; handled-key lookup/append | Durable idempotency index, append-only |
-| `sessions/<parent>/prompt-cache.jsonl` | prompt-cache diagnostics/store | Derived diagnostic/cache data, not canonical replay |
+| `sessions/<parent>/diagnostics/prompt-cache.jsonl` and `.../artifacts/agents/<artifact>/diagnostics/prompt-cache.jsonl` | prompt-cache diagnostics/store | Opt-in (`HATFIELD_WRITE_PROMPT_CACHE_DIAGNOSTICS=1`; default off) derived structural diagnostics, not provider cache or canonical replay; legacy files remain measurable/inert when disabled |
 | `sessions/<parent>/artifacts/agents/registry.json` | `AgentArtifactRegistry` | Parent-owned child-artifact index |
 | `.../artifacts/agents/<artifact>/events.jsonl` | `AgentChildRunEventStore` | Canonical child history |
 | same child directory: `state.json`, `sequence.cursor` | `AgentChildRunStore`, `FileRunSequenceAllocator` | Child hot state / allocation state |
@@ -38,7 +38,7 @@ The child artifact topology explains why a parent has many nested UUID directori
 | child event logs | 229 files; 80,450 records; 267.1 MiB |
 | all event logs | 234 files; 369.8 MiB; median 1.0 MiB; p95 2.6 MiB; max 41.1 MiB |
 | `state.json` | 234 files; 211.7 MiB; median 789.9 KiB; p95 1.9 MiB; max 2.7 MiB |
-| `prompt-cache.jsonl` | 234 files; 129.1 MiB; median 218.7 KiB; p95 2.1 MiB; max 7.2 MiB |
+| `prompt-cache.jsonl` diagnostics | 234 legacy files; 129.1 MiB; median 218.7 KiB; p95 2.1 MiB; max 7.2 MiB; new runs do not write these by default |
 | `idempotency.jsonl` | 219 files; 2.8 MiB; median 9.2 KiB; p95 31.4 KiB; max 106.7 KiB |
 | `metadata.json` / `handoff.md` | 235 each; 2.1 MiB / 1.9 MiB |
 | cursors | 234 files; 920 B total |
@@ -82,7 +82,7 @@ Filesystem size/mtime and static call sites cannot tell: per-turn/per-launch `op
 
 ## Reusable read-only measurement tool
 
-`tools/session-storage-audit.py` is the consolidated, dependency-free tool. It requires an explicit existing directory named `.hatfield`, uses SQLite URI `mode=ro`, reads JSON only to aggregate event types/counts, hashes displayed directory IDs, and never writes below the audited root.
+`tools/session-storage-audit.py` is the consolidated, dependency-free tool. It requires an explicit existing directory named `.hatfield`, uses SQLite URI `mode=ro`, reads JSON only to aggregate event types/counts, hashes displayed directory IDs, and never writes below the audited root. It continues to measure legacy `prompt-cache.jsonl` files; those files are opt-in structural diagnostics (`HATFIELD_WRITE_PROMPT_CACHE_DIAGNOSTICS=1`, default off), not provider cache or replay state.
 
 ```bash
 python3 tools/session-storage-audit.py /absolute/path/to/.hatfield

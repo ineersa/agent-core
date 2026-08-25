@@ -4,8 +4,10 @@
 Usage: tools/session-storage-audit.py /absolute/path/to/.hatfield
 
 It prints aggregate counts, file classes, event-type counts, and SHA-256 ID
-prefixes only. It never prints event payloads, prompts, tool output, or SQLite
-row values, and it never writes below the audited root.
+prefixes only. It continues to measure legacy prompt-cache diagnostics, which
+are opt-in/default-off derived data rather than provider cache or replay state.
+It never prints event payloads, prompts, tool output, or SQLite row values, and
+it never writes below the audited root.
 """
 
 from __future__ import annotations
@@ -128,6 +130,7 @@ def main() -> int:
     classes: dict[str, list[int]] = defaultdict(list)
     for path, size in all_files:
         classes[file_class(path)].append(size)
+    print("PROMPT_CACHE_DIAGNOSTICS opt_in_default_off=true legacy_files_measured=true")
     print("FILE_CLASSES")
     for name in sorted(classes):
         values = classes[name]

@@ -57,15 +57,46 @@ use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Validator\ValidatorBuilder;
 
 /**
- * Thesis A: dual-priority subscriber sees final shaped MessageBag/tools, writes parent/child
- * sidecars, does not mutate InvocationEvent, and never serializes raw prompts/keys/secrets.
+ * Thesis A: opt-in dual-priority subscriber sees final shaped MessageBag/tools, writes parent/child
+ * sidecars only when enabled, does not mutate InvocationEvent, and never serializes raw prompts/keys/secrets.
  * Thesis B: inspect joins diagnostics with usage, prevents multi-record double-count, reports
- * first prefix change, degrades historical usage-only honestly, fails missing session.
+ * first prefix change, and gives one actionable warning for diagnostics-free historical usage.
  */
 final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
 {
     #[Test]
-    public function subscriberWritesSidecarsAndInspectJoinsParentChildHistoryPrivacy(): void
+    public function subscriberDisabledDoesNotCreateParentOrChildSidecars(): void
+    {
+        $projectDir = getcwd();
+        $this->assertNotFalse($projectDir);
+        $sessionId = $this->seedSessionRow($projectDir);
+        $sessionDir = $projectDir.'/.hatfield/sessions/'.$sessionId;
+        if (!is_dir($sessionDir)) {
+            mkdir($sessionDir, 0777, true);
+        }
+
+        $hatfieldSessionStore = $this->sessionStoreForCwd($projectDir);
+        $registry = $this->artifactRegistry($hatfieldSessionStore);
+        $childDirectory = new AgentChildRunDirectory($hatfieldSessionStore, $registry, new TestLogger());
+        $diagStore = static::getContainer()->get(PromptCacheDiagnosticsStore::class);
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(static::getContainer()->get(PromptCacheDiagnosticsInvocationSubscriber::class));
+
+        $this->dispatchInvocation($dispatcher, $sessionId, 1, 'parent-step', 'openai-codex/gpt-5.6', 'system', 'secret', 'read', null);
+        $childRunId = '0194eeee-aaaa-7bbb-8ccc-dddddddddddd';
+        $artifactId = 'disabled-child';
+        $entry = $registry->create($sessionId, $artifactId, $childRunId, 'scout', AgentArtifactKindEnum::Subagent);
+        $childDirectory->register($entry);
+        $this->dispatchInvocation($dispatcher, $childRunId, 1, 'child-step', 'deepseek/deepseek-v4-flash', 'system', 'secret', 'read', null);
+
+        $this->assertSame([], $diagStore->readForRun($sessionId));
+        $this->assertSame([], $diagStore->readForRun($childRunId));
+        $this->assertFileDoesNotExist($sessionDir.'/diagnostics/prompt-cache.jsonl');
+        $this->assertFileDoesNotExist((new SessionAgentArtifactPathResolver($hatfieldSessionStore))->resolveArtifactDir($sessionId, $artifactId).'/diagnostics/prompt-cache.jsonl');
+    }
+
+    #[Test]
+    public function subscriberEnabledWritesSidecarsAndInspectJoinsParentChildHistoryPrivacy(): void
     {
         $projectDir = getcwd();
         $this->assertNotFalse($projectDir);
@@ -95,7 +126,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
             ],
         ));
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new PromptCacheDiagnosticsInvocationSubscriber($diagStore, $catalog, new TestLogger()));
+        $dispatcher->addSubscriber(new PromptCacheDiagnosticsInvocationSubscriber($diagStore, $catalog, new TestLogger(), true));
 
         $cacheKey = '0194eeee-bbbb-7ccc-8ddd-eeeeeeeeeeee';
         $secret = 'secret-prompt-SHOULD-NOT-PRINT';
@@ -189,6 +220,39 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         $this->assertStringNotContainsString('Authorization', $display);
         $this->assertStringNotContainsString('continuation_delta', $display);
         $this->assertStringNotContainsString('previous_response_id', $display);
+    }
+
+    #[Test]
+    public function inspectUsageWithoutDiagnosticsShowsOneActionableOptInHint(): void
+    {
+        $projectDir = getcwd();
+        $this->assertNotFalse($projectDir);
+        $sessionId = $this->seedSessionRow($projectDir);
+        $hatfieldSessionStore = $this->sessionStoreForCwd($projectDir);
+        $eventStore = $this->eventStore($hatfieldSessionStore);
+        $registry = $this->artifactRegistry($hatfieldSessionStore);
+        $eventStore->append(RunEvent::forAppend($sessionId, 1, 'llm_step_completed', [
+            'step_id' => 'usage-only-step',
+            'usage' => ['input_tokens' => 10, 'output_tokens' => 1, 'cost' => 0.01],
+        ]));
+
+        $service = new SessionPromptCacheInspectionService(
+            $hatfieldSessionStore,
+            $eventStore,
+            $registry,
+            $this->childEventStoreFactory($hatfieldSessionStore),
+            $this->diagStore($hatfieldSessionStore, $registry),
+            new TestLogger(),
+        );
+        $tester = new CommandTester(new SessionCacheInspectCommand($service));
+
+        $this->assertSame(Command::SUCCESS, $tester->execute(['session-id' => $sessionId]));
+        $display = $tester->getDisplay();
+        $this->assertStringContainsString('Detailed prefix diagnostics were not recorded.', $display);
+        $this->assertSame(1, substr_count($display, 'HATFIELD_WRITE_PROMPT_CACHE_DIAGNOSTICS=1'));
+        $this->assertStringContainsString('future requests.', $display);
+        $this->assertStringContainsString('10', $display);
+        $this->assertStringContainsString('Prefix attribution unavailable', $display);
     }
 
     #[Test]
