@@ -268,7 +268,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     {
     }
 
-    public function events(string $runId): iterable
+    public function events(string $runId, int $afterSeq = 0): iterable
     {
         // Yield transient streaming events BEFORE canonical events.
         // During the LLM stream, the RuntimeEventStreamObserver emits
@@ -281,13 +281,22 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         //     from later streaming deltas)
         //   - Thinking blocks appearing after the main response
         //   - Empty thinking blocks when deltas arrive too late
-        if (null !== $this->transientSink && $this->transientSink instanceof InMemoryRuntimeEventSink) {
-            yield from $this->transientSink->drain($runId);
+        if ($this->transientSink instanceof InMemoryRuntimeEventSink) {
+            foreach ($this->transientSink->drain($runId) as $event) {
+                yield $event;
+            }
         }
 
-        $runEvents = $this->eventStore->allFor($runId);
+        $unseenEvents = [];
+        foreach ($this->eventStore->reverseFor($runId) as $runEvent) {
+            if ($runEvent->seq <= $afterSeq) {
+                break;
+            }
 
-        foreach ($runEvents as $runEvent) {
+            $unseenEvents[] = $runEvent;
+        }
+
+        foreach (array_reverse($unseenEvents) as $runEvent) {
             $runtimeEvent = $this->mapper->toRuntimeEvent($runEvent);
             if (null !== $runtimeEvent) {
                 yield $runtimeEvent;

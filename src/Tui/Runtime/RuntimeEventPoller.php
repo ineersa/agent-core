@@ -81,7 +81,7 @@ final class RuntimeEventPoller
             $retryingPendingEvents = [] !== $this->pendingEvents;
             $events = $retryingPendingEvents
                 ? $this->pendingEvents
-                : RuntimeEventCallbacks::eventList($client, $state->handle->runId);
+                : RuntimeEventCallbacks::eventList($client, $state->handle->runId, $state->lastSeq);
             if ([] === $events) {
                 $state->runtimePollErrorCount = 0;
                 $state->lastRuntimePollError = '';

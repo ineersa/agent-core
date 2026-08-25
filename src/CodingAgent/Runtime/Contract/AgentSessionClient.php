@@ -31,9 +31,11 @@ interface AgentSessionClient
     public function send(string $runId, UserCommand $command): void;
 
     /**
+     * @param int $afterSeq Last successfully observed canonical sequence. Transient events are never cursor-filtered.
+     *
      * @return iterable<RuntimeEvent>
      */
-    public function events(string $runId): iterable;
+    public function events(string $runId, int $afterSeq = 0): iterable;
 
     /**
      * Begin retaining cross-run JSONL events for a child run opened in subagent live view.

@@ -376,6 +376,58 @@ final class AgentChildRunEventStoreTest extends TestCase
         $this->assertSame('turn_advanced', $tail[0]->type);
     }
 
+    public function testReadAfterSeqReadsOnlyNewestTailAndPreservesChronologicalSequenceHoles(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+        $artifactId = 'scout-tail';
+
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+        $normalizer = new EventPayloadNormalizer();
+        $path = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl";
+        mkdir(\dirname($path), 0775, true);
+        file_put_contents($path, "{malformed older prefix}\n", \FILE_APPEND);
+        foreach ([
+            $normalizer->normalize($agentRunId, 1, 0, 'run_started', []),
+            $normalizer->normalize($agentRunId, 4, 1, 'turn_advanced', ['turn_no' => 1]),
+            $normalizer->normalize($agentRunId, 9, 2, 'agent_end', []),
+        ] as $line) {
+            file_put_contents($path, json_encode($line, \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+        }
+
+        $tail = $store->readAfterSeq(1);
+
+        $this->assertSame([4, 9], array_map(static fn (RunEvent $event): int => $event->seq, $tail));
+    }
+
+    public function testReadAfterSeqSkipsTrailingIncompatibleSchemaButRejectsMalformedUnseenTail(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+        $artifactId = 'scout-incompatible';
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+        $normalizer = new EventPayloadNormalizer();
+        $path = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl";
+        mkdir(\dirname($path), 0775, true);
+        file_put_contents($path, json_encode($normalizer->normalize($agentRunId, 1, 0, 'run_started', []), \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+        file_put_contents($path, json_encode([
+            'schema_version' => '999.0',
+            'run_id' => $agentRunId,
+            'seq' => 2,
+            'turn_no' => 1,
+            'type' => 'future_event',
+            'payload' => [],
+        ], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+        file_put_contents($path, json_encode($normalizer->normalize($agentRunId, 3, 1, 'turn_advanced', ['turn_no' => 1]), \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+
+        $this->assertSame([3], array_map(static fn (RunEvent $event): int => $event->seq, $store->readAfterSeq(1)));
+
+        file_put_contents($path, "{malformed unseen tail}\n", \FILE_APPEND);
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Corrupt event JSONL line');
+        $store->readAfterSeq(1);
+    }
+
     public function testReadAfterSeqRejectsRunIdMismatch(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));

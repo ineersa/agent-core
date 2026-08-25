@@ -108,14 +108,20 @@ final class AgentChildRunEventStore implements EventStoreInterface
 
         try {
             $events = [];
-            foreach ($this->streamRunEventsFromPath($path) as $event) {
-                if ($event->seq <= $cursor) {
+            foreach ($this->eventLog->reverseLines($path) as $line) {
+                $event = $this->eventFromLine($line);
+                if (null === $event) {
                     continue;
                 }
+
+                if ($event->seq <= $cursor) {
+                    break;
+                }
+
                 $events[] = $event;
             }
 
-            return $this->eventLog->sortBySeq($events);
+            return array_reverse($events);
         } finally {
             $lock->release();
         }
