@@ -61,6 +61,19 @@ Resolve the exact checkout before launching subagents. If the subagent tool supp
 
 Launch three independent, read-only subagents with `agent: "scout"` in one parallel `subagent` call using a `tasks` array. Give each scout the same scope packet and one distinct audit lens. Require each scout to inspect the complete resolved scope. Inline the full diff only when reasonably sized; otherwise provide the exact baseline, paths, and inspection commands.
 
+### Mandatory exact scout-task requirements
+
+Before dispatching, construct each individual scout task prompt with the following requirements copied verbatim from this template, not an adapted summary:
+
+1. The complete **Priorities** list, in its exact wording and order.
+2. The complete common Phase 2 scout instructions: read-only behavior; actionable, code-backed evidence; exact citations; concrete cost or risk; smallest safe fix; preservation invariant; prohibition on style-only, speculative, broad, and unrelated findings; correctness/security/data-integrity reporting; and the exact finding format.
+3. The complete corresponding lens section—**Scout 1: Reuse and architecture**, **Scout 2: Simplicity and code quality**, or **Scout 3: Runtime and resource efficiency**—verbatim and bullet-for-bullet.
+4. The resolved scope packet and every applicable Phase 1 checkout and testing requirement.
+
+Task-specific context and invariants may be appended separately, but must not replace, summarize, paraphrase, weaken, or omit any template requirement. Never substitute a reference such as “follow the simplify prompt” or “follow the original protocol” for copied requirements: scouts do not receive implicit parent-prompt text.
+
+Perform a bullet-for-bullet comparison of each scout task against these requirements before dispatch. If tool or task-size constraints prevent exact inclusion, stop and report rather than summarize or launch. This exact-copy rule applies to each scout task independently, even when all three tasks are sent in one parallel call.
+
 If the configured agent cap prevents all three from running simultaneously, use the maximum available concurrency and run the remaining lens immediately afterward. Do not omit or combine a lens.
 
 Scouts gather code-backed evidence; they do not make final decisions. The main agent must verify and classify every proposed finding during aggregation.
