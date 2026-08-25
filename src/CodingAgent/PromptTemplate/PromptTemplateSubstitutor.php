@@ -60,7 +60,7 @@ final class PromptTemplateSubstitutor
                 if ($start < 0) {
                     $start = 0;
                 }
-                if (isset($m[2]) && '' !== $m[2]) {
+                if (isset($m[2])) {
                     $length = (int) $m[2];
 
                     return implode(' ', \array_slice($args, $start, $length));

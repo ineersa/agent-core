@@ -363,7 +363,7 @@ Body
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/tools\[1\].*must be a string/');
+        $this->expectExceptionMessageMatches('/tools\[1\].*must be of type string/');
 
         $this->parser->parseContent($content, '/test/non-string-tool.md');
     }
