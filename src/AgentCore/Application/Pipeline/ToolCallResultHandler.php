@@ -239,23 +239,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         }
 
         if (!$outcome->accepted) {
-            $nextState = $this->eventFactory->incrementStateVersion($state, eventCount: 1);
-            $event = $this->eventFactory->event(
-                runId: $runId,
-                seq: $nextState->lastSeq,
-                turnNo: $state->turnNo,
-                type: RunEventTypeEnum::StaleResultIgnored->value,
-                payload: [
-                    'result' => 'tool_call_result',
-                    'tool_call_id' => $message->toolCallId,
-                    'reason' => 'untracked_tool_call',
-                ],
-            );
-
-            return new HandlerResult(
-                nextState: $nextState,
-                events: [$event],
-            );
+            return new HandlerResult();
         }
 
         $eventSpecs = [

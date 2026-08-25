@@ -140,6 +140,38 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertSame([], $result->postCommit);
     }
 
+    public function testUntrackedCurrentTokenRedeliveryIsIdempotentNoOp(): void
+    {
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: new ToolBatchCollector(),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+
+        $state = RunStateBuilder::running('run-untracked-current-token')
+            ->withTurnNo(1)
+            ->withActiveStepId('step-1')
+            ->build();
+        $message = ToolCallResultBuilder::success('run-untracked-current-token')
+            ->withTurnNo(1)
+            ->withStepId('step-1')
+            ->withIdempotencyKey('untracked-result')
+            ->withToolCallId('unknown-call')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'read', 'content' => [['type' => 'text', 'text' => 'ignored']]])
+            ->build();
+
+        foreach ([$handler->handle($message, $state), $handler->handle($message, $state)] as $result) {
+            $this->assertNull($result->nextState);
+            $this->assertSame([], $result->events);
+            $this->assertSame([], $result->effects);
+            $this->assertSame([], $result->postCommitEffects);
+            $this->assertSame([], $result->postCommit);
+        }
+    }
+
     public function testExtractResultTextSinglePart(): void
     {
         $collector = new ToolBatchCollector();

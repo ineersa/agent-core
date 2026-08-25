@@ -60,6 +60,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->assertFileExists($sessionPath.'/state.json');
         $this->assertFileExists($sessionPath.'/events.jsonl');
         $this->assertFileDoesNotExist($sessionPath.'/transcript.jsonl');
+        $this->assertFileDoesNotExist($sessionPath.'/idempotency.jsonl');
     }
 
     public function testExistsReturnsFalseForMissingSession(): void
