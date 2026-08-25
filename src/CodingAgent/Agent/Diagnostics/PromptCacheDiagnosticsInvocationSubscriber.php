@@ -26,7 +26,8 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  *
  * Priority +100 captures PlatformInvocationMetadata correlation before AgentCore strips it.
  * Priority -100 observes final MessageBag/tools/options after AgentCore shaping and persists.
- * Never mutates the event. Storage/normalization failures are logged and do not break invoke.
+ * Never mutates the event. Disabled by default because it is append-only diagnostics,
+ * not provider cache or replay state. Storage/normalization failures are logged and do not break invoke.
  *
  * Correlation uses WeakMap so an exception between the two priorities cannot leak entries
  * after the event object is released by the dispatcher.
@@ -50,6 +51,7 @@ final class PromptCacheDiagnosticsInvocationSubscriber implements EventSubscribe
         private readonly PromptCacheDiagnosticsStore $store,
         private readonly HatfieldModelCatalog $modelCatalog,
         private readonly LoggerInterface $logger,
+        private readonly bool $writeDiagnostics,
     ) {
         // Fresh map per subscriber instance; entries GC when InvocationEvent is released.
         $this->correlationByEvent = new \WeakMap();
@@ -67,6 +69,10 @@ final class PromptCacheDiagnosticsInvocationSubscriber implements EventSubscribe
 
     public function captureCorrelation(InvocationEvent $event): void
     {
+        if (!$this->writeDiagnostics) {
+            return;
+        }
+
         $metadata = PlatformInvocationMetadata::extract($event->getOptions());
         if (null === $metadata) {
             return;

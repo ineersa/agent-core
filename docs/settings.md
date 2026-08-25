@@ -160,6 +160,7 @@ See [background-processes.md](background-processes.md).
 | `HATFIELD_LOG_DIR` | Override log directory |
 | `HATFIELD_BINARY_PATH` | Subprocess/runtime executable override (tests, custom installs) |
 | `HATFIELD_LLM_RAW_STREAM_CAPTURE` | Enable raw stream capture |
+| `HATFIELD_WRITE_PROMPT_CACHE_DIAGNOSTICS` | `0` (default) skips append-only structural prompt-cache diagnostics; launch future runs with `HATFIELD_WRITE_PROMPT_CACHE_DIAGNOSTICS=1` to enable privacy-safe `diagnostics/prompt-cache.jsonl` records for `session:cache:inspect` |
 | `HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH` | Capture path |
 | `HATFIELD_APPROVAL_CHANNEL` | Non-empty capability signal that an approval channel exists (see [approvals.md](approvals.md)) |
 

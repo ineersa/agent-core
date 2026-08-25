@@ -123,9 +123,11 @@ final class AgentChildRunEventStore implements EventStoreInterface
 
     public function latestSequenceFor(string $runId): ?int
     {
-        $events = $this->allFor($runId);
+        foreach ($this->reverseFor($runId) as $event) {
+            return $event->seq;
+        }
 
-        return [] === $events ? null : $events[array_key_last($events)]->seq;
+        return null;
     }
 
     public function firstFor(string $runId): ?RunEvent
@@ -170,9 +172,11 @@ final class AgentChildRunEventStore implements EventStoreInterface
             return;
         }
 
-        $events = $this->allFor($runId);
-        for ($index = \count($events) - 1; $index >= 0; --$index) {
-            yield $events[$index];
+        foreach ($this->eventLog->reverseLines($this->eventsPath()) as $line) {
+            $event = $this->eventFromLine($line);
+            if (null !== $event) {
+                yield $event;
+            }
         }
     }
 
@@ -211,52 +215,60 @@ final class AgentChildRunEventStore implements EventStoreInterface
 
         try {
             while (($line = fgets($handle)) !== false) {
-                $trimmedLine = trim($line);
-                if ('' === $trimmedLine) {
-                    continue;
+                $event = $this->eventFromLine($line);
+                if (null !== $event) {
+                    yield $event;
                 }
-
-                try {
-                    $payload = $this->eventLog->decodeLine($trimmedLine);
-                } catch (\JsonException $e) {
-                    throw new \RuntimeException(\sprintf('Corrupt event JSONL line for child run "%s": %s', $this->agentRunId, $e->getMessage()), previous: $e);
-                }
-
-                if (!\is_array($payload)) {
-                    $this->logger->warning('AgentChildRunEventStore skipped non-associative JSONL line', [
-                        'run_id' => $this->agentRunId,
-                        'component' => 'agent.artifact',
-                        'event_type' => 'child_event_store.non_associative_line',
-                    ]);
-
-                    continue;
-                }
-
-                $event = $this->eventLog->denormalizeRunEvent($payload);
-                if (null === $event) {
-                    if (!$this->eventLog->isIncompatibleSchemaVersion($payload)) {
-                        throw new \RuntimeException(\sprintf('Corrupt event JSONL for child run "%s": denormalization returned null for compatible or missing schema', $this->agentRunId));
-                    }
-
-                    $this->logger->debug('Skipping incompatible schema version in child event JSONL', [
-                        'run_id' => $this->agentRunId,
-                        'schema_version' => $payload['schema_version'] ?? null,
-                        'component' => 'agent.artifact',
-                        'event_type' => 'child_event_store.incompatible_schema',
-                    ]);
-
-                    continue;
-                }
-
-                if ($event->runId !== $this->agentRunId) {
-                    throw new \RuntimeException(\sprintf('RunEvent integrity error at seq %d: embedded runId "%s" does not match bound agentRunId "%s".', $event->seq, $event->runId, $this->agentRunId));
-                }
-
-                yield $event;
             }
         } finally {
             fclose($handle);
         }
+    }
+
+    private function eventFromLine(string $line): ?RunEvent
+    {
+        $trimmedLine = trim($line);
+        if ('' === $trimmedLine) {
+            return null;
+        }
+
+        try {
+            $payload = $this->eventLog->decodeLine($trimmedLine);
+        } catch (\JsonException $e) {
+            throw new \RuntimeException(\sprintf('Corrupt event JSONL line for child run "%s": %s', $this->agentRunId, $e->getMessage()), previous: $e);
+        }
+
+        if (!\is_array($payload)) {
+            $this->logger->warning('AgentChildRunEventStore skipped non-associative JSONL line', [
+                'run_id' => $this->agentRunId,
+                'component' => 'agent.artifact',
+                'event_type' => 'child_event_store.non_associative_line',
+            ]);
+
+            return null;
+        }
+
+        $event = $this->eventLog->denormalizeRunEvent($payload);
+        if (null === $event) {
+            if (!$this->eventLog->isIncompatibleSchemaVersion($payload)) {
+                throw new \RuntimeException(\sprintf('Corrupt event JSONL for child run "%s": denormalization returned null for compatible or missing schema', $this->agentRunId));
+            }
+
+            $this->logger->debug('Skipping incompatible schema version in child event JSONL', [
+                'run_id' => $this->agentRunId,
+                'schema_version' => $payload['schema_version'] ?? null,
+                'component' => 'agent.artifact',
+                'event_type' => 'child_event_store.incompatible_schema',
+            ]);
+
+            return null;
+        }
+
+        if ($event->runId !== $this->agentRunId) {
+            throw new \RuntimeException(\sprintf('RunEvent integrity error at seq %d: embedded runId "%s" does not match bound agentRunId "%s".', $event->seq, $event->runId, $this->agentRunId));
+        }
+
+        return $event;
     }
 
     private function eventsPath(): string
