@@ -110,6 +110,53 @@ final class CompactRunHandlerTest extends TestCase
         $this->assertSame([], $result->effects);
     }
 
+    public function testCommittedCompactRunRedeliveryDoesNotRepeatPreparationHooksOrWorker(): void
+    {
+        $messages = [$this->userMsg('question'), $this->assistantMsg('answer')];
+        $state = $this->createRunState($messages);
+        $preparation = CompactionPrepareResult::ready(
+            messagesToSummarize: [$messages[0]],
+            retainedTailMessages: [$messages[1]],
+            tokenEstimateBefore: 42000,
+            messagesCompacted: 1,
+            messagesRetained: 1,
+            firstRetainedIndex: 1,
+            priorSummaryPresent: false,
+        );
+        $service = $this->createMock(CompactionServiceInterface::class);
+        $service->expects($this->once())->method('prepare')->willReturn($preparation);
+        $service->expects($this->once())->method('buildSummarizationMessages')->willReturn([$messages[0]]);
+
+        $hook = new class implements BeforeCompactionHookInterface {
+            public int $calls = 0;
+
+            public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
+            {
+                ++$this->calls;
+
+                return CompactionHookResultDTO::continue();
+            }
+        };
+        $handler = new CompactRunHandler(
+            $service,
+            $this->createAppConfig(),
+            new EventFactory(),
+            $this->hooks([]),
+            $this->extensionHooks([$hook]),
+            $this->metadataReader(),
+        );
+        $request = new CompactRun('run-1', 5, 'step-1', 1, 'key-1', 'manual');
+
+        $first = $handler->handle($request, $state);
+        $redelivery = $handler->handle($request, $first->nextState);
+
+        $this->assertCount(1, $first->effects);
+        $this->assertSame(1, $hook->calls);
+        $this->assertNull($redelivery->nextState);
+        $this->assertSame([], $redelivery->events);
+        $this->assertSame([], $redelivery->effects);
+    }
+
     public function testReadyPreparationEmitsStartedAndDispatchesWorker(): void
     {
         $messages = [
@@ -287,6 +334,8 @@ final class CompactRunHandlerTest extends TestCase
         $payload = $result->events[0]->payload;
         $this->assertSame('too_few_messages', $payload['reason']);
         $this->assertFalse($payload['messages_replaced']);
+        $this->assertSame('key-1', $payload['operation_idempotency_key']);
+        $this->assertSame('key-1', $result->nextState->lastAppliedCompactionKey);
 
         // Messages preserved.
         $this->assertCount(\count($messages), $result->nextState->messages);

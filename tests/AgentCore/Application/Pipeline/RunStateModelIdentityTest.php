@@ -8,10 +8,12 @@ use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
+use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -145,6 +147,50 @@ final class RunStateModelIdentityTest extends TestCase
         );
 
         $this->assertSame('advance-key-1', $state->lastAppliedAdvanceKey);
+    }
+
+    public function testAutoCompactionRequestReplaysAdvanceTokenAndRejectsRedelivery(): void
+    {
+        $guard = $this->createStub(PreLlmCompactionGuardInterface::class);
+        $guard->method('shouldCompactBeforeLlmStep')->willReturn(true);
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: new CommandMailboxPolicy(new InMemoryCommandStore(), new CommandRouter([])),
+            eventFactory: new EventFactory(),
+            preLlmCompactionGuard: $guard,
+        );
+        $state = new RunState(runId: 'run-auto-compact', status: RunStatus::Running);
+        $advance = new AdvanceRun('run-auto-compact', 0, 'advance-1', 1, 'advance-key-1');
+
+        $started = $handler->handle($advance, $state);
+        $this->assertContainsOnlyInstancesOf(CompactRun::class, $started->effects);
+        $replayed = (new RunStateReducer())->replay($state, $started->events);
+
+        $this->assertSame('advance-key-1', $replayed->lastAppliedAdvanceKey);
+        $redelivery = $handler->handle($advance, $replayed);
+        $this->assertNull($redelivery->nextState);
+        $this->assertSame([], $redelivery->effects);
+    }
+
+    public function testHistoricalCompactionStartWithoutOperationKeyReplaysTerminalEventSafely(): void
+    {
+        $state = (new RunStateReducer())->replay(
+            RunState::queued('run-legacy-compaction'),
+            [
+                new RunEvent(
+                    runId: 'run-legacy-compaction', seq: 1, turnNo: 0,
+                    type: RunEventTypeEnum::ContextCompactionStarted->value,
+                    payload: ['step_id' => 'compact-1'],
+                ),
+                new RunEvent(
+                    runId: 'run-legacy-compaction', seq: 2, turnNo: 0,
+                    type: RunEventTypeEnum::ContextCompacted->value,
+                    payload: ['messages' => [], 'trigger' => 'manual'],
+                ),
+            ],
+        );
+
+        $this->assertSame(RunStatus::Completed, $state->status);
+        $this->assertNull($state->lastAppliedCompactionKey);
     }
 
     public function testMissingRunModelSchedulesWithNoModelInsteadOfFailingClosed(): void

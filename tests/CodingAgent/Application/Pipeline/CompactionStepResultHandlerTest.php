@@ -1213,6 +1213,43 @@ final class CompactionStepResultHandlerTest extends TestCase
         $this->assertCount(\count($originalMessages), $result->nextState->messages);
     }
 
+    public function testWrongAttemptAndCompletedRedeliveryAreNoOpsWhileMatchingResultAppliesOnce(): void
+    {
+        $messages = [$this->userMsg('question'), $this->assistantMsg('answer')];
+        $state = new RunState(
+            runId: 'run-1',
+            status: RunStatus::Compacting,
+            turnNo: 5,
+            messages: $messages,
+            activeStepId: 'step-1',
+            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, 5, 'step-1', 1, 'key-1'),
+        );
+        $summary = $this->userMsg('summary');
+        $handler = new CompactionStepResultHandler($this->stubCompactionService([$summary]), new EventFactory());
+        $matching = new CompactionStepResult(
+            runId: 'run-1', turnNo: 5, stepId: 'step-1', attempt: 1, idempotencyKey: 'key-1',
+            summaryText: 'summary', error: null, retainedTailMessages: [], messagesCompacted: 1,
+            messagesRetained: 0, firstRetainedIndex: 1, tokenEstimateBefore: 50000,
+            trigger: 'manual', model: 'test-model', modelOptions: [],
+        );
+        $wrongAttempt = new CompactionStepResult(
+            runId: 'run-1', turnNo: 5, stepId: 'step-1', attempt: 2, idempotencyKey: 'key-1',
+            summaryText: 'summary', error: null, retainedTailMessages: [], messagesCompacted: 1,
+            messagesRetained: 0, firstRetainedIndex: 1, tokenEstimateBefore: 50000,
+            trigger: 'manual', model: 'test-model', modelOptions: [],
+        );
+
+        $this->assertNull($handler->handle($wrongAttempt, $state)->nextState);
+        $applied = $handler->handle($matching, $state);
+        $this->assertCount(1, $applied->events);
+        $this->assertNotNull($applied->nextState);
+
+        $completedRedelivery = $handler->handle($matching, $applied->nextState);
+        $this->assertNull($completedRedelivery->nextState);
+        $this->assertSame([], $completedRedelivery->events);
+        $this->assertSame([], $completedRedelivery->effects);
+    }
+
     /**
      * Create a RunState with Compacting status for testing status resolution.
      *

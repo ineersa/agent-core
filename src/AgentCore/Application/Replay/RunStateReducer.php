@@ -583,7 +583,7 @@ final readonly class RunStateReducer
             'status' => $finalStatus,
             'activeStepId' => null,
             'currentOperation' => null,
-            'lastAppliedCompactionKey' => $state->currentOperation->idempotencyKey,
+            'lastAppliedCompactionKey' => $this->currentCompactionKey($state),
             'retryAttempts' => 0,
         ]);
     }
@@ -621,7 +621,14 @@ final readonly class RunStateReducer
         // They happen before the worker is dispatched — preserve activeStepId
         // and prior status (no Compacting transition occurred in live handler).
         if (null === $payloadStepId) {
-            return $state->with(['retryAttempts' => 0]);
+            $operationKey = \is_string($payload['operation_idempotency_key'] ?? null)
+                ? $payload['operation_idempotency_key']
+                : $state->lastAppliedCompactionKey;
+
+            return $state->with([
+                'lastAppliedCompactionKey' => $operationKey,
+                'retryAttempts' => 0,
+            ]);
         }
 
         // Resolve Compacting status: the terminal failure event ends the
@@ -646,7 +653,7 @@ final readonly class RunStateReducer
                 'status' => $resolveCompacting ?? $state->status,
                 'activeStepId' => null,
                 'currentOperation' => null,
-                'lastAppliedCompactionKey' => $state->currentOperation->idempotencyKey,
+                'lastAppliedCompactionKey' => $this->currentCompactionKey($state),
                 'retryAttempts' => 0,
             ]);
         }
@@ -659,6 +666,13 @@ final readonly class RunStateReducer
             'status' => $resolveCompacting ?? $state->status,
             'retryAttempts' => 0,
         ]);
+    }
+
+    private function currentCompactionKey(RunState $state): ?string
+    {
+        return null !== $state->currentOperation
+            ? $state->currentOperation->idempotencyKey
+            : $state->lastAppliedCompactionKey;
     }
 
     private function applyNoMutation(RunEvent $event, RunState $state): RunState

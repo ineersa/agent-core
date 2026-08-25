@@ -161,6 +161,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
                     'message' => $userMessage,
                     'messages_replaced' => false,
                     'trigger' => $message->trigger,
+                    'operation_idempotency_key' => $message->idempotencyKey(),
                 ],
             ]]);
 
@@ -169,7 +170,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             // messages — otherwise the run remains Running with no active step
             // and the user message is never answered.
             return new HandlerResult(
-                nextState: $this->incrementState($state, $events),
+                nextState: $this->incrementState($state, $events)->with(['lastAppliedCompactionKey' => $message->idempotencyKey()]),
                 events: $events,
                 effects: $this->continueAfterCompactionEffects($runId, $state->turnNo, $message->continueAfterCompaction),
             );
@@ -223,6 +224,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
                     'trigger' => $message->trigger,
                     'cancelled' => true,
                     'hook_metadata' => $sanitisedCancelMetadata,
+                    'operation_idempotency_key' => $message->idempotencyKey(),
                 ],
             ]]);
 
@@ -230,7 +232,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             // hook cancels it, the pending LLM turn must still resume on original
             // messages — otherwise the run remains Running with no active step.
             return new HandlerResult(
-                nextState: $this->incrementState($state, $events),
+                nextState: $this->incrementState($state, $events)->with(['lastAppliedCompactionKey' => $message->idempotencyKey()]),
                 events: $events,
                 effects: $this->continueAfterCompactionEffects($runId, $state->turnNo, $message->continueAfterCompaction),
             );
