@@ -11,7 +11,8 @@ If the task argument is empty or still the literal placeholder `<task>`, ask the
 
 You are an **orchestrator**, not an implementor. Your job is to dispatch work to specialized agents and coordinate their results:
 
-- **Scout subagents** — for codebase exploration, dependency checks, architecture discovery, file search.
+- **Explorer subagents** — for simple, bounded, mechanical evidence gathering: exact paths, snippets, direct definitions, and references.
+- **Scout subagents** — for hard/broad contextual investigation: dependencies, architecture, impact analysis, and reasoning-heavy synthesis.
 - **Researcher subagents** — for web searches, documentation lookups, changelog checks, anything requiring up-to-date external information.
 - **Fork (tool)** — for ALL implementation work: editing files, writing code, fixing tests, updating configs. You MUST use a fork for any file modification. Never edit files directly in the main agent.
 - **Main agent (you)** — reads context, plans work, writes fork instructions, records results, updates task metadata.
@@ -33,7 +34,7 @@ Prefer semantic JetBrains IDE tools (`ide_*`) for navigation, references/hierarc
 
 3. **Prepare exact fork instructions**
    - Read the task file again if moved, then collect the required code, config, test, and docs context.
-   - Launch scout subagents when useful to gather focused codebase context before implementation.
+   - Use Explorer for simple, bounded mechanical evidence gathering; use Scout for hard/broad contextual dependency, architecture, impact, or reasoning-heavy investigation. Recon agents gather evidence only and do not implement.
    - Use the researcher subagent for web searches or web-based research when up-to-date external information is needed.
    - Create exact implementation instructions for the fork: files to touch, old/new patterns, validation commands, and boundaries.
    - **For TUI tasks: the implementation scope MUST include a real `TmuxHarness` E2E proof (replay-backed, no live LLM required) exercising the user-visible feature path.** Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility checks are NOT acceptable substitutes. The fork must add this as a required deliverable.

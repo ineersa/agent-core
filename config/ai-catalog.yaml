@@ -8,7 +8,7 @@
 # Refresh: hatfield providers:update
 # Interactive setup: bin/console providers:setup (see providers-setup-command task)
 
-version: 2
+version: 3
 
 providers:
     deepseek:
@@ -146,9 +146,18 @@ providers:
                 thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
                 tool_calling: true
                 input: [text, image]
-                context_window: 272000
+                context_window: 372000
                 max_tokens: 128000
                 cost: { input: 2.50, output: 15.00, cache_read: 0.25, cache_write: 3.125 }
+            gpt-5.3-codex-spark:
+                name: GPT-5.3 Codex Spark
+                reasoning: true
+                thinking_level_map: { minimal: low, xhigh: xhigh }
+                tool_calling: true
+                input: [text]
+                context_window: 128000
+                max_tokens: 128000
+                cost: { input: 1.75, output: 14.00, cache_read: 0.175, cache_write: 0 }
 
     grok-cli:
         label: 'Grok / xAI'

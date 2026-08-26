@@ -137,7 +137,7 @@ Default `task_list` output lists TODO, IN-PROGRESS, CODE-REVIEW, and DONE only; 
 
 Task status/metadata moves do **not** commit to agent-core. Code branches, worktrees, PRs, merges do. Worktree creation updates parent IDEA module exclusions when present, creates minimal worktree-local `.idea` metadata from the integration primary module, and opens the exact worktree in JetBrains via MCP when available. DONE/CANCELLED cleanup closes that exact project before worktree removal.
 
-**Orchestrator model:** main agent plans and dispatches only—scouts explore, researchers look up, **forks implement all file changes**. Never edit files directly in the main agent; forks implement all file modifications (docs, config, tests, and code).
+**Orchestrator model:** main agent plans and dispatches only—Explorers gather simple, bounded, mechanical evidence; Scouts handle hard/broad contextual, dependency, architecture, impact, and reasoning-heavy investigation; researchers look up external information; **forks implement all file changes**. Recon agents do not implement. Never edit files directly in the main agent; forks implement all file modifications (docs, config, tests, and code).
 
 Phases: `task-explain` → `task-start` → `task-to-pr` → `task-done` (with `task-review-iterate` as needed). Load the `task-workflow` skill (`.pi/skills/task-workflow/SKILL.md`) for every phase procedure, fork instructions, and compaction recovery. After compaction, use `task_list` plus that skill.
 

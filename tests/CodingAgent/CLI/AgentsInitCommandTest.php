@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\CLI;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
 use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser;
+use Ineersa\CodingAgent\Agent\Definition\SystemPromptModeEnum;
 use Ineersa\CodingAgent\CLI\AgentsInitCommand;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
@@ -42,7 +43,7 @@ final class AgentsInitCommandTest extends TestCase
         TestDirectoryIsolation::ensureDirectory($this->homeDir);
 
         $repoAgents = \dirname(__DIR__, 3).'/src/CodingAgent/Resources/agents';
-        foreach (['scout.md', 'reviewer.md', 'researcher.md', 'architect.md', 'browser.md'] as $file) {
+        foreach (['explorer.md', 'scout.md', 'reviewer.md', 'researcher.md', 'architect.md', 'browser.md'] as $file) {
             $source = $repoAgents.'/'.$file;
             $this->assertFileExists($source, 'Bundled agent source missing: '.$source);
             (new Filesystem())->copy($source, $this->sourceDir.'/'.$file, true);
@@ -62,13 +63,13 @@ final class AgentsInitCommandTest extends TestCase
 
         $this->assertSame(Command::SUCCESS, $exitCode, $tester->getDisplay());
         $destination = $this->homeDir.'/.hatfield/agents';
-        foreach (['scout', 'reviewer', 'researcher', 'architect', 'browser'] as $name) {
+        foreach (['explorer', 'scout', 'reviewer', 'researcher', 'architect', 'browser'] as $name) {
             $path = $destination.'/'.$name.'.md';
             $this->assertFileExists($path);
             $this->assertFileEquals($this->sourceDir.'/'.$name.'.md', $path);
         }
 
-        $this->assertStringContainsString('Installed 5 bundled agent definition(s)', $tester->getDisplay());
+        $this->assertStringContainsString('Installed 6 bundled agent definition(s)', $tester->getDisplay());
     }
 
     #[Test]
@@ -90,6 +91,7 @@ final class AgentsInitCommandTest extends TestCase
         $this->assertStringContainsString($destination.'/scout.md', $display);
         $this->assertStringContainsString('--force', $display);
         $this->assertSame($staleBefore, (string) file_get_contents($destination.'/scout.md'));
+        $this->assertFileDoesNotExist($destination.'/explorer.md');
         $this->assertFileDoesNotExist($destination.'/reviewer.md');
         $this->assertFileDoesNotExist($destination.'/researcher.md');
         $this->assertFileDoesNotExist($destination.'/architect.md');
@@ -99,6 +101,7 @@ final class AgentsInitCommandTest extends TestCase
         $forceTester = new CommandTester($this->createCommand());
         $forceExit = $forceTester->execute(['--force' => true]);
         $this->assertSame(Command::SUCCESS, $forceExit, $forceTester->getDisplay());
+        $this->assertFileEquals($this->sourceDir.'/explorer.md', $destination.'/explorer.md');
         $this->assertFileEquals($this->sourceDir.'/scout.md', $destination.'/scout.md');
         $this->assertFileEquals($this->sourceDir.'/reviewer.md', $destination.'/reviewer.md');
         $this->assertFileEquals($this->sourceDir.'/researcher.md', $destination.'/researcher.md');
@@ -112,6 +115,7 @@ final class AgentsInitCommandTest extends TestCase
     {
         $parser = $this->createParser();
         $expectedParallelAllowed = [
+            'explorer' => true,
             'scout' => true,
             'reviewer' => true,
             'researcher' => false,
@@ -129,6 +133,13 @@ final class AgentsInitCommandTest extends TestCase
                 $dto->parallelAllowed,
                 \sprintf('bundled agent "%s" parallelAllowed mismatch', $name),
             );
+
+            if ('explorer' === $name) {
+                $this->assertSame('openai-codex/gpt-5.3-codex-spark', $dto->model);
+                $this->assertSame('xhigh', $dto->thinking);
+                $this->assertFalse($dto->inheritProjectContext);
+                $this->assertSame(SystemPromptModeEnum::Replace, $dto->systemPromptMode);
+            }
         }
     }
 

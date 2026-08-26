@@ -24,7 +24,8 @@ The main agent is an **orchestrator**, not an implementor. Work is dispatched to
 
 | Agent | Use for |
 |---|---|
-| **Scout subagents** | Codebase exploration, dependency checks, architecture discovery, impact analysis |
+| **Explorer subagents** | Simple, bounded, mechanical codebase evidence gathering (exact paths, snippets, direct references) |
+| **Scout subagents** | Broad/contextual dependency, architecture, impact, and reasoning-heavy investigation |
 | **Researcher subagents** | Web searches, documentation lookups, changelog checks |
 | **Fork (tool)** | ALL implementation work — editing files, writing code, fixing tests, updating configs |
 | **Main agent (you)** | Reads context, plans work, writes fork instructions, records results, updates task metadata |
@@ -33,7 +34,9 @@ The main agent is an **orchestrator**, not an implementor. Work is dispatched to
 
 ### Subagent dispatch (parallel vs sequential)
 
-- **Independent** scouts/reviewers/researchers: batch them in **one** parallel `subagent` call with a `tasks` array whenever within `agents.max_agents`. Separate single-mode calls for independent work are valid syntax but serialize and waste wall time.
+**Selection rule:** use **Explorer** for simple, bounded, mechanical evidence gathering. Use **Scout** for hard, broad, contextual, dependency, architecture, impact, or reasoning-heavy investigations. Recon agents gather evidence only; they do not implement.
+
+- **Independent** explorers/scouts/reviewers/researchers: batch them in **one** parallel `subagent` call with a `tasks` array whenever within `agents.max_agents`. Separate single-mode calls for independent work are valid syntax but serialize and waste wall time.
 - **Single child** or **dependent** work: use `{"agent":"...","task":"..."}` only for exactly one child, or when a later task cannot be formed until an earlier result returns (follow-up investigation, re-review after a fix, deliberate serialization).
 - Outer separate `subagent` tool calls are sequential; children inside one `tasks` array run concurrently. Split across multiple calls only for **cap overflow** or **true dependencies**.
 - Parallel results are bounded summaries — use `agent_retrieve` with each `Artifact:` ID for complete handoffs when needed.
@@ -64,8 +67,8 @@ task-explain → task-start → task-to-pr → task-done
 Read-only planning. No status changes, no file edits, no forks.
 
 1. Read task file and referenced docs.
-2. Scout codebase for affected areas, dependencies, existing patterns. When multiple independent scouts are useful, launch them in **one** parallel `tasks` call (not separate single-mode calls).
-3. Researcher for external info when needed (batch independent research with scouts in the same `tasks` call when useful).
+2. Use Explorer for bounded mechanical evidence gathering; use Scout for affected areas, dependencies, architecture, impact, or other contextual investigation. When multiple independent recon agents are useful, launch them in **one** parallel `tasks` call (not separate single-mode calls).
+3. Researcher for external info when needed (batch independent research with explorers/scouts in the same `tasks` call when useful).
 4. Present structured plan: summary, affected areas, implementation steps, risks/open questions, suggested validation.
 5. Discuss with user. Highlight decision points — do not silently resolve them.
 6. When ready to implement, user runs `task-start`.
@@ -77,7 +80,7 @@ Read-only planning. No status changes, no file edits, no forks.
 
 1. `move_task(to="IN-PROGRESS")` — creates worktree branch.
    - Worktree creation copies `vendor/` and `.vera/` into the worktree, updates the parent worktree IDEA module exclusions when present, creates minimal worktree-local `.idea` metadata from the integration primary module, and opens the exact worktree in JetBrains via MCP when available.
-2. Scout codebase for context, researcher for external info. Batch independent scouts/researchers in one parallel `tasks` call; use sequential single-mode only when a later probe depends on an earlier result.
+2. Use Explorer for bounded mechanical codebase evidence and Scout for contextual investigation; use Researcher for external info. Batch independent explorers/scouts/researchers in one parallel `tasks` call; use sequential single-mode only when a later probe depends on an earlier result.
 3. Apply the **Specification fidelity gate**: map every proposed externally visible addition to an exact finalized requirement; resolve ambiguity with the user before forking; do not encode uncited product decisions into fork instructions.
 4. Prepare exact fork instructions: files to touch, old/new patterns, validation commands, boundaries (mechanics only).
 5. Launch fork on worktree (`cwd=worktree`). Fork implements, you don't.
