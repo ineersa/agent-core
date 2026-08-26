@@ -183,17 +183,24 @@ final readonly class RunStateReducer
         $turnNo = \is_int($payload['turn_no'] ?? null) ? $payload['turn_no'] : $state->turnNo;
         $stepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : $state->activeStepId;
 
+        $operationKind = CurrentOperationKindEnum::Shell->value === ($payload['operation_kind'] ?? null)
+            ? CurrentOperationKindEnum::Shell
+            : CurrentOperationKindEnum::Llm;
         $attempt = \is_int($payload['operation_attempt'] ?? null) ? $payload['operation_attempt'] : 1;
         $key = \is_string($payload['operation_idempotency_key'] ?? null)
             ? $payload['operation_idempotency_key']
-            : hash('sha256', \sprintf('%s|llm|%d|%s', $state->runId, $turnNo, $stepId));
+            : (CurrentOperationKindEnum::Llm === $operationKind
+                ? hash('sha256', \sprintf('%s|llm|%d|%s', $state->runId, $turnNo, $stepId))
+                : null);
 
         return $state->with([
             'status' => RunStatus::Running,
             'turnNo' => $turnNo,
             'errorMessage' => null,
             'activeStepId' => $stepId,
-            'currentOperation' => new CurrentOperationDTO(CurrentOperationKindEnum::Llm, $turnNo, $stepId, $attempt, $key),
+            'currentOperation' => \is_string($key) && '' !== $key
+                ? new CurrentOperationDTO($operationKind, $turnNo, $stepId, $attempt, $key)
+                : null,
             'retryableFailure' => false,
         ]);
     }
@@ -214,8 +221,31 @@ final readonly class RunStateReducer
 
             $toolCallId = 'sh_'.hash('sha256', $key);
 
+            $standalone = $payload['standalone'] ?? null;
+            $operationTurnNo = $payload['operation_turn_no'] ?? null;
+            $operationStepId = $payload['operation_step_id'] ?? null;
+            $operationAttempt = $payload['operation_attempt'] ?? null;
+            $operationKey = $payload['operation_idempotency_key'] ?? null;
+            $currentOperation = $state->currentOperation;
+            if (true === $standalone
+                && \is_int($operationTurnNo)
+                && \is_string($operationStepId)
+                && '' !== $operationStepId
+                && \is_int($operationAttempt)
+                && \is_string($operationKey)
+                && '' !== $operationKey) {
+                $currentOperation = new CurrentOperationDTO(
+                    CurrentOperationKindEnum::Shell,
+                    $operationTurnNo,
+                    $operationStepId,
+                    $operationAttempt,
+                    $operationKey,
+                );
+            }
+
             return $state->with([
                 'pendingShellToolCalls' => [...$state->pendingShellToolCalls, $toolCallId => true],
+                'currentOperation' => $currentOperation,
             ]);
         }
 

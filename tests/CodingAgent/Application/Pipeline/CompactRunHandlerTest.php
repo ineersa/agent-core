@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\CommandRouter;
+use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
+use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
 use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
+use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
@@ -19,6 +24,7 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
@@ -108,6 +114,49 @@ final class CompactRunHandlerTest extends TestCase
         $this->assertSame($state, $result->nextState);
         $this->assertSame([], $result->events);
         $this->assertSame([], $result->effects);
+    }
+
+    public function testPreLlmCompactionRequestUsesCommittedStateTurnAndStartsWorker(): void
+    {
+        $messages = [$this->userMsg('question'), $this->assistantMsg('answer')];
+        $state = new RunState(
+            runId: 'run-pre-llm-compact',
+            status: RunStatus::Running,
+            version: 10,
+            turnNo: 0,
+            lastSeq: 0,
+            messages: $messages,
+            model: 'openai/test-model',
+        );
+        $guard = $this->createStub(PreLlmCompactionGuardInterface::class);
+        $guard->method('shouldCompactBeforeLlmStep')->willReturn(true);
+        $advance = new AdvanceRunHandler(
+            new CommandMailboxPolicy(new InMemoryCommandStore(), new CommandRouter([])),
+            new EventFactory(),
+            preLlmCompactionGuard: $guard,
+        );
+        $advanceResult = $advance->handle(new AdvanceRun('run-pre-llm-compact', 0, 'advance-1', 1, 'advance-key'), $state);
+
+        $this->assertNotNull($advanceResult->nextState);
+        $this->assertCount(1, $advanceResult->effects);
+        $this->assertInstanceOf(CompactRun::class, $advanceResult->effects[0]);
+        $request = $advanceResult->effects[0];
+        $this->assertSame($advanceResult->nextState->turnNo, $request->turnNo());
+
+        $service = $this->createReadyCompactionService([$messages[0]], [$messages[1]]);
+        $handler = new CompactRunHandler(
+            $service,
+            $this->createAppConfig(),
+            new EventFactory(),
+            $this->hooks([]),
+            $this->extensionHooks([]),
+            $this->metadataReader(),
+        );
+        $started = $handler->handle($request, $advanceResult->nextState);
+
+        $this->assertCount(1, $started->effects);
+        $this->assertInstanceOf(ExecuteCompactionStep::class, $started->effects[0]);
+        $this->assertSame(RunEventTypeEnum::ContextCompactionStarted->value, $started->events[0]->type);
     }
 
     public function testCommittedCompactRunRedeliveryDoesNotRepeatPreparationHooksOrWorker(): void
@@ -1111,9 +1160,9 @@ final class CompactRunHandlerTest extends TestCase
 
         // Effects MUST contain exactly one AdvanceRun for same run/turn.
         $this->assertCount(1, $result->effects, 'Pre-LLM structural failure must emit AdvanceRun to resume the pending LLM turn.');
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $result->effects[0]);
+        $this->assertInstanceOf(AdvanceRun::class, $result->effects[0]);
 
-        /** @var \Ineersa\AgentCore\Domain\Message\AdvanceRun $advance */
+        /** @var AdvanceRun $advance */
         $advance = $result->effects[0];
         $this->assertSame('run-1', $advance->runId());
         $this->assertSame(5, $advance->turnNo());
@@ -1195,9 +1244,9 @@ final class CompactRunHandlerTest extends TestCase
 
         // Effects MUST contain exactly one AdvanceRun for same run/turn.
         $this->assertCount(1, $result->effects, 'Pre-LLM hook cancel must emit AdvanceRun to resume the pending LLM turn.');
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $result->effects[0]);
+        $this->assertInstanceOf(AdvanceRun::class, $result->effects[0]);
 
-        /** @var \Ineersa\AgentCore\Domain\Message\AdvanceRun $advance */
+        /** @var AdvanceRun $advance */
         $advance = $result->effects[0];
         $this->assertSame('run-1', $advance->runId());
         $this->assertSame(5, $advance->turnNo());

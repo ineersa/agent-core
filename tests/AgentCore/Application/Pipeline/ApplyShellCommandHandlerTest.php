@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Pipeline\ApplyShellCommandHandler;
+use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -132,9 +133,17 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertSame('shell_command', $commandEvent->payload['kind'] ?? null);
         $this->assertSame($rawInput, $commandEvent->payload['text'] ?? null);
         $this->assertSame('shell-idem-1', $commandEvent->payload['idempotency_key'] ?? null);
+        $this->assertSame($expectedStandalone, $commandEvent->payload['standalone'] ?? null);
+        $this->assertSame($expectedOwningTurn, $commandEvent->payload['operation_turn_no'] ?? null);
+        $this->assertSame('shell-step-1', $commandEvent->payload['operation_step_id'] ?? null);
+        $this->assertSame(1, $commandEvent->payload['operation_attempt'] ?? null);
+        $this->assertSame('shell-idem-1', $commandEvent->payload['operation_idempotency_key'] ?? null);
 
         if (\count($expectedEventTypes) > 1) {
             $this->assertSame($expectedOwningTurn, $result->events[1]->payload['turn_no'] ?? null);
+            $this->assertSame(CurrentOperationKindEnum::Shell->value, $result->events[1]->payload['operation_kind'] ?? null);
+            $this->assertSame(1, $result->events[1]->payload['operation_attempt'] ?? null);
+            $this->assertSame('shell-idem-1', $result->events[1]->payload['operation_idempotency_key'] ?? null);
             $this->assertSame($expectedOwningTurn, $result->events[2]->payload['position_turn_no'] ?? null);
             $this->assertSame('shell_command', $result->events[2]->payload['reason'] ?? null);
         }
@@ -146,6 +155,18 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertSame('printf BANG_OWNERSHIP', $effect->commandText);
         $this->assertSame($expectedStandalone, $effect->standalone);
         $this->assertSame('sh_'.hash('sha256', 'shell-idem-1'), $effect->toolCallId);
+
+        if ($expectedStandalone) {
+            $replayed = (new RunStateReducer())->replay(RunState::queued('run-shell-1'), $result->events);
+            $this->assertNotNull($replayed->currentOperation);
+            $this->assertTrue($replayed->currentOperation->matches(
+                CurrentOperationKindEnum::Shell,
+                $expectedOwningTurn,
+                'shell-step-1',
+                1,
+                'shell-idem-1',
+            ));
+        }
     }
 
     public function testCommittedStandaloneShellRedeliveryIsANoOp(): void

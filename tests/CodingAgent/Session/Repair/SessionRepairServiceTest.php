@@ -37,6 +37,7 @@ use Ineersa\CodingAgent\Session\Repair\SessionRepairRefusalReasonEnum;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -177,7 +178,7 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame($before, $this->readEvents($runId));
     }
 
-    public function testDryRunAndRepeatedApplyRedriveDirectShellFromCanonicalCommand(): void
+    public function testDryRunAndRepeatedApplyRedriveAttachedShellFromCanonicalCommand(): void
     {
         $runId = 'repair-shell';
         $key = 'shell-command-key';
@@ -189,6 +190,11 @@ final class SessionRepairServiceTest extends TestCase
                 'kind' => 'shell_command',
                 'text' => '!printf repair-shell',
                 'idempotency_key' => $key,
+                'standalone' => false,
+                'operation_turn_no' => 2,
+                'operation_step_id' => 'llm-step',
+                'operation_attempt' => 1,
+                'operation_idempotency_key' => 'llm-key',
             ]],
         ]));
         $store = new InMemoryRunStore();
@@ -208,8 +214,103 @@ final class SessionRepairServiceTest extends TestCase
             $this->assertSame($toolCallId, $message->toolCallId);
             $this->assertSame('printf repair-shell', $message->commandText);
             $this->assertSame(hash('sha256', $runId.'|'.$toolCallId), $message->idempotencyKey());
+            $this->assertFalse($message->standalone);
         }
         $this->assertSame($before, $this->readEvents($runId));
+    }
+
+    public function testHistoricalShellWithoutStandaloneEvidenceIsRefusedWithoutDispatch(): void
+    {
+        $runId = 'repair-historical-shell';
+        $key = 'historical-shell-key';
+        $factory = new EventFactory();
+        $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 0, 1, [
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
+            ['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => [
+                'kind' => 'shell_command',
+                'text' => '!printf historical-shell',
+                'idempotency_key' => $key,
+            ]],
+        ]));
+        $store = new InMemoryRunStore();
+        $store->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 2), 0);
+        $bus = new TestMessageBus();
+        $service = $this->createService($store, dispatcherBus: $bus);
+
+        $result = $service->repair($runId, true);
+
+        $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $result->refusalReason);
+        $this->assertSame([], $bus->messages);
+    }
+
+    /**
+     * @return iterable<string, array{childTurn: bool}>
+     */
+    public static function standaloneShellRepairCases(): iterable
+    {
+        yield 'queued' => ['childTurn' => false];
+        yield 'terminal_child_turn' => ['childTurn' => true];
+    }
+
+    #[DataProvider('standaloneShellRepairCases')]
+    public function testApplyRedrivesStandaloneShellFromCanonicalIdentityWithoutLlm(bool $childTurn): void
+    {
+        $runId = $childTurn ? 'repair-terminal-shell' : 'repair-queued-shell';
+        $key = $childTurn ? 'terminal-shell-key' : 'queued-shell-key';
+        $stepId = $childTurn ? 'terminal-shell-step' : 'queued-shell-step';
+        $turnNo = $childTurn ? 2 : 0;
+        $toolCallId = 'sh_'.hash('sha256', $key);
+        $factory = new EventFactory();
+        $specs = [
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
+        ];
+        if ($childTurn) {
+            $specs[] = ['type' => RunEventTypeEnum::AgentEnd->value, 'payload' => ['reason' => 'completed']];
+        }
+        $specs[] = ['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => [
+            'kind' => 'shell_command',
+            'text' => '!printf repair-standalone-shell',
+            'idempotency_key' => $key,
+            'standalone' => true,
+            'operation_turn_no' => $turnNo,
+            'operation_step_id' => $stepId,
+            'operation_attempt' => 1,
+            'operation_idempotency_key' => $key,
+        ]];
+        if ($childTurn) {
+            $specs[] = ['type' => RunEventTypeEnum::TurnAdvanced->value, 'turn_no' => $turnNo, 'payload' => [
+                'turn_no' => $turnNo,
+                'step_id' => $stepId,
+                'operation_kind' => 'shell',
+                'operation_attempt' => 1,
+                'operation_idempotency_key' => $key,
+            ]];
+        }
+        $events = $factory->eventsFromSpecs($runId, $turnNo, 1, $specs);
+        $this->persistRunEvents($runId, $events);
+        $store = new InMemoryRunStore();
+        $store->compareAndSwap(new RunState(
+            runId: $runId,
+            status: $childTurn ? RunStatus::Running : RunStatus::Queued,
+            version: 1,
+            turnNo: $turnNo,
+            lastSeq: \count($events),
+            activeStepId: $stepId,
+        ), 0);
+        $bus = new TestMessageBus();
+        $service = $this->createService($store, dispatcherBus: $bus);
+
+        $this->assertSame(0, $service->repair($runId, false)->activeOperationsRedriven);
+        $this->assertSame([], $bus->messages);
+
+        $result = $service->repair($runId, true);
+        $this->assertSame(1, $result->activeOperationsRedriven);
+        $this->assertCount(1, $bus->messages);
+        $this->assertInstanceOf(ExecuteShellToolCall::class, $bus->messages[0]);
+        $this->assertSame($toolCallId, $bus->messages[0]->toolCallId);
+        $this->assertSame($turnNo, $bus->messages[0]->turnNo());
+        $this->assertTrue($bus->messages[0]->standalone);
+        $this->assertNotInstanceOf(ExecuteLlmStep::class, $bus->messages[0]);
     }
 
     public function testRepeatedApplyRedrivesDurablePendingAndInFlightToolCalls(): void

@@ -648,7 +648,12 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      */
     private function hasTerminalAgentEnd(array $events): bool
     {
-        foreach ($events as $event) {
+        foreach (array_reverse($events) as $event) {
+            if (RunEventTypeEnum::TurnAdvanced->value === $event->type) {
+                // A later turn supersedes an earlier terminal lifecycle (for
+                // example a terminal standalone shell child turn).
+                return false;
+            }
             if (RunEventTypeEnum::AgentEnd->value === $event->type) {
                 return true;
             }
@@ -863,6 +868,19 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             }
         }
 
+        // Validate shell reconstruction before collecting any LLM effect. A
+        // historical shell event without standalone evidence is ambiguous; in
+        // particular, it must not cause a legacy shell-seeded turn to be
+        // redriven as a fabricated LLM operation.
+        $shellEffects = [];
+        foreach ($state->pendingShellToolCalls as $toolCallId => $_) {
+            $shell = $this->shellEffectFromEvents($runId, $toolCallId, $events);
+            if (null === $shell) {
+                return $this->refusalResult($runId, 'Session repair refused: current shell command cannot be reconstructed safely.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+            }
+            $shellEffects[] = $shell;
+        }
+
         if (null !== $operation && CurrentOperationKindEnum::Llm === $operation->kind) {
             $effects[] = new ExecuteLlmStep(
                 runId: $runId,
@@ -874,19 +892,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 toolsRef: \sprintf('toolset:run:%s:turn:%d', $runId, $operation->turnNo),
             );
         }
-
-        foreach ($state->pendingShellToolCalls as $toolCallId => $_) {
-            $shell = $this->shellEffectFromEvents(
-                $runId,
-                $toolCallId,
-                $events,
-                null !== $operation && CurrentOperationKindEnum::Shell === $operation->kind,
-            );
-            if (null === $shell) {
-                return $this->refusalResult($runId, 'Session repair refused: current shell command cannot be reconstructed safely.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
-            }
-            $effects[] = $shell;
-        }
+        $effects = [...$effects, ...$shellEffects];
 
         if (null !== $state->activeStepId && [] !== $state->pendingToolCalls) {
             $batch = $this->toolBatchStore->load($runId, $state->turnNo, $state->activeStepId);
@@ -925,7 +931,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     /**
      * @param list<RunEvent> $events
      */
-    private function shellEffectFromEvents(string $runId, string $toolCallId, array $events, bool $standalone): ?ExecuteShellToolCall
+    private function shellEffectFromEvents(string $runId, string $toolCallId, array $events): ?ExecuteShellToolCall
     {
         foreach (array_reverse($events) as $event) {
             if (RunEventTypeEnum::AgentCommandApplied->value !== $event->type || 'shell_command' !== ($event->payload['kind'] ?? null)) {
@@ -933,13 +939,23 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             }
             $key = $event->payload['idempotency_key'] ?? null;
             $text = $event->payload['text'] ?? null;
-            if (!\is_string($key) || !\is_string($text) || 'sh_'.hash('sha256', $key) !== $toolCallId || !str_starts_with($text, '!')) {
+            $standalone = $event->payload['standalone'] ?? null;
+            if (!\is_string($key)
+                || !\is_string($text)
+                || !\is_bool($standalone)
+                || 'sh_'.hash('sha256', $key) !== $toolCallId
+                || !str_starts_with($text, '!')) {
                 continue;
+            }
+
+            $turnNo = $event->payload['operation_turn_no'] ?? $event->turnNo;
+            if (!\is_int($turnNo)) {
+                return null;
             }
 
             return new ExecuteShellToolCall(
                 $runId,
-                $event->turnNo,
+                $turnNo,
                 $toolCallId,
                 ltrim(substr($text, 1)),
                 $standalone,

@@ -309,12 +309,16 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 // After successful compaction, the conversation must continue
                 // (AdvanceRun effect) so the LLM turn can proceed on the
                 // compacted context.
+                // CompactRun validates against the state turn at handling time.
+                // This request holds the next LLM turn but does not advance the
+                // state turn until that LLM execution is actually scheduled.
+                $compactRequestTurnNo = $preparedState->turnNo;
                 $compactEffect = new CompactRun(
                     runId: $runId,
-                    turnNo: $nextTurnNo,
+                    turnNo: $compactRequestTurnNo,
                     stepId: $compactStepId,
                     attempt: 1,
-                    idempotencyKey: hash('sha256', \sprintf('%s|compact|%d|%s', $runId, $nextTurnNo, $compactStepId)),
+                    idempotencyKey: hash('sha256', \sprintf('%s|compact|%d|%s', $runId, $compactRequestTurnNo, $compactStepId)),
                     trigger: 'auto',
                     continueAfterCompaction: true,
                 );

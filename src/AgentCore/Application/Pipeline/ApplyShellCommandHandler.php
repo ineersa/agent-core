@@ -85,8 +85,11 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
         $hasConversationalTurn = $state->turnNo > 0;
         $terminalBoundary = $state->status->isTerminal();
         $startsChildTurn = $terminalBoundary && $hasConversationalTurn;
+        $standalone = RunStatus::Queued === $state->status || $terminalBoundary;
         $commandTurnNo = $state->turnNo;
-        $owningTurnNo = $state->turnNo;
+        $owningTurnNo = $startsChildTurn
+            ? max($state->lastSeq, $state->turnNo) + 1
+            : $state->turnNo;
         $eventSpecs = [[
             'type' => RunEventTypeEnum::AgentCommandApplied->value,
             'payload' => [
@@ -94,6 +97,14 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
                 'idempotency_key' => $message->idempotencyKey(),
                 'text' => $rawInput,
                 'options' => [],
+                // Repair replays canonical events rather than state.json. Keep
+                // standalone shell execution self-describing without retaining
+                // a receipt history or adding a separate storage record.
+                'standalone' => $standalone,
+                'operation_turn_no' => $owningTurnNo,
+                'operation_step_id' => $message->stepId(),
+                'operation_attempt' => $message->attempt(),
+                'operation_idempotency_key' => $message->idempotencyKey(),
             ],
         ]];
 
@@ -102,7 +113,6 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
             // the global canonical high-water so discarded turns cannot collide.
             // AgentCommandApplied stays on the prior tip so the command-to-next-
             // TurnAdvanced map treats this shell as a seeder.
-            $owningTurnNo = max($state->lastSeq, $state->turnNo) + 1;
             $previousTurnNo = $state->turnNo;
             $eventSpecs[] = [
                 'type' => RunEventTypeEnum::TurnAdvanced->value,
@@ -110,6 +120,9 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
                 'payload' => [
                     'step_id' => $message->stepId(),
                     'turn_no' => $owningTurnNo,
+                    'operation_kind' => CurrentOperationKindEnum::Shell->value,
+                    'operation_attempt' => $message->attempt(),
+                    'operation_idempotency_key' => $message->idempotencyKey(),
                 ],
             ];
             $eventSpecs[] = [
@@ -129,13 +142,6 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
             $state->lastSeq + 1,
             $eventSpecs,
         );
-
-        // Standalone means the shell action owns terminalization. Queued and
-        // terminal runs have no in-flight model turn that will emit AgentEnd;
-        // the worker therefore writes AgentEnd after tool lifecycle events.
-        // Active running shells attach to the current turn and leave run
-        // terminalization to the model turn.
-        $standalone = RunStatus::Queued === $state->status || $terminalBoundary;
 
         // Deterministic tool-call id keeps Messenger retries from creating a
         // second bash lifecycle for the same ApplyShellCommand message.
