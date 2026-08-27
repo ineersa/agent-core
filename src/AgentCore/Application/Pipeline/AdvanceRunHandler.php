@@ -368,6 +368,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             idempotencyKey: hash('sha256', \sprintf('%s|llm|%d|%s', $runId, $nextTurnNo, $nextStepId)),
             contextRef: \sprintf('hot:run:%s', $runId),
             toolsRef: \sprintf('toolset:run:%s:turn:%d', $runId, $nextTurnNo),
+            messages: $preparedState->messages,
         );
 
         $previousTurnNo = $preparedState->turnNo > 0 ? $preparedState->turnNo : null;

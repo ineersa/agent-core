@@ -18,12 +18,11 @@ use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
- * Executes one LLM step.  Ordinary turns carry no model on
- * {@see ExecuteLlmStep}: the provider boundary
- * ({@see \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter})
- * resolves the current session model and reasoning at invocation time, and
- * this worker propagates the actually-resolved identity onto the
- * {@see LlmStepResult} for canonical completion/failure events.
+ * Executes one LLM step from the immutable context carried by
+ * {@see ExecuteLlmStep}. The provider boundary resolves only current model
+ * selection; it never reads a run snapshot for prompt history. This worker
+ * propagates the actually-resolved identity onto {@see LlmStepResult} for
+ * canonical completion/failure events.
  */
 final readonly class ExecuteLlmStepWorker
 {
@@ -98,6 +97,7 @@ final readonly class ExecuteLlmStepWorker
                     stepId: $message->stepId(),
                     contextRef: $message->contextRef,
                     toolsRef: $message->toolsRef,
+                    messages: $message->messages,
                 ),
             ));
 
