@@ -153,6 +153,19 @@ final class WorktreeManager
             return $this->interruptResult($interrupt);
         }
 
+        if (is_dir($codeRoot.'/vendor/ineersa/hatfield-extension-api') && !$this->hasUsableExtensionApiLink($worktree)) {
+            $repair = $this->repairRootVendor($worktree, $control);
+            if ($repair instanceof ExecResultDTO) {
+                $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
+
+                return $repair;
+            }
+            if (!$this->hasUsableExtensionApiLink($worktree)) {
+                $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
+                throw new \RuntimeException('vendor package link broken: vendor/ineersa/hatfield-extension-api is unavailable after Composer repair.');
+            }
+        }
+
         $exclusion = $this->addWorktreeExclusions($slug, $base);
         if (null !== ($interrupt = $control?->interrupted('Interrupted after IDEA exclusion update.'))) {
             $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
@@ -553,6 +566,31 @@ final class WorktreeManager
             // composer install or fall back to absolute-path reads. Do not hard-fail here.
             return false;
         }
+    }
+
+    /** @phpstan-impure */
+    private function hasUsableExtensionApiLink(string $worktree): bool
+    {
+        $package = $worktree.'/vendor/ineersa/hatfield-extension-api';
+
+        return is_dir($package) && false !== realpath($package);
+    }
+
+    private function repairRootVendor(string $worktree, ?InvocationControl $control): bool|ExecResultDTO
+    {
+        if (!is_file($worktree.'/composer.json')) {
+            return false;
+        }
+        $result = $this->exec->exec('composer', ['install', '--no-interaction', '--no-progress'], new ExecOptionsDTO(
+            cwd: $worktree,
+            timeout: $control?->remainingTimeoutSeconds(120.0) ?? 120.0,
+            cancellationToken: $control?->cancellationToken,
+        ));
+        if ($result->cancelled || $result->timedOut) {
+            return $result;
+        }
+
+        return 0 === $result->exitCode;
     }
 
     private function installExtensionsVendor(string $worktree, ?InvocationControl $control = null): bool|ExecResultDTO

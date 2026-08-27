@@ -14,7 +14,7 @@ You are an **orchestrator**, not an implementor. Your job is to dispatch work to
 - **Fork (tool)** — for any fix needed during merge resolution or post-merge validation failures. You MUST use a fork for any file modification. Never edit files directly.
 - **Main agent (you)** — checks PR state, merges task branches, runs validation, records results, cleans up.
 
-If you catch yourself about to open an editor, write a file, or run a code change — stop and launch a fork instead.
+Main may implement cohesive work it already understands; use compact handoffs for worker-owned slices.
 
 1. **Confirm PR is approved/merged**
    - Check task metadata for PR URL and PR Status.
@@ -31,7 +31,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
    - Run `LLM_MODE=true castor check` on the integration checkout (main) after the merge.
    - The gate is fully deterministic (replay-backed, no live LLM).
    - If prerequisites are unavailable (e.g. tmux), run the available subset:
-     `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
+     focused `castor test --filter=…`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
    - **For TUI tasks that were merged: the full gate or available subset must include `castor test:tui`.** If the E2E proof test fails post-merge, open a follow-up task immediately.
    - **When merged changes touch provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), also run `castor test:llm-real` as opt-in post-merge validation.** This is NOT required for every normal merge.
    - If `castor install` is needed because of new dependencies (e.g. Doctrine bundles), run it first.
@@ -48,3 +48,6 @@ If you catch yourself about to open an editor, write a file, or run a code chang
    - Check whether the worktree directory still exists; if cleanup missed it,
      delete the surviving worktree directory after verifying it has no needed changes.
    - Confirm `git status` on integration checkout is clean.
+
+## Shared workflow policy
+Load the platform task-workflow skill and follow the named phase; do not duplicate its procedure here. Implementation ownership follows context: main may finish cohesive work it understands, while workers own complete bounded slices with compact handoffs. Use the TUI proof pyramid (virtual → controller replay → minimal tmux only for PTY/process boot). Before CODE-REVIEW use focused tests for touched areas plus deptrac/phpstan/cs-check; do not mandate full `castor test`. Flakes require deterministic root-cause fixes—never allowlist, quarantine, blind-retry, or increase timeouts.

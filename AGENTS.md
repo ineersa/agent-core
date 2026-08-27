@@ -137,7 +137,7 @@ Default `task_list` output lists TODO, IN-PROGRESS, CODE-REVIEW, and DONE only; 
 
 Task status/metadata moves do **not** commit to agent-core. Code branches, worktrees, PRs, merges do. Worktree creation updates parent IDEA module exclusions when present, creates minimal worktree-local `.idea` metadata from the integration primary module, and opens the exact worktree in JetBrains via MCP when available. DONE/CANCELLED cleanup closes that exact project before worktree removal.
 
-**Orchestrator model:** main agent plans and dispatches only—scouts explore, researchers look up, **forks implement all file changes**. Never edit files directly in the main agent; forks implement all file modifications (docs, config, tests, and code).
+**Implementation ownership:** delegation is context management, not a prohibition on main-agent edits. The agent with the detailed implementation model normally finishes a cohesive change. Delegate complete bounded slices only when transfer reduces total context/rereading (mechanical migrations, isolated modules, independently testable work, investigation+implementation, disjoint parallel work, or context-heavy internals). One owner edits each slice; never concurrently edit the same files; record an explicit ownership handoff. Workers return only commit, changed paths, validation, and unresolved risks. Main may implement and validate; independent review remains required.
 
 Phases: `task-explain` → `task-start` → `task-to-pr` → `task-done` (with `task-review-iterate` as needed). Load the `task-workflow` skill (`.pi/skills/task-workflow/SKILL.md`) for every phase procedure, fork instructions, and compaction recovery. After compaction, use `task_list` plus that skill.
 

@@ -153,8 +153,19 @@ final class MoveTaskHandlerTest extends TestCase
         // Thesis: without this test, a failing castor check could still push, open a PR, or move the task off IN-PROGRESS.
         $slug = '2026-01-01-cr-fail';
         $branch = 'task/'.$slug;
+        $worktree = $this->worktreesBase.'/'.$slug;
 
-        $inner = new StubExec($this->gitStubForCodeReview(timeoutExitCode: 124));
+        $inner = new StubExec(function (string $command, array $args, ?ExecOptionsDTO $options) use ($worktree): ExecResultDTO {
+            if ('timeout' === $command) {
+                $reports = $worktree.'/var/reports/qa-123';
+                mkdir($reports, 0o755, true);
+                file_put_contents($reports.'/check-phpstan.log', 'PHPStan failure: useful first error');
+
+                return new ExecResultDTO('QA run: qa-123\nquality failed: phpstan', '', 1);
+            }
+
+            return ($this->gitStubForCodeReview(timeoutExitCode: 0))($command, $args, $options);
+        });
         $recording = new RecordingExec($inner);
         $handler = $this->makeHandler($recording);
 
@@ -171,6 +182,9 @@ final class MoveTaskHandlerTest extends TestCase
             $this->fail('Expected RuntimeException when castor check fails');
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('Castor check FAILED', $e->getMessage());
+            $this->assertStringContainsString('Failing lane: phpstan', $e->getMessage());
+            $this->assertStringContainsString('var/reports/qa-123/check-phpstan.log', $e->getMessage());
+            $this->assertStringContainsString('PHPStan failure: useful first error', $e->getMessage());
         }
 
         $this->assertFileExists($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');

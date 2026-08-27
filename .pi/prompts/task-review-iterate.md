@@ -13,10 +13,10 @@ You are an **orchestrator**, not an implementor. Your job is to dispatch work to
 
 - **Reviewer subagent** — for re-review after fixes are applied.
 - **Researcher subagents** — for web searches, external docs referenced in review comments.
-- **Fork (tool)** — for ALL implementation fixes: addressing review feedback, fixing blockers, resolving gate failures. You MUST use a fork for any file modification. Never edit files directly.
+- **Implementation owner** — main or worker owns a cohesive slice based on context; delegate only bounded work that reduces rereading. Do not overlap file ownership.
 - **Main agent (you)** — reads PR comments, classifies feedback, prepares fork instructions, verifies output, moves task state.
 
-If you catch yourself about to open an editor, write a file, or run a code change — stop and launch a fork instead.
+Main may implement cohesive work it already understands; use compact handoffs for worker-owned slices.
 
 ## JetBrains checkout targeting (implementation/review)
 
@@ -44,7 +44,7 @@ Prefer semantic JetBrains IDE tools (`ide_*`) for navigation, references/hierarc
    - Write exact implementation instructions covering each actionable comment.
    - Group nearby changes into single edits where possible.
    - Specify exact files, old/new text patterns, validation steps, and limits of authority.
-   - **For TUI tasks: if the fix addresses user-visible behavior or workflow, the instructions MUST require adding or updating a real `TmuxHarness` E2E proof (replay-backed, no live LLM required) for the affected feature path.** If the task previously lacked such a test, this iteration must remediate that gap.
+   - **For TUI tasks: if the fix addresses user-visible behavior or workflow, the instructions MUST require adding or updating proof at the lowest correct layer (virtual/in-process, controller replay, or minimal tmux only for PTY/process boot) for the affected feature path.** If the task previously lacked such a test, this iteration must remediate that gap.
    - Pass those instructions directly to the fork.
 
 5. **Launch a fork**
@@ -62,7 +62,7 @@ Prefer semantic JetBrains IDE tools (`ide_*`) for navigation, references/hierarc
 
 7. **Re-review**
    - Run the reviewer subagent again on the worktree at the new HEAD.
-   - **For TUI tasks: instruct the reviewer to verify a real `TmuxHarness` E2E proof (replay-backed, no live LLM required) exists and covers the user-visible feature path.** Reject the iteration if it lacks this proof or substitutes mocks.
+   - **For TUI tasks: instruct the reviewer to verify proof at the lowest correct layer (virtual/in-process, controller replay, or minimal tmux only for PTY/process boot) exists and covers the user-visible feature path.** Reject the iteration if it lacks this proof or substitutes mocks.
    - If REQUEST CHANGES again, repeat from step 4 with the new feedback.
 
 8. **Move back to CODE-REVIEW**
@@ -71,3 +71,6 @@ Prefer semantic JetBrains IDE tools (`ide_*`) for navigation, references/hierarc
 9. **Update task**
    - Use `update_task` to record decisions, commit sha, reviewer result, and validation.
    - Append work log entries for each iteration.
+
+## Shared workflow policy
+Load the platform task-workflow skill and follow the named phase; do not duplicate its procedure here. Implementation ownership follows context: main may finish cohesive work it understands, while workers own complete bounded slices with compact handoffs. Use the TUI proof pyramid (virtual → controller replay → minimal tmux only for PTY/process boot). Before CODE-REVIEW use focused tests for touched areas plus deptrac/phpstan/cs-check; do not mandate full `castor test`. Flakes require deterministic root-cause fixes—never allowlist, quarantine, blind-retry, or increase timeouts.

@@ -123,3 +123,7 @@ List every file you actually read with line ranges.
 - Always include file:line references. If you can't pinpoint the line, say so.
 - Distinguish between "this is wrong" from "I would have done it differently".
 - If you didn't read a file, don't comment on it.
+
+## Verdict rubric
+
+Return **REQUEST CHANGES** for CRITICAL/BUG/SEC findings, unmapped surface, or missing required proof. Return **APPROVE WITH SUGGESTIONS** for NTH, naming, or pure ponytail micro-shrinks unless they affect correctness. Do not block approval once all blockers are fixed merely for a tiny remaining line-count reduction.

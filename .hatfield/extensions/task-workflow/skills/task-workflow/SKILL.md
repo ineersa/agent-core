@@ -20,16 +20,18 @@ preventing code-branch pollution. The user commits task board changes manually w
 
 ## Orchestrator model
 
-The main agent is an **orchestrator**, not an implementor. Work is dispatched to specialized agents:
+Implementation ownership is a context-management decision. The agent with the detailed implementation model normally completes cohesive work; delegate only complete bounded slices where transfer avoids rereading/context growth. One owner edits each slice; hand off explicitly and never edit the same files concurrently. Independent review remains required.
+
+Agents may be dispatched as follows:
 
 | Agent | Use for |
 |---|---|
 | **Scout subagents** | Codebase exploration, dependency checks, architecture discovery, impact analysis |
 | **Researcher subagents** | Web searches, documentation lookups, changelog checks |
-| **Fork (tool)** | ALL implementation work — editing files, writing code, fixing tests, updating configs |
-| **Main agent (you)** | Reads context, plans work, writes fork instructions, records results, updates task metadata |
+| **Worker/fork** | A complete bounded implementation slice, mechanical migration, isolated module, or context-heavy investigation plus implementation |
+| **Main agent** | Planning, cohesive implementation it already understands, validation, ownership decisions, and task metadata |
 
-**Never edit files directly in the main agent.** If you catch yourself about to open an editor, write a file, or run a code change — launch a fork instead.
+Worker handoffs are compact: commit, changed paths, validation, unresolved risks.
 
 ### Subagent dispatch (parallel vs sequential)
 
@@ -70,7 +72,7 @@ Read-only planning. No status changes, no file edits, no forks.
 5. Discuss with user. Highlight decision points — do not silently resolve them.
 6. When ready to implement, user runs `task-start`.
 
-#
+## Leaked QA workers
 
 **Leaked QA workers:** `castor check` does not auto-kill. Survivors are lifecycle bugs — fix teardown at root cause; do not kill as routine before retry. Use `castor clean:cleanup:workers:list` for diagnostics; `castor clean:cleanup:workers` only as explicit last resort after investigation.
 ## task-start: Implement (TODO → IN-PROGRESS)
@@ -105,7 +107,7 @@ repo. The external task board repo must be committed manually when desired.
 2. Run reviewer subagent on worktree (`subagent agent="reviewer" cwd=worktree`). Instruct the reviewer to apply the **Specification fidelity gate**: compare changed external surface/complexity to finalized requirements and REQUEST CHANGES for unmapped or unnecessary additions.
    - If REQUEST CHANGES → analyze blockers, fork fixes, re-review. Repeat until APPROVED.
 3. Run focused local validation on worktree:
-   - `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
+   - focused `castor test --filter=…` for touched areas, `castor deptrac`, `castor phpstan`, `castor cs-check`; run controller-replay or `castor test:tui` only when that proof layer is required. Do not require full `castor test`: CODE-REVIEW runs full `castor check`.
    - For TUI tasks: also run `castor test:tui` as part of local validation.
    - When changes touch provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), also run `castor test:llm-real` as opt-in focused validation. This is NOT required for every normal task — only when the change affects live provider compatibility path.
    - The orchestrator/user is responsible for focused validation before moving to CODE-REVIEW. `move_task(to="CODE-REVIEW")` automatically runs deterministic `castor check` in the worktree before pushing and creating the PR.
@@ -114,7 +116,7 @@ repo. The external task board repo must be committed manually when desired.
 
 ### task-review-iterate: Address PR feedback (CODE-REVIEW → IN-PROGRESS → CODE-REVIEW)
 
-1. Read all PR comments via `gh pr view`. Classify blockers vs nice-to-have.
+1. Read PR summary via `gh pr view` and inline comments via `gh api repos/<owner>/<repo>/pulls/<n>/comments`. Classify blockers vs suggestions. In Hatfield, resume the prior reviewer with `agent_resume` plus commit/diff and resolution delta when its artifact/run identity is available; launch a new reviewer only when no reviewer can be resumed.
 2. `move_task(to="IN-PROGRESS")` before any implementation.
 3. Prepare exact fork instructions covering each actionable comment; re-apply the **Specification fidelity gate** so fixes do not introduce uncited product decisions.
 4. Fork fixes on worktree. Verify output, run focused Castor validation.
@@ -128,7 +130,7 @@ repo. The external task board repo must be committed manually when desired.
 2. `move_task(to="DONE")` — merges task branch into integration checkout, runs `git pull`.
    - If merge conflicts → task stays CODE-REVIEW. Do not force.
 3. Post-merge validation: `LLM_MODE=true castor check` on integration checkout.
-   - If prerequisites unavailable: `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
+   - If prerequisites unavailable: focused `castor test --filter=…` for touched areas, `castor deptrac`, `castor phpstan`, `castor cs-check`; run controller-replay or `castor test:tui` only when that proof layer is required. Do not require full `castor test`: CODE-REVIEW runs full `castor check`.
 4. Record validation results via `update_task`.
 5. Clean up: confirm `git status` clean, verify worktree removed.
 
@@ -149,3 +151,13 @@ repo. The external task board repo must be committed manually when desired.
 ## Compaction resilience
 
 After compaction, the `task-workflow` skill documents next steps. Use `task_list` to inspect active tasks, and load this skill for exact phase procedures.
+
+## CODE-REVIEW failure runbook
+
+`move_task(CODE-REVIEW)` reports the failing Castor lane, a bounded first failure snippet, and its `var/reports/qa-<id>/check-*.log` path when a lane ran. For lock, setup, preflight, or finalizer failures without a lane log, use the reported QA directory and the real bounded setup error; never invent a lane or log. Treat every flaky test as a product/harness defect: no allowlist, quarantine, blind retry, or timeout increase. Fix its deterministic root cause, document the unrelated fix, re-review, and rerun; escalate only when the proper fix needs a broader product/design decision.
+
+## Reviewer verdict rubric
+
+CRITICAL, BUG, SEC, unmapped surface, or missing required proof means **REQUEST CHANGES**. NTH, naming, and pure ponytail micro-shrinks mean **APPROVE WITH SUGGESTIONS** unless correctness is affected. Once blockers are fixed, a remaining tiny line shrink must not block approval.
+
+Status styling is selected by key in `StatusPanelWidget`; keep `setStatus` text plain.

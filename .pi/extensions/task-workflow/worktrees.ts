@@ -7,7 +7,7 @@
 // - Adding/removing worktree exclusion blocks in the parent worktree IDEA module (when present)
 // - Merging task branches back into the integration checkout
 
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join, resolve, dirname, basename } from "node:path";
 // @ts-ignore
@@ -248,6 +248,20 @@ export async function removeWorktreeExclusions(
 
 
 const EXTENSIONS_COMPOSER_TIMEOUT_MS = 120_000;
+const ROOT_COMPOSER_TIMEOUT_MS = 120_000;
+
+function usableExtensionApiLink(worktree: string): boolean {
+	const packagePath = join(worktree, "vendor", "ineersa", "hatfield-extension-api");
+	try { return existsSync(packagePath) && statSync(packagePath).isDirectory(); } catch { return false; }
+}
+
+async function repairRootVendor(pi: ExtensionAPI, worktree: string, signal?: AbortSignal): Promise<void> {
+	const result = await run(pi, "composer", ["install", "--no-interaction", "--no-progress"], worktree, signal, ROOT_COMPOSER_TIMEOUT_MS);
+	if (result.code !== 0 || !usableExtensionApiLink(worktree)) {
+		throw new Error("vendor package link broken: vendor/ineersa/hatfield-extension-api is unavailable after Composer repair.");
+	}
+}
+
 
 function sanitizeComposerDiagnostic(stdout: string, stderr: string, code: number): string {
 	const raw = (stderr || stdout || "").trim().replace(/\s+/g, " ");
@@ -350,6 +364,16 @@ export async function createWorktreeForTask(
 			veraCopied = true;
 		} catch {
 			// Non-fatal. Forks can use absolute-path reads/edits.
+		}
+	}
+
+	const sourcePackage = join(codeRoot, "vendor", "ineersa", "hatfield-extension-api");
+	if (existsSync(sourcePackage) && !usableExtensionApiLink(worktree)) {
+		try {
+			await repairRootVendor(pi, worktree, signal);
+		} catch (error) {
+			await run(pi, "git", ["worktree", "remove", worktree], codeRoot, signal);
+			throw error;
 		}
 	}
 

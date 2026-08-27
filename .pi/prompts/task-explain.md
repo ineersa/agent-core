@@ -41,7 +41,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
      - What changes in each file (new classes, modified methods, config changes).
      - Test files to create or update.
    - **Risks and open questions** — anything ambiguous, potentially breaking, or requiring a design decision.
-   - **Suggested validation** — which `castor` commands to run after implementation. For TUI tasks: explicitly include a real `TmuxHarness` E2E proof (replay-backed, no live LLM required), and note that `castor test:tui` is required before CODE-REVIEW. When the task touches provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), also note `castor test:llm-real` as opt-in focused validation.
+   - **Suggested validation** — which `castor` commands to run after implementation. For TUI tasks: explicitly include proof at the lowest correct layer (virtual/in-process, controller replay, or minimal tmux only for PTY/process boot), and note that `castor test:tui` is required before CODE-REVIEW. When the task touches provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), also note `castor test:llm-real` as opt-in focused validation.
 
 4. **Discuss with the user**
    - Present the plan and explicitly ask for feedback.
@@ -54,3 +54,6 @@ If you catch yourself about to open an editor, write a file, or run a code chang
    - Create branches, worktrees, or PRs.
    - Edit any files or launch forks.
    - Run `castor check` or any QA commands.
+
+## Shared workflow policy
+Load the platform task-workflow skill and follow the named phase; do not duplicate its procedure here. Implementation ownership follows context: main may finish cohesive work it understands, while workers own complete bounded slices with compact handoffs. Use the TUI proof pyramid (virtual → controller replay → minimal tmux only for PTY/process boot). Before CODE-REVIEW use focused tests for touched areas plus deptrac/phpstan/cs-check; do not mandate full `castor test`. Flakes require deterministic root-cause fixes—never allowlist, quarantine, blind-retry, or increase timeouts.

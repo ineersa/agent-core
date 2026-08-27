@@ -278,11 +278,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
             $reason = $checkKilled
                 ? 'timeout after '.$checkTimeout.'s'
                 : 'exit code '.$checkResult->exitCode;
-            $detail = trim('' !== $checkResult->stderr ? $checkResult->stderr : $checkResult->stdout);
-            if ('' === $detail) {
-                $detail = '(no output)';
-            }
-            throw new \RuntimeException('Castor check FAILED ('.$reason.') in the worktree. Fix the failures, re-validate with focused Castor commands, then move to CODE-REVIEW again.'."\n".'Worktree: '.$worktree."\n".'Output:'."\n".substr($detail, 0, 2000));
+            throw new \RuntimeException($this->formatCastorCheckFailure($reason, $worktree, $checkResult));
         }
 
         $notes[] = 'castor check passed ('.number_format($checkDuration, 1).'s).';
@@ -341,6 +337,35 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         }
 
         return TaskMarkdown::updateField($text, 'Status', TaskStatusEnum::CODE_REVIEW->value);
+    }
+
+    private function formatCastorCheckFailure(string $reason, string $worktree, ExecResultDTO $result): string
+    {
+        $output = trim('' !== $result->stderr ? $result->stderr : $result->stdout);
+        $qaRun = preg_match('/QA run:\s*(qa-[A-Za-z0-9_-]+)/', $result->stdout."\n".$result->stderr, $matches) ? $matches[1] : null;
+        $lane = preg_match('/(?:quality failed|failed lanes?)[: ]+([^,\n]+)/i', $output, $matches) ? trim($matches[1]) : null;
+        $reportDir = null === $qaRun ? null : 'var/reports/'.$qaRun;
+        $log = null === $lane || null === $reportDir ? null : $reportDir.'/check-'.$lane.'.log';
+        $logPath = null === $log ? null : $worktree.'/'.$log;
+        $snippet = $output;
+        if (null !== $logPath && is_file($logPath)) {
+            $contents = file_get_contents($logPath);
+            if (false !== $contents && '' !== trim($contents)) {
+                $snippet = trim($contents);
+            }
+        }
+        if ('' === $snippet) {
+            $snippet = '(no output)';
+        }
+        $message = 'Castor check FAILED ('.$reason.') in the worktree. Fix the failures, re-validate with focused Castor commands, then move to CODE-REVIEW again.'
+            ."\n".'Worktree: '.$worktree;
+        if (null !== $lane && null !== $log && null !== $logPath && is_file($logPath)) {
+            $message .= "\n".'Failing lane: '.$lane."\n".'Log: '.$log;
+        } elseif (null !== $reportDir) {
+            $message .= "\n".'QA reports: '.$reportDir;
+        }
+
+        return $message."\n".'First failure:'."\n".substr($snippet, 0, 1200);
     }
 
     /**

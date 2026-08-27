@@ -43,6 +43,18 @@ import { workflowPrompt } from "./prompt";
 
 const statusParam = StringEnum(STATUSES);
 
+function formatCastorCheckFailure(reason: string, worktree: string, stdout: string, stderr: string): string {
+	const output = (stderr || stdout || "").trim();
+	const qaRun = /QA run:\s*(qa-[A-Za-z0-9_-]+)/.exec(`${stdout}\n${stderr}`)?.[1];
+	const lane = /(?:quality failed|failed lanes?)[: ]+([^,\n]+)/i.exec(output)?.[1]?.trim();
+	const reportDir = qaRun ? `var/reports/${qaRun}` : undefined;
+	const log = lane && reportDir ? `${reportDir}/check-${lane}.log` : undefined;
+	let snippet = output || "(no output)";
+	if (log && existsSync(join(worktree, log))) snippet = readFileSync(join(worktree, log), "utf8").trim() || snippet;
+	const location = log && existsSync(join(worktree, log)) ? `Failing lane: ${lane}\nLog: ${log}` : reportDir ? `QA reports: ${reportDir}` : "";
+	return `Castor check FAILED (${reason}) in the worktree. Fix the failures, re-validate with focused Castor commands, then move to CODE-REVIEW again.\nWorktree: ${worktree}${location ? `\n${location}` : ""}\nFirst failure:\n${snippet.slice(0, 1200)}`;
+}
+
 const CreateTaskParams = Type.Object({
 	title: Type.String({ description: "Short task title" }),
 	body: Type.Optional(Type.String({ description: "Free-form notes/context for the task" })),
@@ -291,13 +303,7 @@ export default function (pi: ExtensionAPI) {
 						const reason = checkKilled
 							? `timeout after ${checkTimeout}s`
 							: `exit code ${checkResult.code}`;
-						const detail = checkResult.stderr || checkResult.stdout || "(no output)";
-						throw new Error(
-							`Castor check FAILED (${reason}) in the worktree. ` +
-							`Fix the failures, re-validate with focused Castor commands, then move to CODE-REVIEW again.\n` +
-							`Worktree: ${worktree}\n` +
-							`Output:\n${detail.slice(0, 2000)}`,
-						);
+						throw new Error(formatCastorCheckFailure(reason, worktree, checkResult.stdout, checkResult.stderr));
 					}
 
 					notes.push(`castor check passed (${checkDuration.toFixed(1)}s).`);
