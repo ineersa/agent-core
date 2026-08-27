@@ -141,7 +141,7 @@ Task status/metadata moves do **not** commit to agent-core. Code branches, workt
 
 **No dead code or uncited fallback paths:** delete code, branches, prompts, adapters, tests, and compatibility paths that are dead, unreachable, superseded, or have no supported caller in the same change. Do not retain them “just in case.” Do not add fallback behavior, compatibility shims, or preservation paths unless an explicit finalized requirement or published compatibility contract requires them. This does not prohibit required error handling or intentional local degradation that is explicitly documented by the requirement.
 
-Phases: `task-explain` → `task-start` → `task-to-pr` → `task-done` (with `task-review-iterate` as needed). Load the `task-workflow` skill (`.pi/skills/task-workflow/SKILL.md`) for every phase procedure, fork instructions, and compaction recovery. After compaction, use `task_list` plus that skill.
+Phases: `task-explain` → `task-start` → `task-to-pr` → `task-done` (with `task-review-iterate` as needed). Load the `task-workflow` skill (`.pi/skills/task-workflow/SKILL.md`) for every phase procedure, implementation ownership or delegated-worker handoffs, and compaction recovery. After compaction, use `task_list` plus that skill.
 
 ## Docs map
 

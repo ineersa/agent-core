@@ -1,6 +1,6 @@
 ---
 name: task-workflow
-description: "Step-by-step procedures for each task workflow phase. Load this skill when: starting any task phase (task-start, task-to-pr, task-review-iterate, task-done), preparing fork instructions, or running reviewer workflows. Covers orchestrator model, phase procedures, and compaction resilience."
+description: "Step-by-step procedures for each task workflow phase. Load this skill when: starting any task phase (task-start, task-to-pr, task-review-iterate, task-done), defining implementation ownership or delegated-worker handoffs, or running reviewer workflows. Covers ownership, phase procedures, and compaction resilience."
 ---
 
 # Task Workflow Procedures
@@ -42,10 +42,10 @@ Worker handoffs are compact: commit, changed paths, validation, unresolved risks
 
 ## Specification fidelity gate (mandatory)
 
-Before writing fork instructions or accepting review:
+Before defining implementation ownership or delegated-worker handoff instructions, or accepting review:
 
 1. Map every proposed externally visible addition (setting, API, storage field, command, user-visible behavior) to an **exact finalized task requirement**. Unmapped additions are forbidden.
-2. Fork instructions may choose minimal implementation mechanics, but **must not introduce uncited product decisions**. Unresolved ambiguity affecting behavior or public surface goes back to the user — do not invent defaults or surface.
+2. Implementation plans and delegated-worker handoff instructions may choose minimal mechanics, but **must not introduce uncited product decisions**. Unresolved ambiguity affecting behavior or public surface goes back to the user — do not invent defaults or surface.
 3. Latest explicit task clarification overrides earlier superseded scope.
 4. Reviewers must inventory changed external surface and complexity against finalized requirements and return **REQUEST CHANGES** for unmapped functionality or unnecessary complexity.
 5. Delete code, branches, prompts, adapters, tests, compatibility paths, and procedures that become dead, unreachable, superseded, or unsupported in the same change. Do not preserve them “just in case” or add uncited fallback behavior. Required error handling and explicitly documented local degradation remain valid.
@@ -97,13 +97,13 @@ repo. The external task board repo must be committed manually when desired.
 
 **Worktree JetBrains lifecycle:** When creating a worktree, the extension (1) updates the parent worktree IDEA module (e.g., `agent-core-worktrees.iml`) with an idempotent sentinel block of `<excludeFolder>` entries so the aggregate worktrees project does not index generated content, (2) creates minimal worktree-local `.idea` metadata derived from the integration primary module (source roots/exclusions only; no workspace/datasources/cross-module refs), and (3) opens that exact worktree via MCP `ide_open_project`. On DONE/CANCELLED cleanup of an existing worktree, the exact project is closed before removal. IDE/MCP failures are degradation notes, not transition failures. Prefer semantic IDE tools against the exact worktree `project_path`; filesystem tools remain fallback.
 
-**TUI behavior proof for implementation:** For tasks touching TUI behavior, the fork MUST add or update automated proof at the **lowest correct layer** (virtual/in-process, controller-replay, or minimal tmux — see pyramid below). Fork instructions must state the test thesis and layer. Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility assertions are NOT acceptable as the only proof. See `## TUI behavior proof requirement` below.
+**TUI behavior proof for implementation:** For tasks touching TUI behavior, the implementation owner MUST add or update automated proof at the **lowest correct layer** (virtual/in-process, controller-replay, or minimal tmux — see pyramid below). Delegated-worker handoff instructions must state the test thesis and layer when work is delegated. Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility assertions are NOT acceptable as the only proof. See `## TUI behavior proof requirement` below.
 
 ### task-to-pr: Review and create PR (IN-PROGRESS → CODE-REVIEW)
 
 1. Inspect worktree state: `git status`, `git log`, `git diff --stat origin/main...HEAD`.
 2. Run reviewer subagent on worktree (`subagent agent="reviewer" cwd=worktree`). Instruct the reviewer to apply the **Specification fidelity gate**: compare changed external surface/complexity to finalized requirements and REQUEST CHANGES for unmapped or unnecessary additions.
-   - If REQUEST CHANGES → analyze blockers, fork fixes, re-review. Repeat until APPROVED.
+   - If REQUEST CHANGES → analyze blockers, apply fixes under the chosen ownership, then re-review. Repeat until APPROVED.
 3. Run focused local validation on worktree:
    - focused `castor test --filter=…` for touched areas, `castor deptrac`, `castor phpstan`, `castor cs-check`; run controller-replay or `castor test:tui` only when that proof layer is required. Do not require full `castor test`: CODE-REVIEW runs full `castor check`.
    - When changes touch provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), also run `castor test:llm-real` as opt-in focused validation. This is NOT required for every normal task — only when the change affects live provider compatibility path.
@@ -140,7 +140,7 @@ repo. The external task board repo must be committed manually when desired.
 - **Minimal tmux** (`castor test:tui`, `#[Group('tui-e2e-replay')]`, replay fixtures, isolated dirs): terminal integration smoke only when virtual/replay cannot prove the contract.
 
 - Do **not** move a TUI task to CODE-REVIEW or DONE without the appropriate layer proof and passing focused Castor validation for that layer. Purely virtual features do **not** need a new tmux test. Require `castor test:tui` only when the change depends on tmux/pty/process boot.
-- Fork instructions for TUI tasks must name the layer, test thesis, and commands to run.
+- When TUI work is delegated, worker handoff instructions must name the layer, test thesis, and commands to run.
 - Reviewers must verify layer choice and reject tmux-only proof where virtual/replay suffices, or missing proof for the claimed layer.
 
 **Load the `testing` skill** when: writing, running, or debugging TUI proof tests.
