@@ -193,16 +193,6 @@ final class ProcessStore
     }
 
     /**
-     * Fetch all unfinished PIDs.
-     *
-     * @return int[]
-     */
-    public function fetchAllUnfinishedPids(): array
-    {
-        return $this->repository->findUnfinishedPids();
-    }
-
-    /**
      * Fetch private foreground-supervision rows that are safely past their
      * five-minute cleanup grace interval.
      *
@@ -211,16 +201,6 @@ final class ProcessStore
     public function fetchFinishedProvisionalBefore(\DateTimeImmutable $cutoff): array
     {
         return $this->repository->findFinishedProvisionalBefore($cutoff);
-    }
-
-    /**
-     * Fetch stale entities where finishedAt is set and <= cutoff.
-     *
-     * @return BackgroundProcess[]
-     */
-    public function fetchStale(\DateTimeImmutable $cutoff): array
-    {
-        return $this->repository->findStale($cutoff);
     }
 
     /**

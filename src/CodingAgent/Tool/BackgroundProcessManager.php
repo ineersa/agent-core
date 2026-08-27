@@ -35,8 +35,6 @@ use Symfony\Component\Clock\Clock;
  *     liveness via /proc/<pid> on Linux or the status file.
  *  4. stop() sends SIGTERM to the process group (negative PGID), polls
  *     until exit or the configured grace deadline, then SIGKILL if still alive.
- *  5. cleanupStale() removes DB records and log files older than
- *     retention once the process has finished.
  *
  * Session ownership: user-facing list(), readLogTail(), and session-scoped
  * stop() operations require an owning session and expose only rows explicitly
@@ -494,53 +492,6 @@ final class BackgroundProcessManager
         }
 
         return $this->stopProcessEntity($entity);
-    }
-
-    /**
-     * Legacy broad retention cleanup for accepted-background retention policy.
-     *
-     * This method includes the historical directory orphan scan and is not
-     * called by BackgroundProcessProvisionalCleanupTask: that recurring task
-     * may remove only exact row-owned provisional sidecars without scanning.
-     *
-     * First refreshes all unfinished records so finished_at is populated
-     * for processes that completed without a list() call, then queries
-     * for stale entities.
-     *
-     * @return int Number of cleaned records
-     */
-    public function cleanupStale(): int
-    {
-        // Refresh all unfinished so finished_at is populated
-        $this->refreshAllUnfinished();
-
-        $cutoff = Clock::get()->now()->modify('-'.$this->config->retentionSeconds.' seconds');
-
-        $staleEntities = $this->store->fetchStale($cutoff);
-
-        $count = 0;
-        foreach ($staleEntities as $entity) {
-            $logPath = $entity->logPath;
-            $statusPath = $entity->statusPath;
-
-            // Delete log and status files
-            $this->lifecycle->deleteRecordFiles($logPath, $statusPath);
-
-            // Delete DB record
-            if ($this->store->deleteById($entity->id)) {
-                ++$count;
-            }
-        }
-
-        // Also clean up orphaned .pid files (from crashed processes)
-        $activePids = $this->store->fetchAllUnfinishedPids();
-        $activePidSet = [];
-        foreach ($activePids as $activePid) {
-            $activePidSet[$activePid] = true;
-        }
-        $this->lifecycle->cleanupOrphanedPidFiles($activePidSet);
-
-        return $count;
     }
 
     /**

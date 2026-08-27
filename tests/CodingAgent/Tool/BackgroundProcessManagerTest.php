@@ -245,22 +245,6 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->manager->stop(999999);
     }
 
-    /* ── cleanupStale() ── */
-
-    public function testCleanupStaleRemovesFinishedProcesses(): void
-    {
-        $this->createManager(retentionSeconds: 0);
-        $result = $this->manager->start('echo "stale"', self::TEST_SESSION);
-
-        $this->waitUntilFinished($result->pid);
-
-        $count = $this->manager->cleanupStale();
-        $this->assertSame(1, $count);
-
-        $this->assertFileDoesNotExist($result->logPath);
-        $this->assertNull($this->manager->findByRecordId($result->id));
-    }
-
     /* ── shutdownCleanup() ── */
 
     public function testShutdownCleanupStopsAllRunning(): void
@@ -451,11 +435,10 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
      * but with a test-specific BackgroundProcessConfig that points storageDir
      * to a temporary directory for subprocess output files.
      */
-    private function createManager(?string $storageDir = null, int $retentionSeconds = 86400, int $stopGraceSeconds = 1, int $logTailChars = 5000): void
+    private function createManager(?string $storageDir = null, int $stopGraceSeconds = 1, int $logTailChars = 5000): void
     {
         $config = new BackgroundProcessConfig(
             storageDir: $storageDir ?? $this->tmpDir,
-            retentionSeconds: $retentionSeconds,
             stopGraceSeconds: $stopGraceSeconds,
             logTailChars: $logTailChars,
         );
@@ -470,7 +453,6 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
     {
         $config = new BackgroundProcessConfig(
             storageDir: $this->tmpDir,
-            retentionSeconds: 86400,
             stopGraceSeconds: $stopGraceSeconds,
             logTailChars: 5000,
         );

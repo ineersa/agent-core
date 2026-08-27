@@ -91,22 +91,6 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
     }
 
     /**
-     * Find unfinished PIDs only (no entity hydration).
-     *
-     * @return int[]
-     */
-    public function findUnfinishedPids(): array
-    {
-        $rows = $this->createQueryBuilder('bp')
-            ->select('bp.pid')
-            ->where('bp.finishedAt IS NULL')
-            ->getQuery()
-            ->getScalarResult();
-
-        return array_map('intval', array_column($rows, 'pid'));
-    }
-
-    /**
      * Find finished background processes that were explicitly backgrounded
      * and have not yet had their completion notified.
      *
@@ -182,22 +166,6 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
             ->andWhere('bp.finishedAt <= :cutoff')
             ->setParameter('cutoff', $cutoff)
             ->orderBy('bp.id', 'ASC')
-            ->getQuery()
-            ->getResult();
-    }
-
-    /**
-     * Find stale (finished and older than cutoff) processes.
-     *
-     * @return BackgroundProcess[]
-     */
-    public function findStale(\DateTimeImmutable $cutoff): array
-    {
-        return $this->createQueryBuilder('bp')
-            ->where('bp.finishedAt IS NOT NULL')
-            ->andWhere('bp.finishedAt <= :cutoff')
-            ->setParameter('cutoff', $cutoff)
-            ->orderBy('bp.id', 'DESC')
             ->getQuery()
             ->getResult();
     }

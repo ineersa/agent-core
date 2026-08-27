@@ -329,51 +329,6 @@ final class ProcessLifecycle
 
     // ─── Cleanup ─────────────────────────────────────────────────────
 
-    /**
-     * Remove orphaned .pid files (and companion .status/.log files) that
-     * belong to PIDs not tracked in the active set.
-     *
-     * @param array<int, true> $activePidSet PIDs currently tracked in the DB
-     */
-    public function cleanupOrphanedPidFiles(array $activePidSet): void
-    {
-        $bgDir = $this->config->storageDir;
-        if (!is_dir($bgDir)) {
-            return;
-        }
-
-        $iterator = new \FilesystemIterator($bgDir, \FilesystemIterator::SKIP_DOTS);
-        /** @var \SplFileInfo $file */
-        foreach ($iterator as $file) {
-            if (!$file->isFile()) {
-                continue;
-            }
-
-            $filename = $file->getFilename();
-
-            // Only clean .pid files
-            if (!str_ends_with($filename, '.pid')) {
-                continue;
-            }
-
-            $pidContent = @file_get_contents($file->getPathname());
-            $pidFromFile = \is_string($pidContent) ? (int) trim($pidContent) : 0;
-            if ($pidFromFile > 0 && !isset($activePidSet[$pidFromFile])) {
-                // This PID is not in our active set — the .pid file is orphaned
-                @unlink($file->getPathname());
-
-                // Also clean up companion .status and .log files if they exist
-                $base = $file->getPath().'/'.pathinfo($filename, \PATHINFO_FILENAME);
-                foreach (['.status', '.log'] as $ext) {
-                    $companion = $base.$ext;
-                    if (is_file($companion)) {
-                        @unlink($companion);
-                    }
-                }
-            }
-        }
-    }
-
     // ─── Helpers ─────────────────────────────────────────────────────
 
     /**
@@ -425,21 +380,6 @@ final class ProcessLifecycle
         }
 
         return true;
-    }
-
-    /**
-     * Delete log and status files for a finished process.
-     *
-     * Silently ignores non-existent or empty paths.
-     */
-    public function deleteRecordFiles(string $logPath, string $statusPath): void
-    {
-        if ('' !== $logPath && is_file($logPath)) {
-            @unlink($logPath);
-        }
-        if ('' !== $statusPath && is_file($statusPath)) {
-            @unlink($statusPath);
-        }
     }
 
     /**
