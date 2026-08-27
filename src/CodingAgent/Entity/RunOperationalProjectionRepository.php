@@ -23,6 +23,81 @@ final readonly class RunOperationalProjectionRepository implements RunOperationa
 
     public function replace(RunOperationalProjectionDTO $projection): void
     {
+        $this->replaceProjection($projection);
+    }
+
+    /** @param list<RunOperationalHumanInputDTO> $humanInputs */
+    public function replaceStateAndHumanInputs(RunOperationalProjectionDTO $projection, array $humanInputs): void
+    {
+        $this->connection->transactional(function () use ($projection, $humanInputs): void {
+            $this->replaceProjection($projection);
+            $this->replaceHumanInputRows($projection->runId, $humanInputs);
+        });
+    }
+
+    public function findOperationalStatus(string $runId): ?RunOperationalStatusDTO
+    {
+        $row = $this->connection->fetchAssociative(<<<'SQL'
+SELECT run_id, status, operation_turn_no, operation_step_id, operation_attempt, operation_key
+FROM run_operational_state WHERE run_id = :run_id
+SQL, ['run_id' => $runId]);
+        if (false === $row) {
+            return null;
+        }
+
+        $operation = null;
+        if (null !== $row['operation_key']) {
+            $operation = new CurrentOperationDTO(
+                (int) $row['operation_turn_no'],
+                (string) $row['operation_step_id'],
+                (int) $row['operation_attempt'],
+                (string) $row['operation_key'],
+            );
+        }
+
+        return new RunOperationalStatusDTO((string) $row['run_id'], RunStatus::from((string) $row['status']), $operation);
+    }
+
+    /** @param list<RunOperationalToolCallDTO> $toolCalls */
+    public function replaceToolCalls(string $runId, array $toolCalls): void
+    {
+        $this->connection->transactional(function () use ($runId, $toolCalls): void {
+            $this->connection->delete('run_operational_tool_call', ['run_id' => $runId]);
+            $now = Clock::get()->now()->format('Y-m-d H:i:s');
+            foreach ($toolCalls as $toolCall) {
+                $this->connection->insert('run_operational_tool_call', [
+                    'run_id' => $runId, 'batch_id' => $toolCall->batchId, 'tool_call_id' => $toolCall->toolCallId,
+                    'order_index' => $toolCall->orderIndex, 'status' => $toolCall->status, 'attempt' => $toolCall->attempt,
+                    'created_at' => $now, 'updated_at' => $now,
+                ]);
+            }
+        });
+    }
+
+    /** @param list<RunOperationalHumanInputDTO> $humanInputs */
+    public function replaceHumanInputs(string $runId, array $humanInputs): void
+    {
+        $this->connection->transactional(function () use ($runId, $humanInputs): void {
+            $this->replaceHumanInputRows($runId, $humanInputs);
+        });
+    }
+
+    public function deleteForOwnerSession(string $ownerSessionId): int
+    {
+        return $this->connection->transactional(function () use ($ownerSessionId): int {
+            // SQLite foreign-key enforcement is connection-configurable. Delete the
+            // dependents explicitly as well as declaring ON DELETE CASCADE in DDL,
+            // so owner-scoped startup cleanup is correct on every app connection.
+            $runIds = 'SELECT run_id FROM run_operational_state WHERE owner_session_id = :owner_session_id';
+            $this->connection->executeStatement('DELETE FROM run_operational_tool_call WHERE run_id IN ('.$runIds.')', ['owner_session_id' => $ownerSessionId]);
+            $this->connection->executeStatement('DELETE FROM run_operational_human_input WHERE run_id IN ('.$runIds.')', ['owner_session_id' => $ownerSessionId]);
+
+            return $this->connection->delete('run_operational_state', ['owner_session_id' => $ownerSessionId]);
+        });
+    }
+
+    private function replaceProjection(RunOperationalProjectionDTO $projection): void
+    {
         $now = Clock::get()->now()->format('Y-m-d H:i:s');
         $operation = $projection->currentOperation;
         $this->connection->executeStatement(<<<'SQL'
@@ -76,72 +151,17 @@ SQL, [
         ]);
     }
 
-    public function findOperationalStatus(string $runId): ?RunOperationalStatusDTO
-    {
-        $row = $this->connection->fetchAssociative(<<<'SQL'
-SELECT run_id, status, operation_turn_no, operation_step_id, operation_attempt, operation_key
-FROM run_operational_state WHERE run_id = :run_id
-SQL, ['run_id' => $runId]);
-        if (false === $row) {
-            return null;
-        }
-
-        $operation = null;
-        if (null !== $row['operation_key']) {
-            $operation = new CurrentOperationDTO(
-                (int) $row['operation_turn_no'],
-                (string) $row['operation_step_id'],
-                (int) $row['operation_attempt'],
-                (string) $row['operation_key'],
-            );
-        }
-
-        return new RunOperationalStatusDTO((string) $row['run_id'], RunStatus::from((string) $row['status']), $operation);
-    }
-
-    /** @param list<RunOperationalToolCallDTO> $toolCalls */
-    public function replaceToolCalls(string $runId, array $toolCalls): void
-    {
-        $this->connection->transactional(function () use ($runId, $toolCalls): void {
-            $this->connection->delete('run_operational_tool_call', ['run_id' => $runId]);
-            $now = Clock::get()->now()->format('Y-m-d H:i:s');
-            foreach ($toolCalls as $toolCall) {
-                $this->connection->insert('run_operational_tool_call', [
-                    'run_id' => $runId, 'batch_id' => $toolCall->batchId, 'tool_call_id' => $toolCall->toolCallId,
-                    'order_index' => $toolCall->orderIndex, 'status' => $toolCall->status, 'attempt' => $toolCall->attempt,
-                    'created_at' => $now, 'updated_at' => $now,
-                ]);
-            }
-        });
-    }
-
     /** @param list<RunOperationalHumanInputDTO> $humanInputs */
-    public function replaceHumanInputs(string $runId, array $humanInputs): void
+    private function replaceHumanInputRows(string $runId, array $humanInputs): void
     {
-        $this->connection->transactional(function () use ($runId, $humanInputs): void {
-            $this->connection->delete('run_operational_human_input', ['run_id' => $runId]);
-            $now = Clock::get()->now()->format('Y-m-d H:i:s');
-            foreach ($humanInputs as $humanInput) {
-                $this->connection->insert('run_operational_human_input', [
-                    'run_id' => $runId, 'question_id' => $humanInput->questionId, 'order_index' => $humanInput->orderIndex,
-                    'continuation_kind' => $humanInput->continuationKind, 'tool_call_id' => $humanInput->toolCallId,
-                    'status' => $humanInput->status, 'created_at' => $now, 'updated_at' => $now,
-                ]);
-            }
-        });
-    }
-
-    public function deleteForOwnerSession(string $ownerSessionId): int
-    {
-        return $this->connection->transactional(function () use ($ownerSessionId): int {
-            // SQLite foreign-key enforcement is connection-configurable. Delete the
-            // dependents explicitly as well as declaring ON DELETE CASCADE in DDL,
-            // so owner-scoped startup cleanup is correct on every app connection.
-            $runIds = 'SELECT run_id FROM run_operational_state WHERE owner_session_id = :owner_session_id';
-            $this->connection->executeStatement('DELETE FROM run_operational_tool_call WHERE run_id IN ('.$runIds.')', ['owner_session_id' => $ownerSessionId]);
-            $this->connection->executeStatement('DELETE FROM run_operational_human_input WHERE run_id IN ('.$runIds.')', ['owner_session_id' => $ownerSessionId]);
-
-            return $this->connection->delete('run_operational_state', ['owner_session_id' => $ownerSessionId]);
-        });
+        $this->connection->delete('run_operational_human_input', ['run_id' => $runId]);
+        $now = Clock::get()->now()->format('Y-m-d H:i:s');
+        foreach ($humanInputs as $humanInput) {
+            $this->connection->insert('run_operational_human_input', [
+                'run_id' => $runId, 'question_id' => $humanInput->questionId, 'order_index' => $humanInput->orderIndex,
+                'continuation_kind' => $humanInput->continuationKind, 'tool_call_id' => $humanInput->toolCallId,
+                'status' => $humanInput->status, 'created_at' => $now, 'updated_at' => $now,
+            ]);
+        }
     }
 }

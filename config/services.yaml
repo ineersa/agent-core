@@ -678,6 +678,12 @@ services:
   Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface:
     alias: Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService
 
+  Ineersa\AgentCore\Contract\ActiveRunContextInterface:
+    alias: Ineersa\CodingAgent\Agent\Artifact\ActiveRunContext
+
+  Ineersa\AgentCore\Contract\RunOperationalProjectionWriterInterface:
+    alias: Ineersa\CodingAgent\Entity\RunOperationalProjectionWriter
+
   Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface:
     alias: Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService
 
