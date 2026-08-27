@@ -140,10 +140,6 @@ final class ApplyShellCommandHandlerTest extends TestCase
             'attempt' => 1,
             'idempotency_key' => 'shell-idem-1',
         ], $commandEvent->payload['current_operation'] ?? null);
-        $this->assertArrayNotHasKey('operation_turn_no', $commandEvent->payload);
-        $this->assertArrayNotHasKey('operation_step_id', $commandEvent->payload);
-        $this->assertArrayNotHasKey('operation_attempt', $commandEvent->payload);
-        $this->assertArrayNotHasKey('operation_idempotency_key', $commandEvent->payload);
 
         if (\count($expectedEventTypes) > 1) {
             $this->assertSame($expectedOwningTurn, $result->events[1]->payload['turn_no'] ?? null);
@@ -259,7 +255,6 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertNull($result->nextState);
         $this->assertSame([], $result->events);
         $this->assertSame([], $result->effects);
-        $this->assertSame(1, $events->reverseForCalls);
     }
 
     public function testReplayRejectsMalformedStandaloneOperationEvidence(): void

@@ -90,7 +90,7 @@ Session access uses cooperative locking so two interactive controllers do not co
 
 ## Transition validity
 
-Run-control delivery is at-least-once. A completed or stale control message is acknowledged as a pure no-op; this is separate from normal Messenger retry/redelivery of an **execution** message for an operation that remains current and unfinished. `/repair --apply` is explicit user-authorized same-token redrive, never automatic recovery.
+Run-control delivery is at-least-once. A completed or stale control message is acknowledged as a pure no-op; this is separate from normal Messenger retry/redelivery of an **execution** message for an operation that remains current and unfinished. `/repair --apply` is explicit user-authorized same-token redrive, never automatic recovery. There is no receipt ledger: the run lock and CAS serialize transitions while committed state, mailbox entries, tool-batch snapshots, and active operation identities are the bounded guards. Repair appends no completion events; workers and result handlers remain authoritative. Existing `idempotency.jsonl` artifacts are inert user data: no migration, pruner, or deletion is performed, and new parent and child operations never create them.
 
 | Scope | Expected current token | Committed evidence | Completed/stale duplicate behavior | Same-active/unfinished retry behavior | Stranded repair action |
 |---|---|---|---|---|---|
@@ -112,29 +112,3 @@ Compaction rewrites the LLM-visible history while retaining a recent raw tail an
 - Settings: [settings.md](settings.md)
 - Agents: [agents.md](agents.md)
 - Human input: [human-input.md](human-input.md)
-
-## State-transition duplicate delivery
-
-Run-control does not maintain a receipt ledger. The run lock and CAS serialize
-transitions; committed `StartRun`, queued command mailbox entries, finalized tool
-batches, and the active LLM checkpoint are the current bounded duplicate guards.
-A stale LLM or tool result is a no-op. Explicit `/repair` first preserves
-cancellation and canonical-event corruption repair, then may redispatch a current
-LLM, durable tool-batch, direct-shell, or advance message with its existing
-identity. It appends no completion events; workers and result handlers remain
-authoritative. Current compaction recovery redispatches its bounded exact
-prepared worker payload without rerunning hooks; historical compaction starts
-without that payload are refused non-destructively.
-
-| Scope | Current authoritative evidence | Committed/stale delivery |
-|---|---|---|
-| `command.start` | non-queued `RunState` | no-op |
-| `command.apply` | command mailbox idempotency key | no-op |
-| `command.apply_shell` (standalone) | bounded shell checkpoint | no-op |
-| `command.advance` | expected predecessor turn plus the last committed advance key (replayed from the canonical transition event) | no-op before mailbox drain |
-| `result.llm` | active `(turn, step, attempt)` checkpoint | no-op |
-| `result.tool` | finalized batch/pending call/HITL identity | no-op |
-| `command.compact` / `result.compaction` | canonical start payload, bounded active `(turn, step, attempt, key, worker input)` checkpoint, and last completed key | stale/completed delivery is a no-op before hooks or effects; `/repair` redrives only reconstructible current input |
-
-Legacy `idempotency.jsonl` artifacts are inert user data: no migration, pruner, or
-deletion is performed. New parent and child operations never create them.
