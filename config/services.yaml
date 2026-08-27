@@ -1179,7 +1179,7 @@ services:
   Ineersa\CodingAgent\Session\CommittedRunEventAppender:
     arguments:
       $eventStore: '@Ineersa\AgentCore\Contract\EventStoreInterface'
-      $runStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
+      $commandBus: '@agent.command.bus'
 
   Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore:
     arguments:

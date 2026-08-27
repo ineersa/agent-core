@@ -9,6 +9,7 @@ Transport contracts only — immutable bus payloads under `Ineersa\AgentCore\Dom
 - `StartRun`, `ApplyCommand`, `ApplyShellCommand`
 - `LlmStepResult`, `ToolCallResult`, `CompactionStepResult`
 - `CompleteDeferredToolCall` (deferred completion; identity from durable record)
+- `InvalidateRunContext` (internal canonical-event side channel; carries only run ID and clears process-local context)
 
 **Run-control transitions** (transport `run_control` on `agent.command.bus`):
 

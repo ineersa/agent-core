@@ -21,6 +21,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
@@ -212,7 +213,7 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
             ],
         );
 
-        return new self(new RunOrchestrator($processor), $eventStore);
+        return new self(new RunOrchestrator($processor, new TestActiveRunContext()), $eventStore);
     }
 
     public function start(StartRunInput $input): string

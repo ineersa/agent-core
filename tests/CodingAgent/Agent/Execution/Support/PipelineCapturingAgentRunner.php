@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
+use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use Psr\Log\NullLogger;
@@ -74,7 +75,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
             ],
         );
 
-        return new self(new RunOrchestrator($processor), $runStore, $eventStore);
+        return new self(new RunOrchestrator($processor, new TestActiveRunContext()), $runStore, $eventStore);
     }
 
     public function start(StartRunInput $input): string

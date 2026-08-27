@@ -36,6 +36,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
@@ -647,6 +648,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $orchestrator = new RunOrchestrator(
             runMessageProcessor: $runMessageProcessor,
+            activeRunContext: new TestActiveRunContext(),
         );
 
         return new CommandMailboxFixture($orchestrator, $runStore, $eventStore, $commandStore, $commandBus, $executionBus);
