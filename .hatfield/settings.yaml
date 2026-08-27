@@ -77,7 +77,7 @@ ai:
             supports_embeddings: false
             supports_thinking_levels: true
             compatibility: { supports_developer_role: false, supports_reasoning_effort: false, thinking_format: codex }
-            models: { gpt-5.6-luna: { name: 'GPT-5.6 Luna', reasoning: true, thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }, tool_calling: true, input: [text, image], context_window: 272000, max_tokens: 128000, cost: { input: 1.0, output: 6.0, cache_read: 0.1, cache_write: 1.25 } }, gpt-5.6-sol: { name: 'GPT-5.6 Sol', reasoning: true, thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }, tool_calling: true, input: [text, image], context_window: 272000, max_tokens: 128000, cost: { input: 5.0, output: 30.0, cache_read: 0.5, cache_write: 6.25 } }, gpt-5.6-terra: { name: 'GPT-5.6 Terra', reasoning: true, thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }, tool_calling: true, input: [text, image], context_window: 272000, max_tokens: 128000, cost: { input: 2.5, output: 15.0, cache_read: 0.25, cache_write: 3.125 } } }
+            models: { gpt-5.6-luna: { name: 'GPT-5.6 Luna', reasoning: true, thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }, tool_calling: true, input: [text, image], context_window: 272000, max_tokens: 128000, cost: { input: 1.0, output: 6.0, cache_read: 0.1, cache_write: 1.25 } }, gpt-5.6-sol: { name: 'GPT-5.6 Sol', reasoning: true, thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }, tool_calling: true, input: [text, image], context_window: 272000, max_tokens: 128000, cost: { input: 5.0, output: 30.0, cache_read: 0.5, cache_write: 6.25 } }, gpt-5.6-terra: { name: 'GPT-5.6 Terra', reasoning: true, thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }, tool_calling: true, input: [text, image], context_window: 372000, max_tokens: 128000, cost: { input: 2.5, output: 15.0, cache_read: 0.25, cache_write: 3.125 } }, gpt-5.3-codex-spark: { name: 'GPT-5.3 Codex Spark', reasoning: true, thinking_level_map: { minimal: low, xhigh: xhigh }, tool_calling: true, input: [text], context_window: 128000, max_tokens: 128000, cost: { input: 1.75, output: 14.0, cache_read: 0.175, cache_write: 0 } } }
 extensions:
     enabled:
         - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
@@ -99,7 +99,7 @@ extensions:
         safe_guard:
             allow_write_outside_cwd: [/home/ineersa/projects/agent-core-worktrees, /tmp]
 forks:
-    model: deepseek/deepseek-v4-flash
+    model: openai-codex/gpt-5.6-terra
     thinking_level: high
     extensions:
         enabled:
