@@ -105,8 +105,7 @@ final class BackgroundProcessCompletionPoller
             $this->logger->warning('bg_process_completion.artifact_list_failed', [
                 'component' => 'bg_process_completion.poller',
                 'event_type' => 'bg_process_completion.artifact_list_failed',
-                'controller_session_id' => $parentSessionId,
-                'exception' => $e->getMessage(),
+                'exception_class' => $e::class,
             ]);
         }
 
