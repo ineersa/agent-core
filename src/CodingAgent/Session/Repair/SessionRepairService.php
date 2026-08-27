@@ -8,8 +8,8 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -20,6 +20,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\AgentCore\Domain\Message\InvalidateRunContext;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -27,6 +28,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
@@ -36,7 +38,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 
     public function __construct(
         private EventStoreInterface $eventStore,
-        private RunStoreInterface $runStore,
+        private ActiveRunContextInterface $activeRunContext,
         private RunStateReducer $runStateReducer,
         private ReplayEventPreparer $replayEventPreparer,
         private EventFactory $eventFactory,
@@ -47,6 +49,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private StepDispatcher $stepDispatcher,
         private ToolBatchStoreInterface $toolBatchStore,
         private NormalizerInterface&DenormalizerInterface $serializer,
+        private MessageBusInterface $commandBus,
     ) {
     }
 
@@ -100,14 +103,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             );
         }
 
-        $storedState = $this->runStore->get($runId);
-        if (null === $storedState) {
-            return $this->refusalResult(
-                runId: $runId,
-                message: 'Session repair refused: run state is unavailable.',
-                reason: SessionRepairRefusalReasonEnum::RunStateUnavailable,
-            );
-        }
+        $storedState = $this->activeRunContext->stateFor($runId);
 
         if ($storedState->isStreaming) {
             $this->logRefusal($runId, SessionRepairRefusalReasonEnum::ActiveStreaming);
@@ -418,22 +414,11 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             'streamingMessage' => null,
         ]);
 
-        if (!$this->runStore->compareAndSwap($persisted, $storedState->version)) {
-            $this->logger->warning('session_repair.cas_degraded', [
-                'run_id' => $runId,
-                'component' => 'session.repair',
-                'event_type' => 'session.repair.cas_degraded',
-                'terminal_events_appended' => \count($proposedEvents),
-            ]);
+        $this->activeRunContext->remember($persisted);
 
-            return new RepairResult(
-                repairableStaleCancellationDetected: true,
-                staleCancellationRepaired: true,
-                terminalEventsAppended: \count($proposedEvents),
-                replayOk: true,
-                message: 'Session repaired: canonical events appended; hot run state will self-heal on replay.',
-            );
-        }
+        // Event persistence and run-control invalidation are non-transactional:
+        // a dispatch failure propagates after canonical events and the local projection are durable.
+        $this->commandBus->dispatch(new InvalidateRunContext($runId));
 
         $this->logger->info('session_repair.completed', [
             'run_id' => $runId,

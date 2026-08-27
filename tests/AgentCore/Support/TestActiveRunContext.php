@@ -12,6 +12,8 @@ final class TestActiveRunContext implements ActiveRunContextInterface
 {
     /** @var list<string> */
     public array $invalidatedRunIds = [];
+    /** @var list<RunState> */
+    public array $rememberedStates = [];
     /** @var array<string, RunState> */
     private array $states = [];
 
@@ -22,6 +24,7 @@ final class TestActiveRunContext implements ActiveRunContextInterface
 
     public function remember(RunState $state): void
     {
+        $this->rememberedStates[] = $state;
         $this->states[$state->runId] = $state;
     }
 

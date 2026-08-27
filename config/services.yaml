@@ -1185,6 +1185,10 @@ services:
     arguments:
       $commandBus: '@agent.command.bus'
 
+  Ineersa\CodingAgent\Session\Repair\SessionRepairService:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
   Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore:
     arguments:
       $parentStore: '@Ineersa\CodingAgent\Session\SessionRunEventStore'

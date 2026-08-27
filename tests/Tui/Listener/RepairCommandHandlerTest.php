@@ -11,10 +11,10 @@ use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
@@ -125,7 +125,7 @@ final class RepairCommandHandlerTest extends TestCase
     {
         return new SessionRepairService(
             eventStore: new InMemoryEventStore(),
-            runStore: new InMemoryRunStore(),
+            activeRunContext: new TestActiveRunContext(),
             runStateReducer: new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()),
             replayEventPreparer: new ReplayEventPreparer(),
             eventFactory: new EventFactory(),
@@ -136,6 +136,7 @@ final class RepairCommandHandlerTest extends TestCase
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             toolBatchStore: $this->createStub(ToolBatchStoreInterface::class),
             serializer: AttributeSerializerValidatorTestFactory::create()[0],
+            commandBus: new TestMessageBus(),
         );
     }
 }

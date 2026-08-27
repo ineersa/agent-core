@@ -11,6 +11,5 @@ enum SessionRepairRefusalReasonEnum: string
     case ActiveStreaming = 'active_streaming';
     case AmbiguousPendingWork = 'ambiguous_pending_work';
     case NoEvents = 'no_events';
-    case RunStateUnavailable = 'run_state_unavailable';
     case ReplayValidationFailed = 'replay_validation_failed';
 }
