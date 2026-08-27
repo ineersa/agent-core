@@ -11,6 +11,13 @@
       "toolPrefix": "none",
       "directTools": true,
       "exposeResources": false
+    },
+    "datadog": {
+      "url": "https://mcp.datadoghq.com/v1/mcp",
+      "auth": "bearer",
+      "bearerTokenEnv": "DATADOG_MCP_KEY",
+      "directTools": false,
+      "exposeResources": false
     }
   }
 }
