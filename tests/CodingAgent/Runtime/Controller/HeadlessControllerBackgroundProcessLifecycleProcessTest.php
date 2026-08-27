@@ -59,20 +59,6 @@ final class HeadlessControllerBackgroundProcessLifecycleProcessTest extends Cont
         return 'controller-background-process-lifecycle';
     }
 
-    protected function isolatedLlmWorkerCount(): int
-    {
-        return 1;
-    }
-
-    protected function extraSettingsYaml(): string
-    {
-        return <<<'YAML'
-tools:
-    execution:
-        max_parallelism: 1
-YAML;
-    }
-
     /**
      * @return array{id: int, log: string, status: string, pid: string}
      */

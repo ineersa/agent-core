@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Support;
 
 use DAMA\DoctrineTestBundle\Doctrine\DBAL\StaticDriver;
-use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -38,13 +38,9 @@ final class ControllerReplayBackgroundProcessSeeder
             $migrator = $container->get(StartupDatabaseMigrator::class);
             $migrator();
 
-            /** @var BackgroundProcessConfig $config */
-            $config = $container->get(BackgroundProcessConfig::class);
-            if (!is_dir($config->storageDir) && !mkdir($config->storageDir, 0o777, true) && !is_dir($config->storageDir)) {
-                throw new \RuntimeException('Unable to create isolated background process storage directory.');
-            }
-
-            $basePath = $config->storageDir.'/'.$prefix;
+            /** @var ProcessLifecycle $lifecycle */
+            $lifecycle = $container->get(ProcessLifecycle::class);
+            $basePath = $lifecycle->ensureStorageDir().'/'.$prefix;
             $logPath = $basePath.'.log';
             $statusPath = $basePath.'.status';
             $pidPath = $basePath.'.pid';
@@ -115,6 +111,7 @@ final class ControllerReplayBackgroundProcessSeeder
             'APP_DEBUG' => getenv('APP_DEBUG'),
             'APP_SECRET' => getenv('APP_SECRET'),
             'HATFIELD_CWD' => getenv('HATFIELD_CWD'),
+            'HOME' => getenv('HOME'),
             'HATFIELD_TEST_DATABASE_PATH' => getenv('HATFIELD_TEST_DATABASE_PATH'),
             'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => getenv('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'),
             'env' => [
@@ -122,6 +119,7 @@ final class ControllerReplayBackgroundProcessSeeder
                 'APP_DEBUG' => $_ENV['APP_DEBUG'] ?? null,
                 'APP_SECRET' => $_ENV['APP_SECRET'] ?? null,
                 'HATFIELD_CWD' => $_ENV['HATFIELD_CWD'] ?? null,
+                'HOME' => $_ENV['HOME'] ?? null,
                 'HATFIELD_TEST_DATABASE_PATH' => $_ENV['HATFIELD_TEST_DATABASE_PATH'] ?? null,
                 'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => $_ENV['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] ?? null,
             ],
@@ -130,6 +128,7 @@ final class ControllerReplayBackgroundProcessSeeder
                 'APP_DEBUG' => $_SERVER['APP_DEBUG'] ?? null,
                 'APP_SECRET' => $_SERVER['APP_SECRET'] ?? null,
                 'HATFIELD_CWD' => $_SERVER['HATFIELD_CWD'] ?? null,
+                'HOME' => $_SERVER['HOME'] ?? null,
                 'HATFIELD_TEST_DATABASE_PATH' => $_SERVER['HATFIELD_TEST_DATABASE_PATH'] ?? null,
                 'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => $_SERVER['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] ?? null,
             ],
@@ -151,6 +150,8 @@ final class ControllerReplayBackgroundProcessSeeder
             self::put('APP_DEBUG', '0');
             self::put('APP_SECRET', 'test-secret');
             self::put('HATFIELD_CWD', $isolatedProjectDir);
+            // Settings also search HOME/.hatfield; pin it to the isolated tree like the controller subprocess.
+            self::put('HOME', $isolatedProjectDir);
             self::put('HATFIELD_TEST_DATABASE_PATH', $appDbEnvPath);
             self::put('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH', $transportDbEnvPath);
 
@@ -166,6 +167,7 @@ final class ControllerReplayBackgroundProcessSeeder
         } finally {
             if ($kernel instanceof KernelInterface) {
                 $kernel->shutdown();
+                // Kernel boot pushes one error handler; balance that exact push so this short-lived kernel does not leak it.
                 restore_exception_handler();
             }
             if (null !== $keepStatic && class_exists(StaticDriver::class)) {
@@ -180,6 +182,7 @@ final class ControllerReplayBackgroundProcessSeeder
             self::restore('APP_DEBUG', $saved['APP_DEBUG'], $saved['env']['APP_DEBUG'], $saved['server']['APP_DEBUG']);
             self::restore('APP_SECRET', $saved['APP_SECRET'], $saved['env']['APP_SECRET'], $saved['server']['APP_SECRET']);
             self::restore('HATFIELD_CWD', $saved['HATFIELD_CWD'], $saved['env']['HATFIELD_CWD'], $saved['server']['HATFIELD_CWD']);
+            self::restore('HOME', $saved['HOME'], $saved['env']['HOME'], $saved['server']['HOME']);
             self::restore('HATFIELD_TEST_DATABASE_PATH', $saved['HATFIELD_TEST_DATABASE_PATH'], $saved['env']['HATFIELD_TEST_DATABASE_PATH'], $saved['server']['HATFIELD_TEST_DATABASE_PATH']);
             self::restore('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH', $saved['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'], $saved['env']['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'], $saved['server']['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH']);
         }
