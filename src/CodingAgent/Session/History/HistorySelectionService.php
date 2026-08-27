@@ -7,14 +7,16 @@ namespace Ineersa\CodingAgent\Session\History;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\InvalidateRunContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * Positions linear history for /history selection.
@@ -33,11 +35,12 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
     public function __construct(
         private EventStoreInterface $eventStore,
         private RunStateRebuilderInterface $runStateRebuilder,
-        private RunStoreInterface $runStore,
+        private ActiveRunContextInterface $activeRunContext,
         private RunLockManager $lockManager,
         private LoggerInterface $logger,
         private HistoryProjector $historyProjector,
         private ReplayEventPreparer $replayEventPreparer,
+        private MessageBusInterface $commandBus,
     ) {
     }
 
@@ -61,10 +64,7 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
                 throw new \RuntimeException(\sprintf('Cannot select history for run %s: target turn %d is not a selectable human prompt.', $runId, $targetPromptTurnNo));
             }
 
-            $state = $this->runStore->get($runId);
-            if (null === $state) {
-                throw new \RuntimeException(\sprintf('Cannot select history for run %s: no run state found.', $runId));
-            }
+            $state = $this->activeRunContext->stateFor($runId);
 
             $duplicateSeqs = $this->replayEventPreparer->duplicateSequences($events);
             if ([] !== $duplicateSeqs) {
@@ -115,9 +115,8 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
                 'event_type' => 'history_position_set',
             ]);
 
-            if (!$this->runStore->compareAndSwap($rebuiltState, $state->version)) {
-                throw new \RuntimeException(\sprintf('Failed to persist history-select state for run %s (CAS conflict).', $runId));
-            }
+            $this->activeRunContext->remember($rebuiltState);
+            $this->commandBus->dispatch(new InvalidateRunContext($runId));
 
             return [
                 'rebuiltState' => $rebuiltState,

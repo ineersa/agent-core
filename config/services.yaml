@@ -1181,6 +1181,10 @@ services:
       $eventStore: '@Ineersa\AgentCore\Contract\EventStoreInterface'
       $commandBus: '@agent.command.bus'
 
+  Ineersa\CodingAgent\Session\History\HistorySelectionService:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
   Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore:
     arguments:
       $parentStore: '@Ineersa\CodingAgent\Session\SessionRunEventStore'
