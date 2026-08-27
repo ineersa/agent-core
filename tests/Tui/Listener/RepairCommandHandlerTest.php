@@ -5,14 +5,18 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Session\Repair\RepairResult;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairRefusalReasonEnum;
@@ -79,6 +83,22 @@ final class RepairCommandHandlerTest extends TestCase
     }
 
     #[Test]
+    public function reportsActiveOperationRedrive(): void
+    {
+        $service = $this->createStub(SessionRepairServiceInterface::class);
+        $service->method('repair')->willReturn(new RepairResult(false, false, 0, true, 'internal', activeOperationsRedriven: 1));
+        $state = new TuiSessionState('repair');
+        $state->handle = new RunHandle('run-redrive');
+        $handler = new RepairCommandHandler($service, $state, new NullLogger());
+
+        $result = $handler->handle(new SlashCommand('repair', '', '/repair'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('Session repaired: active operation redriven.', $result->text);
+        $this->assertSame('system', $result->style);
+    }
+
+    #[Test]
     public function logsStructuredDegradationWhenRepairThrows(): void
     {
         $service = $this->createStub(SessionRepairServiceInterface::class);
@@ -106,13 +126,16 @@ final class RepairCommandHandlerTest extends TestCase
         return new SessionRepairService(
             eventStore: new InMemoryEventStore(),
             runStore: new InMemoryRunStore(),
-            runStateReducer: new RunStateReducer(),
+            runStateReducer: new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()),
             replayEventPreparer: new ReplayEventPreparer(),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
             lockManager: new RunLockManager(new LockFactory(new FlockStore(sys_get_temp_dir()))),
             logger: new NullLogger(),
+            stepDispatcher: new StepDispatcher(new TestMessageBus()),
+            toolBatchStore: $this->createStub(ToolBatchStoreInterface::class),
+            serializer: AttributeSerializerValidatorTestFactory::create()[0],
         );
     }
 }

@@ -90,6 +90,10 @@ final class RepairCommandHandler implements SlashCommandHandler
             return 'Session repaired: stale cancellation terminalized.';
         }
 
+        if ($result->activeOperationsRedriven > 0) {
+            return 'Session repaired: active operation redriven.';
+        }
+
         if (!$result->repairableStaleCancellationDetected) {
             return 'No repairable corruption detected.';
         }
@@ -103,7 +107,7 @@ final class RepairCommandHandler implements SlashCommandHandler
             return 'error';
         }
 
-        if ($result->staleCancellationRepaired) {
+        if ($result->staleCancellationRepaired || $result->activeOperationsRedriven > 0) {
             return 'system';
         }
 

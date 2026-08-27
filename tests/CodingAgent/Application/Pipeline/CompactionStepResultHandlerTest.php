@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler;
@@ -174,7 +175,7 @@ final class CompactionStepResultHandlerTest extends TestCase
         $this->assertSame('hi', $result->nextState->messages[0]->content[0]['text'] ?? null);
     }
 
-    public function testStaleResultEmitsFailedWhenStepIdMismatch(): void
+    public function testStaleResultIsNoOpWhenStepIdMismatch(): void
     {
         $originalMessages = [$this->userMsg('hi'), $this->assistantMsg('hello')];
         $state = $this->createRunState($originalMessages, turnNo: 5, activeStepId: 'step-5');
@@ -203,23 +204,12 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        // Stale → emits context_compaction_failed with stale_result reason.
-        $this->assertNotNull($result->nextState);
-        $this->assertCount(1, $result->events);
-        $this->assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
-        $this->assertSame('stale_result', $result->events[0]->payload['reason']);
-        $this->assertFalse($result->events[0]->payload['messages_replaced']);
-        $this->assertSame('step-1', $result->events[0]->payload['step_id']);
-
-        // Messages preserved.
-        $this->assertCount(\count($originalMessages), $result->nextState->messages);
-
-        // Stale mismatch preserves current activeStepId — clearing 'step-5'
-        // would lose a newer in-flight compaction's identity.
-        $this->assertSame('step-5', $result->nextState->activeStepId);
+        // Stale delivery is a successful no-op: canonical compaction history is not polluted.
+        $this->assertNull($result->nextState);
+        $this->assertSame([], $result->events);
     }
 
-    public function testStaleResultEmitsFailedWhenTurnNoMismatch(): void
+    public function testStaleResultIsNoOpWhenTurnNoMismatch(): void
     {
         // Fixture models a newer in-flight compaction B (step-5) while
         // stale result A (step-1) arrives on a different turn.  The guard
@@ -251,39 +241,28 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        // Stale (turnNo mismatch) → emits context_compaction_failed.
-        $this->assertNotNull($result->nextState);
-        $this->assertCount(1, $result->events);
-        $this->assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
-        $this->assertSame('stale_result', $result->events[0]->payload['reason']);
-        $this->assertFalse($result->events[0]->payload['messages_replaced']);
-        $this->assertSame('step-1', $result->events[0]->payload['step_id']);
-
-        // Messages preserved.
-        $this->assertCount(\count($originalMessages), $result->nextState->messages);
-
-        // Stale turn mismatch preserves current activeStepId — a newer
-        // compaction B (step-5) is in-flight and must not be cleared.
-        $this->assertSame('step-5', $result->nextState->activeStepId);
+        // Stale delivery is a successful no-op: canonical compaction history is not polluted.
+        $this->assertNull($result->nextState);
+        $this->assertSame([], $result->events);
     }
 
-    public function testMatchingResultOnCompletedRunProcessesNormally(): void
+    public function testMatchingManualCompactionResultProcessesNormally(): void
     {
-        // Manual /compact on a completed run: activeStepId matches stepId,
-        // turnNo matches, and run status is Completed.  The matching async
-        // result must be accepted — terminal run status alone is not staleness.
+        // A manual /compact request on a completed run transitions to Compacting
+        // before its async result arrives, so the matching result is accepted.
         $originalMessages = [
             $this->userMsg('old question'),
             $this->assistantMsg('old answer'),
         ];
         $state = new RunState(
             runId: 'run-1',
-            status: RunStatus::Completed,
+            status: RunStatus::Compacting,
             version: 10,
             turnNo: 5,
             lastSeq: 20,
             messages: $originalMessages,
             activeStepId: 'step-1',
+            currentOperation: new CurrentOperationDTO(5, 'step-1', 1, 'key-1'),
             model: 'test-model');
 
         $summaryMsg = $this->userMsg('Summary of prior context.');
@@ -314,7 +293,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        // Completed run with matching correlation → accepted (NOT stale_result).
+        // Compacting run with matching correlation → accepted (NOT stale_result).
         $this->assertNotNull($result->nextState);
         $this->assertCount(1, $result->events);
         $this->assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
@@ -815,6 +794,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             errorMessage: null,
             messages: [$this->userMsg('q')],
             activeStepId: 'step-1',
+            currentOperation: new CurrentOperationDTO(5, 'step-1', 1, 'key-1'),
             retryableFailure: false,
             model: 'test-model');
 
@@ -927,6 +907,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             turnNo: 5,
             lastSeq: 20,
             activeStepId: 'step-1',
+            currentOperation: new CurrentOperationDTO(5, 'step-1', 1, 'key-1'),
             messages: [$this->userMsg('q')],
             model: 'test-model');
 
@@ -1007,6 +988,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             errorMessage: null,
             messages: $originalMessages,
             activeStepId: 'step-1',
+            currentOperation: new CurrentOperationDTO(5, 'step-1', 1, 'key-1'),
             retryableFailure: false,
             model: 'test-model');
 
@@ -1096,7 +1078,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             $this->userMsg('old question'),
             $this->assistantMsg('old answer'),
         ];
-        $state = $this->createRunState($originalMessages, 'step-1', turnNo: 5);
+        $state = $this->createRunState($originalMessages, 'step-1', turnNo: 5, idempotencyKey: 'key-ineff');
 
         $summaryMsg = $this->userMsg('summary text');
         $retained = [$this->userMsg('recent'), $this->assistantMsg('recent answer')];
@@ -1178,7 +1160,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             $this->userMsg('question'),
             $this->assistantMsg('answer'),
         ];
-        $state = $this->createRunState($originalMessages, 'step-1', turnNo: 5);
+        $state = $this->createRunState($originalMessages, 'step-1', turnNo: 5, idempotencyKey: 'key-ineff-worse');
 
         $summaryMsg = $this->userMsg('summary');
         $retained = [$this->userMsg('recent'), $this->assistantMsg('recent answer')];
@@ -1232,6 +1214,50 @@ final class CompactionStepResultHandlerTest extends TestCase
         $this->assertCount(\count($originalMessages), $result->nextState->messages);
     }
 
+    public function testWrongAttemptAndCompletedRedeliveryAreNoOpsWhileMatchingResultAppliesOnce(): void
+    {
+        $messages = [$this->userMsg('question'), $this->assistantMsg('answer')];
+        $state = new RunState(
+            runId: 'run-1',
+            status: RunStatus::Compacting,
+            turnNo: 5,
+            messages: $messages,
+            activeStepId: 'step-1',
+            currentOperation: new CurrentOperationDTO(5, 'step-1', 1, 'key-1'),
+        );
+        $summary = $this->userMsg('summary');
+        $handler = new CompactionStepResultHandler($this->stubCompactionService([$summary]), new EventFactory());
+        $matching = new CompactionStepResult(
+            runId: 'run-1', turnNo: 5, stepId: 'step-1', attempt: 1, idempotencyKey: 'key-1',
+            summaryText: 'summary', error: null, retainedTailMessages: [], messagesCompacted: 1,
+            messagesRetained: 0, firstRetainedIndex: 1, tokenEstimateBefore: 50000,
+            trigger: 'manual', model: 'test-model', modelOptions: [],
+        );
+        $wrongKey = new CompactionStepResult(
+            runId: 'run-1', turnNo: 5, stepId: 'step-1', attempt: 1, idempotencyKey: 'wrong-key',
+            summaryText: 'summary', error: null, retainedTailMessages: [], messagesCompacted: 1,
+            messagesRetained: 0, firstRetainedIndex: 1, tokenEstimateBefore: 50000,
+            trigger: 'manual', model: 'test-model', modelOptions: [],
+        );
+        $wrongAttempt = new CompactionStepResult(
+            runId: 'run-1', turnNo: 5, stepId: 'step-1', attempt: 2, idempotencyKey: 'key-1',
+            summaryText: 'summary', error: null, retainedTailMessages: [], messagesCompacted: 1,
+            messagesRetained: 0, firstRetainedIndex: 1, tokenEstimateBefore: 50000,
+            trigger: 'manual', model: 'test-model', modelOptions: [],
+        );
+
+        $this->assertNull($handler->handle($wrongKey, $state)->nextState);
+        $this->assertNull($handler->handle($wrongAttempt, $state)->nextState);
+        $applied = $handler->handle($matching, $state);
+        $this->assertCount(1, $applied->events);
+        $this->assertNotNull($applied->nextState);
+
+        $completedRedelivery = $handler->handle($matching, $applied->nextState);
+        $this->assertNull($completedRedelivery->nextState);
+        $this->assertSame([], $completedRedelivery->events);
+        $this->assertSame([], $completedRedelivery->effects);
+    }
+
     /**
      * Create a RunState with Compacting status for testing status resolution.
      *
@@ -1251,6 +1277,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             errorMessage: null,
             messages: $messages,
             activeStepId: $activeStepId,
+            currentOperation: new CurrentOperationDTO(5, $activeStepId, 1, 'key-1'),
             retryableFailure: false,
             model: 'test-model');
     }
@@ -1260,16 +1287,17 @@ final class CompactionStepResultHandlerTest extends TestCase
     /**
      * @param list<AgentMessage> $messages
      */
-    private function createRunState(array $messages, string $activeStepId, int $turnNo = 5): RunState
+    private function createRunState(array $messages, string $activeStepId, int $turnNo = 5, string $idempotencyKey = 'key-1'): RunState
     {
         return new RunState(
             runId: 'run-1',
-            status: RunStatus::Running,
+            status: RunStatus::Compacting,
             version: 10,
             turnNo: $turnNo,
             lastSeq: 20,
             messages: $messages,
             activeStepId: $activeStepId,
+            currentOperation: new CurrentOperationDTO($turnNo, $activeStepId, 1, $idempotencyKey),
             model: 'test-model');
     }
 

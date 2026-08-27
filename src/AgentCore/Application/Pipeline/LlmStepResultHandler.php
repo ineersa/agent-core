@@ -75,24 +75,11 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
 
         $runId = $message->runId();
 
-        if ($state->turnNo !== $message->turnNo() || (null !== $state->activeStepId && $state->activeStepId !== $message->stepId())) {
-            $nextState = $this->eventFactory->incrementStateVersion($state, eventCount: 1);
-            $event = $this->eventFactory->event(
-                runId: $runId,
-                seq: $nextState->lastSeq,
-                turnNo: $state->turnNo,
-                type: RunEventTypeEnum::StaleResultIgnored->value,
-                payload: [
-                    'result' => 'llm_step_result',
-                    'step_id' => $message->stepId(),
-                    'turn_no' => $message->turnNo(),
-                ],
-            );
-
-            return new HandlerResult(
-                nextState: $nextState,
-                events: [$event],
-            );
+        // A result is valid only while its exact LLM operation remains active.
+        // Once committed, redelivery is a successful no-op: it must not append a
+        // stale event or schedule a second tool/continuation path.
+        if (!$state->canAcceptLlmResult($message)) {
+            return new HandlerResult();
         }
 
         if ('aborted' === $message->stopReason || RunStatus::Cancelling === $state->status) {
@@ -158,6 +145,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
+                'currentOperation' => null,
                 // Keep existing messages unchanged (no aborted assistant
                 // message appended).
                 'errorMessage' => $state->errorMessage ?? 'Run cancelled during LLM streaming.',
@@ -248,6 +236,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
+                'currentOperation' => null,
                 'errorMessage' => $userMessage,
                 'retryableFailure' => $canAutoRetry,
                 'retryAttempts' => $canAutoRetry ? $nextRetryAttempt : ($retriesExhausted ? $nextRetryAttempt : $currentAttempts),
@@ -394,6 +383,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
+                'currentOperation' => null,
                 'errorMessage' => null,
                 'retryableFailure' => false,
                 'retryAttempts' => 0,
@@ -403,7 +393,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 ...$this->turnCompletedCallbacks($runId, $state->turnNo),
             ];
 
-            $followUpAdvance = $shouldContinue ? $this->followUpAdvanceCallback($runId, 'stop-boundary-follow-up') : null;
+            $followUpAdvance = $shouldContinue ? $this->followUpAdvanceCallback($runId, $state->turnNo, 'stop-boundary-follow-up') : null;
             if (null !== $followUpAdvance) {
                 $postCommit[] = $followUpAdvance;
             }
@@ -437,6 +427,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             'isStreaming' => false,
             'streamingMessage' => null,
             'pendingToolCalls' => $pendingToolCalls,
+            'currentOperation' => null,
             'errorMessage' => null,
             'messages' => $messages,
             'retryableFailure' => false,
@@ -540,13 +531,13 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         return null === $this->metrics ? [] : $this->metrics->turnCompletedCallback($runId, $turnNo);
     }
 
-    private function followUpAdvanceCallback(string $runId, string $prefix): ?callable
+    private function followUpAdvanceCallback(string $runId, int $turnNo, string $prefix): ?callable
     {
         if (null === $this->commandBus) {
             return null;
         }
 
-        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $prefix, 'Failed to dispatch follow-up AdvanceRun command.');
+        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, $prefix, 'Failed to dispatch follow-up AdvanceRun command.');
     }
 
     /**

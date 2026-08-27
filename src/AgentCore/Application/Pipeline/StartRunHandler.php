@@ -34,6 +34,13 @@ final readonly class StartRunHandler implements RunMessageHandler
             throw new \InvalidArgumentException('StartRunHandler can only handle StartRun messages.');
         }
 
+        // The canonical model is committed only by RunStarted. A shell-only
+        // lifecycle has no RunStarted event and therefore keeps model null even
+        // after reaching Completed; it may still initialize exactly once.
+        if (null !== $state->model) {
+            return new HandlerResult();
+        }
+
         $messages = [] === $message->payload->messages ? $state->messages : $message->payload->messages;
 
         $canonicalModel = $this->requireCanonicalModel($message);
@@ -66,7 +73,7 @@ final readonly class StartRunHandler implements RunMessageHandler
         );
 
         $postCommit = [];
-        $initialAdvance = $this->initialAdvanceCallback($message->runId(), 'start-follow-up');
+        $initialAdvance = $this->initialAdvanceCallback($message->runId(), $nextState->turnNo, 'start-follow-up');
         if (null !== $initialAdvance) {
             $postCommit[] = $initialAdvance;
         }
@@ -78,13 +85,13 @@ final readonly class StartRunHandler implements RunMessageHandler
         );
     }
 
-    private function initialAdvanceCallback(string $runId, string $prefix): ?callable
+    private function initialAdvanceCallback(string $runId, int $turnNo, string $prefix): ?callable
     {
         if (null === $this->commandBus) {
             return null;
         }
 
-        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $prefix, 'Failed to dispatch initial AdvanceRun command.');
+        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, $prefix, 'Failed to dispatch initial AdvanceRun command.');
     }
 
     private function requireCanonicalModel(StartRun $message): string

@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /**
  * Applies a direct shell command under the same lock/CAS/commit pipeline as
@@ -22,6 +25,8 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
 {
     public function __construct(
         private EventFactory $eventFactory,
+        private EventStoreInterface $eventStore,
+        private NormalizerInterface $normalizer,
     ) {
     }
 
@@ -34,6 +39,27 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
     {
         if (!$message instanceof ApplyShellCommand) {
             throw new \InvalidArgumentException('ApplyShellCommandHandler can only handle ApplyShellCommand messages.');
+        }
+
+        // A committed shell command is a completed command transition even
+        // after its tool lifecycle has ended. Stream newest-first so this
+        // stays bounded in the storage implementations and does not turn
+        // RunState into shell-command history.
+        foreach ($this->eventStore->reverseFor($state->runId) as $event) {
+            if (RunEventTypeEnum::AgentCommandApplied->value === $event->type
+                && 'shell_command' === ($event->payload['kind'] ?? null)
+                && $message->idempotencyKey() === ($event->payload['idempotency_key'] ?? null)) {
+                return new HandlerResult();
+            }
+        }
+
+        // Direct shells can attach to an active LLM, so currentOperation cannot
+        // represent them without invalidating that LLM result. Keep only the
+        // currently executing deterministic tool ids; this is removed by the
+        // canonical tool_execution_end reducer, never retained as a receipt.
+        $toolCallId = 'sh_'.hash('sha256', $message->idempotencyKey());
+        if (isset($state->pendingShellToolCalls[$toolCallId])) {
+            return new HandlerResult();
         }
 
         $rawInput = $message->rawInput;
@@ -60,8 +86,22 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
         $hasConversationalTurn = $state->turnNo > 0;
         $terminalBoundary = $state->status->isTerminal();
         $startsChildTurn = $terminalBoundary && $hasConversationalTurn;
+        $standalone = RunStatus::Queued === $state->status || $terminalBoundary;
         $commandTurnNo = $state->turnNo;
-        $owningTurnNo = $state->turnNo;
+        $owningTurnNo = $startsChildTurn
+            ? max($state->lastSeq, $state->turnNo) + 1
+            : $state->turnNo;
+        $operation = new CurrentOperationDTO(
+            $owningTurnNo,
+            $message->stepId(),
+            $message->attempt(),
+            $message->idempotencyKey(),
+        );
+        $normalizedOperation = $this->normalizer->normalize($operation);
+        if (!\is_array($normalizedOperation)) {
+            throw new \LogicException('Current operation normalization must produce an array.');
+        }
+
         $eventSpecs = [[
             'type' => RunEventTypeEnum::AgentCommandApplied->value,
             'payload' => [
@@ -69,6 +109,11 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
                 'idempotency_key' => $message->idempotencyKey(),
                 'text' => $rawInput,
                 'options' => [],
+                // Repair replays canonical events rather than state.json. Keep
+                // every shell execution self-describing without retaining a
+                // receipt history or adding a separate storage record.
+                'standalone' => $standalone,
+                'current_operation' => $normalizedOperation,
             ],
         ]];
 
@@ -77,7 +122,6 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
             // the global canonical high-water so discarded turns cannot collide.
             // AgentCommandApplied stays on the prior tip so the command-to-next-
             // TurnAdvanced map treats this shell as a seeder.
-            $owningTurnNo = max($state->lastSeq, $state->turnNo) + 1;
             $previousTurnNo = $state->turnNo;
             $eventSpecs[] = [
                 'type' => RunEventTypeEnum::TurnAdvanced->value,
@@ -85,6 +129,8 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
                 'payload' => [
                     'step_id' => $message->stepId(),
                     'turn_no' => $owningTurnNo,
+                    'operation_attempt' => $message->attempt(),
+                    'operation_idempotency_key' => $message->idempotencyKey(),
                 ],
             ];
             $eventSpecs[] = [
@@ -105,16 +151,8 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
             $eventSpecs,
         );
 
-        // Standalone means the shell action owns terminalization. Queued and
-        // terminal runs have no in-flight model turn that will emit AgentEnd;
-        // the worker therefore writes AgentEnd after tool lifecycle events.
-        // Active running shells attach to the current turn and leave run
-        // terminalization to the model turn.
-        $standalone = RunStatus::Queued === $state->status || $terminalBoundary;
-
         // Deterministic tool-call id keeps Messenger retries from creating a
         // second bash lifecycle for the same ApplyShellCommand message.
-        $toolCallId = 'sh_'.hash('sha256', $message->idempotencyKey());
         $effect = new ExecuteShellToolCall(
             runId: $state->runId,
             turnNo: $owningTurnNo,
@@ -135,6 +173,12 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
             'activeStepId' => $startsChildTurn || RunStatus::Queued === $state->status
                 ? $message->stepId()
                 : $state->activeStepId,
+            // An attached shell must not replace the active LLM token: its
+            // result still authorizes the in-flight LLM completion. Standalone
+            // shells have no competing model operation and are recoverable by
+            // this bounded descriptor.
+            'currentOperation' => $standalone ? $operation : $state->currentOperation,
+            'pendingShellToolCalls' => [...$state->pendingShellToolCalls, $toolCallId => true],
             'retryableFailure' => $startsChildTurn ? false : $state->retryableFailure,
             // A child turn starts a fresh retry episode; an in-place shell on
             // an active run keeps the episode counter intact.

@@ -180,7 +180,7 @@ final readonly class ExecuteShellToolCallWorker
             try {
                 $this->commandBus->dispatch(new AdvanceRun(
                     runId: $runId,
-                    turnNo: 0,
+                    turnNo: $message->turnNo(),
                     stepId: $stepId,
                     attempt: 1,
                     idempotencyKey: $idempotencyKey,

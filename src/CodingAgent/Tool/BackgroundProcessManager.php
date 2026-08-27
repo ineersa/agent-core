@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
-use Doctrine\DBAL\Exception\TableNotFoundException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
@@ -31,19 +30,15 @@ use Symfony\Component\Clock\Clock;
  *     forwards it to the child so TERM reaches the actual workload.
  *  2. The process runs independently — the PHP tool worker exits while
  *     the child continues in its own session.
- *  3. On subsequent list() calls, resolveEntityStatus() checks
+ *  3. On subsequent accepted-background list() calls, resolveEntityStatus() checks
  *     liveness via /proc/<pid> on Linux or the status file.
  *  4. stop() sends SIGTERM to the process group (negative PGID), polls
  *     until exit or the configured grace deadline, then SIGKILL if still alive.
- *  5. cleanupStale() removes DB records and log files older than
- *     retention once the process has finished.
  *
- * Session ownership: every process stores an optional session_id.
- * Methods that accept ?string $sessionId scope operations to that
- * session when provided; null means unscoped/admin (show all,
- * operate on any process regardless of session).
- * BgStatusTool resolves the current session from the ambient
- * StackToolExecutionContextAccessor so operations are scoped.
+ * Session ownership: user-facing list(), readLogTail(), and session-scoped
+ * stop() operations require an owning session and expose only rows explicitly
+ * accepted as background work. Internal shutdown/reap code retains an
+ * unscoped stop() path for PIDs this manager instance owns.
  *
  * Shutdown handling:
  * Call registerShutdownHandler() from production wiring (services.yaml)
@@ -60,8 +55,8 @@ use Symfony\Component\Clock\Clock;
  * "unable to open database file".
  *
  * Crash resilience: SIGKILL, OOM, or segfault bypass the shutdown
- * function, so background processes survive unexpected controller
- * death. The user can inspect logs on the next session resume.
+ * function, so controller startup removes accepted process state left by
+ * the prior controller after it regains exclusive session ownership.
  *
  * setsid is required. If setsid is unavailable, start() fails with a
  * clear exception rather than falling back to unsafe single-PID mode
@@ -223,23 +218,18 @@ final class BackgroundProcessManager
     }
 
     /**
-     * List all tracked background processes with refreshed status.
+     * List processes explicitly accepted as background work for one run.
+     * Private foreground-supervision records (backgroundedAt === null) are
+     * deliberately excluded from the user-facing bg_status surface.
      *
      * Resolves status from filesystem state (/proc/<pid> or status file)
-     * and persists any changes on the entity before returning.  This is
-     * the canonical way to get current process state — entities returned
-     * by fetchAll() may have stale in-memory status.
-     *
-     * @param string|null $sessionId optional session filter. When
-     *                               provided, only processes for that
-     *                               session are returned. Pass null for
-     *                               all processes.
+     * and persists any changes before returning.
      *
      * @return list<BackgroundProcess>
      */
-    public function list(?string $sessionId = null): array
+    public function list(string $sessionId): array
     {
-        $entities = $this->store->fetchAll($sessionId);
+        $entities = $this->store->fetchBackgrounded($sessionId);
 
         foreach ($entities as $entity) {
             $this->resolveEntityStatus($entity);
@@ -406,24 +396,18 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Return the tail of a background process log file.
+     * Return a user-accepted background process log within its owning run.
+     * The repository applies run, PID, and backgroundedAt predicates together,
+     * so foreground and cross-run records are indistinguishable from absent.
      *
-     * @throws \RuntimeException when process not found, session mismatch, or log unreadable
-     *
-     * Resolves the newest retained row for the OS PID (bg_status pid= semantics);
-     * session ownership is checked after resolution
+     * @throws \RuntimeException when no accepted process matches
      */
-    public function readLogTail(int $pid, ?int $maxChars = null, ?string $sessionId = null): LogTailResult
+    public function readLogTail(string $sessionId, int $pid, ?int $maxChars = null): LogTailResult
     {
         $maxChars ??= $this->config->logTailChars;
-
-        $entity = $this->store->fetchLatestByPid($pid);
+        $entity = $this->store->fetchBackgroundedByPid($sessionId, $pid);
 
         if (null === $entity) {
-            throw new \RuntimeException(\sprintf('No background process found with PID %d.', $pid));
-        }
-
-        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
             throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
         }
 
@@ -482,15 +466,13 @@ final class BackgroundProcessManager
      * determined — a rare race window immediately after process launch.
      *
      * @param int         $pid       Process PID to stop. Must be > 0.
-     * @param string|null $sessionId optional session ownership check.
-     *                               When provided, only a process belonging
-     *                               to this session will be stopped.
+     * @param string|null $sessionId owning run for user-facing operations.
+     *                               When provided, only an accepted process
+     *                               in that run can be stopped; null is only
+     *                               for internal shutdown/reap calls over
+     *                               manager-owned PIDs or session-selected rows.
      *
-     * @throws \RuntimeException when process not found, session mismatch,
-     *                           or PID is invalid
-     *
-     * Resolves the newest retained row for the OS PID (bg_status stop pid=);
-     * session ownership is checked after resolution
+     * @throws \RuntimeException when process not found or PID is invalid
      */
     public function stop(int $pid, ?string $sessionId = null): StopResult
     {
@@ -500,60 +482,15 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('Invalid PID %d for stop.', $pid));
         }
 
-        $entity = $this->store->fetchLatestByPid($pid);
+        $entity = null === $sessionId
+            ? $this->store->fetchLatestByPid($pid)
+            : $this->store->fetchBackgroundedByPid($sessionId, $pid);
 
         if (null === $entity) {
-            throw new \RuntimeException(\sprintf('No background process found with PID %d.', $pid));
-        }
-
-        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
-            throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
+            throw new \RuntimeException(null === $sessionId ? \sprintf('No background process found with PID %d.', $pid) : \sprintf('No background process found with PID %d for this session.', $pid));
         }
 
         return $this->stopProcessEntity($entity);
-    }
-
-    /**
-     * Remove stale (finished) records and log files older than retention.
-     *
-     * First refreshes all unfinished records so finished_at is populated
-     * for processes that completed without a list() call, then queries
-     * for stale entities.
-     *
-     * @return int Number of cleaned records
-     */
-    public function cleanupStale(): int
-    {
-        // Refresh all unfinished so finished_at is populated
-        $this->refreshAllUnfinished();
-
-        $cutoff = Clock::get()->now()->modify('-'.$this->config->retentionSeconds.' seconds');
-
-        $staleEntities = $this->store->fetchStale($cutoff);
-
-        $count = 0;
-        foreach ($staleEntities as $entity) {
-            $logPath = $entity->logPath;
-            $statusPath = $entity->statusPath;
-
-            // Delete log and status files
-            $this->lifecycle->deleteRecordFiles($logPath, $statusPath);
-
-            // Delete DB record
-            if ($this->store->deleteById($entity->id)) {
-                ++$count;
-            }
-        }
-
-        // Also clean up orphaned .pid files (from crashed processes)
-        $activePids = $this->store->fetchAllUnfinishedPids();
-        $activePidSet = [];
-        foreach ($activePids as $activePid) {
-            $activePidSet[$activePid] = true;
-        }
-        $this->lifecycle->cleanupOrphanedPidFiles($activePidSet);
-
-        return $count;
     }
 
     /**
@@ -616,67 +553,17 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Terminate background processes during shutdown or controlled teardown.
+     * Terminate background processes started by this manager instance.
      *
-     * Two modes:
-     * - No session id (null): instance-owned processes only — PIDs recorded in
-     *   start() on this manager. Used by register_shutdown_function() and test
-     *   tearDown. Does not query the database for foreign rows.
-     * - Explicit session id: every unfinished process bound to that session from
-     *   the database (controller controlled-shutdown path).
-     *
-     * Called automatically via register_shutdown_function() on PHP process
-     * exit (graceful or fatal). Also callable explicitly from test tearDown
-     * or controller lifecycle hooks. Safe to call multiple times — only
-     * processes still marked running are affected.
-     *
-     * @param string|null $sessionId optional session filter. When provided,
-     *                               only processes for that session are
-     *                               stopped from the database. Pass null to
-     *                               reap only this instance's owned PIDs.
+     * This PHP-shutdown fallback never queries the shared database. Controller
+     * session cleanup is owned by its lifecycle listener and uses immutable
+     * record IDs instead.
      *
      * @return int Number of processes terminated
      */
-    public function shutdownCleanup(?string $sessionId = null): int
+    public function shutdownCleanup(): int
     {
-        if (null === $sessionId) {
-            return $this->reapOwnedProcesses();
-        }
-
-        try {
-            $entities = $this->store->fetchAllUnfinished($sessionId);
-        } catch (TableNotFoundException) {
-            // Database tables have not been created yet (e.g. during PHAR boot
-            // before migrations run, or for pure CLI commands like list/about
-            // that do not go through AgentCommand). No background processes can
-            // be running in this case.
-            $this->logger->debug('background_process.shutdown_no_table', [
-                'component' => 'background_process_manager',
-                'event_type' => 'shutdown_cleanup_table_not_found',
-                'session_id' => $sessionId,
-            ]);
-
-            return 0;
-        }
-
-        $count = 0;
-        foreach ($entities as $entity) {
-            $pid = $entity->pid;
-            try {
-                $this->stop($pid);
-                ++$count;
-            } catch (\RuntimeException $e) {
-                // Process may have exited between fetch and stop; log and continue
-                $this->logger->warning('background_process.shutdown_cleanup_error', [
-                    'component' => 'tool.background_process',
-                    'event_type' => 'background_process.shutdown_cleanup_error',
-                    'process_pid' => $pid,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-
-        return $count;
+        return $this->reapOwnedProcesses();
     }
 
     /**

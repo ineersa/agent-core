@@ -56,56 +56,20 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
 
         $runId = $message->runId();
 
-        // Guard: if the turn number no longer matches or the stepId no longer
-        // matches the active step, the result is stale.  Emit a terminal
-        // context_compaction_failed event so the user-visible compaction
-        // state is resolved instead of leaving a dangling started event.
-        //
-        // Preserve the current activeStepId — clearing it would lose a
-        // newer in-flight compaction's identity (e.g. compaction B started,
-        // stale result A arrives).  The active step is only cleared when
-        // the result genuinely matches the current step (success/error paths).
-        //
-        // NOTE: run status alone is NOT a staleness signal.  Manual compaction
-        // is commonly triggered on a Completed run — CompactRunHandler sets
-        // activeStepId while the run stays Completed, and the matching async
-        // result must be accepted.  Correlation (turnNo + stepId/activeStepId)
-        // is the true staleness guard: turnNo advances on new conversation
-        // turns, and activeStepId changes when a newer compaction starts.
-        if ($state->turnNo !== $message->turnNo() || $state->activeStepId !== $message->stepId()) {
-            $this->logger->info('Compaction result is stale — discarding.', [
-                'session_id' => $runId,
-                'component' => 'compaction',
-                'event_type' => 'compaction.stale_result',
-                'run_id' => $runId,
-                'step_id' => $message->stepId(),
-                'state_turn_no' => $state->turnNo,
-                'result_turn_no' => $message->turnNo(),
-                'active_step_id' => $state->activeStepId,
-            ]);
-
-            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
-                'type' => RunEventTypeEnum::ContextCompactionFailed->value,
-                'payload' => [
-                    'reason' => 'stale_result',
-                    'message' => 'Compaction result arrived too late — the active step has moved on.',
-                    'messages_replaced' => false,
-                    'step_id' => $message->stepId(),
-                    'trigger' => $message->trigger,
-                ],
-            ]]);
-
-            // Stale result — resolve Compacting back to a running state.
-            // If a newer compaction IS active (different activeStepId), its
-            // handler will set Compacting again on its own started event.
-            $staleFinalStatus = RunStatus::Compacting === $state->status
-                ? RunStatus::Running
-                : $state->status;
-
-            return new HandlerResult(
-                nextState: $this->incrementState($state, $events, clearActiveStepId: false, status: $staleFinalStatus),
-                events: $events,
-            );
+        // Exact active-operation validation makes completed, stale, and
+        // wrong-attempt redeliveries pure no-ops. A stale result must never
+        // manufacture context_compaction_failed after the real lifecycle ended.
+        if (!\in_array($state->status, [RunStatus::Compacting, RunStatus::Cancelling], true)
+            || $state->turnNo !== $message->turnNo()
+            || $state->activeStepId !== $message->stepId()
+            || null === $state->currentOperation
+            || !$state->currentOperation->matches(
+                $message->turnNo(),
+                $message->stepId(),
+                $message->attempt(),
+                $message->idempotencyKey(),
+            )) {
+            return new HandlerResult();
         }
 
         // Error from model invocation → emit failure, preserve messages.
@@ -191,7 +155,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $errorSpecs);
 
             return new HandlerResult(
-                nextState: $this->incrementState($state, $events, clearActiveStepId: true, status: $errorFinalStatus),
+                nextState: $this->incrementState($state, $events, clearActiveStepId: true, status: $errorFinalStatus, completedRequestKey: $message->idempotencyKey()),
                 events: $events,
                 effects: $errorEffects,
             );
@@ -259,7 +223,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $emptySpecs);
 
             return new HandlerResult(
-                nextState: $this->incrementState($state, $events, clearActiveStepId: true, status: $emptyFinalStatus),
+                nextState: $this->incrementState($state, $events, clearActiveStepId: true, status: $emptyFinalStatus, completedRequestKey: $message->idempotencyKey()),
                 events: $events,
                 effects: $emptyEffects,
             );
@@ -368,7 +332,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $ineffectiveSpecs);
 
             return new HandlerResult(
-                nextState: $this->incrementState($state, $events, clearActiveStepId: true, status: $ineffectiveFinalStatus),
+                nextState: $this->incrementState($state, $events, clearActiveStepId: true, status: $ineffectiveFinalStatus, completedRequestKey: $message->idempotencyKey()),
                 events: $events,
                 effects: $ineffectiveEffects,
             );
@@ -431,6 +395,8 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             'lastSeq' => $state->lastSeq + \count($events),
             'messages' => $compactResult->compactedMessages,
             'activeStepId' => null,
+            'currentOperation' => null,
+            'lastAppliedCompactionKey' => $message->idempotencyKey(),
             // Compaction replaces the conversation: explicit retry-episode reset.
             'retryAttempts' => 0,
         ]);
@@ -470,7 +436,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
      * because model_error/empty_summary/success paths genuinely clear the
      * step while stale_result paths genuinely preserve it.
      */
-    private function incrementState(RunState $state, array $events, bool $clearActiveStepId = false, ?RunStatus $status = null): RunState
+    private function incrementState(RunState $state, array $events, bool $clearActiveStepId = false, ?RunStatus $status = null, ?string $completedRequestKey = null): RunState
     {
         $count = \count($events);
 
@@ -479,6 +445,8 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             'version' => $state->version + 1,
             'lastSeq' => $state->lastSeq + $count,
             'activeStepId' => $clearActiveStepId ? null : $state->activeStepId,
+            'currentOperation' => $clearActiveStepId ? null : $state->currentOperation,
+            'lastAppliedCompactionKey' => $completedRequestKey ?? $state->lastAppliedCompactionKey,
             // Compaction events restart the retry episode (context replaced).
             'retryAttempts' => 0,
         ]);

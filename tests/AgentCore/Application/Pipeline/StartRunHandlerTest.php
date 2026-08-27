@@ -36,6 +36,7 @@ final class StartRunHandlerTest extends TestCase
             ->withMessages([new AgentMessage(role: 'assistant', content: [])])
             ->withActiveStepId('legacy-step')
             ->withRetryableFailure(true)
+            ->withModel(null)
             ->build();
 
         $message = StartRunMessageBuilder::create('run-start-handler-1')
@@ -73,7 +74,58 @@ final class StartRunHandlerTest extends TestCase
         $this->assertSame([], $result->effects);
         $this->assertSame([], $result->postCommitEffects);
         $this->assertSame([], $result->postCommit);
-        $this->assertTrue($result->markHandled);
+    }
+
+    public function testCompletedShellOnlyStateInitializesOnce(): void
+    {
+        $handler = new StartRunHandler(
+            eventFactory: new EventFactory(),
+            normalizer: TestSerializerFactory::normalizer(),
+        );
+        $shellMessage = new AgentMessage(role: 'tool', content: [['type' => 'text', 'text' => 'shell output']]);
+        $shellOnly = RunStateBuilder::create('run-shell-only-start')
+            ->withStatus(RunStatus::Completed)
+            ->withVersion(8)
+            ->withTurnNo(0)
+            ->withLastSeq(8)
+            ->withMessages([$shellMessage])
+            ->withModel(null)
+            ->build();
+        $message = StartRunMessageBuilder::create('run-shell-only-start')
+            ->withIdempotencyKey('start-after-shell')
+            ->build();
+
+        $initialized = $handler->handle($message, $shellOnly);
+
+        $this->assertNotNull($initialized->nextState);
+        $this->assertSame(RunStatus::Running, $initialized->nextState->status);
+        $this->assertSame(9, $initialized->nextState->version);
+        $this->assertSame(9, $initialized->nextState->lastSeq);
+        $this->assertSame([$shellMessage], $initialized->nextState->messages);
+        $this->assertNotNull($initialized->nextState->model);
+        $this->assertSame('run_started', $initialized->events[0]->type);
+
+        $redelivery = $handler->handle($message, $initialized->nextState);
+        $this->assertNull($redelivery->nextState);
+        $this->assertSame([], $redelivery->events);
+    }
+
+    public function testCommittedStartRedeliveryIsANoOp(): void
+    {
+        $handler = new StartRunHandler(
+            eventFactory: new EventFactory(),
+            normalizer: TestSerializerFactory::normalizer(),
+        );
+        $message = StartRunMessageBuilder::create('run-start-duplicate')->build();
+        $committed = $handler->handle($message, RunStateBuilder::queued('run-start-duplicate')->withModel(null)->build())->nextState;
+
+        $this->assertNotNull($committed);
+        $redelivery = $handler->handle($message, $committed);
+
+        $this->assertNull($redelivery->nextState);
+        $this->assertSame([], $redelivery->events);
+        $this->assertSame([], $redelivery->effects);
+        $this->assertSame([], $redelivery->postCommit);
     }
 
     public function testHandleSchedulesInitialAdvanceAfterCommitWhenBusIsProvided(): void
@@ -86,7 +138,7 @@ final class StartRunHandlerTest extends TestCase
             commandBus: $commandBus,
         );
 
-        $state = RunStateBuilder::queued('run-start-handler-2')->build();
+        $state = RunStateBuilder::queued('run-start-handler-2')->withModel(null)->build();
 
         $message = StartRunMessageBuilder::create('run-start-handler-2')
             ->withStepId('start-step-2')

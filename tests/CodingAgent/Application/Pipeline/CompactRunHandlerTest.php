@@ -4,21 +4,28 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\CommandRouter;
+use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
+use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
 use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
+use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
@@ -91,6 +98,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([]),
             $this->extensionHooks([]),
             $this->metadataReader(isChild: true),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -108,6 +116,127 @@ final class CompactRunHandlerTest extends TestCase
         $this->assertSame($state, $result->nextState);
         $this->assertSame([], $result->events);
         $this->assertSame([], $result->effects);
+    }
+
+    public function testPreLlmCompactionRequestUsesCommittedStateTurnAndStartsWorker(): void
+    {
+        $messages = [$this->userMsg('question'), $this->assistantMsg('answer')];
+        $state = new RunState(
+            runId: 'run-pre-llm-compact',
+            status: RunStatus::Running,
+            version: 10,
+            turnNo: 0,
+            lastSeq: 0,
+            messages: $messages,
+            model: 'openai/test-model',
+        );
+        $guard = $this->createStub(PreLlmCompactionGuardInterface::class);
+        $guard->method('shouldCompactBeforeLlmStep')->willReturn(true);
+        $advance = new AdvanceRunHandler(
+            new CommandMailboxPolicy(new InMemoryCommandStore(), new CommandRouter([])),
+            new EventFactory(),
+            preLlmCompactionGuard: $guard,
+        );
+        $advanceResult = $advance->handle(new AdvanceRun('run-pre-llm-compact', 0, 'advance-1', 1, 'advance-key'), $state);
+
+        $this->assertNotNull($advanceResult->nextState);
+        $this->assertCount(1, $advanceResult->effects);
+        $this->assertInstanceOf(CompactRun::class, $advanceResult->effects[0]);
+        $request = $advanceResult->effects[0];
+        $this->assertSame($advanceResult->nextState->turnNo, $request->turnNo());
+
+        $service = $this->createReadyCompactionService([$messages[0]], [$messages[1]]);
+        $handler = new CompactRunHandler(
+            $service,
+            $this->createAppConfig(),
+            new EventFactory(),
+            $this->hooks([]),
+            $this->extensionHooks([]),
+            $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
+        );
+        $started = $handler->handle($request, $advanceResult->nextState);
+
+        $this->assertCount(1, $started->effects);
+        $this->assertInstanceOf(ExecuteCompactionStep::class, $started->effects[0]);
+        $this->assertSame(RunEventTypeEnum::ContextCompactionStarted->value, $started->events[0]->type);
+    }
+
+    public function testCommittedCompactRunRedeliveryDoesNotRepeatPreparationHooksOrWorker(): void
+    {
+        $messages = [$this->userMsg('question'), $this->assistantMsg('answer')];
+        // A non-matching active operation must not suppress a distinct compaction request.
+        $state = $this->createRunState($messages)->with([
+            'currentOperation' => new CurrentOperationDTO(5, 'llm-step', 1, 'llm-key'),
+        ]);
+        $preparation = CompactionPrepareResult::ready(
+            messagesToSummarize: [$messages[0]],
+            retainedTailMessages: [$messages[1]],
+            tokenEstimateBefore: 42000,
+            messagesCompacted: 1,
+            messagesRetained: 1,
+            firstRetainedIndex: 1,
+            priorSummaryPresent: false,
+        );
+        $service = $this->createMock(CompactionServiceInterface::class);
+        $service->expects($this->once())->method('prepare')->willReturn($preparation);
+        $service->expects($this->once())->method('buildSummarizationMessages')->willReturn([$messages[0]]);
+
+        $hook = new class implements BeforeCompactionHookInterface {
+            public int $calls = 0;
+
+            public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
+            {
+                ++$this->calls;
+
+                return CompactionHookResultDTO::continue();
+            }
+        };
+        $handler = new CompactRunHandler(
+            $service,
+            $this->createAppConfig(),
+            new EventFactory(),
+            $this->hooks([]),
+            $this->extensionHooks([$hook]),
+            $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
+        );
+        $request = new CompactRun('run-1', 5, 'step-1', 1, 'key-1', 'manual');
+
+        $first = $handler->handle($request, $state);
+        $redelivery = $handler->handle($request, $first->nextState);
+
+        $this->assertCount(1, $first->effects);
+        $this->assertInstanceOf(ExecuteCompactionStep::class, $first->effects[0]);
+        $this->assertSame('key-1', $first->effects[0]->idempotencyKey());
+        $this->assertSame(1, $hook->calls);
+        $this->assertNull($redelivery->nextState);
+        $this->assertSame([], $redelivery->events);
+        $this->assertSame([], $redelivery->effects);
+
+        // Cancellation retains the exact in-flight compaction identity for result
+        // handling, so redelivery must still stop before preparation, hooks, or worker dispatch.
+        foreach ([RunStatus::Cancelling, RunStatus::Cancelled] as $status) {
+            $cancelledRedelivery = $handler->handle($request, $first->nextState->with([
+                'status' => $status,
+                'lastAppliedCompactionKey' => null,
+            ]));
+            $this->assertNull($cancelledRedelivery->nextState);
+            $this->assertSame([], $cancelledRedelivery->events);
+            $this->assertSame([], $cancelledRedelivery->effects);
+        }
+        $this->assertSame(1, $hook->calls);
+
+        $completed = $first->nextState->with([
+            'status' => RunStatus::Completed,
+            'activeStepId' => null,
+            'currentOperation' => null,
+            'lastAppliedCompactionKey' => 'key-1',
+        ]);
+        $completedRedelivery = $handler->handle($request, $completed);
+        $this->assertNull($completedRedelivery->nextState);
+        $this->assertSame([], $completedRedelivery->events);
+        $this->assertSame([], $completedRedelivery->effects);
     }
 
     public function testReadyPreparationEmitsStartedAndDispatchesWorker(): void
@@ -136,6 +265,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([]),
             $this->extensionHooks([]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -164,6 +294,8 @@ final class CompactRunHandlerTest extends TestCase
         $this->assertSame(4, $payload['messages_before']);
         $this->assertSame(2, $payload['messages_to_summarize']);
         $this->assertSame(2, $payload['messages_retained']);
+        $this->assertSame('run-1', $payload['worker_request']['run_id']);
+        $this->assertSame('question 1', $payload['worker_request']['summarization_messages'][0]['content'][0]['text']);
 
         // Sets activeStepId so the result handler can match the result.
         $this->assertSame('step-1', $result->nextState->activeStepId);
@@ -222,6 +354,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([]),
             $this->extensionHooks([]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -265,6 +398,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([]),
             $this->extensionHooks([]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -287,6 +421,8 @@ final class CompactRunHandlerTest extends TestCase
         $payload = $result->events[0]->payload;
         $this->assertSame('too_few_messages', $payload['reason']);
         $this->assertFalse($payload['messages_replaced']);
+        $this->assertSame('key-1', $payload['operation_idempotency_key']);
+        $this->assertSame('key-1', $result->nextState->lastAppliedCompactionKey);
 
         // Messages preserved.
         $this->assertCount(\count($messages), $result->nextState->messages);
@@ -324,6 +460,7 @@ final class CompactRunHandlerTest extends TestCase
                 $this->hooks([]),
                 $this->extensionHooks([]),
                 $this->metadataReader(),
+                AttributeSerializerValidatorTestFactory::create()[0],
             );
 
             $result = $handler->handle(
@@ -385,6 +522,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([$cancelHook]),
             $this->extensionHooks([$cancelHook]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -467,6 +605,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([$replaceHook]),
             $this->extensionHooks([$replaceHook]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -782,6 +921,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([$hook]),
             $this->extensionHooks([$hook]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $handler->handle(
@@ -836,6 +976,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([$hook]),
             $this->extensionHooks([$hook]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -906,6 +1047,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([$cancelHook]),
             $this->extensionHooks([$cancelHook]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -968,6 +1110,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([]),
             $this->extensionHooks([]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -1014,6 +1157,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([]),
             $this->extensionHooks([]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -1049,9 +1193,9 @@ final class CompactRunHandlerTest extends TestCase
 
         // Effects MUST contain exactly one AdvanceRun for same run/turn.
         $this->assertCount(1, $result->effects, 'Pre-LLM structural failure must emit AdvanceRun to resume the pending LLM turn.');
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $result->effects[0]);
+        $this->assertInstanceOf(AdvanceRun::class, $result->effects[0]);
 
-        /** @var \Ineersa\AgentCore\Domain\Message\AdvanceRun $advance */
+        /** @var AdvanceRun $advance */
         $advance = $result->effects[0];
         $this->assertSame('run-1', $advance->runId());
         $this->assertSame(5, $advance->turnNo());
@@ -1091,6 +1235,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([$cancelHook]),
             $this->extensionHooks([$cancelHook]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -1133,9 +1278,9 @@ final class CompactRunHandlerTest extends TestCase
 
         // Effects MUST contain exactly one AdvanceRun for same run/turn.
         $this->assertCount(1, $result->effects, 'Pre-LLM hook cancel must emit AdvanceRun to resume the pending LLM turn.');
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $result->effects[0]);
+        $this->assertInstanceOf(AdvanceRun::class, $result->effects[0]);
 
-        /** @var \Ineersa\AgentCore\Domain\Message\AdvanceRun $advance */
+        /** @var AdvanceRun $advance */
         $advance = $result->effects[0];
         $this->assertSame('run-1', $advance->runId());
         $this->assertSame(5, $advance->turnNo());
@@ -1195,6 +1340,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([]),
             $this->extensionHooks([], [$publicHook]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(

@@ -130,7 +130,7 @@ final class SessionToolBatchStoreTest extends TestCase
     public function testChildRunSnapshotsLiveUnderParentArtifactDirNotPseudoSession(): void
     {
         $parentRunId = '6';
-        $childRunId = 'child-run-uuid';
+        $childRunId = '123e4567-e89b-12d3-a456-426614174000';
         $artifactId = 'agent_test123';
 
         $parentDir = $this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$parentRunId;
@@ -159,6 +159,8 @@ final class SessionToolBatchStoreTest extends TestCase
 
         $expectedDir = $parentDir.'/artifacts/agents/'.$artifactId.'/runtime/tool-batches';
         $this->assertDirectoryExists($expectedDir);
+        $this->assertFileDoesNotExist($parentDir.'/idempotency.jsonl');
+        $this->assertFileDoesNotExist(\dirname($expectedDir, 2).'/idempotency.jsonl');
         $this->assertDirectoryDoesNotExist($this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$childRunId);
     }
 

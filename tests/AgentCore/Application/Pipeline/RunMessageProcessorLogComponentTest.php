@@ -25,7 +25,6 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
-use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler;
@@ -198,7 +197,6 @@ final class RunMessageProcessorLogComponentTest extends IsolatedKernelTestCase
 
         $processor = new RunMessageProcessor(
             runStore: $runStore,
-            idempotency: new InMemoryIdempotencyStore(),
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: new RunCommit(
                 runStore: $runStore,
