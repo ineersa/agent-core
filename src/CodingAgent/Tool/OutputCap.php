@@ -120,12 +120,13 @@ STRING;
     public function persist(string $text, string $runId): string
     {
         $this->maybeCleanup();
-        $scope = $this->scopePath($runId);
-        $lock = $this->scopeLock($scope);
+        $canonicalRoot = $this->ensureStorageDirectory();
+        $scopeName = $this->scopeName($runId);
+        $lock = $this->scopeLock($canonicalRoot, $scopeName);
         $lock->acquire(true);
 
         try {
-            $canonicalScope = $this->ensureScopeDirectory($scope);
+            $canonicalScope = $this->ensureScopeDirectory($canonicalRoot, $scopeName);
             $filePath = $canonicalScope.'/'.bin2hex(random_bytes(16)).'.txt';
             if (false === @file_put_contents($filePath, $text, \LOCK_EX)) {
                 throw new \RuntimeException('Failed to write output cap file.');
@@ -168,7 +169,7 @@ STRING;
                     continue;
                 }
 
-                $lock = $this->scopeLock($entry->getPathname());
+                $lock = $this->scopeLock($root, $name);
                 if (!$lock->acquire(false)) {
                     continue;
                 }
@@ -193,19 +194,20 @@ STRING;
      */
     public function cleanupRun(string $runId, string $phase): void
     {
-        $scope = $this->scopePath($runId);
-        $lock = $this->scopeLock($scope);
+        $canonicalRoot = $this->canonicalStorageRoot();
+        if (null === $canonicalRoot) {
+            $this->logCleanupCompleted($phase, 0, 0);
+
+            return;
+        }
+
+        $scopeName = $this->scopeName($runId);
+        $lock = $this->scopeLock($canonicalRoot, $scopeName);
         $lock->acquire(true);
 
         try {
-            [$files, $bytes] = $this->removeOwnedScope($scope);
-            $this->logger->info('output_cap.session_cleanup_completed', [
-                'component' => 'tool.output_cap',
-                'event_type' => 'output_cap.session_cleanup_completed',
-                'lifecycle_phase' => $phase,
-                'removed_file_count' => $files,
-                'removed_bytes' => $bytes,
-            ]);
+            [$files, $bytes] = $this->removeOwnedScope($canonicalRoot.'/'.$scopeName);
+            $this->logCleanupCompleted($phase, $files, $bytes);
         } catch (\Throwable $exception) {
             $this->logCleanupFailure($phase, $exception);
         } finally {
@@ -236,26 +238,43 @@ STRING;
         $this->cleanup();
     }
 
-    private function scopePath(string $runId): string
+    private function scopeName(string $runId): string
     {
-        return rtrim($this->config->storageDir, '/').'/run-'.hash('sha256', $runId);
+        return 'run-'.hash('sha256', $runId);
     }
 
-    private function scopeLock(string $scope): \Symfony\Component\Lock\LockInterface
+    private function scopeLock(string $canonicalRoot, string $scopeName): \Symfony\Component\Lock\LockInterface
     {
-        return $this->lockFactory->createLock('output-cap:'.hash('sha256', $scope));
+        return $this->lockFactory->createLock('output-cap:'.hash('sha256', $canonicalRoot.'/'.$scopeName));
     }
 
-    /** @return string canonical scope directory */
-    private function ensureScopeDirectory(string $scope): string
+    private function ensureStorageDirectory(): string
     {
         $root = $this->config->storageDir;
         if (!is_dir($root) && !@mkdir($root, 0750, true) && !is_dir($root)) {
             throw new \RuntimeException('Failed to create output cap storage directory.');
         }
 
-        $canonicalRoot = realpath($root);
-        if (false === $canonicalRoot || is_link($scope)) {
+        $canonicalRoot = $this->canonicalStorageRoot();
+        if (null === $canonicalRoot) {
+            throw new \RuntimeException('Refusing unsafe output cap storage directory.');
+        }
+
+        return $canonicalRoot;
+    }
+
+    private function canonicalStorageRoot(): ?string
+    {
+        $canonicalRoot = realpath($this->config->storageDir);
+
+        return false !== $canonicalRoot && is_dir($canonicalRoot) ? $canonicalRoot : null;
+    }
+
+    /** @return string canonical scope directory */
+    private function ensureScopeDirectory(string $canonicalRoot, string $scopeName): string
+    {
+        $scope = $canonicalRoot.'/'.$scopeName;
+        if (is_link($scope)) {
             throw new \RuntimeException('Refusing unsafe output cap scope.');
         }
         if (file_exists($scope) && !is_dir($scope)) {
@@ -347,6 +366,17 @@ STRING;
         }
 
         return $this->config->defaultCap;
+    }
+
+    private function logCleanupCompleted(string $phase, int $files, int $bytes): void
+    {
+        $this->logger->info('output_cap.session_cleanup_completed', [
+            'component' => 'tool.output_cap',
+            'event_type' => 'output_cap.session_cleanup_completed',
+            'lifecycle_phase' => $phase,
+            'removed_file_count' => $files,
+            'removed_bytes' => $bytes,
+        ]);
     }
 
     private function logCleanupFailure(string $phase, \Throwable $exception): void

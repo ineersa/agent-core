@@ -111,6 +111,7 @@ trait TuiSessionServicesFactoryTrait
         $sessionStore = new HatfieldSessionStore(
             $appConfig,
             $this->createStub(EntityManagerInterface::class),
+            dispatcher: new EventDispatcher(),
         );
         $modelService = new ModelSelectionService(
             $appConfig,

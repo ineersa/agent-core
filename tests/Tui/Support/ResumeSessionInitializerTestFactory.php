@@ -64,8 +64,7 @@ final class ResumeSessionInitializerTestFactory
 
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $entityManager
-        );
+            entityManager: $entityManager, dispatcher: new EventDispatcher());
 
         $eventStore = new SessionRunEventStore(
             hatfieldSessionStore: $sessionStore,

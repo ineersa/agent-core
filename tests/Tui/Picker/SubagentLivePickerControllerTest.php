@@ -750,6 +750,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         return new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(EntityManagerInterface::class),
+            dispatcher: new EventDispatcher(),
         );
     }
 

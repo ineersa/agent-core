@@ -58,6 +58,7 @@ final class AgentArtifactRegistryTest extends TestCase
                 cwd: $this->projectDir,
             ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
 
         $serializer = new Serializer(

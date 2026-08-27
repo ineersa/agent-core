@@ -244,7 +244,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
     {
         $projector = $this->buildProjector();
         $appConfig = new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->projectDir);
-        $sessionStore = new HatfieldSessionStore($appConfig, $this->createStub(\Doctrine\ORM\EntityManagerInterface::class));
+        $sessionStore = new HatfieldSessionStore($appConfig, $this->createStub(\Doctrine\ORM\EntityManagerInterface::class), new EventDispatcher());
         $eventStore = $this->buildEventStore();
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
 
@@ -266,7 +266,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
     private function buildEventStore(): SessionRunEventStore
     {
         $appConfig = new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->projectDir);
-        $sessionStore = new HatfieldSessionStore($appConfig, $this->createStub(\Doctrine\ORM\EntityManagerInterface::class));
+        $sessionStore = new HatfieldSessionStore($appConfig, $this->createStub(\Doctrine\ORM\EntityManagerInterface::class), new EventDispatcher());
 
         return new SessionRunEventStore(
             hatfieldSessionStore: $sessionStore,

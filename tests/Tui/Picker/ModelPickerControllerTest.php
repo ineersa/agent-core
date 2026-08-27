@@ -207,6 +207,7 @@ class ModelPickerControllerTest extends TestCase
                 cwd: $this->tempDir.'/project',
             ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
         $sessionMetaStore = $hatfieldSessionStore;
 

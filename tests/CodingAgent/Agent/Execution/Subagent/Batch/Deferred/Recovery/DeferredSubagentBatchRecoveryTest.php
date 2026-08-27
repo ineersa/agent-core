@@ -356,6 +356,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: (string) getcwd()),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
         $resolver = new SessionAgentArtifactPathResolver($hatfieldSessionStore);
         $path = $resolver->eventsPath($parentRunId, $artifactId);

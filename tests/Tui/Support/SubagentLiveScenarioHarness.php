@@ -159,6 +159,7 @@ final class SubagentLiveScenarioHarness
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $entityManager,
+            dispatcher: new EventDispatcher(),
         );
 
         $context = new TuiRuntimeContext(

@@ -76,6 +76,7 @@ final class TuiSessionCompositionTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             $appConfig,
             $this->createStub(EntityManagerInterface::class),
+            dispatcher: new EventDispatcher(),
         );
         $modelService = new ModelSelectionService(
             $appConfig,

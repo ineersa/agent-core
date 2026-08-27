@@ -101,7 +101,7 @@ final class RenameSessionCommandHandlerTest extends TestCase
     public function testHandleWithInvalidSessionIdReturnsError(): void
     {
         $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $switch = $this->createSwitchStub();
         $pickerController = new SessionPickerController($this->pickerTui(), $this->pickerScreen(), $sessionStore, $switch);
 
@@ -118,7 +118,7 @@ final class RenameSessionCommandHandlerTest extends TestCase
     public function testHandleWithMalformedSessionIdReturnsError(): void
     {
         $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $switch = $this->createSwitchStub();
         $pickerController = new SessionPickerController($this->pickerTui(), $this->pickerScreen(), $sessionStore, $switch);
 
@@ -135,7 +135,7 @@ final class RenameSessionCommandHandlerTest extends TestCase
     public function testHandleWithSessionIdZeroReturnsError(): void
     {
         $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $switch = $this->createSwitchStub();
         $pickerController = new SessionPickerController($this->pickerTui(), $this->pickerScreen(), $sessionStore, $switch);
 
@@ -186,7 +186,7 @@ final class RenameSessionCommandHandlerTest extends TestCase
         $registry->method('getManagerForClass')->willReturn($em);
         $em->method('getRepository')->willReturn(new \Ineersa\CodingAgent\Entity\HatfieldSessionRepository($registry));
 
-        return new HatfieldSessionStore($this->createAppConfig(), $em);
+        return new HatfieldSessionStore($this->createAppConfig(), $em, new \Symfony\Component\EventDispatcher\EventDispatcher());
     }
 
     private function createAppConfig(): AppConfig
@@ -218,7 +218,7 @@ final class RenameSessionCommandHandlerTest extends TestCase
         // handler reaches updateMetadata().  Stub is fine since we
         // test the return value, not flush() invocation count.
 
-        return new HatfieldSessionStore($this->createAppConfig(), $em);
+        return new HatfieldSessionStore($this->createAppConfig(), $em, new \Symfony\Component\EventDispatcher\EventDispatcher());
     }
 
     private function createSwitchStub(): TuiSessionSwitchServiceInterface

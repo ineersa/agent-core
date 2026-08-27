@@ -69,6 +69,35 @@ final class OutputCapTest extends TestCase
         unlink($linkedRoot); // TestDirectoryIsolation intentionally owns directories, not symlink roots.
     }
 
+    public function testSymlinkedConfiguredRootStaleCleanupRespectsCanonicalScopeLock(): void
+    {
+        $canonicalRoot = $this->tmpDir.'/canonical-output-cap';
+        mkdir($canonicalRoot, 0750);
+        $linkedRoot = $this->tmpDir.'/linked-output-cap';
+        symlink($canonicalRoot, $linkedRoot);
+        $runId = 'locked-run';
+        $scopeName = 'run-'.hash('sha256', $runId);
+        $scope = $canonicalRoot.'/'.$scopeName;
+        mkdir($scope, 0750);
+        touch($scope, time() - 2);
+
+        $lockFactory = new LockFactory(new FlockStore($this->tmpDir));
+        $lock = $lockFactory->createLock('output-cap:'.hash('sha256', $canonicalRoot.'/'.$scopeName));
+        $lock->acquire(true);
+        try {
+            (new OutputCap(
+                new OutputCapConfig(storageDir: $linkedRoot, retentionSeconds: 1),
+                $lockFactory,
+                new NullLogger(),
+            ))->cleanup();
+        } finally {
+            $lock->release();
+            unlink($linkedRoot); // TestDirectoryIsolation intentionally owns directories, not symlink roots.
+        }
+
+        $this->assertDirectoryExists($scope);
+    }
+
     public function testTextExactlyAtCapBoundaryIsNotCapped(): void
     {
         $cap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10));

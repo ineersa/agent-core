@@ -86,7 +86,7 @@ final class ToolBatchCollectorFinalizedRedeliveryTest extends TestCase
             logging: new LoggingConfig(),
             cwd: $this->projectDir,
         );
-        $hatfield = new HatfieldSessionStore($appConfig, $entityManager);
+        $hatfield = new HatfieldSessionStore($appConfig, $entityManager, new \Symfony\Component\EventDispatcher\EventDispatcher());
 
         [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
 

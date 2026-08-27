@@ -7,7 +7,8 @@ namespace Ineersa\CodingAgent\Session\Event;
 use Symfony\Contracts\EventDispatcher\Event;
 
 /**
- * Dispatched after controller consumers stop and before session ownership releases.
+ * Dispatched after controller consumers stop and before session ownership releases,
+ * or before explicit session deletion removes canonical metadata and files.
  */
 final class ControllerSessionShutdownEvent extends Event
 {
