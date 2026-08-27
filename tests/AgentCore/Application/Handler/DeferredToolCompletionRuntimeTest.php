@@ -396,10 +396,10 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
                 eventStore: $eventStore,
                 commandStore: new InMemoryCommandStore(),
                 hotPromptStateRebuilder: $replayService,
-                stepDispatcher: new StepDispatcher(new TestMessageBus()),
+                stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
                 logger: new NullLogger(),
             ),
-            stepDispatcher: new StepDispatcher(new TestMessageBus()),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             handlers: [
                 new ToolCallResultHandler(
                     toolBatchCollector: $collector,

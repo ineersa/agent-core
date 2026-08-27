@@ -56,7 +56,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
                 new \Ineersa\AgentCore\Application\Replay\PromptStateReplayService(),
                 new \Ineersa\AgentCore\Application\Replay\ReplayEventPreparer(),
             ),
-            stepDispatcher: new StepDispatcher($executionBus),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), $executionBus),
             logger: new NullLogger(),
             hookDispatcher: null,
         );
@@ -64,7 +64,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
             runStore: $runStore,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
-            stepDispatcher: new StepDispatcher($executionBus),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), $executionBus),
             logger: new NullLogger(),
             handlers: [
                 new StartRunHandler(

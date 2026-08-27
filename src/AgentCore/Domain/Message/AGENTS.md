@@ -10,9 +10,9 @@ Transport contracts only — immutable bus payloads under `Ineersa\AgentCore\Dom
 - `LlmStepResult`, `ToolCallResult`, `CompactionStepResult`
 - `CompleteDeferredToolCall` (deferred completion; identity from durable record)
 
-**Sync (intentionally not transport-routed):**
+**Run-control transitions** (transport `run_control` on `agent.command.bus`):
 
-- `AdvanceRun`, `CompactRun` — handled on the bus(es) without Messenger transport (see `config/packages/messenger.yaml` comments)
+- `AdvanceRun`, `CompactRun` — state transitions handled only by the dedicated run_control consumer
 
 **Execution payloads** (`agent.execution.bus` → `llm` / `tool` transports):
 

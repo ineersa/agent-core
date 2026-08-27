@@ -60,7 +60,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             eventStore: $eventStore,
             commandStore: new InMemoryCommandStore(),
             hotPromptStateRebuilder: $replayService,
-            stepDispatcher: new StepDispatcher(new TestMessageBus()),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(),
             hookDispatcher: new HookDispatcher([$subscriber]),
         );

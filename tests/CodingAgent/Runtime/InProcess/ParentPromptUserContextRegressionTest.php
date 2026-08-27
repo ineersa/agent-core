@@ -197,7 +197,7 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
                 new PromptStateReplayService(),
                 new ReplayEventPreparer(),
             ),
-            stepDispatcher: new StepDispatcher(new TestMessageBus()),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new NullLogger(),
             hookDispatcher: null,
         );
@@ -205,7 +205,7 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
             runStore: $runStore,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
-            stepDispatcher: new StepDispatcher(new TestMessageBus()),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new NullLogger(),
             handlers: [
                 new StartRunHandler(new EventFactory(), TestSerializerFactory::normalizer()),

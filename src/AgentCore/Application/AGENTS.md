@@ -11,10 +11,10 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 | `StartRun` | `agent.command.bus` | `StartRunHandler` |
 | `ApplyCommand` | `agent.command.bus` | `ApplyCommandHandler` |
 | `ApplyShellCommand` | `agent.command.bus` | `ApplyShellCommandHandler` → effect `ExecuteShellToolCall` |
-| `AdvanceRun` | **sync** on `agent.command.bus` **and** `agent.execution.bus` (not transport-routed) | `AdvanceRunHandler` |
+| `AdvanceRun` | `agent.command.bus` (transport `run_control`) | `AdvanceRunHandler` |
 | `LlmStepResult` | `agent.command.bus` (transport `run_control`) | `LlmStepResultHandler` |
 | `ToolCallResult` | `agent.command.bus` (transport `run_control`) | `ToolCallResultHandler` |
-| `CompactRun` | **sync** on both buses (not transport-routed) | `Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler` (App layer; depends on compaction services) |
+| `CompactRun` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler` (App layer; depends on compaction services) |
 | `CompactionStepResult` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler` |
 | `CompleteDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler` |
 
@@ -35,7 +35,8 @@ Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`)
 - `ApplyCommand` — `AgentRunner` continue/steer/followUp/cancel/answerHuman via `applyCoreCommand()`
 - `ApplyShellCommand` — `AgentRunner::shell()`, controller shell path, in-process shell send
 - `AdvanceRun` — post-commit kickoffs (`StartRunHandler`, apply/LLM follow-up callbacks), `ExecuteShellToolCallWorker` wake after standalone shell `AgentEnd`, stale-run resume command
-- `ExecuteLlmStep` / `ExecuteToolCall` / `ExecuteCompactionStep` — handler effects through `RunMessageProcessor` / `RunCommit`
+- `AdvanceRun` / `CompactRun` — state-transition effects through `RunMessageProcessor` / `RunCommit` → `agent.command.bus` → `run_control`
+- `ExecuteLlmStep` / `ExecuteToolCall` / `ExecuteCompactionStep` — external-I/O effects through `RunMessageProcessor` / `RunCommit` → `agent.execution.bus`
 - `CompactRun` — auto-compaction hooks, manual `/compact`, pre-LLM compaction guard / overflow recovery paths
 
 There is **no** `CollectToolBatch` message type in `src/` (stale historical name — do not reintroduce docs for it).

@@ -217,11 +217,11 @@ final class RunMessageProcessorLogComponentTest extends IsolatedKernelTestCase
                         );
                     }
                 },
-                stepDispatcher: new StepDispatcher(new TestMessageBus()),
+                stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
                 logger: new NullLogger(),
                 hookDispatcher: null,
             ),
-            stepDispatcher: new StepDispatcher(new TestMessageBus()),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             handlers: $handlers,
             logger: $logger,
             runStateRebuilder: $log,

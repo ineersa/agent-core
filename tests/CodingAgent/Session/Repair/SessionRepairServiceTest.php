@@ -1573,7 +1573,7 @@ final class SessionRepairServiceTest extends TestCase
             toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
             lockManager: new RunLockManager(new LockFactory(new FlockStore($lockDir))),
             logger: $logger ?? new NullLogger(),
-            stepDispatcher: new StepDispatcher($dispatcherBus),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), $dispatcherBus),
             toolBatchStore: $toolBatchStore,
             serializer: AttributeSerializerValidatorTestFactory::create()[0],
         );

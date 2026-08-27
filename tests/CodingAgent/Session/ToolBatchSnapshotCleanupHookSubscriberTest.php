@@ -190,7 +190,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             eventStore: new CleanupHookSubscriberNoOpEventStore(),
             commandStore: new InMemoryCommandStore(),
             hotPromptStateRebuilder: new CleanupHookSubscriberNoOpHotPromptRebuilder(),
-            stepDispatcher: new StepDispatcher(new TestMessageBus()),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(),
             hookDispatcher: $hookDispatcher,
         );

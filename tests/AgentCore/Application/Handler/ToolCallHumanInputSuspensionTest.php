@@ -360,10 +360,10 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                         );
                     }
                 },
-                stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus()),
+                stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()),
                 logger: new \Psr\Log\NullLogger(),
             ),
-            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus()),
+            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             handlers: [$handler],
             logger: new \Psr\Log\NullLogger(),
         );
@@ -499,10 +499,10 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                         );
                     }
                 },
-                stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher($executionBus),
+                stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), $executionBus),
                 logger: new \Psr\Log\NullLogger(),
             ),
-            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher($executionBus),
+            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), $executionBus),
             handlers: [$handler],
             logger: new \Psr\Log\NullLogger(),
         );
@@ -624,10 +624,10 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                         );
                     }
                 },
-                stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher($executionBus),
+                stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), $executionBus),
                 logger: new \Psr\Log\NullLogger(),
             ),
-            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher($executionBus),
+            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), $executionBus),
             handlers: [$handler],
             logger: new \Psr\Log\NullLogger(),
         );

@@ -5,9 +5,8 @@
 #                          Routed messages (StartRun, ApplyCommand,
 #                          ApplyShellCommand, LlmStepResult,
 #                          ToolCallResult, CompactionStepResult) are enqueued on
-#                          run_control and handled by the single run_control consumer.
-#                          Unrouted messages (AdvanceRun, CompactRun) are handled
-#                          synchronously on the bus in the caller/consumer process.
+#                          run_control and handled only by the single run_control consumer,
+#                          including the AdvanceRun and CompactRun state transitions.
 #   agent.execution.bus  — async LLM/tool work. ExecuteLlmStep → llm transport,
 #                          ExecuteToolCall → tool transport. Workers consume from
 #                          their respective queues and dispatch results back to
@@ -21,7 +20,9 @@
 # - StartRun → run_control transport (messenger:consume run_control)
 # - ApplyCommand → run_control transport
 # - ApplyShellCommand → run_control transport
-# - AdvanceRun is intentionally NOT routed (sync on agent.command.bus / agent.execution.bus).
+# - AdvanceRun and CompactRun → run_control transport. StepDispatcher sends these
+#   state transitions to agent.command.bus; only external-I/O Execute* effects use
+#   agent.execution.bus.
 # - ExecuteLlmStep → llm transport (messenger:consume llm)
 # - ExecuteToolCall → tool transport (messenger:consume tool)
 # - ExecuteToolCall (toolName=subagent) → agent transport via
@@ -106,41 +107,11 @@ framework:
             Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery\RecoverDeferredSubagentBatchLifecycleMessage: run_control
 
             Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall: run_control
-            # AdvanceRun is intentionally NOT routed to a transport.
-            # It is handled synchronously by AdvanceRunHandler (registered on
-            # agent.command.bus AND agent.execution.bus via RunMessageHandler
-            # tagging in RunOrchestrator).
-            #
-            # Routing AdvanceRun to run_control would cause double-processing
-            # when dispatched as an effect from CompactionStepResultHandler:
-            # the effect goes to agent.execution.bus, SendMessageMiddleware
-            # routes it to run_control (sync://), and SyncTransport re-dispatches
-            # through RoutableMessageBus to agent.execution.bus where there
-            # would be no handler — causing NoHandlerForMessageException.
-            #
-            # Both normal paths (StartRunHandler/ApplyCommandHandler postCommit
-            # via agent.command.bus) and effect paths (CompactionStepResultHandler
-            # via agent.execution.bus) now run synchronously with handlers on
-            # both buses.
-            # CompactRun is intentionally NOT routed to a transport.
-            # It is handled synchronously by CompactRunHandler (registered on
-            # agent.command.bus via RunMessageHandler tagging). Async work
-            # (the LLM summarization call) is dispatched separately as
-            # ExecuteCompactionStep → llm transport.
-            #
-            # Routing CompactRun to run_control would cause double-processing:
-            # the sync handler runs once, then SendMessageMiddleware routes it
-            # to the transport, and the consumer processes it again. With
-            # sync:// transports this also triggers a second in-process dispatch
-            # through RoutableMessageBus, which can route to agent.execution.bus
-            # where there is no CompactRun handler, causing a
-            # NoHandlerForMessageException retry loop.
-            #
-            # Auto-compaction (AutoCompactionHookSubscriber) dispatches
-            # CompactRun from inside RunCommit → after-turn hook → the sync
-            # handler in the same process; manual /compact dispatches from
-            # CompactCommandHandler (in-process for TUI, via ApplyCommand for
-            # headless controller). Neither path needs transport routing.
+            # State transitions are sent only to agent.command.bus by
+            # StepDispatcher and are durably handled once by run_control.
+            # Their asynchronous work remains separate Execute* effects.
+            Ineersa\AgentCore\Domain\Message\AdvanceRun: run_control
+            Ineersa\AgentCore\Domain\Message\CompactRun: run_control
             Ineersa\AgentCore\Domain\Message\ExecuteLlmStep: llm
             Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep: llm
             # Default tool transport; subagent is overridden to agent via middleware.

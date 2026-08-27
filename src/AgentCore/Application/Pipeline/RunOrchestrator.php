@@ -79,7 +79,6 @@ final readonly class RunOrchestrator
      * Handles AdvanceRun message to trigger next step execution.
      */
     #[AsMessageHandler(bus: 'agent.command.bus')]
-    #[AsMessageHandler(bus: 'agent.execution.bus')]
     public function onAdvanceRun(AdvanceRun $message): void
     {
         $this->dispatch(
@@ -121,14 +120,11 @@ final readonly class RunOrchestrator
     /**
      * Handles CompactRun message to initiate compaction.
      *
-     * Registered on both buses because CompactRun may arrive as an effect
-     * dispatched through StepDispatcher (→ agent.execution.bus) when the
-     * pre-LLM compaction guard triggers from AdvanceRunHandler, or as a
-     * direct dispatch on agent.command.bus from AutoCompactionHookSubscriber
-     * or manual /compact.
+     * This is a run-control transition and therefore only runs on the command
+     * bus; its asynchronous model work is emitted separately as
+     * ExecuteCompactionStep on the execution bus.
      */
     #[AsMessageHandler(bus: 'agent.command.bus')]
-    #[AsMessageHandler(bus: 'agent.execution.bus')]
     public function onCompactRun(CompactRun $message): void
     {
         $this->dispatch(

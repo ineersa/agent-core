@@ -34,7 +34,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testHandleWithToolCallsReturnsPostCommitBatchRegistrationCallback(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
 
         $commandStore = new InMemoryCommandStore();
         $handler = new LlmStepResultHandler(
@@ -117,7 +117,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testAbortedDoesNotAppendAssistantMessageToState(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
 
         $commandStore = new InMemoryCommandStore();
         $handler = new LlmStepResultHandler(
@@ -202,7 +202,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testAbortedWithOnlyTextDoesNotAppendMessage(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
 
         $commandStore = new InMemoryCommandStore();
         $handler = new LlmStepResultHandler(
@@ -279,7 +279,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testStopBoundaryMailboxEffectsContainPendingCompact(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
 
         $commandStore = new InMemoryCommandStore();
 
@@ -360,7 +360,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testErrorResultDoesNotAppendAssistantMessage(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
 
         $commandStore = new InMemoryCommandStore();
         $handler = new LlmStepResultHandler(
@@ -457,7 +457,7 @@ final class LlmStepResultHandlerTest extends TestCase
     {
         $executionBus = new TestMessageBus();
         $commandBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
         $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
 
         $handler = new LlmStepResultHandler(
@@ -554,7 +554,7 @@ final class LlmStepResultHandlerTest extends TestCase
     {
         $executionBus = new TestMessageBus();
         $commandBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
         $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
 
         $handler = new LlmStepResultHandler(
@@ -643,7 +643,7 @@ final class LlmStepResultHandlerTest extends TestCase
     {
         $executionBus = new TestMessageBus();
         $commandBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
         $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
 
         $handler = new LlmStepResultHandler(
@@ -726,7 +726,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testParallelToolCallsCarryConfiguredMaxParallelism(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
 
         $toolSetResolver = new class implements ToolSetResolverInterface {
             public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
@@ -801,7 +801,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testExecuteToolCallHasNullTimeoutWithoutPerToolOverride(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
         $handler = new LlmStepResultHandler(
             toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(

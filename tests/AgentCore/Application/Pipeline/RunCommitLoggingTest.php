@@ -42,7 +42,7 @@ final class RunCommitLoggingTest extends TestCase
             replayEventPreparer: new ReplayEventPreparer(),
         );
 
-        $stepDispatcher = new StepDispatcher(new TestMessageBus());
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), new TestMessageBus());
 
         $commit = new RunCommit(
             runStore: $runStore,
@@ -106,7 +106,7 @@ final class RunCommitLoggingTest extends TestCase
             eventStore: $eventStore,
             commandStore: new InMemoryCommandStore(),
             hotPromptStateRebuilder: $replayService,
-            stepDispatcher: new StepDispatcher(new TestMessageBus()),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: $logger,
         );
 
@@ -166,7 +166,7 @@ final class RunCommitLoggingTest extends TestCase
                 promptStateReplayService: new PromptStateReplayService(),
                 replayEventPreparer: new ReplayEventPreparer(),
             ),
-            stepDispatcher: new StepDispatcher(new TestMessageBus()),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: $logger,
             metrics: $metrics,
         );

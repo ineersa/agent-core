@@ -133,7 +133,7 @@ final class RepairCommandHandlerTest extends TestCase
             toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
             lockManager: new RunLockManager(new LockFactory(new FlockStore(sys_get_temp_dir()))),
             logger: new NullLogger(),
-            stepDispatcher: new StepDispatcher(new TestMessageBus()),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             toolBatchStore: $this->createStub(ToolBatchStoreInterface::class),
             serializer: AttributeSerializerValidatorTestFactory::create()[0],
         );
