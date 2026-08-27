@@ -74,9 +74,16 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
 
         // A compaction request has one bounded authoritative lifecycle. Never
         // prepare, invoke hooks, or dispatch a second worker for a committed,
-        // stale, or currently active request.
+        // stale, or currently active request. The exact active identity survives
+        // status transitions such as cancellation until its result is handled.
         if ($message->turnNo() !== $state->turnNo
             || $message->idempotencyKey() === $state->lastAppliedCompactionKey
+            || (null !== $state->currentOperation && $state->currentOperation->matches(
+                $message->turnNo(),
+                $message->stepId(),
+                $message->attempt(),
+                $message->idempotencyKey(),
+            ))
             || RunStatus::Compacting === $state->status) {
             return new HandlerResult();
         }

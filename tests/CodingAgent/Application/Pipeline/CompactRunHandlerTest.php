@@ -22,6 +22,7 @@ use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
@@ -164,7 +165,10 @@ final class CompactRunHandlerTest extends TestCase
     public function testCommittedCompactRunRedeliveryDoesNotRepeatPreparationHooksOrWorker(): void
     {
         $messages = [$this->userMsg('question'), $this->assistantMsg('answer')];
-        $state = $this->createRunState($messages);
+        // A non-matching active operation must not suppress a distinct compaction request.
+        $state = $this->createRunState($messages)->with([
+            'currentOperation' => new CurrentOperationDTO(5, 'llm-step', 1, 'llm-key'),
+        ]);
         $preparation = CompactionPrepareResult::ready(
             messagesToSummarize: [$messages[0]],
             retainedTailMessages: [$messages[1]],
@@ -209,6 +213,19 @@ final class CompactRunHandlerTest extends TestCase
         $this->assertNull($redelivery->nextState);
         $this->assertSame([], $redelivery->events);
         $this->assertSame([], $redelivery->effects);
+
+        // Cancellation retains the exact in-flight compaction identity for result
+        // handling, so redelivery must still stop before preparation, hooks, or worker dispatch.
+        foreach ([RunStatus::Cancelling, RunStatus::Cancelled] as $status) {
+            $cancelledRedelivery = $handler->handle($request, $first->nextState->with([
+                'status' => $status,
+                'lastAppliedCompactionKey' => null,
+            ]));
+            $this->assertNull($cancelledRedelivery->nextState);
+            $this->assertSame([], $cancelledRedelivery->events);
+            $this->assertSame([], $cancelledRedelivery->effects);
+        }
+        $this->assertSame(1, $hook->calls);
 
         $completed = $first->nextState->with([
             'status' => RunStatus::Completed,
