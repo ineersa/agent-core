@@ -57,26 +57,11 @@ If the scope includes tests, test strategy, TUI/runtime/Messenger/DB behavior, o
 
 Resolve the exact checkout before launching subagents. If the subagent tool supports a per-task `cwd`, set it to that checkout. Otherwise verify that the runtime's current working directory is already the exact checkout. When a tracked task identifies a dedicated worktree, use it; otherwise use the current checkout. Do not create or switch worktrees merely for this review. If the available subagent runtime cannot inspect the exact checkout safely, stop and report the limitation.
 
-## Phase 2: Run three focused audits in parallel
+## Phase 2: Run proportional independent audits
 
-Launch three independent, read-only subagents with `agent: "scout"` in one parallel `subagent` call using a `tasks` array. Give each scout the same scope packet and one distinct audit lens. Require each scout to inspect the complete resolved scope. Inline the full diff only when reasonably sized; otherwise provide the exact baseline, paths, and inspection commands.
+Choose scouts proportionally: use none when the main agent already owns sufficient context; one read-only scout for an unfamiliar bounded scope; and parallel scouts only when genuinely independent lenses materially reduce risk in cross-module, security-sensitive, or architecturally ambiguous work. Never re-scout research already completed by the main agent. When investigation should retain context into implementation, assign one fork the complete investigation-plus-implementation slice instead.
 
-### Mandatory exact scout-task requirements
-
-Before dispatching, construct each individual scout task prompt with the following requirements copied verbatim from this template, not an adapted summary:
-
-1. The complete **Priorities** list, in its exact wording and order.
-2. The complete common Phase 2 scout instructions: read-only behavior; actionable, code-backed evidence; exact citations; concrete cost or risk; smallest safe fix; preservation invariant; prohibition on style-only, speculative, broad, and unrelated findings; correctness/security/data-integrity reporting; and the exact finding format.
-3. The complete corresponding lens section—**Scout 1: Reuse and architecture**, **Scout 2: Simplicity and code quality**, or **Scout 3: Runtime and resource efficiency**—verbatim and bullet-for-bullet.
-4. The resolved scope packet and every applicable Phase 1 checkout and testing requirement.
-
-Task-specific context and invariants may be appended separately, but must not replace, summarize, paraphrase, weaken, or omit any template requirement. Never substitute a reference such as “follow the simplify prompt” or “follow the original protocol” for copied requirements: scouts do not receive implicit parent-prompt text.
-
-Perform a bullet-for-bullet comparison of each scout task against these requirements before dispatch. If tool or task-size constraints prevent exact inclusion, stop and report rather than summarize or launch. This exact-copy rule applies to each scout task independently, even when all three tasks are sent in one parallel call.
-
-If the configured agent cap prevents all three from running simultaneously, use the maximum available concurrency and run the remaining lens immediately afterward. Do not omit or combine a lens.
-
-Scouts gather code-backed evidence; they do not make final decisions. The main agent must verify and classify every proposed finding during aggregation.
+For every chosen scout, provide the resolved scope packet, applicable priorities/invariants, a distinct lens where multiple scouts are used, and require complete-scope evidence. Batch independent scouts in one parallel `subagent` call; do not impose a scout count. Scouts gather evidence only; the main agent verifies and classifies findings.
 
 Ask each scout to:
 
@@ -155,7 +140,7 @@ Do not introduce concurrency, caching, batching, or lifecycle machinery for theo
 
 ## Phase 3: Aggregate and decide
 
-Wait for all three audits, retrieving full subagent artifacts when summaries omit evidence.
+Wait for all selected audits, retrieving full subagent artifacts when summaries omit evidence.
 
 Then:
 
@@ -205,7 +190,7 @@ Follow the testing instructions loaded in Phase 1 before touching or reviewing t
 
 Run QA only through Castor. Choose the smallest relevant validation set, for example focused tests plus applicable `castor phpstan`, `castor deptrac`, `castor cs-check`, or `castor docs:validate`. Run full `castor check` when repository instructions or the affected runtime path require it. Do not run broad QA merely for ceremony, but do not skip a required gate. If no code was changed, do not run QA unless it is needed to verify a disputed finding.
 
-Do not automatically repeat all three audits. Re-run only the relevant audit lens when the fixes are non-trivial or materially alter the design.
+Do not automatically repeat every lens. Re-run only the relevant selected lens when the fixes are non-trivial or materially alter the design.
 
 ## Final response
 

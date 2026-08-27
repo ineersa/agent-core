@@ -11,7 +11,6 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ContextualExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
 use Ineersa\HatfieldExt\TaskWorkflow\Pr\PrManager;
-use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowSettings;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardLock;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardStore;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskInfo;
@@ -21,13 +20,16 @@ use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorktreeManager;
 
 final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerInterface
 {
+    private const int CASTOR_CHECK_WALL_SECONDS = 210;
+    private const int CASTOR_CHECK_OUTER_GUARD_SECONDS = 240;
+    private const int CASTOR_CHECK_HOST_TIMEOUT_SECONDS = 285;
+
     public function __construct(
         private TaskBoardStore $store,
         private GitExecutor $git,
         private WorktreeManager $worktrees,
         private PrManager $pr,
         private ExecInterface $exec,
-        private TaskWorkflowSettings $config,
         private string $codeRoot,
     ) {
     }
@@ -252,18 +254,17 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
             return $interrupt;
         }
 
-        $checkTimeout = $this->resolveCastorCheckTimeout($arguments);
-        $notes[] = 'Running deterministic castor check in worktree (timeout '.$checkTimeout.'s)...';
+        $notes[] = 'Running deterministic castor check in worktree (Castor wall '.self::CASTOR_CHECK_WALL_SECONDS.'s; outer cleanup guard '.self::CASTOR_CHECK_OUTER_GUARD_SECONDS.'s)...';
 
         $checkStart = microtime(true);
-        // +45s outer Process budget: covers timeout(1) startup plus --kill-after=30s
-        // grace after the castor check wall, so the host can stop a stuck tree cleanly.
+        // timeout(1) allows cleanup grace beyond Castor's fixed 210s wall; the host
+        // budget exceeds its maximum 270s lifetime, including --kill-after=30s.
         $checkResult = $this->exec->exec(
             'timeout',
-            ['--kill-after=30s', (string) $checkTimeout.'s', 'env', 'LLM_MODE=true', 'castor', 'check'],
+            ['--kill-after=30s', self::CASTOR_CHECK_OUTER_GUARD_SECONDS.'s', 'env', 'LLM_MODE=true', 'castor', 'check'],
             new ExecOptionsDTO(
                 cwd: $worktree,
-                timeout: $control->remainingTimeoutSeconds((float) ($checkTimeout + 45)),
+                timeout: $control->remainingTimeoutSeconds((float) self::CASTOR_CHECK_HOST_TIMEOUT_SECONDS),
                 env: ['LLM_MODE' => 'true'],
                 cancellationToken: $control->cancellationToken,
             ),
@@ -276,7 +277,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
 
         if (0 !== $checkResult->exitCode) {
             $reason = $checkKilled
-                ? 'timeout after '.$checkTimeout.'s'
+                ? 'outer cleanup guard after Castor\'s '.self::CASTOR_CHECK_WALL_SECONDS.'s wall ('.self::CASTOR_CHECK_OUTER_GUARD_SECONDS.'s)'
                 : 'exit code '.$checkResult->exitCode;
             throw new \RuntimeException($this->formatCastorCheckFailure($reason, $worktree, $checkResult));
         }
@@ -439,26 +440,6 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         array_push($notes, ...$mergeNotes);
 
         return $text;
-    }
-
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    private function resolveCastorCheckTimeout(array $arguments): int
-    {
-        if (isset($arguments['castorCheckTimeoutSeconds']) && is_numeric($arguments['castorCheckTimeoutSeconds'])) {
-            $v = (int) $arguments['castorCheckTimeoutSeconds'];
-            if ($v >= 60 && $v <= 1200) {
-                return $v;
-            }
-        }
-
-        $v = $this->config->castorCheckTimeoutSeconds;
-        if ($v >= 60 && $v <= 1200) {
-            return $v;
-        }
-
-        return 480;
     }
 
     /**

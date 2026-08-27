@@ -73,7 +73,6 @@ final class MoveTaskHandlerTest extends TestCase
             new WorktreeManager($git, $exec),
             new PrManager($exec),
             $exec,
-            new TaskWorkflowSettings(taskRoot: $this->boardRoot),
             $this->repoRoot,
         );
 
@@ -115,7 +114,6 @@ final class MoveTaskHandlerTest extends TestCase
             'task' => $slug,
             'from' => 'IN-PROGRESS',
             'to' => 'CODE-REVIEW',
-            'castorCheckTimeoutSeconds' => 60,
         ], $this->ctx());
 
         $this->assertStringContainsString('Moved task', $r);
@@ -129,7 +127,7 @@ final class MoveTaskHandlerTest extends TestCase
         $this->assertNotEmpty($timeoutCalls, 'castor check gate must invoke timeout wrapper');
         $args = $timeoutCalls[0]['args'];
         $this->assertSame('--kill-after=30s', $args[0] ?? '');
-        $this->assertSame('60s', $args[1] ?? '');
+        $this->assertSame('240s', $args[1] ?? '');
         $this->assertContains('castor', $args);
         $this->assertContains('check', $args);
         $this->assertSame($worktree, $timeoutCalls[0]['cwd']);
@@ -177,7 +175,6 @@ final class MoveTaskHandlerTest extends TestCase
                 'task' => $slug,
                 'from' => 'IN-PROGRESS',
                 'to' => 'CODE-REVIEW',
-                'castorCheckTimeoutSeconds' => 60,
             ], $this->ctx());
             $this->fail('Expected RuntimeException when castor check fails');
         } catch (\RuntimeException $e) {
@@ -220,7 +217,7 @@ final class MoveTaskHandlerTest extends TestCase
         ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase], $this->ctx());
 
         try {
-            ($handler)(['task' => $slug, 'from' => 'IN-PROGRESS', 'to' => 'CODE-REVIEW', 'castorCheckTimeoutSeconds' => 60], $this->ctx());
+            ($handler)(['task' => $slug, 'from' => 'IN-PROGRESS', 'to' => 'CODE-REVIEW'], $this->ctx());
             $this->fail('Expected RuntimeException when setup fails');
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('QA reports: var/reports/qa-setup', $e->getMessage());
@@ -245,7 +242,7 @@ final class MoveTaskHandlerTest extends TestCase
         $slug = 'dirty-claim';
         file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Dirty'));
 
-        $handler = new MoveTaskHandler($store, $git, new WorktreeManager($git, $exec), new PrManager($exec), $exec, new TaskWorkflowSettings(), $this->repoRoot);
+        $handler = new MoveTaskHandler($store, $git, new WorktreeManager($git, $exec), new PrManager($exec), $exec, $this->repoRoot);
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Integration checkout is not clean');
         ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase], $this->ctx());
@@ -287,7 +284,6 @@ final class MoveTaskHandlerTest extends TestCase
             'task' => $slug,
             'from' => 'IN-PROGRESS',
             'to' => 'CODE-REVIEW',
-            'castorCheckTimeoutSeconds' => 60,
         ], $this->ctx(cancellationToken: $token));
 
         $this->assertIsArray($result);
@@ -712,7 +708,6 @@ final class MoveTaskHandlerTest extends TestCase
             new WorktreeManager($git, $exec),
             new PrManager($exec),
             $exec,
-            new TaskWorkflowSettings(taskRoot: $this->boardRoot, castorCheckTimeoutSeconds: 480),
             $this->repoRoot,
         );
     }

@@ -16,6 +16,18 @@ castor.php        Task runner
 depfile.yaml      Deptrac rules (authoritative boundaries)
 ```
 
+## Local instructions
+
+Before touching an area, read its nearest nested `AGENTS.md`. Nested instructions add local invariants and procedure but cannot weaken this root file.
+
+| Area | Local instructions |
+|---|---|
+| Domain and application | `src/AgentCore/Domain/AGENTS.md`, `src/AgentCore/Application/AGENTS.md` |
+| Runtime | `src/CodingAgent/Runtime/AGENTS.md` (then any deeper `AGENTS.md`) |
+| TUI | `src/Tui/AGENTS.md` |
+| Extension API | `.hatfield/extensions/extension-api/AGENTS.md` |
+| Tests | `tests/AGENTS.md` |
+
 ## Castor-only QA
 
 **All QA, test, lint, static analysis, and formatting go through Castor.** Do not run raw `vendor/bin/*` except to isolate a Castor failure. Reports land under `var/reports/` (per-run dirs via `HATFIELD_QA_REPORTS_DIR`).
@@ -106,28 +118,7 @@ Settings precedence: built-in defaults < `~/.hatfield/settings.yaml` < project `
 - TUI↔runtime boundary for product code: `src/CodingAgent/Runtime/Contract`, `Runtime/Protocol`, and `AgentSessionClient` (plus Deptrac-approved projection/session edges where listed).
 - HTTP-less product: no web serving surface.
 
-### Extension API
-
-- Package `ineersa/hatfield-extension-api` at `.hatfield/extensions/extension-api/`, namespace `Ineersa\Hatfield\ExtensionApi`. Canonical development in this monorepo; tag publish is a read-only mirror (`docs/distribution.md`).
-- Public compatibility surface: must not depend on CodingAgent internals, AgentCore, in-repo TUI (`Ineersa\Tui\*`), Symfony DI/AI, settings, tool registry, runtime adapters, or PHAR packaging.
-- Generic TUI contracts under `Ineersa\Hatfield\ExtensionApi\Tui\*` may depend on **Symfony TUI** public widgets/events/input only (`AppExtensionApi` → `SymfonyTui` in Deptrac)—approved public UI extension API.
-- Feature UX lives in `.hatfield/extensions/<name>/`; do not add feature-shaped types to ExtensionApi or Runtime Contract. Loader/registry may depend on ExtensionApi; never the reverse. Keep the `Ineersa\Hatfield\ExtensionApi` namespace stable.
-
-## Runtime model
-
-- `AgentSessionClient` is the TUI/runtime boundary.
-- `Runtime/Contract` and `Runtime/Protocol` define command/event DTOs.
-- `Runtime/InProcess` calls AgentCore directly; `Runtime/Process` uses headless JSONL subprocess.
-- `src/CodingAgent/CLI/AgentCommand.php` wires TUI via `Ineersa\Tui\Application\InteractiveMode`.
-- Keep transient stream deltas separate from canonical replay. Canonical source: `.hatfield/sessions/<id>/events.jsonl` via `EventStoreInterface`.
-
-## TUI architecture
-
-Single-column layout: header → transcript/history → pending → working/status → extension widgets → editor → footer.
-
-Key types: `TuiSlotRegistry`, `TuiExtensionContext` / `SlotBasedTuiExtensionContext`, `FooterDataProvider` / `FooterSegmentProvider` / `FooterBarWidget`. Chrome (header, status, pending, loaded resources, compact header, footer) renders via native Symfony TUI `AbstractWidget`s mounted directly by `ChatScreen`.
-
-Themes: `ThemeColorEnum`, `ThemePalette`, `DefaultTheme`, `ThemeRegistry`, YAML under `config/themes/` (no separate `ThemeLoader` class). Extensions register status/working/footer state and terminal input through `TuiExtensionContext`; they must not mutate widgets directly. Hotkeys: `/hotkeys` catalog in `src/Tui/Command/Hotkey/` (display metadata, not input routing). Full design: `docs/tui-architecture.md`.
+Module-specific Runtime, TUI, and Extension API rules live in their nearest local `AGENTS.md`; the table above routes to them.
 
 ## Task workflow
 
@@ -137,11 +128,15 @@ Default `task_list` output lists TODO, IN-PROGRESS, CODE-REVIEW, and DONE only; 
 
 Task status/metadata moves do **not** commit to agent-core. Code branches, worktrees, PRs, merges do. Worktree creation updates parent IDEA module exclusions when present, creates minimal worktree-local `.idea` metadata from the integration primary module, and opens the exact worktree in JetBrains via MCP when available. DONE/CANCELLED cleanup closes that exact project before worktree removal.
 
-**Implementation ownership:** delegation is context management, not a prohibition on main-agent edits. The agent with the detailed implementation model normally finishes a cohesive change. Delegate complete bounded slices only when transfer reduces total context/rereading (mechanical migrations, isolated modules, independently testable work, investigation+implementation, disjoint parallel work, or context-heavy internals). One owner edits each slice; never concurrently edit the same files; record an explicit ownership handoff. Workers return only commit, changed paths, validation, and unresolved risks. Main may implement and validate; independent review remains required.
+**Implementation ownership:** delegation is context management, not a prohibition on main-agent edits. The agent with the detailed implementation model normally finishes a cohesive change. A worker is a fork: each bounded worker-owned implementation slice has exactly one fork owner. Scouts, researchers, and reviewers are read-only subagents, not workers. Delegate a fork only when transfer reduces total context/rereading (mechanical migrations, isolated modules, independently testable work, investigation+implementation, disjoint parallel work, or context-heavy internals). One owner edits each slice; never concurrently edit the same files; each new fork is a new worker and explicit ownership handoff. Main may implement and validate; independent review remains required.
 
 **No dead code or uncited fallback paths:** delete code, branches, prompts, adapters, tests, and compatibility paths that are dead, unreachable, superseded, or have no supported caller in the same change. Do not retain them “just in case.” Do not add fallback behavior, compatibility shims, or preservation paths unless an explicit finalized requirement or published compatibility contract requires them. This does not prohibit required error handling or intentional local degradation that is explicitly documented by the requirement.
 
-Phases: `task-explain` → `task-start` → `task-to-pr` → `task-done` (with `task-review-iterate` as needed). Load the `task-workflow` skill (`.pi/skills/task-workflow/SKILL.md`) for every phase procedure, implementation ownership or delegated-worker handoffs, and compaction recovery. After compaction, use `task_list` plus that skill.
+### Workflow instruction authority
+
+Root `AGENTS.md` owns global invariants and routing; nested `AGENTS.md` files own module-local invariants. The active runtime's task-workflow skill owns phase procedures; thin slash prompts only guard arguments and dispatch. `WorkflowPrompt` provides discoverability only. Task tool definitions own executable parameters, preconditions, side effects, and errors—not orchestration checklists.
+
+Phases: `task-explain` → `task-start` → `task-to-pr` → `task-done` (with `task-review-iterate` as needed). Load the active runtime's `task-workflow` skill for every phase procedure, implementation ownership or delegated-worker handoffs, and compaction recovery. After compaction, use `task_list` plus that skill.
 
 ## Docs map
 

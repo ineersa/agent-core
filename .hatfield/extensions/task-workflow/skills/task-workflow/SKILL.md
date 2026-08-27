@@ -28,10 +28,18 @@ Agents may be dispatched as follows:
 |---|---|
 | **Scout subagents** | Codebase exploration, dependency checks, architecture discovery, impact analysis |
 | **Researcher subagents** | Web searches, documentation lookups, changelog checks |
-| **Worker/fork** | A complete bounded implementation slice, mechanical migration, isolated module, or context-heavy investigation plus implementation |
+| **Worker/fork** | Exactly one fork owns one complete bounded implementation slice, mechanical migration, isolated module, or context-heavy investigation plus implementation |
 | **Main agent** | Planning, cohesive implementation it already understands, validation, ownership decisions, and task metadata |
 
-Worker handoffs are compact: commit, changed paths, validation, unresolved risks.
+Scouts, researchers, and reviewers are subagents, not workers. Each role's existing handoff format remains authoritative; task metadata records only identity, revision, scope, outcome, validation, and unresolved blockers.
+
+### Proportional scouting
+
+- Use zero scouts when main already owns sufficient context; never re-scout research main already performed.
+- Use one read-only scout for an unfamiliar bounded scope.
+- Use parallel scouts only for genuinely independent lenses or high-risk cross-module, security, or ambiguous-architecture work.
+- When noisy investigation should retain context into implementation, give one fork the complete investigation-plus-implementation slice.
+- Independent review remains required regardless of scout count.
 
 ### Subagent dispatch (parallel vs sequential)
 
@@ -64,10 +72,10 @@ task-explain → task-start → task-to-pr → task-done
 
 ### task-explain: Discuss before implementing
 
-Read-only planning. No status changes, no file edits, no forks.
+Read-only planning. No status changes, file edits, or implementation forks; read-only scout/research subagents are allowed when proportional to the uncertainty. Do not write task metadata in this phase.
 
 1. Read task file and referenced docs.
-2. Scout codebase for affected areas, dependencies, existing patterns. When multiple independent scouts are useful, launch them in **one** parallel `tasks` call (not separate single-mode calls).
+2. Scout only when proportional to uncertainty: none when context is already sufficient, one for an unfamiliar bounded area, parallel only for genuinely independent/high-risk lenses. Batch independent scouts in one parallel `tasks` call.
 3. Researcher for external info when needed (batch independent research with scouts in the same `tasks` call when useful).
 4. Present structured plan: summary, affected areas, implementation steps, risks/open questions, suggested validation.
 5. Discuss with user. Highlight decision points — do not silently resolve them.
@@ -80,11 +88,11 @@ Read-only planning. No status changes, no file edits, no forks.
 
 1. `move_task(to="IN-PROGRESS")` — creates worktree branch.
    - Worktree creation copies `vendor/` and `.vera/` into the worktree, and updates the parent worktree IDEA module exclusions when present.
-2. Scout codebase for context, researcher for external info. Batch independent scouts/researchers in one parallel `tasks` call; use sequential single-mode only when a later probe depends on an earlier result.
+2. Scout/research only where proportional to uncertainty; do not re-scout context main already owns. Use one scout for an unfamiliar bounded area and parallel independent lenses only for high-risk cross-module, security, or ambiguous architecture work. Batch independent probes in one parallel `tasks` call.
 3. Apply the **Specification fidelity gate**: map every proposed externally visible addition to an exact finalized requirement and resolve ambiguity with the user.
-4. Build the implementation model, then explicitly choose and record either main-owned cohesive implementation or worker-owned bounded slice(s). Define disjoint file ownership and compact handoff evidence for worker slices.
+4. Build the implementation model, then explicitly choose and record either main-owned cohesive implementation or worker-owned bounded slice(s). A worker is one fork; define disjoint file ownership. After a fork launch/return identity is available, record its `forkRun` plus target revision and scope through `update_task`.
 5. Implement without overlapping ownership. The main agent may complete its cohesive slice; a worker owns any delegated bounded slice.
-6. Verify commits/output and run focused validation. Record implementation ownership, changed paths, validation, and unresolved risks via `update_task`.
+6. Verify commits/output and run focused validation. Record implementation ownership plus identity/revision/scope, outcome, validation, and unresolved blockers via `update_task`; retain each role's own handoff format rather than inventing a shared one.
 7. **STOP.** Do not proceed to PR or code review.
    - Do NOT run: `castor check`, `move_task(to="CODE-REVIEW")`, `gh pr create`, `git push`, reviewer subagent.
    - Inform user implementation is done. They run `task-to-pr` when ready.
@@ -102,24 +110,24 @@ repo. The external task board repo must be committed manually when desired.
 ### task-to-pr: Review and create PR (IN-PROGRESS → CODE-REVIEW)
 
 1. Inspect worktree state: `git status`, `git log`, `git diff --stat origin/main...HEAD`.
-2. Run reviewer subagent on worktree (`subagent agent="reviewer" cwd=worktree`). Instruct the reviewer to apply the **Specification fidelity gate**: compare changed external surface/complexity to finalized requirements and REQUEST CHANGES for unmapped or unnecessary additions.
+2. Run reviewer subagent on worktree (`subagent agent="reviewer" cwd=worktree`). Once identity is available, record its role, artifact/run ID, target revision, and scope via `update_task` work log. Instruct the reviewer to apply the **Specification fidelity gate**: compare changed external surface/complexity to finalized requirements and REQUEST CHANGES for unmapped or unnecessary additions.
    - If REQUEST CHANGES → analyze blockers, apply fixes under the chosen ownership, then re-review. Repeat until APPROVED.
 3. Run focused local validation on worktree:
    - focused `castor test --filter=…` for touched areas, `castor deptrac`, `castor phpstan`, `castor cs-check`; run controller-replay or `castor test:tui` only when that proof layer is required. Do not require full `castor test`: CODE-REVIEW runs full `castor check`.
    - When changes touch provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), also run `castor test:llm-real` as opt-in focused validation. This is NOT required for every normal task — only when the change affects live provider compatibility path.
    - The orchestrator/user is responsible for focused validation before moving to CODE-REVIEW. `move_task(to="CODE-REVIEW")` automatically runs deterministic `castor check` in the worktree before pushing and creating the PR.
-4. Record reviewer decision, commit sha, validation results via `update_task`.
+4. Record reviewer decision, target revision, validation results, and unresolved blockers via `update_task`.
 5. `move_task(to="CODE-REVIEW")` — runs castor check in worktree, verifies it is clean, pushes branch, creates PR.
 
 ### task-review-iterate: Address PR feedback (CODE-REVIEW → IN-PROGRESS → CODE-REVIEW)
 
-1. Read PR summary via `gh pr view` and inline comments via `gh api repos/<owner>/<repo>/pulls/<n>/comments`. Classify blockers vs suggestions. In Hatfield, resume the prior reviewer with `agent_resume` plus commit/diff and resolution delta when its artifact/run identity is available; launch a new reviewer only when no reviewer can be resumed.
+1. Read PR summary via `gh pr view` and inline comments via `gh api repos/<owner>/<repo>/pulls/<n>/comments`. Classify blockers vs suggestions. In the same parent session, resume the prior reviewer with `agent_resume` plus commit/diff and resolution delta when its recorded artifact/run identity is eligible; otherwise launch a new reviewer.
 2. `move_task(to="IN-PROGRESS")` before any implementation.
 3. Re-apply the **Specification fidelity gate**, choose main-owned cohesive fixes or worker-owned bounded slices, and record disjoint ownership before implementation.
 4. Implement fixes, verify output, and run focused Castor validation.
-5. Re-review by resuming the prior reviewer with `agent_resume`, the new commit/diff, prior findings, and resolution delta when its artifact/run identity is available; launch a new reviewer only when none is resumable. Include the specification fidelity gate. If REQUEST CHANGES → repeat from step 3.
+5. Re-review by resuming the prior reviewer with `agent_resume`, the new commit/diff, prior findings, and resolution delta only when its recorded artifact/run identity is eligible in this parent session; otherwise launch a new reviewer. Record the active reviewer role, artifact/run ID, target revision, and scope via `update_task` work log. Include the specification fidelity gate. If REQUEST CHANGES → repeat from step 3.
 6. When APPROVED → `move_task(to="CODE-REVIEW")` (pushes branch, creates/updates PR).
-7. Record decisions, commit sha, reviewer result via `update_task`.
+7. Record reviewer identity, target revision, scope, decision, commit sha, validation, and unresolved blockers via `update_task`.
 
 ### task-done: Merge approved PR (CODE-REVIEW → DONE)
 
@@ -156,5 +164,3 @@ After compaction, the `task-workflow` skill documents next steps. Use `task_list
 ## Reviewer verdict rubric
 
 CRITICAL, BUG, SEC, unmapped surface, dead code, uncited fallback behavior, or missing required proof means **REQUEST CHANGES**. NTH, naming, and pure ponytail micro-shrinks mean **APPROVE WITH SUGGESTIONS** unless correctness is affected. Once blockers are fixed, a remaining tiny line shrink must not block approval.
-
-Status styling is selected by key in `StatusPanelWidget`; keep `setStatus` text plain.

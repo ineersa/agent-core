@@ -23,7 +23,7 @@ final readonly class WorkflowPrompt implements PromptContributorInterface
 
 Tasks use the external board under TODO, IN-PROGRESS, CODE-REVIEW, DONE, ARCHIVE, and CANCELLED. '.$boardDesc.'
 
-Use task tools for status transitions; task-board metadata never commits to the code repository. Claim with move_task(IN-PROGRESS), submit with move_task(CODE-REVIEW), and merge only after approval with move_task(DONE). Load the Hatfield task-workflow skill for platform procedures, reviewer resume, validation, worktree, and cleanup details.
+Use task tools for status transitions; task-board metadata never commits to the code repository. Load the Hatfield task-workflow skill for phase procedures.
 ';
     }
 }

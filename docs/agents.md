@@ -82,11 +82,13 @@ hatfield agents:init
 
 Use `subagent` when no existing child run matches the task and you need a new named-role investigation or review.
 
-Use `agent_resume` when an existing child run already contains useful progress or an incomplete handoff. Resume the existing run instead of launching a duplicate child. Identify the run with the artifact/run identifier returned by the earlier launch.
+Use `agent_resume` when an existing child run in the same parent session already contains useful progress or an incomplete handoff. Resume the existing run instead of launching a duplicate child. Identify the run with the artifact/run identifier returned by the earlier launch; across parent sessions, launch a new child with the prior handoff as context.
+
+For tracked work, record each launched or returned reviewer/subagent identity in the task work log with its role, artifact/run ID, target revision, and scope. `forkRun` metadata is reserved for the implementation fork ID. Keep each role's own handoff format authoritative; task metadata retains only identity/revision/scope plus outcome, validation, and unresolved blockers.
 
 Do not use `subagent` to continue an existing child, and do not use `agent_resume` as a fresh-task launcher. A resumed child keeps its existing identity and session history; provide a focused continuation instruction.
 
-Child runs cannot resume or launch other children. Resume is parent-scoped and rejects fork children.
+Child runs cannot resume or launch other children. Resume is same-parent-session scoped and rejects fork children; each new fork is a new worker and ownership handoff.
 
 ## `agent_resume`
 

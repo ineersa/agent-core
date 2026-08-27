@@ -108,20 +108,14 @@ final readonly class TaskWorkflowExtension implements HatfieldExtensionInterface
                     'prBody' => ['type' => 'string', 'minLength' => 1, 'description' => 'Body for the GitHub PR when moving to CODE-REVIEW.'],
                     'prBaseBranch' => ['type' => 'string', 'minLength' => 1, 'description' => 'Base branch for the PR. Defaults to the repository default branch.'],
                     'pushOnly' => ['type' => 'boolean', 'description' => 'Push the branch but skip PR creation. Default false.'],
-                    'castorCheckTimeoutSeconds' => ['type' => 'integer', 'minimum' => 60, 'maximum' => 1200, 'description' => 'Timeout for the deterministic Castor check during the CODE-REVIEW transition. Default 480 seconds.'],
                 ],
                 'required' => ['task', 'to'],
                 'additionalProperties' => false,
             ],
-            handler: new MoveTaskHandler($store, $git, $worktrees, $pr, $exec, $config, $codeRoot),
+            handler: new MoveTaskHandler($store, $git, $worktrees, $pr, $exec, $codeRoot),
             promptSummary: 'Move tracked project tasks between statuses; creates worktrees, opens PRs, and merges completed task branches',
             promptGuidelines: [
-                'Use move_task instead of manual mv/git worktree commands for tracked task workflow transitions.',
-                'Use move_task with to="IN-PROGRESS" before launching a worker/fork for a tracked task.',
-                'Use move_task with to="CODE-REVIEW" after the worktree branch is committed and ready for review; this automatically runs deterministic castor check in the worktree, then pushes the branch and creates a PR. Run focused Castor validation (castor test, castor deptrac, castor phpstan, castor cs-check) yourself before moving to catch issues early.',
-                'Use move_task with to="DONE" only after PR review is approved and the user/parent decides to merge; move_task reports merge conflicts and leaves the task in CODE-REVIEW on failure.',
-                'Use move_task with to="ARCHIVE" only from DONE; this updates Status metadata and moves the Markdown file with no git side effects.',
-                'Use move_task with to="CANCELLED" to abandon a task from any status; clean worktrees and IDEA exclusions are removed safely, the git branch is left, and dirty worktrees fail closed without moving the task.',
+                'Use move_task rather than manual status-file or worktree moves. Its schema and result describe transition preconditions, side effects, and errors; load the task-workflow skill for orchestration.',
             ],
         ));
 
