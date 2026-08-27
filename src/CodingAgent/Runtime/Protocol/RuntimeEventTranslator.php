@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Protocol;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
@@ -40,6 +42,8 @@ final class RuntimeEventTranslator
      */
     public function __construct(
         private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly ?ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec = null,
+        private readonly AgentMessageNormalizer $messageNormalizer = new AgentMessageNormalizer(),
     ) {
         $this->dispatchTable = [
             // Lifecycle
@@ -334,13 +338,23 @@ final class RuntimeEventTranslator
     private function onToolExecutionEnded(RunEvent $runEvent): RuntimeEvent
     {
         $p = $runEvent->payload;
-        $isError = (bool) ($p['is_error'] ?? false);
-        $resultText = isset($p['result']) && \is_string($p['result']) ? $p['result'] : '';
+        if (null !== $this->toolExecutionEndPayloadCodec) {
+            $typedResult = $this->toolExecutionEndPayloadCodec->fromEventPayload($p);
+            $isError = $typedResult->isError;
+            $resultText = $this->toolResultText($typedResult);
+            $toolCallId = $typedResult->toolCallId;
+            $orderIndex = $typedResult->orderIndex;
+        } else {
+            $isError = (bool) ($p['is_error'] ?? false);
+            $resultText = isset($p['result']) && \is_string($p['result']) ? $p['result'] : '';
+            $toolCallId = (string) ($p['tool_call_id'] ?? '');
+            $orderIndex = (int) ($p['order_index'] ?? 0);
+        }
 
         $payload = [
-            'tool_call_id' => (string) ($p['tool_call_id'] ?? ''),
+            'tool_call_id' => $toolCallId,
             'is_error' => $isError,
-            'order_index' => (int) ($p['order_index'] ?? 0),
+            'order_index' => $orderIndex,
         ];
 
         // Pass through result text when present (e.g. shell command output
@@ -370,6 +384,19 @@ final class RuntimeEventTranslator
             seq: $runEvent->seq,
             payload: $payload,
         );
+    }
+
+    private function toolResultText(\Ineersa\AgentCore\Domain\Message\ToolCallResult $result): string
+    {
+        $message = $this->messageNormalizer->toolMessage($result);
+        $parts = [];
+        foreach ($message->content as $part) {
+            if ('text' === ($part['type'] ?? null) && \is_string($part['text'] ?? null)) {
+                $parts[] = $part['text'];
+            }
+        }
+
+        return implode("\n", $parts);
     }
 
     // ── Model notification ────────────────────────────────────────────────

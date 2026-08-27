@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -447,6 +450,37 @@ final class RuntimeEventMapperTest extends TestCase
         $this->assertNotNull($result);
         $this->assertSame(RuntimeEventTypeEnum::ToolExecutionFailed->value, $result->type);
         $this->assertTrue($result->payload['is_error']);
+    }
+
+    public function testTypedToolExecutionEndResultWinsOverStagedDisplayDuplicate(): void
+    {
+        [$serializer] = AttributeSerializerValidatorTestFactory::create();
+        $codec = new ToolExecutionEndPayloadCodec($serializer);
+        $typed = new ToolCallResult(
+            runId: $this->runId,
+            turnNo: 1,
+            stepId: 'step-1',
+            attempt: 1,
+            idempotencyKey: 'key-1',
+            toolCallId: 'call-typed',
+            orderIndex: 2,
+            result: ['tool_name' => 'read', 'content' => [['type' => 'text', 'text' => 'canonical output']]],
+        );
+        $event = $this->runEvent('tool_execution_end', array_merge([
+            'tool_call_id' => 'call-conflict',
+            'order_index' => 99,
+            'is_error' => true,
+            'result' => 'staged display duplicate',
+        ], $codec->toEventPayload($typed)));
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), $codec));
+
+        $result = $mapper->toRuntimeEvent($event);
+
+        $this->assertNotNull($result);
+        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
+        $this->assertSame('call-typed', $result->payload['tool_call_id']);
+        $this->assertSame(2, $result->payload['order_index']);
+        $this->assertSame('canonical output', $result->payload['result']);
     }
 
     public function testNormalizesToolExecutionEndPassesThroughResultText(): void

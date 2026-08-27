@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Replay;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -15,8 +18,11 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 final readonly class RunStateReducer
 {
-    public function __construct(private DenormalizerInterface $denormalizer)
-    {
+    public function __construct(
+        private DenormalizerInterface $denormalizer,
+        private ?ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec = null,
+        private AgentMessageNormalizer $messageNormalizer = new AgentMessageNormalizer(),
+    ) {
     }
 
     /**
@@ -38,9 +44,11 @@ final readonly class RunStateReducer
         // RunState objects carry stale copies (see docblock invariant above).
         $messages = [];
         $pendingToolCalls = [];
+        /** @var array<string, AgentMessage> $toolMessagesByCallId */
+        $toolMessagesByCallId = [];
 
         foreach ($events as $event) {
-            $state = $this->applyEvent($state, $event, $messages, $pendingToolCalls);
+            $state = $this->applyEvent($state, $event, $messages, $pendingToolCalls, $toolMessagesByCallId);
 
             // Advance lastSeq to the current event's sequence number.
             $state = $state->with(['lastSeq' => $event->seq]);
@@ -56,14 +64,16 @@ final readonly class RunStateReducer
     }
 
     /**
-     * @param list<AgentMessage>  $messages
-     * @param array<string, bool> $pendingToolCalls
+     * @param list<AgentMessage>          $messages
+     * @param array<string, bool>         $pendingToolCalls
+     * @param array<string, AgentMessage> $toolMessagesByCallId
      */
     private function applyEvent(
         RunState $state,
         RunEvent $event,
         array &$messages,
         array &$pendingToolCalls,
+        array &$toolMessagesByCallId,
     ): RunState {
         $payload = $event->payload;
 
@@ -77,10 +87,13 @@ final readonly class RunStateReducer
             RunEventTypeEnum::LlmStepFailed->value => $this->applyLlmStepFailed($payload, $state),
             RunEventTypeEnum::LlmStepAborted->value => $state->with(['currentOperation' => null]),
             RunEventTypeEnum::ToolExecutionStart->value => $this->applyToolExecutionStart($payload, $pendingToolCalls, $state),
-            RunEventTypeEnum::ToolExecutionEnd->value => $this->applyToolExecutionEnd($payload, $pendingToolCalls, $state),
+            RunEventTypeEnum::ToolExecutionEnd->value => $this->applyToolExecutionEnd($payload, $pendingToolCalls, $state, $toolMessagesByCallId),
             RunEventTypeEnum::ToolCallResultReceived->value => $this->applyNoMutation($event, $state),
             RunEventTypeEnum::MessageStart->value => $this->applyNoMutation($event, $state),
-            RunEventTypeEnum::MessageEnd->value => $this->applyMessageEnd($payload, $state, $messages),
+            // Temporary Pass 3A boundary: the retained message_end events preserve
+            // ordered batch projection while the message itself comes from the typed
+            // ToolExecutionEnd authority. Pass 3B removes this boundary entirely.
+            RunEventTypeEnum::MessageEnd->value => $this->applyMessageEnd($payload, $state, $messages, $toolMessagesByCallId),
             RunEventTypeEnum::ToolBatchCommitted->value => $this->applyToolBatchCommitted($state, $pendingToolCalls),
             RunEventTypeEnum::WaitingHuman->value => $this->applyWaitingHuman($event->payload, $state),
             RunEventTypeEnum::AgentEnd->value => $this->applyAgentEnd($payload, $state),
@@ -432,11 +445,16 @@ final readonly class RunStateReducer
      * AdvanceRun (after the run completed) bails on the stale tool-call
      * guard even though the tool has already finished (issue #183).
      *
-     * @param array<string, mixed> $payload
-     * @param array<string, bool>  $pendingToolCalls
+     * @param array<string, mixed>        $payload
+     * @param array<string, bool>         $pendingToolCalls
+     * @param array<string, AgentMessage> $toolMessagesByCallId
      */
-    private function applyToolExecutionEnd(array $payload, array &$pendingToolCalls, RunState $state): RunState
-    {
+    private function applyToolExecutionEnd(
+        array $payload,
+        array &$pendingToolCalls,
+        RunState $state,
+        array &$toolMessagesByCallId,
+    ): RunState {
         $toolCallId = \is_string($payload['tool_call_id'] ?? null) ? $payload['tool_call_id'] : null;
 
         if (null !== $toolCallId) {
@@ -447,28 +465,53 @@ final readonly class RunStateReducer
 
                 return $state->with(['pendingShellToolCalls' => $pendingShellToolCalls]);
             }
+
+            if (null !== $this->toolExecutionEndPayloadCodec) {
+                $result = $this->toolExecutionEndPayloadCodec->fromEventPayload($payload);
+                if ($result->toolCallId !== $toolCallId) {
+                    throw new \UnexpectedValueException('ToolExecutionEnd tool_result identity does not match tool_call_id.');
+                }
+                $notifications = ModelNotificationCodec::denormalizeFromDetails(
+                    $this->denormalizer,
+                    \is_array($result->result) ? ($result->result['details'] ?? null) : null,
+                );
+                $toolMessagesByCallId[$toolCallId] = $this->messageNormalizer->toolMessage($result, $notifications);
+            }
         }
 
         return $state;
     }
 
     /**
-     * @param array<string, mixed> $payload
-     * @param list<AgentMessage>   $messages
+     * @param array<string, mixed>        $payload
+     * @param list<AgentMessage>          $messages
+     * @param array<string, AgentMessage> $toolMessagesByCallId
      */
-    private function applyMessageEnd(array $payload, RunState $state, array &$messages): RunState
+    private function applyMessageEnd(array $payload, RunState $state, array &$messages, array &$toolMessagesByCallId): RunState
     {
         $messageRole = \is_string($payload['message_role'] ?? null) ? $payload['message_role'] : null;
 
-        // Tool messages: append the serialized tool result from the event.
-        if ('tool' === $messageRole) {
-            $messagePayload = \is_array($payload['message'] ?? null) ? $payload['message'] : null;
+        if ('tool' !== $messageRole) {
+            return $state;
+        }
 
-            if (null !== $messagePayload) {
-                $msg = AgentMessage::fromPayload($messagePayload);
-                if (null !== $msg) {
-                    $messages[] = $msg;
-                }
+        $toolCallId = \is_string($payload['tool_call_id'] ?? null) ? $payload['tool_call_id'] : null;
+        if (null !== $toolCallId && isset($toolMessagesByCallId[$toolCallId])) {
+            // The retained MessageEnd establishes current batch order only; its nested
+            // AgentMessage is deliberately ignored so the typed end result is sole authority.
+            $messages[] = $toolMessagesByCallId[$toolCallId];
+            unset($toolMessagesByCallId[$toolCallId]);
+
+            return $state;
+        }
+
+        // Unit callers that deliberately construct the reducer without the staged
+        // codec retain their legacy fixture behavior until Pass 3B deletes MessageEnd.
+        $messagePayload = \is_array($payload['message'] ?? null) ? $payload['message'] : null;
+        if (null !== $messagePayload) {
+            $message = AgentMessage::fromPayload($messagePayload);
+            if (null !== $message) {
+                $messages[] = $message;
             }
         }
 

@@ -514,29 +514,34 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         int $orderIndex,
     ): void {
         $endPayload = $this->latestToolExecutionEndPayload($events, $toolCallId);
-        $resultText = \is_string($endPayload['result'] ?? null) ? $endPayload['result'] : self::SYNTHETIC_CANCEL_MESSAGE;
-        $isError = true === ($endPayload['is_error'] ?? false)
-            || true === ($endPayload['cancelled'] ?? false)
-            || self::SYNTHETIC_CANCEL_MESSAGE === $resultText;
-
-        $toolResult = new ToolCallResult(
-            runId: $runId,
-            turnNo: $turnNo,
-            stepId: $stepId,
-            attempt: 1,
-            idempotencyKey: hash('sha256', \sprintf('repair-msg-%s-%s', $runId, $toolCallId)),
-            toolCallId: $toolCallId,
-            orderIndex: $orderIndex,
-            result: [
-                'tool_name' => $toolName,
-                'content' => [['type' => 'text', 'text' => $resultText]],
-            ],
-            isError: $isError,
-            error: $isError ? [
-                'type' => true === ($endPayload['cancelled'] ?? false) ? 'cancelled' : 'error',
-                'message' => $resultText,
-            ] : null,
-        );
+        // The typed ToolExecutionEnd is authoritative even while Pass 3A still
+        // writes MessageEnd. Never reconstruct repair messages from its staged
+        // display duplicate.
+        if (\is_array($endPayload['tool_result'] ?? null)) {
+            $toolResult = $this->toolExecutionEndPayloadCodec->fromEventPayload($endPayload);
+            if ($toolResult->toolCallId !== $toolCallId) {
+                throw new \UnexpectedValueException('Repair ToolExecutionEnd tool_result identity does not match tool_call_id.');
+            }
+        } else {
+            // Temporary legacy-fixture fallback; Pass 3B removes this together with
+            // the old result/message vocabulary after all consumers are cut over.
+            $resultText = \is_string($endPayload['result'] ?? null) ? $endPayload['result'] : self::SYNTHETIC_CANCEL_MESSAGE;
+            $isError = true === ($endPayload['is_error'] ?? false)
+                || true === ($endPayload['cancelled'] ?? false)
+                || self::SYNTHETIC_CANCEL_MESSAGE === $resultText;
+            $toolResult = new ToolCallResult(
+                runId: $runId,
+                turnNo: $turnNo,
+                stepId: $stepId,
+                attempt: 1,
+                idempotencyKey: hash('sha256', \sprintf('repair-msg-%s-%s', $runId, $toolCallId)),
+                toolCallId: $toolCallId,
+                orderIndex: $orderIndex,
+                result: ['tool_name' => $toolName, 'content' => [['type' => 'text', 'text' => $resultText]]],
+                isError: $isError,
+                error: $isError ? ['type' => true === ($endPayload['cancelled'] ?? false) ? 'cancelled' : 'error', 'message' => $resultText] : null,
+            );
+        }
 
         $toolMsg = $this->messageNormalizer->toolMessage($toolResult);
         $toolMsgArray = $toolMsg->toArray();

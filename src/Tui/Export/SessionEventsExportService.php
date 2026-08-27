@@ -619,10 +619,14 @@ HTML;
      */
     private function renderToolEnd(array $payload, array $toolNames = []): string
     {
-        $toolCallId = self::strFromArray($payload, 'tool_call_id');
+        // TUI stays outside AgentCore's typed serializer boundary. This localized
+        // presentation adapter reads the normalized canonical shape once; Pass 3B
+        // removes the staged top-level fallback fields.
+        $typed = \is_array($payload['tool_result'] ?? null) ? $payload['tool_result'] : null;
+        $toolCallId = \is_array($typed) ? self::strFromArray($typed, 'tool_call_id') : self::strFromArray($payload, 'tool_call_id');
         $toolName = $toolNames[$toolCallId] ?? '';
-        $isError = (bool) ($payload['is_error'] ?? false);
-        $result = self::strFromArray($payload, 'result');
+        $isError = \is_array($typed) ? true === ($typed['is_error'] ?? false) : (bool) ($payload['is_error'] ?? false);
+        $result = \is_array($typed) ? $this->toolResultText($typed) : self::strFromArray($payload, 'result');
         $durationMs = \is_int($payload['duration_ms'] ?? null) ? $payload['duration_ms'] : null;
 
         $html = '  <div class="'.($isError ? 'tool-result tool-error' : 'tool-result').'">'."\n";
@@ -650,6 +654,40 @@ HTML;
         $html .= "  </div>\n";
 
         return $html;
+    }
+
+    /**
+     * Export-only adapter for the normalized ToolCallResult shape. It intentionally
+     * does not recreate a cross-layer serializer dependency or leak nested payload
+     * walking into other TUI code.
+     *
+     * @param array<string, mixed> $toolResult
+     */
+    private function toolResultText(array $toolResult): string
+    {
+        $result = $toolResult['result'] ?? null;
+        $content = \is_array($result) ? ($result['content'] ?? null) : null;
+        if (\is_array($content)) {
+            $parts = [];
+            foreach ($content as $part) {
+                if (\is_array($part) && 'text' === ($part['type'] ?? null) && \is_string($part['text'] ?? null)) {
+                    $parts[] = $part['text'];
+                }
+            }
+            if ([] !== $parts) {
+                return implode("\n", $parts);
+            }
+        }
+
+        $error = $toolResult['error'] ?? null;
+        if (true === ($toolResult['is_error'] ?? false) && \is_array($error)) {
+            $message = $error['message'] ?? $error['type'] ?? null;
+            if (\is_string($message)) {
+                return $message;
+            }
+        }
+
+        return '';
     }
 
     /**

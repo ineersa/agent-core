@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
@@ -100,6 +101,7 @@ MD;
         private readonly RunStoreInterface $runStore,
         private readonly EventStoreInterface $eventStore,
         private readonly LoggerInterface $logger,
+        private readonly ?ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec = null,
     ) {
     }
 
@@ -466,7 +468,10 @@ MD;
      */
     private function summarizeToolEnd(array $payload): string
     {
-        $name = $payload['tool_name'] ?? $payload['toolName'] ?? 'unknown';
+        $typedResult = null === $this->toolExecutionEndPayloadCodec
+            ? null
+            : $this->toolExecutionEndPayloadCodec->fromEventPayload($payload);
+        $name = $typedResult?->result['tool_name'] ?? $payload['tool_name'] ?? $payload['toolName'] ?? 'unknown';
         $exit = $payload['exit_code'] ?? $payload['exitCode'] ?? null;
         $base = \is_string($name) ? 'tool end: '.$name : 'tool end';
         if (\is_int($exit)) {
