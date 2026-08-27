@@ -153,6 +153,24 @@ final class WorktreeManager
             return $this->interruptResult($interrupt);
         }
 
+        if ($this->sourceHasExtensionApiPackage($codeRoot) && !$this->hasUsableExtensionApiLink($worktree)) {
+            try {
+                $repair = $this->repairRootVendor($worktree, $control);
+            } catch (\Throwable $e) {
+                $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
+                throw new \RuntimeException('vendor package link broken: Composer repair failed.', 0, $e);
+            }
+            if ($repair instanceof ExecResultDTO) {
+                $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
+
+                return $repair;
+            }
+            if (!$this->hasUsableExtensionApiLink($worktree)) {
+                $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
+                throw new \RuntimeException('vendor package link broken: vendor/ineersa/hatfield-extension-api is unavailable after Composer repair.');
+            }
+        }
+
         $exclusion = $this->addWorktreeExclusions($slug, $base);
         if (null !== ($interrupt = $control?->interrupted('Interrupted after IDEA exclusion update.'))) {
             $this->cleanupPartialWorktree($codeRoot, $worktree, $slug, $base);
@@ -549,10 +567,43 @@ final class WorktreeManager
 
             return true;
         } catch (\Throwable) {
-            // Non-fatal: vendor/.vera are developer-convenience copies; the worker can run
-            // composer install or fall back to absolute-path reads. Do not hard-fail here.
+            // Non-fatal: vendor/.vera copies are developer conveniences. A copied
+            // Extension API package is verified and repaired separately below.
             return false;
         }
+    }
+
+    /** @phpstan-impure */
+    private function sourceHasExtensionApiPackage(string $codeRoot): bool
+    {
+        $package = $codeRoot.'/vendor/ineersa/hatfield-extension-api';
+
+        return is_link($package) || is_dir($package);
+    }
+
+    /** @phpstan-impure */
+    private function hasUsableExtensionApiLink(string $worktree): bool
+    {
+        $package = $worktree.'/vendor/ineersa/hatfield-extension-api';
+
+        return is_dir($package) && false !== realpath($package);
+    }
+
+    private function repairRootVendor(string $worktree, ?InvocationControl $control): bool|ExecResultDTO
+    {
+        if (!is_file($worktree.'/composer.json')) {
+            return false;
+        }
+        $result = $this->exec->exec('composer', ['install', '--no-interaction', '--no-progress'], new ExecOptionsDTO(
+            cwd: $worktree,
+            timeout: $control?->remainingTimeoutSeconds(120.0) ?? 120.0,
+            cancellationToken: $control?->cancellationToken,
+        ));
+        if ($result->cancelled || $result->timedOut) {
+            return $result;
+        }
+
+        return 0 === $result->exitCode;
     }
 
     private function installExtensionsVendor(string $worktree, ?InvocationControl $control = null): bool|ExecResultDTO
@@ -580,8 +631,7 @@ final class WorktreeManager
 
             return true;
         } catch (\Throwable) {
-            // Non-fatal: extensions vendor is a developer-convenience; the worker
-            // can run composer install manually or fall back. Do not hard-fail here.
+            // Non-fatal: extensions vendor is a developer convenience.
             return false;
         }
     }
@@ -602,6 +652,11 @@ final class WorktreeManager
         }
 
         $remove = $this->git->git(['worktree', 'remove', $worktree], $codeRoot);
+        if (0 !== $remove->exitCode) {
+            // This worktree was created by the current failed claim and has no task
+            // metadata yet, so forced removal is confined to owned partial state.
+            $remove = $this->git->git(['worktree', 'remove', '--force', $worktree], $codeRoot);
+        }
         if (0 === $remove->exitCode) {
             $this->removeWorktreeExclusions($slug, $base);
         }

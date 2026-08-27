@@ -53,7 +53,7 @@ final class ResumeSessionCommandHandlerTest extends TestCase
     {
         $switch = $this->createSwitchSpy();
         $em = $this->createEntityManagerWithSession(42, 'Test Session');
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $pickerController = new SessionPickerController($this->pickerTui(), $this->pickerScreen(), $sessionStore, $switch);
 
         $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
@@ -70,7 +70,7 @@ final class ResumeSessionCommandHandlerTest extends TestCase
         $switch = $this->createSwitchSpy();
         // EntityManager as stub — find() returns null for any ID
         $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $pickerController = new SessionPickerController($this->pickerTui(), $this->pickerScreen(), $sessionStore, $switch);
 
         $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
@@ -88,7 +88,7 @@ final class ResumeSessionCommandHandlerTest extends TestCase
     {
         $switch = $this->createSwitchSpy();
         $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $pickerController = new SessionPickerController($this->pickerTui(), $this->pickerScreen(), $sessionStore, $switch);
 
         $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
@@ -106,7 +106,7 @@ final class ResumeSessionCommandHandlerTest extends TestCase
     {
         $switch = $this->createSwitchSpy();
         $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $pickerController = new SessionPickerController($this->pickerTui(), $this->pickerScreen(), $sessionStore, $switch);
 
         $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
@@ -167,7 +167,7 @@ final class ResumeSessionCommandHandlerTest extends TestCase
         $registry->method('getManagerForClass')->willReturn($em);
         $em->method('getRepository')->willReturn(new \Ineersa\CodingAgent\Entity\HatfieldSessionRepository($registry));
 
-        return new HatfieldSessionStore($this->createAppConfig(), $em);
+        return new HatfieldSessionStore($this->createAppConfig(), $em, new \Symfony\Component\EventDispatcher\EventDispatcher());
     }
 
     private function createSwitchSpy(): object

@@ -1550,6 +1550,7 @@ final class SessionRepairServiceTest extends TestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
 
         $lockDir = $this->projectDir.'/.hatfield/locks';
@@ -1639,6 +1640,7 @@ final class SessionRepairServiceTest extends TestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
         $lockDir = $this->projectDir.'/.hatfield/locks';
         TestDirectoryIsolation::ensureDirectory($lockDir);
@@ -1666,6 +1668,7 @@ final class SessionRepairServiceTest extends TestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
         $lockDir = $this->projectDir.'/.hatfield/locks';
         TestDirectoryIsolation::ensureDirectory($lockDir);

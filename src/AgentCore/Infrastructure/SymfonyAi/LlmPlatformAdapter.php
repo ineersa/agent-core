@@ -75,7 +75,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $cancelToken = $this->cancellationToken($request);
         $messages = $this->resolveContextMessages($request->input);
         $preTransformIds = $this->extractNotificationIds($messages);
-        $messages = $this->applyTransformHooks($messages, $cancelToken);
+        $messages = $this->applyTransformHooks($messages, $cancelToken, $request->input->runId);
         $modelNotifications = $this->extractNewModelNotifications($messages, $preTransformIds);
 
         // Preflight invariant: validate tool-call/tool-result sequence
@@ -234,12 +234,12 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      *
      * @return list<AgentMessage>
      */
-    private function applyTransformHooks(array $messages, CancellationTokenInterface $cancelToken): array
+    private function applyTransformHooks(array $messages, CancellationTokenInterface $cancelToken, ?string $runId): array
     {
         $transformed = $messages;
 
         foreach ($this->transformContextHooks as $hook) {
-            $transformed = $hook->transformContext($transformed, $cancelToken);
+            $transformed = $hook->transformContext($transformed, $cancelToken, $runId);
         }
 
         return $transformed;

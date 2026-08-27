@@ -119,10 +119,10 @@ a successful late result into a timeout failure.
 
 | Key | Meaning | Default |
 |---|---|---|
-| `tools.output_cap.path` | Persisted oversized output dir | `.hatfield/tmp/output-cap` |
+| `tools.output_cap.path` | Root for ephemeral SHA-256 run-scoped oversized output | `.hatfield/tmp/output-cap` |
 | `tools.output_cap.default_cap` | Non-doc char cap | `20000` |
 | `tools.output_cap.doc_cap` | Doc-like char cap | `50000` |
-| `tools.output_cap.retention` | Stale file seconds | `86400` |
+| `tools.output_cap.retention` | Orphan fallback stale-artifact seconds (lifecycle cleanup is earlier) | `86400` |
 
 ### Images
 

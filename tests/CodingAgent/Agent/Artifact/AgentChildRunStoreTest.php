@@ -58,6 +58,7 @@ final class AgentChildRunStoreTest extends TestCase
                 cwd: $this->projectDir,
             ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
 
         $this->pathResolver = new SessionAgentArtifactPathResolver($hatfieldSessionStore);

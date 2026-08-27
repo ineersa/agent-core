@@ -401,6 +401,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
                 cwd: $this->tempDir.'/project',
             ),
             entityManager: $this->entityManager,
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
         $sessionMetaStore = $hatfieldSessionStore;
 
