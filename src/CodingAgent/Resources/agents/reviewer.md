@@ -4,8 +4,8 @@ description: Senior code reviewer — thorough security, correctness, design, an
 tools:
   - read
   - bash
-thinking: high
-model: zai/glm-5.2
+thinking: medium
+model: zai/glm-5.3
 systemPromptMode: append
 ---
 
