@@ -121,7 +121,7 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
         );
 
         // Apply capping with a structured result.
-        $capResult = $this->outputCap->capIfNeeded($combinedText, $path, $runId);
+        $capResult = $this->outputCap->capIfNeeded($combinedText, $runId, $path);
 
         if (null === $capResult) {
             // Text fits within the applicable cap — pass through unchanged.

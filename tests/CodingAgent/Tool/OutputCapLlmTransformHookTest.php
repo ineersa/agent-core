@@ -13,7 +13,10 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapLlmTransformHook;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Message\ToolCallMessage;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\OutputCapLlmTransformHook
@@ -39,7 +42,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     public function testOversizedToolMessageIsCapped(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500);
-        $cap = new OutputCap($cfg);
+        $cap = $this->outputCap($cfg);
         $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
         $converter = new AgentMessageConverter();
 
@@ -94,7 +97,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     public function testToolMessageWithEmptyTextButLargeDetailsIsCapped(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500);
-        $cap = new OutputCap($cfg);
+        $cap = $this->outputCap($cfg);
         $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
         $converter = new AgentMessageConverter();
 
@@ -138,7 +141,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     public function testSmallToolMessageIsUnchanged(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500);
-        $cap = new OutputCap($cfg);
+        $cap = $this->outputCap($cfg);
         $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $smallText = 'Hello, tool!';
@@ -162,7 +165,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     public function testNonToolMessagesAreUnchanged(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10);
-        $cap = new OutputCap($cfg);
+        $cap = $this->outputCap($cfg);
         $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $userMsg = new AgentMessage(
@@ -196,7 +199,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     public function testMetadataFieldsArePreserved(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500);
-        $cap = new OutputCap($cfg);
+        $cap = $this->outputCap($cfg);
         $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $timestamp = new \DateTimeImmutable('2025-01-01 12:00:00');
@@ -234,7 +237,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     public function testImageRefContentPartsArePreserved(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500);
-        $cap = new OutputCap($cfg);
+        $cap = $this->outputCap($cfg);
         $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $message = new AgentMessage(
@@ -279,7 +282,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     public function testMultipleTextPartsAreCombinedForCapping(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500);
-        $cap = new OutputCap($cfg);
+        $cap = $this->outputCap($cfg);
         $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         // Each part individually small, but combined exceeds cap
@@ -312,7 +315,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     public function testEmptyToolMessagePassesThrough(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10);
-        $cap = new OutputCap($cfg);
+        $cap = $this->outputCap($cfg);
         $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $message = new AgentMessage(
@@ -340,7 +343,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     public function testLateHookProducesStableNotificationIdOnRepeatTransform(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 100);
-        $cap = new OutputCap($cfg);
+        $cap = $this->outputCap($cfg);
         $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $largeText = str_repeat('X', 500);
@@ -391,7 +394,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     public function testLateHookReadNoticeUsesOriginalPathNotSavedArtifact(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50);
-        $outputCap = new OutputCap($cfg);
+        $outputCap = $this->outputCap($cfg);
         $hook = new OutputCapLlmTransformHook($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
         $converter = new AgentMessageConverter();
 
@@ -501,4 +504,8 @@ final class OutputCapLlmTransformHookTest extends TestCase
     }
 
     /* ── Helpers ── */
+    private function outputCap(OutputCapConfig $config): OutputCap
+    {
+        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
+    }
 }

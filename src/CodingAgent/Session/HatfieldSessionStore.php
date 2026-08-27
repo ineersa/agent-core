@@ -8,7 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
-use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerSessionShutdownEvent;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Filesystem\Filesystem;
 

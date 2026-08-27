@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\OutputCap;
@@ -14,6 +15,9 @@ use Ineersa\CodingAgent\Tool\OutputCapLlmTransformHook;
 use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 use function Symfony\Component\String\u;
 
@@ -42,23 +46,41 @@ final class OutputCapTest extends TestCase
 
     public function testSmallTextIsNotCapped(): void
     {
-        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir));
-        $this->assertNull($cap->capIfNeeded('Hello, world!', null, 'test-run'));
-        $this->assertNull($cap->capIfNeeded('', null, 'test-run'));
+        $cap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir));
+        $this->assertNull($cap->capIfNeeded('Hello, world!', 'test-run'));
+        $this->assertNull($cap->capIfNeeded('', 'test-run'));
+    }
+
+    public function testDefaultRetentionRemainsTwentyFourHours(): void
+    {
+        $this->assertSame(86400, new OutputCapConfig()->retentionSeconds);
+    }
+
+    public function testConfiguredRootWithSymlinkedPathComponentPersistsInsideCanonicalRoot(): void
+    {
+        $canonicalRoot = $this->tmpDir.'/canonical-output-cap';
+        mkdir($canonicalRoot, 0750);
+        $linkedRoot = $this->tmpDir.'/linked-output-cap';
+        symlink($canonicalRoot, $linkedRoot);
+        $path = $this->outputCap(new OutputCapConfig(storageDir: $linkedRoot))->persist('content', 'run');
+
+        $this->assertStringStartsWith($canonicalRoot.'/', $path);
+        $this->assertFileExists($path);
+        unlink($linkedRoot); // TestDirectoryIsolation intentionally owns directories, not symlink roots.
     }
 
     public function testTextExactlyAtCapBoundaryIsNotCapped(): void
     {
-        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10));
-        $this->assertNull($cap->capIfNeeded('1234567890', null, 'test-run'));
+        $cap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10));
+        $this->assertNull($cap->capIfNeeded('1234567890', 'test-run'));
     }
 
     public function testOversizedTextProducesNoticePersistenceAndMetrics(): void
     {
-        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10));
+        $cap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10));
         $text = str_repeat('a', 100);
 
-        $result = $cap->capIfNeeded($text, null, 'test-run');
+        $result = $cap->capIfNeeded($text, 'test-run');
         $this->assertNotNull($result);
         $this->assertSame(100, $result->charCount);
         $this->assertSame(25, $result->tokenEstimate);
@@ -80,7 +102,7 @@ final class OutputCapTest extends TestCase
     public function testPersistCreatesRunScopedFileWithRestrictiveDirectories(): void
     {
         $nestedDir = $this->tmpDir.'/nested/subdir';
-        $cap = new OutputCap(new OutputCapConfig(storageDir: $nestedDir));
+        $cap = $this->outputCap(new OutputCapConfig(storageDir: $nestedDir));
         $path = $cap->persist('prefixed content', 'run-abc123');
 
         $this->assertFileExists($path);
@@ -97,7 +119,7 @@ final class OutputCapTest extends TestCase
 
     public function testPersistThrowsOnUnwritableDirectory(): void
     {
-        $cap = new OutputCap(new OutputCapConfig(
+        $cap = $this->outputCap(new OutputCapConfig(
             storageDir: '/proc/hatfield-output-cap-blocked-'.bin2hex(random_bytes(4)),
         ));
 
@@ -108,30 +130,30 @@ final class OutputCapTest extends TestCase
 
     public function testDocLikePathsUseDocCapAndNullUsesDefault(): void
     {
-        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 100));
+        $cap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 100));
         $text = str_repeat('a', 75);
 
-        $this->assertNotNull($cap->capIfNeeded($text, '/path/to/file.php', 'test-run'));
-        $this->assertNull($cap->capIfNeeded($text, '/path/to/file.md', 'test-run'));
-        $this->assertNull($cap->capIfNeeded($text, '/path/to/file.MD', 'test-run'));
-        $this->assertNull($cap->capIfNeeded($text, '/path/to/file.txt', 'test-run'));
-        $this->assertNull($cap->capIfNeeded($text, '/path/to/file.toon', 'test-run'));
-        $this->assertNotNull($cap->capIfNeeded($text, null, 'test-run'));
+        $this->assertNotNull($cap->capIfNeeded($text, 'test-run', '/path/to/file.php'));
+        $this->assertNull($cap->capIfNeeded($text, 'test-run', '/path/to/file.md'));
+        $this->assertNull($cap->capIfNeeded($text, 'test-run', '/path/to/file.MD'));
+        $this->assertNull($cap->capIfNeeded($text, 'test-run', '/path/to/file.txt'));
+        $this->assertNull($cap->capIfNeeded($text, 'test-run', '/path/to/file.toon'));
+        $this->assertNotNull($cap->capIfNeeded($text, 'test-run'));
     }
 
     public function testCleanupDeletesStaleAndPreservesRecentAndMissingDir(): void
     {
-        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir, retentionSeconds: 3600));
+        $cap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir, retentionSeconds: 3600));
         $fresh = $cap->persist('fresh', 'fresh-run');
         $stale = $cap->persist('stale', 'stale-run');
         touch($stale, time() - 7200);
-        touch(dirname($stale), time() - 7200);
+        touch(\dirname($stale), time() - 7200);
 
         $cap->cleanup();
         $this->assertFileExists($fresh);
         $this->assertFileDoesNotExist($stale);
 
-        $missing = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/nonexistent'));
+        $missing = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/nonexistent'));
         $missing->cleanup();
         $this->assertTrue(true);
     }
@@ -139,7 +161,7 @@ final class OutputCapTest extends TestCase
     public function testPersistTriggersCleanupOnFirstUse(): void
     {
         @mkdir($this->tmpDir, 0750, true);
-        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir, retentionSeconds: 3600));
+        $cap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir, retentionSeconds: 3600));
         $oldPath = $this->tmpDir.'/'.date('Ymd', time() - 7200).'-'.bin2hex(random_bytes(8)).'.txt';
         file_put_contents($oldPath, 'old data');
         touch($oldPath, time() - 7200);
@@ -151,8 +173,8 @@ final class OutputCapTest extends TestCase
 
     public function testReadContextualNoticeUsesOriginalPathAndOffset(): void
     {
-        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10));
-        $result = $cap->capIfNeeded(str_repeat('x', 20), 'src/Foo.php', 'test-run');
+        $cap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10));
+        $result = $cap->capIfNeeded(str_repeat('x', 20), 'test-run', 'src/Foo.php');
         $this->assertNotNull($result);
 
         $notice = $cap->buildContextualNotice('read', ['path' => 'src/Foo.php', 'offset' => 40], $result);
@@ -175,7 +197,7 @@ final class OutputCapTest extends TestCase
         bool $isError,
         ?string $expectedPath,
     ): void {
-        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir));
+        $cap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir));
         $this->assertSame(
             $expectedPath,
             $cap->resolveCapPath($toolName, $arguments, $isError),
@@ -240,7 +262,7 @@ final class OutputCapTest extends TestCase
     public function testPrimaryAndLateHookAgreeOnDocClassificationAndSettingsDefault(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
-        $outputCap = new OutputCap($cfg);
+        $outputCap = $this->outputCap($cfg);
         $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
         $hook = new OutputCapLlmTransformHook($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
@@ -335,7 +357,7 @@ final class OutputCapTest extends TestCase
     public function testHatfieldDocsReadOverDocCapIsCappedAtFiftyK(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
-        $processor = new OutputCapToolResultProcessor(new OutputCap($cfg), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $processor = new OutputCapToolResultProcessor($this->outputCap($cfg), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
         $body = str_repeat('Z', 50001);
         $toolCall = new ToolCall(
             toolCallId: 'call-docs-over',
@@ -357,5 +379,56 @@ final class OutputCapTest extends TestCase
         $this->assertArrayHasKey('output_cap', $details);
         $this->assertSame(50000, $details['output_cap']['cap']);
         $this->assertStringContainsString('hatfield_docs completed', (string) ($processed->content[0]['text'] ?? ''));
+    }
+
+    public function testCleanupFailureLogsOnlyStructuredCategoryWithoutSensitiveScopeData(): void
+    {
+        $logger = new TestLogger();
+        $cap = new OutputCap(
+            new OutputCapConfig(storageDir: $this->tmpDir),
+            new LockFactory(new FlockStore($this->tmpDir)),
+            $logger,
+        );
+        $runId = 'sensitive-run-id';
+        file_put_contents($this->tmpDir.'/run-'.hash('sha256', $runId), 'not a directory');
+
+        $cap->cleanupRun($runId, 'shutdown');
+
+        $this->assertCount(1, $logger->records);
+        $record = $logger->records[0];
+        $this->assertSame('output_cap.session_cleanup_failed', $record['message']);
+        $this->assertSame('operation_exception', $record['context']['failure_kind']);
+        $encoded = json_encode($record['context'], \JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString($runId, $encoded);
+        $this->assertStringNotContainsString($this->tmpDir, $encoded);
+    }
+
+    public function testTraversalLikeRunIdStaysInHashedScopeAndCleanupUnlinksScopeSymlinkWithoutFollowingTarget(): void
+    {
+        $cap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 1));
+        $path = $cap->persist('owned', '../../not-a-path');
+        $this->assertSame(
+            $this->tmpDir.'/run-'.hash('sha256', '../../not-a-path'),
+            \dirname($path),
+        );
+
+        $target = $this->tmpDir.'/outside-target';
+        mkdir($target, 0750);
+        $targetFile = $target.'/preserved.txt';
+        file_put_contents($targetFile, 'outside');
+        $symlinkRunId = 'symlink-run';
+        $scope = $this->tmpDir.'/run-'.hash('sha256', $symlinkRunId);
+        symlink($target, $scope);
+
+        $cap->cleanupRun($symlinkRunId, 'starting');
+        $cap->cleanupRun($symlinkRunId, 'starting');
+
+        $this->assertFileExists($targetFile);
+        $this->assertFileDoesNotExist($scope);
+    }
+
+    private function outputCap(OutputCapConfig $config): OutputCap
+    {
+        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
     }
 }

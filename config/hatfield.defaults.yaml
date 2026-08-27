@@ -189,8 +189,6 @@ tools:
         # session lifecycle cleanup removes owned artifacts earlier.
         retention: 86400
 
-        # Optional session prefix for persisted output filenames.
-        # session_prefix: run-abc123
 
     background_process:
         # Storage directory for background process log files.

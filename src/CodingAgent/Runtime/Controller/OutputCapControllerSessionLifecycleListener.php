@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
-use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerSessionShutdownEvent;
-use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerSessionStartingEvent;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 

@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Runtime\Controller\Event;
+namespace Ineersa\CodingAgent\Session\Event;
 
 use Symfony\Contracts\EventDispatcher\Event;
 
 /**
- * Dispatched after controller consumers stop and before session ownership releases.
+ * Dispatched after a controller exclusively owns a session and before it starts consumers.
  */
-final class ControllerSessionShutdownEvent extends Event
+final class ControllerSessionStartingEvent extends Event
 {
     public function __construct(
         public readonly string $sessionId,
