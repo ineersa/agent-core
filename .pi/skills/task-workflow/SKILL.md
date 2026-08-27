@@ -1,6 +1,6 @@
 ---
 name: task-workflow
-description: "Step-by-step procedures for each task workflow phase. Load this skill when: starting any task phase (task-start, task-to-pr, task-review-iterate, task-done), defining implementation ownership or delegated-worker handoffs, or running reviewer workflows. Covers ownership, phase procedures, and compaction resilience."
+description: "Step-by-step procedures for each task workflow phase. Load this skill when: starting any task phase (task-start, task-to-pr, task-review-iterate, task-done), defining implementation ownership or delegated-fork handoffs, or running reviewer workflows. Covers ownership, phase procedures, and compaction resilience."
 ---
 
 # Task Workflow Procedures
@@ -28,10 +28,10 @@ Agents may be dispatched as follows:
 |---|---|
 | **Scout subagents** | Codebase exploration, dependency checks, architecture discovery, impact analysis |
 | **Researcher subagents** | Web searches, documentation lookups, changelog checks |
-| **Worker/fork** | Exactly one fork owns one complete bounded implementation slice, mechanical migration, isolated module, or context-heavy investigation plus implementation |
+| **Fork** | Exactly one fork owns one complete bounded implementation slice, mechanical migration, isolated module, or context-heavy investigation plus implementation |
 | **Main agent** | Planning, cohesive implementation it already understands, validation, ownership decisions, and task metadata |
 
-Scouts, researchers, and reviewers are subagents, not workers. Each role's existing handoff format remains authoritative; task metadata records only identity, revision, scope, outcome, validation, and unresolved blockers.
+Scouts, researchers, and reviewers are read-only subagents. Each role's existing handoff format remains authoritative; task metadata records only identity, revision, scope, outcome, validation, and unresolved blockers.
 
 ### Proportional scouting
 
@@ -50,10 +50,10 @@ Scouts, researchers, and reviewers are subagents, not workers. Each role's exist
 
 ## Specification fidelity gate (mandatory)
 
-Before defining implementation ownership or delegated-worker handoff instructions, or accepting review:
+Before defining implementation ownership or delegated-fork handoff instructions, or accepting review:
 
 1. Map every proposed externally visible addition (setting, API, storage field, command, user-visible behavior) to an **exact finalized task requirement**. Unmapped additions are forbidden.
-2. Implementation plans and delegated-worker handoff instructions may choose minimal mechanics, but **must not introduce uncited product decisions**. Unresolved ambiguity affecting behavior or public surface goes back to the user — do not invent defaults or surface.
+2. Implementation plans and delegated-fork handoff instructions may choose minimal mechanics, but **must not introduce uncited product decisions**. Unresolved ambiguity affecting behavior or public surface goes back to the user — do not invent defaults or surface.
 3. Latest explicit task clarification overrides earlier superseded scope.
 4. Reviewers must inventory changed external surface and complexity against finalized requirements and return **REQUEST CHANGES** for unmapped functionality or unnecessary complexity.
 5. Delete code, branches, prompts, adapters, tests, compatibility paths, and procedures that become dead, unreachable, superseded, or unsupported in the same change. Do not preserve them “just in case” or add uncited fallback behavior. Required error handling and explicitly documented local degradation remain valid.
@@ -90,8 +90,8 @@ Read-only planning. No status changes, file edits, or implementation forks; read
    - Worktree creation copies `vendor/` and `.vera/` into the worktree, updates the parent worktree IDEA module exclusions when present, creates minimal worktree-local `.idea` metadata from the integration primary module, and opens the exact worktree in JetBrains via MCP when available.
 2. Scout/research only where proportional to uncertainty; do not re-scout context main already owns. Use one scout for an unfamiliar bounded area and parallel independent lenses only for high-risk cross-module, security, or ambiguous architecture work. Batch independent probes in one parallel `tasks` call.
 3. Apply the **Specification fidelity gate**: map every proposed externally visible addition to an exact finalized requirement and resolve ambiguity with the user.
-4. Build the implementation model, then explicitly choose and record either main-owned cohesive implementation or worker-owned bounded slice(s). A worker is one fork; define disjoint file ownership. After a fork launch/return identity is available, record its `forkRun` plus target revision and scope through `update_task`.
-5. Implement without overlapping ownership. The main agent may complete its cohesive slice; a worker owns any delegated bounded slice.
+4. Build the implementation model, then explicitly choose and record either main-owned cohesive implementation or fork-owned bounded slice(s). Define disjoint file ownership. After a fork launch/return identity is available, record its `forkRun` plus target revision and scope through `update_task`.
+5. Implement without overlapping ownership. The main agent may complete its cohesive slice; one fork owns each delegated bounded slice.
 6. Verify commits/output and run focused validation. Record implementation ownership plus identity/revision/scope, outcome, validation, and unresolved blockers via `update_task`; retain each role's own handoff format rather than inventing a shared one.
 7. **STOP.** Do not proceed to PR or code review.
    - Do NOT run: `castor check`, `move_task(to="CODE-REVIEW")`, `gh pr create`, `git push`, reviewer subagent.
@@ -105,7 +105,7 @@ repo. The external task board repo must be committed manually when desired.
 
 **Worktree JetBrains lifecycle:** When creating a worktree, the extension (1) updates the parent worktree IDEA module (e.g., `agent-core-worktrees.iml`) with an idempotent sentinel block of `<excludeFolder>` entries so the aggregate worktrees project does not index generated content, (2) creates minimal worktree-local `.idea` metadata derived from the integration primary module (source roots/exclusions only; no workspace/datasources/cross-module refs), and (3) opens that exact worktree via MCP `ide_open_project`. On DONE/CANCELLED cleanup of an existing worktree, the exact project is closed before removal. IDE/MCP failures are degradation notes, not transition failures. Prefer semantic IDE tools against the exact worktree `project_path`; filesystem tools remain fallback.
 
-**TUI behavior proof for implementation:** For tasks touching TUI behavior, the implementation owner MUST add or update automated proof at the **lowest correct layer** (virtual/in-process, controller-replay, or minimal tmux — see pyramid below). Delegated-worker handoff instructions must state the test thesis and layer when work is delegated. Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility assertions are NOT acceptable as the only proof. See `## TUI behavior proof requirement` below.
+**TUI behavior proof for implementation:** For tasks touching TUI behavior, the implementation owner MUST add or update automated proof at the **lowest correct layer** (virtual/in-process, controller-replay, or minimal tmux — see pyramid below). Delegated-fork handoff instructions must state the test thesis and layer when work is delegated. Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility assertions are NOT acceptable as the only proof. See `## TUI behavior proof requirement` below.
 
 ### task-to-pr: Review and create PR (IN-PROGRESS → CODE-REVIEW)
 
@@ -123,7 +123,7 @@ repo. The external task board repo must be committed manually when desired.
 
 1. Read PR summary via `gh pr view` and inline comments via `gh api repos/<owner>/<repo>/pulls/<n>/comments`. Classify blockers vs suggestions.
 2. `move_task(to="IN-PROGRESS")` before any implementation.
-3. Re-apply the **Specification fidelity gate**, choose main-owned cohesive fixes or worker-owned bounded slices, and record disjoint ownership before implementation.
+3. Re-apply the **Specification fidelity gate**, choose main-owned cohesive fixes or fork-owned bounded slices, and record disjoint ownership before implementation.
 4. Implement fixes, verify output, and run focused Castor validation.
 5. Re-review with reviewer subagent (include the specification fidelity gate). Once identity is available, record role, artifact/run ID, target revision, and scope via `update_task` work log. If REQUEST CHANGES → repeat from step 3.
 6. When APPROVED → `move_task(to="CODE-REVIEW")` (pushes branch, creates/updates PR).
@@ -148,7 +148,7 @@ repo. The external task board repo must be committed manually when desired.
 - **Minimal tmux** (`castor test:tui`, `#[Group('tui-e2e-replay')]`, replay fixtures, isolated dirs): terminal integration smoke only when virtual/replay cannot prove the contract.
 
 - Do **not** move a TUI task to CODE-REVIEW or DONE without the appropriate layer proof and passing focused Castor validation for that layer. Purely virtual features do **not** need a new tmux test. Require `castor test:tui` only when the change depends on tmux/pty/process boot.
-- When TUI work is delegated, worker handoff instructions must name the layer, test thesis, and commands to run.
+- When TUI work is delegated, fork handoff instructions must name the layer, test thesis, and commands to run.
 - Reviewers must verify layer choice and reject tmux-only proof where virtual/replay suffices, or missing proof for the claimed layer.
 
 **Load the `testing` skill** when: writing, running, or debugging TUI proof tests.

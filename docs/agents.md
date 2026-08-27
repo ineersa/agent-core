@@ -88,7 +88,7 @@ For tracked work, record each launched or returned reviewer/subagent identity in
 
 Do not use `subagent` to continue an existing child, and do not use `agent_resume` as a fresh-task launcher. A resumed child keeps its existing identity and session history; provide a focused continuation instruction.
 
-Child runs cannot resume or launch other children. Resume is same-parent-session scoped and rejects fork children; each new fork is a new worker and ownership handoff.
+Child runs cannot resume or launch other children. Resume is same-parent-session scoped and rejects fork children; each new fork requires an explicit ownership handoff.
 
 ## `agent_resume`
 
