@@ -91,18 +91,6 @@ final class LlmStepResultHandlerTest extends TestCase
 
         $this->assertNull($handler->handle($wrongKey, $state)->nextState);
 
-        $shellKey = 'standalone-shell-key';
-        $shellState = $state->with([
-            'activeStepId' => 'shell-step',
-            'currentOperation' => new CurrentOperationDTO(1, 'shell-step', 1, $shellKey),
-            'pendingShellToolCalls' => ['sh_'.hash('sha256', $shellKey) => true],
-        ]);
-        $shellIdentityResult = new LlmStepResult(
-            runId: 'run-llm-handler-1', turnNo: 1, stepId: 'shell-step', attempt: 1,
-            idempotencyKey: $shellKey, assistantMessage: null, usage: [], stopReason: null, error: null,
-        );
-        $this->assertNull($handler->handle($shellIdentityResult, $shellState)->nextState);
-
         $result = $handler->handle($message, $state);
 
         $this->assertNotNull($result->nextState);

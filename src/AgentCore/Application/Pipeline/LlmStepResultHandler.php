@@ -75,15 +75,10 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
 
         $runId = $message->runId();
 
-        // A result is valid only while its exact LLM step remains active. Once
-        // committed, redelivery is a successful no-op: it must not append a stale
-        // event or schedule a second tool/continuation path.
-        if (!\in_array($state->status, [RunStatus::Running, RunStatus::Cancelling], true)
-            || $state->turnNo !== $message->turnNo()
-            || $state->activeStepId !== $message->stepId()
-            || null === $state->currentOperation
-            || !$state->currentOperation->matches($message->turnNo(), $message->stepId(), $message->attempt(), $message->idempotencyKey())
-            || isset($state->pendingShellToolCalls['sh_'.hash('sha256', $state->currentOperation->idempotencyKey)])) {
+        // A result is valid only while its exact LLM operation remains active.
+        // Once committed, redelivery is a successful no-op: it must not append a
+        // stale event or schedule a second tool/continuation path.
+        if (!$state->canAcceptLlmResult($message)) {
             return new HandlerResult();
         }
 

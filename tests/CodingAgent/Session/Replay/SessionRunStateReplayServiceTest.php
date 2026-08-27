@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Session\History\HistoryProjector;
 use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
@@ -30,7 +31,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
     {
         $this->eventStore = new InMemoryEventStore();
         $this->historyFilter = new HistoryReplayFilter(new HistoryProjector());
-        $this->reducer = new RunStateReducer();
+        $this->reducer = new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer());
         $this->service = new SessionRunStateReplayService(
             $this->eventStore,
             new NullLogger(),

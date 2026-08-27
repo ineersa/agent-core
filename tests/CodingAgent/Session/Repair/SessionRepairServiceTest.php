@@ -20,6 +20,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
@@ -236,10 +237,9 @@ final class SessionRepairServiceTest extends TestCase
                 'text' => '!printf repair-shell',
                 'idempotency_key' => $key,
                 'standalone' => false,
-                'operation_turn_no' => 2,
-                'operation_step_id' => 'llm-step',
-                'operation_attempt' => 1,
-                'operation_idempotency_key' => 'llm-key',
+                'current_operation' => AttributeSerializerValidatorTestFactory::create()[0]->normalize(
+                    new CurrentOperationDTO(2, 'llm-step', 1, 'llm-key'),
+                ),
             ]],
         ]));
         $store = new InMemoryRunStore();
@@ -317,10 +317,9 @@ final class SessionRepairServiceTest extends TestCase
             'text' => '!printf repair-standalone-shell',
             'idempotency_key' => $key,
             'standalone' => true,
-            'operation_turn_no' => $turnNo,
-            'operation_step_id' => $stepId,
-            'operation_attempt' => 1,
-            'operation_idempotency_key' => $key,
+            'current_operation' => AttributeSerializerValidatorTestFactory::create()[0]->normalize(
+                new CurrentOperationDTO($turnNo, $stepId, 1, $key),
+            ),
         ]];
         if ($childTurn) {
             $specs[] = ['type' => RunEventTypeEnum::TurnAdvanced->value, 'turn_no' => $turnNo, 'payload' => [
@@ -1567,7 +1566,7 @@ final class SessionRepairServiceTest extends TestCase
         return new SessionRepairService(
             eventStore: $eventStore,
             runStore: $runStore,
-            runStateReducer: new RunStateReducer(),
+            runStateReducer: new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()),
             replayEventPreparer: new ReplayEventPreparer(),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -1652,7 +1651,7 @@ final class SessionRepairServiceTest extends TestCase
         );
 
         $events = $eventStore->allFor($runId);
-        $replayed = (new RunStateReducer())->replay(RunState::queued($runId), $events);
+        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()))->replay(RunState::queued($runId), $events);
 
         return $replayed->messages;
     }
@@ -1679,7 +1678,7 @@ final class SessionRepairServiceTest extends TestCase
         );
 
         $events = $eventStore->allFor($runId);
-        $replayed = (new RunStateReducer())->replay(RunState::queued($runId), $events);
+        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()))->replay(RunState::queued($runId), $events);
         $this->assertSame($expected, $replayed->status);
     }
 

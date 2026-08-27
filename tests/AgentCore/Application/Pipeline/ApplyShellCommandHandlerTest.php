@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -94,7 +95,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         array $expectedEventTypes,
         RunStatus $expectedStatus,
     ): void {
-        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore());
+        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0]);
         $rawInput = '!printf BANG_OWNERSHIP';
         $message = new ApplyShellCommand(
             runId: 'run-shell-1',
@@ -133,10 +134,16 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertSame($rawInput, $commandEvent->payload['text'] ?? null);
         $this->assertSame('shell-idem-1', $commandEvent->payload['idempotency_key'] ?? null);
         $this->assertSame($expectedStandalone, $commandEvent->payload['standalone'] ?? null);
-        $this->assertSame($expectedOwningTurn, $commandEvent->payload['operation_turn_no'] ?? null);
-        $this->assertSame('shell-step-1', $commandEvent->payload['operation_step_id'] ?? null);
-        $this->assertSame(1, $commandEvent->payload['operation_attempt'] ?? null);
-        $this->assertSame('shell-idem-1', $commandEvent->payload['operation_idempotency_key'] ?? null);
+        $this->assertSame([
+            'turn_no' => $expectedOwningTurn,
+            'step_id' => 'shell-step-1',
+            'attempt' => 1,
+            'idempotency_key' => 'shell-idem-1',
+        ], $commandEvent->payload['current_operation'] ?? null);
+        $this->assertArrayNotHasKey('operation_turn_no', $commandEvent->payload);
+        $this->assertArrayNotHasKey('operation_step_id', $commandEvent->payload);
+        $this->assertArrayNotHasKey('operation_attempt', $commandEvent->payload);
+        $this->assertArrayNotHasKey('operation_idempotency_key', $commandEvent->payload);
 
         if (\count($expectedEventTypes) > 1) {
             $this->assertSame($expectedOwningTurn, $result->events[1]->payload['turn_no'] ?? null);
@@ -155,7 +162,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertSame('sh_'.hash('sha256', 'shell-idem-1'), $effect->toolCallId);
 
         if ($expectedStandalone) {
-            $replayed = (new RunStateReducer())->replay(RunState::queued('run-shell-1'), $result->events);
+            $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()))->replay(RunState::queued('run-shell-1'), $result->events);
             $this->assertNotNull($replayed->currentOperation);
             $this->assertTrue($replayed->currentOperation->matches($expectedOwningTurn,
                 'shell-step-1',
@@ -167,7 +174,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
 
     public function testCommittedStandaloneShellRedeliveryIsANoOp(): void
     {
-        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore());
+        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0]);
         $message = new ApplyShellCommand(
             runId: 'run-shell-duplicate',
             turnNo: 0,
@@ -191,7 +198,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
 
     public function testCommittedAttachedShellRedeliveryIsANoOpWithoutReplacingActiveLlm(): void
     {
-        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore());
+        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0]);
         $message = new ApplyShellCommand(
             runId: 'run-attached-shell-duplicate',
             turnNo: 4,
@@ -214,6 +221,19 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertSame($llm, $committed->currentOperation);
         $this->assertArrayHasKey('sh_'.hash('sha256', 'shell-attached-key'), $committed->pendingShellToolCalls);
 
+        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()))->replay(
+            RunState::queued('run-attached-shell-duplicate'),
+            [
+                new RunEvent(
+                    'run-attached-shell-duplicate', 1, 4, RunEventTypeEnum::TurnAdvanced->value,
+                    ['turn_no' => 4, 'step_id' => 'llm-step', 'operation_idempotency_key' => 'llm-key'],
+                ),
+                ...$handler->handle($message, $state)->events,
+            ],
+        );
+        $this->assertNotNull($replayed->currentOperation);
+        $this->assertTrue($replayed->currentOperation->matches(4, 'llm-step', 1, 'llm-key'), 'Attached shell evidence must preserve the active LLM identity on replay.');
+
         $redelivery = $handler->handle($message, $committed);
         $this->assertNull($redelivery->nextState);
         $this->assertSame([], $redelivery->events);
@@ -230,7 +250,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
             type: RunEventTypeEnum::AgentCommandApplied->value,
             payload: ['kind' => 'shell_command', 'idempotency_key' => 'completed-shell-key', 'text' => '!printf once'],
         ));
-        $handler = new ApplyShellCommandHandler(new EventFactory(), $events);
+        $handler = new ApplyShellCommandHandler(new EventFactory(), $events, AttributeSerializerValidatorTestFactory::create()[0]);
         $message = new ApplyShellCommand('run-completed-shell', 4, 'shell-step', 1, 'completed-shell-key', '!printf once');
         $state = new RunState(runId: 'run-completed-shell', status: RunStatus::Running, turnNo: 4, lastSeq: 9, activeStepId: 'llm-step');
 
@@ -242,9 +262,28 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertSame(1, $events->reverseForCalls);
     }
 
+    public function testReplayRejectsMalformedStandaloneOperationEvidence(): void
+    {
+        $event = new RunEvent(
+            runId: 'run-malformed-shell',
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::AgentCommandApplied->value,
+            payload: [
+                'kind' => 'shell_command',
+                'idempotency_key' => 'shell-key',
+                'standalone' => true,
+                'current_operation' => ['turn_no' => 0],
+            ],
+        );
+
+        $this->expectException(\UnexpectedValueException::class);
+        (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()))->replay(RunState::queued('run-malformed-shell'), [$event]);
+    }
+
     public function testRejectsInvalidRawInput(): void
     {
-        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore());
+        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0]);
         $state = new RunState(runId: 'run-shell-2', status: RunStatus::Queued, turnNo: 0, lastSeq: 0, model: 'test-model');
 
         $this->expectException(\InvalidArgumentException::class);

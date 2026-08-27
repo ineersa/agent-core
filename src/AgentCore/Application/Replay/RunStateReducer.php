@@ -11,9 +11,14 @@ use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 final readonly class RunStateReducer
 {
+    public function __construct(private DenormalizerInterface $denormalizer)
+    {
+    }
+
     /**
      * @param list<RunEvent> $events
      */
@@ -217,30 +222,29 @@ final readonly class RunStateReducer
 
             $toolCallId = 'sh_'.hash('sha256', $key);
 
-            $standalone = $payload['standalone'] ?? null;
-            $operationTurnNo = $payload['operation_turn_no'] ?? null;
-            $operationStepId = $payload['operation_step_id'] ?? null;
-            $operationAttempt = $payload['operation_attempt'] ?? null;
-            $operationKey = $payload['operation_idempotency_key'] ?? null;
-            $currentOperation = $state->currentOperation;
-            if (true === $standalone
-                && \is_int($operationTurnNo)
-                && \is_string($operationStepId)
-                && '' !== $operationStepId
-                && \is_int($operationAttempt)
-                && \is_string($operationKey)
-                && '' !== $operationKey) {
-                $currentOperation = new CurrentOperationDTO(
-                    $operationTurnNo,
-                    $operationStepId,
-                    $operationAttempt,
-                    $operationKey,
-                );
+            if (true !== ($payload['standalone'] ?? null)) {
+                return $state->with([
+                    'pendingShellToolCalls' => [...$state->pendingShellToolCalls, $toolCallId => true],
+                ]);
+            }
+
+            $rawOperation = $payload['current_operation'] ?? null;
+            if (!\is_array($rawOperation)) {
+                throw new \UnexpectedValueException('Standalone shell command event is missing a normalized current_operation.');
+            }
+
+            try {
+                $operation = $this->denormalizer->denormalize($rawOperation, CurrentOperationDTO::class);
+            } catch (\Throwable $exception) {
+                throw new \UnexpectedValueException('Standalone shell command event contains an invalid current_operation.', 0, $exception);
+            }
+            if (!$operation instanceof CurrentOperationDTO) {
+                throw new \UnexpectedValueException('Standalone shell command current_operation must denormalize to CurrentOperationDTO.');
             }
 
             return $state->with([
                 'pendingShellToolCalls' => [...$state->pendingShellToolCalls, $toolCallId => true],
-                'currentOperation' => $currentOperation,
+                'currentOperation' => $operation,
             ]);
         }
 

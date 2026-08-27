@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /**
  * Applies a direct shell command under the same lock/CAS/commit pipeline as
@@ -25,6 +26,7 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
     public function __construct(
         private EventFactory $eventFactory,
         private EventStoreInterface $eventStore,
+        private NormalizerInterface $normalizer,
     ) {
     }
 
@@ -89,6 +91,17 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
         $owningTurnNo = $startsChildTurn
             ? max($state->lastSeq, $state->turnNo) + 1
             : $state->turnNo;
+        $operation = new CurrentOperationDTO(
+            $owningTurnNo,
+            $message->stepId(),
+            $message->attempt(),
+            $message->idempotencyKey(),
+        );
+        $normalizedOperation = $this->normalizer->normalize($operation);
+        if (!\is_array($normalizedOperation)) {
+            throw new \LogicException('Current operation normalization must produce an array.');
+        }
+
         $eventSpecs = [[
             'type' => RunEventTypeEnum::AgentCommandApplied->value,
             'payload' => [
@@ -97,13 +110,10 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
                 'text' => $rawInput,
                 'options' => [],
                 // Repair replays canonical events rather than state.json. Keep
-                // standalone shell execution self-describing without retaining
-                // a receipt history or adding a separate storage record.
+                // every shell execution self-describing without retaining a
+                // receipt history or adding a separate storage record.
                 'standalone' => $standalone,
-                'operation_turn_no' => $owningTurnNo,
-                'operation_step_id' => $message->stepId(),
-                'operation_attempt' => $message->attempt(),
-                'operation_idempotency_key' => $message->idempotencyKey(),
+                'current_operation' => $normalizedOperation,
             ],
         ]];
 
@@ -167,14 +177,7 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
             // result still authorizes the in-flight LLM completion. Standalone
             // shells have no competing model operation and are recoverable by
             // this bounded descriptor.
-            'currentOperation' => $startsChildTurn || RunStatus::Queued === $state->status
-                ? new CurrentOperationDTO(
-                    $owningTurnNo,
-                    $message->stepId(),
-                    $message->attempt(),
-                    $message->idempotencyKey(),
-                )
-                : $state->currentOperation,
+            'currentOperation' => $standalone ? $operation : $state->currentOperation,
             'pendingShellToolCalls' => [...$state->pendingShellToolCalls, $toolCallId => true],
             'retryableFailure' => $startsChildTurn ? false : $state->retryableFailure,
             // A child turn starts a fresh retry episode; an in-place shell on

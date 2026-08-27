@@ -986,15 +986,17 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 continue;
             }
 
-            $turnNo = $event->payload['operation_turn_no'] ?? null;
-            $stepId = $event->payload['operation_step_id'] ?? null;
-            $attempt = $event->payload['operation_attempt'] ?? null;
-            $operationKey = $event->payload['operation_idempotency_key'] ?? null;
-            if (!\is_int($turnNo) || !\is_string($stepId) || !\is_int($attempt) || !\is_string($operationKey)) {
-                return false;
+            $shellOperation = $this->shellOperationFromEvent($event);
+            if (null === $shellOperation) {
+                throw new \UnexpectedValueException('Standalone shell command event is missing a normalized current_operation.');
             }
 
-            return $operation->matches($turnNo, $stepId, $attempt, $operationKey);
+            return $operation->matches(
+                $shellOperation->turnNo,
+                $shellOperation->stepId,
+                $shellOperation->attempt,
+                $shellOperation->idempotencyKey,
+            );
         }
 
         return false;
@@ -1020,14 +1022,14 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 continue;
             }
 
-            $turnNo = $event->payload['operation_turn_no'] ?? $event->turnNo;
-            if (!\is_int($turnNo)) {
+            $operation = $this->shellOperationFromEvent($event);
+            if (null === $operation) {
                 return null;
             }
 
             return new ExecuteShellToolCall(
                 $runId,
-                $turnNo,
+                $operation->turnNo,
                 $toolCallId,
                 ltrim(substr($text, 1)),
                 $standalone,
@@ -1035,6 +1037,29 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         }
 
         return null;
+    }
+
+    private function shellOperationFromEvent(RunEvent $event): ?CurrentOperationDTO
+    {
+        $rawOperation = $event->payload['current_operation'] ?? null;
+        if (!\is_array($rawOperation)) {
+            return null;
+        }
+
+        try {
+            $operation = $this->serializer->denormalize($rawOperation, CurrentOperationDTO::class);
+        } catch (\Throwable $exception) {
+            $this->logger->warning('Session repair could not denormalize shell operation.', [
+                'component' => 'session.repair',
+                'event_type' => 'session.repair.shell_operation_denormalization_failed',
+                'run_id' => $event->runId,
+                'exception' => $exception::class,
+            ]);
+
+            return null;
+        }
+
+        return $operation instanceof CurrentOperationDTO ? $operation : null;
     }
 
     private function ambiguousRefusal(string $runId): RepairResult

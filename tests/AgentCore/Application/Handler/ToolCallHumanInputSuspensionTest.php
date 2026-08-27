@@ -23,6 +23,7 @@ use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -90,7 +91,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             ['question_id' => 'q-h', 'prompt' => 'Allow id?'],
             ['run_id' => 'run-h', 'turn_no' => 3, 'step_id' => 'step-h', 'tool_call_id' => 'call-h'],
         );
-        $result = (new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer()))->handle(
+        $result = (new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), AttributeSerializerValidatorTestFactory::denormalizer()))->handle(
             ToolCallResultFactory::fromExecuteToolCallAndHumanInputSuspension(
                 $this->call('run-h', 'step-h', 'call-h', 0, 3),
                 new ToolExecutionHumanInputSuspension($request),
@@ -113,7 +114,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         }
         $this->assertSame('tool_call', $payload['continuation_kind'] ?? null);
         $this->assertSame('call-h', $payload['continuation_ref']['tool_call_id'] ?? null);
-        $replayed = (new RunStateReducer())->replay(RunState::queued('run-h'), [new RunEvent('run-h', 1, 3, RunEventTypeEnum::WaitingHuman->value, $payload ?? [])]);
+        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()))->replay(RunState::queued('run-h'), [new RunEvent('run-h', 1, 3, RunEventTypeEnum::WaitingHuman->value, $payload ?? [])]);
         $this->assertSame(HumanInputContinuationKindEnum::ToolCall, $replayed->pendingHumanInputRequests[0]->continuationKind);
         $this->assertSame('q-h', $replayed->pendingHumanInputRequests[0]->questionId);
     }
@@ -126,7 +127,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             $this->call('run-par', 'step-par', 'call-2', 1, mode: 'parallel', maxParallelism: 2),
         ]);
 
-        $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), AttributeSerializerValidatorTestFactory::denormalizer());
         $state = RunStateBuilder::running('run-par')
             ->withTurnNo(1)
             ->withLastSeq(3)
@@ -336,7 +337,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             ->build();
         $this->assertTrue($runStore->compareAndSwap($running, 0));
 
-        $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), AttributeSerializerValidatorTestFactory::denormalizer());
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
             runStore: $runStore,
             runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),

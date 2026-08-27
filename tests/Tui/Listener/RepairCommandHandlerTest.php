@@ -126,7 +126,7 @@ final class RepairCommandHandlerTest extends TestCase
         return new SessionRepairService(
             eventStore: new InMemoryEventStore(),
             runStore: new InMemoryRunStore(),
-            runStateReducer: new RunStateReducer(),
+            runStateReducer: new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()),
             replayEventPreparer: new ReplayEventPreparer(),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Run;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 
 final readonly class RunState
 {
@@ -56,6 +57,19 @@ final readonly class RunState
     }
 
     /**
+     * LLM results are admitted only for the one exact active model operation.
+     * A direct standalone shell can hold that bounded identity while its tool
+     * call remains pending, so its forged LLM result must not be accepted.
+     */
+    public function canAcceptLlmResult(LlmStepResult $message): bool
+    {
+        return \in_array($this->status, [RunStatus::Running, RunStatus::Cancelling], true)
+            && null !== $this->currentOperation
+            && $this->currentOperation->matchesMessage($message)
+            && !$this->isPendingStandaloneShellOperation($this->currentOperation);
+    }
+
+    /**
      * Safe immutable copy that preserves every field unless explicitly overridden.
      * Prefer this over raw `new RunState(...)` when only a subset of fields change.
      *
@@ -104,5 +118,10 @@ final readonly class RunState
             pendingHumanInputRequests: \array_key_exists('pendingHumanInputRequests', $overrides) ? $overrides['pendingHumanInputRequests'] : $this->pendingHumanInputRequests,
             model: \array_key_exists('model', $overrides) ? $overrides['model'] : $this->model,
         );
+    }
+
+    private function isPendingStandaloneShellOperation(CurrentOperationDTO $operation): bool
+    {
+        return isset($this->pendingShellToolCalls['sh_'.hash('sha256', $operation->idempotencyKey)]);
     }
 }
