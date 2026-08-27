@@ -13,11 +13,10 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
 /**
  * Maps tool execution outcomes to the canonical ToolCallResult envelope.
  *
- * Outcome variants must use DISTINCT deterministic idempotency keys even when
- * they share the same ExecuteToolCall envelope. Suspension then terminal
- * completion for one tool call are two valid sequential run_control messages.
- * Their distinct keys keep the suspension and terminal outcomes independently
- * admissible against the durable tool-batch state (avoiding a stuck run after Allow).
+ * Suspension then terminal completion for one tool call are two valid sequential
+ * run_control messages, distinguished and admitted by durable tool-batch state.
+ * Their generated keys merely provide stable, distinct deterministic envelope
+ * identities (avoiding a stuck run after Allow).
  */
 final class ToolCallResultFactory
 {
@@ -62,8 +61,7 @@ final class ToolCallResultFactory
      * (run/turn/step/toolCall) lives on the envelope; `$pendingHumanInput` alone marks the
      * non-terminal variant for ToolCallResultHandler admission.
      *
-     * Idempotency includes questionId so a later distinct suspension on the same tool call
-     * remains independently admissible against its human-input request identity.
+     * questionId gives each suspension/question a distinct deterministic envelope identity.
      */
     public static function fromExecuteToolCallAndHumanInputSuspension(
         ExecuteToolCall $message,
