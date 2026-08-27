@@ -98,6 +98,24 @@ final class ProcessStore
     }
 
     /**
+     * Fetch user-accepted background processes for one run.
+     *
+     * @return BackgroundProcess[]
+     */
+    public function fetchBackgrounded(string $sessionId): array
+    {
+        return $this->repository->findBackgrounded($sessionId);
+    }
+
+    /**
+     * Fetch a user-accepted background process by PID within one run.
+     */
+    public function fetchBackgroundedByPid(string $sessionId, int $pid): ?BackgroundProcess
+    {
+        return $this->repository->findBackgroundedByPid($sessionId, $pid);
+    }
+
+    /**
      * Fetch a single entity by auto-increment record ID.
      *
      * Unlike PID-based lookups (OS PIDs can be reused while rows are retained),
@@ -199,6 +217,17 @@ final class ProcessStore
     public function fetchAllUnfinishedPids(): array
     {
         return $this->repository->findUnfinishedPids();
+    }
+
+    /**
+     * Fetch private foreground-supervision rows that are safely past their
+     * five-minute cleanup grace interval.
+     *
+     * @return BackgroundProcess[]
+     */
+    public function fetchFinishedProvisionalBefore(\DateTimeImmutable $cutoff): array
+    {
+        return $this->repository->findFinishedProvisionalBefore($cutoff);
     }
 
     /**

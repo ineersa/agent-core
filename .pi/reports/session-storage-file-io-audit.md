@@ -43,6 +43,10 @@ The child artifact topology explains why a parent has many nested UUID directori
 | `metadata.json` / `handoff.md` | 235 each; 2.1 MiB / 1.9 MiB |
 | cursors | 234 files; 920 B total |
 | `.hatfield/tmp/bg` | 19,945 files; historical snapshot 281.4 MiB; current generic `*.log` aggregate is 329.1 MiB because it includes other log locations |
+
+### Background-process provisional cleanup
+
+`BackgroundProcessManager::start()` creates a private foreground-supervision row and exact `.pid` / `.status` / `.log` sidecars before a Bash background prompt can be accepted. `backgrounded_at IS NULL` is therefore not user-visible background work: `bg_status` lists, tails, and stops only rows that were accepted (`backgrounded_at IS NOT NULL`) within its current run. A Symfony Scheduler task runs every five minutes, refreshes unfinished records, and removes only finished private rows whose `finished_at` is at least one interval old, plus their exact row-owned sidecars. The grace interval preserves BashTool's foreground output read; accepted background rows retain their existing behavior. This replaces neither the configured accepted-background retention setting nor process lifecycle semantics.
 | `.hatfield/logs` | historical snapshot: 2 files; 50.5 MiB |
 | `.hatfield/tmp/output-cap` | historical snapshot: 103 files; 44.8 MiB |
 

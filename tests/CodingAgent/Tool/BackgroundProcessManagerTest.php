@@ -100,6 +100,43 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->manager->shutdownCleanup();
     }
 
+    public function testListBackgroundedExcludesPrivateForegroundRows(): void
+    {
+        $this->createManager();
+        $private = $this->manager->start('echo "private"', self::TEST_SESSION);
+        $accepted = $this->manager->start('echo "accepted"', self::TEST_SESSION);
+        $foreign = $this->manager->start('echo "foreign"', 'other-session');
+        $this->manager->markBackgroundedForRecord($accepted->id, self::TEST_SESSION);
+        $this->manager->markBackgroundedForRecord($foreign->id, 'other-session');
+
+        $entities = $this->manager->listBackgrounded(self::TEST_SESSION);
+
+        $this->assertCount(1, $entities);
+        $this->assertSame($accepted->id, $entities[0]->id);
+        $this->assertNotSame($private->id, $entities[0]->id);
+
+        $this->manager->shutdownCleanup();
+    }
+
+    public function testPidOperationsRequireAcceptedRowInOwningSession(): void
+    {
+        $this->createManager();
+        $private = $this->manager->start('echo "private"', self::TEST_SESSION);
+        $foreign = $this->manager->start('echo "foreign"', 'other-session');
+        $this->manager->markBackgroundedForRecord($foreign->id, 'other-session');
+
+        try {
+            $this->manager->readBackgroundedLogTail(self::TEST_SESSION, $private->pid);
+            $this->fail('Private foreground supervision must be invisible to PID log lookup.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame(\sprintf('No background process found with PID %d for this session.', $private->pid), $e->getMessage());
+        }
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage(\sprintf('No background process found with PID %d for this session.', $foreign->pid));
+        $this->manager->stopBackgrounded(self::TEST_SESSION, $foreign->pid);
+    }
+
     /* ── readLogTail() ── */
 
     public function testReadLogTailReturnsContent(): void

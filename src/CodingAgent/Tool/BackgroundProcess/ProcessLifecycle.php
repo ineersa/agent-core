@@ -377,6 +377,39 @@ final class ProcessLifecycle
     // ─── Helpers ─────────────────────────────────────────────────────
 
     /**
+     * Delete only the three exact sidecars belonging to a finished private
+     * foreground-supervision record. This intentionally does not scan the
+     * background directory: a row may clean up only its own .log/.status/.pid
+     * siblings after their paths are verified as direct children of it.
+     *
+     * @return bool false when paths are not the expected exact sibling set or
+     *              an existing sidecar cannot be removed
+     */
+    public function deleteFinishedProvisionalRecordFiles(string $logPath, string $statusPath): bool
+    {
+        $storageDir = realpath($this->config->storageDir);
+        if (false === $storageDir || !str_ends_with($logPath, '.log')) {
+            return false;
+        }
+
+        $prefix = substr(basename($logPath), 0, -4);
+        if ('' === $prefix
+            || \dirname($logPath) !== $storageDir
+            || $statusPath !== $storageDir.'/'.$prefix.'.status'
+        ) {
+            return false;
+        }
+
+        foreach ([$logPath, $statusPath, $storageDir.'/'.$prefix.'.pid'] as $path) {
+            if ((is_file($path) || is_link($path)) && !@unlink($path)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Delete log and status files for a finished process.
      *
      * Silently ignores non-existent or empty paths.

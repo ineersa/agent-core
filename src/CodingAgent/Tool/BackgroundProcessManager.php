@@ -251,6 +251,26 @@ final class BackgroundProcessManager
     }
 
     /**
+     * List only processes explicitly accepted as background work for one run.
+     * Private foreground-supervision records (backgroundedAt === null) are
+     * deliberately excluded from the user-facing bg_status surface.
+     *
+     * @return list<BackgroundProcess>
+     */
+    public function listBackgrounded(string $sessionId): array
+    {
+        $entities = $this->store->fetchBackgrounded($sessionId);
+
+        foreach ($entities as $entity) {
+            $this->resolveEntityStatus($entity);
+        }
+
+        $this->store->flush();
+
+        return $entities;
+    }
+
+    /**
      * Check whether a row exists for the given PID.
      *
      * Uses an ORM COUNT query that always hits the database, bypassing
@@ -431,6 +451,25 @@ final class BackgroundProcessManager
     }
 
     /**
+     * Return a user-accepted background process log within its owning run.
+     * The repository applies run, PID, and backgroundedAt predicates together,
+     * so foreground and cross-run records are indistinguishable from absent.
+     *
+     * @throws \RuntimeException when no accepted process matches
+     */
+    public function readBackgroundedLogTail(string $sessionId, int $pid, ?int $maxChars = null): LogTailResult
+    {
+        $maxChars ??= $this->config->logTailChars;
+        $entity = $this->store->fetchBackgroundedByPid($sessionId, $pid);
+
+        if (null === $entity) {
+            throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
+        }
+
+        return $this->lifecycle->readLogTail($entity->logPath, $pid, $maxChars);
+    }
+
+    /**
      * Return the tail of a background process log by immutable record ID.
      */
     public function readLogTailForRecord(int $recordId, ?int $maxChars = null, ?string $sessionId = null): LogTailResult
@@ -514,7 +553,68 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Remove stale (finished) records and log files older than retention.
+     * Stop a user-accepted background process within its owning run.
+     * Foreground-supervision rows are intentionally unavailable by PID.
+     *
+     * @throws \RuntimeException when no accepted process matches
+     */
+    public function stopBackgrounded(string $sessionId, int $pid): StopResult
+    {
+        if ($pid <= 0) {
+            throw new \RuntimeException(\sprintf('Invalid PID %d for stop.', $pid));
+        }
+
+        $entity = $this->store->fetchBackgroundedByPid($sessionId, $pid);
+        if (null === $entity) {
+            throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
+        }
+
+        return $this->stopProcessEntity($entity);
+    }
+
+    /**
+     * Sweep only finished private foreground-supervision records after one
+     * scheduler interval. The grace period lets BashTool read its exact record
+     * output before this recurring maintenance can remove the sidecars.
+     *
+     * @return int Number of rows and exact sidecar sets removed
+     */
+    public function cleanupFinishedProvisional(): int
+    {
+        $this->refreshAllUnfinished();
+        $cutoff = Clock::get()->now()->modify('-5 minutes');
+        $cleaned = 0;
+        $failed = 0;
+
+        foreach ($this->store->fetchFinishedProvisionalBefore($cutoff) as $entity) {
+            if (!$this->lifecycle->deleteFinishedProvisionalRecordFiles($entity->logPath, $entity->statusPath)) {
+                ++$failed;
+                continue;
+            }
+
+            if ($this->store->deleteById($entity->id)) {
+                ++$cleaned;
+            } else {
+                ++$failed;
+            }
+        }
+
+        $this->logger->info('background_process.provisional_cleanup_completed', [
+            'component' => 'tool.background_process',
+            'event_type' => 'background_process.provisional_cleanup_completed',
+            'cleaned_count' => $cleaned,
+            'failed_count' => $failed,
+        ]);
+
+        return $cleaned;
+    }
+
+    /**
+     * Legacy broad retention cleanup for accepted-background retention policy.
+     *
+     * This method includes the historical directory orphan scan and is not
+     * called by BackgroundProcessProvisionalCleanupTask: that recurring task
+     * may remove only exact row-owned provisional sidecars without scanning.
      *
      * First refreshes all unfinished records so finished_at is populated
      * for processes that completed without a list() call, then queries
