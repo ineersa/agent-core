@@ -16,7 +16,7 @@ Settings keys: [settings-agents.md](settings-agents.md). Sessions/artifacts: [se
 ```markdown
 ---
 name: scout
-description: Contextual codebase investigation for dependency, architecture, impact, and reasoning-heavy handoff
+description: Fast read-only codebase reconnaissance
 tools:
   - read
   - bash
@@ -63,18 +63,11 @@ Load order (low → high precedence), non-recursive `*.md`:
 4. `<cwd>/.hatfield/agents/`
 5. `agents.paths`
 
-Bundled starters (`explorer`, `scout`, `reviewer`, `researcher`, `architect`, `browser`) install with:
+Bundled starters (`scout`, `reviewer`, `researcher`, `architect`, `browser`) install with:
 
 ```bash
 hatfield agents:init
 ```
-
-## Reconnaissance roles
-
-- **Explorer** is the fast option for simple, bounded mechanical evidence gathering: exact paths, line ranges, snippets, direct definitions/references, and unresolved unknowns. It does not edit or make architecture, safety, or change-safety judgments.
-- **Scout** is the smarter option for broad or hard contextual investigation: dependencies, architecture, impact analysis, and reasoning-heavy synthesis.
-
-Reconnaissance agents gather evidence only; they do not implement changes. Use independent Explorers/Scouts in one parallel `subagent` call when appropriate; preserve sequential launches for dependent work.
 
 ## Foreground `subagent` tool
 

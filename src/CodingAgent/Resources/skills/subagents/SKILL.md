@@ -9,12 +9,12 @@ Model-visible tools: **`subagent`** (launch), **`agent_resume`** (continue), and
 
 ## Quick start
 
-**Decision rule:** use **Explorer** for simple, bounded, mechanical evidence gathering; use **Scout** for broad or hard contextual investigation involving dependencies, architecture, impact, or reasoning. Batch independent explorers/scouts/reviewers in **one** `tasks` call within `agents.max_agents` (default **4**). Use single mode for exactly one child or work that must be serialized. Separate outer `subagent` calls run sequentially; tasks inside one `tasks` array run concurrently. Recon agents gather evidence only; they do not implement changes.
+**Decision rule:** batch independent scouts/reviewers in **one** `tasks` call within `agents.max_agents` (default **4**). Use single mode for exactly one child or work that must be serialized. Separate outer `subagent` calls run sequentially; tasks inside one `tasks` array run concurrently.
 
 **Single child** (or dependent/serialized work):
 
 ```json
-{ "agent": "explorer", "task": "List the files that define and load skills, with exact line ranges." }
+{ "agent": "scout", "task": "Map how skills are discovered and injected." }
 ```
 
 **Independent parallel children** (preferred; max `agents.max_agents` — use either single or `tasks`, not both):
@@ -22,8 +22,7 @@ Model-visible tools: **`subagent`** (launch), **`agent_resume`** (continue), and
 ```json
 {
   "tasks": [
-    { "agent": "explorer", "task": "Locate routing definitions and references." },
-    { "agent": "scout", "task": "Trace routing dependencies and impact." },
+    { "agent": "scout", "task": "Inspect routing." },
     { "agent": "reviewer", "task": "Review the diff." }
   ]
 }
@@ -81,7 +80,7 @@ Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<a
 
 ## Workflows
 
-1. **Optional starters** — `hatfield agents:init` copies bundled `explorer`/`scout`/`reviewer`/`researcher`/`architect`/`browser` into `~/.hatfield/agents/` (fails on collisions unless `--force`; opinionated model/MCP/skill pins).
+1. **Optional starters** — `hatfield agents:init` copies bundled `scout`/`reviewer`/`researcher`/`architect`/`browser` into `~/.hatfield/agents/` (fails on collisions unless `--force`; opinionated model/MCP/skill pins).
 2. **Define agent** — `.hatfield/agents/<name>.md` with frontmatter + instructions.
 3. **Delegate** — parent calls `subagent` with `agent`+`task` or `tasks`.
 4. **Continue** — use `agent_resume` for an existing child artifact/run rather than launching a duplicate.
