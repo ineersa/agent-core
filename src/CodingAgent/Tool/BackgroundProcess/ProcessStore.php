@@ -98,6 +98,24 @@ final class ProcessStore
     }
 
     /**
+     * Fetch user-accepted background processes for one run.
+     *
+     * @return BackgroundProcess[]
+     */
+    public function fetchBackgrounded(string $sessionId): array
+    {
+        return $this->repository->findBackgrounded($sessionId);
+    }
+
+    /**
+     * Fetch a user-accepted background process by PID within one run.
+     */
+    public function fetchBackgroundedByPid(string $sessionId, int $pid): ?BackgroundProcess
+    {
+        return $this->repository->findBackgroundedByPid($sessionId, $pid);
+    }
+
+    /**
      * Fetch a single entity by auto-increment record ID.
      *
      * Unlike PID-based lookups (OS PIDs can be reused while rows are retained),
@@ -165,23 +183,6 @@ final class ProcessStore
     }
 
     /**
-     * Fetch all entities, optionally filtered by session.
-     *
-     * @return BackgroundProcess[]
-     */
-    public function fetchAll(?string $sessionId = null): array
-    {
-        $criteria = [];
-        if (null !== $sessionId) {
-            $criteria['sessionId'] = $sessionId;
-        }
-
-        /* @var BackgroundProcess[] */
-        return $this->repository
-            ->findBy($criteria, ['id' => 'DESC']);
-    }
-
-    /**
      * Fetch all unfinished entities, optionally scoped by session.
      *
      * @return BackgroundProcess[]
@@ -192,23 +193,14 @@ final class ProcessStore
     }
 
     /**
-     * Fetch all unfinished PIDs.
-     *
-     * @return int[]
-     */
-    public function fetchAllUnfinishedPids(): array
-    {
-        return $this->repository->findUnfinishedPids();
-    }
-
-    /**
-     * Fetch stale entities where finishedAt is set and <= cutoff.
+     * Fetch private foreground-supervision rows that are safely past their
+     * five-minute cleanup grace interval.
      *
      * @return BackgroundProcess[]
      */
-    public function fetchStale(\DateTimeImmutable $cutoff): array
+    public function fetchFinishedProvisionalBefore(\DateTimeImmutable $cutoff): array
     {
-        return $this->repository->findStale($cutoff);
+        return $this->repository->findFinishedProvisionalBefore($cutoff);
     }
 
     /**
