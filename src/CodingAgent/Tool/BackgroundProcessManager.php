@@ -31,19 +31,17 @@ use Symfony\Component\Clock\Clock;
  *     forwards it to the child so TERM reaches the actual workload.
  *  2. The process runs independently — the PHP tool worker exits while
  *     the child continues in its own session.
- *  3. On subsequent list() calls, resolveEntityStatus() checks
+ *  3. On subsequent accepted-background list() calls, resolveEntityStatus() checks
  *     liveness via /proc/<pid> on Linux or the status file.
  *  4. stop() sends SIGTERM to the process group (negative PGID), polls
  *     until exit or the configured grace deadline, then SIGKILL if still alive.
  *  5. cleanupStale() removes DB records and log files older than
  *     retention once the process has finished.
  *
- * Session ownership: every process stores an optional session_id.
- * Methods that accept ?string $sessionId scope operations to that
- * session when provided; null means unscoped/admin (show all,
- * operate on any process regardless of session).
- * BgStatusTool resolves the current session from the ambient
- * StackToolExecutionContextAccessor so operations are scoped.
+ * Session ownership: user-facing list(), readLogTail(), and session-scoped
+ * stop() operations require an owning session and expose only rows explicitly
+ * accepted as background work. Internal shutdown/reap code retains an
+ * unscoped stop() path for PIDs this manager instance owns.
  *
  * Shutdown handling:
  * Call registerShutdownHandler() from production wiring (services.yaml)
@@ -72,8 +70,6 @@ use Symfony\Component\Clock\Clock;
  */
 final class BackgroundProcessManager
 {
-    public const int PROVISIONAL_CLEANUP_INTERVAL_SECONDS = 300;
-
     private bool $shutdownRegistered = false;
 
     /** @var int[] PIDs launched via start() by THIS instance, used for instance-scoped shutdown cleanup. */
@@ -225,41 +221,16 @@ final class BackgroundProcessManager
     }
 
     /**
-     * List all tracked background processes with refreshed status.
-     *
-     * Resolves status from filesystem state (/proc/<pid> or status file)
-     * and persists any changes on the entity before returning.  This is
-     * the canonical way to get current process state — entities returned
-     * by fetchAll() may have stale in-memory status.
-     *
-     * @param string|null $sessionId optional session filter. When
-     *                               provided, only processes for that
-     *                               session are returned. Pass null for
-     *                               all processes.
-     *
-     * @return list<BackgroundProcess>
-     */
-    public function list(?string $sessionId = null): array
-    {
-        $entities = $this->store->fetchAll($sessionId);
-
-        foreach ($entities as $entity) {
-            $this->resolveEntityStatus($entity);
-        }
-
-        $this->store->flush();
-
-        return $entities;
-    }
-
-    /**
-     * List only processes explicitly accepted as background work for one run.
+     * List processes explicitly accepted as background work for one run.
      * Private foreground-supervision records (backgroundedAt === null) are
      * deliberately excluded from the user-facing bg_status surface.
      *
+     * Resolves status from filesystem state (/proc/<pid> or status file)
+     * and persists any changes before returning.
+     *
      * @return list<BackgroundProcess>
      */
-    public function listBackgrounded(string $sessionId): array
+    public function list(string $sessionId): array
     {
         $entities = $this->store->fetchBackgrounded($sessionId);
 
@@ -428,38 +399,13 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Return the tail of a background process log file.
-     *
-     * @throws \RuntimeException when process not found, session mismatch, or log unreadable
-     *
-     * Resolves the newest retained row for the OS PID (bg_status pid= semantics);
-     * session ownership is checked after resolution
-     */
-    public function readLogTail(int $pid, ?int $maxChars = null, ?string $sessionId = null): LogTailResult
-    {
-        $maxChars ??= $this->config->logTailChars;
-
-        $entity = $this->store->fetchLatestByPid($pid);
-
-        if (null === $entity) {
-            throw new \RuntimeException(\sprintf('No background process found with PID %d.', $pid));
-        }
-
-        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
-            throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
-        }
-
-        return $this->lifecycle->readLogTail($entity->logPath, $pid, $maxChars);
-    }
-
-    /**
      * Return a user-accepted background process log within its owning run.
      * The repository applies run, PID, and backgroundedAt predicates together,
      * so foreground and cross-run records are indistinguishable from absent.
      *
      * @throws \RuntimeException when no accepted process matches
      */
-    public function readBackgroundedLogTail(string $sessionId, int $pid, ?int $maxChars = null): LogTailResult
+    public function readLogTail(string $sessionId, int $pid, ?int $maxChars = null): LogTailResult
     {
         $maxChars ??= $this->config->logTailChars;
         $entity = $this->store->fetchBackgroundedByPid($sessionId, $pid);
@@ -523,15 +469,12 @@ final class BackgroundProcessManager
      * determined — a rare race window immediately after process launch.
      *
      * @param int         $pid       Process PID to stop. Must be > 0.
-     * @param string|null $sessionId optional session ownership check.
-     *                               When provided, only a process belonging
-     *                               to this session will be stopped.
+     * @param string|null $sessionId owning run for user-facing operations.
+     *                               When provided, only an accepted process
+     *                               in that run can be stopped; null remains
+     *                               the internal shutdown/reap path.
      *
-     * @throws \RuntimeException when process not found, session mismatch,
-     *                           or PID is invalid
-     *
-     * Resolves the newest retained row for the OS PID (bg_status stop pid=);
-     * session ownership is checked after resolution
+     * @throws \RuntimeException when process not found or PID is invalid
      */
     public function stop(int $pid, ?string $sessionId = null): StopResult
     {
@@ -541,74 +484,15 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('Invalid PID %d for stop.', $pid));
         }
 
-        $entity = $this->store->fetchLatestByPid($pid);
+        $entity = null === $sessionId
+            ? $this->store->fetchLatestByPid($pid)
+            : $this->store->fetchBackgroundedByPid($sessionId, $pid);
 
         if (null === $entity) {
-            throw new \RuntimeException(\sprintf('No background process found with PID %d.', $pid));
-        }
-
-        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
-            throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
+            throw new \RuntimeException(null === $sessionId ? \sprintf('No background process found with PID %d.', $pid) : \sprintf('No background process found with PID %d for this session.', $pid));
         }
 
         return $this->stopProcessEntity($entity);
-    }
-
-    /**
-     * Stop a user-accepted background process within its owning run.
-     * Foreground-supervision rows are intentionally unavailable by PID.
-     *
-     * @throws \RuntimeException when no accepted process matches
-     */
-    public function stopBackgrounded(string $sessionId, int $pid): StopResult
-    {
-        if ($pid <= 0) {
-            throw new \RuntimeException(\sprintf('Invalid PID %d for stop.', $pid));
-        }
-
-        $entity = $this->store->fetchBackgroundedByPid($sessionId, $pid);
-        if (null === $entity) {
-            throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
-        }
-
-        return $this->stopProcessEntity($entity);
-    }
-
-    /**
-     * Sweep only finished private foreground-supervision records after one
-     * scheduler interval. The grace period lets BashTool read its exact record
-     * output before this recurring maintenance can remove the sidecars.
-     *
-     * @return int Number of rows and exact sidecar sets removed
-     */
-    public function cleanupFinishedProvisional(): int
-    {
-        $this->refreshAllUnfinished();
-        $cutoff = Clock::get()->now()->modify('-'.self::PROVISIONAL_CLEANUP_INTERVAL_SECONDS.' seconds');
-        $cleaned = 0;
-        $failed = 0;
-
-        foreach ($this->store->fetchFinishedProvisionalBefore($cutoff) as $entity) {
-            if (!$this->lifecycle->deleteFinishedProvisionalRecordFiles($entity->logPath, $entity->statusPath)) {
-                ++$failed;
-                continue;
-            }
-
-            if ($this->store->deleteById($entity->id)) {
-                ++$cleaned;
-            } else {
-                ++$failed;
-            }
-        }
-
-        $this->logger->info('background_process.provisional_cleanup_completed', [
-            'component' => 'tool.background_process',
-            'event_type' => 'background_process.provisional_cleanup_completed',
-            'cleaned_count' => $cleaned,
-            'failed_count' => $failed,
-        ]);
-
-        return $cleaned;
     }
 
     /**

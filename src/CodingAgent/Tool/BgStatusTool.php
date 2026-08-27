@@ -92,8 +92,7 @@ final class BgStatusTool implements HatfieldToolProviderInterface
      */
     private function handleList(): string
     {
-        $sessionId = $this->contextAccessor->current()?->runId() ?? '';
-        $entities = $this->manager->listBackgrounded($sessionId);
+        $entities = $this->manager->list($this->contextAccessor->requireCurrent()->runId());
 
         if ([] === $entities) {
             return Toon::encode([
@@ -140,8 +139,7 @@ final class BgStatusTool implements HatfieldToolProviderInterface
         $pid = $arguments->pid;
 
         try {
-            $sessionId = $this->contextAccessor->current()?->runId() ?? '';
-            $result = $this->manager->readBackgroundedLogTail($sessionId, $pid, $this->config->logTailChars);
+            $result = $this->manager->readLogTail($this->contextAccessor->requireCurrent()->runId(), $pid, $this->config->logTailChars);
         } catch (\RuntimeException $e) {
             throw new ToolCallException($e->getMessage(), retryable: false, hint: 'The process may have already finished or belongs to a different session. Run bg_status list to see available processes for this session.');
         }
@@ -177,8 +175,7 @@ final class BgStatusTool implements HatfieldToolProviderInterface
         $pid = $arguments->pid;
 
         try {
-            $sessionId = $this->contextAccessor->current()?->runId() ?? '';
-            $result = $this->manager->stopBackgrounded($sessionId, $pid);
+            $result = $this->manager->stop($pid, $this->contextAccessor->requireCurrent()->runId());
         } catch (\RuntimeException $e) {
             throw new ToolCallException($e->getMessage(), retryable: false, hint: 'The process may have already finished. Run bg_status list to see current state.');
         }

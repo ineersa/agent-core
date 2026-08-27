@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
+use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
@@ -924,10 +925,10 @@ final class BashToolTest extends IsolatedKernelTestCase
             return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "session test"'));
         });
 
-        $entities = $this->manager->list(self::TEST_SESSION);
+        $entities = $this->recordsForSession(self::TEST_SESSION);
         $this->assertCount(1, $entities);
 
-        $otherEntities = $this->manager->list('other-session');
+        $otherEntities = $this->recordsForSession('other-session');
         $this->assertCount(0, $otherEntities);
     }
 
@@ -999,7 +1000,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringContainsString(self::DATETIME_MARKER, $result);
         $this->assertStringNotContainsString(self::COMPOSER_MARKER, $result);
 
-        $entities = $this->manager->list(self::TEST_SESSION);
+        $entities = $this->recordsForSession(self::TEST_SESSION);
         $this->assertGreaterThanOrEqual(2, \count($entities));
 
         $byId = [];
@@ -1125,6 +1126,15 @@ final class BashToolTest extends IsolatedKernelTestCase
         ));
 
         return new SubagentRunMetadataReader($store, AttributeSerializerValidatorTestFactory::denormalizer());
+    }
+
+    /**
+     * @return list<\Ineersa\CodingAgent\Entity\BackgroundProcess>
+     */
+    private function recordsForSession(string $sessionId): array
+    {
+        return static::getContainer()->get(BackgroundProcessRepository::class)
+            ->findBy(['sessionId' => $sessionId], ['id' => 'DESC']);
     }
 
     private function countProcessesHoldingMarker(string $markerPath): int

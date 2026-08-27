@@ -76,15 +76,17 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
     /* ── list() ── */
 
-    public function testListReturnsRunningAndFinished(): void
+    public function testListReturnsAcceptedRunningAndFinished(): void
     {
         $this->createManager();
         $running = $this->manager->start('sleep 3', self::TEST_SESSION);
         $finished = $this->manager->start('echo "done"', self::TEST_SESSION);
+        $this->manager->markBackgroundedForRecord($running->id, self::TEST_SESSION);
+        $this->manager->markBackgroundedForRecord($finished->id, self::TEST_SESSION);
 
         $this->waitUntilFinished($finished->pid);
 
-        $entities = $this->manager->list();
+        $entities = $this->manager->list(self::TEST_SESSION);
 
         $this->assertCount(2, $entities);
 
@@ -100,7 +102,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->manager->shutdownCleanup();
     }
 
-    public function testListBackgroundedExcludesPrivateForegroundRows(): void
+    public function testListExcludesPrivateForegroundRows(): void
     {
         $this->createManager();
         $private = $this->manager->start('echo "private"', self::TEST_SESSION);
@@ -109,7 +111,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->manager->markBackgroundedForRecord($accepted->id, self::TEST_SESSION);
         $this->manager->markBackgroundedForRecord($foreign->id, 'other-session');
 
-        $entities = $this->manager->listBackgrounded(self::TEST_SESSION);
+        $entities = $this->manager->list(self::TEST_SESSION);
 
         $this->assertCount(1, $entities);
         $this->assertSame($accepted->id, $entities[0]->id);
@@ -126,7 +128,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->manager->markBackgroundedForRecord($foreign->id, 'other-session');
 
         try {
-            $this->manager->readBackgroundedLogTail(self::TEST_SESSION, $private->pid);
+            $this->manager->readLogTail(self::TEST_SESSION, $private->pid);
             $this->fail('Private foreground supervision must be invisible to PID log lookup.');
         } catch (\RuntimeException $e) {
             $this->assertSame(\sprintf('No background process found with PID %d for this session.', $private->pid), $e->getMessage());
@@ -134,7 +136,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage(\sprintf('No background process found with PID %d for this session.', $foreign->pid));
-        $this->manager->stopBackgrounded(self::TEST_SESSION, $foreign->pid);
+        $this->manager->stop($foreign->pid, self::TEST_SESSION);
     }
 
     /* ── readLogTail() ── */
@@ -146,7 +148,8 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         $this->waitUntilLogContains($result->logPath, 'line2');
 
-        $logResult = $this->manager->readLogTail($result->pid);
+        $this->manager->markBackgroundedForRecord($result->id, self::TEST_SESSION);
+        $logResult = $this->manager->readLogTail(self::TEST_SESSION, $result->pid);
 
         $this->assertInstanceOf(LogTailResult::class, $logResult);
         $this->assertSame($result->pid, $logResult->pid);
@@ -164,7 +167,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('No background process found');
 
-        $this->manager->readLogTail(999999);
+        $this->manager->readLogTail(self::TEST_SESSION, 999999);
     }
 
     /* ── stop() ── */
@@ -255,7 +258,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertSame(1, $count);
 
         $this->assertFileDoesNotExist($result->logPath);
-        $this->assertCount(0, $this->manager->list());
+        $this->assertNull($this->manager->findByRecordId($result->id));
     }
 
     /* ── shutdownCleanup() ── */
@@ -263,15 +266,15 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
     public function testShutdownCleanupStopsAllRunning(): void
     {
         $this->createManager(stopGraceSeconds: 0);
-        $this->manager->start('sleep 3', self::TEST_SESSION);
+        $result = $this->manager->start('sleep 3', self::TEST_SESSION);
 
         $count = $this->manager->shutdownCleanup();
 
         $this->assertSame(1, $count);
 
-        foreach ($this->manager->list() as $p) {
-            $this->assertNotNull($p->finishedAt);
-        }
+        $entity = $this->manager->findByRecordId($result->id);
+        $this->assertNotNull($entity);
+        $this->assertNotNull($entity->finishedAt);
     }
 
     public function testShutdownCleanupWithNoRunningProcesses(): void
@@ -290,14 +293,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $otherManager = $this->createOtherManager(stopGraceSeconds: 0);
         $this->assertSame(0, $otherManager->shutdownCleanup());
 
-        $entities = $this->manager->list();
-        $entity = null;
-        foreach ($entities as $candidate) {
-            if ($candidate->pid === $pid) {
-                $entity = $candidate;
-                break;
-            }
-        }
+        $entity = $this->manager->findByRecordId($result->id);
         $this->assertNotNull($entity);
         $this->assertNull($entity->finishedAt);
 
@@ -311,6 +307,8 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->createManager();
         $a = $this->manager->start('echo "session-a"', 'session-A');
         $b = $this->manager->start('echo "session-b"', 'session-B');
+        $this->manager->markBackgroundedForRecord($a->id, 'session-A');
+        $this->manager->markBackgroundedForRecord($b->id, 'session-B');
         // Session scoping is on persisted rows; wait only for both rows to finish so list() is stable.
         $this->waitUntilFinished($a->pid);
         $this->waitUntilFinished($b->pid);
@@ -318,8 +316,6 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $sessionA = $this->manager->list('session-A');
         $this->assertCount(1, $sessionA);
         $this->assertSame('session-A', $sessionA[0]->sessionId);
-
-        $this->assertCount(2, $this->manager->list());
 
         $this->manager->shutdownCleanup();
     }
@@ -423,10 +419,9 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
     {
         $deadline = microtime(true) + $timeoutSeconds;
         while (microtime(true) < $deadline) {
-            foreach ($this->manager->list() as $entity) {
-                if ($entity->pid === $pid && null !== $entity->finishedAt) {
-                    return;
-                }
+            $entity = $this->manager->find($pid);
+            if (null !== $entity && null !== $entity->finishedAt) {
+                return;
             }
             usleep(10_000);
         }

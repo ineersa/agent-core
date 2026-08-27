@@ -25,6 +25,7 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
     private string $tmpDir;
     private ProcessStore $store;
     private BackgroundProcessManager $manager;
+    private ProcessLifecycle $lifecycle;
     private BackgroundProcessProvisionalCleanupTask $task;
     private TestLogger $logger;
     private \DateTimeImmutable $now;
@@ -42,13 +43,14 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
         $config = new BackgroundProcessConfig(storageDir: $this->tmpDir);
         $this->store = static::getContainer()->get(ProcessStore::class);
         $this->logger = new TestLogger();
+        $this->lifecycle = new ProcessLifecycle($config, $this->logger);
         $this->manager = new BackgroundProcessManager(
             $this->store,
-            new ProcessLifecycle($config, $this->logger),
+            $this->lifecycle,
             $config,
             $this->logger,
         );
-        $this->task = new BackgroundProcessProvisionalCleanupTask($this->manager);
+        $this->task = new BackgroundProcessProvisionalCleanupTask($this->manager, $this->store, $this->lifecycle, $this->logger);
     }
 
     protected function tearDown(): void
@@ -67,7 +69,7 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
 
         $this->assertCount(1, $attributes);
         $task = $attributes[0]->newInstance();
-        $this->assertSame(BackgroundProcessManager::PROVISIONAL_CLEANUP_INTERVAL_SECONDS, $task->frequency);
+        $this->assertSame(BackgroundProcessProvisionalCleanupTask::INTERVAL_SECONDS, $task->frequency);
         $this->assertSame('default', $task->schedule);
     }
 
@@ -204,13 +206,14 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
     private function rebuildTask(string $storageDir): void
     {
         $config = new BackgroundProcessConfig(storageDir: $storageDir);
+        $this->lifecycle = new ProcessLifecycle($config, $this->logger);
         $this->manager = new BackgroundProcessManager(
             $this->store,
-            new ProcessLifecycle($config, $this->logger),
+            $this->lifecycle,
             $config,
             $this->logger,
         );
-        $this->task = new BackgroundProcessProvisionalCleanupTask($this->manager);
+        $this->task = new BackgroundProcessProvisionalCleanupTask($this->manager, $this->store, $this->lifecycle, $this->logger);
     }
 
     private function createFinishedRecord(string $logPath, string $statusPath, \DateTimeImmutable $finishedAt): int

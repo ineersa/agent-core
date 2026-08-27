@@ -183,23 +183,6 @@ final class ProcessStore
     }
 
     /**
-     * Fetch all entities, optionally filtered by session.
-     *
-     * @return BackgroundProcess[]
-     */
-    public function fetchAll(?string $sessionId = null): array
-    {
-        $criteria = [];
-        if (null !== $sessionId) {
-            $criteria['sessionId'] = $sessionId;
-        }
-
-        /* @var BackgroundProcess[] */
-        return $this->repository
-            ->findBy($criteria, ['id' => 'DESC']);
-    }
-
-    /**
      * Fetch all unfinished entities, optionally scoped by session.
      *
      * @return BackgroundProcess[]
