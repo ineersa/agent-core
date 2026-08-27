@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Messenger;
 
 use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
-use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -23,8 +22,8 @@ use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
  * RunCommit in the single run_control consumer process. This subscriber is an
  * intentional exception to that path: it runs only after the processor/handler
  * for a run_control message has permanently failed (willRetry() is false) and
- * must append a sequenced agent_end then CAS a terminal Failed RunState so the
- * controller/TUI does not hang with no durable terminal event.
+ * must append a sequenced agent_end then remember a terminal Failed RunState
+ * so the controller/TUI does not hang with no durable terminal event.
  *
  * Receiver filtering (HANDLED_RECEIVERS = run_control) keeps the write inside
  * the same authorized run_control consumer process; execution-bus failures on
@@ -32,10 +31,9 @@ use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
  * run_control instead of mutating canonical state directly.
  *
  * Limitation: this bypass does not invoke RunCommit post-commit hooks (for
- * example tool-batch snapshot cleanup). With sequenced append-before-CAS, a CAS
- * conflict after agent_end is persisted can leave state.json stale while the
- * event log contains the terminal agent_end; we never overwrite an already
- * terminal RunState when CAS fails.
+ * example tool-batch snapshot cleanup). Canonical append happens before the
+ * active context and operational projection are updated; a projection failure
+ * leaves the durable agent_end authoritative for replay.
  *
  * This subscriber only acts when willRetry() returns false (final rejection),
  * preventing partial/intermediate retries from writing spurious terminal states.
@@ -46,7 +44,7 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
     private const array HANDLED_RECEIVERS = ['run_control'];
 
     public function __construct(
-        private RunStoreInterface $runStore,
+        private ActiveRunContextInterface $activeRunContext,
         private EventStoreInterface $eventStore,
         private LoggerInterface $logger,
     ) {
@@ -92,14 +90,17 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
         ]);
 
         try {
-            // Read current state so we can CAS with the correct expected version.
-            $current = $this->runStore->get($runId);
+            if ($exception instanceof RunStateDuplicateSequenceReplayException) {
+                $this->logger->warning('agent_loop.worker_failed_skipped_replay_corruption', [
+                    'run_id' => $runId,
+                    'component' => 'messenger.worker',
+                    'event_type' => 'worker_failed.skipped_replay_corruption',
+                ]);
 
-            if (null === $current) {
-                // No state was ever committed — create a minimal queued
-                // placeholder so we have a base version for the CAS.
-                $current = RunState::queued($runId);
+                return;
             }
+
+            $current = $this->activeRunContext->stateFor($runId);
 
             // If the run is already in a terminal state, don't overwrite it.
             if (RunStatus::Failed === $current->status
@@ -111,16 +112,6 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                     'current_status' => $current->status->value,
                     'component' => 'messenger.worker',
                     'event_type' => 'worker_failed.skipped_terminal',
-                ]);
-
-                return;
-            }
-
-            if ($exception instanceof RunStateDuplicateSequenceReplayException) {
-                $this->logger->warning('agent_loop.worker_failed_skipped_replay_corruption', [
-                    'run_id' => $runId,
-                    'component' => 'messenger.worker',
-                    'event_type' => 'worker_failed.skipped_replay_corruption',
                 ]);
 
                 return;
@@ -157,22 +148,7 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 'retryAttempts' => 0,
             ]);
 
-            $committed = $this->runStore->compareAndSwap($failedState, $current->version);
-
-            if (!$committed) {
-                $after = $this->runStore->get($runId);
-                $this->logger->warning('agent_loop.worker_failed_cas_conflict', [
-                    'run_id' => $runId,
-                    'session_id' => $runId,
-                    'component' => 'messenger.worker',
-                    'event_type' => 'worker_failed.cas_conflict',
-                    'expected_version' => $current->version,
-                    'persisted_seq' => $persisted->seq,
-                    'store_status_after' => $after?->status->value,
-                ]);
-
-                return;
-            }
+            $this->activeRunContext->remember($failedState);
 
             $this->logger->info('agent_loop.worker_failed_written', [
                 'run_id' => $runId,
