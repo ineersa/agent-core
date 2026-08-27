@@ -387,20 +387,38 @@ final class ProcessLifecycle
      */
     public function deleteFinishedProvisionalRecordFiles(string $logPath, string $statusPath): bool
     {
-        $storageDir = realpath($this->config->storageDir);
-        if (false === $storageDir || !str_ends_with($logPath, '.log')) {
+        if (!str_ends_with($logPath, '.log')) {
             return false;
         }
 
+        $directory = \dirname($logPath);
         $prefix = substr(basename($logPath), 0, -4);
-        if ('' === $prefix
-            || \dirname($logPath) !== $storageDir
-            || $statusPath !== $storageDir.'/'.$prefix.'.status'
-        ) {
+        $expectedStatusPath = $directory.'/'.$prefix.'.status';
+        $expectedPidPath = $directory.'/'.$prefix.'.pid';
+        if ('' === $prefix || $statusPath !== $expectedStatusPath) {
             return false;
         }
 
-        foreach ([$logPath, $statusPath, $storageDir.'/'.$prefix.'.pid'] as $path) {
+        $configuredStorageDir = $this->config->storageDir;
+        if (is_dir($configuredStorageDir)) {
+            $canonicalStorageDir = realpath($configuredStorageDir);
+            $canonicalRecordDirectory = realpath($directory);
+            if (false === $canonicalStorageDir || false === $canonicalRecordDirectory || $canonicalRecordDirectory !== $canonicalStorageDir) {
+                return false;
+            }
+        } elseif ($directory !== $configuredStorageDir) {
+            return false;
+        } else {
+            foreach ([$logPath, $statusPath, $expectedPidPath] as $path) {
+                if (is_file($path) || is_link($path)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        foreach ([$logPath, $statusPath, $expectedPidPath] as $path) {
             if ((is_file($path) || is_link($path)) && !@unlink($path)) {
                 return false;
             }

@@ -72,6 +72,8 @@ use Symfony\Component\Clock\Clock;
  */
 final class BackgroundProcessManager
 {
+    public const int PROVISIONAL_CLEANUP_INTERVAL_SECONDS = 300;
+
     private bool $shutdownRegistered = false;
 
     /** @var int[] PIDs launched via start() by THIS instance, used for instance-scoped shutdown cleanup. */
@@ -582,7 +584,7 @@ final class BackgroundProcessManager
     public function cleanupFinishedProvisional(): int
     {
         $this->refreshAllUnfinished();
-        $cutoff = Clock::get()->now()->modify('-5 minutes');
+        $cutoff = Clock::get()->now()->modify('-'.self::PROVISIONAL_CLEANUP_INTERVAL_SECONDS.' seconds');
         $cleaned = 0;
         $failed = 0;
 

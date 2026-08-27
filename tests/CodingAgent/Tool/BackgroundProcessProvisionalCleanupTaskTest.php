@@ -67,7 +67,7 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
 
         $this->assertCount(1, $attributes);
         $task = $attributes[0]->newInstance();
-        $this->assertSame(300, $task->frequency);
+        $this->assertSame(BackgroundProcessManager::PROVISIONAL_CLEANUP_INTERVAL_SECONDS, $task->frequency);
         $this->assertSame('default', $task->schedule);
     }
 
@@ -88,6 +88,49 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
         $this->assertNotNull($this->store->fetchById($accepted['id']));
         $this->assertFileExists($accepted['log']);
         $this->assertFileExists($neighbor);
+    }
+
+    #[Test]
+    public function handlerCleansSymlinkedStorageDirectoryAndLeavesOutsideFileUntouched(): void
+    {
+        $targetDir = $this->tmpDir.'/storage-target';
+        mkdir($targetDir);
+        $symlinkedStorageDir = $this->tmpDir.'/storage-link';
+        symlink($targetDir, $symlinkedStorageDir);
+        $this->rebuildTask($symlinkedStorageDir);
+
+        $paths = $this->createSidecars('symlinked', $targetDir);
+        $old = $this->createFinishedRecord($paths['log'], $paths['status'], $this->now->modify('-6 minutes'));
+        $outside = $this->tmpDir.'/outside.log';
+        file_put_contents($outside, 'unrelated');
+
+        try {
+            ($this->task)();
+
+            $this->assertNull($this->store->fetchById($old));
+            $this->assertFileDoesNotExist($paths['log']);
+            $this->assertFileDoesNotExist($paths['status']);
+            $this->assertFileDoesNotExist($paths['pid']);
+            $this->assertFileExists($outside);
+        } finally {
+            unlink($symlinkedStorageDir);
+        }
+    }
+
+    #[Test]
+    public function handlerDeletesOldProvisionalRowWhenConfiguredStorageDirectoryIsAlreadyMissing(): void
+    {
+        $missingStorageDir = $this->tmpDir.'/missing-storage';
+        $this->rebuildTask($missingStorageDir);
+        $logPath = $missingStorageDir.'/vanished.log';
+        $old = $this->createFinishedRecord($logPath, $missingStorageDir.'/vanished.status', $this->now->modify('-6 minutes'));
+        $outside = $this->tmpDir.'/outside.log';
+        file_put_contents($outside, 'unrelated');
+
+        ($this->task)();
+
+        $this->assertNull($this->store->fetchById($old));
+        $this->assertFileExists($outside);
     }
 
     #[Test]
@@ -158,9 +201,34 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
         return ['id' => $id] + $paths;
     }
 
-    /**
-     * @return array{id: int, log: string, status: string, pid: string}
-     */
+    private function rebuildTask(string $storageDir): void
+    {
+        $config = new BackgroundProcessConfig(storageDir: $storageDir);
+        $this->manager = new BackgroundProcessManager(
+            $this->store,
+            new ProcessLifecycle($config, $this->logger),
+            $config,
+            $this->logger,
+        );
+        $this->task = new BackgroundProcessProvisionalCleanupTask($this->manager);
+    }
+
+    private function createFinishedRecord(string $logPath, string $statusPath, \DateTimeImmutable $finishedAt): int
+    {
+        $id = $this->store->insertRecord([
+            'pid' => 100000 + hexdec(substr(hash('crc32b', $logPath), 0, 4)),
+            'pgid' => null,
+            'session_id' => 'run-fixture',
+            'command' => 'fixture',
+            'log_path' => $logPath,
+            'status_path' => $statusPath,
+            'started_at' => $finishedAt->modify('-1 minute'),
+        ]);
+        $this->store->markFinished($id, 0, $finishedAt);
+
+        return $id;
+    }
+
     private function createRunningRecord(string $prefix): array
     {
         $paths = $this->createSidecars($prefix, includeStatus: false);
@@ -180,9 +248,9 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
     /**
      * @return array{log: string, status: string, pid: string}
      */
-    private function createSidecars(string $prefix, bool $includeStatus = true): array
+    private function createSidecars(string $prefix, ?string $directory = null, bool $includeStatus = true): array
     {
-        $base = $this->tmpDir.'/'.$prefix;
+        $base = ($directory ?? $this->tmpDir).'/'.$prefix;
         file_put_contents($base.'.log', 'output');
         if ($includeStatus) {
             file_put_contents($base.'.status', '0');

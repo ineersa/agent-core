@@ -14,7 +14,7 @@ use Symfony\Component\Scheduler\Attribute\AsPeriodicTask;
  * BashTool can read its output, then this task removes only their exact
  * row-owned sidecars and database rows. Accepted background work is excluded.
  */
-#[AsPeriodicTask(frequency: 300, schedule: 'default')]
+#[AsPeriodicTask(frequency: BackgroundProcessManager::PROVISIONAL_CLEANUP_INTERVAL_SECONDS, schedule: 'default')]
 final class BackgroundProcessProvisionalCleanupTask
 {
     public function __construct(private readonly BackgroundProcessManager $manager)
