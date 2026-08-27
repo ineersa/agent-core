@@ -87,7 +87,6 @@ extensions:
     settings:
         task_workflow:
             task_root: /home/ineersa/projects/agent-core-tasks
-            castor_check_timeout_seconds: 480
         castor_llm_mode:
             enabled: true
         observational_memory:

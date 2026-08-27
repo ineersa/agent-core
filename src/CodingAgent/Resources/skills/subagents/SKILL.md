@@ -36,7 +36,9 @@ After a run, copy **`Artifact: agent_<hex>`** from the tool result. Single-mode 
 
 Launch a new child with `subagent` only when the work has no existing child context. If a child has already produced progress or ended with an incomplete handoff, use `agent_resume` with its artifact/run identifier and a focused continuation task. Do not duplicate an existing child by calling `subagent` again.
 
-`agent_resume` continues an existing parent-scoped child; it is not a fresh launch mechanism. Children cannot resume themselves or launch nested children. Fork children are not resumable.
+`agent_resume` continues an existing child only in the same parent session; it is not a fresh launch mechanism. Children cannot resume themselves or launch nested children. Fork children are not resumable: each new fork requires an explicit ownership handoff.
+
+For tracked work, record each reviewer/subagent launch or return through `update_task` work log with role, artifact/run ID, target revision, and scope. `forkRun` metadata is for the implementation fork ID. Role-specific handoff formats remain authoritative; task metadata retains only identity/revision/scope plus outcome, validation, and unresolved blockers.
 
 ## Where agents live
 

@@ -398,6 +398,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         return new HatfieldSessionStore(
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $projectDir),
             entityManager: static::getContainer()->get('doctrine')->getManager(),
+            dispatcher: new EventDispatcher(),
         );
     }
 

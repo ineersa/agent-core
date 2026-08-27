@@ -11,7 +11,6 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ContextualExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
 use Ineersa\HatfieldExt\TaskWorkflow\Pr\PrManager;
-use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowSettings;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardLock;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardStore;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskInfo;
@@ -21,13 +20,16 @@ use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorktreeManager;
 
 final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerInterface
 {
+    private const int CASTOR_CHECK_WALL_SECONDS = 210;
+    private const int CASTOR_CHECK_OUTER_GUARD_SECONDS = 240;
+    private const int CASTOR_CHECK_HOST_TIMEOUT_SECONDS = 285;
+
     public function __construct(
         private TaskBoardStore $store,
         private GitExecutor $git,
         private WorktreeManager $worktrees,
         private PrManager $pr,
         private ExecInterface $exec,
-        private TaskWorkflowSettings $config,
         private string $codeRoot,
     ) {
     }
@@ -252,18 +254,17 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
             return $interrupt;
         }
 
-        $checkTimeout = $this->resolveCastorCheckTimeout($arguments);
-        $notes[] = 'Running deterministic castor check in worktree (timeout '.$checkTimeout.'s)...';
+        $notes[] = 'Running deterministic castor check in worktree (Castor wall '.self::CASTOR_CHECK_WALL_SECONDS.'s; outer cleanup guard '.self::CASTOR_CHECK_OUTER_GUARD_SECONDS.'s)...';
 
         $checkStart = microtime(true);
-        // +45s outer Process budget: covers timeout(1) startup plus --kill-after=30s
-        // grace after the castor check wall, so the host can stop a stuck tree cleanly.
+        // timeout(1) allows cleanup grace beyond Castor's fixed 210s wall; the host
+        // budget exceeds its maximum 270s lifetime, including --kill-after=30s.
         $checkResult = $this->exec->exec(
             'timeout',
-            ['--kill-after=30s', (string) $checkTimeout.'s', 'env', 'LLM_MODE=true', 'castor', 'check'],
+            ['--kill-after=30s', self::CASTOR_CHECK_OUTER_GUARD_SECONDS.'s', 'env', 'LLM_MODE=true', 'castor', 'check'],
             new ExecOptionsDTO(
                 cwd: $worktree,
-                timeout: $control->remainingTimeoutSeconds((float) ($checkTimeout + 45)),
+                timeout: $control->remainingTimeoutSeconds((float) self::CASTOR_CHECK_HOST_TIMEOUT_SECONDS),
                 env: ['LLM_MODE' => 'true'],
                 cancellationToken: $control->cancellationToken,
             ),
@@ -276,13 +277,9 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
 
         if (0 !== $checkResult->exitCode) {
             $reason = $checkKilled
-                ? 'timeout after '.$checkTimeout.'s'
+                ? 'outer cleanup guard after Castor\'s '.self::CASTOR_CHECK_WALL_SECONDS.'s wall ('.self::CASTOR_CHECK_OUTER_GUARD_SECONDS.'s)'
                 : 'exit code '.$checkResult->exitCode;
-            $detail = trim('' !== $checkResult->stderr ? $checkResult->stderr : $checkResult->stdout);
-            if ('' === $detail) {
-                $detail = '(no output)';
-            }
-            throw new \RuntimeException('Castor check FAILED ('.$reason.') in the worktree. Fix the failures, re-validate with focused Castor commands, then move to CODE-REVIEW again.'."\n".'Worktree: '.$worktree."\n".'Output:'."\n".substr($detail, 0, 2000));
+            throw new \RuntimeException($this->formatCastorCheckFailure($reason, $worktree, $checkResult));
         }
 
         $notes[] = 'castor check passed ('.number_format($checkDuration, 1).'s).';
@@ -341,6 +338,35 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         }
 
         return TaskMarkdown::updateField($text, 'Status', TaskStatusEnum::CODE_REVIEW->value);
+    }
+
+    private function formatCastorCheckFailure(string $reason, string $worktree, ExecResultDTO $result): string
+    {
+        $output = trim($result->stdout."\n".$result->stderr);
+        $qaRun = preg_match('/QA run:\s*(qa-[A-Za-z0-9_-]+)/', $output, $matches) ? $matches[1] : null;
+        $lane = preg_match('/^\s*-\s*([A-Za-z0-9][A-Za-z0-9:_-]*):\s*exit code\s+\d+\s*$/mi', $output, $matches) ? $matches[1] : null;
+        $reportDir = null === $qaRun ? null : 'var/reports/'.$qaRun;
+        $log = null === $lane || null === $reportDir ? null : $reportDir.'/check-'.$lane.'.log';
+        $logPath = null === $log ? null : $worktree.'/'.$log;
+        $snippet = $output;
+        if (null !== $logPath && is_file($logPath)) {
+            $contents = file_get_contents($logPath);
+            if (false !== $contents && '' !== trim($contents)) {
+                $snippet = trim($contents);
+            }
+        }
+        if ('' === $snippet) {
+            $snippet = '(no output)';
+        }
+        $message = 'Castor check FAILED ('.$reason.') in the worktree. Fix the failures, re-validate with focused Castor commands, then move to CODE-REVIEW again.'
+            ."\n".'Worktree: '.$worktree;
+        if (null !== $lane && null !== $log && null !== $logPath && is_file($logPath)) {
+            $message .= "\n".'Failing lane: '.$lane."\n".'Log: '.$log;
+        } elseif (null !== $reportDir) {
+            $message .= "\n".'QA reports: '.$reportDir;
+        }
+
+        return $message."\n".'First failure:'."\n".substr($snippet, 0, 1200);
     }
 
     /**
@@ -414,26 +440,6 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         array_push($notes, ...$mergeNotes);
 
         return $text;
-    }
-
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    private function resolveCastorCheckTimeout(array $arguments): int
-    {
-        if (isset($arguments['castorCheckTimeoutSeconds']) && is_numeric($arguments['castorCheckTimeoutSeconds'])) {
-            $v = (int) $arguments['castorCheckTimeoutSeconds'];
-            if ($v >= 60 && $v <= 1200) {
-                return $v;
-            }
-        }
-
-        $v = $this->config->castorCheckTimeoutSeconds;
-        if ($v >= 60 && $v <= 1200) {
-            return $v;
-        }
-
-        return 480;
     }
 
     /**

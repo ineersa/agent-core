@@ -199,6 +199,7 @@ final class ImagePasteInputVirtualTest extends TestCase
                     cwd: $this->tempDir,
                 ),
                 $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+                new \Symfony\Component\EventDispatcher\EventDispatcher(),
             ),
             new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
                 new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
@@ -210,6 +211,7 @@ final class ImagePasteInputVirtualTest extends TestCase
                         cwd: $this->tempDir,
                     ),
                     $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+                    new \Symfony\Component\EventDispatcher\EventDispatcher(),
                 ),
                 new \Ineersa\CodingAgent\Config\AppConfig(
                     tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),

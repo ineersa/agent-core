@@ -1477,7 +1477,7 @@ final class ToolCallResultHandlerTest extends TestCase
             logging: new LoggingConfig(),
             cwd: $this->toolBatchProjectDir,
         );
-        $hatfield = new HatfieldSessionStore($appConfig, $entityManager);
+        $hatfield = new HatfieldSessionStore($appConfig, $entityManager, new \Symfony\Component\EventDispatcher\EventDispatcher());
 
         [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
 

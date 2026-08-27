@@ -619,7 +619,6 @@ tools:
         default_cap: 20000
         doc_cap: 50000
         retention: 86400
-        session_prefix: null
     # Future concrete-tool sections should be added by the tasks that implement them.
     # bash:
     #     background_prompt_threshold_seconds: 15

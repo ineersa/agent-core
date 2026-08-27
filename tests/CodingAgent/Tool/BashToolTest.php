@@ -40,6 +40,8 @@ use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Validator\ConstraintValidatorFactory;
 use Symfony\Component\Validator\ValidatorBuilder;
 
@@ -98,7 +100,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->toolRuntime = new ToolRuntime($this->contextAccessor);
-        $this->outputCap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/output-cap'));
+        $this->outputCap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/output-cap'));
         $this->logger = new TestLogger();
     }
 
@@ -727,7 +729,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             defaultCap: 10,
             docCap: 10,
         );
-        $this->outputCap = new OutputCap($tinyCap);
+        $this->outputCap = $this->outputCap($tinyCap);
         $this->createManager();
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
@@ -1232,6 +1234,11 @@ final class BashToolTest extends IsolatedKernelTestCase
                 }
             }
         }
+    }
+
+    private function outputCap(OutputCapConfig $config): OutputCap
+    {
+        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
     }
 }
 

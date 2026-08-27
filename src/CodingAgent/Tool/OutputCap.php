@@ -5,40 +5,33 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\CodingAgent\Config\OutputCapConfig;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\Lock\LockFactory;
 
 use function Symfony\Component\String\u;
 
 /**
  * Reusable output capping and persistence for text-producing tools.
  *
- * Applies a configurable character limit to tool output. Oversized text is
- * persisted to disk under a configurable storage directory and replaced with
- * a model-facing notice containing the saved path and inspection hints.
- *
- * Settings (defaults, storage path, caps, retention) hydrate from Hatfield
- * config via {@see OutputCapConfig} which is injected through DI.
- *
- * Also owns path/category classification and read-specific notice construction
- * shared by {@see OutputCapToolResultProcessor} and {@see OutputCapLlmTransformHook}.
- *
- * @see .pi/plans/toolbox-design-plan.md § "Output capping (OutputCap)"
+ * Oversized output is ephemeral runtime material. It is persisted only below
+ * the explicit owning run's hashed scope, never in canonical session history.
  */
 final class OutputCap
 {
-    /**
-     * File extensions treated as "doc-like" (higher cap).
-     */
+    /** File extensions whose dense, document-like output receives the higher cap. */
     private const DOC_EXTENSIONS = ['md', 'txt', 'toon'];
 
     /**
-     * Conventional tool argument keys used to determine path-specific caps.
+     * Conventional tool argument keys that identify a filesystem path for cap selection.
+     * The first non-empty string wins because tools may expose more than one alias.
      *
      * @var list<string>
      */
     private const array PATH_ARGUMENT_KEYS = ['path', 'file_path', 'file'];
 
     /**
-     * Tools whose successful result is a dense document-style report/handoff.
+     * Successful results from these tools are handoff/report documents even without a
+     * filesystem path, so they use a synthetic doc-like path for cap selection only.
      *
      * @var list<string>
      */
@@ -46,41 +39,37 @@ final class OutputCap
 
     private bool $cleanedUp = false;
 
-    /**
-     * @param OutputCapConfig $config Resolved cap settings from Hatfield config.
-     *                                Production code always receives this from
-     *                                DI. Tests construct OutputCapConfig directly.
-     */
     public function __construct(
         private readonly OutputCapConfig $config,
+        private readonly LockFactory $lockFactory,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
     /**
-     * Apply output capping and return a structured result or null.
+     * Returns null when text fits the applicable cap; otherwise persists the full text
+     * in the owning run scope and returns the model-facing replacement notice.
      *
-     * When the text fits within the applicable cap it returns null.
-     * Otherwise the full text is persisted and an OutputCapResult with
-     * the exact model-facing notice text and metrics is returned.
+     * The optional path chooses the document/default cap. A run ID is required only
+     * when persistence is needed, so uncapped output remains side-effect free.
      *
-     * @param string      $text the raw tool output
-     * @param string|null $path Optional file path used to determine doc vs.
-     *                          code cap. Null paths use the default cap.
-     *
-     * @return OutputCapResult|null structured result when capped, null otherwise
+     * @return OutputCapResult|null structured result when capped
      */
-    public function capIfNeeded(string $text, ?string $path = null): ?OutputCapResult
+    public function capIfNeeded(string $text, ?string $runId, ?string $path = null): ?OutputCapResult
     {
         $this->maybeCleanup();
 
         $cap = $this->resolveCap($path);
         $charCount = u($text)->length();
-
         if ($charCount <= $cap) {
             return null;
         }
 
-        $savedPath = $this->persist($text);
+        if (null === $runId || '' === trim($runId)) {
+            throw new \LogicException('OutputCap requires a run ID when persisting oversized output.');
+        }
+
+        $savedPath = $this->persist($text, $runId);
 
         return new OutputCapResult(
             savedPath: $savedPath,
@@ -92,30 +81,17 @@ final class OutputCap
     }
 
     /**
-     * Resolve the path used for cap selection.
-     *
-     * Preference order:
-     * 1. Explicit filesystem path-like tool argument (read/write file context),
-     *    except native settings which uses dotted keys that must never be
-     *    treated as filesystem paths even when they end in .md/.txt/.toon.
-     * 2. Synthetic .md path for successful hatfield_docs read (not list).
-     * 3. Synthetic .md path for successful document-report tools
-     *    (fork/subagent/agent_resume/agent_retrieve) so resolveCap applies docCap without
-     *    changing defaultCap.
-     * 4. null → defaultCap.
-     *
-     * Error results from report/docs tools keep defaultCap (null path): failed
-     * envelopes are short status text, not handoff documents.
+     * Cap-selection precedence: a real path argument, then synthetic paths for
+     * successful document outputs, otherwise the default cap. Settings' dotted
+     * `path` key is configuration, not a filesystem path; errors intentionally stay
+     * at the default cap because they are status envelopes rather than documents.
+     * Synthetic paths affect cap selection only and are never persisted or exposed.
      *
      * @param array<string, mixed> $arguments
      */
-    public function resolveCapPath(
-        ?string $toolName,
-        array $arguments,
-        bool $isError = false,
-    ): ?string {
+    public function resolveCapPath(?string $toolName, array $arguments, bool $isError = false): ?string
+    {
         if ('settings' === $toolName) {
-            // settings.path is a dotted config key (e.g. docs.foo.md), never a file path.
             return null;
         }
 
@@ -129,41 +105,24 @@ final class OutputCap
         }
 
         if ('hatfield_docs' === $toolName) {
-            // Only successful document reads are doc-like; list stays defaultCap.
-            return ('read' === ($arguments['operation'] ?? null))
-                ? 'hatfield-docs-read.md'
-                : null;
+            return ('read' === ($arguments['operation'] ?? null)) ? 'hatfield-docs-read.md' : null;
         }
 
-        if (null !== $toolName && \in_array($toolName, self::DOCUMENT_REPORT_TOOL_NAMES, true)) {
-            // Virtual doc path: only used for extension-based docCap selection.
-            return 'handoff-report.md';
-        }
-
-        return null;
+        return null !== $toolName && \in_array($toolName, self::DOCUMENT_REPORT_TOOL_NAMES, true)
+            ? 'handoff-report.md'
+            : null;
     }
 
     /**
-     * Build a context-aware capping notice.
-     *
-     * For read tools: guides follow-up reads to the original file path with
-     * offset+limit, avoiding double line numbers from reading the saved
-     * rendered artifact.  For all other tools: uses the generic saved-output
-     * inspection notice from {@see buildCappedNotice()}.
+     * Read follow-ups target the original file, not the rendered saved artifact, so
+     * offset/limit and grep remain meaningful without duplicating rendered output.
+     * Without an original path, fall back to the generic saved-artifact guidance.
      *
      * @param array<string, mixed> $arguments
      */
     public function buildContextualNotice(?string $toolName, array $arguments, OutputCapResult $capResult): string
     {
-        if ('read' !== $toolName) {
-            return $capResult->noticeText;
-        }
-
-        $originalPath = $this->extractPathFromArguments($arguments);
-
-        // Only produce read-specific notice when we have the original path.
-        // Without it, fall back to the generic saved-artifact notice (head/grep).
-        if (null === $originalPath) {
+        if ('read' !== $toolName || null === ($originalPath = $this->extractPathFromArguments($arguments))) {
             return $capResult->noticeText;
         }
 
@@ -183,82 +142,112 @@ STRING;
     }
 
     /**
-     * Persist full text to disk unconditionally.
+     * Persist full text unconditionally in the hashed scope owned by the run.
      *
-     * Useful when a consumer (e.g. bash tool) always wants full output
-     * saved regardless of whether it exceeds the cap.
-     *
-     * Stale-file cleanup runs once on first call, matching capIfNeeded()
-     * behaviour.
-     *
-     * @param string $text the text to persist
+     * The first-use stale fallback runs before persistence, while lifecycle hooks own
+     * normal cleanup. Throws when safe scope creation or writing fails.
      *
      * @return string absolute path to the saved file
-     *
-     * @throws \RuntimeException when the storage directory cannot be
-     *                           created or the file cannot be written
      */
-    public function persist(string $text): string
+    public function persist(string $text, string $runId): string
     {
         $this->maybeCleanup();
+        $canonicalRoot = $this->ensureStorageDirectory();
+        $scopeName = $this->scopeName($runId);
+        $lock = $this->scopeLock($canonicalRoot, $scopeName);
+        $lock->acquire(true);
 
-        $this->ensureStorageDirExists();
+        try {
+            $canonicalScope = $this->ensureScopeDirectory($canonicalRoot, $scopeName);
+            $filePath = $canonicalScope.'/'.bin2hex(random_bytes(16)).'.txt';
+            if (false === @file_put_contents($filePath, $text, \LOCK_EX)) {
+                throw new \RuntimeException('Failed to write output cap file.');
+            }
 
-        $filename = $this->buildFilename();
-        $filePath = $this->config->storageDir.'/'.$filename;
-
-        $written = @file_put_contents($filePath, $text, \LOCK_EX);
-        if (false === $written) {
-            throw new \RuntimeException(\sprintf('Failed to write output cap file: %s', $filePath));
+            return $filePath;
+        } finally {
+            $lock->release();
         }
-
-        return $filePath;
     }
 
     /**
-     * Delete stored files older than the configured retention period.
-     *
-     * Called automatically on first use, but exposed publicly so session
-     * hooks or scheduled tasks can trigger it explicitly.
+     * First-use crash/orphan fallback. It only considers exact legacy files and
+     * exact hashed run scopes, never unknown root entries or symlinks.
      */
     public function cleanup(): void
     {
-        $dir = $this->config->storageDir;
-
-        if (!is_dir($dir)) {
+        $root = realpath($this->config->storageDir);
+        if (false === $root || !is_dir($root)) {
             return;
         }
 
         $cutoff = time() - $this->config->retentionSeconds;
+        try {
+            foreach (new \DirectoryIterator($root) as $entry) {
+                if ($entry->isDot() || $entry->isLink() || $entry->getMTime() >= $cutoff) {
+                    continue;
+                }
 
-        $handle = opendir($dir);
-        if (false === $handle) {
-            return;
-        }
+                $name = $entry->getFilename();
+                if ($entry->isFile() && 1 === preg_match('/^\d{8}-[a-f0-9]{16}\.txt$/', $name)) {
+                    if (!@unlink($entry->getPathname())) {
+                        $this->logCleanupFailure('stale_fallback', new \RuntimeException('Failed to remove stale legacy output cap artifact.'));
+                    }
 
-        while (($entry = readdir($handle)) !== false) {
-            if ('.' === $entry || '..' === $entry) {
-                continue;
+                    continue;
+                }
+
+                if (!$entry->isDir() || 1 !== preg_match('/^run-[a-f0-9]{64}$/', $name)) {
+                    continue;
+                }
+
+                $lock = $this->scopeLock($root, $name);
+                if (!$lock->acquire(false)) {
+                    continue;
+                }
+
+                try {
+                    $this->removeOwnedScope($entry->getPathname());
+                } catch (\Throwable $exception) {
+                    $this->logCleanupFailure('stale_fallback', $exception);
+                } finally {
+                    $lock->release();
+                }
             }
-
-            $filePath = $dir.'/'.$entry;
-
-            if (is_file($filePath) && filemtime($filePath) < $cutoff) {
-                @unlink($filePath);
-            }
+        } catch (\Throwable $exception) {
+            $this->logCleanupFailure('stale_fallback', $exception);
         }
-
-        closedir($handle);
     }
 
     /**
-     * Find a file-path value from tool call arguments.
-     *
-     * Checks known path-carrying argument keys and returns the first
-     * string value found.  Returns null when no path argument exists.
-     *
-     * @param array<string, mixed> $arguments
+     * Idempotently remove the exact scope owned by one run. Failures are
+     * intentionally contained and logged so controller shutdown can release
+     * ownership while a future start retries the artifact cleanup.
      */
+    public function cleanupRun(string $runId, string $phase): void
+    {
+        $canonicalRoot = $this->canonicalStorageRoot();
+        if (null === $canonicalRoot) {
+            $this->logCleanupCompleted($phase, 0, 0);
+
+            return;
+        }
+
+        $scopeName = $this->scopeName($runId);
+        $lock = $this->scopeLock($canonicalRoot, $scopeName);
+        $lock->acquire(true);
+
+        try {
+            [$files, $bytes] = $this->removeOwnedScope($canonicalRoot.'/'.$scopeName);
+            $this->logCleanupCompleted($phase, $files, $bytes);
+        } catch (\Throwable $exception) {
+            $this->logCleanupFailure($phase, $exception);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /** @param array<string, mixed> $arguments */
     private function extractPathFromArguments(array $arguments): ?string
     {
         foreach (self::PATH_ARGUMENT_KEYS as $key) {
@@ -272,10 +261,8 @@ STRING;
     }
 
     /**
-     * Run cleanup once on first use (capIfNeeded() or persist()).
-     *
-     * Chose first-use invocation over constructor because cleanup is an
-     * I/O operation that should not happen during container/DI wiring.
+     * Run the 24-hour stale fallback once on first use rather than during container
+     * construction, because cleanup performs filesystem I/O.
      */
     private function maybeCleanup(): void
     {
@@ -287,41 +274,120 @@ STRING;
         $this->cleanup();
     }
 
-    /**
-     * Ensure the storage directory exists with restrictive permissions.
-     *
-     * @throws \RuntimeException when the directory cannot be created
-     */
-    private function ensureStorageDirExists(): void
+    private function scopeName(string $runId): string
     {
-        if (is_dir($this->config->storageDir)) {
-            return;
-        }
-
-        if (!@mkdir($this->config->storageDir, 0750, true) && !is_dir($this->config->storageDir)) {
-            throw new \RuntimeException(\sprintf('Failed to create output cap storage directory: %s', $this->config->storageDir));
-        }
+        return 'run-'.hash('sha256', $runId);
     }
 
-    /**
-     * Build a unique filename for persisted output.
-     *
-     * Format: [session_prefix|Ymd]-[16-random-hex].txt
-     */
-    private function buildFilename(): string
+    private function scopeLock(string $canonicalRoot, string $scopeName): \Symfony\Component\Lock\LockInterface
     {
-        $prefix = $this->config->sessionPrefix ?? date('Ymd');
-
-        return $prefix.'-'.bin2hex(random_bytes(8)).'.txt';
+        return $this->lockFactory->createLock('output-cap:'.hash('sha256', $canonicalRoot.'/'.$scopeName));
     }
 
-    /**
-     * Determine which character cap applies based on file extension.
-     *
-     * Doc-like extensions (.md, .txt, .toon) use docCap.
-     * Everything else uses defaultCap.
-     * Null paths use defaultCap.
-     */
+    private function ensureStorageDirectory(): string
+    {
+        $root = $this->config->storageDir;
+        if (!is_dir($root) && !@mkdir($root, 0750, true) && !is_dir($root)) {
+            throw new \RuntimeException('Failed to create output cap storage directory.');
+        }
+
+        $canonicalRoot = $this->canonicalStorageRoot();
+        if (null === $canonicalRoot) {
+            throw new \RuntimeException('Refusing unsafe output cap storage directory.');
+        }
+
+        return $canonicalRoot;
+    }
+
+    private function canonicalStorageRoot(): ?string
+    {
+        $canonicalRoot = realpath($this->config->storageDir);
+
+        return false !== $canonicalRoot && is_dir($canonicalRoot) ? $canonicalRoot : null;
+    }
+
+    /** @return string canonical scope directory */
+    private function ensureScopeDirectory(string $canonicalRoot, string $scopeName): string
+    {
+        $scope = $canonicalRoot.'/'.$scopeName;
+        if (is_link($scope)) {
+            throw new \RuntimeException('Refusing unsafe output cap scope.');
+        }
+        if (file_exists($scope) && !is_dir($scope)) {
+            throw new \RuntimeException('Refusing non-directory output cap scope.');
+        }
+        if (!is_dir($scope) && !@mkdir($scope, 0750) && !is_dir($scope)) {
+            throw new \RuntimeException('Failed to create output cap run scope.');
+        }
+
+        $canonicalScope = realpath($scope);
+        if (false === $canonicalScope || \dirname($canonicalScope) !== $canonicalRoot) {
+            throw new \RuntimeException('Refusing output cap scope outside configured root.');
+        }
+
+        return $canonicalScope;
+    }
+
+    /** @return array{0: int, 1: int} removed file count and bytes */
+    private function removeOwnedScope(string $scope): array
+    {
+        if (!file_exists($scope) && !is_link($scope)) {
+            return [0, 0];
+        }
+        if (is_link($scope)) {
+            if (!@unlink($scope)) {
+                throw new \RuntimeException('Failed to remove output cap scope symlink.');
+            }
+
+            return [1, 0];
+        }
+        if (!is_dir($scope)) {
+            throw new \RuntimeException('Refusing non-directory output cap cleanup scope.');
+        }
+
+        $canonicalRoot = realpath($this->config->storageDir);
+        $canonicalScope = realpath($scope);
+        if (false === $canonicalRoot || false === $canonicalScope || \dirname($canonicalScope) !== $canonicalRoot) {
+            throw new \RuntimeException('Refusing unsafe output cap cleanup scope.');
+        }
+
+        $files = 0;
+        $bytes = 0;
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($canonicalScope, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+        foreach ($iterator as $entry) {
+            $path = $entry->getPathname();
+            if ($entry->isLink()) {
+                if (!@unlink($path)) {
+                    throw new \RuntimeException('Failed to remove output cap symlink occupant.');
+                }
+                ++$files;
+
+                continue;
+            }
+            if ($entry->isFile()) {
+                $bytes += $entry->getSize();
+                if (!@unlink($path)) {
+                    throw new \RuntimeException('Failed to remove output cap artifact.');
+                }
+                ++$files;
+
+                continue;
+            }
+            if ($entry->isDir() && !@rmdir($path)) {
+                throw new \RuntimeException('Failed to remove output cap nested directory.');
+            }
+        }
+
+        if (!@rmdir($canonicalScope)) {
+            throw new \RuntimeException('Failed to remove output cap scope directory.');
+        }
+
+        return [$files, $bytes];
+    }
+
     private function resolveCap(?string $path): int
     {
         if (null === $path) {
@@ -338,14 +404,31 @@ STRING;
         return $this->config->defaultCap;
     }
 
+    private function logCleanupCompleted(string $phase, int $files, int $bytes): void
+    {
+        $this->logger->info('output_cap.session_cleanup_completed', [
+            'component' => 'tool.output_cap',
+            'event_type' => 'output_cap.session_cleanup_completed',
+            'lifecycle_phase' => $phase,
+            'removed_file_count' => $files,
+            'removed_bytes' => $bytes,
+        ]);
+    }
+
+    private function logCleanupFailure(string $phase, \Throwable $exception): void
+    {
+        $this->logger->warning('output_cap.session_cleanup_failed', [
+            'component' => 'tool.output_cap',
+            'event_type' => 'output_cap.session_cleanup_failed',
+            'lifecycle_phase' => $phase,
+            'failure_kind' => 'operation_exception',
+            'exception_class' => $exception::class,
+        ]);
+    }
+
     /**
-     * Build a model-facing notice about capped output.
-     *
-     * Generic fallback for non-read tools.  Suggests inspecting the saved
-     * output artefact with read (offset+limit) for chunked inspection and
-     * grep for targeted search.  Read-tool callers should use
-     * {@see buildContextualNotice()} that points follow-up reads at the
-     * original file, not this artefact.
+     * Generic guidance for non-read tools. Read callers use buildContextualNotice()
+     * to direct follow-ups to their original file instead of this saved artifact.
      */
     private function buildCappedNotice(string $fullText, int $cap, string $savedPath): string
     {
@@ -356,8 +439,7 @@ STRING;
 
         return \sprintf(
             "[Output capped: %d chars (~%d tokens) > %d-char cap]\n".
-            "Saved full output: %s\n".
-            "\n".
+            "Saved full output: %s\n\n".
             "Next: inspect the saved output, e.g.\n".
             "- read(path: %s, offset: 1, limit: 200)\n".
             "- bash(command: \"grep -n -- 'PATTERN' %s | head -50\")\n".

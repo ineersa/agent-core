@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\OutputCap;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Uid\Uuid;
@@ -82,11 +85,40 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->assertDirectoryDoesNotExist($sessionPath);
     }
 
-    public function testDeleteSessionThrowsForMissingSession(): void
+    public function testDeleteSessionCleansParentAndChildOutputCapScopesThroughTheContainerLifecycleListener(): void
     {
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Session "999999999" not found.');
-        $this->store->deleteSession('999999999');
+        $sessionId = $this->store->createSession('delete-output-cap');
+        $childRunId = 'child-output-cap-'.$sessionId;
+        static::getContainer()->get(AgentArtifactRegistry::class)->create(
+            $sessionId,
+            'output-cap-child-'.$sessionId,
+            $childRunId,
+            'scout',
+            AgentArtifactKindEnum::Subagent,
+        );
+        $outputCap = static::getContainer()->get(OutputCap::class);
+        $parentPath = $outputCap->persist('parent output', $sessionId);
+        $childPath = $outputCap->persist('child output', $childRunId);
+
+        $this->store->deleteSession($sessionId);
+
+        $this->assertFileDoesNotExist($parentPath);
+        $this->assertFileDoesNotExist($childPath);
+    }
+
+    public function testDeleteSessionThrowsForMissingSessionWithoutCleaningForeignOutputCapScope(): void
+    {
+        $outputCap = static::getContainer()->get(OutputCap::class);
+        $foreignPath = $outputCap->persist('foreign output', 'foreign-run');
+
+        try {
+            $this->store->deleteSession('999999999');
+            $this->fail('Expected missing session deletion to throw.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Session "999999999" not found.', $exception->getMessage());
+        }
+
+        $this->assertFileExists($foreignPath);
     }
 
     public function testFindSessionReturnsNullForMissingSession(): void

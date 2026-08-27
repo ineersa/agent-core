@@ -11,6 +11,9 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 use function Symfony\Component\String\u;
 
@@ -49,7 +52,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
     {
         // Cap set low so our test text triggers capping.
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 50);
-        $outputCap = new OutputCap($cfg);
+        $outputCap = $this->outputCap($cfg);
         $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $rawSentinel = 'RAW_SENTINEL_'.bin2hex(random_bytes(8));
@@ -73,6 +76,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             toolName: 'read',
             arguments: ['path' => './test.txt'],
             orderIndex: 0,
+            runId: 'test-run',
         );
 
         $processed = $processor->process($result, $toolCall);
@@ -125,6 +129,30 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         $this->assertSame(50, $details['output_cap']['cap']);
     }
 
+    public function testToolCallRunIdTakesPrecedenceOverContextFallbackAndMissingRunIdFailsOnlyWhenCapped(): void
+    {
+        $processor = new OutputCapToolResultProcessor(
+            $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10)),
+            \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        $result = new ToolResult('call-run', 'bash', [['type' => 'text', 'text' => str_repeat('x', 20)]], [], false);
+        $explicit = new ToolCall('call-run', 'bash', [], 0, runId: 'explicit-run', context: ['run_id' => 'context-run']);
+        $processed = $processor->process($result, $explicit);
+        $details = \is_array($processed->details) ? $processed->details : [];
+        $this->assertStringContainsString('run-'.hash('sha256', 'explicit-run'), (string) $details['output_cap']['saved_path']);
+
+        $fallback = new ToolCall('call-fallback', 'bash', [], 0, context: ['run_id' => 'context-run']);
+        $fallbackResult = new ToolResult('call-fallback', 'bash', [['type' => 'text', 'text' => str_repeat('y', 20)]], [], false);
+        $fallbackProcessed = $processor->process($fallbackResult, $fallback);
+        $fallbackDetails = \is_array($fallbackProcessed->details) ? $fallbackProcessed->details : [];
+        $this->assertStringContainsString('run-'.hash('sha256', 'context-run'), (string) $fallbackDetails['output_cap']['saved_path']);
+
+        $small = new ToolResult('call-small', 'bash', [['type' => 'text', 'text' => 'small']], [], false);
+        $this->assertSame($small, $processor->process($small, new ToolCall('call-small', 'bash', [], 0)));
+        $this->expectException(\LogicException::class);
+        $processor->process($result, new ToolCall('call-missing', 'bash', [], 0));
+    }
+
     public function testGenericCappedResultSuggestsReadOnSavedArtifactWithOffsetLimit(): void
     {
         // Test thesis: generic (non-read) tool output caps use the generic
@@ -133,7 +161,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         // and grep for targeted search.  This is safe because the saved
         // cap artefact is rendered tool output text (plain content; read the original path for follow-up inspection).
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 50);
-        $outputCap = new OutputCap($cfg);
+        $outputCap = $this->outputCap($cfg);
         $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $largeText = str_repeat('B', 300).'GENERIC_SENTINEL_'.bin2hex(random_bytes(8));
@@ -151,6 +179,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             toolName: 'bash',
             arguments: ['command' => 'cat large.log'],
             orderIndex: 3,
+            runId: 'test-run',
         );
 
         $processed = $processor->process($result, $toolCall);
@@ -176,7 +205,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
     public function testResultUnderCapPassesThroughUnchanged(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 5000, docCap: 5000);
-        $outputCap = new OutputCap($cfg);
+        $outputCap = $this->outputCap($cfg);
         $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $smallText = 'Small result text';
@@ -194,6 +223,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             toolName: 'bash',
             arguments: [],
             orderIndex: 1,
+            runId: 'test-run',
         );
 
         $processed = $processor->process($result, $toolCall);
@@ -214,7 +244,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
     public function testEmptyContentPassesThrough(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 5000);
-        $outputCap = new OutputCap($cfg);
+        $outputCap = $this->outputCap($cfg);
         $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $result = new ToolResult(
@@ -230,6 +260,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             toolName: 'read',
             arguments: [],
             orderIndex: 2,
+            runId: 'test-run',
         );
 
         $processed = $processor->process($result, $toolCall);
@@ -244,10 +275,10 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         // Thesis: successful fork/subagent handoff reports use docCap (50k),
         // not defaultCap (20k), even though the tool call has no path argument.
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
-        $outputCap = new OutputCap($cfg);
+        $outputCap = $this->outputCap($cfg);
         $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
-        $handoff = str_repeat('H', 25000)."\n## 1. Result / status\n";
+        $handoff = str_repeat('H', 25000)."\n## Result\n";
         $this->assertGreaterThan(20000, u($handoff)->length());
         $this->assertLessThan(50000, u($handoff)->length());
 
@@ -263,6 +294,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             toolName: 'fork',
             arguments: ['task' => 'do work'],
             orderIndex: 0,
+            runId: 'test-run',
         );
 
         $processed = $processor->process($result, $toolCall);
@@ -276,7 +308,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
     public function testSuccessfulSubagentHandoffBetweenDefaultAndDocCapStaysInline(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
-        $outputCap = new OutputCap($cfg);
+        $outputCap = $this->outputCap($cfg);
         $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $handoff = str_repeat('S', 30000);
@@ -292,6 +324,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             toolName: 'subagent',
             arguments: ['prompt' => 'review'],
             orderIndex: 1,
+            runId: 'test-run',
         );
 
         $processed = $processor->process($result, $toolCall);
@@ -305,7 +338,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
     {
         // Thesis: non-report tools without a path still cap at defaultCap.
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
-        $outputCap = new OutputCap($cfg);
+        $outputCap = $this->outputCap($cfg);
         $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $large = str_repeat('B', 25000);
@@ -321,6 +354,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             toolName: 'bash',
             arguments: ['command' => 'cat big.log'],
             orderIndex: 2,
+            runId: 'test-run',
         );
 
         $processed = $processor->process($result, $toolCall);
@@ -330,5 +364,10 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         $this->assertArrayHasKey('output_cap', $details);
         $this->assertSame(20000, $details['output_cap']['cap']);
         $this->assertTrue($details['output_cap']['capped']);
+    }
+
+    private function outputCap(OutputCapConfig $config): OutputCap
+    {
+        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
     }
 }
