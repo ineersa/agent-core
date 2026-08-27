@@ -8,14 +8,7 @@ use Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Tests for ForkTaskPromptBuilder.
- *
- * Test thesis:
- *   - The built task user message contains "Task:", the task body, and
- *     all 11 section headers.
- *   - The FORK_CHILD system append contains the fork mode declaration.
- */
+/** Tests the compact fork handoff prompt contract. */
 #[CoversClass(ForkTaskPromptBuilder::class)]
 final class ForkTaskPromptBuilderTest extends TestCase
 {
@@ -26,93 +19,60 @@ final class ForkTaskPromptBuilderTest extends TestCase
         $this->builder = new ForkTaskPromptBuilder();
     }
 
-    public function testBuildTaskUserMessageContainsTaskIndicator(): void
+    public function testBuildTaskUserMessageInterpolatesTask(): void
     {
-        $task = 'Implement feature X';
+        $task = "Implement feature X:\n- Preserve contract";
         $message = $this->builder->buildTaskUserMessage($task);
 
         $this->assertStringContainsString('Task:', $message);
         $this->assertStringContainsString($task, $message);
+        $this->assertStringContainsString('You are a fork delegated by a parent agent.', $message);
+        $this->assertStringContainsString('compacted snapshot', $message);
     }
 
-    public function testBuildTaskUserMessageContainsAll11SectionHeaders(): void
+    public function testBuildTaskUserMessageDefinesCompactHandoffContract(): void
     {
         $message = $this->builder->buildTaskUserMessage('Test task');
 
-        $expectedSections = [
-            '## 1. Result / status',
-            '## 2. Scope and authority',
-            '## 3. Navigation / tool trail',
-            '## 4. Evidence and context discovered',
-            '## 5. Changes made',
-            '## 6. Data/control flow',
-            '## 7. Validation performed',
-            '## 8. Risks, gaps, and gotchas',
-            '## 9. Reusable learnings',
-            '## 10. Continuation context',
-            '## 11. Final handoff',
-        ];
-
-        foreach ($expectedSections as $section) {
+        foreach ([
+            '## Status',
+            '## Result',
+            '## Validation',
+            '## Repository state',
+            '## Risks / open decisions',
+            '## Continuation',
+            '## Reusable learning',
+            '## Parent action',
+            '## Length discipline',
+        ] as $section) {
             $this->assertStringContainsString($section, $message, "Missing section: {$section}");
         }
+
+        $this->assertStringContainsString('Required for implementation tasks', $message);
+        $this->assertStringContainsString('`Commit: <full SHA>`', $message);
+        $this->assertStringContainsString('`Worktree: clean` or `Worktree: dirty`', $message);
+        $this->assertStringContainsString('Uncommitted paths:', $message);
     }
 
-    public function testBuildTaskUserMessageMentionsHandoffReport(): void
+    public function testBuildTaskUserMessageRequiresDeltaInsteadOfTranscript(): void
     {
-        $message = $this->builder->buildTaskUserMessage('Test');
+        $message = $this->builder->buildTaskUserMessage('Test task');
 
-        $this->assertStringContainsString('handoff report', $message);
-        $this->assertStringContainsString('dense', $message);
+        $this->assertStringContainsString('Return the semantic delta produced by this fork, not a transcript.', $message);
+        $this->assertStringContainsString('every file read, search made, or command run', $message);
+        $this->assertStringContainsString('routine implementation: 250–700 words;', $message);
+        $this->assertStringContainsString('exhaustive reports: only when explicitly requested.', $message);
     }
 
-    public function testForkChildSystemPromptAppend(): void
+    public function testForkChildSystemPromptAppendPreservesForkModeAndFinality(): void
     {
         $append = $this->builder->forkChildSystemPromptAppend();
 
-        $this->assertStringContainsString('FORK MODE IS ENABLED', $append);
+        $this->assertStringContainsString('FORK MODE IS ENABLED.', $append);
         $this->assertStringContainsString('forked child agent', $append);
-        $this->assertStringContainsString('delegated task', $append);
         $this->assertStringContainsString('last user message', $append);
-        $this->assertStringContainsString('Do not suggest launching a fork', $append);
-        $this->assertStringContainsString('obey the delegated task', $append);
-        $this->assertStringContainsString('Execute and verify all tool work first', $append);
-        $this->assertStringContainsString('Never emit the handoff in a message that also requests tools', $append);
-        $this->assertStringContainsString('final assistant message must be the complete handoff', $append);
-        $this->assertStringContainsString('Do not replace it with a shorter recap', $append);
-    }
-
-    public function testBuildTaskUserMessageReinforcesHandoffFinalityWithoutRewritingSections(): void
-    {
-        $message = $this->builder->buildTaskUserMessage('Test task');
-
-        $this->assertStringContainsString('## 1. Result / status', $message);
-        $this->assertStringContainsString('## 11. Final handoff', $message);
-        $this->assertStringContainsString(
-            'Execute and verify all tool work first. Never emit the handoff in a message that also requests tools.',
-            $message,
-        );
-        $this->assertStringContainsString(
-            'After the final tool result, your final assistant message must be the complete handoff. Do not replace it with a shorter recap.',
-            $message,
-        );
-    }
-
-    public function testBuildTaskUserMessageWithEmptyTask(): void
-    {
-        $message = $this->builder->buildTaskUserMessage('');
-
-        $this->assertStringContainsString('Task:', $message);
-        $this->assertStringContainsString('Return a dense handoff report', $message);
-    }
-
-    public function testBuildTaskUserMessageWithComplexTask(): void
-    {
-        $task = "Implement feature X:\n- Step 1\n- Step 2\n- Step 3";
-        $message = $this->builder->buildTaskUserMessage($task);
-
-        $this->assertStringContainsString('Step 1', $message);
-        $this->assertStringContainsString('Step 2', $message);
-        $this->assertStringContainsString('Step 3', $message);
+        $this->assertStringContainsString('Execute and verify all tool work first.', $append);
+        $this->assertStringContainsString('Never emit the handoff in a message that also requests tools.', $append);
+        $this->assertStringContainsString('final assistant message must be the complete handoff.', $append);
     }
 }
