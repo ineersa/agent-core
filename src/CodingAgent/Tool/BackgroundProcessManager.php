@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
-use Doctrine\DBAL\Exception\TableNotFoundException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
@@ -56,8 +55,8 @@ use Symfony\Component\Clock\Clock;
  * "unable to open database file".
  *
  * Crash resilience: SIGKILL, OOM, or segfault bypass the shutdown
- * function, so background processes survive unexpected controller
- * death. The user can inspect logs on the next session resume.
+ * function, so controller startup removes accepted process state left by
+ * the prior controller after it regains exclusive session ownership.
  *
  * setsid is required. If setsid is unavailable, start() fails with a
  * clear exception rather than falling back to unsafe single-PID mode
@@ -554,67 +553,17 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Terminate background processes during shutdown or controlled teardown.
+     * Terminate background processes started by this manager instance.
      *
-     * Two modes:
-     * - No session id (null): instance-owned processes only — PIDs recorded in
-     *   start() on this manager. Used by register_shutdown_function() and test
-     *   tearDown. Does not query the database for foreign rows.
-     * - Explicit session id: every unfinished process bound to that session from
-     *   the database (controller controlled-shutdown path).
-     *
-     * Called automatically via register_shutdown_function() on PHP process
-     * exit (graceful or fatal). Also callable explicitly from test tearDown
-     * or controller lifecycle hooks. Safe to call multiple times — only
-     * processes still marked running are affected.
-     *
-     * @param string|null $sessionId optional session filter. When provided,
-     *                               only processes for that session are
-     *                               stopped from the database. Pass null to
-     *                               reap only this instance's owned PIDs.
+     * This PHP-shutdown fallback never queries the shared database. Controller
+     * session cleanup is owned by its lifecycle listener and uses immutable
+     * record IDs instead.
      *
      * @return int Number of processes terminated
      */
-    public function shutdownCleanup(?string $sessionId = null): int
+    public function shutdownCleanup(): int
     {
-        if (null === $sessionId) {
-            return $this->reapOwnedProcesses();
-        }
-
-        try {
-            $entities = $this->store->fetchAllUnfinished($sessionId);
-        } catch (TableNotFoundException) {
-            // Database tables have not been created yet (e.g. during PHAR boot
-            // before migrations run, or for pure CLI commands like list/about
-            // that do not go through AgentCommand). No background processes can
-            // be running in this case.
-            $this->logger->debug('background_process.shutdown_no_table', [
-                'component' => 'background_process_manager',
-                'event_type' => 'shutdown_cleanup_table_not_found',
-                'session_id' => $sessionId,
-            ]);
-
-            return 0;
-        }
-
-        $count = 0;
-        foreach ($entities as $entity) {
-            $pid = $entity->pid;
-            try {
-                $this->stop($pid);
-                ++$count;
-            } catch (\RuntimeException $e) {
-                // Process may have exited between fetch and stop; log and continue
-                $this->logger->warning('background_process.shutdown_cleanup_error', [
-                    'component' => 'tool.background_process',
-                    'event_type' => 'background_process.shutdown_cleanup_error',
-                    'process_pid' => $pid,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-
-        return $count;
+        return $this->reapOwnedProcesses();
     }
 
     /**

@@ -39,7 +39,7 @@ final class BackgroundProcessProvisionalCleanupTask
         $failed = 0;
 
         foreach ($this->store->fetchFinishedProvisionalBefore($cutoff) as $entity) {
-            if (!$this->lifecycle->deleteFinishedProvisionalRecordFiles($entity->logPath, $entity->statusPath)) {
+            if (!$this->lifecycle->deleteExactRecordSidecars($entity->logPath, $entity->statusPath)) {
                 ++$failed;
                 continue;
             }

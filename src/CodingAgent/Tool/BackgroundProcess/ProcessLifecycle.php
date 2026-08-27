@@ -330,15 +330,15 @@ final class ProcessLifecycle
     // ─── Cleanup ─────────────────────────────────────────────────────
 
     /**
-     * Delete only the three exact sidecars belonging to a finished private
-     * foreground-supervision record. This intentionally does not scan the
-     * background directory: a row may clean up only its own .log/.status/.pid
-     * siblings after their paths are verified as direct children of it.
+     * Delete only the three exact sidecars belonging to one record. This
+     * intentionally does not scan the background directory: a row may clean up
+     * only its own .log/.status/.pid siblings after their paths are verified as
+     * direct children of it.
      *
      * @return bool false when paths are not the expected exact sibling set or
      *              an existing sidecar cannot be removed
      */
-    public function deleteFinishedProvisionalRecordFiles(string $logPath, string $statusPath): bool
+    public function deleteExactRecordSidecars(string $logPath, string $statusPath): bool
     {
         if (!str_ends_with($logPath, '.log')) {
             return false;

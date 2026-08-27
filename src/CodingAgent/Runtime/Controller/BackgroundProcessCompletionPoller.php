@@ -82,9 +82,49 @@ final class BackgroundProcessCompletionPoller
         });
     }
 
+    /**
+     * Session IDs owned by a controller: parent session plus child agent run IDs.
+     *
+     * The caller-provided parent ID is authoritative so controller lifecycle
+     * listeners cannot accidentally act on this poller's configured scope.
+     *
+     * @return list<string>
+     */
+    public function resolveOwnedSessionIds(string $parentSessionId): array
+    {
+        $ids = [$parentSessionId];
+
+        try {
+            foreach ($this->artifactRegistry->list($parentSessionId) as $entry) {
+                $childRunId = $entry->agentRunId;
+                if ('' !== $childRunId && !\in_array($childRunId, $ids, true)) {
+                    $ids[] = $childRunId;
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning('bg_process_completion.artifact_list_failed', [
+                'component' => 'bg_process_completion.poller',
+                'event_type' => 'bg_process_completion.artifact_list_failed',
+                'controller_session_id' => $parentSessionId,
+                'exception' => $e->getMessage(),
+            ]);
+        }
+
+        return $ids;
+    }
+
     private function poll(): void
     {
-        $sessionIds = $this->resolveOwnedSessionIds();
+        if (null === $this->sessionId) {
+            $this->logger->debug('bg_process_completion.poll_skipped_no_session', [
+                'component' => 'bg_process_completion.poller',
+                'event_type' => 'bg_process_completion.poll_skipped_no_session',
+            ]);
+
+            return;
+        }
+
+        $sessionIds = $this->resolveOwnedSessionIds($this->sessionId);
         if ([] === $sessionIds) {
             $this->logger->debug('bg_process_completion.poll_skipped_no_session', [
                 'component' => 'bg_process_completion.poller',
@@ -143,38 +183,6 @@ final class BackgroundProcessCompletionPoller
                 // Do NOT mark notified — retry on next poll.
             }
         }
-    }
-
-    /**
-     * Session IDs this controller owns: parent session plus child agent run IDs.
-     *
-     * @return list<string>
-     */
-    private function resolveOwnedSessionIds(): array
-    {
-        if (null === $this->sessionId) {
-            return [];
-        }
-
-        $ids = [$this->sessionId];
-
-        try {
-            foreach ($this->artifactRegistry->list($this->sessionId) as $entry) {
-                $childRunId = $entry->agentRunId;
-                if ('' !== $childRunId && !\in_array($childRunId, $ids, true)) {
-                    $ids[] = $childRunId;
-                }
-            }
-        } catch (\Throwable $e) {
-            $this->logger->warning('bg_process_completion.artifact_list_failed', [
-                'component' => 'bg_process_completion.poller',
-                'event_type' => 'bg_process_completion.artifact_list_failed',
-                'controller_session_id' => $this->sessionId,
-                'exception' => $e->getMessage(),
-            ]);
-        }
-
-        return $ids;
     }
 
     /**
