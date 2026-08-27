@@ -18,12 +18,23 @@ use function Symfony\Component\String\u;
  */
 final class OutputCap
 {
+    /** File extensions whose dense, document-like output receives the higher cap. */
     private const DOC_EXTENSIONS = ['md', 'txt', 'toon'];
 
-    /** @var list<string> */
+    /**
+     * Conventional tool argument keys that identify a filesystem path for cap selection.
+     * The first non-empty string wins because tools may expose more than one alias.
+     *
+     * @var list<string>
+     */
     private const array PATH_ARGUMENT_KEYS = ['path', 'file_path', 'file'];
 
-    /** @var list<string> */
+    /**
+     * Successful results from these tools are handoff/report documents even without a
+     * filesystem path, so they use a synthetic doc-like path for cap selection only.
+     *
+     * @var list<string>
+     */
     private const array DOCUMENT_REPORT_TOOL_NAMES = ['fork', 'subagent', 'agent_resume', 'agent_retrieve'];
 
     private bool $cleanedUp = false;
@@ -36,6 +47,12 @@ final class OutputCap
     }
 
     /**
+     * Returns null when text fits the applicable cap; otherwise persists the full text
+     * in the owning run scope and returns the model-facing replacement notice.
+     *
+     * The optional path chooses the document/default cap. A run ID is required only
+     * when persistence is needed, so uncapped output remains side-effect free.
+     *
      * @return OutputCapResult|null structured result when capped
      */
     public function capIfNeeded(string $text, ?string $runId, ?string $path = null): ?OutputCapResult
@@ -64,6 +81,12 @@ final class OutputCap
     }
 
     /**
+     * Cap-selection precedence: a real path argument, then synthetic paths for
+     * successful document outputs, otherwise the default cap. Settings' dotted
+     * `path` key is configuration, not a filesystem path; errors intentionally stay
+     * at the default cap because they are status envelopes rather than documents.
+     * Synthetic paths affect cap selection only and are never persisted or exposed.
+     *
      * @param array<string, mixed> $arguments
      */
     public function resolveCapPath(?string $toolName, array $arguments, bool $isError = false): ?string
@@ -91,6 +114,10 @@ final class OutputCap
     }
 
     /**
+     * Read follow-ups target the original file, not the rendered saved artifact, so
+     * offset/limit and grep remain meaningful without duplicating rendered output.
+     * Without an original path, fall back to the generic saved-artifact guidance.
+     *
      * @param array<string, mixed> $arguments
      */
     public function buildContextualNotice(?string $toolName, array $arguments, OutputCapResult $capResult): string
@@ -115,6 +142,11 @@ STRING;
     }
 
     /**
+     * Persist full text unconditionally in the hashed scope owned by the run.
+     *
+     * The first-use stale fallback runs before persistence, while lifecycle hooks own
+     * normal cleanup. Throws when safe scope creation or writing fails.
+     *
      * @return string absolute path to the saved file
      */
     public function persist(string $text, string $runId): string
@@ -228,6 +260,10 @@ STRING;
         return null;
     }
 
+    /**
+     * Run the 24-hour stale fallback once on first use rather than during container
+     * construction, because cleanup performs filesystem I/O.
+     */
     private function maybeCleanup(): void
     {
         if ($this->cleanedUp) {
@@ -390,6 +426,10 @@ STRING;
         ]);
     }
 
+    /**
+     * Generic guidance for non-read tools. Read callers use buildContextualNotice()
+     * to direct follow-ups to their original file instead of this saved artifact.
+     */
     private function buildCappedNotice(string $fullText, int $cap, string $savedPath): string
     {
         $charCount = u($fullText)->length();
