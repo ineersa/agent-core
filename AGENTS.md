@@ -156,5 +156,5 @@ Phases: `task-explain` → `task-start` → `task-to-pr` → `task-done` (with `
 - `src/AgentCore/Domain/AGENTS.md` — domain/event docs
 - `src/AgentCore/Application/AGENTS.md` — command/handler topology
 - `.agents/skills/testing/SKILL.md` — QA/test command matrix and runbooks
-- `.pi/skills/task-workflow/SKILL.md` — task phase procedures
+- Active runtime `task-workflow` skill — task phase procedures
 - `tests/AGENTS.md` — shared test infrastructure and standards

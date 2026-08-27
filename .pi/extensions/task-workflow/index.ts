@@ -76,7 +76,7 @@ const MoveTaskParams = Type.Object({
 	task: Type.String({ description: "Task filename, slug, or unique substring" }),
 	to: statusParam,
 	from: Type.Optional(statusParam),
-	forkRun: Type.Optional(Type.String({ description: "Fork/subagent run id to record in the task file" })),
+	forkRun: Type.Optional(Type.String({ description: "Implementation fork run id to record in the task file" })),
 	summary: Type.Optional(Type.String({ description: "Completion or handoff summary appended to the task" })),
 	validation: Type.Optional(Type.Array(Type.String(), { description: "Validation commands/results appended to the task" })),
 	worktreeBase: Type.Optional(Type.String({ description: "Directory for task worktrees. Defaults to ../<repo>-worktrees" })),
@@ -93,7 +93,7 @@ const MoveTaskParams = Type.Object({
 const UpdateTaskParams = Type.Object({
 	task: Type.String({ description: "Task filename, slug, or unique substring" }),
 	from: Type.Optional(statusParam),
-	forkRun: Type.Optional(Type.String({ description: "Fork/subagent run id to record in the task file" })),
+	forkRun: Type.Optional(Type.String({ description: "Implementation fork run id to record in the task file" })),
 	summary: Type.Optional(Type.String({ description: "Completion or handoff summary appended to the task" })),
 	validation: Type.Optional(Type.Array(Type.String(), { description: "Validation commands/results appended to the task" })),
 	prUrl: Type.Optional(Type.String({ description: "Set/update the PR URL in task metadata" })),

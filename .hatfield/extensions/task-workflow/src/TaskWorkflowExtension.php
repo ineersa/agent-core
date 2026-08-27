@@ -96,7 +96,7 @@ final readonly class TaskWorkflowExtension implements HatfieldExtensionInterface
                     'task' => ['type' => 'string', 'minLength' => 1, 'description' => 'Task filename, slug, or unique substring'],
                     'to' => ['type' => 'string', 'enum' => $statusEnum, 'description' => 'Destination status.'],
                     'from' => ['type' => 'string', 'enum' => $statusEnum, 'description' => 'Optional current status used to narrow task lookup.'],
-                    'forkRun' => ['type' => 'string', 'minLength' => 1, 'description' => 'Fork/subagent run ID to store in task metadata.'],
+                    'forkRun' => ['type' => 'string', 'minLength' => 1, 'description' => 'Implementation fork run ID to store in task metadata.'],
                     'summary' => ['type' => 'string', 'minLength' => 1, 'description' => 'Completion or handoff summary appended to the task work log.'],
                     'validation' => ['type' => 'array', 'items' => ['type' => 'string', 'minLength' => 1], 'description' => 'Validation commands or results appended to the task work log.'],
                     'worktreeBase' => ['type' => 'string', 'minLength' => 1, 'description' => 'Directory for task worktrees. Defaults to ../<repo>-worktrees.'],
@@ -127,7 +127,7 @@ final readonly class TaskWorkflowExtension implements HatfieldExtensionInterface
                 'properties' => [
                     'task' => ['type' => 'string', 'minLength' => 1, 'description' => 'Task filename, slug, or unique substring'],
                     'from' => ['type' => 'string', 'enum' => $statusEnum, 'description' => 'Optional current status used to narrow task lookup.'],
-                    'forkRun' => ['type' => 'string', 'minLength' => 1, 'description' => 'Fork/subagent run ID to store in task metadata.'],
+                    'forkRun' => ['type' => 'string', 'minLength' => 1, 'description' => 'Implementation fork run ID to store in task metadata.'],
                     'summary' => ['type' => 'string', 'minLength' => 1, 'description' => 'Summary appended to the task work log.'],
                     'validation' => ['type' => 'array', 'items' => ['type' => 'string', 'minLength' => 1], 'description' => 'Validation commands or results appended to the task work log.'],
                     'prUrl' => ['type' => 'string', 'minLength' => 1, 'description' => 'PR URL to store in task metadata.'],
