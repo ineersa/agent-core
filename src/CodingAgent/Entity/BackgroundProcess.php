@@ -39,14 +39,14 @@ class BackgroundProcess
     public int $id = 0;
 
     /**
-     * OS process ID.  Non-unique over historical rows because:
-     * - The OS reuses PIDs after a process exits.
-     * - Old background_process records are retained for runtime polling
-     *   (24h retention policy; see BackgroundProcessCleanupTask).
-     * - Multiple retained rows can share the same PID.
+     * OS process ID. Non-unique because records may outlive their processes
+     * and the OS reuses PIDs after a process exits. Finished provisional
+     * (backgrounded_at IS NULL) rows are removed by
+     * BackgroundProcessProvisionalCleanupTask; accepted rows are excluded from
+     * that sweep, so multiple retained rows can share the same PID.
      *
-     * The @ORM\Index on 'pid' is intentionally non-unique.  Prefer the
-     * auto-increment $id for immutable record lookups.
+     * The @ORM\Index on 'pid' is intentionally non-unique. Prefer the
+     * auto-increment $id as the authoritative lifecycle key.
      *
      * @see ProcessStore::fetchLatestByPid() for public PID-based lookup semantics
      * @see BackgroundProcessManager::findByRecordId() for immutable lookup

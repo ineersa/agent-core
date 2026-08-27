@@ -329,8 +329,6 @@ final class ProcessLifecycle
 
     // ─── Cleanup ─────────────────────────────────────────────────────
 
-    // ─── Helpers ─────────────────────────────────────────────────────
-
     /**
      * Delete only the three exact sidecars belonging to a finished private
      * foreground-supervision record. This intentionally does not scan the
@@ -381,6 +379,8 @@ final class ProcessLifecycle
 
         return true;
     }
+
+    // ─── Helpers ─────────────────────────────────────────────────────
 
     /**
      * Coerce a mixed value to ?int, handling numeric strings from SQLite.
