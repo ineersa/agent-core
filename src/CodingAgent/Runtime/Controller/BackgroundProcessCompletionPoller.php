@@ -124,15 +124,6 @@ final class BackgroundProcessCompletionPoller
         }
 
         $sessionIds = $this->resolveOwnedSessionIds($this->sessionId);
-        if ([] === $sessionIds) {
-            $this->logger->debug('bg_process_completion.poll_skipped_no_session', [
-                'component' => 'bg_process_completion.poller',
-                'event_type' => 'bg_process_completion.poll_skipped_no_session',
-            ]);
-
-            return;
-        }
-
         $pendingByPid = [];
 
         foreach ($sessionIds as $sessionId) {
