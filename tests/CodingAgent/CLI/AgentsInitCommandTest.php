@@ -129,6 +129,10 @@ final class AgentsInitCommandTest extends TestCase
                 $dto->parallelAllowed,
                 \sprintf('bundled agent "%s" parallelAllowed mismatch', $name),
             );
+            if ('reviewer' === $name) {
+                $this->assertSame('zai/glm-5.3', $dto->model);
+                $this->assertSame('medium', $dto->thinking);
+            }
         }
     }
 
