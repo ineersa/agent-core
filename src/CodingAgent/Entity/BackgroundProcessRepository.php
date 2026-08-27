@@ -91,22 +91,6 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
     }
 
     /**
-     * Find unfinished PIDs only (no entity hydration).
-     *
-     * @return int[]
-     */
-    public function findUnfinishedPids(): array
-    {
-        $rows = $this->createQueryBuilder('bp')
-            ->select('bp.pid')
-            ->where('bp.finishedAt IS NULL')
-            ->getQuery()
-            ->getScalarResult();
-
-        return array_map('intval', array_column($rows, 'pid'));
-    }
-
-    /**
      * Find finished background processes that were explicitly backgrounded
      * and have not yet had their completion notified.
      *
@@ -136,17 +120,52 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
     }
 
     /**
-     * Find stale (finished and older than cutoff) processes.
+     * Find user-accepted background processes for one run.
      *
      * @return BackgroundProcess[]
      */
-    public function findStale(\DateTimeImmutable $cutoff): array
+    public function findBackgrounded(string $sessionId): array
     {
         return $this->createQueryBuilder('bp')
-            ->where('bp.finishedAt IS NOT NULL')
+            ->where('bp.sessionId = :sessionId')
+            ->andWhere('bp.backgroundedAt IS NOT NULL')
+            ->setParameter('sessionId', $sessionId)
+            ->orderBy('bp.id', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Resolve a user-accepted background process by PID within one run.
+     */
+    public function findBackgroundedByPid(string $sessionId, int $pid): ?BackgroundProcess
+    {
+        return $this->createQueryBuilder('bp')
+            ->where('bp.sessionId = :sessionId')
+            ->andWhere('bp.pid = :pid')
+            ->andWhere('bp.backgroundedAt IS NOT NULL')
+            ->setParameter('sessionId', $sessionId)
+            ->setParameter('pid', $pid)
+            ->orderBy('bp.id', 'DESC')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /**
+     * Find private foreground-supervision rows that have remained finished
+     * for at least one cleanup interval.
+     *
+     * @return BackgroundProcess[]
+     */
+    public function findFinishedProvisionalBefore(\DateTimeImmutable $cutoff): array
+    {
+        return $this->createQueryBuilder('bp')
+            ->where('bp.backgroundedAt IS NULL')
+            ->andWhere('bp.finishedAt IS NOT NULL')
             ->andWhere('bp.finishedAt <= :cutoff')
             ->setParameter('cutoff', $cutoff)
-            ->orderBy('bp.id', 'DESC')
+            ->orderBy('bp.id', 'ASC')
             ->getQuery()
             ->getResult();
     }

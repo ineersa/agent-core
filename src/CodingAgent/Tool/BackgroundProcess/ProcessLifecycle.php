@@ -330,66 +330,57 @@ final class ProcessLifecycle
     // ─── Cleanup ─────────────────────────────────────────────────────
 
     /**
-     * Remove orphaned .pid files (and companion .status/.log files) that
-     * belong to PIDs not tracked in the active set.
+     * Delete only the three exact sidecars belonging to one record. This
+     * intentionally does not scan the background directory: a row may clean up
+     * only its own .log/.status/.pid siblings after their paths are verified as
+     * direct children of it.
      *
-     * @param array<int, true> $activePidSet PIDs currently tracked in the DB
+     * @return bool false when paths are not the expected exact sibling set or
+     *              an existing sidecar cannot be removed
      */
-    public function cleanupOrphanedPidFiles(array $activePidSet): void
+    public function deleteExactRecordSidecars(string $logPath, string $statusPath): bool
     {
-        $bgDir = $this->config->storageDir;
-        if (!is_dir($bgDir)) {
-            return;
+        if (!str_ends_with($logPath, '.log')) {
+            return false;
         }
 
-        $iterator = new \FilesystemIterator($bgDir, \FilesystemIterator::SKIP_DOTS);
-        /** @var \SplFileInfo $file */
-        foreach ($iterator as $file) {
-            if (!$file->isFile()) {
-                continue;
+        $directory = \dirname($logPath);
+        $prefix = substr(basename($logPath), 0, -4);
+        $expectedStatusPath = $directory.'/'.$prefix.'.status';
+        $expectedPidPath = $directory.'/'.$prefix.'.pid';
+        if ('' === $prefix || $statusPath !== $expectedStatusPath) {
+            return false;
+        }
+
+        $configuredStorageDir = $this->config->storageDir;
+        if (is_dir($configuredStorageDir)) {
+            $canonicalStorageDir = realpath($configuredStorageDir);
+            $canonicalRecordDirectory = realpath($directory);
+            if (false === $canonicalStorageDir || false === $canonicalRecordDirectory || $canonicalRecordDirectory !== $canonicalStorageDir) {
+                return false;
             }
-
-            $filename = $file->getFilename();
-
-            // Only clean .pid files
-            if (!str_ends_with($filename, '.pid')) {
-                continue;
-            }
-
-            $pidContent = @file_get_contents($file->getPathname());
-            $pidFromFile = \is_string($pidContent) ? (int) trim($pidContent) : 0;
-            if ($pidFromFile > 0 && !isset($activePidSet[$pidFromFile])) {
-                // This PID is not in our active set — the .pid file is orphaned
-                @unlink($file->getPathname());
-
-                // Also clean up companion .status and .log files if they exist
-                $base = $file->getPath().'/'.pathinfo($filename, \PATHINFO_FILENAME);
-                foreach (['.status', '.log'] as $ext) {
-                    $companion = $base.$ext;
-                    if (is_file($companion)) {
-                        @unlink($companion);
-                    }
+        } elseif ($directory !== $configuredStorageDir) {
+            return false;
+        } else {
+            foreach ([$logPath, $statusPath, $expectedPidPath] as $path) {
+                if (is_file($path) || is_link($path)) {
+                    return false;
                 }
             }
+
+            return true;
         }
+
+        foreach ([$logPath, $statusPath, $expectedPidPath] as $path) {
+            if ((is_file($path) || is_link($path)) && !@unlink($path)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────
-
-    /**
-     * Delete log and status files for a finished process.
-     *
-     * Silently ignores non-existent or empty paths.
-     */
-    public function deleteRecordFiles(string $logPath, string $statusPath): void
-    {
-        if ('' !== $logPath && is_file($logPath)) {
-            @unlink($logPath);
-        }
-        if ('' !== $statusPath && is_file($statusPath)) {
-            @unlink($statusPath);
-        }
-    }
 
     /**
      * Coerce a mixed value to ?int, handling numeric strings from SQLite.

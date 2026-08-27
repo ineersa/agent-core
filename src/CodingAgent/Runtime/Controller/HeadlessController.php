@@ -8,11 +8,12 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\CodingAgent\Config\RuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
+use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerSessionShutdownEvent;
+use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerSessionStartingEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\Console\Command\Command;
@@ -88,11 +89,6 @@ final class HeadlessController
          */
         private readonly int $llmWorkerCount = 0,
         /**
-         * Optional background process manager for session-scoped cleanup
-         * on graceful controller shutdown (SIGTERM/SIGINT).
-         */
-        private readonly ?BackgroundProcessManager $bgProcessManager = null,
-        /**
          * Optional tool question poller for cross-process tool questions
          * (e.g. bash background prompts). When provided, polls the DB for
          * un-emitted tool questions and emits RuntimeEvents to the TUI.
@@ -138,6 +134,14 @@ final class HeadlessController
         // and whose CWD matches ours — never touches consumers owned by
         // a living controller instance.
         $this->killOrphanedConsumers();
+
+        try {
+            $this->dispatcher->dispatch(new ControllerSessionStartingEvent($this->sessionId));
+        } catch (\Throwable $exception) {
+            $this->releaseSessionOwnerLock();
+
+            throw $exception;
+        }
 
         // Wire the consumer abandonment callback so the TUI sees a
         // protocol error when a consumer is permanently lost instead of
@@ -467,10 +471,21 @@ final class HeadlessController
         $this->logger->info('Controller shutting down gracefully');
 
         $this->consumerSupervisor->shutdown();
-        $this->bgProcessManager?->shutdownCleanup($this->sessionId);
-        // Release only after consumers are stopped so a replacement controller
-        // cannot race mid-shutdown and attach to half-closed workers.
-        $this->releaseSessionOwnerLock();
+
+        try {
+            $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($this->sessionId));
+        } catch (\Throwable $exception) {
+            $this->logger->error('Controller session shutdown lifecycle failed', [
+                'component' => 'HeadlessController',
+                'event_type' => 'controller.session_shutdown_lifecycle_failed',
+                'session_id' => $this->sessionId,
+                'exception' => $exception,
+            ]);
+        } finally {
+            // Release only after consumers and lifecycle listeners finish so a
+            // replacement controller cannot race against cleanup.
+            $this->releaseSessionOwnerLock();
+        }
     }
 
     /**

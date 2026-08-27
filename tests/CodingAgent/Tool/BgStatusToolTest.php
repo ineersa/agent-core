@@ -114,7 +114,8 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     public function testListReturnsProcesses(): void
     {
         $this->withContext(self::TEST_SESSION, function (): void {
-            $this->manager->start('echo "bg process"', self::TEST_SESSION);
+            $started = $this->manager->start('echo "bg process"', self::TEST_SESSION);
+            $this->manager->markBackgroundedForRecord($started->id, self::TEST_SESSION);
         });
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list')));
@@ -127,6 +128,20 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $this->assertArrayHasKey('pid', $data['processes'][0]);
         $this->assertArrayHasKey('log_path', $data['processes'][0]);
         $this->assertArrayHasKey('hint', $data);
+    }
+
+    public function testListExcludesPrivateForegroundSupervision(): void
+    {
+        $private = $this->manager->start('echo "private"', self::TEST_SESSION);
+        $accepted = $this->manager->start('echo "accepted"', self::TEST_SESSION);
+        $this->manager->markBackgroundedForRecord($accepted->id, self::TEST_SESSION);
+
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list')));
+        $data = Toon::decode($result);
+
+        $this->assertCount(1, $data['processes']);
+        $this->assertSame($accepted->pid, $data['processes'][0]['pid']);
+        $this->assertNotSame($private->pid, $data['processes'][0]['pid']);
     }
 
     public function testListEmpty(): void
@@ -145,6 +160,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     public function testLogReturnsContent(): void
     {
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('echo "hello from bg"', self::TEST_SESSION));
+        $this->manager->markBackgroundedForRecord($started->id, self::TEST_SESSION);
 
         $this->waitUntilLogContains($started->logPath, 'hello from bg');
 
@@ -179,6 +195,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     public function testStopAction(): void
     {
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('sleep 30', self::TEST_SESSION));
+        $this->manager->markBackgroundedForRecord($started->id, self::TEST_SESSION);
         // start() persists the row and returns a live PID; stop needs no fixed delay.
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'stop', pid: $started->pid)));
@@ -190,6 +207,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     public function testStopAlreadyFinished(): void
     {
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('echo "quick"', self::TEST_SESSION));
+        $this->manager->markBackgroundedForRecord($started->id, self::TEST_SESSION);
         $this->waitUntilFinished($started->pid);
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'stop', pid: $started->pid)));
@@ -236,8 +254,10 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     public function testListScopedBySession(): void
     {
-        $this->withContext('session-A', fn () => $this->manager->start('echo "A-for-test-B"', 'session-A'));
-        $this->withContext('session-B', fn () => $this->manager->start('echo "B-for-test-A"', 'session-B'));
+        $a = $this->withContext('session-A', fn () => $this->manager->start('echo "A-for-test-B"', 'session-A'));
+        $b = $this->withContext('session-B', fn () => $this->manager->start('echo "B-for-test-A"', 'session-B'));
+        $this->manager->markBackgroundedForRecord($a->id, 'session-A');
+        $this->manager->markBackgroundedForRecord($b->id, 'session-B');
 
         $resultA = $this->withContext('session-A', fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list')));
         $resultB = $this->withContext('session-B', fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list')));
@@ -281,6 +301,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $command = 'printf \''.$padding.'\n'.$sentinel.'\n\'';
 
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start($command, self::TEST_SESSION));
+        $this->manager->markBackgroundedForRecord($started->id, self::TEST_SESSION);
         $this->waitUntilLogContains($started->logPath, $sentinel);
 
         $result = $this->withContext(self::TEST_SESSION, static fn (): string => $lowCapTool(new BgStatusArgumentsDTO(action: 'log', pid: $started->pid)));

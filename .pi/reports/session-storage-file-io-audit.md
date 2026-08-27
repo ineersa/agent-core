@@ -21,7 +21,7 @@
 | same child directory: `metadata.json`, `handoff.md`, lifetime/diagnostic files | artifact registry/lifecycle/handoff services | Child metadata and rendered handoff artifacts; derived from child lifecycle/history where applicable |
 | session attachment/MCP catalog artifacts (when present) | attachment and MCP catalog services | Session-scoped derived/indexed artifacts; inventory only, no measured present-size breakdown |
 | `.hatfield/state.sqlite` | Doctrine repositories/migrations | Durable relational state: session catalog, tool questions, deferred completions/batches/children, background-process records; not a transcript replacement |
-| `.hatfield/tmp/bg/<id>/` (`*.log`, `*.pid`, `*.status`) | background-process subsystem | Adjacent process output/status; ephemeral/runtime retention policy is separate from session replay |
+| `.hatfield/tmp/bg/<prefix>.{log,pid,status}` | background-process subsystem | Exact flat per-record sidecars for process output/status; ephemeral/runtime retention policy is separate from session replay |
 | `.hatfield/tmp/output-cap/` | output-cap subsystem | Adjacent capped-output artifacts |
 | `.hatfield/logs/` | Monolog rotating handler | Adjacent operational logs |
 | `.hatfield/cache/`, `.hatfield/tmp/`, `.hatfield/locks/`, Messenger SQLite files | framework/runtime services | Ephemeral cache, temporary, lock, and transport state; not canonical sessions |
@@ -45,6 +45,10 @@ The child artifact topology explains why a parent has many nested UUID directori
 | `.hatfield/tmp/bg` | 19,945 files; historical snapshot 281.4 MiB; current generic `*.log` aggregate is 329.1 MiB because it includes other log locations |
 | `.hatfield/logs` | historical snapshot: 2 files; 50.5 MiB |
 | `.hatfield/tmp/output-cap` | historical snapshot: 103 files; 44.8 MiB |
+
+### Background-process provisional cleanup
+
+`BackgroundProcessManager::start()` creates a private foreground-supervision row and exact `.pid` / `.status` / `.log` sidecars before a Bash background prompt can be accepted. `backgrounded_at IS NULL` is therefore not user-visible background work: `bg_status` lists, tails, and stops only rows that were accepted (`backgrounded_at IS NOT NULL`) within its current run. A Symfony Scheduler task runs every five minutes, refreshes unfinished records, and removes only finished private rows whose `finished_at` is at least one interval old, plus their exact row-owned sidecars. The grace interval preserves BashTool's foreground output read. Accepted rows are instead removed at controller shutdown, with the same exact-sidecar cleanup repeated at controller startup to repair crash leftovers.
 
 Largest anonymized parent `811786ad1a`: 10,326 events / 41.1 MiB, 67 child dirs and seven compactions. It has 5,998 `tool_execution_update` records, 538 tool executions, and 343 turn transitions; its largest turn bucket is 244 events / 1.8 MiB. A short representative `71ee45a3c0` has 772 events / 2.3 MiB, 1.2 MiB state, and four child dirs. Therefore per-turn growth is highly workload-shaped, not a constant: history/progress payloads dominate the observed large turn.
 
