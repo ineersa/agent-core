@@ -7,7 +7,7 @@
 // - Adding/removing worktree exclusion blocks in the parent worktree IDEA module (when present)
 // - Merging task branches back into the integration checkout
 
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync, statSync } from "node:fs";
 import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join, resolve, dirname, basename } from "node:path";
 // @ts-ignore
@@ -248,6 +248,29 @@ export async function removeWorktreeExclusions(
 
 
 const EXTENSIONS_COMPOSER_TIMEOUT_MS = 120_000;
+const ROOT_COMPOSER_TIMEOUT_MS = 120_000;
+
+function usableExtensionApiLink(worktree: string): boolean {
+	const packagePath = join(worktree, "vendor", "ineersa", "hatfield-extension-api");
+	try { return existsSync(packagePath) && statSync(packagePath).isDirectory(); } catch { return false; }
+}
+
+function sourceHasExtensionApiPackage(codeRoot: string): boolean {
+	try {
+		const entry = lstatSync(join(codeRoot, "vendor", "ineersa", "hatfield-extension-api"));
+		return entry.isDirectory() || entry.isSymbolicLink();
+	} catch {
+		return false;
+	}
+}
+
+async function repairRootVendor(pi: ExtensionAPI, worktree: string, signal?: AbortSignal): Promise<void> {
+	const result = await run(pi, "composer", ["install", "--no-interaction", "--no-progress"], worktree, signal, ROOT_COMPOSER_TIMEOUT_MS);
+	if (result.code !== 0 || !usableExtensionApiLink(worktree)) {
+		throw new Error("vendor package link broken: vendor/ineersa/hatfield-extension-api is unavailable after Composer repair.");
+	}
+}
+
 
 function sanitizeComposerDiagnostic(stdout: string, stderr: string, code: number): string {
 	const raw = (stderr || stdout || "").trim().replace(/\s+/g, " ");
@@ -292,8 +315,7 @@ async function installExtensionsVendor(
 		}
 		return { installed: true };
 	} catch (err: any) {
-		// Non-fatal: extensions vendor is a developer convenience; the worker
-		// can run composer install manually. Do not hard-fail worktree creation.
+		// Non-fatal: extensions vendor is a developer convenience.
 		const message = err?.message ? String(err.message).trim() : "composer install failed";
 		const max = 240;
 		const body = message.length > max ? message.slice(0, max) + "…" : message;
@@ -336,7 +358,7 @@ export async function createWorktreeForTask(
 			await cp(mainVendor, worktreeVendor, { recursive: true });
 			vendorCopied = true;
 		} catch {
-			// Non-fatal. Worker can run composer install.
+			// Non-fatal. Fork can run composer install.
 		}
 	}
 
@@ -349,7 +371,20 @@ export async function createWorktreeForTask(
 			await cp(mainVera, worktreeVera, { recursive: true });
 			veraCopied = true;
 		} catch {
-			// Non-fatal. Forks can use absolute-path reads/edits.
+			// Non-fatal best-effort index copy.
+		}
+	}
+
+	if (sourceHasExtensionApiPackage(codeRoot) && !usableExtensionApiLink(worktree)) {
+		try {
+			await repairRootVendor(pi, worktree, signal);
+		} catch (error) {
+			const remove = await run(pi, "git", ["worktree", "remove", worktree], codeRoot, signal);
+			if (remove.code !== 0) {
+				// This worktree belongs only to the failed claim and has no task metadata yet.
+				await run(pi, "git", ["worktree", "remove", "--force", worktree], codeRoot, signal);
+			}
+			throw new Error("vendor package link broken: Composer repair failed.", { cause: error });
 		}
 	}
 

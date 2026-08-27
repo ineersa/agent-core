@@ -8,7 +8,6 @@ final readonly class TaskWorkflowSettings
 {
     public function __construct(
         public ?string $taskRoot = null,
-        public int $castorCheckTimeoutSeconds = 480,
     ) {
     }
 
@@ -20,11 +19,7 @@ final readonly class TaskWorkflowSettings
         $taskRoot = isset($settings['task_root']) && \is_string($settings['task_root']) && '' !== $settings['task_root']
             ? $settings['task_root']
             : null;
-        $timeout = 480;
-        if (isset($settings['castor_check_timeout_seconds']) && is_numeric($settings['castor_check_timeout_seconds'])) {
-            $timeout = (int) $settings['castor_check_timeout_seconds'];
-        }
 
-        return new self($taskRoot, $timeout);
+        return new self($taskRoot);
     }
 }

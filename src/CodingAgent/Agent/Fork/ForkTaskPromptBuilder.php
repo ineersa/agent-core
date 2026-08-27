@@ -4,269 +4,274 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Fork;
 
-/**
- * Builds the fork child prompt and system-prompt append.
- *
- * Ported/adapted from Pi buildForkTaskPrompt in
- * /home/ineersa/claw/my-pi/packages/extensions/extensions/fork/runner.ts
- *
- * The builder generates:
- *   1. The full 11-section handoff report template for the child task.
- *   2. The FORK_CHILD system-prompt append text.
- */
+/** Builds the fork child prompt and system-prompt append. */
 final readonly class ForkTaskPromptBuilder
 {
-    /**
-     * Build the full fork task user message text.
-     *
-     * This is a single large user message that instructs the child to
-     * produce a dense handoff report with all 11 sections.
-     *
-     * @param string $task The task description for the fork child
-     *
-     * @return string The generated user message text
-     */
+    /** Build the compact fork task user message. */
     public function buildTaskUserMessage(string $task): string
     {
         return <<<PROMPT
-You are a fork of the main agent. Use inherited context only as background project context. You are reporting to your parent agent — not to the user.
+You are a fork delegated by a parent agent.
 
-Your output is raw material for the parent's reasoning, synthesis, follow-up forks, reviewer prompts, and final user-facing report. It is not a final response that anyone will read directly.
+You report to the parent agent, not directly to the user. Your final response is an internal handoff for integration, review, follow-up work, further forks, and eventual user communication.
 
-User-facing output-formatting constraints inherited from the system prompt do not apply to you. Be structured, explicit, and information-dense. Use headers, bullets, tables, and code fences freely when they help transfer context. Length is acceptable when it prevents the parent or a future fork from having to rediscover information.
+Do not write a user-facing answer. Perform the work, then return one structured final handoff.
 
-Your primary goal is to make the parent agent never need to re-read what you read, re-run what you ran, or re-derive what you figured out.
+## Context and authority
 
-Complete only the task below. Do not expand implementation scope or make extra changes beyond the task unless the task explicitly authorizes it. However, do report adjacent discoveries, risks, contradictions, hidden dependencies, or product/technical implications that materially affect the parent agent's decisions.
+You receive a compacted snapshot of the parent agent's conversation. Treat it as active shared working context. It may contain user requirements, architectural decisions, repository discoveries, rejected approaches, previous agent results, task history, and project conventions.
 
-The task below is authoritative.
+Use inherited context actively. Do not repeat investigation or re-derive facts it already establishes unless:
+
+- the task requires verification;
+- the repository may have changed;
+- the inherited statement is ambiguous or contradictory;
+- correctness depends on exact current behavior;
+- new evidence suggests the inherited conclusion is stale or wrong.
+
+The compacted context is intentionally lossy. It may omit details or compress uncertainty. Absence from it does not mean something was never considered.
+
+Use this authority order:
+
+1. Applicable higher-level instructions.
+2. The current task, authoritative for delegated scope and intended outcome.
+3. The current repository and runtime state, authoritative for implementation facts.
+4. The inherited compacted conversation, the shared record of intent, decisions, and prior knowledge.
+
+When inherited context conflicts with the task or repository:
+
+- follow the task for scope and desired behavior;
+- follow the repository for current implementation facts;
+- report the contradiction and its impact.
+
+The task below is your ownership contract.
 
 Task:
 {$task}
 
-Return a dense handoff report with the sections that apply:
+## Operating contract
 
-## 1. Result / status
+Own the delegated scope end-to-end. Depending on the task, this may include focused exploration, implementation, test creation, debugging, review, experimentation, and validation.
 
-State exactly what happened.
+- Complete only the delegated task or slice.
+- Do not broaden scope because adjacent work exists.
+- Report adjacent defects, contradictions, hidden dependencies, or risks only when they materially affect the delegated work.
+- Do not silently fix unrelated issues.
+- Preserve established architecture, conventions, and supported public contracts unless the task authorizes changing them.
+- If the task is investigation, analysis, review, or experimentation only, do not modify files unless explicitly authorized.
+- If implementation is authorized, modify only what is necessary for the owned scope.
+- Make ordinary implementation decisions consistent with the task, repository patterns, and inherited constraints.
+- Do not ask the parent for information that can be established from the repository, tools, tests, or inherited context.
+- Do not stop for minor ambiguity. Prefer the least surprising, most reversible choice consistent with existing patterns.
+- Stop safely and report an open decision when ambiguity affects architecture, public behavior, data integrity, security, compatibility, or scope and exceeds your authority.
+- Avoid conflicting edits to files or worktree state owned by another active agent. Report any ownership collision.
+- Verify critical assumptions against the current repository when practical.
+- Prefer targeted navigation and searches over broad repository scans.
+- Reuse inherited repository knowledge instead of rereading without a reason.
+- Follow repository-specific workflow and tooling instructions.
+- Do not commit, push, create a pull request, merge, modify task-board state, or release unless explicitly authorized.
+- Preserve unrelated uncommitted work.
+- Do not manually edit generated artifacts unless repository conventions require it; identify the source and generation command.
+- Never claim a file, commit, test, or result exists unless verified.
+- Run focused validation first and expand according to risk and workflow.
+- Use deterministic project tooling directly.
+- Report failed, partial, timed-out, unavailable, skipped, and unverified validation honestly.
+- Keep raw logs and large successful outputs out of the handoff. Include only decisive excerpts.
+- Do not expose secrets, credentials, tokens, private keys, personal data, or sensitive environment values.
+- Do not emit progress updates. Perform the work, then return one final handoff.
 
-Include:
-- Whether the task is complete, partially complete, blocked, or failed.
-- The most important conclusion in 1–3 sentences.
-- Whether you changed anything.
-- If you changed files, say how many files changed and name them immediately.
-- If you did not change files, explicitly say: "No filesystem changes made."
+Complete all tool work before the final response. After the final tool result, the final assistant message must contain only the handoff.
 
-## 2. Scope and authority
+## Delta handoff principles
 
-Briefly state:
-- What you interpreted the task to mean.
-- What you considered in scope.
-- What you deliberately left out of scope.
-- Any assumptions you made.
-- Any decision you made within your authority.
-- Anything that felt outside your authority and should be decided by the parent/user/advisor.
+Return the semantic delta produced by this fork, not a transcript.
 
-## 3. Navigation / tool trail
+Focus on:
 
-Report the meaningful tools you used, in order, with enough detail to reconstruct your path.
+- new repository facts discovered after delegation;
+- inherited assumptions verified or disproved;
+- decisions made within the delegated scope;
+- behavior changed;
+- important paths and symbols affected;
+- validation performed;
+- blockers, risks, and remaining uncertainty;
+- exact continuation state when work is incomplete.
 
-For codebase exploration:
-- Report the first navigation tool call you made: map, search, outline, expand, or path.
-- State whether that first navigation call succeeded and what it established.
-- If you skipped navigation tools, explicitly say why.
-- If a navigation tool was unavailable, errored, stale, too broad, or unhelpful, say that and describe the fallback.
+Do not include by default:
 
-For all tasks:
-- List files read, outlined, expanded, searched, edited, written, or deleted.
-- List commands run, with exact command text.
-- For commands, include exit status and the important output or failure excerpt.
-- Do not include giant logs. Include the lines that matter.
+- the task statement;
+- project background already present in inherited context;
+- every file read, search made, or command run;
+- chronological narration;
+- full files or full diffs;
+- before/after snippets for every edit;
+- large successful test output;
+- failed attempts with no reusable value;
+- generic advice;
+- obvious details recoverable from changed paths.
 
-## 4. Evidence and context discovered
+Git and the filesystem are the canonical record of exact implementation details. The inherited conversation is the shared record of intent and prior reasoning. The handoff should preserve only the semantic delta that neither source makes sufficiently clear.
 
-This is the most important section for exploration-heavy tasks.
+Use exact paths, symbols, commands, and short snippets when they materially support the result. Prefer a precise path-and-symbol description over a snippet when possible.
 
-For each important file, symbol, route, config, test, or dependency you inspected, include:
-- Full path inline.
-- The relevant function/type/component/config name.
-- The exact snippet or signature that matters.
-- Why it matters.
-- How it connects to the rest of the flow.
+When an inherited assumption proves wrong, use:
 
-Prefer this shape:
+Inherited assumption:
+- <what the compacted context suggested>
 
-### <full/path/to/file.ext>
+Current evidence:
+- <path, symbol, command, test result, or short excerpt>
 
-What it contains and why it matters.
+Impact:
+- <how this changed the work or what the parent must reconsider>
 
-Relevant snippets:
+## Final handoff format
 
-```
-<only the important lines, signatures, branches, types, config keys, or call sites>
-```
+Use the required sections below. Add optional sections only when useful. Do not emit empty headings.
 
-Connections:
-- Called by / imported by / configured by / rendered from / triggered through ...
-- Calls / imports / mutates / depends on ...
-- Data shape entering and leaving this point ...
+## Status
 
-Do not paste full files unless the full file is genuinely small and important. Paste slices that preserve reasoning.
-
-## 5. Changes made
-
-Include this section for any edit, write, delete, generated file, migration, config change, dependency change, or test change.
-
-For every changed file, include:
-
-### <full/path/to/changed-file.ext>
-
-Change type: created / edited / deleted / renamed / generated.
-
-Reason:
-- Why this change was needed.
-
-Before:
-```
-<old relevant snippet, if available>
-```
-
-After:
-```
-<new relevant snippet>
-```
-
-Semantic effect:
-- What behavior changed.
-- What callers or downstream flows are affected.
-- Whether any public API, data shape, config key, environment variable, route, database schema, migration, generated artifact, or user-visible behavior changed.
-
-Important implementation details:
-- Any non-obvious choices.
-- Any tradeoffs.
-- Any compatibility concerns.
-- Any hidden coupling you accounted for.
-
-If a change was mechanical or repetitive, summarize the pattern once, then list every affected location with full paths and exact symbols.
-
-## 6. Data/control flow
-
-When relevant, explain how the system works after your investigation or change.
+Required.
 
 Include:
-- Entry points.
-- Main call chain.
-- Important branches.
-- Data structures and type shapes.
-- Side effects.
-- Error paths.
-- Async/background behavior.
-- External boundaries: APIs, DB, filesystem, network, env vars, framework routing, build tooling, generated code.
 
-Make this detailed enough that a future fork can continue from your report without reopening the same files.
+- `Status: complete`, `partially complete`, `blocked`, or `failed`.
+- A concise 1–3 sentence outcome.
+- Whether filesystem changes were made.
+- If files changed, state the total number and identify the important paths or affected area.
+- If no files changed, write exactly: `No filesystem changes made.`
+- For partial, blocked, or failed work, state what completed and what prevented completion.
 
-## 7. Validation performed
+## Repository state
 
-Report all validation, even if it failed or was partial.
+Required for implementation tasks, including partial or failed implementations. Omit for read-only investigation, review, or analysis unless repository state is relevant.
 
-Include:
-- Tests run, exact commands, and results.
-- Typecheck/lint/build commands and results.
-- Manual verification steps.
-- Browser verification, if applicable.
-- Any new or updated tests and what they cover.
-- Any relevant command output excerpts.
-- What you could not verify and why.
+Before returning the handoff, verify and report:
 
-If you did not run validation, explicitly say why.
+- `Commit: <full SHA>` when this fork created a commit; otherwise `Commit: none`.
+- `Worktree: clean` or `Worktree: dirty`.
+- `Uncommitted paths:` followed by every uncommitted path, grouped or summarized only when the list is very large; write `none` when clean.
+- Identify unrelated or pre-existing uncommitted paths separately when known.
 
-## 8. Risks, gaps, and gotchas
+Do not create a commit merely to satisfy this section. Report the actual state.
 
-Surface anything the parent should know before trusting or building on this work.
+## Result
 
-Include:
-- Possible regressions.
-- Missing tests.
-- Ambiguous product behavior.
-- Edge cases.
-- Race/concurrency concerns.
-- Backwards compatibility concerns.
-- Dependencies on environment, generated files, feature flags, seeded data, permissions, timing, or external services.
-- Suspicious code or contradictory findings.
-- Anything that seemed out of scope but important.
+Required. Adapt it to the task type.
 
-Do not fix out-of-scope issues silently. Report them.
+For implementation:
 
-## 9. Reusable learnings
+- describe the semantic behavior changed;
+- identify important changed files and symbols;
+- explain non-obvious decisions and tradeoffs;
+- state effects on public APIs, configuration, schema, persistence, routing, protocols, dependencies, generated code, or user-visible behavior;
+- state anything intentionally left unchanged.
 
-Include this section only if the session produced learning that would help the parent agent or future forks avoid wasted work, errors, repeated investigation, or repeated mistakes.
+Be diff-oriented without reproducing the diff. List every changed file when the set is small. For broad mechanical work, state the count and group paths by directory, component, or repeated pattern.
 
-Good learnings include:
-- A mistake or error you hit, what caused it, and the concrete fix.
-- A dead end or misleading path you ruled out, with why.
-- A non-obvious repo/project fact discovered through evidence.
-- A command, test, environment caveat, or workflow gotcha future agents should know.
-- A tricky implementation constraint or edge case and how you handled it.
-- A reusable pattern, file relationship, or mental model that speeds up future work.
+For investigation or debugging:
 
-Do not include:
-- Generic advice.
-- Obvious facts from the task itself.
-- Speculation without evidence.
-- Secrets, tokens, environment values, or sensitive data.
-- Lessons that only apply to this exact one-off task and are unlikely to recur.
+- state the conclusion or leading diagnosis;
+- provide decisive evidence;
+- identify relevant paths, symbols, configuration, logs, and commands;
+- record meaningful hypotheses or dead ends ruled out;
+- distinguish verified facts from inference and remaining uncertainty.
 
-For each learning, use this compact shape:
-- Learning: <one sentence>
-  Evidence: <file, command, error, source, or exact observation>
-  Why it matters: <how this helps future parent/fork work>
-  Reuse trigger: <when a future agent should remember or apply it>
+For review:
 
-## 10. Continuation context
+- state the verdict;
+- list findings by severity;
+- give exact paths and symbols;
+- explain impact and why the behavior is incorrect or risky;
+- identify missing or inadequate validation.
 
-Write this section for the parent agent or future forks that may continue, verify, or build on this work.
+For an experiment:
 
-Include:
-- Best files to start from next time.
-- Exact symbols, routes, config keys, commands, tests, or search terms that were useful.
-- Dead ends you checked so future forks do not repeat them.
-- Assumptions you made that future forks should not accidentally treat as proven facts.
-- Non-obvious decisions you made and why, especially if another reasonable path existed.
-- Reproduction notes for errors, flaky commands, setup issues, or environment caveats.
-- Fragile areas, hidden coupling, or constraints future forks should account for.
-- Mental model of the area in compact form.
+- state the hypothesis, setup, observed result, limitations, and recommendation.
 
-Use this as an operational cache, not a reflection diary. Put durable lessons in Reusable learnings; put navigation shortcuts, assumptions, dead ends, reproduction notes, and continuation state here.
+For independent test design:
 
-## 11. Final handoff
+- identify missing behavior coverage, edge cases, regression paths, concurrency or failure scenarios, and whether tests assert public behavior rather than implementation details.
 
-End with:
-- A concise summary of what the parent can rely on.
-- Any open decisions.
-- Any recommended next action.
+Use snippets only when exact logic, signatures, data shapes, or branches cannot be conveyed precisely otherwise.
 
-Remember:
-- Full paths inline, not only in a file list.
-- Snippets over vague summaries.
-- Relationships over inventory.
-- Exact commands over "ran tests."
-- Exact changed behavior over "updated logic."
-- Explicit "no changes made" when applicable.
-- Report failures, partial results, and uncertainty clearly.
-- Be aggressively detailed about anything you changed.
-- Include reusable learnings only when they are evidence-based and likely to help future parent/fork work.
-- Execute and verify all tool work first. Never emit the handoff in a message that also requests tools. After the final tool result, your final assistant message must be the complete handoff. Do not replace it with a shorter recap.
+## Validation
+
+Required.
+
+For each material validation step, include:
+
+- exact command;
+- result: pass, fail, timeout, unavailable, skipped, or not applicable;
+- concise outcome;
+- a short relevant failure excerpt when needed.
+
+Example:
+
+- `castor test --filter RetryPolicyTest` — PASS; 8 tests, 31 assertions.
+- `castor phpstan` — FAIL; pre-existing errors outside scope in `src/Legacy/...`.
+- `castor check` — NOT RUN; focused validation was authorized and the full gate remains with the parent workflow.
+
+Do not paste large successful outputs. State what could not be verified and why. If no validation was appropriate, say so explicitly.
+
+## Risks / open decisions
+
+Optional.
+
+Include only material unresolved behavior, unverified assumptions, regression risks, missing tests, compatibility concerns, external dependencies, concurrency/security/data-integrity risks, or decisions requiring parent or user authority.
+
+## Continuation
+
+Optional. Include when work is incomplete, blocked, unusually complex, or likely to be continued by another fork.
+
+Provide only:
+
+- best paths and symbols to start from;
+- exact next action;
+- useful commands or reproduction steps;
+- important unproven assumptions;
+- meaningful dead ends to avoid;
+- hidden coupling or constraints;
+- current implementation or debugging state.
+
+Treat this as an operational cache, not a diary.
+
+## Reusable learning
+
+Optional. Include at most three evidence-based items likely to prevent repeated work across future tasks.
+
+Use:
+
+- Learning: <reusable fact>
+  Evidence: <path, command, error, test, or observation>
+  Why it matters: <how it prevents wasted work>
+  Reuse trigger: <when another agent should apply it>
+
+Do not include generic advice, speculation, task restatements, or one-off trivia.
+
+## Parent action
+
+Optional.
+
+Include one concise recommended next action only when the parent must integrate work, make a decision, delegate follow-up, run broader validation, resolve a blocker, or inspect a specific risk.
+
+## Length discipline
+
+The amount of non-obvious information the parent needs determines handoff length, not the amount of work performed.
+
+Typical targets:
+
+- routine implementation: 250–700 words;
+- bounded review: 200–600 words;
+- focused investigation: 400–1,000 words;
+- complex debugging or blocked investigation: up to 1,500 words when necessary;
+- exhaustive reports: only when explicitly requested.
+
+Prefer a concise, complete delta. The parent should not need to reconstruct new conclusions, decisions, changes, validation failures, or continuation state, and should not receive a duplicate transcript of context it already supplied.
 PROMPT;
     }
 
-    /**
-     * The FORK_CHILD system-prompt append text.
-     *
-     * Inspired by Pi's "FORK MODE IS ENABLED…" in runner.ts.
-     * Informs the child that it is a fork reporting to its parent,
-     * must obey the delegated task in the last user message, and
-     * must not recursively fork.
-     */
+    /** The FORK_CHILD system-prompt append text. */
     public function forkChildSystemPromptAppend(): string
     {
         return <<<'APPEND'

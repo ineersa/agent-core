@@ -42,6 +42,21 @@ import { workflowPrompt } from "./prompt";
 // ── Parameter schemas ─────────────────────────────────────────────────────────
 
 const statusParam = StringEnum(STATUSES);
+const CASTOR_CHECK_WALL_SECONDS = 210;
+const CASTOR_CHECK_OUTER_GUARD_SECONDS = 240;
+const CASTOR_CHECK_HOST_TIMEOUT_SECONDS = 285;
+
+function formatCastorCheckFailure(reason: string, worktree: string, stdout: string, stderr: string): string {
+	const output = `${stdout}\n${stderr}`.trim();
+	const qaRun = /QA run:\s*(qa-[A-Za-z0-9_-]+)/.exec(output)?.[1];
+	const lane = /^\s*-\s*([A-Za-z0-9][A-Za-z0-9:_-]*):\s*exit code\s+\d+\s*$/im.exec(output)?.[1];
+	const reportDir = qaRun ? `var/reports/${qaRun}` : undefined;
+	const log = lane && reportDir ? `${reportDir}/check-${lane}.log` : undefined;
+	let snippet = output || "(no output)";
+	if (log && existsSync(join(worktree, log))) snippet = readFileSync(join(worktree, log), "utf8").trim() || snippet;
+	const location = log && existsSync(join(worktree, log)) ? `Failing lane: ${lane}\nLog: ${log}` : reportDir ? `QA reports: ${reportDir}` : "";
+	return `Castor check FAILED (${reason}) in the worktree. Fix the failures, re-validate with focused Castor commands, then move to CODE-REVIEW again.\nWorktree: ${worktree}${location ? `\n${location}` : ""}\nFirst failure:\n${snippet.slice(0, 1200)}`;
+}
 
 const CreateTaskParams = Type.Object({
 	title: Type.String({ description: "Short task title" }),
@@ -61,7 +76,7 @@ const MoveTaskParams = Type.Object({
 	task: Type.String({ description: "Task filename, slug, or unique substring" }),
 	to: statusParam,
 	from: Type.Optional(statusParam),
-	forkRun: Type.Optional(Type.String({ description: "Fork/subagent run id to record in the task file" })),
+	forkRun: Type.Optional(Type.String({ description: "Implementation fork run id to record in the task file" })),
 	summary: Type.Optional(Type.String({ description: "Completion or handoff summary appended to the task" })),
 	validation: Type.Optional(Type.Array(Type.String(), { description: "Validation commands/results appended to the task" })),
 	worktreeBase: Type.Optional(Type.String({ description: "Directory for task worktrees. Defaults to ../<repo>-worktrees" })),
@@ -73,13 +88,12 @@ const MoveTaskParams = Type.Object({
 	prBody: Type.Optional(Type.String({ description: "Body for GitHub PR when moving to CODE-REVIEW." })),
 	prBaseBranch: Type.Optional(Type.String({ description: "Base branch for PR. Defaults to repository default branch." })),
 	pushOnly: Type.Optional(Type.Boolean({ description: "Push branch but skip PR creation. Default false." })),
-	castorCheckTimeoutSeconds: Type.Optional(Type.Number({ description: "Timeout in seconds for the deterministic castor check gate during CODE-REVIEW transition. Default 480.", minimum: 60, maximum: 1200 })),
 });
 
 const UpdateTaskParams = Type.Object({
 	task: Type.String({ description: "Task filename, slug, or unique substring" }),
 	from: Type.Optional(statusParam),
-	forkRun: Type.Optional(Type.String({ description: "Fork/subagent run id to record in the task file" })),
+	forkRun: Type.Optional(Type.String({ description: "Implementation fork run id to record in the task file" })),
 	summary: Type.Optional(Type.String({ description: "Completion or handoff summary appended to the task" })),
 	validation: Type.Optional(Type.Array(Type.String(), { description: "Validation commands/results appended to the task" })),
 	prUrl: Type.Optional(Type.String({ description: "Set/update the PR URL in task metadata" })),
@@ -199,12 +213,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Move a task between TODO, IN-PROGRESS, CODE-REVIEW, DONE, ARCHIVE, and CANCELLED on the external task board. TODO→IN-PROGRESS creates a code worktree; IN-PROGRESS→CODE-REVIEW pushes branch and creates PR; CODE-REVIEW→DONE merges the task branch; DONE→ARCHIVE is metadata-only; ANY→CANCELLED removes a clean worktree (if present) and leaves the branch.",
 		promptSnippet: "Move tracked project tasks between statuses; creates worktrees, opens PRs, and merges completed task branches",
 		promptGuidelines: [
-			"Use move_task instead of manual mv/git worktree commands for tracked task workflow transitions.",
-			"Use move_task with to=\"IN-PROGRESS\" before launching a worker/fork for a tracked task.",
-			"Use move_task with to=\"CODE-REVIEW\" after the worktree branch is committed and ready for review; this automatically runs deterministic castor check in the worktree, then pushes the branch and creates a PR. Run focused Castor validation (castor test, castor deptrac, castor phpstan, castor cs-check) yourself before moving to catch issues early.",
-			"Use move_task with to=\"DONE\" only after PR review is approved and the user/parent decides to merge; move_task reports merge conflicts and leaves the task in CODE-REVIEW on failure.",
-			"Use move_task with to=\"ARCHIVE\" only from DONE; this updates Status metadata and moves the Markdown file with no git side effects.",
-			"Use move_task with to=\"CANCELLED\" to abandon a task from any status; clean worktrees and IDEA exclusions are removed safely, the git branch is left, and dirty worktrees fail closed without moving the task.",
+			"Use move_task rather than manual status-file or worktree moves. Its schema and result describe transition preconditions, side effects, and errors; load the task-workflow skill for orchestration.",
 		],
 		parameters: MoveTaskParams,
 		async execute(_toolCallId, params, signal, _onUpdate, ctx: ExtensionContext) {
@@ -271,17 +280,16 @@ export default function (pi: ExtensionAPI) {
 					}
 
 					// Run deterministic castor check in worktree
-					const checkTimeout = params.castorCheckTimeoutSeconds ?? 480;
-					notes.push(`Running deterministic castor check in worktree (timeout ${checkTimeout}s)...`);
+					notes.push(`Running deterministic castor check in worktree (Castor wall ${CASTOR_CHECK_WALL_SECONDS}s; outer cleanup guard ${CASTOR_CHECK_OUTER_GUARD_SECONDS}s)...`);
 
 					const checkStart = Date.now();
 					const checkResult = await run(
 						pi,
 						"timeout",
-						["--kill-after=30s", `${checkTimeout}s`, "env", "LLM_MODE=true", "castor", "check"],
+						["--kill-after=30s", `${CASTOR_CHECK_OUTER_GUARD_SECONDS}s`, "env", "LLM_MODE=true", "castor", "check"],
 						worktree,
 						signal,
-						(checkTimeout + 45) * 1000,
+						CASTOR_CHECK_HOST_TIMEOUT_SECONDS * 1000,
 					);
 
 					const checkDuration = (Date.now() - checkStart) / 1000;
@@ -289,15 +297,9 @@ export default function (pi: ExtensionAPI) {
 
 					if (checkResult.code !== 0) {
 						const reason = checkKilled
-							? `timeout after ${checkTimeout}s`
+							? `outer cleanup guard after Castor's ${CASTOR_CHECK_WALL_SECONDS}s wall (${CASTOR_CHECK_OUTER_GUARD_SECONDS}s)`
 							: `exit code ${checkResult.code}`;
-						const detail = checkResult.stderr || checkResult.stdout || "(no output)";
-						throw new Error(
-							`Castor check FAILED (${reason}) in the worktree. ` +
-							`Fix the failures, re-validate with focused Castor commands, then move to CODE-REVIEW again.\n` +
-							`Worktree: ${worktree}\n` +
-							`Output:\n${detail.slice(0, 2000)}`,
-						);
+						throw new Error(formatCastorCheckFailure(reason, worktree, checkResult.stdout, checkResult.stderr));
 					}
 
 					notes.push(`castor check passed (${checkDuration.toFixed(1)}s).`);
