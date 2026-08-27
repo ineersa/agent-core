@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Compaction;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
@@ -50,7 +49,6 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
     private array $inFlight = [];
 
     public function __construct(
-        private readonly RunStoreInterface $runStore,
         private readonly ProviderContextUsageResolver $providerUsageResolver,
         private readonly CompactionConfig $compactionConfig,
         private readonly RunModelResolverInterface $modelResolver,
@@ -115,15 +113,17 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // The ToolExecutionStart guard catches the batch-start commit;
         // this guard catches the in-between partial commits.
         //
-        // Fetch run state once here and reuse below for the in-flight
-        // and provider-usage guards — avoids a double fetch that would
-        // produce a stale-version mismatch in concurrent scenarios.
-        $runState = $this->runStore->get($runId);
-        if (null !== $runState) {
-            foreach ($runState->pendingToolCalls as $completed) {
-                if (true !== $completed) {
-                    return $context;
-                }
+        // RunCommit provides the resolved committed state, including the
+        // persisted event sequence, so this synchronous hook never rereads
+        // the file-backed run store after commit.
+        $runState = $context->runState;
+        if (null === $runState) {
+            return $context;
+        }
+
+        foreach ($runState->pendingToolCalls as $completed) {
+            if (true !== $completed) {
+                return $context;
             }
         }
 
@@ -174,7 +174,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         }
 
         // Prefer canonical RunState.model; session/default is config-only fallback.
-        $activeModel = null !== $runState && null !== $runState->model && '' !== trim($runState->model)
+        $activeModel = null !== $runState->model && '' !== trim($runState->model)
             ? trim($runState->model)
             : $this->modelResolver->resolveActiveModel($runId);
         $runtimeSettings = $this->compactionConfig->resolveRuntimeSettings($activeModel);
@@ -186,7 +186,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // Guard: skip when a compaction is already in flight.
         // activeStepId is set to e.g. 'compact-1234567890' by
         // CompactRunHandler before the lifecycle events are committed.
-        if (null !== $runState && null !== $runState->activeStepId && str_starts_with($runState->activeStepId, 'compact-')) {
+        if (null !== $runState->activeStepId && str_starts_with($runState->activeStepId, 'compact-')) {
             return $context;
         }
 
@@ -229,12 +229,6 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // (too_few_messages, below_keep_recent_tokens, no_boundary,
         // no_safe_boundary) are also silently skipped — the hook
         // should not emit visible failures for compile-time skips.
-        // If RunState is absent (unlikely but defensive), skip — we
-        // cannot inspect messages to prepare compaction boundaries.
-        if (null === $runState) {
-            return $context;
-        }
-
         $prepareResult = $this->compactionService->prepare($runState->messages);
 
         if (!$prepareResult->isReady()) {

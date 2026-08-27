@@ -52,7 +52,6 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
 
         $this->subscriber = new ContextBudgetReminderHookSubscriber(
             $this->eventStore,
-            $this->runStore,
             $this->agentRunner,
             new ContextBudgetReminderConfig(
                 earlyInputTokens: 200000,
@@ -239,6 +238,24 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         ]));
     }
 
+    public function testUsesCommittedContextModelWhenRunStartedHasNoWindow(): void
+    {
+        $this->mockEvents([
+            $this->runStarted(1, null),
+        ]);
+        $this->runStore->expects($this->never())->method('get');
+        $this->agentRunner->expects($this->once())->method('appendMessage');
+
+        $this->subscriber->handleAfterTurnCommit($this->hookContext(
+            [
+                $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, [
+                    'usage' => ['input_tokens' => 200000],
+                ]),
+            ],
+            $this->runState(),
+        ));
+    }
+
     public function testUrgentAlreadyQueuedSuppressesLaterReminders(): void
     {
         $urgentWrapped = ContextBudgetReminderHookSubscriber::wrapSystemReminder(
@@ -269,7 +286,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
     /**
      * @param list<AfterTurnCommitEventSummary> $events
      */
-    private function hookContext(array $events): AfterTurnCommitHookContext
+    private function hookContext(array $events, ?RunState $runState = null): AfterTurnCommitHookContext
     {
         return new AfterTurnCommitHookContext(
             runId: 'run-1',
@@ -277,6 +294,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             status: RunStatus::Running->value,
             events: $events,
             effectsCount: 0,
+            runState: $runState ?? $this->runStore->get('run-1'),
         );
     }
 

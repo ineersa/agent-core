@@ -89,6 +89,8 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
         $this->assertSame(2, $captured->events[1]->seq);
         $this->assertSame('running', $captured->status);
         $this->assertNotSame(0, $captured->events[0]->seq);
+        $this->assertInstanceOf(RunState::class, $captured->runState);
+        $this->assertSame(2, $captured->runState->lastSeq);
 
         // The assigned-sequence bump (input seq 0 -> persisted seq 2) must
         // preserve the in-flight retry episode, not reset retryAttempts to 0.

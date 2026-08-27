@@ -90,7 +90,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $this->metadataReader = new SubagentRunMetadataReader(new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::denormalizer());
 
         $this->subscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
@@ -115,13 +114,11 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ];
         $runState = $this->createRunState($messages);
 
-        $this->runStore->expects($this->once())
-            ->method('get')
-            ->willReturn($runState);
+        $this->runStore->expects($this->never())->method('get');
 
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);  // 12000 > 11000, no auto started event
 
-        $context = $this->createHookContext();
+        $context = $this->createHookContext(runState: $runState);
         $this->subscriber->handleAfterTurnCommit($context);
 
         $this->assertCount(1, $this->commandBus->messages);
@@ -195,7 +192,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             compactAfterTokens: 1,
         );
         $subscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
             $this->providerUsageResolver,
             $disabledConfig,
             $this->modelResolver,
@@ -350,7 +346,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             ->willReturn('openai/gpt-4');
 
         $subscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
             $this->providerUsageResolver,
             $configWithOverride,
             $modelResolver,
@@ -597,7 +592,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // Fresh service instance — no in-memory state.
         $freshSubscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
@@ -920,7 +914,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         };
 
         $summaryOnlySubscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
@@ -1010,7 +1003,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         };
 
         $summaryPlusFreshSubscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
@@ -1078,7 +1070,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         };
 
         $failedSubscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
@@ -1163,7 +1154,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $compactionService->expects($this->never())->method('prepare');
 
         $subscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
@@ -1206,7 +1196,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             model: null);
     }
 
-    private function createHookContext(array $eventTypes = [], int $effectsCount = 0): AfterTurnCommitHookContext
+    private function createHookContext(array $eventTypes = [], int $effectsCount = 0, ?RunState $runState = null): AfterTurnCommitHookContext
     {
         $events = array_map(
             static fn (string $type): AfterTurnCommitEventSummary => new AfterTurnCommitEventSummary(seq: 1, type: $type),
@@ -1219,6 +1209,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             status: 'running',
             events: $events,
             effectsCount: $effectsCount,
+            runState: $runState ?? $this->runStore->get('run-1'),
         );
     }
 
