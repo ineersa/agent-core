@@ -12,7 +12,7 @@ Tasks live in an **external task board directory** separate from the code repo.
 - **Code repo:** `/home/ineersa/projects/agent-core` — git operations (branches, worktrees, PRs)
 - **Task board:** `/home/ineersa/projects/agent-core-tasks` — task markdown files
 
-The task board root is configured via `.pi/settings.json`→`taskWorkflow.taskRoot`, or overridden by the `PI_TASK_WORKFLOW_ROOT` environment variable.
+The task board root is configured via `extensions.settings.task_workflow.task_root` in Hatfield settings, or overridden by the `HATFIELD_TASK_WORKFLOW_ROOT` environment variable.
 
 **Task status/metadata moves do NOT commit to the agent-core code repo.**
 Task board changes are git-auto-detected in the external task repo but not auto-committed,
@@ -20,7 +20,7 @@ preventing code-branch pollution. The user commits task board changes manually w
 
 ## Orchestrator model
 
-Implementation ownership is a context-management decision. The agent with the detailed implementation model normally completes cohesive work; delegate only complete bounded slices where transfer avoids rereading/context growth. One owner edits each slice; hand off explicitly and never edit the same files concurrently. Independent review remains required.
+Implementation ownership is a context-management decision. After a shallow routing pass, choose main-owned versus fork-owned implementation before deep implementation exploration. If main already has the detailed implementation model, it keeps the cohesive slice. If delegated, the fork owns detailed exploration, implementation, and focused validation for its bounded scope; give it the goal, acceptance criteria, constraints, known entry points, ownership boundaries, and validation contract—not a parent-completed implementation design. Write-capable owners execute sequentially in one worktree, even for disjoint files: Git index/status, generated files, formatters, and test artifacts are shared. Parallel write-capable forks require separate branches/worktrees and an explicit integration order. Hand off ownership explicitly. Independent review remains required.
 
 Agents may be dispatched as follows:
 
@@ -32,6 +32,16 @@ Agents may be dispatched as follows:
 | **Main agent** | Planning, cohesive implementation it already understands, validation, ownership decisions, and task metadata |
 
 Scouts, researchers, and reviewers are read-only subagents. Each role's existing handoff format remains authoritative; task metadata records only identity, revision, scope, outcome, validation, and unresolved blockers.
+
+### Canonical ownership work-log record
+
+Append this exact record through the existing `update_task(workLog=[...])` at assignment and again when the slice completes or blocks:
+
+```text
+Ownership: owner=<main|fork>; fork_run=<run-id|none>; revision=<target revision/baseline>; scope=<bounded scope>; outcome=<assigned|completed|blocked>; commit=<sha|none>
+```
+
+The append-only work log is authoritative for multiple slices and revisions. `Fork run` may remain a latest-fork convenience pointer, but must not replace these records.
 
 ### Proportional scouting
 
@@ -90,9 +100,9 @@ Read-only planning. No status changes, file edits, or implementation forks; read
    - Worktree creation copies `vendor/` and `.vera/` into the worktree, and updates the parent worktree IDEA module exclusions when present.
 2. Scout/research only where proportional to uncertainty; do not re-scout context main already owns. Use one scout for an unfamiliar bounded area and parallel independent lenses only for high-risk cross-module, security, or ambiguous architecture work. Batch independent probes in one parallel `tasks` call.
 3. Apply the **Specification fidelity gate**: map every proposed externally visible addition to an exact finalized requirement and resolve ambiguity with the user.
-4. Build the implementation model, then explicitly choose and record either main-owned cohesive implementation or fork-owned bounded slice(s). Define disjoint file ownership. After a fork launch/return identity is available, record its `forkRun` plus target revision and scope through `update_task`.
-5. Implement without overlapping ownership. The main agent may complete its cohesive slice; one fork owns each delegated bounded slice.
-6. Verify commits/output and run focused validation. Record implementation ownership plus identity/revision/scope, outcome, validation, and unresolved blockers via `update_task`; retain each role's own handoff format rather than inventing a shared one.
+4. After a shallow routing pass, explicitly choose and record main-owned cohesive implementation or fork-owned bounded slice(s) **before** deep implementation exploration. If main already has the detailed model, it keeps the slice; otherwise the fork performs detailed exploration, implementation, and focused validation. For a fork, provide goal, acceptance criteria, constraints, known entry points, ownership boundaries, and validation contract—not a parent-completed design. Append the canonical ownership work-log record with `outcome=assigned`.
+5. Implement sequentially within one worktree; disjoint files do not make concurrent writers safe. The main agent may complete its cohesive slice; one fork owns each delegated bounded slice. Parallel write-capable forks require separate branches/worktrees and an explicit integration order.
+6. Verify commits/output and run focused validation. Append the canonical ownership work-log record with `outcome=completed` or `blocked`, including commit when available; retain each role's own handoff format rather than inventing a shared one.
 7. **STOP.** Do not proceed to PR or code review.
    - Do NOT run: `castor check`, `move_task(to="CODE-REVIEW")`, `gh pr create`, `git push`, reviewer subagent.
    - Inform user implementation is done. They run `task-to-pr` when ready.
@@ -123,8 +133,8 @@ repo. The external task board repo must be committed manually when desired.
 
 1. Read PR summary via `gh pr view` and inline comments via `gh api repos/<owner>/<repo>/pulls/<n>/comments`. Classify blockers vs suggestions. In the same parent session, resume the prior reviewer with `agent_resume` plus commit/diff and resolution delta when its recorded artifact/run identity is eligible; otherwise launch a new reviewer.
 2. `move_task(to="IN-PROGRESS")` before any implementation.
-3. Re-apply the **Specification fidelity gate**, choose main-owned cohesive fixes or fork-owned bounded slices, and record disjoint ownership before implementation.
-4. Implement fixes, verify output, and run focused Castor validation.
+3. Re-apply the **Specification fidelity gate**. After a shallow routing pass, choose and append the canonical ownership record for main-owned cohesive fixes or fork-owned bounded slices before deep exploration. Write-capable owners remain sequential in one worktree; parallel forks require separate branches/worktrees and an explicit integration order.
+4. Implement fixes, verify output, run focused Castor validation, and append the canonical ownership record with `outcome=completed` or `blocked`.
 5. Re-review by resuming the prior reviewer with `agent_resume`, the new commit/diff, prior findings, and resolution delta only when its recorded artifact/run identity is eligible in this parent session; otherwise launch a new reviewer. Record the active reviewer role, artifact/run ID, target revision, and scope via `update_task` work log. Include the specification fidelity gate. If REQUEST CHANGES → repeat from step 3.
 6. When APPROVED → `move_task(to="CODE-REVIEW")` (pushes branch, creates/updates PR).
 7. Record reviewer identity, target revision, scope, decision, commit sha, validation, and unresolved blockers via `update_task`.

@@ -344,7 +344,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
     {
         $output = trim($result->stdout."\n".$result->stderr);
         $qaRun = preg_match('/QA run:\s*(qa-[A-Za-z0-9_-]+)/', $output, $matches) ? $matches[1] : null;
-        $lane = preg_match('/(?:quality failed|failed lanes?)\s*:?\s*([A-Za-z0-9][A-Za-z0-9:_-]*)(?=\s*(?:\(|,|\n|$))/i', $output, $matches) ? $matches[1] : null;
+        $lane = preg_match('/^\s*-\s*([A-Za-z0-9][A-Za-z0-9:_-]*):\s*exit code\s+\d+\s*$/mi', $output, $matches) ? $matches[1] : null;
         $reportDir = null === $qaRun ? null : 'var/reports/'.$qaRun;
         $log = null === $lane || null === $reportDir ? null : $reportDir.'/check-'.$lane.'.log';
         $logPath = null === $log ? null : $worktree.'/'.$log;

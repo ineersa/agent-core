@@ -159,7 +159,7 @@ final class MoveTaskHandlerTest extends TestCase
                 mkdir($reports, 0o755, true);
                 file_put_contents($reports.'/check-test:llm-real.log', 'LLM lane failure: useful first error');
 
-                return new ExecResultDTO('QA run: qa-123\nquality failed: test:llm-real (exit code 1)', 'Castor summary is on stdout.', 1);
+                return new ExecResultDTO("QA run: qa-123\nquality failed:\n- test:llm-real: exit code 1", 'Castor summary is on stdout.', 1);
             }
 
             return ($this->gitStubForCodeReview(timeoutExitCode: 0))($command, $args, $options);
