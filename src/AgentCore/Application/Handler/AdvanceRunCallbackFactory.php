@@ -14,22 +14,22 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *
  * Every follow-up flow dispatches AdvanceRun with the same mechanics: a
  * fresh hrtime-based step id evaluated at invocation time (never at callback
- * creation), turnNo 0, attempt 1, a SHA-256 "$runId|$stepId" idempotency key,
+ * creation), the committed predecessor turn, attempt 1, a SHA-256 "$runId|$stepId" idempotency key,
  * and Messenger failures wrapped into a flow-specific RuntimeException with
  * the original exception as previous. Only the step-id prefix and the failure
  * message vary per call site.
  */
 final class AdvanceRunCallbackFactory
 {
-    public static function create(MessageBusInterface $commandBus, string $runId, string $prefix, string $errorMessage): callable
+    public static function create(MessageBusInterface $commandBus, string $runId, int $turnNo, string $prefix, string $errorMessage): callable
     {
-        return static function () use ($commandBus, $runId, $prefix, $errorMessage): void {
+        return static function () use ($commandBus, $runId, $turnNo, $prefix, $errorMessage): void {
             $stepId = \sprintf('%s-%d', $prefix, hrtime(true));
 
             try {
                 $commandBus->dispatch(new AdvanceRun(
                     runId: $runId,
-                    turnNo: 0,
+                    turnNo: $turnNo,
                     stepId: $stepId,
                     attempt: 1,
                     idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),

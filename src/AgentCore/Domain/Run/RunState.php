@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Run;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 
 final readonly class RunState
 {
@@ -13,6 +14,7 @@ final readonly class RunState
      *
      * @param list<AgentMessage>                $messages
      * @param array<string, bool>               $pendingToolCalls
+     * @param array<string, bool>               $pendingShellToolCalls     current direct-shell tool call ids only; removed when execution ends
      * @param array<string, mixed>|null         $streamingMessage
      * @param list<PendingHumanInputRequestDTO> $pendingHumanInputRequests ordered FIFO of outstanding human-input requests
      */
@@ -25,9 +27,17 @@ final readonly class RunState
         public bool $isStreaming = false,
         public ?array $streamingMessage = null,
         public array $pendingToolCalls = [],
+        /** @var array<string, bool> Current direct-shell tool call ids only; never a receipt history. */
+        public array $pendingShellToolCalls = [],
         public ?string $errorMessage = null,
         public array $messages = [],
         public ?string $activeStepId = null,
+        /** Bounded current operation identity; never an operation history. */
+        public ?CurrentOperationDTO $currentOperation = null,
+        /** Last committed AdvanceRun token; bounded transition evidence, never a receipt history. */
+        public ?string $lastAppliedAdvanceKey = null,
+        /** Last completed CompactRun token; bounded transition evidence, never a receipt history. */
+        public ?string $lastAppliedCompactionKey = null,
         public bool $retryableFailure = false,
         /** Count of completed auto-retry attempts in the active retryable-failure episode; manual continue resets to 0. May be one past max when retries are exhausted. */
         public int $retryAttempts = 0,
@@ -47,6 +57,19 @@ final readonly class RunState
     }
 
     /**
+     * LLM results are admitted only for the one exact active model operation.
+     * A direct standalone shell can hold that bounded identity while its tool
+     * call remains pending, so its forged LLM result must not be accepted.
+     */
+    public function canAcceptLlmResult(LlmStepResult $message): bool
+    {
+        return \in_array($this->status, [RunStatus::Running, RunStatus::Cancelling], true)
+            && null !== $this->currentOperation
+            && $this->currentOperation->matchesMessage($message)
+            && !$this->isPendingStandaloneShellOperation($this->currentOperation);
+    }
+
+    /**
      * Safe immutable copy that preserves every field unless explicitly overridden.
      * Prefer this over raw `new RunState(...)` when only a subset of fields change.
      *
@@ -59,9 +82,13 @@ final readonly class RunState
      *     isStreaming?: bool,
      *     streamingMessage?: array<string, mixed>|null,
      *     pendingToolCalls?: array<string, bool>,
+     *     pendingShellToolCalls?: array<string, bool>,
      *     errorMessage?: string|null,
      *     messages?: list<AgentMessage>,
      *     activeStepId?: string|null,
+     *     currentOperation?: CurrentOperationDTO|null,
+     *     lastAppliedAdvanceKey?: string|null,
+     *     lastAppliedCompactionKey?: string|null,
      *     retryableFailure?: bool,
      *     retryAttempts?: int,
      *     pendingHumanInputRequests?: list<PendingHumanInputRequestDTO>,
@@ -79,13 +106,22 @@ final readonly class RunState
             isStreaming: \array_key_exists('isStreaming', $overrides) ? (bool) $overrides['isStreaming'] : $this->isStreaming,
             streamingMessage: \array_key_exists('streamingMessage', $overrides) ? $overrides['streamingMessage'] : $this->streamingMessage,
             pendingToolCalls: \array_key_exists('pendingToolCalls', $overrides) ? $overrides['pendingToolCalls'] : $this->pendingToolCalls,
+            pendingShellToolCalls: \array_key_exists('pendingShellToolCalls', $overrides) ? $overrides['pendingShellToolCalls'] : $this->pendingShellToolCalls,
             errorMessage: \array_key_exists('errorMessage', $overrides) ? $overrides['errorMessage'] : $this->errorMessage,
             messages: \array_key_exists('messages', $overrides) ? $overrides['messages'] : $this->messages,
             activeStepId: \array_key_exists('activeStepId', $overrides) ? $overrides['activeStepId'] : $this->activeStepId,
+            currentOperation: \array_key_exists('currentOperation', $overrides) ? $overrides['currentOperation'] : $this->currentOperation,
+            lastAppliedAdvanceKey: \array_key_exists('lastAppliedAdvanceKey', $overrides) ? $overrides['lastAppliedAdvanceKey'] : $this->lastAppliedAdvanceKey,
+            lastAppliedCompactionKey: \array_key_exists('lastAppliedCompactionKey', $overrides) ? $overrides['lastAppliedCompactionKey'] : $this->lastAppliedCompactionKey,
             retryableFailure: \array_key_exists('retryableFailure', $overrides) ? (bool) $overrides['retryableFailure'] : $this->retryableFailure,
             retryAttempts: \array_key_exists('retryAttempts', $overrides) ? (int) $overrides['retryAttempts'] : $this->retryAttempts,
             pendingHumanInputRequests: \array_key_exists('pendingHumanInputRequests', $overrides) ? $overrides['pendingHumanInputRequests'] : $this->pendingHumanInputRequests,
             model: \array_key_exists('model', $overrides) ? $overrides['model'] : $this->model,
         );
+    }
+
+    private function isPendingStandaloneShellOperation(CurrentOperationDTO $operation): bool
+    {
+        return isset($this->pendingShellToolCalls['sh_'.hash('sha256', $operation->idempotencyKey)]);
     }
 }

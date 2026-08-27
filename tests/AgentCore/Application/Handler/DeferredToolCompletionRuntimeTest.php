@@ -390,7 +390,6 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
 
         $processor = new RunMessageProcessor(
             runStore: $runStore,
-            idempotency: new InMemoryIdempotencyStore(),
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: new RunCommit(
                 runStore: $runStore,

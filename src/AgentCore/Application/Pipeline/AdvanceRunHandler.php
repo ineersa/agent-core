@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -42,6 +43,21 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
 
         $runId = $message->runId();
 
+        // AdvanceRun consumes the exact current turn. A prior committed
+        // transition must stop before it drains commands queued afterward.
+        if ($message->turnNo() !== $state->turnNo
+            || $message->idempotencyKey() === $state->lastAppliedAdvanceKey) {
+            return new HandlerResult();
+        }
+
+        // AdvanceRun is a successor token. Once it has committed a new active
+        // operation, a redelivery must stop before it can drain newer mailbox
+        // work or dispatch a second successor.
+        if (null !== $state->currentOperation
+            && $state->currentOperation->idempotencyKey !== $message->idempotencyKey()) {
+            return new HandlerResult();
+        }
+
         // Safety guard: do not advance the run while there are still
         // unresolved tool calls in flight.  An AdvanceRun dispatched
         // before all pending tool results are collected would assemble
@@ -70,7 +86,10 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             $eventSpecs = [
                 [
                     'type' => RunEventTypeEnum::AgentEnd->value,
-                    'payload' => ['reason' => 'cancelled'],
+                    'payload' => [
+                        'reason' => 'cancelled',
+                        'advance_idempotency_key' => $message->idempotencyKey(),
+                    ],
                 ],
             ];
 
@@ -82,13 +101,16 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
+                'pendingShellToolCalls' => [],
+                'currentOperation' => null,
+                'lastAppliedAdvanceKey' => $message->idempotencyKey(),
                 'retryableFailure' => false,
                 'retryAttempts' => 0,
             ]);
 
             $postCommit = [];
             if (null !== $this->commandBus) {
-                $postCommit[] = AdvanceRunCallbackFactory::create($this->commandBus, $runId, 'post-cancel-advance', 'Failed to dispatch AdvanceRun after cancellation terminalized.');
+                $postCommit[] = AdvanceRunCallbackFactory::create($this->commandBus, $runId, $state->turnNo, 'post-cancel-advance', 'Failed to dispatch AdvanceRun after cancellation terminalized.');
             }
 
             return new HandlerResult(
@@ -108,7 +130,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         ;
 
         $preparedState = $mailboxResult->state;
-        $boundaryEventSpecs = $mailboxResult->eventSpecs;
+        $boundaryEventSpecs = $this->withAdvanceToken($mailboxResult->eventSpecs, $message->idempotencyKey());
         $mailboxEffects = $mailboxResult->effects;
 
         // When pending commands (steer/follow-up/append_message) added new messages while
@@ -149,6 +171,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 $nextState = $preparedState->with([
                     'version' => $state->version + 1,
                     'lastSeq' => $state->lastSeq + \count($events),
+                    'lastAppliedAdvanceKey' => $message->idempotencyKey(),
                 ]);
 
                 return new HandlerResult(
@@ -169,6 +192,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             $nextState = $preparedState->with([
                 'version' => $state->version + 1,
                 'lastSeq' => $state->lastSeq + \count($events),
+                'lastAppliedAdvanceKey' => $message->idempotencyKey(),
             ]);
 
             return new HandlerResult(
@@ -195,6 +219,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 nextState: $preparedState->with([
                     'version' => $state->version + 1,
                     'lastSeq' => $state->lastSeq + \count($events),
+                    'lastAppliedAdvanceKey' => $message->idempotencyKey(),
                 ]),
                 events: $events,
             );
@@ -283,28 +308,48 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 // After successful compaction, the conversation must continue
                 // (AdvanceRun effect) so the LLM turn can proceed on the
                 // compacted context.
+                // CompactRun validates against the state turn at handling time.
+                // This request holds the next LLM turn but does not advance the
+                // state turn until that LLM execution is actually scheduled.
+                $compactRequestTurnNo = $preparedState->turnNo;
                 $compactEffect = new CompactRun(
                     runId: $runId,
-                    turnNo: $nextTurnNo,
+                    turnNo: $compactRequestTurnNo,
                     stepId: $compactStepId,
                     attempt: 1,
-                    idempotencyKey: hash('sha256', \sprintf('%s|compact|%d|%s', $runId, $nextTurnNo, $compactStepId)),
+                    idempotencyKey: hash('sha256', \sprintf('%s|compact|%d|%s', $runId, $compactRequestTurnNo, $compactStepId)),
                     trigger: 'auto',
                     continueAfterCompaction: true,
                 );
 
-                // Emit boundary events only — do NOT emit TurnAdvanced
-                // or HistoryPositionSet (compaction does not advance the turn).
+                // Persist the request separately from actual compaction start:
+                // the CompactRun effect can be lost after commit, while replay
+                // must still reject this already-applied AdvanceRun before it
+                // drains a newer mailbox command.
+                $compactionRequestSpecs = [
+                    ...$boundaryEventSpecs,
+                    [
+                        'type' => RunEventTypeEnum::ContextCompactionRequested->value,
+                        'payload' => [
+                            'step_id' => $compactStepId,
+                            'turn_no' => $nextTurnNo,
+                            'request_idempotency_key' => $compactEffect->idempotencyKey(),
+                            'advance_idempotency_key' => $message->idempotencyKey(),
+                            'trigger' => 'auto',
+                        ],
+                    ],
+                ];
                 $events = $this->eventFactory->eventsFromSpecs(
                     $runId,
                     $preparedState->turnNo,
                     $state->lastSeq + 1,
-                    $boundaryEventSpecs,
+                    $compactionRequestSpecs,
                 );
 
                 $compactedState = $preparedState->with([
                     'version' => $state->version + 1,
                     'lastSeq' => $state->lastSeq + \count($events),
+                    'lastAppliedAdvanceKey' => $message->idempotencyKey(),
                 ]);
 
                 return new HandlerResult(
@@ -335,6 +380,9 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 'payload' => [
                     'step_id' => $nextStepId,
                     'turn_no' => $nextTurnNo,
+                    'operation_attempt' => 1,
+                    'operation_idempotency_key' => $effect->idempotencyKey(),
+                    'advance_idempotency_key' => $message->idempotencyKey(),
                 ],
             ],
             [
@@ -361,6 +409,13 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             'isStreaming' => false,
             'streamingMessage' => null,
             'activeStepId' => $nextStepId,
+            'currentOperation' => new CurrentOperationDTO(
+                $nextTurnNo,
+                $nextStepId,
+                1,
+                $effect->idempotencyKey(),
+            ),
+            'lastAppliedAdvanceKey' => $message->idempotencyKey(),
             'retryableFailure' => false,
         ]);
 
@@ -376,6 +431,22 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             events: $events,
             effects: [$effect],
             postCommit: $postCommit,
+        );
+    }
+
+    /**
+     * @param list<array{type: string, payload: array<string, mixed>, turn_no?: int}> $eventSpecs
+     *
+     * @return list<array{type: string, payload: array<string, mixed>, turn_no?: int}>
+     */
+    private function withAdvanceToken(array $eventSpecs, string $idempotencyKey): array
+    {
+        return array_map(
+            static fn (array $eventSpec): array => [
+                ...$eventSpec,
+                'payload' => [...$eventSpec['payload'], 'advance_idempotency_key' => $idempotencyKey],
+            ],
+            $eventSpecs,
         );
     }
 }

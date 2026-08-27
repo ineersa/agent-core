@@ -247,7 +247,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
             return $context;
         }
 
-        $this->dispatchAutoCompaction($runId);
+        $this->dispatchAutoCompaction($runId, $runState->turnNo);
 
         return $context;
     }
@@ -271,7 +271,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         return true;
     }
 
-    private function dispatchAutoCompaction(string $runId): void
+    private function dispatchAutoCompaction(string $runId, int $turnNo): void
     {
         $this->inFlight[$runId] = true;
 
@@ -280,7 +280,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         try {
             $this->commandBus->dispatch(new CompactRun(
                 runId: $runId,
-                turnNo: 0,
+                turnNo: $turnNo,
                 stepId: $stepId,
                 attempt: 1,
                 idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),

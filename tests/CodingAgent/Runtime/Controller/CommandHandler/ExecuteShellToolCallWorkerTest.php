@@ -106,7 +106,7 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         /** @var AdvanceRun $advance */
         $advance = $commandBus->messages[0];
         $this->assertSame('run-standalone', $advance->runId());
-        $this->assertSame(0, $advance->turnNo());
+        $this->assertSame(2, $advance->turnNo());
         $this->assertSame(1, $advance->attempt());
         $this->assertSame('shell-standalone-advance-sh_tc_1', $advance->stepId());
         $this->assertSame(

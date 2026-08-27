@@ -80,7 +80,6 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame([], $result->effects);
         $this->assertSame([], $result->postCommitEffects);
         $this->assertCount(1, $result->postCommit);
-        $this->assertTrue($result->markHandled);
 
         ($result->postCommit[0])();
 
@@ -967,6 +966,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(CompactRun::class, $commandBus->messages[0]);
         $this->assertSame('run-terminal-compact', $commandBus->messages[0]->runId());
+        $this->assertSame(5, $commandBus->messages[0]->turnNo());
 
         // No pending command left in store (would cause duplicate drain)
         $this->assertCount(0, $commandStore->pending('run-terminal-compact'),

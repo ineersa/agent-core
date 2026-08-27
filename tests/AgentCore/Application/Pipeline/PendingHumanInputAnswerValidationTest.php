@@ -20,6 +20,7 @@ use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
@@ -42,7 +43,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
             'ui_kind' => 'confirm',
         ];
         $runId = 'run-pending-hitl-replay';
-        $state = (new RunStateReducer())->replay(RunState::queued($runId), [
+        $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()))->replay(RunState::queued($runId), [
             new RunEvent($runId, 1, 0, RunEventTypeEnum::RunStarted->value, ['step_id' => 'start', 'messages' => []]),
             new RunEvent($runId, 2, 1, RunEventTypeEnum::WaitingHuman->value, $payload),
         ]);

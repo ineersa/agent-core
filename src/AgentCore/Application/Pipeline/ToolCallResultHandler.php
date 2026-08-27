@@ -54,27 +54,11 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
         $runId = $message->runId();
 
-        if (($state->turnNo !== $message->turnNo() || (null !== $state->activeStepId && $state->activeStepId !== $message->stepId()))
-            || RunStatus::Cancelled === $state->status) {
-            $nextState = $this->eventFactory->incrementStateVersion($state, eventCount: 1);
-            $event = $this->eventFactory->event(
-                runId: $runId,
-                seq: $nextState->lastSeq,
-                turnNo: $state->turnNo,
-                type: RunEventTypeEnum::StaleResultIgnored->value,
-                payload: [
-                    'result' => 'tool_call_result',
-                    'tool_call_id' => $message->toolCallId,
-                    'step_id' => $message->stepId(),
-                    'turn_no' => $message->turnNo(),
-                    'status' => $state->status->value,
-                ],
-            );
-
-            return new HandlerResult(
-                nextState: $nextState,
-                events: [$event],
-            );
+        // Completed or superseded tool results are harmless redeliveries. The
+        // collector remains the authority for active parallel calls and HITL.
+        if (($state->turnNo !== $message->turnNo() || $state->activeStepId !== $message->stepId())
+            && RunStatus::Cancelling !== $state->status) {
+            return new HandlerResult();
         }
 
         // Suspension envelopes are non-terminal: admit (or ignore) them before the
@@ -233,7 +217,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             ]);
 
             $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
-            $postCancelAdvance = $this->postCancelAdvanceCallback($runId);
+            $postCancelAdvance = $this->postCancelAdvanceCallback($runId, $state->turnNo);
             if (null !== $postCancelAdvance) {
                 $postCommit[] = $postCancelAdvance;
             }
@@ -247,31 +231,15 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
         $outcome = $this->toolBatchCollector->collect($message);
         if ($outcome->duplicate) {
-            return new HandlerResult(markHandled: true);
+            return new HandlerResult();
         }
 
         if ($outcome->complete && $this->canonicalBatchAlreadyCommitted($state, $message, $outcome->orderedResults)) {
-            return new HandlerResult(markHandled: true);
+            return new HandlerResult();
         }
 
         if (!$outcome->accepted) {
-            $nextState = $this->eventFactory->incrementStateVersion($state, eventCount: 1);
-            $event = $this->eventFactory->event(
-                runId: $runId,
-                seq: $nextState->lastSeq,
-                turnNo: $state->turnNo,
-                type: RunEventTypeEnum::StaleResultIgnored->value,
-                payload: [
-                    'result' => 'tool_call_result',
-                    'tool_call_id' => $message->toolCallId,
-                    'reason' => 'untracked_tool_call',
-                ],
-            );
-
-            return new HandlerResult(
-                nextState: $nextState,
-                events: [$event],
-            );
+            return new HandlerResult();
         }
 
         $eventSpecs = [
@@ -371,7 +339,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
 
             if (null === $interruptPayload) {
-                $followUpAdvance = $this->followUpAdvanceCallback($runId);
+                $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo);
                 if (null !== $followUpAdvance) {
                     $postCommit[] = $followUpAdvance;
                 }
@@ -672,22 +640,22 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         ];
     }
 
-    private function postCancelAdvanceCallback(string $runId): ?callable
+    private function postCancelAdvanceCallback(string $runId, int $turnNo): ?callable
     {
         if (null === $this->commandBus) {
             return null;
         }
 
-        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, 'post-cancel-advance', 'Failed to dispatch AdvanceRun after cancellation terminalized.');
+        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, 'post-cancel-advance', 'Failed to dispatch AdvanceRun after cancellation terminalized.');
     }
 
-    private function followUpAdvanceCallback(string $runId): ?callable
+    private function followUpAdvanceCallback(string $runId, int $turnNo): ?callable
     {
         if (null === $this->commandBus) {
             return null;
         }
 
-        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, 'advance-after-tools', 'Failed to dispatch AdvanceRun after tool batch completion.');
+        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, 'advance-after-tools', 'Failed to dispatch AdvanceRun after tool batch completion.');
     }
 
     /**

@@ -78,11 +78,60 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $this->assertSame([], $result->postCommitEffects);
         $this->assertCount(1, $result->postCommit);
-        $this->assertTrue($result->markHandled);
 
         ($result->postCommit[0])();
 
         $this->assertIsArray($metrics->snapshot());
+    }
+
+    public function testCommittedAdvanceDoesNotDrainLaterMailboxCommandAndNextAdvanceCanApplyIt(): void
+    {
+        $runId = 'run-advance-redelivery';
+        $commandStore = new InMemoryCommandStore();
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, new CommandRouter([])),
+            eventFactory: new EventFactory(),
+        );
+        $first = AdvanceRunMessageBuilder::create($runId)
+            ->withTurnNo(2)
+            ->withStepId('advance-first')
+            ->withIdempotencyKey('advance-first-key')
+            ->build();
+
+        $committed = $handler->handle($first, RunStateBuilder::create($runId)
+            ->withStatus(RunStatus::Running)
+            ->withTurnNo(2)
+            ->withLastSeq(10)
+            ->build());
+        $this->assertNotNull($committed->nextState);
+
+        $commandStore->enqueue(new PendingCommand(
+            runId: $runId,
+            kind: CoreCommandKind::FollowUp,
+            idempotencyKey: 'queued-after-advance',
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'later']]]],
+            options: new CommandCancellationOptions(safe: false),
+        ));
+
+        $duplicate = $handler->handle($first, $committed->nextState);
+        $this->assertNull($duplicate->nextState);
+        $this->assertSame([], $duplicate->events);
+        $this->assertSame([], $duplicate->effects);
+        $this->assertCount(1, $commandStore->pending($runId), 'Duplicate AdvanceRun must stop before draining later mailbox work.');
+
+        $completedState = $committed->nextState->with([
+            'status' => RunStatus::Completed,
+            'currentOperation' => null,
+        ]);
+        $next = $handler->handle(AdvanceRunMessageBuilder::create($runId)
+            ->withTurnNo($completedState->turnNo)
+            ->withStepId('advance-next')
+            ->withIdempotencyKey('advance-next-key')
+            ->build(), $completedState);
+
+        $this->assertNotNull($next->nextState);
+        $this->assertCount(1, $next->nextState->messages, 'A successor token may still drain the queued command.');
+        $this->assertCount(1, $next->effects);
     }
 
     public function testCancelledRunWithFollowUpTransitionsToRunning(): void
@@ -581,6 +630,12 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertCount(1, $result->events);
         $this->assertSame('agent_end', $result->events[0]->type);
         $this->assertSame('cancelled', $result->events[0]->payload['reason'] ?? null);
+        $this->assertSame('advance-cancel-1', $result->events[0]->payload['advance_idempotency_key'] ?? null);
+
+        $duplicate = $handler->handle($message, $result->nextState);
+        $this->assertNull($duplicate->nextState);
+        $this->assertCount(1, $commandStore->pending('run-cancel-append-advance'), 'Committed cancellation must not drain its pending append on redelivery.');
+
         $this->assertCount(1, $result->postCommit);
         ($result->postCommit[0])();
         $this->assertCount(1, $commandBus->messages);

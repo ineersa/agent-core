@@ -138,7 +138,38 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertInstanceOf(ExecuteToolCall::class, $result->postCommitEffects[0]);
         $this->assertSame('tool-b', $result->postCommitEffects[0]->toolCallId);
         $this->assertSame([], $result->postCommit);
-        $this->assertTrue($result->markHandled);
+    }
+
+    public function testUntrackedCurrentTokenRedeliveryIsIdempotentNoOp(): void
+    {
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: new ToolBatchCollector(),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+
+        $state = RunStateBuilder::running('run-untracked-current-token')
+            ->withTurnNo(1)
+            ->withActiveStepId('step-1')
+            ->build();
+        $message = ToolCallResultBuilder::success('run-untracked-current-token')
+            ->withTurnNo(1)
+            ->withStepId('step-1')
+            ->withIdempotencyKey('untracked-result')
+            ->withToolCallId('unknown-call')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'read', 'content' => [['type' => 'text', 'text' => 'ignored']]])
+            ->build();
+
+        foreach ([$handler->handle($message, $state), $handler->handle($message, $state)] as $result) {
+            $this->assertNull($result->nextState);
+            $this->assertSame([], $result->events);
+            $this->assertSame([], $result->effects);
+            $this->assertSame([], $result->postCommitEffects);
+            $this->assertSame([], $result->postCommit);
+        }
     }
 
     public function testExtractResultTextSinglePart(): void
@@ -1301,7 +1332,6 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertSame([], $redelivery->events);
         $this->assertSame([], $redelivery->postCommit);
         $this->assertSame([], $redelivery->postCommitEffects);
-        $this->assertTrue($redelivery->markHandled);
     }
 
     public function testFinalizedRedeliveryBeforeCanonicalCommitRecoversOnce(): void
