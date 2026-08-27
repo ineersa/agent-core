@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
+use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -240,9 +241,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
 
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->once())->method('allFor')->with($this->identicalTo($childRun))->willReturn($events);
-        $runStore = $this->createStub(RunStoreInterface::class);
-
-        $service = $this->makeService($runStore, $eventStore);
+        $service = $this->makeService(eventStore: $eventStore);
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'events', 'limit' => 5]));
 
         $this->assertStringContainsString('Showing last 5 of 25 events', $out);
@@ -270,11 +269,17 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         }
 
         $state = new RunState(runId: $childRun, status: RunStatus::Completed, messages: $messages, model: 'test-model');
-        $runStore = $this->createMock(RunStoreInterface::class);
-        $runStore->expects($this->once())->method('get')->with($this->identicalTo($childRun))->willReturn($state);
+        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
+        $rebuilder->expects($this->once())
+            ->method('rebuildIfStale')
+            ->with(
+                $this->callback(static fn (RunState $queued): bool => $queued->runId === $childRun && 0 === $queued->lastSeq),
+                $this->identicalTo($childRun),
+            )
+            ->willReturn(RunStateReplayResult::rebuilt($state, 44, 44, true));
         $eventStore = $this->createStub(EventStoreInterface::class);
 
-        $service = $this->makeService($runStore, $eventStore);
+        $service = $this->makeService(rebuilder: $rebuilder, eventStore: $eventStore);
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'history', 'limit' => 3]));
 
         $this->assertStringContainsString('Showing last 3 of', $out);
@@ -334,17 +339,24 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
         $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Cancelled, summary: 'Child run was cancelled.');
 
-        $runStore = $this->createStub(RunStoreInterface::class);
-        $runStore->method('get')->willReturn(new RunState(
+        $state = new RunState(
             runId: $childRun,
             status: RunStatus::Cancelled,
             version: 1,
             turnNo: 4,
             lastSeq: 18,
             messages: [],
-            model: 'test-model'));
+            model: 'test-model');
+        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
+        $rebuilder->expects($this->once())
+            ->method('rebuildIfStale')
+            ->with(
+                $this->callback(static fn (RunState $queued): bool => $queued->runId === $childRun && 0 === $queued->lastSeq),
+                $this->identicalTo($childRun),
+            )
+            ->willReturn(RunStateReplayResult::rebuilt($state, 18, 18, true));
 
-        $service = $this->makeService(runStore: $runStore);
+        $service = $this->makeService(rebuilder: $rebuilder);
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'metadata']));
 
         $this->assertStringContainsString('status: cancelled', $out);
@@ -401,13 +413,18 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
     }
 
     private function makeService(
-        ?RunStoreInterface $runStore = null,
+        ?RunStateRebuilderInterface $rebuilder = null,
         ?EventStoreInterface $eventStore = null,
     ): AgentArtifactRetrievalService {
+        if (null === $rebuilder) {
+            $rebuilder = $this->createStub(RunStateRebuilderInterface::class);
+            $rebuilder->method('rebuildIfStale')->willReturn(RunStateReplayResult::noEvents());
+        }
+
         return new AgentArtifactRetrievalService(
             artifactRegistry: $this->registry,
             childRunDirectory: $this->directory,
-            runStore: $runStore ?? $this->createStub(RunStoreInterface::class),
+            runStateRebuilder: $rebuilder,
             eventStore: $eventStore ?? $this->createStub(EventStoreInterface::class),
             logger: self::getContainer()->get('logger'),
         );
