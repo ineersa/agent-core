@@ -33,6 +33,7 @@ final class SessionPickerControllerTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
             $em,
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
         $controller = new SessionPickerController($this->tui(), $this->screen(), $sessionStore, $switch);
 
@@ -152,6 +153,7 @@ final class SessionPickerControllerTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
             $em,
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
         $controller = new SessionPickerController($this->tui(), $this->screen(), $sessionStore, $switch);
 
@@ -168,6 +170,7 @@ final class SessionPickerControllerTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
             $em,
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
         $controller = new SessionPickerController($this->tui(), $this->screen(), $sessionStore, $switch);
 
@@ -202,6 +205,7 @@ final class SessionPickerControllerTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
             $em,
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
         $screen = $this->screen();
         $controller = new SessionPickerController($this->tui(), $screen, $sessionStore, $switch);

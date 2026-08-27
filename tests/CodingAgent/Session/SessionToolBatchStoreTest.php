@@ -51,7 +51,7 @@ final class SessionToolBatchStoreTest extends TestCase
             logging: new LoggingConfig(),
             cwd: $this->projectDir,
         );
-        $this->hatfieldSessionStore = new HatfieldSessionStore($appConfig, $entityManager);
+        $this->hatfieldSessionStore = new HatfieldSessionStore($appConfig, $entityManager, new \Symfony\Component\EventDispatcher\EventDispatcher());
 
         $this->store = $this->createStore($this->hatfieldSessionStore);
     }
@@ -326,7 +326,7 @@ final class SessionToolBatchStoreTest extends TestCase
                 logging: new LoggingConfig(),
                 cwd: $projectDir,
             );
-            $hatfield = new HatfieldSessionStore($appConfig, $entityManager);
+            $hatfield = new HatfieldSessionStore($appConfig, $entityManager, new \Symfony\Component\EventDispatcher\EventDispatcher());
         }
 
         $pathResolver = new SessionAgentArtifactPathResolver($hatfield);

@@ -15,5 +15,5 @@ interface TransformContextHookInterface
      *
      * @return list<AgentMessage>
      */
-    public function transformContext(array $messages, ?CancellationTokenInterface $cancelToken = null): array;
+    public function transformContext(array $messages, ?CancellationTokenInterface $cancelToken = null, ?string $runId = null): array;
 }

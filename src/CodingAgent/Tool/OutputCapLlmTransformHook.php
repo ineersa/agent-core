@@ -42,18 +42,18 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
     ) {
     }
 
-    public function transformContext(array $messages, ?CancellationTokenInterface $cancelToken = null): array
+    public function transformContext(array $messages, ?CancellationTokenInterface $cancelToken = null, ?string $runId = null): array
     {
         $transformed = [];
 
         foreach ($messages as $message) {
-            $transformed[] = $this->transformMessage($message);
+            $transformed[] = $this->transformMessage($message, $runId);
         }
 
         return $transformed;
     }
 
-    private function transformMessage(AgentMessage $message): AgentMessage
+    private function transformMessage(AgentMessage $message, ?string $runId): AgentMessage
     {
         if ('tool' !== $message->role) {
             return $message;
@@ -121,7 +121,7 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
         );
 
         // Apply capping with a structured result.
-        $capResult = $this->outputCap->capIfNeeded($combinedText, $path);
+        $capResult = $this->outputCap->capIfNeeded($combinedText, $runId, $path);
 
         if (null === $capResult) {
             // Text fits within the applicable cap — pass through unchanged.

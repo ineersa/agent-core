@@ -11,8 +11,8 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  *
  * Immutable value object. Contains the storage directory for persisted
  * oversized tool output, character caps for code vs doc-like paths,
- * retention duration for stale-file cleanup, and an optional session
- * prefix for filename generation.
+ * retention duration for stale-file cleanup. Persisted output is scoped by
+ * the explicit runtime run ID, never a configured filename prefix.
  *
  * Hydrated from the tools.output_cap section of Hatfield merged config
  * via Symfony Serializer. The storageDir is made absolute by
@@ -27,7 +27,6 @@ final readonly class OutputCapConfig
         public int $docCap = 50000,
         #[SerializedName('retention')]
         public int $retentionSeconds = 86400,
-        public ?string $sessionPrefix = null,
     ) {
     }
 

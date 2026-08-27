@@ -16,7 +16,10 @@ use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\ReadFileTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Validator\Validation;
 
 /**
@@ -579,7 +582,7 @@ final class ReadFileToolTest extends TestCase
             defaultCap: 10,
             docCap: 10,
         );
-        $cap = new OutputCap($capConfig);
+        $cap = $this->outputCap($capConfig);
         $readTool = new ReadFileTool($this->toolRuntime);
 
         $targetPath = $this->tmpDir.'/cap_me.txt';
@@ -680,5 +683,10 @@ final class ReadFileToolTest extends TestCase
         }
 
         @rmdir($path);
+    }
+
+    private function outputCap(OutputCapConfig $config): OutputCap
+    {
+        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
     }
 }

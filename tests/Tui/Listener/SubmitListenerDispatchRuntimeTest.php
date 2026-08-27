@@ -306,6 +306,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 cwd: $this->tempCwd,
             ),
             entityManager: $em,
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
 
         $this->client->expects($this->once())
@@ -582,6 +583,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 cwd: $this->tempCwd,
             ),
             entityManager: $em,
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
 
         $png = file_get_contents(__DIR__.'/../E2E/fixtures/paste-test-1x1.png');

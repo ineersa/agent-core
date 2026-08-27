@@ -28,6 +28,8 @@ use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\BgStatusTool
@@ -286,7 +288,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
             defaultCap: 200,
             docCap: 200,
         );
-        $lowCap = new OutputCap($lowCapCfg);
+        $lowCap = $this->outputCap($lowCapCfg);
         $lowCapTool = new BgStatusTool(
             $this->manager,
             $this->config,
@@ -403,5 +405,10 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         );
 
         return $this->contextAccessor->with($toolContext, $callback);
+    }
+
+    private function outputCap(OutputCapConfig $config): OutputCap
+    {
+        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
     }
 }
