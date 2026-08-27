@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathsDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Agent\Artifact\RunOwnerSessionResolver;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -169,6 +173,34 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
         $this->assertNull($result, 'Locator must return null for unknown run IDs');
     }
 
+    public function testOwnerResolverReturnsUnknownTopLevelRunId(): void
+    {
+        $resolver = new RunOwnerSessionResolver($this->directory);
+
+        $this->assertSame('top-level-run', $resolver->ownerSessionIdFor('top-level-run'));
+    }
+
+    public function testOwnerResolverReturnsRegisteredParentAndTopLevelNestedParent(): void
+    {
+        $this->directory->register($this->entry('child-run', 'top-level-run'));
+        $this->directory->register($this->entry('grandchild-run', 'child-run'));
+        $resolver = new RunOwnerSessionResolver($this->directory);
+
+        $this->assertSame('top-level-run', $resolver->ownerSessionIdFor('child-run'));
+        $this->assertSame('top-level-run', $resolver->ownerSessionIdFor('grandchild-run'));
+    }
+
+    public function testOwnerResolverRejectsRegisteredOwnershipCycle(): void
+    {
+        $this->directory->register($this->entry('cycle-a', 'cycle-b'));
+        $this->directory->register($this->entry('cycle-b', 'cycle-a'));
+        $resolver = new RunOwnerSessionResolver($this->directory);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('ownership cycle');
+        $resolver->ownerSessionIdFor('cycle-a');
+    }
+
     /**
      * Prove that corrupted/unreadable registry for one parent does not
      * block location of child runs in other parents.
@@ -210,5 +242,19 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
             .'when another parent has a corrupt registry',
         );
         $this->assertSame($childRunId, $found->agentRunId);
+    }
+
+    private function entry(string $agentRunId, string $parentRunId): AgentArtifactEntryDTO
+    {
+        return new AgentArtifactEntryDTO(
+            artifactId: 'artifact-'.$agentRunId,
+            parentRunId: $parentRunId,
+            agentRunId: $agentRunId,
+            agentName: 'scout',
+            kind: AgentArtifactKindEnum::Subagent,
+            status: AgentArtifactStatusEnum::Running,
+            paths: AgentArtifactPathsDTO::forArtifactId('artifact-'.$agentRunId),
+            createdAt: new \DateTimeImmutable(),
+        );
     }
 }

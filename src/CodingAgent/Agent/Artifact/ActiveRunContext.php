@@ -38,7 +38,13 @@ final class ActiveRunContext implements ActiveRunContextInterface
 
     public function remember(RunState $state): void
     {
-        $this->persist($state);
+        try {
+            $this->persist($state);
+        } catch (\Throwable $e) {
+            unset($this->states[$state->runId]);
+
+            throw $e;
+        }
         $this->states[$state->runId] = $state;
     }
 
