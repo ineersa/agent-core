@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -149,6 +150,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             'agentRunner' => $childRunner,
             'runStore' => $this->pollingChildRunStore($childRunStore),
             'parentRunStore' => $parentRunStore,
+            'runStateRebuilder' => self::getContainer()->get(RunStateRebuilderInterface::class),
             'eventStore' => $childEventStore,
             'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
             'metadataReader' => new SubagentRunMetadataReader($childEventStore, AttributeSerializerValidatorTestFactory::denormalizer()),

@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 
+use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -70,7 +72,11 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
         $this->assertNotNull($parentBefore);
         $parentHashBefore = $this->hashMessages($parentBefore->messages);
 
-        $countingStore = new CountingRunStoreDecorator($runStore);
+        $runStateRebuilder = $this->createMock(RunStateRebuilderInterface::class);
+        $runStateRebuilder->expects($this->once())
+            ->method('rebuildIfStale')
+            ->with(RunState::queued($parentRunId), $parentRunId)
+            ->willReturn(RunStateReplayResult::rebuilt($parentBefore, $parentBefore->lastSeq, 1, true));
 
         $compactCalls = 0;
         $compactedMessages = [
@@ -141,12 +147,12 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
         $container->set(CompactionServiceInterface::class, $compaction);
         $container->set(AgentRunnerInterface::class, $agentRunner);
 
-        // Construct with the counting store so the one-parent-read contract is real,
-        // not an accidental pre-built container graph binding.
+        // Pass the canonical replay result explicitly so this boundary cannot
+        // accidentally fall back to a legacy parent RunStore snapshot.
         $forkExecution = new ForkExecutionService(
             $container->get(DeferredSubagentBatchLaunchService::class),
             $container->get(SubagentRunMetadataReader::class),
-            $countingStore,
+            $runStateRebuilder,
             $container->get(ForkSnapshotSanitizer::class),
             $compaction,
         );
@@ -158,7 +164,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
 
         $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
         $this->assertSame(1, $compactCalls);
-        $this->assertSame(1, $countingStore->getCount, 'ForkExecutionService must read parent RunStore exactly once before launch');
+        // The replay mock assertion above proves the fork uses the canonical boundary once.
 
         $parentAfter = $runStore->get($parentRunId);
         $this->assertNotNull($parentAfter);
@@ -182,6 +188,9 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
             ],
             turnNo: 1,
             model: 'test-model'), 0);
+        $this->appendCanonicalParentRun($parentRunId, 'test-model', [
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'hello']]),
+        ]);
 
         $compaction = $this->createMock(CompactionServiceInterface::class);
         $compaction->expects($this->once())
@@ -234,6 +243,9 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
             ],
             turnNo: 1,
             model: 'test-model'), 0);
+        $this->appendCanonicalParentRun($parentRunId, 'test-model', [
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'only one']]),
+        ]);
 
         $compaction = $this->createMock(CompactionServiceInterface::class);
         $compaction->expects($this->once())
@@ -271,6 +283,26 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
     /**
      * @param list<AgentMessage> $messages
      */
+    private function appendCanonicalParentRun(string $runId, string $model, array $messages): void
+    {
+        $eventStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
+        $eventStore->append(new \Ineersa\AgentCore\Domain\Event\RunEvent(
+            runId: $runId,
+            seq: 1,
+            turnNo: 0,
+            type: \Ineersa\AgentCore\Domain\Event\RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'payload' => [
+                    'metadata' => ['session' => ['kind' => 'parent'], 'model' => $model],
+                    'messages' => array_map(static fn (AgentMessage $message): array => $message->toArray(), $messages),
+                ],
+            ],
+        ));
+    }
+
+    /**
+     * @param list<AgentMessage> $messages
+     */
     private function hashMessages(array $messages): string
     {
         return hash('sha256', serialize(array_map(
@@ -301,34 +333,5 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
         );
 
         return $accessor->with($context, $callback);
-    }
-}
-
-/**
- * Test-local parent RunStore decorator to prove ForkExecutionService reads parent once.
- */
-final class CountingRunStoreDecorator implements RunStoreInterface
-{
-    public int $getCount = 0;
-
-    public function __construct(private readonly RunStoreInterface $inner)
-    {
-    }
-
-    public function get(string $runId): ?RunState
-    {
-        ++$this->getCount;
-
-        return $this->inner->get($runId);
-    }
-
-    public function compareAndSwap(RunState $state, int $expectedVersion): bool
-    {
-        return $this->inner->compareAndSwap($state, $expectedVersion);
-    }
-
-    public function findRunningStaleBefore(\DateTimeImmutable $updatedBefore): array
-    {
-        return $this->inner->findRunningStaleBefore($updatedBefore);
     }
 }

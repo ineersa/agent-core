@@ -1147,12 +1147,12 @@ services:
 
   # ─── AGENT-05 Subagent execution service ──────────────────────────
 
-  # Subagent child-run stack: child RunStore auto-wires to ChildAwareRunStore; parent RunStore
-  # binds to SessionRunStore for prompt/metadata. Parent progress events append via
+  # Subagent child-run stack: parent prompt context is rebuilt from canonical
+  # events at the explicit child-launch boundary. Parent progress events append via
   # CommittedRunEventAppender only (seq 0 input; committed store allocates persisted seq).
   Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory:
     arguments:
-      $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
+      $runStateRebuilder: '@Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface'
 
   # ─── AGENT-05 Subagent tool storage routing ─────────────────────────
 

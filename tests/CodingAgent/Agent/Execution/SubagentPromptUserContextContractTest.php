@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
+use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -335,6 +337,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             'agentRunner' => $agentRunner,
             'runStore' => $this->pollingChildRunStore($childRunStore),
             'parentRunStore' => $parentRunStore,
+            'runStateRebuilder' => $this->runStateRebuilderFor($parentRunStore),
             'eventStore' => $eventStore,
             'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
             'metadataReader' => new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
@@ -352,6 +355,29 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             'childExtensionSelection' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\ChildExtensionSelectionService::class),
             'toolRegistry' => self::getContainer()->get(ToolRegistryInterface::class),
         ]);
+    }
+
+    private function runStateRebuilderFor(RunStoreInterface $parentRunStore): RunStateRebuilderInterface
+    {
+        return new class($parentRunStore) implements RunStateRebuilderInterface {
+            public function __construct(private readonly RunStoreInterface $parentRunStore)
+            {
+            }
+
+            public function rebuildIfStale(RunState $state, string $runId): RunStateReplayResult
+            {
+                $parentState = $this->parentRunStore->get($runId);
+
+                return null === $parentState
+                    ? RunStateReplayResult::noEvents()
+                    : RunStateReplayResult::rebuilt($parentState, $parentState->lastSeq, 1, true);
+            }
+
+            public function rebuildAtPosition(RunState $state, string $runId, int $positionTurnNo): RunStateReplayResult
+            {
+                return $this->rebuildIfStale($state, $runId);
+            }
+        };
     }
 
     private function pollingChildRunStore(RunStoreInterface $inner): RunStoreInterface

@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -242,6 +243,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'agentRunner' => $this->createStub(AgentRunnerInterface::class),
             'runStore' => $this->createStub(RunStoreInterface::class),
             'parentRunStore' => $this->createStub(RunStoreInterface::class),
+            'runStateRebuilder' => self::getContainer()->get(RunStateRebuilderInterface::class),
             'eventStore' => $this->createStub(EventStoreInterface::class),
             'committedRunEventAppender' => self::getContainer()->get(SubagentProgressEventAppender::class),
             'metadataReader' => new SubagentRunMetadataReader($this->createStub(EventStoreInterface::class), AttributeSerializerValidatorTestFactory::denormalizer()),

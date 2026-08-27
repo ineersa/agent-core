@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\ChildRun\Preparation;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
@@ -68,6 +72,44 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
         );
     }
 
+    public function testInheritedProjectContextComesFromCanonicalReplayNotLegacySnapshot(): void
+    {
+        $parentRunId = 'parent-canonical-user-context';
+        $canonicalContext = 'CANONICAL_AGENTS_CONTEXT';
+        $this->seedParentRunStarted($parentRunId, reasoning: 'medium', messages: [[
+            'role' => 'user-context',
+            'content' => [['type' => 'text', 'text' => $canonicalContext]],
+            'metadata' => ['source' => 'agents_context'],
+        ]]);
+
+        $legacyStore = self::getContainer()->get(RunStoreInterface::class);
+        $this->assertTrue($legacyStore->compareAndSwap(new RunState(
+            runId: $parentRunId,
+            status: RunStatus::Running,
+            version: 0,
+            messages: [new AgentMessage(role: 'user-context', content: [['type' => 'text', 'text' => 'STALE_SNAPSHOT_CONTEXT']], metadata: ['source' => 'agents_context'])],
+            model: 'stale/model',
+        ), 0));
+
+        $factory = self::getContainer()->get(SubagentChildLaunchInputFactory::class);
+        \assert($factory instanceof SubagentChildLaunchInputFactory);
+        $prepared = $factory->buildPrepared(
+            identity: $this->identity($parentRunId, 'deepseek/deepseek-v4-flash'),
+            definition: $this->definition('deepseek/deepseek-v4-flash'),
+            allowedTools: [],
+            mcp: [],
+            parentModel: 'deepseek/deepseek-v4-flash',
+        );
+
+        $contexts = array_filter(
+            $prepared->startRunInput->messages,
+            static fn (AgentMessage $message): bool => 'agents_context' === ($message->metadata['source'] ?? null),
+        );
+        $this->assertCount(1, $contexts);
+        $context = array_values($contexts)[0];
+        $this->assertSame($canonicalContext, $context->content[0]['text'] ?? null);
+    }
+
     public function testMissingParentRunStartedReasoningUsesCanonicalDefault(): void
     {
         $parentRunId = 'parent-missing-reasoning';
@@ -89,7 +131,10 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
         $this->assertSame('medium', $prepared->identity->launchReasoning);
     }
 
-    private function seedParentRunStarted(string $parentRunId, ?string $reasoning): void
+    /**
+     * @param list<array<string, mixed>> $messages
+     */
+    private function seedParentRunStarted(string $parentRunId, ?string $reasoning, array $messages = []): void
     {
         $eventStore = self::getContainer()->get(EventStoreInterface::class);
         \assert($eventStore instanceof EventStoreInterface);
@@ -105,7 +150,7 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
             seq: 1,
             turnNo: 0,
             type: RunEventTypeEnum::RunStarted->value,
-            payload: ['payload' => ['metadata' => $metadata]],
+            payload: ['payload' => ['metadata' => $metadata, 'messages' => $messages]],
             createdAt: new \DateTimeImmutable(),
         ));
     }

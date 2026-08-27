@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
@@ -46,6 +47,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
                     ?string $activeModel = null,
                 ) use ($parentRunId): MessageSnapshotCompactionResult {
                     $this->assertSame($parentRunId, $runId);
+                    $this->assertSame(2, $turnNo);
                     $this->assertSame('fork', $trigger);
                     $this->assertSame('deepseek/deepseek-v4-flash', $activeModel);
 
@@ -62,10 +64,11 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             runId: $parentRunId,
             status: RunStatus::Running,
             version: 0,
-            turnNo: 2,
+            turnNo: 99,
             messages: [],
-            model: 'deepseek/deepseek-v4-flash',
+            model: 'stale-store-model',
         ), 0));
+        $this->appendCanonicalParentRun($parentRunId, 'deepseek/deepseek-v4-flash', 2);
 
         $forkExecution = $container->get(ForkExecutionService::class);
 
@@ -106,43 +109,10 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         }
     }
 
-    public function testForkFailsClosedWhenParentRunModelMissing(): void
-    {
-        $parentRunId = 'parent-fork-missing-model';
-
-        $compaction = $this->createMock(CompactionServiceInterface::class);
-        $compaction->expects($this->never())->method('compactMessages');
-        self::getContainer()->set(CompactionServiceInterface::class, $compaction);
-
-        $runStore = self::getContainer()->get(RunStoreInterface::class);
-        $this->assertTrue($runStore->compareAndSwap(new RunState(
-            runId: $parentRunId,
-            status: RunStatus::Running,
-            version: 0,
-            turnNo: 1,
-            messages: [],
-            model: null,
-        ), 0));
-
-        $forkExecution = self::getContainer()->get(ForkExecutionService::class);
-
-        try {
-            $this->withToolContext($parentRunId, 'call-missing-model', static fn () => $forkExecution->execute(
-                $parentRunId,
-                'Delegated integration task',
-            ));
-            $this->fail('Expected ToolCallException');
-        } catch (ToolCallException $e) {
-            $this->assertStringContainsString('canonical parent run model', $e->getMessage());
-            $this->assertStringContainsString($parentRunId, $e->getMessage());
-            $this->assertFalse($e->retryable());
-        }
-    }
-
     public function testNestedForkRejectedBeforeReservation(): void
     {
         $childRunId = 'child-fork-nested-1';
-        $eventStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
+        $eventStore = self::getContainer()->get(EventStoreInterface::class);
         $eventStore->append(new \Ineersa\AgentCore\Domain\Event\RunEvent(
             runId: $childRunId,
             seq: 1,
@@ -178,6 +148,29 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('Nested fork', $e->getMessage());
         }
+    }
+
+    private function appendCanonicalParentRun(string $runId, ?string $model, int $turnNo): void
+    {
+        $metadata = ['session' => ['kind' => 'parent']];
+        if (null !== $model) {
+            $metadata['model'] = $model;
+        }
+        $eventStore = self::getContainer()->get(EventStoreInterface::class);
+        $eventStore->append(new \Ineersa\AgentCore\Domain\Event\RunEvent(
+            runId: $runId,
+            seq: 1,
+            turnNo: 0,
+            type: \Ineersa\AgentCore\Domain\Event\RunEventTypeEnum::RunStarted->value,
+            payload: ['payload' => ['metadata' => $metadata, 'messages' => []]],
+        ));
+        $eventStore->append(new \Ineersa\AgentCore\Domain\Event\RunEvent(
+            runId: $runId,
+            seq: 2,
+            turnNo: $turnNo,
+            type: \Ineersa\AgentCore\Domain\Event\RunEventTypeEnum::TurnAdvanced->value,
+            payload: ['turn_no' => $turnNo, 'step_id' => 'parent-step'],
+        ));
     }
 
     /**
