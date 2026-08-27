@@ -247,7 +247,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         $outputCap = new OutputCap($cfg);
         $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
-        $handoff = str_repeat('H', 25000)."\n## 1. Result / status\n";
+        $handoff = str_repeat('H', 25000)."\n## Result\n";
         $this->assertGreaterThan(20000, u($handoff)->length());
         $this->assertLessThan(50000, u($handoff)->length());
 

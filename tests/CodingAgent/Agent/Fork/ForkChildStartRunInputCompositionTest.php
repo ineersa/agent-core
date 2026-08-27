@@ -283,7 +283,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
         $this->assertNotContains('subagent', $active->toolNames);
     }
 
-    public function testForkChildOmitsAgentChildContractAndKeepsFinalityPlusElevenSections(): void
+    public function testForkChildOmitsAgentChildContractAndKeepsFinalityPlusCompactHandoffContract(): void
     {
         $parentRunId = 'parent-fork-no-contract';
         $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
@@ -327,8 +327,11 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
         $this->assertStringNotContainsString('agent_child_contract', $joined);
         $this->assertStringContainsString('FORK MODE IS ENABLED', $prepared->startRunInput->systemPrompt);
         $this->assertStringContainsString('Never emit the handoff in a message that also requests tools', $prepared->startRunInput->systemPrompt);
-        $this->assertStringContainsString('## 1. Result / status', $joined);
-        $this->assertStringContainsString('## 11. Final handoff', $joined);
+        $this->assertStringContainsString('## Status', $joined);
+        $this->assertStringContainsString('## Repository state', $joined);
+        $this->assertStringContainsString('## Result', $joined);
+        $this->assertStringContainsString('## Validation', $joined);
+        $this->assertStringContainsString('Return the semantic delta produced by this fork, not a transcript.', $joined);
         $this->assertSame('user', $prepared->startRunInput->messages[array_key_last($prepared->startRunInput->messages)]->role);
     }
 }
