@@ -26,6 +26,7 @@ final class AdvanceRunCallbackFactoryTest extends TestCase
         $callback = AdvanceRunCallbackFactory::create(
             $commandBus,
             'run-advance-1',
+            7,
             'follow-up',
             'Failed to dispatch follow-up AdvanceRun command.',
         );
@@ -35,7 +36,7 @@ final class AdvanceRunCallbackFactoryTest extends TestCase
         $advance = $commandBus->messages[0];
         $this->assertInstanceOf(AdvanceRun::class, $advance);
         $this->assertSame('run-advance-1', $advance->runId());
-        $this->assertSame(0, $advance->turnNo());
+        $this->assertSame(7, $advance->turnNo());
         $this->assertSame(1, $advance->attempt());
         $this->assertStringStartsWith('follow-up-', $advance->stepId());
         $this->assertSame(
@@ -47,7 +48,7 @@ final class AdvanceRunCallbackFactoryTest extends TestCase
     public function testStepIdIsEvaluatedAtInvocationTime(): void
     {
         $commandBus = new TestMessageBus();
-        $callback = AdvanceRunCallbackFactory::create($commandBus, 'run-advance-2', 'post-cancel-advance', 'err');
+        $callback = AdvanceRunCallbackFactory::create($commandBus, 'run-advance-2', 3, 'post-cancel-advance', 'err');
 
         $callback();
         $callback();
@@ -69,6 +70,7 @@ final class AdvanceRunCallbackFactoryTest extends TestCase
         $callback = AdvanceRunCallbackFactory::create(
             $throwingBus,
             'run-advance-3',
+            2,
             'advance-after-tools',
             'Failed to dispatch AdvanceRun after tool batch completion.',
         );

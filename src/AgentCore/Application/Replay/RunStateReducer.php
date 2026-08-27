@@ -7,12 +7,18 @@ namespace Ineersa\AgentCore\Application\Replay;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 final readonly class RunStateReducer
 {
+    public function __construct(private DenormalizerInterface $denormalizer)
+    {
+    }
+
     /**
      * @param list<RunEvent> $events
      */
@@ -61,7 +67,7 @@ final readonly class RunStateReducer
     ): RunState {
         $payload = $event->payload;
 
-        return match ($event->type) {
+        $nextState = match ($event->type) {
             RunEventTypeEnum::RunStarted->value => $this->applyRunStarted($event, $state, $messages),
             RunEventTypeEnum::ModelChanged->value => $this->applyModelChanged($payload, $state),
             RunEventTypeEnum::TurnAdvanced->value => $this->applyTurnAdvanced($payload, $state),
@@ -69,7 +75,7 @@ final readonly class RunStateReducer
             RunEventTypeEnum::AgentCommandRejected->value => $this->applyCommandRejected($payload, $state),
             RunEventTypeEnum::LlmStepCompleted->value => $this->applyLlmStepCompleted($payload, $state, $messages, $pendingToolCalls),
             RunEventTypeEnum::LlmStepFailed->value => $this->applyLlmStepFailed($payload, $state),
-            RunEventTypeEnum::LlmStepAborted->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::LlmStepAborted->value => $state->with(['currentOperation' => null]),
             RunEventTypeEnum::ToolExecutionStart->value => $this->applyToolExecutionStart($payload, $pendingToolCalls, $state),
             RunEventTypeEnum::ToolExecutionEnd->value => $this->applyToolExecutionEnd($payload, $pendingToolCalls, $state),
             RunEventTypeEnum::ToolCallResultReceived->value => $this->applyNoMutation($event, $state),
@@ -86,6 +92,7 @@ final readonly class RunStateReducer
             RunEventTypeEnum::AgentCommandQueued->value,
             RunEventTypeEnum::AgentCommandSuperseded->value,
             RunEventTypeEnum::StaleResultIgnored->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::ContextCompactionRequested->value => $this->applyNoMutation($event, $state),
             RunEventTypeEnum::ContextCompactionStarted->value => $this->applyContextCompactionStarted($payload, $state),
             RunEventTypeEnum::ContextCompacted->value => $this->applyContextCompacted($payload, $state, $messages),
             RunEventTypeEnum::ContextCompactionFailed->value => $this->applyContextCompactionFailed($payload, $state),
@@ -93,6 +100,12 @@ final readonly class RunStateReducer
             RunEventTypeEnum::HistoryTailDiscarded->value => $this->applyNoMutation($event, $state),
             default => $this->applyNoMutation($event, $state),
         };
+
+        $advanceKey = $payload['advance_idempotency_key'] ?? null;
+
+        return \is_string($advanceKey) && '' !== $advanceKey
+            ? $nextState->with(['lastAppliedAdvanceKey' => $advanceKey])
+            : $nextState;
     }
 
     // ── Event reducers ──────────────────────────────────────────────────────
@@ -174,11 +187,21 @@ final readonly class RunStateReducer
         $turnNo = \is_int($payload['turn_no'] ?? null) ? $payload['turn_no'] : $state->turnNo;
         $stepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : $state->activeStepId;
 
+        $attempt = \is_int($payload['operation_attempt'] ?? null) ? $payload['operation_attempt'] : 1;
+        $key = \is_string($payload['operation_idempotency_key'] ?? null)
+            ? $payload['operation_idempotency_key']
+            : ([] === $state->pendingShellToolCalls
+                ? hash('sha256', \sprintf('%s|llm|%d|%s', $state->runId, $turnNo, $stepId))
+                : null);
+
         return $state->with([
             'status' => RunStatus::Running,
             'turnNo' => $turnNo,
             'errorMessage' => null,
             'activeStepId' => $stepId,
+            'currentOperation' => \is_string($key) && '' !== $key
+                ? new CurrentOperationDTO($turnNo, $stepId, $attempt, $key)
+                : null,
             'retryableFailure' => false,
         ]);
     }
@@ -190,6 +213,40 @@ final readonly class RunStateReducer
     private function applyAgentCommandApplied(array $payload, RunState $state, array &$messages): RunState
     {
         $kind = \is_string($payload['kind'] ?? null) ? $payload['kind'] : null;
+
+        if ('shell_command' === $kind) {
+            $key = \is_string($payload['idempotency_key'] ?? null) ? $payload['idempotency_key'] : null;
+            if (null === $key || '' === $key) {
+                return $state;
+            }
+
+            $toolCallId = 'sh_'.hash('sha256', $key);
+
+            if (true !== ($payload['standalone'] ?? null)) {
+                return $state->with([
+                    'pendingShellToolCalls' => [...$state->pendingShellToolCalls, $toolCallId => true],
+                ]);
+            }
+
+            $rawOperation = $payload['current_operation'] ?? null;
+            if (!\is_array($rawOperation)) {
+                throw new \UnexpectedValueException('Standalone shell command event is missing a normalized current_operation.');
+            }
+
+            try {
+                $operation = $this->denormalizer->denormalize($rawOperation, CurrentOperationDTO::class);
+            } catch (\Throwable $exception) {
+                throw new \UnexpectedValueException('Standalone shell command event contains an invalid current_operation.', 0, $exception);
+            }
+            if (!$operation instanceof CurrentOperationDTO) {
+                throw new \UnexpectedValueException('Standalone shell command current_operation must denormalize to CurrentOperationDTO.');
+            }
+
+            return $state->with([
+                'pendingShellToolCalls' => [...$state->pendingShellToolCalls, $toolCallId => true],
+                'currentOperation' => $operation,
+            ]);
+        }
 
         // steer / follow_up / append_message: append message to prompt context
         if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
@@ -322,6 +379,7 @@ final readonly class RunStateReducer
             'errorMessage' => null,
             'retryableFailure' => false,
             'retryAttempts' => 0,
+            'currentOperation' => null,
         ]);
     }
 
@@ -342,6 +400,7 @@ final readonly class RunStateReducer
             'isStreaming' => false,
             'streamingMessage' => null,
             'pendingToolCalls' => [],
+            'currentOperation' => null,
             'errorMessage' => $errorMessage,
             'retryableFailure' => $retryable,
             'retryAttempts' => $retryAttempt,
@@ -382,6 +441,12 @@ final readonly class RunStateReducer
 
         if (null !== $toolCallId) {
             $pendingToolCalls[$toolCallId] = true;
+            if (isset($state->pendingShellToolCalls[$toolCallId])) {
+                $pendingShellToolCalls = $state->pendingShellToolCalls;
+                unset($pendingShellToolCalls[$toolCallId]);
+
+                return $state->with(['pendingShellToolCalls' => $pendingShellToolCalls]);
+            }
         }
 
         return $state;
@@ -462,7 +527,9 @@ final readonly class RunStateReducer
             'isStreaming' => false,
             'streamingMessage' => null,
             'pendingToolCalls' => [],
+            'pendingShellToolCalls' => [],
             'activeStepId' => null,
+            'currentOperation' => null,
             'retryableFailure' => false,
             'retryAttempts' => 0,
         ]);
@@ -486,10 +553,18 @@ final readonly class RunStateReducer
     private function applyContextCompactionStarted(array $payload, RunState $state): RunState
     {
         $stepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : $state->activeStepId;
+        $turnNo = \is_int($payload['turn_no'] ?? null) ? $payload['turn_no'] : $state->turnNo;
+
+        $attempt = \is_int($payload['operation_attempt'] ?? null) ? $payload['operation_attempt'] : 1;
+        $key = \is_string($payload['operation_idempotency_key'] ?? null) ? $payload['operation_idempotency_key'] : null;
 
         return $state->with([
             'status' => RunStatus::Compacting,
+            'turnNo' => $turnNo,
             'activeStepId' => $stepId,
+            'currentOperation' => null !== $stepId && null !== $key
+                ? new CurrentOperationDTO($turnNo, $stepId, $attempt, $key)
+                : null,
             'retryAttempts' => 0,
         ]);
     }
@@ -538,6 +613,8 @@ final readonly class RunStateReducer
         return $state->with([
             'status' => $finalStatus,
             'activeStepId' => null,
+            'currentOperation' => null,
+            'lastAppliedCompactionKey' => $this->currentCompactionKey($state),
             'retryAttempts' => 0,
         ]);
     }
@@ -575,7 +652,14 @@ final readonly class RunStateReducer
         // They happen before the worker is dispatched — preserve activeStepId
         // and prior status (no Compacting transition occurred in live handler).
         if (null === $payloadStepId) {
-            return $state->with(['retryAttempts' => 0]);
+            $operationKey = \is_string($payload['operation_idempotency_key'] ?? null)
+                ? $payload['operation_idempotency_key']
+                : $state->lastAppliedCompactionKey;
+
+            return $state->with([
+                'lastAppliedCompactionKey' => $operationKey,
+                'retryAttempts' => 0,
+            ]);
         }
 
         // Resolve Compacting status: the terminal failure event ends the
@@ -599,6 +683,8 @@ final readonly class RunStateReducer
             return $state->with([
                 'status' => $resolveCompacting ?? $state->status,
                 'activeStepId' => null,
+                'currentOperation' => null,
+                'lastAppliedCompactionKey' => $this->currentCompactionKey($state),
                 'retryAttempts' => 0,
             ]);
         }
@@ -611,6 +697,13 @@ final readonly class RunStateReducer
             'status' => $resolveCompacting ?? $state->status,
             'retryAttempts' => 0,
         ]);
+    }
+
+    private function currentCompactionKey(RunState $state): ?string
+    {
+        return null !== $state->currentOperation
+            ? $state->currentOperation->idempotencyKey
+            : $state->lastAppliedCompactionKey;
     }
 
     private function applyNoMutation(RunEvent $event, RunState $state): RunState

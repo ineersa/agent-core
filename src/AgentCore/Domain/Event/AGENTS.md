@@ -16,7 +16,7 @@ Ordered lifecycle cases on `RunEventTypeEnum` (underscore wire values, e.g. `age
 
 `AgentStart` → `TurnStart` → `MessageStart`/`MessageUpdate`/`MessageEnd` → `ToolExecutionStart`/`ToolExecutionUpdate`/`ToolExecutionEnd` → `TurnEnd` → `AgentEnd`
 
-Pipeline/compaction/history cases (`RunStarted`, `WaitingHuman`, `HistoryPositionSet`, `HistoryTailDiscarded`, compaction, etc.) live on the same enum — read the enum file for the full set. Do not maintain a second exhaustive catalog here.
+Pipeline/compaction/history cases (`RunStarted`, `WaitingHuman`, `HistoryPositionSet`, `HistoryTailDiscarded`, compaction, etc.) live on the same enum — read the enum file for the full set. `ContextCompactionRequested` records a committed pre-LLM compaction request before its synchronous `CompactRun` effect, so replay can reject the already-consumed `AdvanceRun`. Do not maintain a second exhaustive catalog here.
 
 Ordering constraints are enforced at each event write/commit call site; there is no separate `LifecycleOrderValidator`. Example: a standalone shell worker writes `tool_execution_*` then `AgentEnd`.
 

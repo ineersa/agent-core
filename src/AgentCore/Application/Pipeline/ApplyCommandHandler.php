@@ -183,7 +183,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // for the next safe boundary.  Non-active runs apply immediately.
         $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling, RunStatus::Compacting], true);
         if (!$isActive && \in_array($message->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {
-            $followUpAdvance = $this->followUpAdvanceCallback($runId, $message->kind);
+            $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo, $message->kind);
             if (null !== $followUpAdvance) {
                 $postCommit[] = $followUpAdvance;
             }
@@ -297,7 +297,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
                 $postCommit = [];
                 if ($hasPendingAppendMessage) {
-                    $followUpAdvance = $this->followUpAdvanceCallback($runId, 'post-cancel-advance');
+                    $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo, 'post-cancel-advance');
                     if (null !== $followUpAdvance) {
                         $postCommit[] = $followUpAdvance;
                     }
@@ -375,7 +375,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
             $postCommit = [];
             if ($hasPendingAppendMessage) {
-                $followUpAdvance = $this->followUpAdvanceCallback($runId, 'post-cancel-advance');
+                $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo, 'post-cancel-advance');
                 if (null !== $followUpAdvance) {
                     $postCommit[] = $followUpAdvance;
                 }
@@ -506,7 +506,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         );
 
         $postCommit = [];
-        $followUpAdvance = $this->followUpAdvanceCallback($runId, 'continue');
+        $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo, 'continue');
         if (null !== $followUpAdvance) {
             $postCommit[] = $followUpAdvance;
         }
@@ -637,7 +637,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         $postCommit = [];
         // Model-turn answers schedule AdvanceRun only when no further human requests remain.
         if ([] === $remainingRequests) {
-            $followUpAdvance = $this->followUpAdvanceCallback($runId, 'human-response');
+            $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo, 'human-response');
             if (null !== $followUpAdvance) {
                 $postCommit[] = $followUpAdvance;
             }
@@ -897,7 +897,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             );
 
             $postCommit = [];
-            $compactCallback = $this->compactCallback($runId, $message->payload['custom_instructions'] ?? null);
+            $compactCallback = $this->compactCallback($runId, $state->turnNo, $message->payload['custom_instructions'] ?? null);
             if (null !== $compactCallback) {
                 $postCommit[] = $compactCallback;
             }
@@ -944,28 +944,28 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         );
     }
 
-    private function followUpAdvanceCallback(string $runId, string $prefix): ?callable
+    private function followUpAdvanceCallback(string $runId, int $turnNo, string $prefix): ?callable
     {
         if (null === $this->commandBus) {
             return null;
         }
 
-        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $prefix, 'Failed to dispatch follow-up AdvanceRun command.');
+        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, $prefix, 'Failed to dispatch follow-up AdvanceRun command.');
     }
 
-    private function compactCallback(string $runId, ?string $customInstructions = null): ?callable
+    private function compactCallback(string $runId, int $turnNo, ?string $customInstructions = null): ?callable
     {
         if (null === $this->commandBus) {
             return null;
         }
 
-        return function () use ($runId, $customInstructions): void {
+        return function () use ($runId, $turnNo, $customInstructions): void {
             $stepId = \sprintf('compact-%d', hrtime(true));
 
             try {
                 $this->commandBus->dispatch(new CompactRun(
                     runId: $runId,
-                    turnNo: 0,
+                    turnNo: $turnNo,
                     stepId: $stepId,
                     attempt: 1,
                     idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),

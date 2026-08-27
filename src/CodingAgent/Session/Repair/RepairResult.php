@@ -20,6 +20,8 @@ final readonly class RepairResult
         public array $duplicateSeqs = [],
         public array $missingSeqs = [],
         public ?SessionRepairRefusalReasonEnum $refusalReason = null,
+        /** Number of current operation messages dispatched by an applied manual repair. */
+        public int $activeOperationsRedriven = 0,
     ) {
     }
 }

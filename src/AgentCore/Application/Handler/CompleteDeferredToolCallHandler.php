@@ -51,9 +51,9 @@ final readonly class CompleteDeferredToolCallHandler
 
             // Dispatch first while status remains pending so Messenger retries can re-dispatch
             // after transport/handler failures. Mark completed only after dispatch succeeds.
-            // If dispatch succeeds but markCompleted fails, a later retry may dispatch again;
-            // ToolCallResult uses the stored ExecuteToolCall idempotency key so RunMessageProcessor
-            // suppresses duplicate observable pipeline effects (at-least-once transport, exactly-once handling).
+            // If dispatch succeeds but markCompleted fails, a later retry may dispatch again.
+            // ToolCallResultHandler and the durable tool-batch state admit the terminal result only once,
+            // so a duplicate delivery produces no additional observable pipeline transition.
             $toolCallResult = ToolCallResultFactory::fromDeferredCorrelationAndCompletion(
                 $correlation,
                 $message->content,

@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
-use Ineersa\AgentCore\Contract\IdempotencyStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
@@ -21,12 +20,12 @@ use Psr\Log\LoggerInterface;
  *
  * For each message:
  *  1. Acquires the run lock (re-entrant-safe)
- *  2. Checks idempotency — skips if already handled
+ *  2. Validates the message against the bounded authoritative run state
  *  3. Re-reads the latest run state from the store
  *  4. Resolves and runs the appropriate handler
  *  5. Commits state changes with CAS retry and exponential backoff
  *  6. Dispatches post-commit effects and callbacks
- *  7. Marks the message as handled
+ *  7. Duplicate committed transitions are no-ops; unfinished transitions retry
  *
  * The CAS retry loop (ASYNC-06) re-reads state and re-executes the
  * handler on each attempt, ensuring correctness under concurrent
@@ -48,7 +47,6 @@ final readonly class RunMessageProcessor
      */
     public function __construct(
         private RunStoreInterface $runStore,
-        private IdempotencyStoreInterface $idempotency,
         private RunLockManager $runLockManager,
         private RunCommit $runCommit,
         private StepDispatcher $stepDispatcher,
@@ -63,7 +61,6 @@ final readonly class RunMessageProcessor
     public function process(string $scope, AbstractAgentBusMessage $message): void
     {
         $runId = $message->runId();
-        $idempotencyKey = $message->idempotencyKey();
 
         RunLogContext::enter([
             'run_id' => $runId,
@@ -73,11 +70,7 @@ final readonly class RunMessageProcessor
         ]);
 
         try {
-            $this->runLockManager->synchronized($runId, function () use ($scope, $message, $runId, $idempotencyKey): void {
-                if ($this->idempotency->isHandled($scope, $runId, $idempotencyKey)) {
-                    return;
-                }
-
+            $this->runLockManager->synchronized($runId, function () use ($scope, $message, $runId): void {
                 $handler = $this->resolveHandler($message);
 
                 // Set handler context for inner logs. The component comes from
@@ -91,7 +84,7 @@ final readonly class RunMessageProcessor
                 ]);
 
                 try {
-                    $this->processWithRetry($scope, $message, $runId, $idempotencyKey, $handler);
+                    $this->processWithRetry($scope, $message, $runId, $handler);
                 } finally {
                     RunLogContext::leave(); // handler context
                 }
@@ -101,7 +94,7 @@ final readonly class RunMessageProcessor
         }
     }
 
-    private function processWithRetry(string $scope, AbstractAgentBusMessage $message, string $runId, string $idempotencyKey, RunMessageHandler $handler): void
+    private function processWithRetry(string $scope, AbstractAgentBusMessage $message, string $runId, RunMessageHandler $handler): void
     {
         $delayMs = self::INITIAL_RETRY_DELAY_MS;
 
@@ -166,10 +159,6 @@ final readonly class RunMessageProcessor
                     $callback();
                 }
 
-                if ($result->markHandled) {
-                    $this->idempotency->markHandled($scope, $runId, $idempotencyKey);
-                }
-
                 return;
             }
 
@@ -188,10 +177,6 @@ final readonly class RunMessageProcessor
 
                 foreach ($result->postCommit as $callback) {
                     $callback();
-                }
-
-                if ($result->markHandled) {
-                    $this->idempotency->markHandled($scope, $runId, $idempotencyKey);
                 }
 
                 return;
