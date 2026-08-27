@@ -17,16 +17,18 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
-use Ineersa\AgentCore\Domain\Run\CurrentCompactionExecutionDTO;
-use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final readonly class SessionRepairService implements SessionRepairServiceInterface
 {
@@ -44,6 +46,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private LoggerInterface $logger,
         private StepDispatcher $stepDispatcher,
         private ToolBatchStoreInterface $toolBatchStore,
+        private NormalizerInterface&DenormalizerInterface $serializer,
     ) {
     }
 
@@ -845,43 +848,33 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $effects = [];
         $operation = $state->currentOperation;
 
-        if (null !== $operation && CurrentOperationKindEnum::Compaction === $operation->kind) {
-            foreach (array_reverse($events) as $event) {
-                if (RunEventTypeEnum::ContextCompactionStarted->value !== $event->type
-                    || $operation->turnNo !== ($event->payload['turn_no'] ?? null)
-                    || $operation->stepId !== ($event->payload['step_id'] ?? null)
-                    || $operation->attempt !== ($event->payload['operation_attempt'] ?? null)
-                    || $operation->idempotencyKey !== ($event->payload['operation_idempotency_key'] ?? null)) {
-                    continue;
-                }
-
-                $compaction = CurrentCompactionExecutionDTO::fromStartedEvent($runId, $event->payload);
-                if (null !== $compaction) {
-                    $effects[] = $compaction->request;
-
-                    break;
-                }
-            }
-
-            if ([] === $effects) {
-                return $this->refusalResult($runId, 'Session repair refused: historical current compaction input cannot be reconstructed safely.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
-            }
-        }
-
         // Validate shell reconstruction before collecting any LLM effect. A
         // historical shell event without standalone evidence is ambiguous; in
         // particular, it must not cause a legacy shell-seeded turn to be
         // redriven as a fabricated LLM operation.
         $shellEffects = [];
+        $standaloneShellOperation = false;
         foreach ($state->pendingShellToolCalls as $toolCallId => $_) {
             $shell = $this->shellEffectFromEvents($runId, $toolCallId, $events);
             if (null === $shell) {
                 return $this->refusalResult($runId, 'Session repair refused: current shell command cannot be reconstructed safely.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
             }
             $shellEffects[] = $shell;
+            $standaloneShellOperation = $standaloneShellOperation
+                || (null !== $operation && $this->isStandaloneShellOperation($operation, $toolCallId, $events));
         }
 
-        if (null !== $operation && CurrentOperationKindEnum::Llm === $operation->kind) {
+        if (RunStatus::Compacting === $state->status) {
+            if (null === $operation) {
+                return $this->refusalResult($runId, 'Session repair refused: current compaction identity cannot be reconstructed safely.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+            }
+
+            $compaction = $this->compactionRequestFromStartedEvents($runId, $operation, $events);
+            if (null === $compaction) {
+                return $this->refusalResult($runId, 'Session repair refused: historical current compaction input cannot be reconstructed safely.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+            }
+            $effects[] = $compaction;
+        } elseif (null !== $operation && !$standaloneShellOperation) {
             $effects[] = new ExecuteLlmStep(
                 runId: $runId,
                 turnNo: $operation->turnNo,
@@ -926,6 +919,85 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $this->stepDispatcher->dispatchEffects($effects);
 
         return new RepairResult(false, false, 0, true, 'Active operation redriven.', activeOperationsRedriven: \count($effects));
+    }
+
+    /**
+     * @param list<RunEvent> $events
+     */
+    private function compactionRequestFromStartedEvents(string $runId, CurrentOperationDTO $operation, array $events): ?ExecuteCompactionStep
+    {
+        foreach (array_reverse($events) as $event) {
+            if (RunEventTypeEnum::ContextCompactionStarted->value !== $event->type
+                || !$this->operationMatchesEvent($operation, $event)) {
+                continue;
+            }
+
+            $workerRequest = $event->payload['worker_request'] ?? null;
+            if (!\is_array($workerRequest)) {
+                return null;
+            }
+
+            try {
+                $request = $this->serializer->denormalize($workerRequest, ExecuteCompactionStep::class);
+            } catch (\Throwable $exception) {
+                $this->logger->warning('Session repair could not denormalize compaction worker request.', [
+                    'event_type' => 'session.repair.compaction_denormalization_failed',
+                    'run_id' => $runId,
+                    'exception' => $exception::class,
+                ]);
+
+                return null;
+            }
+
+            if (!$request instanceof ExecuteCompactionStep
+                || $request->runId() !== $runId
+                || !$operation->matches($request->turnNo(), $request->stepId(), $request->attempt(), $request->idempotencyKey())) {
+                return null;
+            }
+
+            return $request;
+        }
+
+        return null;
+    }
+
+    private function operationMatchesEvent(CurrentOperationDTO $operation, RunEvent $event): bool
+    {
+        return $operation->turnNo === ($event->payload['turn_no'] ?? null)
+            && $operation->stepId === ($event->payload['step_id'] ?? null)
+            && $operation->attempt === ($event->payload['operation_attempt'] ?? null)
+            && $operation->idempotencyKey === ($event->payload['operation_idempotency_key'] ?? null);
+    }
+
+    /**
+     * @param list<RunEvent> $events
+     */
+    private function isStandaloneShellOperation(CurrentOperationDTO $operation, string $toolCallId, array $events): bool
+    {
+        foreach (array_reverse($events) as $event) {
+            if (RunEventTypeEnum::AgentCommandApplied->value !== $event->type || 'shell_command' !== ($event->payload['kind'] ?? null)) {
+                continue;
+            }
+
+            $key = $event->payload['idempotency_key'] ?? null;
+            if (!\is_string($key)
+                || 'sh_'.hash('sha256', $key) !== $toolCallId
+                || true !== ($event->payload['standalone'] ?? null)) {
+                continue;
+            }
+
+            $turnNo = $event->payload['operation_turn_no'] ?? null;
+            $stepId = $event->payload['operation_step_id'] ?? null;
+            $attempt = $event->payload['operation_attempt'] ?? null;
+            $operationKey = $event->payload['operation_idempotency_key'] ?? null;
+            if (!\is_int($turnNo) || !\is_string($stepId) || !\is_int($attempt) || !\is_string($operationKey)) {
+                return false;
+            }
+
+            return $operation->matches($turnNo, $stepId, $attempt, $operationKey);
+        }
+
+        return false;
     }
 
     /**

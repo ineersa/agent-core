@@ -97,6 +97,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([]),
             $this->extensionHooks([]),
             $this->metadataReader(isChild: true),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -151,6 +152,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([]),
             $this->extensionHooks([]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
         $started = $handler->handle($request, $advanceResult->nextState);
 
@@ -193,6 +195,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([]),
             $this->extensionHooks([$hook]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
         $request = new CompactRun('run-1', 5, 'step-1', 1, 'key-1', 'manual');
 
@@ -245,6 +248,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([]),
             $this->extensionHooks([]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -273,6 +277,8 @@ final class CompactRunHandlerTest extends TestCase
         $this->assertSame(4, $payload['messages_before']);
         $this->assertSame(2, $payload['messages_to_summarize']);
         $this->assertSame(2, $payload['messages_retained']);
+        $this->assertSame('run-1', $payload['worker_request']['run_id']);
+        $this->assertSame('question 1', $payload['worker_request']['summarization_messages'][0]['content'][0]['text']);
 
         // Sets activeStepId so the result handler can match the result.
         $this->assertSame('step-1', $result->nextState->activeStepId);
@@ -331,6 +337,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([]),
             $this->extensionHooks([]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -374,6 +381,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([]),
             $this->extensionHooks([]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -435,6 +443,7 @@ final class CompactRunHandlerTest extends TestCase
                 $this->hooks([]),
                 $this->extensionHooks([]),
                 $this->metadataReader(),
+                AttributeSerializerValidatorTestFactory::create()[0],
             );
 
             $result = $handler->handle(
@@ -496,6 +505,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([$cancelHook]),
             $this->extensionHooks([$cancelHook]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -578,6 +588,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([$replaceHook]),
             $this->extensionHooks([$replaceHook]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -893,6 +904,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([$hook]),
             $this->extensionHooks([$hook]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $handler->handle(
@@ -947,6 +959,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([$hook]),
             $this->extensionHooks([$hook]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -1017,6 +1030,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([$cancelHook]),
             $this->extensionHooks([$cancelHook]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -1079,6 +1093,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([]),
             $this->extensionHooks([]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -1125,6 +1140,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([]),
             $this->extensionHooks([]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -1202,6 +1218,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([$cancelHook]),
             $this->extensionHooks([$cancelHook]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(
@@ -1306,6 +1323,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->hooks([]),
             $this->extensionHooks([], [$publicHook]),
             $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
         );
 
         $result = $handler->handle(

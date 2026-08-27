@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -134,6 +135,7 @@ final class RepairCommandHandlerTest extends TestCase
             logger: new NullLogger(),
             stepDispatcher: new StepDispatcher(new TestMessageBus()),
             toolBatchStore: $this->createStub(ToolBatchStoreInterface::class),
+            serializer: AttributeSerializerValidatorTestFactory::create()[0],
         );
     }
 }

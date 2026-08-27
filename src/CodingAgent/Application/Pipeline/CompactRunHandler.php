@@ -15,9 +15,7 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
-use Ineersa\AgentCore\Domain\Run\CurrentCompactionExecutionDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
-use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
@@ -29,6 +27,7 @@ use Ineersa\CodingAgent\Config\CompactionRuntimeSettingsDTO;
 use Ineersa\CodingAgent\Extension\ExtensionCompactionHookDispatcher;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /**
  * Handles {@see CompactRun} messages: prepares compaction partitions,
@@ -50,6 +49,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
         private CompactionHookDispatcher $hookDispatcher,
         private ExtensionCompactionHookDispatcher $extensionHookDispatcher,
         private SubagentRunMetadataReader $metadataReader,
+        private NormalizerInterface $normalizer,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -77,8 +77,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
         // stale, or currently active request.
         if ($message->turnNo() !== $state->turnNo
             || $message->idempotencyKey() === $state->lastAppliedCompactionKey
-            || RunStatus::Compacting === $state->status
-            || (null !== $state->currentOperation && CurrentOperationKindEnum::Compaction === $state->currentOperation->kind)) {
+            || RunStatus::Compacting === $state->status) {
             return new HandlerResult();
         }
 
@@ -304,8 +303,6 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             continueAfterCompaction: $message->continueAfterCompaction,
             hookMetadata: [] !== $sanitisedHookMetadata ? $sanitisedHookMetadata : null,
         );
-        $currentExecution = new CurrentCompactionExecutionDTO($workerRequest);
-
         $startedEvents = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
             'type' => RunEventTypeEnum::ContextCompactionStarted->value,
             'payload' => [
@@ -324,13 +321,12 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
                 'first_retained_index' => $preparation->firstRetainedIndex,
                 'prior_summary_present' => $preparation->priorSummaryPresent,
                 'hook_metadata' => $sanitisedHookMetadata,
-                ...$currentExecution->eventPayload(),
+                'worker_request' => $this->normalizer->normalize($workerRequest),
             ],
         ]]);
 
         $nextState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId(), status: RunStatus::Compacting)->with([
             'currentOperation' => new CurrentOperationDTO(
-                CurrentOperationKindEnum::Compaction,
                 $state->turnNo,
                 $message->stepId(),
                 $message->attempt(),

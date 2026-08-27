@@ -21,7 +21,6 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
-use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
@@ -83,7 +82,8 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             || $state->turnNo !== $message->turnNo()
             || $state->activeStepId !== $message->stepId()
             || null === $state->currentOperation
-            || !$state->currentOperation->matches(CurrentOperationKindEnum::Llm, $message->turnNo(), $message->stepId(), $message->attempt(), $message->idempotencyKey())) {
+            || !$state->currentOperation->matches($message->turnNo(), $message->stepId(), $message->attempt(), $message->idempotencyKey())
+            || isset($state->pendingShellToolCalls['sh_'.hash('sha256', $state->currentOperation->idempotencyKey)])) {
             return new HandlerResult();
         }
 

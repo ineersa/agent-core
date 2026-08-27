@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
-use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 
@@ -120,7 +119,6 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
                 'payload' => [
                     'step_id' => $message->stepId(),
                     'turn_no' => $owningTurnNo,
-                    'operation_kind' => CurrentOperationKindEnum::Shell->value,
                     'operation_attempt' => $message->attempt(),
                     'operation_idempotency_key' => $message->idempotencyKey(),
                 ],
@@ -171,7 +169,6 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
             // this bounded descriptor.
             'currentOperation' => $startsChildTurn || RunStatus::Queued === $state->status
                 ? new CurrentOperationDTO(
-                    CurrentOperationKindEnum::Shell,
                     $owningTurnNo,
                     $message->stepId(),
                     $message->attempt(),

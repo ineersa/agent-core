@@ -13,7 +13,6 @@ namespace Ineersa\AgentCore\Domain\Run;
 final readonly class CurrentOperationDTO
 {
     public function __construct(
-        public CurrentOperationKindEnum $kind,
         public int $turnNo,
         public string $stepId,
         public int $attempt,
@@ -21,10 +20,9 @@ final readonly class CurrentOperationDTO
     ) {
     }
 
-    public function matches(CurrentOperationKindEnum $kind, int $turnNo, string $stepId, int $attempt, string $idempotencyKey): bool
+    public function matches(int $turnNo, string $stepId, int $attempt, string $idempotencyKey): bool
     {
-        return $this->kind === $kind
-            && $this->turnNo === $turnNo
+        return $this->turnNo === $turnNo
             && $this->stepId === $stepId
             && $this->attempt === $attempt
             && $this->idempotencyKey === $idempotencyKey;

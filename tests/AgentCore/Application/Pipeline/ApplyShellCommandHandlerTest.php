@@ -12,7 +12,6 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
-use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
@@ -141,7 +140,6 @@ final class ApplyShellCommandHandlerTest extends TestCase
 
         if (\count($expectedEventTypes) > 1) {
             $this->assertSame($expectedOwningTurn, $result->events[1]->payload['turn_no'] ?? null);
-            $this->assertSame(CurrentOperationKindEnum::Shell->value, $result->events[1]->payload['operation_kind'] ?? null);
             $this->assertSame(1, $result->events[1]->payload['operation_attempt'] ?? null);
             $this->assertSame('shell-idem-1', $result->events[1]->payload['operation_idempotency_key'] ?? null);
             $this->assertSame($expectedOwningTurn, $result->events[2]->payload['position_turn_no'] ?? null);
@@ -159,9 +157,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         if ($expectedStandalone) {
             $replayed = (new RunStateReducer())->replay(RunState::queued('run-shell-1'), $result->events);
             $this->assertNotNull($replayed->currentOperation);
-            $this->assertTrue($replayed->currentOperation->matches(
-                CurrentOperationKindEnum::Shell,
-                $expectedOwningTurn,
+            $this->assertTrue($replayed->currentOperation->matches($expectedOwningTurn,
                 'shell-step-1',
                 1,
                 'shell-idem-1',
@@ -204,7 +200,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
             idempotencyKey: 'shell-attached-key',
             rawInput: '!printf once',
         );
-        $llm = new CurrentOperationDTO(CurrentOperationKindEnum::Llm, 4, 'llm-step', 1, 'llm-key');
+        $llm = new CurrentOperationDTO(4, 'llm-step', 1, 'llm-key');
         $state = new RunState(
             runId: 'run-attached-shell-duplicate',
             status: RunStatus::Running,

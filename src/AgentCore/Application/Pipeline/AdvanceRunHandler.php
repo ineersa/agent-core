@@ -14,7 +14,6 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
-use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -411,7 +410,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             'streamingMessage' => null,
             'activeStepId' => $nextStepId,
             'currentOperation' => new CurrentOperationDTO(
-                CurrentOperationKindEnum::Llm,
                 $nextTurnNo,
                 $nextStepId,
                 1,

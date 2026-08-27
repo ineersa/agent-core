@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
-use Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler;
@@ -247,24 +246,23 @@ final class CompactionStepResultHandlerTest extends TestCase
         $this->assertSame([], $result->events);
     }
 
-    public function testMatchingResultOnCompletedRunProcessesNormally(): void
+    public function testMatchingManualCompactionResultProcessesNormally(): void
     {
-        // Manual /compact on a completed run: activeStepId matches stepId,
-        // turnNo matches, and run status is Completed.  The matching async
-        // result must be accepted — terminal run status alone is not staleness.
+        // A manual /compact request on a completed run transitions to Compacting
+        // before its async result arrives, so the matching result is accepted.
         $originalMessages = [
             $this->userMsg('old question'),
             $this->assistantMsg('old answer'),
         ];
         $state = new RunState(
             runId: 'run-1',
-            status: RunStatus::Completed,
+            status: RunStatus::Compacting,
             version: 10,
             turnNo: 5,
             lastSeq: 20,
             messages: $originalMessages,
             activeStepId: 'step-1',
-            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, 5, 'step-1', 1, 'key-1'),
+            currentOperation: new CurrentOperationDTO(5, 'step-1', 1, 'key-1'),
             model: 'test-model');
 
         $summaryMsg = $this->userMsg('Summary of prior context.');
@@ -295,7 +293,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        // Completed run with matching correlation → accepted (NOT stale_result).
+        // Compacting run with matching correlation → accepted (NOT stale_result).
         $this->assertNotNull($result->nextState);
         $this->assertCount(1, $result->events);
         $this->assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
@@ -796,7 +794,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             errorMessage: null,
             messages: [$this->userMsg('q')],
             activeStepId: 'step-1',
-            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, 5, 'step-1', 1, 'key-1'),
+            currentOperation: new CurrentOperationDTO(5, 'step-1', 1, 'key-1'),
             retryableFailure: false,
             model: 'test-model');
 
@@ -909,7 +907,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             turnNo: 5,
             lastSeq: 20,
             activeStepId: 'step-1',
-            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, 5, 'step-1', 1, 'key-1'),
+            currentOperation: new CurrentOperationDTO(5, 'step-1', 1, 'key-1'),
             messages: [$this->userMsg('q')],
             model: 'test-model');
 
@@ -990,7 +988,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             errorMessage: null,
             messages: $originalMessages,
             activeStepId: 'step-1',
-            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, 5, 'step-1', 1, 'key-1'),
+            currentOperation: new CurrentOperationDTO(5, 'step-1', 1, 'key-1'),
             retryableFailure: false,
             model: 'test-model');
 
@@ -1225,7 +1223,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             turnNo: 5,
             messages: $messages,
             activeStepId: 'step-1',
-            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, 5, 'step-1', 1, 'key-1'),
+            currentOperation: new CurrentOperationDTO(5, 'step-1', 1, 'key-1'),
         );
         $summary = $this->userMsg('summary');
         $handler = new CompactionStepResultHandler($this->stubCompactionService([$summary]), new EventFactory());
@@ -1279,7 +1277,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             errorMessage: null,
             messages: $messages,
             activeStepId: $activeStepId,
-            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, 5, $activeStepId, 1, 'key-1'),
+            currentOperation: new CurrentOperationDTO(5, $activeStepId, 1, 'key-1'),
             retryableFailure: false,
             model: 'test-model');
     }
@@ -1293,13 +1291,13 @@ final class CompactionStepResultHandlerTest extends TestCase
     {
         return new RunState(
             runId: 'run-1',
-            status: RunStatus::Running,
+            status: RunStatus::Compacting,
             version: 10,
             turnNo: $turnNo,
             lastSeq: 20,
             messages: $messages,
             activeStepId: $activeStepId,
-            currentOperation: new CurrentOperationDTO(CurrentOperationKindEnum::Compaction, $turnNo, $activeStepId, 1, $idempotencyKey),
+            currentOperation: new CurrentOperationDTO($turnNo, $activeStepId, 1, $idempotencyKey),
             model: 'test-model');
     }
 

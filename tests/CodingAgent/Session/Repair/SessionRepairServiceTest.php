@@ -26,6 +26,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -141,6 +142,24 @@ final class SessionRepairServiceTest extends TestCase
         $runId = 'repair-compaction';
         $key = 'compact-key';
         $factory = new EventFactory();
+        $workerRequest = new ExecuteCompactionStep(
+            runId: $runId,
+            turnNo: 4,
+            stepId: 'compact-step',
+            attempt: 2,
+            idempotencyKey: $key,
+            model: 'test-model',
+            modelOptions: ['thinking_level' => 'low'],
+            summarizationMessages: [new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'old']])],
+            retainedTailMessages: [new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'new']])],
+            messagesCompacted: 1,
+            messagesRetained: 1,
+            firstRetainedIndex: 1,
+            tokenEstimateBefore: 42,
+            trigger: 'auto',
+            continueAfterCompaction: true,
+        );
+        $serializer = AttributeSerializerValidatorTestFactory::create()[0];
         $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 4, 1, [
             ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
             ['type' => RunEventTypeEnum::ContextCompactionStarted->value, 'payload' => [
@@ -148,14 +167,7 @@ final class SessionRepairServiceTest extends TestCase
                 'step_id' => 'compact-step',
                 'operation_attempt' => 2,
                 'operation_idempotency_key' => $key,
-                'worker_request' => [
-                    'model' => 'test-model', 'model_options' => ['thinking_level' => 'low'],
-                    'summarization_messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'old']]]],
-                    'retained_tail_messages' => [['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'new']]]],
-                    'messages_compacted' => 1, 'messages_retained' => 1, 'first_retained_index' => 1,
-                    'token_estimate_before' => 42, 'trigger' => 'auto', 'continue_after_compaction' => true,
-                    'hook_metadata' => null,
-                ],
+                'worker_request' => $serializer->normalize($workerRequest),
             ]],
         ]));
         $store = new InMemoryRunStore();
@@ -175,7 +187,40 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame($key, $bus->messages[0]->idempotencyKey());
         $this->assertSame($key, $bus->messages[1]->idempotencyKey());
         $this->assertSame(2, $bus->messages[0]->attempt());
+        $this->assertSame('old', $bus->messages[0]->summarizationMessages[0]->content[0]['text']);
+        $this->assertSame('new', $bus->messages[0]->retainedTailMessages[0]->content[0]['text']);
         $this->assertSame($before, $this->readEvents($runId));
+    }
+
+    public function testConflictingNormalizedCompactionEnvelopeIsRefusedWithoutDispatch(): void
+    {
+        $runId = 'repair-compaction-conflict';
+        $key = 'compact-key';
+        $request = new ExecuteCompactionStep(
+            runId: 'other-run', turnNo: 4, stepId: 'compact-step', attempt: 1, idempotencyKey: $key,
+            model: 'test-model', modelOptions: [], summarizationMessages: [], retainedTailMessages: [],
+            messagesCompacted: 0, messagesRetained: 0, firstRetainedIndex: 0, tokenEstimateBefore: 0, trigger: 'auto',
+        );
+        $serializer = AttributeSerializerValidatorTestFactory::create()[0];
+        $factory = new EventFactory();
+        $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 4, 1, [
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
+            ['type' => RunEventTypeEnum::ContextCompactionStarted->value, 'payload' => [
+                'turn_no' => 4,
+                'step_id' => 'compact-step',
+                'operation_attempt' => 1,
+                'operation_idempotency_key' => $key,
+                'worker_request' => $serializer->normalize($request),
+            ]],
+        ]));
+        $store = new InMemoryRunStore();
+        $store->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Compacting, version: 1, turnNo: 4, lastSeq: 2, activeStepId: 'compact-step'), 0);
+        $bus = new TestMessageBus();
+
+        $result = $this->createService($store, dispatcherBus: $bus)->repair($runId, true);
+
+        $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $result->refusalReason);
+        $this->assertSame([], $bus->messages);
     }
 
     public function testDryRunAndRepeatedApplyRedriveAttachedShellFromCanonicalCommand(): void
@@ -281,7 +326,6 @@ final class SessionRepairServiceTest extends TestCase
             $specs[] = ['type' => RunEventTypeEnum::TurnAdvanced->value, 'turn_no' => $turnNo, 'payload' => [
                 'turn_no' => $turnNo,
                 'step_id' => $stepId,
-                'operation_kind' => 'shell',
                 'operation_attempt' => 1,
                 'operation_idempotency_key' => $key,
             ]];
@@ -1532,6 +1576,7 @@ final class SessionRepairServiceTest extends TestCase
             logger: $logger ?? new NullLogger(),
             stepDispatcher: new StepDispatcher($dispatcherBus),
             toolBatchStore: $toolBatchStore,
+            serializer: AttributeSerializerValidatorTestFactory::create()[0],
         );
     }
 

@@ -59,11 +59,11 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
         // Exact active-operation validation makes completed, stale, and
         // wrong-attempt redeliveries pure no-ops. A stale result must never
         // manufacture context_compaction_failed after the real lifecycle ended.
-        if ($state->turnNo !== $message->turnNo()
+        if (!\in_array($state->status, [RunStatus::Compacting, RunStatus::Cancelling], true)
+            || $state->turnNo !== $message->turnNo()
             || $state->activeStepId !== $message->stepId()
             || null === $state->currentOperation
             || !$state->currentOperation->matches(
-                \Ineersa\AgentCore\Domain\Run\CurrentOperationKindEnum::Compaction,
                 $message->turnNo(),
                 $message->stepId(),
                 $message->attempt(),
