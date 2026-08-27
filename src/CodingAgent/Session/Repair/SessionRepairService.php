@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Session\Repair;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
@@ -34,6 +35,8 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 {
     private const string SYNTHETIC_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
 
+    private ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec;
+
     public function __construct(
         private EventStoreInterface $eventStore,
         private RunStoreInterface $runStore,
@@ -48,6 +51,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private ToolBatchStoreInterface $toolBatchStore,
         private NormalizerInterface&DenormalizerInterface $serializer,
     ) {
+        $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
 
     public function repair(string $runId, bool $apply): RepairResult
@@ -616,14 +620,14 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         ];
         $eventSpecs[] = [
             'type' => RunEventTypeEnum::ToolExecutionEnd->value,
-            'payload' => [
+            'payload' => array_merge([
                 'tool_call_id' => $toolCallId,
                 'order_index' => $orderIndex,
                 'is_error' => true,
                 'result' => self::SYNTHETIC_CANCEL_MESSAGE,
                 'cancelled' => true,
                 'cancellation_reason' => 'user',
-            ],
+            ], $this->toolExecutionEndPayloadCodec->toEventPayload($syntheticResult)),
         ];
 
         $toolMsg = $this->messageNormalizer->toolMessage($syntheticResult);

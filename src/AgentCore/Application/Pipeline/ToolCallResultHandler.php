@@ -25,6 +25,8 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 {
     private const string SYNTHETIC_USER_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
 
+    private ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec;
+
     public function __construct(
         private ToolBatchCollector $toolBatchCollector,
         private EventFactory $eventFactory,
@@ -34,6 +36,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         private ?RunMetrics $metrics = null,
         private ?MessageBusInterface $commandBus = null,
     ) {
+        $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
 
     public function getLogComponent(): string
@@ -253,12 +256,12 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             ],
             [
                 'type' => RunEventTypeEnum::ToolExecutionEnd->value,
-                'payload' => [
+                'payload' => array_merge([
                     'tool_call_id' => $message->toolCallId,
                     'order_index' => $message->orderIndex,
                     'is_error' => $message->isError,
                     'result' => $this->extractResultText($message->result),
-                ],
+                ], $this->toolExecutionEndPayloadCodec->toEventPayload($message)),
             ],
         ];
 
@@ -531,6 +534,10 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         if (null !== $toolExecutionEndExtras) {
             $toolExecutionEndPayload = array_merge($toolExecutionEndPayload, $toolExecutionEndExtras);
         }
+        $toolExecutionEndPayload = array_merge(
+            $toolExecutionEndPayload,
+            $this->toolExecutionEndPayloadCodec->toEventPayload($result),
+        );
 
         $eventSpecs[] = [
             'type' => RunEventTypeEnum::ToolCallResultReceived->value,

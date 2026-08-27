@@ -8,6 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -132,6 +133,15 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertArrayHasKey('result', $result->events[1]->payload);
         $this->assertSame('A', $result->events[1]->payload['result'],
             'ToolExecutionEnd must carry the extracted result text, not fall back to "alpha completed"');
+        [$serializer] = AttributeSerializerValidatorTestFactory::create();
+        $typedResult = (new ToolExecutionEndPayloadCodec($serializer))
+            ->fromEventPayload($result->events[1]->payload);
+        $this->assertSame('run-tool-handler-1', $typedResult->runId());
+        $this->assertSame('turn-1-step', $typedResult->stepId());
+        $this->assertSame('tool-result-a', $typedResult->idempotencyKey());
+        $this->assertSame('tool-a', $typedResult->toolCallId);
+        $this->assertSame($message->result, $typedResult->result);
+        $this->assertFalse($typedResult->isError);
 
         $this->assertSame([], $result->effects);
         $this->assertCount(1, $result->postCommitEffects);

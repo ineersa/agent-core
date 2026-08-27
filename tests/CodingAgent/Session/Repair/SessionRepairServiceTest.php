@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Session\Repair;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
@@ -520,6 +521,14 @@ final class SessionRepairServiceTest extends TestCase
             }
             $this->assertTrue($row['payload']['is_error'] ?? false);
             $this->assertNotTrue($row['payload']['success'] ?? null, 'Unresolved tool must not be silently marked successful');
+            [$serializer] = AttributeSerializerValidatorTestFactory::create();
+            $typedResult = (new ToolExecutionEndPayloadCodec($serializer))
+                ->fromEventPayload($row['payload']);
+            $this->assertSame($runId, $typedResult->runId());
+            $this->assertSame(self::TOOL_CALL_ID, $typedResult->toolCallId);
+            $this->assertSame('Tool execution cancelled by user.', $typedResult->result['content'][0]['text'] ?? null);
+            $this->assertTrue($typedResult->isError);
+            $this->assertSame('cancelled', $typedResult->error['type'] ?? null);
         }
 
         $replayed = $this->replayMessages($runId);

@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
@@ -45,6 +47,7 @@ final readonly class ExecuteShellToolCallWorker
         private ToolExecutorInterface $toolExecutor,
         private EventStoreInterface $eventStore,
         private MessageBusInterface $commandBus,
+        private ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec,
         private ?LoggerInterface $logger = null,
     ) {
     }
@@ -126,17 +129,37 @@ final readonly class ExecuteShellToolCallWorker
             }
         }
 
+        // Preserve the direct executor's raw content and details once in the
+        // staged typed payload. Existing top-level fields remain for current
+        // runtime/replay consumers until the authority cutover pass.
+        $toolCallResult = new ToolCallResult(
+            runId: $runId,
+            turnNo: $turnNo,
+            stepId: $message->stepId(),
+            attempt: $message->attempt(),
+            idempotencyKey: $message->idempotencyKey(),
+            toolCallId: $toolCallId,
+            orderIndex: 0,
+            result: [
+                'tool_name' => $result->toolName,
+                'content' => $result->content,
+                'details' => $result->details,
+                'arguments' => $arguments,
+            ],
+            isError: $result->isError,
+        );
+
         // Emit tool_execution_end event with result text.
         $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: $turnNo,
             type: RunEventTypeEnum::ToolExecutionEnd->value,
-            payload: [
+            payload: array_merge([
                 'tool_call_id' => $toolCallId,
                 'is_error' => $result->isError,
                 'result' => $resultText,
-            ],
+            ], $this->toolExecutionEndPayloadCodec->toEventPayload($toolCallResult)),
         ));
 
         $this->logger?->info('shell.tool_execution_completed', [
