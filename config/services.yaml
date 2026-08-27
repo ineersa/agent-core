@@ -98,6 +98,9 @@ services:
   Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface:
     alias: Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository
 
+  Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface:
+    alias: Ineersa\CodingAgent\Entity\RunOperationalProjectionRepository
+
   # ─── Error capture (env-driven config, not a per-catch delegation service) ───
 
   Ineersa\CodingAgent\Runtime\Contract\RuntimeErrorCaptureConfig:

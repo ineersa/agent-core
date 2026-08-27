@@ -143,6 +143,16 @@ final class ApplicationMigrationExecutorTest extends TestCase
             'deferred_subagent_batch and deferred_subagent_child must exist after startup executor (Piece 4A)',
         );
 
+        $this->assertTrue(
+            $schemaManager->tablesExist(['run_operational_state', 'run_operational_tool_call', 'run_operational_human_input']),
+            'All payload-free run operational projection tables must exist after startup executor.',
+        );
+        $recordedOperationalProjection = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260827120000'],
+        );
+        $this->assertNotFalse($recordedOperationalProjection);
+
         $recordedDeferredSingleDrop = $connection->fetchOne(
             'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
             ['Version20260714140000'],

@@ -75,3 +75,9 @@ services:
   test.om_database_factory:
     class: Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService
     public: true
+
+  # TEST-ONLY access to the private operational projection repository for
+  # kernel/database integration tests. The production service remains private.
+  test.run_operational_projection_repository:
+    alias: Ineersa\CodingAgent\Entity\RunOperationalProjectionRepository
+    public: true
