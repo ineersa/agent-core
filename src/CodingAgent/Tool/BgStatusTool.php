@@ -13,13 +13,13 @@ use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
 
 /**
- * Inspect, tail-log, and stop background processes.
+ * Inspect, tail-log, and stop user-accepted background processes.
  *
  * Implements HatfieldToolProviderInterface for automatic registration
  * as a permanent tool and the Symfony AI native tool contract (typed DTO arguments).
  *
  * Actions:
- *  - list:  Show all tracked background processes with status, scoped to
+ *  - list:  Show user-accepted background processes with status, scoped to
  *           the current session via ambient ToolContext.
  *  - log:   Return the tail of a background process log file, scoped to
  *           the current session.
@@ -28,8 +28,9 @@ use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
  *
  * Session ownership: resolves the current run/session ID from the ambient
  * StackToolExecutionContextAccessor (ToolContext::runId()) and passes it
- * to every BackgroundProcessManager call. This ensures the LLM only sees
- * and operates on processes it owns.
+ * to every BackgroundProcessManager call. This ensures the LLM sees and
+ * operates only on user-accepted processes it owns; private foreground
+ * supervision rows are never exposed.
  */
 final class BgStatusTool implements HatfieldToolProviderInterface
 {

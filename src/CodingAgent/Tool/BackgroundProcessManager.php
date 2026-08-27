@@ -471,8 +471,9 @@ final class BackgroundProcessManager
      * @param int         $pid       Process PID to stop. Must be > 0.
      * @param string|null $sessionId owning run for user-facing operations.
      *                               When provided, only an accepted process
-     *                               in that run can be stopped; null remains
-     *                               the internal shutdown/reap path.
+     *                               in that run can be stopped; null is only
+     *                               for internal shutdown/reap calls over
+     *                               manager-owned PIDs or session-selected rows.
      *
      * @throws \RuntimeException when process not found or PID is invalid
      */
