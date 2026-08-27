@@ -71,6 +71,7 @@ final class TraceReplayTest extends KernelTestCase
                 cwd: $this->tempDir.'/project',
             ),
             entityManager: $this->entityManager,
+            dispatcher: new EventDispatcher(),
         );
         $this->sessionMetaStore = $hatfieldSessionStore;
     }

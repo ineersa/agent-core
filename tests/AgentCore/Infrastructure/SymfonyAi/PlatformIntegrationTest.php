@@ -78,7 +78,7 @@ final class PlatformIntegrationTest extends TestCase
             {
             }
 
-            public function transformContext(array $messages, ?CancellationTokenInterface $cancelToken = null): array
+            public function transformContext(array $messages, ?CancellationTokenInterface $cancelToken = null, ?string $runId = null): array
             {
                 $this->calls[] = 'transform_context';
 
@@ -580,7 +580,7 @@ final class PlatformIntegrationTest extends TestCase
         };
 
         $transformHook = new class implements TransformContextHookInterface {
-            public function transformContext(array $messages, ?CancellationTokenInterface $cancelToken = null): array
+            public function transformContext(array $messages, ?CancellationTokenInterface $cancelToken = null, ?string $runId = null): array
             {
                 // Attach a model_notification to the last AgentMessage to
                 // simulate a defense-in-depth output cap firing.
@@ -675,7 +675,7 @@ final class PlatformIntegrationTest extends TestCase
         };
 
         $transformHook = new class implements TransformContextHookInterface {
-            public function transformContext(array $messages, ?CancellationTokenInterface $cancelToken = null): array
+            public function transformContext(array $messages, ?CancellationTokenInterface $cancelToken = null, ?string $runId = null): array
             {
                 $notification = [
                     'id' => hash('sha256', 'err-cap'),
@@ -754,7 +754,7 @@ final class PlatformIntegrationTest extends TestCase
         // Transform hook that adds a NEW notification to the
         // last message (simulating defense-in-depth on a different tool).
         $transformHook = new class implements TransformContextHookInterface {
-            public function transformContext(array $messages, ?CancellationTokenInterface $cancelToken = null): array
+            public function transformContext(array $messages, ?CancellationTokenInterface $cancelToken = null, ?string $runId = null): array
             {
                 $lastIndex = \count($messages) - 1;
                 if (isset($messages[$lastIndex])) {

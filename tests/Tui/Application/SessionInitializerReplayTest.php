@@ -81,8 +81,7 @@ final class SessionInitializerReplayTest extends TestCase
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class)
-        );
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class), dispatcher: new EventDispatcher());
 
         $mapper = new RuntimeEventMapper(
             new RuntimeEventTranslator(new EventDispatcher())

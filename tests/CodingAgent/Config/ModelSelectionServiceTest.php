@@ -68,6 +68,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
                 cwd: $this->tempDir.'/project',
             ),
             entityManager: $this->entityManager,
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
         $this->sessionMetaStore = $hatfieldSessionStore;
 

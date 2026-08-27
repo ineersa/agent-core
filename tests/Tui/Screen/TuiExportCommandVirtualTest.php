@@ -122,6 +122,7 @@ final class TuiExportCommandVirtualTest extends TestCase
         return new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(EntityManagerInterface::class),
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
     }
 

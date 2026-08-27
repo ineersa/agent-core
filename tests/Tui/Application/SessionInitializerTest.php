@@ -70,8 +70,7 @@ final class SessionInitializerTest extends TestCase
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class)
-        );
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class), dispatcher: new EventDispatcher());
 
         $this->eventStore = new SessionRunEventStore(
             hatfieldSessionStore: $hatfieldSessionStore,
@@ -423,8 +422,7 @@ final class SessionInitializerTest extends TestCase
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class)
-        );
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class), dispatcher: new EventDispatcher());
         $mapper = new RuntimeEventMapper(
             new RuntimeEventTranslator(new EventDispatcher())
         );
@@ -498,8 +496,7 @@ final class SessionInitializerTest extends TestCase
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class)
-        );
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class), dispatcher: new EventDispatcher());
         $mapper = new RuntimeEventMapper(
             new RuntimeEventTranslator(new EventDispatcher())
         );
@@ -657,8 +654,7 @@ final class SessionInitializerTest extends TestCase
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class)
-        );
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class), dispatcher: new EventDispatcher());
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
         $eventApplier = new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer());
 

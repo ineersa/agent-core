@@ -62,6 +62,7 @@ final class SessionRunStoreTest extends TestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->entityManager,
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
 
         $this->store = new SessionRunStore(
@@ -169,6 +170,7 @@ final class SessionRunStoreTest extends TestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->entityManager,
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
         $newStore = new SessionRunStore(
             hatfieldSessionStore: $hatfieldSessionStore,

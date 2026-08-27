@@ -706,6 +706,7 @@ final class CompletionListenerTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
         $isolatedContext = new TuiRuntimeContext(
             tui: $isolatedTui,
@@ -882,7 +883,7 @@ final class CompletionListenerTest extends TestCase
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
                 entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            );
+                dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), );
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
                 client: $this->createStub(AgentSessionClient::class),
@@ -945,7 +946,7 @@ final class CompletionListenerTest extends TestCase
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
                 entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            );
+                dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), );
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
                 client: $this->createStub(AgentSessionClient::class),
@@ -1004,7 +1005,7 @@ final class CompletionListenerTest extends TestCase
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
                 entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            );
+                dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), );
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
                 client: $this->createStub(AgentSessionClient::class),
@@ -1068,7 +1069,7 @@ final class CompletionListenerTest extends TestCase
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
                 entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            );
+                dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), );
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
                 client: $this->createStub(AgentSessionClient::class),
