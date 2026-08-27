@@ -294,7 +294,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             status: RunStatus::Running->value,
             events: $events,
             effectsCount: 0,
-            runState: $runState ?? $this->runStore->get('run-1'),
+            runState: $runState ?? $this->runStore->get('run-1') ?? $this->runState(),
         );
     }
 

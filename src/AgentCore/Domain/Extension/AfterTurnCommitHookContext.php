@@ -21,7 +21,7 @@ final readonly class AfterTurnCommitHookContext
         public string $status,
         array $events,
         public int $effectsCount,
-        public ?RunState $runState = null,
+        public RunState $runState,
     ) {
         foreach ($events as $event) {
             if (!$event instanceof AfterTurnCommitEventSummary) {

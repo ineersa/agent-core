@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
@@ -659,6 +660,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             status: 'cancelling',
             events: [],
             effectsCount: 0,
+            runState: new RunState($parent, RunStatus::Cancelling, turnNo: 1),
         ));
         $this->assertSame('cancelling', $result->status);
         $this->assertInstanceOf(InterruptDeferredSubagentBatchMessage::class, $hookBus->messages[0]);
@@ -673,6 +675,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             status: 'running',
             events: [],
             effectsCount: 0,
+            runState: new RunState($parent, RunStatus::Running, turnNo: 1),
         ));
         $this->assertCount(0, $hookBus2->messages);
     }

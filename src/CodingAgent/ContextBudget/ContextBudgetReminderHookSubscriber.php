@@ -195,7 +195,7 @@ final readonly class ContextBudgetReminderHookSubscriber implements HookSubscrib
             return $fromRun;
         }
 
-        $model = null !== $context->runState?->model ? trim($context->runState->model) : '';
+        $model = null !== $context->runState->model ? trim($context->runState->model) : '';
 
         return $this->contextWindowFromCatalog('' !== $model ? $model : null);
     }

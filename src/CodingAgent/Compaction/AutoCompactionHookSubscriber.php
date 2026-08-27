@@ -117,9 +117,6 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // persisted event sequence, so this synchronous hook never rereads
         // the file-backed run store after commit.
         $runState = $context->runState;
-        if (null === $runState) {
-            return $context;
-        }
 
         foreach ($runState->pendingToolCalls as $completed) {
             if (true !== $completed) {

@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Extension\ExtensionAfterTurnCommitHookSubscriber;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
@@ -42,6 +44,7 @@ final class ExtensionAfterTurnCommitHookSubscriberTest extends TestCase
                 createdAt: '2026-07-22T12:00:00+00:00',
             )],
             0,
+            new RunState('run-1', RunStatus::Running, turnNo: 2),
         );
         $subscriber->handleAfterTurnCommit($ctx);
         $this->assertInstanceOf(AfterTurnCommitHookContextDTO::class, $captured);
@@ -65,7 +68,7 @@ final class ExtensionAfterTurnCommitHookSubscriberTest extends TestCase
         });
         $logger = new TestLogger();
         $subscriber = new ExtensionAfterTurnCommitHookSubscriber($registry, $logger);
-        $ctx = new AfterTurnCommitHookContext('run-9', 3, 'running', [new AfterTurnCommitEventSummary(1, 'turn_end')], 0);
+        $ctx = new AfterTurnCommitHookContext('run-9', 3, 'running', [new AfterTurnCommitEventSummary(1, 'turn_end')], 0, new RunState('run-9', RunStatus::Running, turnNo: 3));
         $subscriber->handleAfterTurnCommit($ctx);
         $this->assertNotEmpty($logger->records);
         $this->assertSame('warning', $logger->records[0]['level']);

@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Obse
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -107,6 +108,7 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
             status: 'running',
             events: $events,
             effectsCount: 0,
+            runState: new RunState($childRunId, RunStatus::Running, turnNo: 2),
         ));
 
         $this->assertCount($expectedDispatches, $bus->messages);
@@ -180,6 +182,7 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
             status: 'running',
             events: [new AfterTurnCommitEventSummary(1, RunEventTypeEnum::RunStarted->value, [])],
             effectsCount: 0,
+            runState: new RunState($child['childRunId'], RunStatus::Running, turnNo: 1),
         ));
 
         $this->assertContains('deferred_subagent_batch.child_turn_dispatch_failed', array_column($logger->records, 'message'));

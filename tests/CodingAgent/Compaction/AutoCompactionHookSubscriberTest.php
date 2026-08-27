@@ -372,21 +372,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Test: null run state
-    // ─────────────────────────────────────────────────────────────────
-
-    public function testDoesNotDispatchWhenRunStateMissing(): void
-    {
-        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
-        $this->runStore->method('get')->willReturn(null);
-
-        $context = $this->createHookContext();
-        $this->subscriber->handleAfterTurnCommit($context);
-
-        $this->assertCount(0, $this->commandBus->messages);
-    }
-
-    // ─────────────────────────────────────────────────────────────────
     //  Test: interface contract
     // ─────────────────────────────────────────────────────────────────
 
@@ -1086,32 +1071,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     }
 
     /**
-     * Thesis: when RunState is absent from the store, the auto-compaction
-     * hook must NOT dispatch CompactRun and must NOT fatal.
-     *
-     * Under normal operation RunState always exists for runs processed
-     * by after-turn hooks, but this is defensive against concurrent
-     * store eviction, corruption, or edge cases where the hook fires
-     * for a run whose state has been removed.
-     */
-    public function testSkipsWhenRunStateMissingBeforePreparation(): void
-    {
-        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
-
-        // RunState absent: no stubbed return from runStore->get()
-        // Under #[AllowMockObjectsWithoutExpectations] this returns null.
-
-        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
-
-        $context = $this->createHookContext();
-        $this->subscriber->handleAfterTurnCommit($context);
-
-        $this->assertCount(0, $this->commandBus->messages,
-            'Must skip without fatal when RunState is missing from store '
-            .'— null $runState must not dereference in prepare().');
-    }
-
-    /**
      * Thesis: agent child runs (fork/subagent, session.kind=agent_child) never
      * schedule after-turn auto-compaction even when provider usage exceeds the
      * normal compact_after_tokens threshold.
@@ -1209,7 +1168,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             status: 'running',
             events: $events,
             effectsCount: $effectsCount,
-            runState: $runState ?? $this->runStore->get('run-1'),
+            runState: $runState ?? $this->runStore->get('run-1') ?? $this->createRunState(),
         );
     }
 

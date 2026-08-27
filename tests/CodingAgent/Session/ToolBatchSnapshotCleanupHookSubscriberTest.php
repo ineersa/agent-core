@@ -73,6 +73,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
                 ]),
             ],
             effectsCount: 0,
+            runState: new RunState('run-1', RunStatus::Running, turnNo: 3),
         ));
 
         $this->assertNull($store->load('run-1', 3, 'step-x'));
@@ -92,6 +93,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             status: RunStatus::Completed->value,
             events: [new AfterTurnCommitEventSummary(99, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed'])],
             effectsCount: 0,
+            runState: new RunState('run-1', RunStatus::Completed, turnNo: 2),
         ));
 
         $this->assertNull($store->load('run-1', 1, 's1'));
