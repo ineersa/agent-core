@@ -34,34 +34,26 @@ Prefer semantic JetBrains IDE tools (agent-visible `jetbrains-index_ide_*`; raw 
    - Use the existing task worktree from metadata. If it is missing, recreate or recover it before implementation.
 
 3. **Classify feedback**
-   - Classify findings by actionability, not just severity. Address all sensible findings across severity levels: CRITICAL, BUG, EDGE CASE, SEC, CONVENTION, SIMPLIFY, NAMING, DEAD CODE, and reasonable NTH items.
-   - Skip only clearly subjective style preferences or items the reviewer explicitly marks as non-actionable.
+   - Classify findings by the reviewer verdict rubric: CRITICAL, BUG, SEC, missing proof, dead code, and uncited fallback paths block; NTH, naming, and pure micro-shrinks are suggestions unless correctness is affected.
+   - Address blockers; record or optionally apply non-blocking suggestions without preventing approval.
    - Note which comments intersect with already-identified issues on the task.
    - If a comment references external docs (e.g. Doctrine release notes, Symfony changelog), read those too.
    - Use the researcher subagent for web searches or web-based research when up-to-date external information is needed.
 
-4. **Prepare exact fork instructions**
-   - Write exact implementation instructions covering each actionable comment.
-   - Group nearby changes into single edits where possible.
-   - Specify exact files, old/new text patterns, validation steps, and limits of authority.
-   - **For TUI tasks: if the fix addresses user-visible behavior or workflow, the instructions MUST require adding or updating proof at the lowest correct layer (virtual/in-process, controller replay, or minimal tmux only for PTY/process boot) for the affected feature path.** If the task previously lacked such a test, this iteration must remediate that gap.
-   - Pass those instructions directly to the fork.
+4. **Choose ownership and implement**
+   - Choose main-owned cohesive fixes or worker-owned bounded slices; specify disjoint files, validation, and limits of authority.
+   - **For TUI tasks: require proof at the selected lowest correct layer for the affected feature path.**
+   - Main may implement cohesive fixes directly; delegate only bounded slices that reduce rereading.
 
-5. **Launch a fork**
-   - Launch a single fork with `cwd` set to the task worktree (from task metadata).
-   - Include the exact implementation instructions.
-   - Do NOT implement directly — the fork implements.
-
-6. **Verify fork output**
-   - Confirm the fork committed (check git log on worktree).
-   - Inspect `git diff --stat HEAD~1` or `git show --stat HEAD` for the fork commit.
+5. **Verify implementation output**
+   - Confirm commits/output and inspect `git diff --stat HEAD~1` or `git show --stat HEAD`.
    - Run focused Castor validation: `castor test --filter=...`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
-   - **For TUI tasks: run `castor test:tui` to confirm the E2E proof test added/updated by this iteration passes.**
+   - **For TUI tasks: run controller replay or `castor test:tui` only when that selected proof layer is required.**
    - **When changes touch provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), also run `castor test:llm-real` as opt-in focused validation.** This is NOT required for every normal task.
    - Verify no unintended changes (only the advertised files changed).
 
 7. **Re-review**
-   - Run the reviewer subagent again on the worktree at the new HEAD. Re-review after a fix is **sequential** by design (it depends on the new HEAD). Batch only if you need multiple independent reviewers at the same HEAD in one parallel `tasks` call.
+   - Resume the prior reviewer with `agent_resume`, the new commit/diff, prior findings, and resolution delta when its artifact/run identity is available; launch a new reviewer only when no resumable reviewer exists. Re-review after a fix is **sequential** by design (it depends on the new HEAD). Batch only if you need multiple independent reviewers at the same HEAD in one parallel `tasks` call.
    - **For TUI tasks: instruct the reviewer to verify proof at the lowest correct layer (virtual/in-process, controller replay, or minimal tmux only for PTY/process boot) exists and covers the user-visible feature path.** Reject the iteration if it lacks this proof or substitutes mocks.
    - If REQUEST CHANGES again, repeat from step 4 with the new feedback.
 
@@ -73,4 +65,4 @@ Prefer semantic JetBrains IDE tools (agent-visible `jetbrains-index_ide_*`; raw 
    - Append work log entries for each iteration.
 
 ## Shared workflow policy
-Load the platform task-workflow skill and follow the named phase; do not duplicate its procedure here. Implementation ownership follows context: main may finish cohesive work it understands, while workers own complete bounded slices with compact handoffs. Use the TUI proof pyramid (virtual → controller replay → minimal tmux only for PTY/process boot). Before CODE-REVIEW use focused tests for touched areas plus deptrac/phpstan/cs-check; do not mandate full `castor test`. Flakes require deterministic root-cause fixes—never allowlist, quarantine, blind-retry, or increase timeouts.
+Load the platform task-workflow skill and follow the named phase; do not duplicate its procedure here. Implementation ownership follows context: main may finish cohesive work it understands, while workers own complete bounded slices with compact handoffs. Use the TUI proof pyramid (virtual → controller replay → minimal tmux only for PTY/process boot). Before CODE-REVIEW use focused tests for touched areas plus deptrac/phpstan/cs-check; do not mandate full `castor test`. Flakes require deterministic root-cause fixes—never allowlist, quarantine, blind-retry, or increase timeouts. Delete dead or superseded code and uncited fallback paths; required error handling and documented local degradation remain valid.

@@ -44,9 +44,9 @@ import { workflowPrompt } from "./prompt";
 const statusParam = StringEnum(STATUSES);
 
 function formatCastorCheckFailure(reason: string, worktree: string, stdout: string, stderr: string): string {
-	const output = (stderr || stdout || "").trim();
-	const qaRun = /QA run:\s*(qa-[A-Za-z0-9_-]+)/.exec(`${stdout}\n${stderr}`)?.[1];
-	const lane = /(?:quality failed|failed lanes?)[: ]+([^,\n]+)/i.exec(output)?.[1]?.trim();
+	const output = `${stdout}\n${stderr}`.trim();
+	const qaRun = /QA run:\s*(qa-[A-Za-z0-9_-]+)/.exec(output)?.[1];
+	const lane = /(?:quality failed|failed lanes?)\s*:?\s*([A-Za-z0-9][A-Za-z0-9:_-]*)(?=\s*(?:\(|,|\n|$))/i.exec(output)?.[1];
 	const reportDir = qaRun ? `var/reports/${qaRun}` : undefined;
 	const log = lane && reportDir ? `${reportDir}/check-${lane}.log` : undefined;
 	let snippet = output || "(no output)";

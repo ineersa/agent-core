@@ -48,6 +48,7 @@ Before writing fork instructions or accepting review:
 2. Fork instructions may choose minimal implementation mechanics, but **must not introduce uncited product decisions**. Unresolved ambiguity affecting behavior or public surface goes back to the user — do not invent defaults or surface.
 3. Latest explicit task clarification overrides earlier superseded scope.
 4. Reviewers must inventory changed external surface and complexity against finalized requirements and return **REQUEST CHANGES** for unmapped functionality or unnecessary complexity.
+5. Delete code, branches, prompts, adapters, tests, compatibility paths, and procedures that become dead, unreachable, superseded, or unsupported in the same change. Do not preserve them “just in case” or add uncited fallback behavior. Required error handling and explicitly documented local degradation remain valid.
 
 Root `AGENTS.md` owns the principle; this gate enforces it in task-start and review.
 
@@ -80,13 +81,10 @@ Read-only planning. No status changes, no file edits, no forks.
 1. `move_task(to="IN-PROGRESS")` — creates worktree branch.
    - Worktree creation copies `vendor/` and `.vera/` into the worktree, and updates the parent worktree IDEA module exclusions when present.
 2. Scout codebase for context, researcher for external info. Batch independent scouts/researchers in one parallel `tasks` call; use sequential single-mode only when a later probe depends on an earlier result.
-3. Apply the **Specification fidelity gate**: map every proposed externally visible addition to an exact finalized requirement; resolve ambiguity with the user before forking; do not encode uncited product decisions into fork instructions.
-4. Prepare exact fork instructions: files to touch, old/new patterns, validation commands, boundaries (mechanics only).
-5. Launch fork on worktree (`cwd=worktree`). Fork implements, you don't.
-6. When fork report arrives:
-   - Verify commit exists, inspect `git diff --stat`, confirm expected files changed.
-   - Record fork run id, summary, validation results via `update_task`.
-   - If fork failed or produced unacceptable output → re-launch with narrower instructions.
+3. Apply the **Specification fidelity gate**: map every proposed externally visible addition to an exact finalized requirement and resolve ambiguity with the user.
+4. Build the implementation model, then explicitly choose and record either main-owned cohesive implementation or worker-owned bounded slice(s). Define disjoint file ownership and compact handoff evidence for worker slices.
+5. Implement without overlapping ownership. The main agent may complete its cohesive slice; a worker owns any delegated bounded slice.
+6. Verify commits/output and run focused validation. Record implementation ownership, changed paths, validation, and unresolved risks via `update_task`.
 7. **STOP.** Do not proceed to PR or code review.
    - Do NOT run: `castor check`, `move_task(to="CODE-REVIEW")`, `gh pr create`, `git push`, reviewer subagent.
    - Inform user implementation is done. They run `task-to-pr` when ready.
@@ -108,7 +106,6 @@ repo. The external task board repo must be committed manually when desired.
    - If REQUEST CHANGES → analyze blockers, fork fixes, re-review. Repeat until APPROVED.
 3. Run focused local validation on worktree:
    - focused `castor test --filter=…` for touched areas, `castor deptrac`, `castor phpstan`, `castor cs-check`; run controller-replay or `castor test:tui` only when that proof layer is required. Do not require full `castor test`: CODE-REVIEW runs full `castor check`.
-   - For TUI tasks: also run `castor test:tui` as part of local validation.
    - When changes touch provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), also run `castor test:llm-real` as opt-in focused validation. This is NOT required for every normal task — only when the change affects live provider compatibility path.
    - The orchestrator/user is responsible for focused validation before moving to CODE-REVIEW. `move_task(to="CODE-REVIEW")` automatically runs deterministic `castor check` in the worktree before pushing and creating the PR.
 4. Record reviewer decision, commit sha, validation results via `update_task`.
@@ -118,8 +115,8 @@ repo. The external task board repo must be committed manually when desired.
 
 1. Read PR summary via `gh pr view` and inline comments via `gh api repos/<owner>/<repo>/pulls/<n>/comments`. Classify blockers vs suggestions. In Hatfield, resume the prior reviewer with `agent_resume` plus commit/diff and resolution delta when its artifact/run identity is available; launch a new reviewer only when no reviewer can be resumed.
 2. `move_task(to="IN-PROGRESS")` before any implementation.
-3. Prepare exact fork instructions covering each actionable comment; re-apply the **Specification fidelity gate** so fixes do not introduce uncited product decisions.
-4. Fork fixes on worktree. Verify output, run focused Castor validation.
+3. Re-apply the **Specification fidelity gate**, choose main-owned cohesive fixes or worker-owned bounded slices, and record disjoint ownership before implementation.
+4. Implement fixes, verify output, and run focused Castor validation.
 5. Re-review with reviewer subagent (include the specification fidelity gate). If REQUEST CHANGES → repeat from step 3.
 6. When APPROVED → `move_task(to="CODE-REVIEW")` (pushes branch, creates/updates PR).
 7. Record decisions, commit sha, reviewer result via `update_task`.
@@ -158,6 +155,6 @@ After compaction, the `task-workflow` skill documents next steps. Use `task_list
 
 ## Reviewer verdict rubric
 
-CRITICAL, BUG, SEC, unmapped surface, or missing required proof means **REQUEST CHANGES**. NTH, naming, and pure ponytail micro-shrinks mean **APPROVE WITH SUGGESTIONS** unless correctness is affected. Once blockers are fixed, a remaining tiny line shrink must not block approval.
+CRITICAL, BUG, SEC, unmapped surface, dead code, uncited fallback behavior, or missing required proof means **REQUEST CHANGES**. NTH, naming, and pure ponytail micro-shrinks mean **APPROVE WITH SUGGESTIONS** unless correctness is affected. Once blockers are fixed, a remaining tiny line shrink must not block approval.
 
 Status styling is selected by key in `StatusPanelWidget`; keep `setStatus` text plain.

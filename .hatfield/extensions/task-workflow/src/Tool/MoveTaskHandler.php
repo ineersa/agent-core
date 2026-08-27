@@ -341,9 +341,9 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
 
     private function formatCastorCheckFailure(string $reason, string $worktree, ExecResultDTO $result): string
     {
-        $output = trim('' !== $result->stderr ? $result->stderr : $result->stdout);
-        $qaRun = preg_match('/QA run:\s*(qa-[A-Za-z0-9_-]+)/', $result->stdout."\n".$result->stderr, $matches) ? $matches[1] : null;
-        $lane = preg_match('/(?:quality failed|failed lanes?)[: ]+([^,\n]+)/i', $output, $matches) ? trim($matches[1]) : null;
+        $output = trim($result->stdout."\n".$result->stderr);
+        $qaRun = preg_match('/QA run:\s*(qa-[A-Za-z0-9_-]+)/', $output, $matches) ? $matches[1] : null;
+        $lane = preg_match('/(?:quality failed|failed lanes?)\s*:?\s*([A-Za-z0-9][A-Za-z0-9:_-]*)(?=\s*(?:\(|,|\n|$))/i', $output, $matches) ? $matches[1] : null;
         $reportDir = null === $qaRun ? null : 'var/reports/'.$qaRun;
         $log = null === $lane || null === $reportDir ? null : $reportDir.'/check-'.$lane.'.log';
         $logPath = null === $log ? null : $worktree.'/'.$log;

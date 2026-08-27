@@ -1,5 +1,5 @@
 ---
-description: Start a tracked task by moving TODO -> IN-PROGRESS and launching a fork
+description: Start a tracked task by moving TODO -> IN-PROGRESS and choosing implementation ownership
 argument-hint: "<task>"
 ---
 
@@ -13,8 +13,8 @@ You are an **orchestrator**, not an implementor. Your job is to dispatch work to
 
 - **Scout subagents** — for codebase exploration, dependency checks, architecture discovery, file search.
 - **Researcher subagents** — for web searches, documentation lookups, changelog checks, anything requiring up-to-date external information.
-- **Fork (tool)** — for ALL implementation work: editing files, writing code, fixing tests, updating configs. You MUST use a fork for any file modification. Never edit files directly in the main agent.
-- **Main agent (you)** — reads context, plans work, writes fork instructions, records results, updates task metadata.
+- **Implementation owner** — main owns cohesive work it already understands; workers own complete bounded slices where the handoff reduces rereading/context growth. Never overlap file ownership.
+- **Main agent (you)** — reads context, plans work, records results, updates task metadata.
 
 Main may implement cohesive work it already understands; use compact handoffs for worker-owned slices.
 
@@ -31,26 +31,21 @@ Prefer semantic JetBrains IDE tools (`ide_*`) for navigation, references/hierarc
    - Call `move_task` with the task slug from `$ARGUMENTS` and `to="IN-PROGRESS"`. This creates a task worktree branch.
    - Record the worktree path returned in the notes.
 
-3. **Prepare exact fork instructions**
+3. **Build the implementation model and choose ownership**
    - Read the task file again if moved, then collect the required code, config, test, and docs context.
    - Launch scout subagents when useful to gather focused codebase context before implementation.
    - Use the researcher subagent for web searches or web-based research when up-to-date external information is needed.
-   - Create exact implementation instructions for the fork: files to touch, old/new patterns, validation commands, and boundaries.
+   - Explicitly choose main-owned cohesive implementation or worker-owned bounded slice(s), record ownership, and define disjoint files, validation, and boundaries.
    - **For TUI tasks: the implementation scope must use the lowest correct proof layer: virtual/in-process for local render/input/commands, controller replay for runtime JSONL/session/events, and minimal tmux only for PTY/process boot (replay-backed, no live LLM required) exercising the user-visible feature path.** Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility checks are NOT acceptable substitutes. The fork must add this as a required deliverable.
    - When the task touches provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), the fork instructions should mention `castor test:llm-real` as opt-in focused validation. This is NOT required for every normal task — only when the change affects live provider compatibility.
    - Record useful context or updates on the task with `update_task` when helpful.
 
-4. **Launch a fork**
-   - Launch a single fork on the task worktree with `cwd` set to the worktree directory.
-   - Include the exact implementation plan as the fork task, with file paths, edit patterns, and required validation.
-   - Do NOT implement directly — the fork implements.
-   - Do not wait idle for the fork; it will return a report when finished.
-
-5. **Handle fork report**
-   - When the fork report arrives, verify the commit exists, inspect `git diff --stat`, and confirm the expected files changed.
-   - **For TUI tasks: verify the fork added proof at the lowest correct layer (virtual/in-process, controller replay, or minimal tmux only for PTY/process boot) exercising the actual feature path.** If the fork only reports abstract validations or mock-based tests, reject it and re-launch with explicit E2E test requirements.
-   - Record fork run id, summary, and validation results via `update_task`.
-   - If the fork failed or produced unacceptable output, re-launch with narrower instructions.
+4. **Implement and verify**
+   - Main may implement its cohesive slice directly. Launch a worker only for its bounded slice, with exact files, validation, and compact handoff requirements.
+   - Do not wait idle for a worker; it will return a report when finished.
+   - Verify commits/output, inspect `git diff --stat`, and confirm expected files changed.
+   - **For TUI tasks: verify automated proof at the selected lowest correct layer exercises the actual feature path.**
+   - Record ownership, changed paths, validation results, and unresolved risks via `update_task`.
 
 6. **STOP — do not proceed to PR or code review**
    - Your responsibility ends with implementation and recording the fork result.
@@ -60,4 +55,4 @@ Prefer semantic JetBrains IDE tools (`ide_*`) for navigation, references/hierarc
    - Inform the user the implementation is done and they should run `task-to-pr` when ready.
 
 ## Shared workflow policy
-Load the platform task-workflow skill and follow the named phase; do not duplicate its procedure here. Implementation ownership follows context: main may finish cohesive work it understands, while workers own complete bounded slices with compact handoffs. Use the TUI proof pyramid (virtual → controller replay → minimal tmux only for PTY/process boot). Before CODE-REVIEW use focused tests for touched areas plus deptrac/phpstan/cs-check; do not mandate full `castor test`. Flakes require deterministic root-cause fixes—never allowlist, quarantine, blind-retry, or increase timeouts.
+Load the platform task-workflow skill and follow the named phase; do not duplicate its procedure here. Implementation ownership follows context: main may finish cohesive work it understands, while workers own complete bounded slices with compact handoffs. Use the TUI proof pyramid (virtual → controller replay → minimal tmux only for PTY/process boot). Before CODE-REVIEW use focused tests for touched areas plus deptrac/phpstan/cs-check; do not mandate full `castor test`. Flakes require deterministic root-cause fixes—never allowlist, quarantine, blind-retry, or increase timeouts. Delete dead or superseded code and uncited fallback paths; required error handling and documented local degradation remain valid.

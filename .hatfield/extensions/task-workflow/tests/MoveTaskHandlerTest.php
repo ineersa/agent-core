@@ -159,9 +159,9 @@ final class MoveTaskHandlerTest extends TestCase
             if ('timeout' === $command) {
                 $reports = $worktree.'/var/reports/qa-123';
                 mkdir($reports, 0o755, true);
-                file_put_contents($reports.'/check-phpstan.log', 'PHPStan failure: useful first error');
+                file_put_contents($reports.'/check-test:llm-real.log', 'LLM lane failure: useful first error');
 
-                return new ExecResultDTO('QA run: qa-123\nquality failed: phpstan', '', 1);
+                return new ExecResultDTO('QA run: qa-123\nquality failed: test:llm-real (exit code 1)', 'Castor summary is on stdout.', 1);
             }
 
             return ($this->gitStubForCodeReview(timeoutExitCode: 0))($command, $args, $options);
@@ -182,9 +182,9 @@ final class MoveTaskHandlerTest extends TestCase
             $this->fail('Expected RuntimeException when castor check fails');
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('Castor check FAILED', $e->getMessage());
-            $this->assertStringContainsString('Failing lane: phpstan', $e->getMessage());
-            $this->assertStringContainsString('var/reports/qa-123/check-phpstan.log', $e->getMessage());
-            $this->assertStringContainsString('PHPStan failure: useful first error', $e->getMessage());
+            $this->assertStringContainsString('Failing lane: test:llm-real', $e->getMessage());
+            $this->assertStringContainsString('var/reports/qa-123/check-test:llm-real.log', $e->getMessage());
+            $this->assertStringContainsString('LLM lane failure: useful first error', $e->getMessage());
         }
 
         $this->assertFileExists($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');
@@ -201,6 +201,38 @@ final class MoveTaskHandlerTest extends TestCase
             static fn (array $c): bool => 'gh' === $c['command'] && \in_array('create', $c['args'], true),
         );
         $this->assertEmpty($ghCreate, 'must not create PR when castor check fails');
+    }
+
+    #[Test]
+    public function moveTaskToCodeReviewReportsSetupFailureWithoutInventingLaneOrLog(): void
+    {
+        $slug = '2026-01-01-cr-setup-fail';
+        $inner = new StubExec(function (string $command, array $args, ?ExecOptionsDTO $options): ExecResultDTO {
+            if ('timeout' === $command) {
+                return new ExecResultDTO('QA run: qa-setup\npreflight failed: lock unavailable', 'Unable to acquire check lock', 1);
+            }
+
+            return ($this->gitStubForCodeReview(timeoutExitCode: 0))($command, $args, $options);
+        });
+        $recording = new RecordingExec($inner);
+        $handler = $this->makeHandler($recording);
+        file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('CR setup fail'));
+        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase], $this->ctx());
+
+        try {
+            ($handler)(['task' => $slug, 'from' => 'IN-PROGRESS', 'to' => 'CODE-REVIEW', 'castorCheckTimeoutSeconds' => 60], $this->ctx());
+            $this->fail('Expected RuntimeException when setup fails');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('QA reports: var/reports/qa-setup', $e->getMessage());
+            $this->assertStringContainsString('preflight failed: lock unavailable', $e->getMessage());
+            $this->assertStringNotContainsString('Failing lane:', $e->getMessage());
+            $this->assertStringNotContainsString('check-preflight', $e->getMessage());
+        }
+
+        $this->assertFileExists($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');
+        $this->assertFileDoesNotExist($this->boardRoot.'/CODE-REVIEW/'.$slug.'.md');
+        $this->assertEmpty(array_filter($recording->calls(), static fn (array $call): bool => 'git' === $call['command'] && \in_array('push', $call['args'], true)));
+        $this->assertEmpty(array_filter($recording->calls(), static fn (array $call): bool => 'gh' === $call['command'] && \in_array('create', $call['args'], true)));
     }
 
     #[Test]

@@ -32,14 +32,14 @@ Prefer semantic JetBrains IDE tools (`ide_*`) for navigation, references/hierarc
    - Run the reviewer subagent on the worktree (subagent agent="reviewer" cwd=worktree).
    - Use the researcher subagent for web searches or web-based research when up-to-date external information is needed.
    - **For TUI tasks: instruct the reviewer to explicitly check for and reject work that lacks proof at the lowest correct layer (virtual/in-process, controller replay, or minimal tmux only for PTY/process boot) of the user-visible feature.** Mocks, service-only tests, custom PHP smoke scripts, and picker/footer visibility assertions are NOT substitutes and must be flagged as a blocker.
-   - If reviewer returns REQUEST CHANGES or APPROVE WITH SUGGESTIONS, analyze **all actionable findings** (not only CRITICAL/BUG), create exact fork instructions, and launch a fork.
-   - Address all sensible findings across severity levels: CRITICAL, BUG, EDGE CASE, SEC, CONVENTION, SIMPLIFY, NAMING, DEAD CODE, and reasonable NTH items. Skip only clearly subjective style preferences or items the reviewer explicitly marks as non-actionable.
+   - If reviewer returns REQUEST CHANGES, choose main-owned cohesive fixes or worker-owned bounded slices, then re-review. APPROVE WITH SUGGESTIONS does not block CODE-REVIEW unless correctness is affected.
+   - Address blockers: CRITICAL, BUG, SEC, missing proof, dead code, and uncited fallback paths. NTH, naming, and pure micro-shrinks are non-blocking suggestions unless correctness is affected.
    - Repeat until reviewer returns APPROVED for current HEAD.
 
 3. **Run focused local validation**
    - Run fast Castor validation on the worktree:
      focused `castor test --filter=…`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
-   - **For TUI tasks: also run `castor test:tui` as part of local validation.** The TUI E2E proof test must pass before moving to CODE-REVIEW.
+   - **For TUI tasks: run controller replay or `castor test:tui` only when that selected proof layer is required.** The required proof must pass before moving to CODE-REVIEW.
    - **When changes touch provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), also run `castor test:llm-real` as opt-in focused validation.** This is NOT required for every normal task — only when the change affects live provider compatibility.
    - Optionally run `castor test --filter=...` for targeted coverage.
    - `move_task(to="CODE-REVIEW")` automatically runs deterministic `castor check` in the worktree, then pushes the branch and creates the PR. The orchestrator/user should run focused validation before moving to catch issues early.
@@ -54,4 +54,4 @@ Prefer semantic JetBrains IDE tools (`ide_*`) for navigation, references/hierarc
    - Record the PR URL returned in the notes.
 
 ## Shared workflow policy
-Load the platform task-workflow skill and follow the named phase; do not duplicate its procedure here. Implementation ownership follows context: main may finish cohesive work it understands, while workers own complete bounded slices with compact handoffs. Use the TUI proof pyramid (virtual → controller replay → minimal tmux only for PTY/process boot). Before CODE-REVIEW use focused tests for touched areas plus deptrac/phpstan/cs-check; do not mandate full `castor test`. Flakes require deterministic root-cause fixes—never allowlist, quarantine, blind-retry, or increase timeouts.
+Load the platform task-workflow skill and follow the named phase; do not duplicate its procedure here. Implementation ownership follows context: main may finish cohesive work it understands, while workers own complete bounded slices with compact handoffs. Use the TUI proof pyramid (virtual → controller replay → minimal tmux only for PTY/process boot). Before CODE-REVIEW use focused tests for touched areas plus deptrac/phpstan/cs-check; do not mandate full `castor test`. Flakes require deterministic root-cause fixes—never allowlist, quarantine, blind-retry, or increase timeouts. Delete dead or superseded code and uncited fallback paths; required error handling and documented local degradation remain valid.

@@ -53,7 +53,7 @@ Go through every changed file line by line. For each file, evaluate:
 - Does it follow the project's conventions from AGENTS.md? (naming, formatting, exports)
 - Are there magic numbers that should be constants?
 - Is error handling consistent with the rest of the codebase?
-- Are there unused imports, dead code paths, or unreachable branches?
+- Are there unused imports, dead code paths, unreachable branches, or fallback behavior not mapped to an explicit requirement/published compatibility contract? Required error handling and intentional documented local degradation are not fallback behavior.
 - Does it leak resources? (file handles, streams, timers, event listeners, connections)
 
 #### Integration & Contracts
@@ -126,4 +126,4 @@ List every file you actually read with line ranges.
 
 ## Verdict rubric
 
-Return **REQUEST CHANGES** for CRITICAL/BUG/SEC findings, unmapped surface, or missing required proof. Return **APPROVE WITH SUGGESTIONS** for NTH, naming, or pure ponytail micro-shrinks unless they affect correctness. Do not block approval once all blockers are fixed merely for a tiny remaining line-count reduction.
+Return **REQUEST CHANGES** for CRITICAL/BUG/SEC findings, unmapped surface, dead code, uncited fallback behavior, or missing required proof. Return **APPROVE WITH SUGGESTIONS** for NTH, naming, or pure ponytail micro-shrinks unless they affect correctness. Do not block approval once all blockers are fixed merely for a tiny remaining line-count reduction.

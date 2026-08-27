@@ -92,6 +92,88 @@ final class WorktreeManagerCopyTest extends TestCase
     }
 
     #[Test]
+    public function healthyExtensionApiPackageAvoidsRootComposerRepair(): void
+    {
+        $this->seedTree($this->repoRoot.'/vendor/ineersa/hatfield-extension-api', ['autoload.php' => "<?php\n"]);
+        $rootComposerCalls = 0;
+        $recording = new RecordingExec(new StubExec(function (string $command, array $args, ?ExecOptionsDTO $options) use (&$rootComposerCalls): ExecResultDTO {
+            if ('composer' === $command && !\in_array('-d', $args, true)) {
+                ++$rootComposerCalls;
+            }
+
+            return $this->execStub($command, $args, $options);
+        }));
+        $manager = new WorktreeManager(new GitExecutor($recording), $recording);
+        $slug = '2026-01-01-healthy-package';
+
+        $result = $manager->createWorktreeForTask($this->repoRoot, $this->task($slug), $this->worktreesBase, InvocationControl::fromContext($this->ctx()));
+
+        $this->assertInstanceOf(WorktreeCreateResult::class, $result);
+        $this->assertSame(0, $rootComposerCalls);
+        $this->assertDirectoryExists($this->worktreesBase.'/'.$slug.'/vendor/ineersa/hatfield-extension-api');
+    }
+
+    #[Test]
+    public function danglingExtensionApiPackageTriggersRootComposerRepair(): void
+    {
+        mkdir($this->repoRoot.'/vendor/ineersa', 0o755, true);
+        symlink('/missing-extension-api', $this->repoRoot.'/vendor/ineersa/hatfield-extension-api');
+        file_put_contents($this->repoRoot.'/composer.json', '{"name":"test/root"}');
+        $this->runGit($this->repoRoot, ['add', 'composer.json']);
+        $this->runGit($this->repoRoot, ['commit', '-m', 'add root composer']);
+        $rootComposerCalls = 0;
+        $recording = new RecordingExec(new StubExec(function (string $command, array $args, ?ExecOptionsDTO $options) use (&$rootComposerCalls): ExecResultDTO {
+            if ('composer' === $command && !\in_array('-d', $args, true)) {
+                ++$rootComposerCalls;
+                $package = ($options?->cwd ?? '').'/vendor/ineersa/hatfield-extension-api';
+                if (is_link($package)) {
+                    unlink($package);
+                }
+                mkdir($package, 0o755, true);
+
+                return new ExecResultDTO('', '', 0);
+            }
+
+            return $this->execStub($command, $args, $options);
+        }));
+        $manager = new WorktreeManager(new GitExecutor($recording), $recording);
+        $slug = '2026-01-01-repaired-package';
+
+        $result = $manager->createWorktreeForTask($this->repoRoot, $this->task($slug), $this->worktreesBase, InvocationControl::fromContext($this->ctx()));
+
+        $this->assertInstanceOf(WorktreeCreateResult::class, $result);
+        $this->assertSame(1, $rootComposerCalls);
+        $this->assertDirectoryExists($this->worktreesBase.'/'.$slug.'/vendor/ineersa/hatfield-extension-api');
+    }
+
+    #[Test]
+    public function failedExtensionApiRepairRemovesPartialWorktree(): void
+    {
+        mkdir($this->repoRoot.'/vendor/ineersa', 0o755, true);
+        symlink('/missing-extension-api', $this->repoRoot.'/vendor/ineersa/hatfield-extension-api');
+        file_put_contents($this->repoRoot.'/composer.json', '{"name":"test/root"}');
+        $this->runGit($this->repoRoot, ['add', 'composer.json']);
+        $this->runGit($this->repoRoot, ['commit', '-m', 'add root composer']);
+        $recording = new RecordingExec(new StubExec(function (string $command, array $args, ?ExecOptionsDTO $options): ExecResultDTO {
+            if ('composer' === $command && !\in_array('-d', $args, true)) {
+                return new ExecResultDTO('', 'repair failed', 1);
+            }
+
+            return $this->execStub($command, $args, $options);
+        }));
+        $manager = new WorktreeManager(new GitExecutor($recording), $recording);
+        $slug = '2026-01-01-failed-repair';
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('vendor package link broken');
+        try {
+            $manager->createWorktreeForTask($this->repoRoot, $this->task($slug), $this->worktreesBase, InvocationControl::fromContext($this->ctx()));
+        } finally {
+            $this->assertDirectoryDoesNotExist($this->worktreesBase.'/'.$slug);
+        }
+    }
+
+    #[Test]
     public function cancelledNativeVendorCopyCleansPartialWorktree(): void
     {
         $this->seedTree($this->repoRoot.'/vendor', [
@@ -170,6 +252,16 @@ final class WorktreeManagerCopyTest extends TestCase
         }
 
         return new ExecResultDTO('', '', 0);
+    }
+
+    private function task(string $slug): TaskInfo
+    {
+        return new TaskInfo(
+            status: TaskStatusEnum::TODO,
+            file: $slug.'.md',
+            path: '/tmp/'.$slug.'.md',
+            title: $slug,
+        );
     }
 
     private function ctx(?ToolCancellationTokenInterface $cancellationToken = null): ToolInvocationContextDTO
