@@ -45,7 +45,8 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
             $result->isError,
         );
 
-        $capResult = $this->outputCap->capIfNeeded($text, $path);
+        $runId = $toolCall->runId ?? ($toolCall->context['run_id'] ?? null);
+        $capResult = $this->outputCap->capIfNeeded($text, $path, \is_string($runId) ? $runId : null);
         if (null === $capResult) {
             return $result;
         }

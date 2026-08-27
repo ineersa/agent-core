@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\CodingAgent\Config\OutputCapConfig;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
+use Psr\Log\NullLogger;
 
 use function Symfony\Component\String\u;
 
@@ -53,8 +57,15 @@ final class OutputCap
      */
     public function __construct(
         private readonly OutputCapConfig $config,
+        ?LockFactory $lockFactory = null,
+        ?LoggerInterface $logger = null,
     ) {
+        $this->lockFactory = $lockFactory ?? new LockFactory(new FlockStore(sys_get_temp_dir()));
+        $this->logger = $logger ?? new NullLogger();
     }
+
+    private readonly LockFactory $lockFactory;
+    private readonly LoggerInterface $logger;
 
     /**
      * Apply output capping and return a structured result or null.
@@ -69,7 +80,7 @@ final class OutputCap
      *
      * @return OutputCapResult|null structured result when capped, null otherwise
      */
-    public function capIfNeeded(string $text, ?string $path = null): ?OutputCapResult
+    public function capIfNeeded(string $text, ?string $path = null, ?string $runId = null): ?OutputCapResult
     {
         $this->maybeCleanup();
 
@@ -80,7 +91,11 @@ final class OutputCap
             return null;
         }
 
-        $savedPath = $this->persist($text);
+        if (null === $runId || '' === $runId) {
+            throw new \LogicException('OutputCap requires a run ID when persisting oversized output.');
+        }
+
+        $savedPath = $this->persist($text, $runId);
 
         return new OutputCapResult(
             savedPath: $savedPath,
@@ -198,21 +213,23 @@ STRING;
      * @throws \RuntimeException when the storage directory cannot be
      *                           created or the file cannot be written
      */
-    public function persist(string $text): string
+    public function persist(string $text, string $runId): string
     {
         $this->maybeCleanup();
+        $scope = $this->scopePath($runId);
+        $lock = $this->lockFactory->createLock('output-cap:'.hash('sha256', $scope));
+        $lock->acquire(true);
+        try {
+            $this->ensureScopeDirectory($scope);
+            $filePath = $scope.'/'.bin2hex(random_bytes(16)).'.txt';
+            if (false === @file_put_contents($filePath, $text, \LOCK_EX)) {
+                throw new \RuntimeException('Failed to write output cap file.');
+            }
 
-        $this->ensureStorageDirExists();
-
-        $filename = $this->buildFilename();
-        $filePath = $this->config->storageDir.'/'.$filename;
-
-        $written = @file_put_contents($filePath, $text, \LOCK_EX);
-        if (false === $written) {
-            throw new \RuntimeException(\sprintf('Failed to write output cap file: %s', $filePath));
+            return $filePath;
+        } finally {
+            $lock->release();
         }
-
-        return $filePath;
     }
 
     /**
@@ -223,32 +240,45 @@ STRING;
      */
     public function cleanup(): void
     {
-        $dir = $this->config->storageDir;
-
-        if (!is_dir($dir)) {
+        $root = realpath($this->config->storageDir);
+        if (false === $root || !is_dir($root)) {
             return;
         }
-
         $cutoff = time() - $this->config->retentionSeconds;
-
-        $handle = opendir($dir);
-        if (false === $handle) {
-            return;
-        }
-
-        while (($entry = readdir($handle)) !== false) {
-            if ('.' === $entry || '..' === $entry) {
+        foreach (new \DirectoryIterator($root) as $entry) {
+            if ($entry->isDot() || $entry->isLink() || $entry->getMTime() >= $cutoff) {
                 continue;
             }
-
-            $filePath = $dir.'/'.$entry;
-
-            if (is_file($filePath) && filemtime($filePath) < $cutoff) {
-                @unlink($filePath);
+            $name = $entry->getFilename();
+            if ($entry->isFile() && preg_match('/^\d{8}-[a-f0-9]{16}\.txt$/', $name)) {
+                @unlink($entry->getPathname());
+                continue;
+            }
+            if ($entry->isDir() && preg_match('/^run-[a-f0-9]{64}$/', $name)) {
+                $lock = $this->lockFactory->createLock('output-cap:'.hash('sha256', $entry->getPathname()));
+                if ($lock->acquire(false)) {
+                    try { $this->removeOwnedScope($entry->getPathname()); } finally { $lock->release(); }
+                }
             }
         }
+    }
 
-        closedir($handle);
+    /** Remove one known run scope; missing scopes are success. */
+    public function cleanupRun(string $runId, string $phase): void
+    {
+        $scope = $this->scopePath($runId);
+        $files = 0;
+        $bytes = 0;
+        $lock = $this->lockFactory->createLock('output-cap:'.hash('sha256', $scope));
+        $lock->acquire(true);
+        try {
+            [$files, $bytes] = $this->removeOwnedScope($scope);
+            $this->logger->info('output_cap.session_cleanup_completed', ['component' => 'tool.output_cap', 'event_type' => 'output_cap.session_cleanup_completed', 'lifecycle_phase' => $phase, 'removed_file_count' => $files, 'removed_bytes' => $bytes]);
+        } catch (\Throwable $exception) {
+            $this->logger->warning('output_cap.session_cleanup_failed', ['component' => 'tool.output_cap', 'event_type' => 'output_cap.session_cleanup_failed', 'lifecycle_phase' => $phase, 'exception_class' => $exception::class]);
+        } finally {
+            $lock->release();
+        }
     }
 
     /**
@@ -287,32 +317,67 @@ STRING;
         $this->cleanup();
     }
 
-    /**
-     * Ensure the storage directory exists with restrictive permissions.
-     *
-     * @throws \RuntimeException when the directory cannot be created
-     */
-    private function ensureStorageDirExists(): void
+    private function scopePath(string $runId): string
     {
-        if (is_dir($this->config->storageDir)) {
-            return;
-        }
+        return rtrim($this->config->storageDir, '/').'/run-'.hash('sha256', $runId);
+    }
 
-        if (!@mkdir($this->config->storageDir, 0750, true) && !is_dir($this->config->storageDir)) {
-            throw new \RuntimeException(\sprintf('Failed to create output cap storage directory: %s', $this->config->storageDir));
+    private function ensureScopeDirectory(string $scope): void
+    {
+        $root = $this->config->storageDir;
+        if (!is_dir($root) && !@mkdir($root, 0750, true) && !is_dir($root)) {
+            throw new \RuntimeException('Failed to create output cap storage directory.');
+        }
+        $canonicalRoot = realpath($root);
+        if (false === $canonicalRoot || is_link($scope)) {
+            throw new \RuntimeException('Refusing unsafe output cap scope.');
+        }
+        if (!is_dir($scope) && !@mkdir($scope, 0750) && !is_dir($scope)) {
+            throw new \RuntimeException('Failed to create output cap run scope.');
+        }
+        $canonicalScope = realpath($scope);
+        if (false === $canonicalScope || dirname($canonicalScope) !== $canonicalRoot) {
+            throw new \RuntimeException('Refusing output cap scope outside configured root.');
         }
     }
 
-    /**
-     * Build a unique filename for persisted output.
-     *
-     * Format: [session_prefix|Ymd]-[16-random-hex].txt
-     */
-    private function buildFilename(): string
+    /** @return array{0: int, 1: int} */
+    private function removeOwnedScope(string $scope): array
     {
-        $prefix = $this->config->sessionPrefix ?? date('Ymd');
-
-        return $prefix.'-'.bin2hex(random_bytes(8)).'.txt';
+        if (!file_exists($scope) && !is_link($scope)) {
+            return [0, 0];
+        }
+        if (is_link($scope)) {
+            @unlink($scope);
+            return [0, 0];
+        }
+        $root = realpath($this->config->storageDir);
+        $canonicalScope = realpath($scope);
+        if (false === $root || false === $canonicalScope || dirname($canonicalScope) !== $root) {
+            throw new \RuntimeException('Refusing unsafe output cap cleanup scope.');
+        }
+        $files = 0;
+        $bytes = 0;
+        foreach (new \DirectoryIterator($canonicalScope) as $entry) {
+            if ($entry->isDot() || $entry->isLink()) {
+                continue;
+            }
+            if ($entry->isFile()) {
+                $bytes += $entry->getSize();
+                if (@unlink($entry->getPathname())) { ++$files; }
+                continue;
+            }
+            if ($entry->isDir()) {
+                foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($entry->getPathname(), \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::CHILD_FIRST) as $child) {
+                    if ($child->isLink()) { continue; }
+                    if ($child->isFile()) { $bytes += $child->getSize(); if (@unlink($child->getPathname())) { ++$files; } }
+                    elseif ($child->isDir()) { @rmdir($child->getPathname()); }
+                }
+                @rmdir($entry->getPathname());
+            }
+        }
+        @rmdir($canonicalScope);
+        return [$files, $bytes];
     }
 
     /**

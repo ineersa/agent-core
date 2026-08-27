@@ -73,6 +73,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             toolName: 'read',
             arguments: ['path' => './test.txt'],
             orderIndex: 0,
+        runId: 'test-run',
         );
 
         $processed = $processor->process($result, $toolCall);
@@ -151,6 +152,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             toolName: 'bash',
             arguments: ['command' => 'cat large.log'],
             orderIndex: 3,
+        runId: 'test-run',
         );
 
         $processed = $processor->process($result, $toolCall);
@@ -194,6 +196,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             toolName: 'bash',
             arguments: [],
             orderIndex: 1,
+        runId: 'test-run',
         );
 
         $processed = $processor->process($result, $toolCall);
@@ -230,6 +233,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             toolName: 'read',
             arguments: [],
             orderIndex: 2,
+        runId: 'test-run',
         );
 
         $processed = $processor->process($result, $toolCall);
@@ -263,6 +267,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             toolName: 'fork',
             arguments: ['task' => 'do work'],
             orderIndex: 0,
+        runId: 'test-run',
         );
 
         $processed = $processor->process($result, $toolCall);
@@ -292,6 +297,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             toolName: 'subagent',
             arguments: ['prompt' => 'review'],
             orderIndex: 1,
+        runId: 'test-run',
         );
 
         $processed = $processor->process($result, $toolCall);
@@ -321,6 +327,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             toolName: 'bash',
             arguments: ['command' => 'cat big.log'],
             orderIndex: 2,
+        runId: 'test-run',
         );
 
         $processed = $processor->process($result, $toolCall);

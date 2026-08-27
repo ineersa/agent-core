@@ -22,6 +22,7 @@
 | session attachment/MCP catalog artifacts (when present) | attachment and MCP catalog services | Session-scoped derived/indexed artifacts; inventory only, no measured present-size breakdown |
 | `.hatfield/state.sqlite` | Doctrine repositories/migrations | Durable relational state: session catalog, tool questions, deferred completions/batches/children, background-process records; not a transcript replacement |
 | `.hatfield/tmp/bg/<prefix>.{log,pid,status}` | background-process subsystem | Exact flat per-record sidecars for process output/status; ephemeral/runtime retention policy is separate from session replay |
+| `.hatfield/tmp/output-cap/run-<sha256(run_id)>/` | output-cap subsystem | Ephemeral active controller-session artifacts; start/shutdown/deletion clean parent+child scopes, while 24h first-use cleanup is orphan fallback. Notices may retain deleted paths because canonical replay never reads artifacts. Legacy date-prefixed root files require separately authorized dry-run-first manual cleanup. |
 | `.hatfield/tmp/output-cap/` | output-cap subsystem | Adjacent capped-output artifacts |
 | `.hatfield/logs/` | Monolog rotating handler | Adjacent operational logs |
 | `.hatfield/cache/`, `.hatfield/tmp/`, `.hatfield/locks/`, Messenger SQLite files | framework/runtime services | Ephemeral cache, temporary, lock, and transport state; not canonical sessions |

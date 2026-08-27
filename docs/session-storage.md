@@ -107,6 +107,12 @@ Run-control delivery is at-least-once. A completed or stale control message is a
 
 Compaction rewrites the LLM-visible history while retaining a recent raw tail and recording compaction events. Resume after compaction replays the compacted view correctly — see [compaction.md](compaction.md).
 
+## Ephemeral output-cap artifacts
+
+Oversized tool output is saved under `tools.output_cap.path/run-<sha256(run_id)>/` only while a controller owns that session. Controller start/resume clears prior parent and child scopes; controller shutdown and explicit deletion dispatch the same cleanup before canonical session metadata is removed. Completion, cancellation, and failure remain resumable boundaries and do not clear these artifacts. Saved output-cap paths in canonical notices are metadata only: replay, repair, and projection never read the artifact, so historical notices can refer to deleted files. A 24-hour first-use stale cleanup remains the crash/orphan fallback.
+
+Legacy date-prefixed root files are intentionally not lifecycle-deleted. Operators may clean them only with quiesced controllers after verifying the configured root, dry-running an exact `^\d{8}-[a-f0-9]{16}\.txt$` name/date selection, reviewing names, and deleting each approved direct file non-recursively.
+
 ## Related
 
 - Settings: [settings.md](settings.md)

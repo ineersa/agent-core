@@ -43,14 +43,14 @@ final class OutputCapTest extends TestCase
     public function testSmallTextIsNotCapped(): void
     {
         $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir));
-        $this->assertNull($cap->capIfNeeded('Hello, world!'));
-        $this->assertNull($cap->capIfNeeded(''));
+        $this->assertNull($cap->capIfNeeded('Hello, world!', null, 'test-run'));
+        $this->assertNull($cap->capIfNeeded('', null, 'test-run'));
     }
 
     public function testTextExactlyAtCapBoundaryIsNotCapped(): void
     {
         $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10));
-        $this->assertNull($cap->capIfNeeded('1234567890'));
+        $this->assertNull($cap->capIfNeeded('1234567890', null, 'test-run'));
     }
 
     public function testOversizedTextProducesNoticePersistenceAndMetrics(): void
@@ -58,7 +58,7 @@ final class OutputCapTest extends TestCase
         $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10));
         $text = str_repeat('a', 100);
 
-        $result = $cap->capIfNeeded($text);
+        $result = $cap->capIfNeeded($text, null, 'test-run');
         $this->assertNotNull($result);
         $this->assertSame(100, $result->charCount);
         $this->assertSame(25, $result->tokenEstimate);
@@ -77,24 +77,22 @@ final class OutputCapTest extends TestCase
         $this->assertStringNotContainsString($text, $result->noticeText);
     }
 
-    public function testPersistCreatesFileWithSessionOrDatePrefixAndRestrictiveDir(): void
+    public function testPersistCreatesRunScopedFileWithRestrictiveDirectories(): void
     {
         $nestedDir = $this->tmpDir.'/nested/subdir';
-        $cap = new OutputCap(new OutputCapConfig(storageDir: $nestedDir, sessionPrefix: 'run-abc123'));
-        $path = $cap->persist('prefixed content');
+        $cap = new OutputCap(new OutputCapConfig(storageDir: $nestedDir));
+        $path = $cap->persist('prefixed content', 'run-abc123');
 
         $this->assertFileExists($path);
         $this->assertStringEqualsFile($path, 'prefixed content');
         $this->assertTrue(str_starts_with($path, '/'));
-        $this->assertStringContainsString('run-abc123-', $path);
+        $this->assertStringContainsString('run-'.hash('sha256', 'run-abc123').'/', $path);
         $this->assertStringEndsWith('.txt', $path);
         $this->assertDirectoryExists($nestedDir);
         $perms = fileperms($nestedDir) & 0777;
         $this->assertLessThanOrEqual(0750, $perms);
 
-        $dated = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir));
-        $datedPath = $dated->persist('dated prefix content');
-        $this->assertMatchesRegularExpression('/^\d{8}-[a-f0-9]{16}\.txt$/', basename($datedPath));
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{32}\.txt$/', basename($path));
     }
 
     public function testPersistThrowsOnUnwritableDirectory(): void
@@ -105,7 +103,7 @@ final class OutputCapTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Failed to create output cap storage directory');
-        $cap->persist('should fail');
+        $cap->persist('should fail', 'test-run');
     }
 
     public function testDocLikePathsUseDocCapAndNullUsesDefault(): void
@@ -113,20 +111,21 @@ final class OutputCapTest extends TestCase
         $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 100));
         $text = str_repeat('a', 75);
 
-        $this->assertNotNull($cap->capIfNeeded($text, '/path/to/file.php'));
-        $this->assertNull($cap->capIfNeeded($text, '/path/to/file.md'));
-        $this->assertNull($cap->capIfNeeded($text, '/path/to/file.MD'));
-        $this->assertNull($cap->capIfNeeded($text, '/path/to/file.txt'));
-        $this->assertNull($cap->capIfNeeded($text, '/path/to/file.toon'));
-        $this->assertNotNull($cap->capIfNeeded($text, null));
+        $this->assertNotNull($cap->capIfNeeded($text, '/path/to/file.php', 'test-run'));
+        $this->assertNull($cap->capIfNeeded($text, '/path/to/file.md', 'test-run'));
+        $this->assertNull($cap->capIfNeeded($text, '/path/to/file.MD', 'test-run'));
+        $this->assertNull($cap->capIfNeeded($text, '/path/to/file.txt', 'test-run'));
+        $this->assertNull($cap->capIfNeeded($text, '/path/to/file.toon', 'test-run'));
+        $this->assertNotNull($cap->capIfNeeded($text, null, 'test-run'));
     }
 
     public function testCleanupDeletesStaleAndPreservesRecentAndMissingDir(): void
     {
         $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir, retentionSeconds: 3600));
-        $fresh = $cap->persist('fresh');
-        $stale = $cap->persist('stale');
+        $fresh = $cap->persist('fresh', 'fresh-run');
+        $stale = $cap->persist('stale', 'stale-run');
         touch($stale, time() - 7200);
+        touch(dirname($stale), time() - 7200);
 
         $cap->cleanup();
         $this->assertFileExists($fresh);
@@ -141,11 +140,11 @@ final class OutputCapTest extends TestCase
     {
         @mkdir($this->tmpDir, 0750, true);
         $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir, retentionSeconds: 3600));
-        $oldPath = $this->tmpDir.'/stale-test-'.bin2hex(random_bytes(4)).'.txt';
+        $oldPath = $this->tmpDir.'/'.date('Ymd', time() - 7200).'-'.bin2hex(random_bytes(8)).'.txt';
         file_put_contents($oldPath, 'old data');
         touch($oldPath, time() - 7200);
 
-        $newPath = $cap->persist('new data');
+        $newPath = $cap->persist('new data', 'test-run');
         $this->assertFileDoesNotExist($oldPath);
         $this->assertFileExists($newPath);
     }
@@ -153,7 +152,7 @@ final class OutputCapTest extends TestCase
     public function testReadContextualNoticeUsesOriginalPathAndOffset(): void
     {
         $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10));
-        $result = $cap->capIfNeeded(str_repeat('x', 20), 'src/Foo.php');
+        $result = $cap->capIfNeeded(str_repeat('x', 20), 'src/Foo.php', 'test-run');
         $this->assertNotNull($result);
 
         $notice = $cap->buildContextualNotice('read', ['path' => 'src/Foo.php', 'offset' => 40], $result);
@@ -254,6 +253,7 @@ final class OutputCapTest extends TestCase
             toolName: 'hatfield_docs',
             arguments: ['operation' => 'read', 'id' => 'settings'],
             orderIndex: 0,
+            runId: 'test-run',
         );
         $docsResult = new ToolResult(
             toolCallId: 'call-docs-1',
@@ -273,7 +273,7 @@ final class OutputCapTest extends TestCase
             toolName: 'hatfield_docs',
             details: ['arguments' => ['operation' => 'read', 'id' => 'settings']],
         );
-        $this->assertSame($body, $hook->transformContext([$docsMessage])[0]->content[0]['text'] ?? null);
+        $this->assertSame($body, $hook->transformContext([$docsMessage], null, 'test-run')[0]->content[0]['text'] ?? null);
 
         $handoff = str_repeat('S', 20478);
         $subCall = new ToolCall(
@@ -281,6 +281,7 @@ final class OutputCapTest extends TestCase
             toolName: 'subagent',
             arguments: ['task' => 'scout'],
             orderIndex: 0,
+            runId: 'test-run',
         );
         $subResult = new ToolResult(
             toolCallId: 'call-sub-1',
@@ -297,7 +298,7 @@ final class OutputCapTest extends TestCase
             toolName: 'subagent',
             details: ['arguments' => ['task' => 'scout']],
         );
-        $this->assertSame($handoff, $hook->transformContext([$subMessage])[0]->content[0]['text'] ?? null);
+        $this->assertSame($handoff, $hook->transformContext([$subMessage], null, 'test-run')[0]->content[0]['text'] ?? null);
 
         $large = str_repeat('K', 25000);
         $settingsCall = new ToolCall(
@@ -305,6 +306,7 @@ final class OutputCapTest extends TestCase
             toolName: 'settings',
             arguments: ['operation' => 'read', 'path' => 'docs.example.md'],
             orderIndex: 0,
+            runId: 'test-run',
         );
         $settingsResult = new ToolResult(
             toolCallId: 'call-settings-1',
@@ -325,7 +327,7 @@ final class OutputCapTest extends TestCase
             toolName: 'settings',
             details: ['arguments' => ['operation' => 'read', 'path' => 'docs.example.md']],
         );
-        $transformedSettings = $hook->transformContext([$settingsMessage]);
+        $transformedSettings = $hook->transformContext([$settingsMessage], null, 'test-run');
         $this->assertStringContainsString('Output capped', (string) ($transformedSettings[0]->content[0]['text'] ?? ''));
         $this->assertStringContainsString('20000-char cap', (string) ($transformedSettings[0]->content[0]['text'] ?? ''));
     }
@@ -340,6 +342,7 @@ final class OutputCapTest extends TestCase
             toolName: 'hatfield_docs',
             arguments: ['operation' => 'read', 'id' => 'agents'],
             orderIndex: 0,
+            runId: 'test-run',
         );
         $result = new ToolResult(
             toolCallId: 'call-docs-over',

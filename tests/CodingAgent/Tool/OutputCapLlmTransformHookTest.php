@@ -55,7 +55,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
             toolName: 'some_tool',
         );
 
-        $transformed = $hook->transformContext([$message]);
+        $transformed = $hook->transformContext([$message], null, 'test-run');
         $messageBag = $converter->toMessageBag($transformed);
 
         $toolMessages = array_filter(
@@ -76,7 +76,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
 
         // The persisted file must contain the full sentinel.
         $this->assertDirectoryExists($cfg->storageDir);
-        $files = glob($cfg->storageDir.'/*.txt') ?: [];
+        $files = glob($cfg->storageDir.'/run-'.hash('sha256', 'test-run').'/*.txt') ?: [];
         $this->assertNotEmpty($files, 'Expected at least one persisted file');
 
         $foundSentinel = false;
@@ -115,7 +115,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
             details: ['raw_result' => $largeResult],
         );
 
-        $transformed = $hook->transformContext([$message]);
+        $transformed = $hook->transformContext([$message], null, 'test-run');
         $messageBag = $converter->toMessageBag($transformed);
 
         $toolMessages = array_filter(
@@ -150,7 +150,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
             toolName: 'safe_tool',
         );
 
-        $transformed = $hook->transformContext([$message]);
+        $transformed = $hook->transformContext([$message], null, 'test-run');
 
         $this->assertCount(1, $transformed);
         $this->assertSame('tool', $transformed[0]->role);
@@ -213,7 +213,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
             metadata: ['order_index' => 7],
         );
 
-        $transformed = $hook->transformContext([$message]);
+        $transformed = $hook->transformContext([$message], null, 'test-run');
 
         $this->assertCount(1, $transformed);
         $t = $transformed[0];
@@ -254,7 +254,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
             toolName: 'view_image',
         );
 
-        $transformed = $hook->transformContext([$message]);
+        $transformed = $hook->transformContext([$message], null, 'test-run');
 
         $this->assertCount(1, $transformed);
         $content = $transformed[0]->content;
@@ -297,7 +297,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
             toolName: 'multi_part_tool',
         );
 
-        $transformed = $hook->transformContext([$message]);
+        $transformed = $hook->transformContext([$message], null, 'test-run');
 
         $this->assertCount(1, $transformed);
         // Content should be a single text part (combined and capped)
@@ -322,7 +322,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
             toolName: 'empty_tool',
         );
 
-        $transformed = $hook->transformContext([$message]);
+        $transformed = $hook->transformContext([$message], null, 'test-run');
 
         $this->assertCount(1, $transformed);
         $this->assertSame([], $transformed[0]->content);
@@ -352,8 +352,8 @@ final class OutputCapLlmTransformHookTest extends TestCase
             toolName: 'some_tool',
         );
 
-        $first = $hook->transformContext([$message]);
-        $second = $hook->transformContext([$message]);
+        $first = $hook->transformContext([$message], null, 'test-run');
+        $second = $hook->transformContext([$message], null, 'test-run');
 
         $this->assertCount(1, $first);
         $this->assertCount(1, $second);
@@ -410,7 +410,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
             ],
         );
 
-        $transformed = $hook->transformContext([$message]);
+        $transformed = $hook->transformContext([$message], null, 'test-run');
         $messageBag = $converter->toMessageBag($transformed);
 
         $toolMessages = array_filter(

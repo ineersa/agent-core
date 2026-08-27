@@ -175,8 +175,8 @@ tools:
         jpeg_min_quality: 40
 
     output_cap:
-        # Storage directory for persisted oversized output.
-        # Relative paths resolve against the active project CWD.
+        # Storage root for ephemeral run-scoped oversized output. Each run uses
+        # a SHA-256-derived child directory; relative paths resolve against CWD.
         path: .hatfield/tmp/output-cap
 
         # Default character cap for non-doc paths (code files).
@@ -185,7 +185,8 @@ tools:
         # Character cap for doc-like paths (.md, .txt, .toon).
         doc_cap: 50000
 
-        # Stale file retention in seconds (default 24 hours).
+        # Orphan fallback retention in seconds (default 24 hours). Controller
+        # session lifecycle cleanup removes owned artifacts earlier.
         retention: 86400
 
         # Optional session prefix for persisted output filenames.

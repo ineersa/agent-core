@@ -8,6 +8,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
+use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerSessionShutdownEvent;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Filesystem\Filesystem;
 
 use function Symfony\Component\String\u;
@@ -49,6 +51,7 @@ final class HatfieldSessionStore
     public function __construct(
         private readonly AppConfig $appConfig,
         private readonly EntityManagerInterface $entityManager,
+        private readonly EventDispatcherInterface $dispatcher,
     ) {
     }
 
@@ -217,6 +220,8 @@ final class HatfieldSessionStore
         if (null === $entity) {
             throw new \RuntimeException(\sprintf('Session "%s" not found.', $sessionId));
         }
+
+        $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($sessionId));
 
         $this->entityManager->remove($entity);
         $this->entityManager->flush();
