@@ -358,7 +358,7 @@ export async function createWorktreeForTask(
 			await cp(mainVendor, worktreeVendor, { recursive: true });
 			vendorCopied = true;
 		} catch {
-			// Non-fatal. Worker can run composer install.
+			// Non-fatal. Fork can run composer install.
 		}
 	}
 
