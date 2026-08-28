@@ -36,7 +36,7 @@ final class ExtensionAfterTurnCommitHookSubscriberTest extends TestCase
             'running',
             [new AfterTurnCommitEventSummary(
                 seq: 1,
-                type: 'turn_end',
+                type: 'agent_end',
                 payload: ['reason' => 'completed'],
                 turnNo: 7,
                 createdAt: '2026-07-22T12:00:00+00:00',
@@ -46,7 +46,7 @@ final class ExtensionAfterTurnCommitHookSubscriberTest extends TestCase
         $subscriber->handleAfterTurnCommit($ctx);
         $this->assertInstanceOf(AfterTurnCommitHookContextDTO::class, $captured);
         $this->assertSame(1, $captured->events[0]->seq);
-        $this->assertSame('turn_end', $captured->events[0]->type);
+        $this->assertSame('agent_end', $captured->events[0]->type);
         $this->assertSame(['reason' => 'completed'], $captured->events[0]->payload);
         // Per-event provenance, not the surrounding context turnNo.
         $this->assertSame(7, $captured->events[0]->turnNo);
@@ -65,7 +65,7 @@ final class ExtensionAfterTurnCommitHookSubscriberTest extends TestCase
         });
         $logger = new TestLogger();
         $subscriber = new ExtensionAfterTurnCommitHookSubscriber($registry, $logger);
-        $ctx = new AfterTurnCommitHookContext('run-9', 3, 'running', [new AfterTurnCommitEventSummary(1, 'turn_end')], 0);
+        $ctx = new AfterTurnCommitHookContext('run-9', 3, 'running', [new AfterTurnCommitEventSummary(1, 'agent_end')], 0);
         $subscriber->handleAfterTurnCommit($ctx);
         $this->assertNotEmpty($logger->records);
         $this->assertSame('warning', $logger->records[0]['level']);

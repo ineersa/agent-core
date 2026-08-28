@@ -12,9 +12,7 @@
 
 ## Lifecycle stream (ordered core)
 
-Ordered lifecycle cases on `RunEventTypeEnum` (underscore wire values, e.g. `agent_start`):
-
-`AgentStart` → `TurnStart` → `MessageStart`/`MessageUpdate`/`MessageEnd` → `ToolExecutionStart`/`ToolExecutionUpdate`/`ToolExecutionEnd` → `TurnEnd` → `AgentEnd`
+Retained lifecycle cases on `RunEventTypeEnum` use underscore wire values. `RunStarted`, `TurnAdvanced`, `LlmStepCompleted`, `ToolExecutionStart`/`ToolExecutionUpdate`/`ToolExecutionEnd`, `ToolBatchCommitted`, and `AgentEnd` provide the durable run boundaries; removed historical vocabulary is rejected during canonical event decoding.
 
 Pipeline/compaction/history cases (`RunStarted`, `WaitingHuman`, `HistoryPositionSet`, `HistoryTailDiscarded`, compaction, etc.) live on the same enum — read the enum file for the full set. `ContextCompactionRequested` records a committed pre-LLM compaction request before its synchronous `CompactRun` effect, so replay can reject the already-consumed `AdvanceRun`. Do not maintain a second exhaustive catalog here.
 

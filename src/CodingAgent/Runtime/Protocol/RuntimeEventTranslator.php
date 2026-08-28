@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Protocol;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
@@ -40,11 +42,12 @@ final class RuntimeEventTranslator
      */
     public function __construct(
         private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec,
+        private readonly AgentMessageNormalizer $messageNormalizer = new AgentMessageNormalizer(),
     ) {
         $this->dispatchTable = [
             // Lifecycle
             RunEventTypeEnum::RunStarted->value => $this->onRunStarted(...),
-            RunEventTypeEnum::ModelChanged->value => $this->onModelChanged(...),
             RunEventTypeEnum::TurnAdvanced->value => $this->onTurnStarted(...),
             RunEventTypeEnum::AgentEnd->value => $this->onAgentEnd(...),
             // Assistant stream
@@ -63,16 +66,13 @@ final class RuntimeEventTranslator
             RunEventTypeEnum::AgentCommandApplied->value => $this->onAgentCommandApplied(...),
             // Cancel / fallback
             RunEventTypeEnum::AgentCommandRejected->value => $this->onStatusUpdated(...),
-            RunEventTypeEnum::StaleResultIgnored->value => $this->onStatusUpdated(...),
             // Compaction
             RunEventTypeEnum::ContextCompactionStarted->value => $this->onCompactionStarted(...),
             RunEventTypeEnum::ContextCompacted->value => $this->onCompactionCompleted(...),
             RunEventTypeEnum::ContextCompactionFailed->value => $this->onCompactionFailed(...),
             // Drop (internal bookkeeping)
-            RunEventTypeEnum::ToolCallResultReceived->value => $this->drop(...),
             RunEventTypeEnum::ToolBatchCommitted->value => $this->drop(...),
             RunEventTypeEnum::AgentCommandQueued->value => $this->onAgentCommandQueued(...),
-            RunEventTypeEnum::AgentCommandSuperseded->value => $this->drop(...),
             // Drop (history metadata — not user-visible; run.history_position_changed is emitted by selection handlers)
             RunEventTypeEnum::HistoryPositionSet->value => $this->drop(...),
             RunEventTypeEnum::HistoryTailDiscarded->value => $this->drop(...),
@@ -112,21 +112,6 @@ final class RuntimeEventTranslator
     }
 
     // ── Lifecycle ──────────────────────────────────────────────────────────
-
-    private function onModelChanged(RunEvent $runEvent): RuntimeEvent
-    {
-        $p = $runEvent->payload;
-
-        return new RuntimeEvent(
-            type: RuntimeEventTypeEnum::ModelChanged->value,
-            runId: $runEvent->runId,
-            seq: $runEvent->seq,
-            payload: [
-                'model' => (string) ($p['model'] ?? ''),
-                'previous_model' => $p['previous_model'] ?? null,
-            ],
-        );
-    }
 
     private function onRunStarted(RunEvent $runEvent): RuntimeEvent
     {
@@ -187,12 +172,7 @@ final class RuntimeEventTranslator
     {
         $p = $runEvent->payload;
 
-        // Prefer the explicit text key when available (source-side extraction
-        // via AssistantMessage::asText()).  Fall back to walking the
-        // normalized assistant_message content array for backward compat.
-        $text = \is_string($p['text'] ?? null) && '' !== $p['text']
-            ? $p['text']
-            : $this->extractAssistantText($p['assistant_message'] ?? null);
+        $text = $this->extractAssistantText($p['assistant_message'] ?? null);
 
         $payload = [
             'message_id' => (string) ($p['step_id'] ?? ''),
@@ -334,13 +314,16 @@ final class RuntimeEventTranslator
     private function onToolExecutionEnded(RunEvent $runEvent): RuntimeEvent
     {
         $p = $runEvent->payload;
-        $isError = (bool) ($p['is_error'] ?? false);
-        $resultText = isset($p['result']) && \is_string($p['result']) ? $p['result'] : '';
+        $typedResult = $this->toolExecutionEndPayloadCodec->fromEventPayload($p);
+        $isError = $typedResult->isError;
+        $resultText = $this->toolResultText($typedResult);
+        $toolCallId = $typedResult->toolCallId;
+        $orderIndex = $typedResult->orderIndex;
 
         $payload = [
-            'tool_call_id' => (string) ($p['tool_call_id'] ?? ''),
+            'tool_call_id' => $toolCallId,
             'is_error' => $isError,
-            'order_index' => (int) ($p['order_index'] ?? 0),
+            'order_index' => $orderIndex,
         ];
 
         // Pass through result text when present (e.g. shell command output
@@ -353,10 +336,7 @@ final class RuntimeEventTranslator
             $payload['duration_ms'] = $p['duration_ms'];
         }
 
-        $isStructuredCancel = (bool) ($p['cancelled'] ?? false);
-        // Structured metadata is preferred; text heuristic remains for legacy events.
-        $isUserCancelled = $isStructuredCancel
-            || ($isError && str_contains(strtolower($resultText), 'cancelled by user'));
+        $isUserCancelled = $isError && 'cancelled' === ($typedResult->error['type'] ?? null);
 
         $type = match (true) {
             $isUserCancelled => RuntimeEventTypeEnum::ToolExecutionCancelled->value,
@@ -370,6 +350,19 @@ final class RuntimeEventTranslator
             seq: $runEvent->seq,
             payload: $payload,
         );
+    }
+
+    private function toolResultText(\Ineersa\AgentCore\Domain\Message\ToolCallResult $result): string
+    {
+        $message = $this->messageNormalizer->toolMessage($result);
+        $parts = [];
+        foreach ($message->content as $part) {
+            if ('text' === ($part['type'] ?? null) && \is_string($part['text'] ?? null)) {
+                $parts[] = $part['text'];
+            }
+        }
+
+        return implode("\n", $parts);
     }
 
     // ── Model notification ────────────────────────────────────────────────

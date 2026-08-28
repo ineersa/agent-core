@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session\Replay;
 
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
@@ -31,7 +33,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
     {
         $this->eventStore = new InMemoryEventStore();
         $this->historyFilter = new HistoryReplayFilter(new HistoryProjector());
-        $this->reducer = new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer());
+        $this->reducer = new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $this->service = new SessionRunStateReplayService(
             $this->eventStore,
             new NullLogger(),
@@ -210,41 +212,10 @@ final class SessionRunStateReplayServiceTest extends TestCase
             'tool_name' => 'read',
         ]);
 
-        // Tool result received
-        $this->appendEvent(RunEventTypeEnum::ToolCallResultReceived->value, 4, [
-            'tool_call_id' => 'tc-1',
-            'order_index' => 0,
-            'is_error' => false,
-        ]);
-
-        // Tool execution end
-        $this->appendEvent(RunEventTypeEnum::ToolExecutionEnd->value, 5, [
-            'tool_call_id' => 'tc-1',
-            'order_index' => 0,
-            'is_error' => false,
-        ]);
-
-        // Message start for tool
-        $this->appendEvent(RunEventTypeEnum::MessageStart->value, 6, [
-            'message_role' => 'tool',
-            'tool_call_id' => 'tc-1',
-        ]);
-
-        // Message end for tool with serialized result
-        $this->appendEvent(RunEventTypeEnum::MessageEnd->value, 7, [
-            'message_role' => 'tool',
-            'tool_call_id' => 'tc-1',
-            'message' => [
-                'role' => 'tool',
-                'content' => [['type' => 'text', 'text' => '{"is_error":false,"result":"file content"}']],
-                'tool_call_id' => 'tc-1',
-                'tool_name' => 'read',
-                'is_error' => false,
-            ],
-        ]);
+        $this->appendEvent(RunEventTypeEnum::ToolExecutionEnd->value, 4, $this->toolEndPayload('tc-1', 'read', 'file content'));
 
         // Batch committed
-        $this->appendEvent(RunEventTypeEnum::ToolBatchCommitted->value, 8, [
+        $this->appendEvent(RunEventTypeEnum::ToolBatchCommitted->value, 5, [
             'count' => 1,
         ]);
 
@@ -259,6 +230,93 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertSame('assistant', $messages[0]->role);
         $this->assertSame('tool', $messages[1]->role);
         $this->assertSame([], $rebuiltState->pendingToolCalls);
+    }
+
+    public function testReplayFlushesReverseOrderParallelToolEndsOnlyAtCommittedBatchBoundary(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::LlmStepCompleted->value, 1, [
+            'step_id' => 'parallel-step',
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [],
+                'tool_calls' => [
+                    ['id' => 'call-a', 'name' => 'read', 'arguments' => [], 'order_index' => 0],
+                    ['id' => 'call-b', 'name' => 'read', 'arguments' => [], 'order_index' => 1],
+                ],
+            ],
+        ]);
+        $this->appendEvent(RunEventTypeEnum::ToolExecutionStart->value, 2, ['tool_call_id' => 'call-a', 'tool_name' => 'read', 'order_index' => 0]);
+        $this->appendEvent(RunEventTypeEnum::ToolExecutionStart->value, 3, ['tool_call_id' => 'call-b', 'tool_name' => 'read', 'order_index' => 1]);
+        // B completes in a first commit before A.
+        $this->appendEvent(RunEventTypeEnum::ToolExecutionEnd->value, 4, $this->toolEndPayload('call-b', 'read', 'B', 1));
+
+        $partial = $this->service->rebuildIfStale(RunState::queued($this->runId), $this->runId)->rebuiltState;
+        $this->assertNotNull($partial);
+        $this->assertCount(1, $partial->messages);
+        $this->assertSame(['call-a' => false, 'call-b' => true], $partial->pendingToolCalls);
+
+        // A completes in a later commit, then the durable batch boundary flushes
+        // both typed results in model order rather than worker completion order.
+        $this->appendEvent(RunEventTypeEnum::ToolExecutionEnd->value, 5, $this->toolEndPayload('call-a', 'read', 'A', 0));
+        $this->appendEvent(RunEventTypeEnum::ToolBatchCommitted->value, 6, ['count' => 2]);
+
+        $final = $this->service->rebuildIfStale(RunState::queued($this->runId), $this->runId)->rebuiltState;
+        $this->assertNotNull($final);
+        $this->assertSame(['call-a', 'call-b'], array_map(static fn ($message): ?string => $message->toolCallId, \array_slice($final->messages, 1)));
+        $this->assertSame([], $final->pendingToolCalls);
+    }
+
+    public function testReplayAttachedShellResultNeverFlushesIntoInterleavedLlmToolBatch(): void
+    {
+        $shellIdempotencyKey = 'attached-shell-key';
+        $shellToolCallId = 'sh_'.hash('sha256', $shellIdempotencyKey);
+
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 1, 1, [
+            'turn_no' => 1,
+            'step_id' => 'llm-step',
+            'operation_idempotency_key' => 'llm-key',
+        ]);
+        // Attached shells coexist with the current LLM operation and become
+        // transcript-only pending identities during canonical replay.
+        $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandApplied->value, 2, 1, [
+            'kind' => 'shell_command',
+            'idempotency_key' => $shellIdempotencyKey,
+            'standalone' => false,
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::ToolExecutionStart->value, 3, 1, [
+            'tool_call_id' => $shellToolCallId,
+            'tool_name' => 'bash',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 4, 1, [
+            'step_id' => 'llm-step',
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [],
+                'tool_calls' => [
+                    ['id' => 'llm-tool', 'name' => 'read', 'arguments' => [], 'order_index' => 0],
+                ],
+            ],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::ToolExecutionStart->value, 5, 1, [
+            'tool_call_id' => 'llm-tool',
+            'tool_name' => 'read',
+            'order_index' => 0,
+        ]);
+        // The shell end is intentionally interleaved before the later LLM
+        // batch boundary: without the pending-shell guard, that boundary
+        // would incorrectly flush this transcript-only output to the model.
+        $this->appendEventWithTurn(RunEventTypeEnum::ToolExecutionEnd->value, 6, 1, $this->toolEndPayload($shellToolCallId, 'bash', 'shell output'));
+        $this->appendEventWithTurn(RunEventTypeEnum::ToolExecutionEnd->value, 7, 1, $this->toolEndPayload('llm-tool', 'read', 'LLM result'));
+        $this->appendEventWithTurn(RunEventTypeEnum::ToolBatchCommitted->value, 8, 1, ['count' => 1]);
+
+        $rebuilt = $this->service->rebuildIfStale(RunState::queued($this->runId), $this->runId)->rebuiltState;
+
+        $this->assertNotNull($rebuilt);
+        $this->assertSame([], $rebuilt->pendingShellToolCalls);
+        $this->assertCount(2, $rebuilt->messages);
+        $toolMessages = array_values(array_filter($rebuilt->messages, static fn ($message): bool => 'tool' === $message->role));
+        $this->assertSame(['llm-tool'], array_map(static fn ($message): ?string => $message->toolCallId, $toolMessages));
+        $this->assertSame('LLM result', $toolMessages[0]->content[0]['text']);
     }
 
     public function testReplayAssistantTextWithTopLevelToolCallsPreservesMetadataForValidator(): void
@@ -279,17 +337,8 @@ final class SessionRunStateReplayServiceTest extends TestCase
             ],
         ]);
 
-        $this->appendEvent(RunEventTypeEnum::MessageEnd->value, 3, [
-            'message_role' => 'tool',
-            'tool_call_id' => 'call_00_Zm7aROqgBCMbqsuWtGpr0544',
-            'message' => [
-                'role' => 'tool',
-                'content' => [['type' => 'text', 'text' => 'docs/']],
-                'tool_call_id' => 'call_00_Zm7aROqgBCMbqsuWtGpr0544',
-                'tool_name' => 'bash',
-                'is_error' => false,
-            ],
-        ]);
+        $this->appendEvent(RunEventTypeEnum::ToolExecutionEnd->value, 3, $this->toolEndPayload('call_00_Zm7aROqgBCMbqsuWtGpr0544', 'bash', 'docs/'));
+        $this->appendEvent(RunEventTypeEnum::ToolBatchCommitted->value, 4, ['count' => 1]);
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
@@ -334,10 +383,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         ]);
 
         // tool_execution_end resolves the pending call — the fix.
-        $this->appendEvent(RunEventTypeEnum::ToolExecutionEnd->value, 3, [
-            'tool_call_id' => 'sh_shell_1',
-            'is_error' => false,
-        ]);
+        $this->appendEvent(RunEventTypeEnum::ToolExecutionEnd->value, 3, $this->toolEndPayload('sh_shell_1', 'bash', ''));
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
@@ -1971,6 +2017,21 @@ final class SessionRunStateReplayServiceTest extends TestCase
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
+
+    /** @return array<string, mixed> */
+    private function toolEndPayload(string $toolCallId, string $toolName, string $text, int $orderIndex = 0): array
+    {
+        return (new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))->toEventPayload(new ToolCallResult(
+            runId: $this->runId,
+            turnNo: 0,
+            stepId: 's1',
+            attempt: 1,
+            idempotencyKey: 'result-'.$toolCallId,
+            toolCallId: $toolCallId,
+            orderIndex: $orderIndex,
+            result: ['tool_name' => $toolName, 'content' => [['type' => 'text', 'text' => $text]]],
+        ));
+    }
 
     /**
      * @param array<string, mixed> $payload

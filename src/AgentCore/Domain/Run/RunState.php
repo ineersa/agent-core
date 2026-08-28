@@ -44,7 +44,7 @@ final readonly class RunState
         public array $pendingHumanInputRequests = [],
         /**
          * Canonical execution model for this run (provider/model).
-         * Source of truth is run_started.metadata.model, then model_changed transitions.
+         * Source of truth is run_started.metadata.model.
          * Scheduling and compaction must use this field, never re-resolve session/default.
          */
         public ?string $model = null,

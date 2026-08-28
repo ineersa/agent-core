@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Pipeline\ApplyShellCommandHandler;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -158,7 +159,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertSame('sh_'.hash('sha256', 'shell-idem-1'), $effect->toolCallId);
 
         if ($expectedStandalone) {
-            $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()))->replay(RunState::queued('run-shell-1'), $result->events);
+            $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued('run-shell-1'), $result->events);
             $this->assertNotNull($replayed->currentOperation);
             $this->assertTrue($replayed->currentOperation->matches($expectedOwningTurn,
                 'shell-step-1',
@@ -217,7 +218,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertSame($llm, $committed->currentOperation);
         $this->assertArrayHasKey('sh_'.hash('sha256', 'shell-attached-key'), $committed->pendingShellToolCalls);
 
-        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()))->replay(
+        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(
             RunState::queued('run-attached-shell-duplicate'),
             [
                 new RunEvent(
@@ -273,7 +274,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         );
 
         $this->expectException(\UnexpectedValueException::class);
-        (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()))->replay(RunState::queued('run-malformed-shell'), [$event]);
+        (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued('run-malformed-shell'), [$event]);
     }
 
     public function testRejectsInvalidRawInput(): void

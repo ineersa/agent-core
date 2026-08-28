@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Application;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -81,7 +83,7 @@ final class SessionInitializerTest extends TestCase
         );
 
         $mapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher())
+            new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))
         );
 
         $transcriptProjector = $this->buildRealTranscriptProjector();
@@ -424,7 +426,7 @@ final class SessionInitializerTest extends TestCase
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class), dispatcher: new EventDispatcher());
         $mapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher())
+            new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))
         );
 
         $eventApplier = new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer());
@@ -498,7 +500,7 @@ final class SessionInitializerTest extends TestCase
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class), dispatcher: new EventDispatcher());
         $mapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher())
+            new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))
         );
 
         $eventApplier = new TuiRuntimeEventApplier($this->buildRealTranscriptProjector(), SubagentProgressSerializerTestSupport::denormalizer());
@@ -591,7 +593,7 @@ final class SessionInitializerTest extends TestCase
             'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
         ]));
         $this->seedCanonicalEvent(new RunEvent(runId: $runId, seq: 2, turnNo: 1, type: 'llm_step_completed', payload: [
-            'step_id' => 'step-2', 'text' => 'Hello', 'usage' => ['input_tokens' => 120, 'output_tokens' => 30],
+            'step_id' => 'step-2', 'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Hello']]], 'usage' => ['input_tokens' => 120, 'output_tokens' => 30],
         ]));
 
         $historyProvider = $this->createMock(HistoryProviderInterface::class);
@@ -655,7 +657,7 @@ final class SessionInitializerTest extends TestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class), dispatcher: new EventDispatcher());
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
         $eventApplier = new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer());
 
         return [new SessionInitializer(

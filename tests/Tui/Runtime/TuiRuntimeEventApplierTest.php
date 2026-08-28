@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tests\Tui\Runtime;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -91,7 +93,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
     public function testIdleFollowUpQueuedEventDoesNotPopulatePendingQueue(): void
     {
         // Thesis: idle follow_up should not emit user.message_queued (no ⏳ flicker).
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
         $runEvent = new RunEvent(
             runId: 'run-fu',
             seq: 2,
@@ -125,7 +127,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
 
         $applierState = new TuiSessionState($runId, true);
         $applier = $this->buildApplier();
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
         $store = $this->buildEventStore();
 
         foreach ($store->allFor($runId) as $runEvent) {
@@ -212,10 +214,24 @@ final class TuiRuntimeEventApplierTest extends TestCase
             ['seq' => 1, 'turn_no' => 0, 'type' => 'run_started', 'payload' => ['step_id' => 's1', 'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Resume me']]]]]]],
             ['seq' => 2, 'turn_no' => 1, 'type' => 'turn_advanced', 'payload' => ['turn_no' => 1]],
             ['seq' => 3, 'turn_no' => 1, 'type' => 'history_position_set', 'payload' => ['position_turn_no' => 1, 'reason' => 'continue']],
-            ['seq' => 4, 'turn_no' => 1, 'type' => 'llm_step_completed', 'payload' => ['step_id' => 's2', 'text' => '', 'tool_calls_count' => 1, 'assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [['id' => 'call_sub_1', 'name' => 'subagent', 'arguments' => ['task' => 'x']]]], 'usage' => ['input_tokens' => 12, 'output_tokens' => 4]]],
+            ['seq' => 4, 'turn_no' => 1, 'type' => 'llm_step_completed', 'payload' => ['step_id' => 's2', 'assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [['id' => 'call_sub_1', 'name' => 'subagent', 'arguments' => ['task' => 'x']]]], 'usage' => ['input_tokens' => 12, 'output_tokens' => 4]]],
             ['seq' => 5, 'turn_no' => 1, 'type' => 'tool_execution_start', 'payload' => ['tool_call_id' => 'call_sub_1', 'tool_name' => 'subagent', 'order_index' => 0]],
             ['seq' => 6, 'turn_no' => 1, 'type' => 'tool_execution_update', 'payload' => ['tool_call_id' => 'call_sub_1', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => ['mode' => 'single', 'status' => 'running', 'agent_name' => 'scout', 'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'task', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium']]],
-            ['seq' => 7, 'turn_no' => 1, 'type' => 'tool_execution_end', 'payload' => ['tool_call_id' => 'call_sub_1', 'order_index' => 0, 'is_error' => false, 'result' => 'Final subagent handoff text']],
+            ['seq' => 7, 'turn_no' => 1, 'type' => 'tool_execution_end', 'payload' => [
+                'tool_result' => [
+                    'run_id' => $runId,
+                    'turn_no' => 1,
+                    'step_id' => 's2',
+                    'attempt' => 1,
+                    'idempotency_key' => 'result-call_sub_1',
+                    'tool_call_id' => 'call_sub_1',
+                    'order_index' => 0,
+                    'result' => ['tool_name' => 'subagent', 'content' => [['type' => 'text', 'text' => 'Final subagent handoff text']]],
+                    'is_error' => false,
+                    'error' => null,
+                    'pending_human_input' => null,
+                ],
+            ]],
             ['seq' => 8, 'turn_no' => 1, 'type' => 'agent_command_applied', 'payload' => ['kind' => 'cancel']],
             ['seq' => 9, 'turn_no' => 1, 'type' => 'agent_end', 'payload' => ['reason' => 'cancelled']],
         ];
@@ -246,7 +262,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $appConfig = new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->projectDir);
         $sessionStore = new HatfieldSessionStore($appConfig, $this->createStub(\Doctrine\ORM\EntityManagerInterface::class), new EventDispatcher());
         $eventStore = $this->buildEventStore();
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
 
         return new SessionInitializer(
             sessionStore: $sessionStore,

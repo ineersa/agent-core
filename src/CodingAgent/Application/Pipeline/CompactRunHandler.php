@@ -96,7 +96,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             return new HandlerResult(nextState: $state, events: [], effects: []);
         }
 
-        // Canonical execution model is RunState.model (run_started / model_changed).
+        // Canonical execution model is RunState.model from run_started metadata.
         // Compaction override resolution may still use configured overrides, but
         // base identity must not re-query mutable session/default selection.
         $activeModelStr = null !== $state->model && '' !== trim($state->model)

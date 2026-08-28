@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Application;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -84,7 +86,7 @@ final class SessionInitializerReplayTest extends TestCase
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class), dispatcher: new EventDispatcher());
 
         $mapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher())
+            new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))
         );
 
         // Real projector with all projection subscribers — no mocking.
@@ -155,7 +157,7 @@ final class SessionInitializerReplayTest extends TestCase
         // llm_step_completed with assistant response
         $this->append($runId, 2, 'llm_step_completed', [
             'step_id' => 'step-2',
-            'text' => 'Hi there! How can I help?',
+            'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Hi there! How can I help?']]],
         ]);
 
         $state = new TuiSessionState($runId, true);
@@ -209,7 +211,6 @@ final class SessionInitializerReplayTest extends TestCase
         // 2: llm_step_completed (assistant with tool calls)
         $this->append($runId, 2, 'llm_step_completed', [
             'step_id' => 'step-2',
-            'text' => 'Let me read that file.',
             'assistant_message' => [
                 'role' => 'assistant',
                 'content' => [['type' => 'text', 'text' => 'Let me read that file.']],
@@ -225,9 +226,12 @@ final class SessionInitializerReplayTest extends TestCase
 
         // 4: tool_execution_end
         $this->append($runId, 4, 'tool_execution_end', [
-            'tool_call_id' => 'tc-1',
-            'is_error' => false,
-            'order_index' => 0,
+            'tool_result' => [
+                'run_id' => $runId, 'turn_no' => 1, 'step_id' => 'step-1', 'attempt' => 1,
+                'idempotency_key' => 'result-tc-1', 'tool_call_id' => 'tc-1', 'order_index' => 0,
+                'result' => ['tool_name' => 'read', 'content' => []], 'is_error' => false,
+                'error' => null, 'pending_human_input' => null,
+            ],
         ]);
 
         // 5: waiting_human (HITL question)
@@ -322,7 +326,7 @@ final class SessionInitializerReplayTest extends TestCase
         ]);
         $this->append($runId, 2, 'llm_step_completed', [
             'step_id' => 'step-2',
-            'text' => 'Done turn one.',
+            'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Done turn one.']]],
         ]);
         $this->append($runId, 117, 'agent_end', ['reason' => 'completed']);
 
@@ -347,18 +351,8 @@ final class SessionInitializerReplayTest extends TestCase
             'mode' => 'parallel',
         ]);
         $this->append($runId, 126, 'agent_command_applied', ['kind' => 'cancel']);
-        $this->append($runId, 129, 'tool_execution_end', [
-            'tool_call_id' => 'call_00',
-            'order_index' => 0,
-            'is_error' => true,
-            'result' => 'Tool execution cancelled by user.',
-        ]);
-        $this->append($runId, 133, 'tool_execution_end', [
-            'tool_call_id' => 'call_01',
-            'order_index' => 1,
-            'is_error' => true,
-            'result' => 'Tool execution cancelled by user.',
-        ]);
+        $this->append($runId, 129, 'tool_execution_end', $this->toolEndPayload($runId, 'call_00', 0, true, 'Tool execution cancelled by user.'));
+        $this->append($runId, 133, 'tool_execution_end', $this->toolEndPayload($runId, 'call_01', 1, true, 'Tool execution cancelled by user.'));
         $this->append($runId, 137, 'agent_end', ['reason' => 'cancelled']);
 
         $state = new TuiSessionState($runId, true);
@@ -432,7 +426,7 @@ final class SessionInitializerReplayTest extends TestCase
 
         $this->append($runId, 2, 'llm_step_completed', [
             'step_id' => 'step-2',
-            'text' => 'First response',
+            'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'First response']]],
         ]);
 
         // Replay session
@@ -463,7 +457,7 @@ final class SessionInitializerReplayTest extends TestCase
         // This mirrors how the poller creates its own mapping chain per tick
         // rather than sharing state with the initial replay path.
         $pollerMapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher())
+            new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))
         );
 
         // Re-read events and feed only the new one (simulating poller dedup)
@@ -645,11 +639,7 @@ final class SessionInitializerReplayTest extends TestCase
             'tool_name' => 'bash',
             'order_index' => 0,
         ]);
-        $this->append($runId, 2, 'tool_execution_end', [
-            'tool_call_id' => 'sh_1',
-            'is_error' => false,
-            'result' => 'ok',
-        ]);
+        $this->append($runId, 2, 'tool_execution_end', $this->toolEndPayload($runId, 'sh_1', 0, false, 'ok'));
         $this->append($runId, 3, 'agent_end', ['reason' => 'completed']);
 
         $state = new TuiSessionState($runId, true);
@@ -674,7 +664,7 @@ final class SessionInitializerReplayTest extends TestCase
         ]);
         $this->append($runId, 2, 'llm_step_completed', [
             'step_id' => 'step-1',
-            'message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Ok']]],
+            'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Ok']]],
         ]);
         $this->append($runId, 3, 'agent_end', ['reason' => 'completed']);
         $this->append($runId, 4, 'context_compaction_started', [
@@ -702,7 +692,7 @@ final class SessionInitializerReplayTest extends TestCase
                 ],
             ],
         ]);
-        $this->append($runId, 2, 'turn_started', ['turn_no' => 1]);
+        $this->append($runId, 2, 'turn_advanced', ['turn_no' => 1]);
 
         $state = new TuiSessionState($runId, true);
         $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);
@@ -723,6 +713,18 @@ final class SessionInitializerReplayTest extends TestCase
         if (!file_exists($dir.'/events.jsonl')) {
             file_put_contents($dir.'/events.jsonl', '');
         }
+    }
+
+    /** @return array<string, mixed> */
+    private function toolEndPayload(string $runId, string $toolCallId, int $orderIndex, bool $isError, string $text): array
+    {
+        return ['tool_result' => [
+            'run_id' => $runId, 'turn_no' => 1, 'step_id' => 'step-1', 'attempt' => 1,
+            'idempotency_key' => 'result-'.$toolCallId, 'tool_call_id' => $toolCallId, 'order_index' => $orderIndex,
+            'result' => ['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => $text]]],
+            'is_error' => $isError, 'error' => $isError ? ['type' => 'cancelled', 'message' => $text] : null,
+            'pending_human_input' => null,
+        ]];
     }
 
     /**

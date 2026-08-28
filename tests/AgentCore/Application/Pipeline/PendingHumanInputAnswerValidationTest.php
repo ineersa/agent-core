@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -43,7 +44,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
             'ui_kind' => 'confirm',
         ];
         $runId = 'run-pending-hitl-replay';
-        $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()))->replay(RunState::queued($runId), [
+        $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued($runId), [
             new RunEvent($runId, 1, 0, RunEventTypeEnum::RunStarted->value, ['step_id' => 'start', 'messages' => []]),
             new RunEvent($runId, 2, 1, RunEventTypeEnum::WaitingHuman->value, $payload),
         ]);

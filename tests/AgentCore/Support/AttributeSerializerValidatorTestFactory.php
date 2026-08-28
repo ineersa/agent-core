@@ -36,6 +36,11 @@ final class AttributeSerializerValidatorTestFactory
         return self::create($withBackedEnumNormalizer)[0];
     }
 
+    public static function serializer(bool $withBackedEnumNormalizer = false): SerializerInterface&NormalizerInterface&DenormalizerInterface
+    {
+        return self::create($withBackedEnumNormalizer)[0];
+    }
+
     /**
      * @return array{0: SerializerInterface&NormalizerInterface&DenormalizerInterface, 1: ValidatorInterface}
      */

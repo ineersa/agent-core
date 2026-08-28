@@ -224,16 +224,6 @@ final class SessionCatalogRecoveryService
                     $parentId = $fromStart['parent_id'];
                 }
             }
-
-            if (RunEventTypeEnum::ModelChanged->value === $event->type) {
-                $changed = $event->payload['model'] ?? null;
-                if (\is_string($changed)) {
-                    $changed = trim($changed);
-                    if ('' !== $changed) {
-                        $model = $changed;
-                    }
-                }
-            }
         }
 
         $modelProvider = null;
