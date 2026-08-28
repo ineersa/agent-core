@@ -380,6 +380,13 @@ services:
     arguments:
       $connection: '@doctrine.dbal.default_connection'
 
+  app.migrations.messenger_transport_executor:
+    class: Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor
+    arguments:
+      $connection: '@doctrine.dbal.messenger_transport_connection'
+      $knownMigrations:
+        - DoctrineMigrations\MessengerTransport\Version20260828224203
+
   # Outer transactions on messenger_transport use BEGIN IMMEDIATE (see doctrine.yaml).
   # autoconfigure: false keeps middleware registration explicit and connection-scoped.
   Ineersa\CodingAgent\Infrastructure\Doctrine\MessengerSqliteImmediateTransactionMiddleware:
@@ -387,14 +394,10 @@ services:
     tags:
       - { name: doctrine.middleware, connection: messenger_transport }
 
-  Ineersa\CodingAgent\Migrations\MessengerTransportSchemaEnsurer:
-    arguments:
-      $connection: '@doctrine.dbal.messenger_transport_connection'
-
   Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator:
     arguments:
-      $executor: '@Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor'
-      $transportSchemaEnsurer: '@Ineersa\CodingAgent\Migrations\MessengerTransportSchemaEnsurer'
+      $applicationMigrationExecutor: '@Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor'
+      $transportMigrationExecutor: '@app.migrations.messenger_transport_executor'
       $sessionCatalogRecovery: '@Ineersa\CodingAgent\Session\SessionCatalogRecoveryService'
 
   # HatfieldModelCatalog — build from AppConfig.ai so all consumers share the

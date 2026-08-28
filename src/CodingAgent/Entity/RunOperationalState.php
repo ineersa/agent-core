@@ -32,6 +32,10 @@ final class RunOperationalState
     #[Assert\Length(max: self::ID_MAX_LENGTH)]
     public string $runId;
 
+    #[ORM\Column(name: 'parent_run_id', type: 'string', length: self::ID_MAX_LENGTH, nullable: true)]
+    #[Assert\Length(min: 1, max: self::ID_MAX_LENGTH)]
+    public ?string $parentRunId = null;
+
     #[ORM\Column(name: 'owner_session_id', type: 'string', length: self::ID_MAX_LENGTH)]
     #[Assert\NotBlank(normalizer: 'trim')]
     #[Assert\Length(max: self::ID_MAX_LENGTH)]

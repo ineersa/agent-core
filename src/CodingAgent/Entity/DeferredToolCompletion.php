@@ -8,6 +8,8 @@ use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'deferred_tool_completion')]
+#[ORM\UniqueConstraint(name: 'uniq_deferred_tool_completion_deferred_id', columns: ['deferred_id'])]
+#[ORM\UniqueConstraint(name: 'uniq_deferred_tool_completion_run_tool_call', columns: ['run_id', 'tool_call_id'])]
 #[ORM\HasLifecycleCallbacks]
 class DeferredToolCompletion
 {
@@ -18,7 +20,7 @@ class DeferredToolCompletion
     #[ORM\Column(type: 'integer')]
     public int $id = 0;
 
-    #[ORM\Column(name: 'deferred_id', type: 'string', length: 36, unique: true)]
+    #[ORM\Column(name: 'deferred_id', type: 'string', length: 36)]
     public string $deferredId = '';
 
     #[ORM\Column(name: 'run_id', type: 'string', length: 255)]

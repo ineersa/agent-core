@@ -8,7 +8,7 @@
 doctrine_migrations:
     migrations_paths:
         # Namespace must NOT conflict with src/ PSR-4 auto-discovery
-        'DoctrineMigrations': '%kernel.project_dir%/migrations'
+        'DoctrineMigrations': '%kernel.project_dir%/migrations/application'
 
     storage:
         table_storage:

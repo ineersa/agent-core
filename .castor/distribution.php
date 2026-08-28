@@ -1405,7 +1405,8 @@ function distribution_assert_phar_bundled_resources(string $pharPath): void
     $required = [
         'config/hatfield.defaults.yaml',
         'config/themes/catppuccin-mocha.yaml',
-        'migrations/Version20260601152619.php',
+        'migrations/application/Version20260601152619.php',
+        'migrations/messenger_transport/Version20260828224203.php',
     ];
     foreach ($required as $entry) {
         if (!isset($phar[$entry])) {
