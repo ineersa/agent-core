@@ -43,7 +43,7 @@ final class ReplayEventPreparerTest extends TestCase
             runId: 'run-prep',
             seq: $seq,
             turnNo: 0,
-            type: RunEventTypeEnum::TurnEnd->value,
+            type: RunEventTypeEnum::AgentEnd->value,
             payload: [],
             createdAt: new \DateTimeImmutable(),
         );

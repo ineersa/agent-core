@@ -196,15 +196,12 @@ final readonly class RunCommit
             return false;
         }
 
-        $this->trackCommitMetrics($state, $resolvedAfterPersist, $events);
+        $this->trackCommitMetrics($state, $resolvedAfterPersist);
 
         return true;
     }
 
-    /**
-     * @param list<RunEvent> $events
-     */
-    private function trackCommitMetrics(RunState $state, RunState $nextState, array $events): void
+    private function trackCommitMetrics(RunState $state, RunState $nextState): void
     {
         if (null === $this->metrics) {
             return;
@@ -212,20 +209,6 @@ final readonly class RunCommit
 
         $this->metrics->recordRunStatusTransition($state->status, $nextState->status);
         $this->metrics->setCommandQueueLag($nextState->runId, $this->commandStore->countPending($nextState->runId));
-
-        $staleIgnored = 0;
-
-        foreach ($events as $event) {
-            if ('stale_result_ignored' !== $event->type) {
-                continue;
-            }
-
-            ++$staleIgnored;
-        }
-
-        if ($staleIgnored > 0) {
-            $this->metrics->incrementStaleResultCount($staleIgnored);
-        }
     }
 
     /**

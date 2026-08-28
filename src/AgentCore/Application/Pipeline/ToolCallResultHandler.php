@@ -25,6 +25,8 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 {
     private const string SYNTHETIC_USER_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
 
+    private ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec;
+
     public function __construct(
         private ToolBatchCollector $toolBatchCollector,
         private EventFactory $eventFactory,
@@ -34,6 +36,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         private ?RunMetrics $metrics = null,
         private ?MessageBusInterface $commandBus = null,
     ) {
+        $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
 
     public function getLogComponent(): string
@@ -87,16 +90,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             if ($preserveIncoming) {
                 $pendingToolCalls[$message->toolCallId] = true;
             } else {
-                $eventSpecs[] = [
-                    'type' => RunEventTypeEnum::StaleResultIgnored->value,
-                    'payload' => [
-                        'result' => 'tool_call_result',
-                        'tool_call_id' => $message->toolCallId,
-                        'step_id' => $message->stepId(),
-                        'turn_no' => $message->turnNo(),
-                        'status' => $state->status->value,
-                    ],
-                ];
+                $this->metrics?->incrementStaleResultCount();
             }
 
             // Cancellation can land after some results were accepted while the batch was
@@ -140,7 +134,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                             eventSpecs: $eventSpecs,
                             messages: $messages,
                             result: $message,
-                            toolExecutionEndExtras: $this->cancellationToolExecutionEndExtras(),
                         );
                     } else {
                         // Result was accepted while Running (incomplete batch): ends already
@@ -156,11 +149,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                             toolName: $toolName,
                             orderIndex: $orderIndex,
                         );
-                        $this->appendToolMessageEvents(
-                            eventSpecs: $eventSpecs,
-                            messages: $messages,
-                            result: $resultToProject,
-                        );
+                        $this->appendToolMessage(messages: $messages, result: $resultToProject);
                     }
                     ++$projectedToolMessageCount;
 
@@ -180,7 +169,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                     eventSpecs: $eventSpecs,
                     messages: $messages,
                     result: $syntheticResult,
-                    toolExecutionEndExtras: $this->cancellationToolExecutionEndExtras(),
                 );
                 ++$projectedToolMessageCount;
             }
@@ -239,28 +227,18 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         }
 
         if (!$outcome->accepted) {
+            // An untracked terminal result cannot change canonical state or the
+            // user-visible stream, but remains observable through the bounded
+            // stale-result metric.
+            $this->metrics?->incrementStaleResultCount();
+
             return new HandlerResult();
         }
 
-        $eventSpecs = [
-            [
-                'type' => RunEventTypeEnum::ToolCallResultReceived->value,
-                'payload' => [
-                    'tool_call_id' => $message->toolCallId,
-                    'order_index' => $message->orderIndex,
-                    'is_error' => $message->isError,
-                ],
-            ],
-            [
-                'type' => RunEventTypeEnum::ToolExecutionEnd->value,
-                'payload' => [
-                    'tool_call_id' => $message->toolCallId,
-                    'order_index' => $message->orderIndex,
-                    'is_error' => $message->isError,
-                    'result' => $this->extractResultText($message->result),
-                ],
-            ],
-        ];
+        $eventSpecs = [[
+            'type' => RunEventTypeEnum::ToolExecutionEnd->value,
+            'payload' => $this->toolExecutionEndPayloadCodec->toEventPayload($message),
+        ]];
 
         $pendingToolCalls = $state->pendingToolCalls;
         if (\array_key_exists($message->toolCallId, $pendingToolCalls)) {
@@ -284,25 +262,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $orderedResult->result['details'] ?? null);
                 $toolMsg = $this->messageNormalizer->toolMessage($orderedResult, $notifications);
                 $messages[] = $toolMsg;
-                $toolMsgArray = $toolMsg->toArray();
-
-                $eventSpecs[] = [
-                    'type' => RunEventTypeEnum::MessageStart->value,
-                    'payload' => [
-                        'message_role' => 'tool',
-                        'tool_call_id' => $orderedResult->toolCallId,
-                    ],
-                ];
-
-                $eventSpecs[] = [
-                    'type' => RunEventTypeEnum::MessageEnd->value,
-                    'payload' => [
-                        'message_role' => 'tool',
-                        'tool_call_id' => $orderedResult->toolCallId,
-                        'message' => $toolMsgArray,
-                    ],
-                ];
-
                 // Emit model_notification events for any notifications
                 // attached to this tool result.
                 foreach (ModelNotificationCodec::toEventSpecs($this->serializer, $notifications) as $notifSpec) {
@@ -514,75 +473,21 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
     /**
      * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
      * @param list<AgentMessage>                                       $messages
-     * @param array<string, mixed>|null                                $toolExecutionEndExtras
      */
-    private function appendCommittedToolResultEvents(
-        array &$eventSpecs,
-        array &$messages,
-        ToolCallResult $result,
-        ?array $toolExecutionEndExtras = null,
-    ): void {
-        $toolExecutionEndPayload = [
-            'tool_call_id' => $result->toolCallId,
-            'order_index' => $result->orderIndex,
-            'is_error' => $result->isError,
-            'result' => $this->extractResultText($result->result),
-        ];
-        if (null !== $toolExecutionEndExtras) {
-            $toolExecutionEndPayload = array_merge($toolExecutionEndPayload, $toolExecutionEndExtras);
-        }
-
-        $eventSpecs[] = [
-            'type' => RunEventTypeEnum::ToolCallResultReceived->value,
-            'payload' => [
-                'tool_call_id' => $result->toolCallId,
-                'order_index' => $result->orderIndex,
-                'is_error' => $result->isError,
-            ],
-        ];
+    private function appendCommittedToolResultEvents(array &$eventSpecs, array &$messages, ToolCallResult $result): void
+    {
         $eventSpecs[] = [
             'type' => RunEventTypeEnum::ToolExecutionEnd->value,
-            'payload' => $toolExecutionEndPayload,
+            'payload' => $this->toolExecutionEndPayloadCodec->toEventPayload($result),
         ];
-
-        $this->appendToolMessageEvents(
-            eventSpecs: $eventSpecs,
-            messages: $messages,
-            result: $result,
-        );
+        $this->appendToolMessage(messages: $messages, result: $result);
     }
 
-    /**
-     * Project a deferred tool message without re-emitting durable result/end events.
-     *
-     * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
-     * @param list<AgentMessage>                                       $messages
-     */
-    private function appendToolMessageEvents(
-        array &$eventSpecs,
-        array &$messages,
-        ToolCallResult $result,
-    ): void {
+    /** @param list<AgentMessage> $messages */
+    private function appendToolMessage(array &$messages, ToolCallResult $result): void
+    {
         $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $result->result['details'] ?? null);
-        $toolMsg = $this->messageNormalizer->toolMessage($result, $notifications);
-        $messages[] = $toolMsg;
-        $toolMsgArray = $toolMsg->toArray();
-
-        $eventSpecs[] = [
-            'type' => RunEventTypeEnum::MessageStart->value,
-            'payload' => [
-                'message_role' => 'tool',
-                'tool_call_id' => $result->toolCallId,
-            ],
-        ];
-        $eventSpecs[] = [
-            'type' => RunEventTypeEnum::MessageEnd->value,
-            'payload' => [
-                'message_role' => 'tool',
-                'tool_call_id' => $result->toolCallId,
-                'message' => $toolMsgArray,
-            ],
-        ];
+        $messages[] = $this->messageNormalizer->toolMessage($result, $notifications);
     }
 
     /**
@@ -629,17 +534,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         );
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function cancellationToolExecutionEndExtras(): array
-    {
-        return [
-            'cancelled' => true,
-            'cancellation_reason' => 'user',
-        ];
-    }
-
     private function postCancelAdvanceCallback(string $runId, int $turnNo): ?callable
     {
         if (null === $this->commandBus) {
@@ -656,52 +550,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         }
 
         return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, 'advance-after-tools', 'Failed to dispatch AdvanceRun after tool batch completion.');
-    }
-
-    /**
-     * Extract a displayable result string from a tool result payload.
-     *
-     * The result array carries 'content' as an array of content parts
-     * (Symfony AI format).  This helper collects text from parts where
-     * type === 'text' and joins them, so the string propagates through
-     * RuntimeEventTranslator to the projection layer and surfaces as
-     * actual tool output in the TUI.
-     *
-     * Returns '' for non-array results, missing/unexpected structures,
-     * or when no text parts are found.  The downstream projector falls
-     * back to '{tool_name} completed' when the result is empty, so
-     * tools that produce no displayable output still show a sensible
-     * status.
-     *
-     * @param array<string, mixed>|string|int|float|bool|null $result
-     */
-    private function extractResultText(mixed $result): string
-    {
-        if (!\is_array($result)) {
-            return '';
-        }
-
-        $content = $result['content'] ?? null;
-        if (!\is_array($content)) {
-            return '';
-        }
-
-        $parts = [];
-        foreach ($content as $part) {
-            if (!\is_array($part)) {
-                continue;
-            }
-            if (($part['type'] ?? null) !== 'text') {
-                continue;
-            }
-            $text = $part['text'] ?? null;
-            if (!\is_string($text)) {
-                continue;
-            }
-            $parts[] = $text;
-        }
-
-        return implode("\n", $parts);
     }
 
     /**

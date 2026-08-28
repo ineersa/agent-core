@@ -28,7 +28,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 {
     public function testCanonicalRunStartedModelOverridesStaleDefinitionAndSurvivesResume(): void
     {
-        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer());
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
@@ -98,7 +98,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 
     public function testRetryableLlmStepFailedStaysRunningWhileExhaustedFailureIsTerminal(): void
     {
-        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer());
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
@@ -185,7 +185,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 
     public function testApplyEnforcesPrivacyStatusOverridesAndMalformedArgumentSafety(): void
     {
-        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer());
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
@@ -209,7 +209,21 @@ final class DeferredChildRunEventProjectorTest extends TestCase
                     'tool_calls' => [['id' => 'tc1', 'name' => 'read', 'arguments' => $secretArgs]],
                 ],
             ]),
-            new AfterTurnCommitEventSummary(3, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_call_id' => 'tc1']),
+            new AfterTurnCommitEventSummary(3, RunEventTypeEnum::ToolExecutionEnd->value, [
+                'tool_result' => [
+                    'run_id' => 'child-run',
+                    'turn_no' => 4,
+                    'step_id' => 'step-1',
+                    'attempt' => 1,
+                    'idempotency_key' => 'result-tc1',
+                    'tool_call_id' => 'tc1',
+                    'order_index' => 0,
+                    'result' => ['tool_name' => 'read', 'content' => []],
+                    'is_error' => false,
+                    'error' => null,
+                    'pending_human_input' => null,
+                ],
+            ]),
         ];
 
         $projection = $projector->apply(
@@ -271,7 +285,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 
     public function testCompletedAndFailedLlmStepsIncrementDurableCounterAndRoundTrip(): void
     {
-        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer());
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,

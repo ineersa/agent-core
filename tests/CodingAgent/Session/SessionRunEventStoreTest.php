@@ -213,7 +213,7 @@ final class SessionRunEventStoreTest extends TestCase
         $this->store->append(RunEvent::forAppend(
             runId: $runId,
             turnNo: 0,
-            type: 'agent_start',
+            type: 'agent_end',
             payload: [],
         ));
 
@@ -222,7 +222,7 @@ final class SessionRunEventStoreTest extends TestCase
 
         $events = $newStore->allFor($runId);
         $this->assertCount(1, $events, 'Events must survive store recreation');
-        $this->assertSame('agent_start', $events[0]->type);
+        $this->assertSame('agent_end', $events[0]->type);
     }
 
     public function testEmbeddedRunIdMustMatchDirectory(): void
@@ -247,7 +247,7 @@ final class SessionRunEventStoreTest extends TestCase
         $runB = 'run-'.bin2hex(random_bytes(2));
 
         $this->store->append(RunEvent::forAppend(runId: $runA, turnNo: 0, type: 'run_started'));
-        $this->store->append(RunEvent::forAppend(runId: $runB, turnNo: 0, type: 'agent_start'));
+        $this->store->append(RunEvent::forAppend(runId: $runB, turnNo: 0, type: 'agent_end'));
 
         $eventsA = $this->store->allFor($runA);
         $eventsB = $this->store->allFor($runB);
@@ -257,7 +257,7 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertSame($runA, $eventsA[0]->runId);
 
         $this->assertCount(1, $eventsB);
-        $this->assertSame('agent_start', $eventsB[0]->type);
+        $this->assertSame('agent_end', $eventsB[0]->type);
         $this->assertSame($runB, $eventsB[0]->runId);
     }
 
@@ -358,7 +358,7 @@ final class SessionRunEventStoreTest extends TestCase
             'run_id' => $runId,
             'seq' => 2,
             'turn_no' => 1,
-            'type' => 'agent_start',
+            'type' => 'agent_end',
             'payload' => ['source' => 'external'],
             'ts' => '2026-01-01T00:00:00+00:00',
         ];
@@ -368,7 +368,7 @@ final class SessionRunEventStoreTest extends TestCase
 
         $second = $this->store->allFor($runId);
         $this->assertCount(2, $second);
-        $this->assertSame(['run_started', 'agent_start'], array_map(static fn (RunEvent $e): string => $e->type, $second));
+        $this->assertSame(['run_started', 'agent_end'], array_map(static fn (RunEvent $e): string => $e->type, $second));
         $this->assertSame('external', $second[1]->payload['source']);
     }
 
@@ -380,11 +380,11 @@ final class SessionRunEventStoreTest extends TestCase
         $first = $this->store->allFor($runId);
         $this->assertCount(1, $first);
 
-        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'agent_start', payload: ['via' => 'store']));
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'agent_end', payload: ['via' => 'store']));
 
         $second = $this->store->allFor($runId);
         $this->assertCount(2, $second);
-        $this->assertSame(['run_started', 'agent_start'], array_map(static fn (RunEvent $e): string => $e->type, $second));
+        $this->assertSame(['run_started', 'agent_end'], array_map(static fn (RunEvent $e): string => $e->type, $second));
         $this->assertSame('store', $second[1]->payload['via']);
     }
 

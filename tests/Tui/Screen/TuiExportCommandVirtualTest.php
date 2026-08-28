@@ -141,7 +141,7 @@ final class TuiExportCommandVirtualTest extends TestCase
             'type' => 'run_started',
             'payload' => [
                 'step_id' => 's1',
-                'user_messages' => [['role' => 'user', 'content' => 'Export me']],
+                'payload' => ['messages' => [['role' => 'user', 'content' => 'Export me']]],
             ],
             'ts' => '2026-01-01T00:00:00+00:00',
         ];

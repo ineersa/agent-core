@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -119,19 +121,24 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertNotNull($result->nextState);
         $this->assertSame(RunStatus::Running, $result->nextState->status);
         $this->assertSame(6, $result->nextState->version);
-        $this->assertSame(8, $result->nextState->lastSeq);
+        $this->assertSame(7, $result->nextState->lastSeq);
         $this->assertSame([
             'tool-a' => true,
             'tool-b' => false,
         ], $result->nextState->pendingToolCalls);
 
-        $this->assertCount(2, $result->events);
-        $this->assertSame('tool_call_result_received', $result->events[0]->type);
-        $this->assertSame('tool_execution_end', $result->events[1]->type);
-
-        $this->assertArrayHasKey('result', $result->events[1]->payload);
-        $this->assertSame('A', $result->events[1]->payload['result'],
-            'ToolExecutionEnd must carry the extracted result text, not fall back to "alpha completed"');
+        $this->assertCount(1, $result->events);
+        $this->assertSame('tool_execution_end', $result->events[0]->type);
+        $this->assertSame(['tool_result'], array_keys($result->events[0]->payload));
+        [$serializer] = AttributeSerializerValidatorTestFactory::create();
+        $typedResult = (new ToolExecutionEndPayloadCodec($serializer))
+            ->fromEventPayload($result->events[0]->payload);
+        $this->assertSame('run-tool-handler-1', $typedResult->runId());
+        $this->assertSame('turn-1-step', $typedResult->stepId());
+        $this->assertSame('tool-result-a', $typedResult->idempotencyKey());
+        $this->assertSame('tool-a', $typedResult->toolCallId);
+        $this->assertSame($message->result, $typedResult->result);
+        $this->assertFalse($typedResult->isError);
 
         $this->assertSame([], $result->effects);
         $this->assertCount(1, $result->postCommitEffects);
@@ -142,12 +149,14 @@ final class ToolCallResultHandlerTest extends TestCase
 
     public function testUntrackedCurrentTokenRedeliveryIsIdempotentNoOp(): void
     {
+        $metrics = new RunMetrics();
         $handler = new ToolCallResultHandler(
             toolBatchCollector: new ToolBatchCollector(),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            metrics: $metrics,
         );
 
         $state = RunStateBuilder::running('run-untracked-current-token')
@@ -170,484 +179,7 @@ final class ToolCallResultHandlerTest extends TestCase
             $this->assertSame([], $result->postCommitEffects);
             $this->assertSame([], $result->postCommit);
         }
-    }
-
-    public function testExtractResultTextSinglePart(): void
-    {
-        $collector = new ToolBatchCollector();
-        $collector->registerExpectedBatch(
-            runId: 'run-extract-single',
-            turnNo: 1,
-            stepId: 'turn-1-step',
-            toolCalls: [
-                new ExecuteToolCall(
-                    runId: 'run-extract-single',
-                    turnNo: 1,
-                    stepId: 'turn-1-step',
-                    attempt: 1,
-                    idempotencyKey: 'exec-solo',
-                    toolCallId: 'tool-solo',
-                    toolName: 'read',
-                    args: ['path' => './test.txt'],
-                    orderIndex: 0,
-                    maxParallelism: 1,
-                ),
-            ],
-        );
-
-        $handler = new ToolCallResultHandler(
-            toolBatchCollector: $collector,
-            eventFactory: new EventFactory(),
-            toolCallExtractor: new ToolCallExtractor(),
-            messageNormalizer: new AgentMessageNormalizer(),
-            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
-        );
-
-        $state = RunStateBuilder::running('run-extract-single')
-            ->withVersion(1)
-            ->withTurnNo(1)
-            ->withLastSeq(2)
-            ->withPendingToolCalls(['tool-solo' => false])
-            ->withActiveStepId('turn-1-step')
-            ->build();
-
-        $message = ToolCallResultBuilder::success('run-extract-single')
-            ->withTurnNo(1)
-            ->withStepId('turn-1-step')
-            ->withIdempotencyKey('tool-result-solo')
-            ->withToolCallId('tool-solo')
-            ->withOrderIndex(0)
-            ->withResult([
-                'tool_name' => 'read',
-                'content' => [['type' => 'text', 'text' => 'FILE_CONTENT_SENTINEL']],
-            ])
-            ->build();
-
-        $result = $handler->handle($message, $state);
-
-        $this->assertSame('tool_execution_end', $result->events[1]->type);
-        $this->assertSame('FILE_CONTENT_SENTINEL', $result->events[1]->payload['result']);
-    }
-
-    public function testExtractResultTextMultipleParts(): void
-    {
-        $collector = new ToolBatchCollector();
-        $collector->registerExpectedBatch(
-            runId: 'run-extract-multi',
-            turnNo: 1,
-            stepId: 'turn-1-multi',
-            toolCalls: [
-                new ExecuteToolCall(
-                    runId: 'run-extract-multi',
-                    turnNo: 1,
-                    stepId: 'turn-1-multi',
-                    attempt: 1,
-                    idempotencyKey: 'exec-multi',
-                    toolCallId: 'tool-multi',
-                    toolName: 'bash',
-                    args: ['command' => 'echo one; echo two'],
-                    orderIndex: 0,
-                    maxParallelism: 1,
-                ),
-            ],
-        );
-
-        $handler = new ToolCallResultHandler(
-            toolBatchCollector: $collector,
-            eventFactory: new EventFactory(),
-            toolCallExtractor: new ToolCallExtractor(),
-            messageNormalizer: new AgentMessageNormalizer(),
-            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
-        );
-
-        $state = RunStateBuilder::running('run-extract-multi')
-            ->withVersion(1)
-            ->withTurnNo(1)
-            ->withLastSeq(2)
-            ->withPendingToolCalls(['tool-multi' => false])
-            ->withActiveStepId('turn-1-multi')
-            ->build();
-
-        $message = ToolCallResultBuilder::success('run-extract-multi')
-            ->withTurnNo(1)
-            ->withStepId('turn-1-multi')
-            ->withIdempotencyKey('tool-result-multi')
-            ->withToolCallId('tool-multi')
-            ->withOrderIndex(0)
-            ->withResult([
-                'tool_name' => 'bash',
-                'content' => [
-                    ['type' => 'text', 'text' => 'line one'],
-                    ['type' => 'text', 'text' => 'line two'],
-                ],
-            ])
-            ->build();
-
-        $result = $handler->handle($message, $state);
-
-        $this->assertSame('tool_execution_end', $result->events[1]->type);
-        $this->assertSame("line one\nline two", $result->events[1]->payload['result']);
-    }
-
-    public function testExtractResultTextNoTextPartsReturnsEmpty(): void
-    {
-        $collector = new ToolBatchCollector();
-        $collector->registerExpectedBatch(
-            runId: 'run-extract-empty',
-            turnNo: 1,
-            stepId: 'turn-1-empty',
-            toolCalls: [
-                new ExecuteToolCall(
-                    runId: 'run-extract-empty',
-                    turnNo: 1,
-                    stepId: 'turn-1-empty',
-                    attempt: 1,
-                    idempotencyKey: 'exec-empty',
-                    toolCallId: 'tool-empty',
-                    toolName: 'noop',
-                    args: [],
-                    orderIndex: 0,
-                    maxParallelism: 1,
-                ),
-            ],
-        );
-
-        $handler = new ToolCallResultHandler(
-            toolBatchCollector: $collector,
-            eventFactory: new EventFactory(),
-            toolCallExtractor: new ToolCallExtractor(),
-            messageNormalizer: new AgentMessageNormalizer(),
-            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
-        );
-
-        $state = RunStateBuilder::running('run-extract-empty')
-            ->withVersion(1)
-            ->withTurnNo(1)
-            ->withLastSeq(2)
-            ->withPendingToolCalls(['tool-empty' => false])
-            ->withActiveStepId('turn-1-empty')
-            ->build();
-
-        // Content contains only non-text parts (e.g. image_ref).
-        $message = ToolCallResultBuilder::success('run-extract-empty')
-            ->withTurnNo(1)
-            ->withStepId('turn-1-empty')
-            ->withIdempotencyKey('tool-result-empty')
-            ->withToolCallId('tool-empty')
-            ->withOrderIndex(0)
-            ->withResult([
-                'tool_name' => 'noop',
-                'content' => [
-                    ['type' => 'image_ref', 'image_ref' => 'data:...'],
-                ],
-            ])
-            ->build();
-
-        $result = $handler->handle($message, $state);
-
-        $this->assertSame('tool_execution_end', $result->events[1]->type);
-        $this->assertArrayHasKey('result', $result->events[1]->payload);
-        $this->assertSame('', $result->events[1]->payload['result'],
-            'Non-text content parts should produce empty result, triggering the "completed" fallback');
-    }
-
-    public function testExtractResultTextMalformedContent(): void
-    {
-        $collector = new ToolBatchCollector();
-        $collector->registerExpectedBatch(
-            runId: 'run-extract-malformed',
-            turnNo: 1,
-            stepId: 'turn-1-malformed',
-            toolCalls: [
-                new ExecuteToolCall(
-                    runId: 'run-extract-malformed',
-                    turnNo: 1,
-                    stepId: 'turn-1-malformed',
-                    attempt: 1,
-                    idempotencyKey: 'exec-malformed',
-                    toolCallId: 'tool-malformed',
-                    toolName: 'buggy',
-                    args: [],
-                    orderIndex: 0,
-                    maxParallelism: 1,
-                ),
-            ],
-        );
-
-        $handler = new ToolCallResultHandler(
-            toolBatchCollector: $collector,
-            eventFactory: new EventFactory(),
-            toolCallExtractor: new ToolCallExtractor(),
-            messageNormalizer: new AgentMessageNormalizer(),
-            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
-        );
-
-        $state = RunStateBuilder::running('run-extract-malformed')
-            ->withVersion(1)
-            ->withTurnNo(1)
-            ->withLastSeq(2)
-            ->withPendingToolCalls(['tool-malformed' => false])
-            ->withActiveStepId('turn-1-malformed')
-            ->build();
-
-        // Null result: the helper must degrade to '' without throwing.
-        $message = ToolCallResultBuilder::success('run-extract-malformed')
-            ->withTurnNo(1)
-            ->withStepId('turn-1-malformed')
-            ->withIdempotencyKey('tool-result-malformed')
-            ->withToolCallId('tool-malformed')
-            ->withOrderIndex(0)
-            ->withResult(null)
-            ->build();
-
-        // Should not throw despite null result.
-        $result = $handler->handle($message, $state);
-
-        $this->assertSame('tool_execution_end', $result->events[1]->type);
-        $this->assertArrayHasKey('result', $result->events[1]->payload);
-        $this->assertSame('', $result->events[1]->payload['result'],
-            'Null result should produce empty string without throwing');
-    }
-
-    public function testExtractResultTextNonArrayContentReturnsEmpty(): void
-    {
-        $collector = new ToolBatchCollector();
-        $collector->registerExpectedBatch(
-            runId: 'run-extract-nonarr-content',
-            turnNo: 1,
-            stepId: 'turn-1-nonarr-content',
-            toolCalls: [
-                new ExecuteToolCall(
-                    runId: 'run-extract-nonarr-content',
-                    turnNo: 1,
-                    stepId: 'turn-1-nonarr-content',
-                    attempt: 1,
-                    idempotencyKey: 'exec-nonarr-content',
-                    toolCallId: 'tool-nonarr-content',
-                    toolName: 'read',
-                    args: [],
-                    orderIndex: 0,
-                    maxParallelism: 1,
-                ),
-            ],
-        );
-
-        $handler = new ToolCallResultHandler(
-            toolBatchCollector: $collector,
-            eventFactory: new EventFactory(),
-            toolCallExtractor: new ToolCallExtractor(),
-            messageNormalizer: new AgentMessageNormalizer(),
-            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
-        );
-
-        $state = RunStateBuilder::running('run-extract-nonarr-content')
-            ->withVersion(1)
-            ->withTurnNo(1)
-            ->withLastSeq(2)
-            ->withPendingToolCalls(['tool-nonarr-content' => false])
-            ->withActiveStepId('turn-1-nonarr-content')
-            ->build();
-
-        // Content key is present but its value is a string, not an array.
-        $message = ToolCallResultBuilder::success('run-extract-nonarr-content')
-            ->withTurnNo(1)
-            ->withStepId('turn-1-nonarr-content')
-            ->withIdempotencyKey('tool-result-nonarr-content')
-            ->withToolCallId('tool-nonarr-content')
-            ->withOrderIndex(0)
-            ->withResult([
-                'tool_name' => 'read',
-                'content' => 'not-an-array',
-            ])
-            ->build();
-
-        $result = $handler->handle($message, $state);
-
-        $this->assertSame('tool_execution_end', $result->events[1]->type);
-        $this->assertArrayHasKey('result', $result->events[1]->payload);
-        $this->assertSame('', $result->events[1]->payload['result'],
-            'Non-array content should produce empty string without throwing');
-    }
-
-    public function testExtractResultTextNonArrayPartReturnsEmpty(): void
-    {
-        $collector = new ToolBatchCollector();
-        $collector->registerExpectedBatch(
-            runId: 'run-extract-nonarr-part',
-            turnNo: 1,
-            stepId: 'turn-1-nonarr-part',
-            toolCalls: [
-                new ExecuteToolCall(
-                    runId: 'run-extract-nonarr-part',
-                    turnNo: 1,
-                    stepId: 'turn-1-nonarr-part',
-                    attempt: 1,
-                    idempotencyKey: 'exec-nonarr-part',
-                    toolCallId: 'tool-nonarr-part',
-                    toolName: 'read',
-                    args: [],
-                    orderIndex: 0,
-                    maxParallelism: 1,
-                ),
-            ],
-        );
-
-        $handler = new ToolCallResultHandler(
-            toolBatchCollector: $collector,
-            eventFactory: new EventFactory(),
-            toolCallExtractor: new ToolCallExtractor(),
-            messageNormalizer: new AgentMessageNormalizer(),
-            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
-        );
-
-        $state = RunStateBuilder::running('run-extract-nonarr-part')
-            ->withVersion(1)
-            ->withTurnNo(1)
-            ->withLastSeq(2)
-            ->withPendingToolCalls(['tool-nonarr-part' => false])
-            ->withActiveStepId('turn-1-nonarr-part')
-            ->build();
-
-        // Content is an array, but the element is not an array (no 'type' key).
-        $message = ToolCallResultBuilder::success('run-extract-nonarr-part')
-            ->withTurnNo(1)
-            ->withStepId('turn-1-nonarr-part')
-            ->withIdempotencyKey('tool-result-nonarr-part')
-            ->withToolCallId('tool-nonarr-part')
-            ->withOrderIndex(0)
-            ->withResult([
-                'tool_name' => 'read',
-                'content' => ['not-an-array-element'],
-            ])
-            ->build();
-
-        $result = $handler->handle($message, $state);
-
-        $this->assertSame('tool_execution_end', $result->events[1]->type);
-        $this->assertArrayHasKey('result', $result->events[1]->payload);
-        $this->assertSame('', $result->events[1]->payload['result'],
-            'Non-array content part should produce empty string without throwing');
-    }
-
-    public function testExtractResultTextMissingContentKeyReturnsEmpty(): void
-    {
-        $collector = new ToolBatchCollector();
-        $collector->registerExpectedBatch(
-            runId: 'run-extract-nokey',
-            turnNo: 1,
-            stepId: 'turn-1-nokey',
-            toolCalls: [
-                new ExecuteToolCall(
-                    runId: 'run-extract-nokey',
-                    turnNo: 1,
-                    stepId: 'turn-1-nokey',
-                    attempt: 1,
-                    idempotencyKey: 'exec-nokey',
-                    toolCallId: 'tool-nokey',
-                    toolName: 'read',
-                    args: [],
-                    orderIndex: 0,
-                    maxParallelism: 1,
-                ),
-            ],
-        );
-
-        $handler = new ToolCallResultHandler(
-            toolBatchCollector: $collector,
-            eventFactory: new EventFactory(),
-            toolCallExtractor: new ToolCallExtractor(),
-            messageNormalizer: new AgentMessageNormalizer(),
-            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
-        );
-
-        $state = RunStateBuilder::running('run-extract-nokey')
-            ->withVersion(1)
-            ->withTurnNo(1)
-            ->withLastSeq(2)
-            ->withPendingToolCalls(['tool-nokey' => false])
-            ->withActiveStepId('turn-1-nokey')
-            ->build();
-
-        // Content key is entirely missing from the result.
-        $message = ToolCallResultBuilder::success('run-extract-nokey')
-            ->withTurnNo(1)
-            ->withStepId('turn-1-nokey')
-            ->withIdempotencyKey('tool-result-nokey')
-            ->withToolCallId('tool-nokey')
-            ->withOrderIndex(0)
-            ->withResult([
-                'tool_name' => 'read',
-            ])
-            ->build();
-
-        $result = $handler->handle($message, $state);
-
-        $this->assertSame('tool_execution_end', $result->events[1]->type);
-        $this->assertArrayHasKey('result', $result->events[1]->payload);
-        $this->assertSame('', $result->events[1]->payload['result'],
-            'Missing content key should produce empty string without throwing');
-    }
-
-    public function testExtractResultTextErrorResult(): void
-    {
-        $collector = new ToolBatchCollector();
-        $collector->registerExpectedBatch(
-            runId: 'run-extract-error',
-            turnNo: 1,
-            stepId: 'turn-1-error',
-            toolCalls: [
-                new ExecuteToolCall(
-                    runId: 'run-extract-error',
-                    turnNo: 1,
-                    stepId: 'turn-1-error',
-                    attempt: 1,
-                    idempotencyKey: 'exec-error',
-                    toolCallId: 'tool-error',
-                    toolName: 'read',
-                    args: ['path' => './missing.txt'],
-                    orderIndex: 0,
-                    maxParallelism: 1,
-                ),
-            ],
-        );
-
-        $handler = new ToolCallResultHandler(
-            toolBatchCollector: $collector,
-            eventFactory: new EventFactory(),
-            toolCallExtractor: new ToolCallExtractor(),
-            messageNormalizer: new AgentMessageNormalizer(),
-            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
-        );
-
-        $state = RunStateBuilder::running('run-extract-error')
-            ->withVersion(1)
-            ->withTurnNo(1)
-            ->withLastSeq(2)
-            ->withPendingToolCalls(['tool-error' => false])
-            ->withActiveStepId('turn-1-error')
-            ->build();
-
-        // Error results still carry the exception message in content[0]['text'].
-        $message = ToolCallResultBuilder::success('run-extract-error')
-            ->withTurnNo(1)
-            ->withStepId('turn-1-error')
-            ->withIdempotencyKey('tool-result-error')
-            ->withToolCallId('tool-error')
-            ->withOrderIndex(0)
-            ->withResult([
-                'tool_name' => 'read',
-                'content' => [['type' => 'text', 'text' => 'File not found: ./missing.txt']],
-            ])
-            ->withIsError(true)
-            ->build();
-
-        // Should not throw despite isError=true.
-        $result = $handler->handle($message, $state);
-
-        $this->assertSame('tool_execution_end', $result->events[1]->type);
-        $this->assertArrayHasKey('result', $result->events[1]->payload);
-        $this->assertSame('File not found: ./missing.txt', $result->events[1]->payload['result'],
-            'Error results should carry the error message as result text');
+        $this->assertSame(2, $metrics->snapshot()['stale_result_count']);
     }
 
     public function testCancellingWithPendingToolCallsSynthesizesToolMessages(): void
@@ -695,7 +227,7 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertNotNull($result->nextState);
         $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
         $this->assertSame(4, $result->nextState->version);
-        $this->assertSame(10, $result->nextState->lastSeq);
+        $this->assertSame(7, $result->nextState->lastSeq);
         $this->assertSame([], $result->nextState->pendingToolCalls);
 
         // Messages: original assistant + synthetic tool
@@ -706,24 +238,11 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertFalse($result->nextState->messages[1]->isError);
         $this->assertSame('bash', $result->nextState->messages[1]->toolName);
 
-        // Events: StaleResultIgnored + ToolCallResultReceived + ToolExecutionEnd + MessageStart + MessageEnd + ToolBatchCommitted + AgentEnd
-        $this->assertCount(6, $result->events);
-        $this->assertSame('tool_call_result_received', $result->events[0]->type);
-        $this->assertSame('tc-cat', $result->events[0]->payload['tool_call_id']);
-        $this->assertFalse($result->events[0]->payload['is_error']);
-        $this->assertSame('tool_execution_end', $result->events[1]->type);
-        $this->assertSame('tc-cat', $result->events[1]->payload['tool_call_id']);
-        $this->assertFalse($result->events[1]->payload['is_error']);
-        $this->assertSame('results', $result->events[1]->payload['result']);
-        $this->assertSame('message_start', $result->events[2]->type);
-        $this->assertSame('tool', $result->events[2]->payload['message_role']);
-        $this->assertSame('message_end', $result->events[3]->type);
-        $this->assertSame('tool', $result->events[3]->payload['message_role']);
-        $this->assertSame('tc-cat', $result->events[3]->payload['tool_call_id']);
-        $this->assertSame('tool_batch_committed', $result->events[4]->type);
-        $this->assertSame(1, $result->events[4]->payload['count']);
-        $this->assertSame('agent_end', $result->events[5]->type);
-        $this->assertSame('cancelled', $result->events[5]->payload['reason']);
+        $this->assertSame(
+            ['tool_execution_end', 'tool_batch_committed', 'agent_end'],
+            array_map(static fn ($event): string => $event->type, $result->events),
+        );
+        $this->assertSame('cancelled', $result->events[2]->payload['reason']);
 
         $this->assertSame([], $result->effects);
         $this->assertSame([], $result->postCommitEffects);
@@ -765,11 +284,10 @@ final class ToolCallResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        // Only StaleResultIgnored + AgentEnd (no synthetic messages)
-        $this->assertCount(2, $result->events);
-        $this->assertSame('stale_result_ignored', $result->events[0]->type);
-        $this->assertSame('agent_end', $result->events[1]->type);
-        $this->assertSame('cancelled', $result->events[1]->payload['reason']);
+        // Discarded stale work is observable only in metrics; no canonical result event.
+        $this->assertCount(1, $result->events);
+        $this->assertSame('agent_end', $result->events[0]->type);
+        $this->assertSame('cancelled', $result->events[0]->payload['reason']);
 
         // Messages unchanged
         $this->assertCount(1, $result->nextState->messages);
@@ -820,33 +338,13 @@ final class ToolCallResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        // Events: StaleResultIgnored + 4-per-tool×2 + ToolBatchCommitted + AgentEnd = 11
-        $this->assertCount(10, $result->events);
-
-        $this->assertSame('tool_call_result_received', $result->events[0]->type);
-        $this->assertSame('tc-read-1', $result->events[0]->payload['tool_call_id']);
-        $this->assertFalse($result->events[0]->payload['is_error']);
-        $this->assertSame('tool_execution_end', $result->events[1]->type);
-        $this->assertSame('tc-read-1', $result->events[1]->payload['tool_call_id']);
-        $this->assertSame('a content', $result->events[1]->payload['result']);
-        $this->assertSame('message_start', $result->events[2]->type);
-        $this->assertSame('message_end', $result->events[3]->type);
-
-        $this->assertSame('tool_call_result_received', $result->events[4]->type);
-        $this->assertSame('tc-read-2', $result->events[4]->payload['tool_call_id']);
-        $this->assertTrue($result->events[4]->payload['is_error']);
-        $this->assertSame('tool_execution_end', $result->events[5]->type);
-        $this->assertSame('tc-read-2', $result->events[5]->payload['tool_call_id']);
-        $this->assertSame('Tool execution cancelled by user.', $result->events[5]->payload['result'] ?? null);
-        $this->assertTrue($result->events[5]->payload['cancelled'] ?? false);
-        $this->assertSame('user', $result->events[5]->payload['cancellation_reason'] ?? null);
-        $this->assertSame('message_start', $result->events[6]->type);
-        $this->assertSame('message_end', $result->events[7]->type);
-
-        $this->assertSame('tool_batch_committed', $result->events[8]->type);
-        $this->assertSame(2, $result->events[8]->payload['count']);
-        $this->assertSame('agent_end', $result->events[9]->type);
-        $this->assertSame('cancelled', $result->events[9]->payload['reason']);
+        $this->assertSame(
+            ['tool_execution_end', 'tool_execution_end', 'tool_batch_committed', 'agent_end'],
+            array_map(static fn ($event): string => $event->type, $result->events),
+        );
+        [$serializer] = AttributeSerializerValidatorTestFactory::create();
+        $this->assertSame('tc-read-1', (new ToolExecutionEndPayloadCodec($serializer))->fromEventPayload($result->events[0]->payload)->toolCallId);
+        $this->assertTrue((new ToolExecutionEndPayloadCodec($serializer))->fromEventPayload($result->events[1]->payload)->isError);
 
         // Messages: assistant + 2 synthetic tool
         $this->assertCount(3, $result->nextState->messages);
@@ -986,16 +484,6 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertCount(1, $agentEnds);
         $this->assertSame('cancelled', $agentEnds[0]->payload['reason'] ?? null);
 
-        // Exactly one tool message per id; no duplicate result/end for A beyond the Running commit.
-        $toolMsgEnds = 0;
-        foreach ($result->events as $event) {
-            if (RunEventTypeEnum::MessageEnd->value === $event->type
-                && 'tool' === ($event->payload['message_role'] ?? null)) {
-                ++$toolMsgEnds;
-            }
-        }
-        $this->assertSame(2, $toolMsgEnds);
-
         $validator = new AgentMessageToolCallSequenceValidator();
         $validator->validate($result->nextState->messages);
         $validator->validate(array_merge(
@@ -1112,34 +600,19 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertSame('tc-done', $result->nextState->messages[1]->toolCallId);
         $this->assertSame('tc-pending', $result->nextState->messages[2]->toolCallId);
 
-        $batchCommitted = null;
-        $aResultReceived = 0;
-        $bResultReceived = 0;
-        $bExecutionEnds = 0;
-        foreach ($result->events as $event) {
-            if (RunEventTypeEnum::ToolBatchCommitted->value === $event->type) {
-                $batchCommitted = $event;
-            }
-            if (RunEventTypeEnum::ToolCallResultReceived->value === $event->type) {
-                if ('tc-done' === ($event->payload['tool_call_id'] ?? null)) {
-                    ++$aResultReceived;
-                }
-                if ('tc-pending' === ($event->payload['tool_call_id'] ?? null)) {
-                    ++$bResultReceived;
-                }
-            }
-            if (RunEventTypeEnum::ToolExecutionEnd->value === $event->type
-                && 'tc-pending' === ($event->payload['tool_call_id'] ?? null)) {
-                ++$bExecutionEnds;
-                $this->assertTrue($event->payload['cancelled'] ?? false);
-            }
-        }
-
-        $this->assertNotNull($batchCommitted);
-        $this->assertSame(2, $batchCommitted->payload['count'] ?? null);
-        $this->assertSame(0, $aResultReceived, 'A must not re-emit result_received on Cancelling entry');
-        $this->assertSame(1, $bResultReceived, 'B preserveIncoming emits one full result_received');
-        $this->assertSame(1, $bExecutionEnds);
+        $batchCommitted = array_values(array_filter(
+            $result->events,
+            static fn ($event): bool => RunEventTypeEnum::ToolBatchCommitted->value === $event->type,
+        ));
+        $ends = array_values(array_filter(
+            $result->events,
+            static fn ($event): bool => RunEventTypeEnum::ToolExecutionEnd->value === $event->type,
+        ));
+        $this->assertCount(1, $batchCommitted);
+        $this->assertSame(2, $batchCommitted[0]->payload['count'] ?? null);
+        $this->assertCount(1, $ends);
+        [$serializer] = AttributeSerializerValidatorTestFactory::create();
+        $this->assertSame('tc-pending', (new ToolExecutionEndPayloadCodec($serializer))->fromEventPayload($ends[0]->payload)->toolCallId);
 
         $agentEnds = array_values(array_filter(
             $result->events,
@@ -1262,12 +735,13 @@ final class ToolCallResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        $this->assertSame('tool_execution_end', $result->events[1]->type);
-        $this->assertSame($richMessage, $result->events[1]->payload['result']);
+        $this->assertSame('tool_execution_end', $result->events[0]->type);
+        [$serializer] = AttributeSerializerValidatorTestFactory::create();
+        $typed = (new ToolExecutionEndPayloadCodec($serializer))->fromEventPayload($result->events[0]->payload);
+        $this->assertSame($richMessage, $typed->error['message']);
+        $this->assertSame('cancelled', $typed->error['type']);
         $this->assertSame('tool', $result->nextState->messages[1]->role);
         $this->assertStringContainsString('Artifact: agent_41d4ca5566368a6b', $result->nextState->messages[1]->content[0]['text'] ?? '');
-        $this->assertTrue($result->events[1]->payload['cancelled'] ?? false);
-        $this->assertSame('user', $result->events[1]->payload['cancellation_reason'] ?? null);
     }
 
     public function testFinalizedRedeliveryAfterCanonicalCommitIsIdempotentNoOp(): void
@@ -1453,9 +927,10 @@ final class ToolCallResultHandlerTest extends TestCase
         }
 
         $this->assertNotNull($toolEnd);
-        $this->assertSame('Tool execution cancelled by user.', $toolEnd->payload['result'] ?? null);
-        $this->assertTrue($toolEnd->payload['cancelled'] ?? false);
-        $this->assertSame('user', $toolEnd->payload['cancellation_reason'] ?? null);
+        [$serializer] = AttributeSerializerValidatorTestFactory::create();
+        $typed = (new ToolExecutionEndPayloadCodec($serializer))->fromEventPayload($toolEnd->payload);
+        $this->assertSame('Tool execution cancelled by user.', $typed->error['message']);
+        $this->assertSame('cancelled', $typed->error['type']);
         $this->assertSame('Tool execution cancelled by user.', $result->nextState->messages[1]->content[0]['text'] ?? null);
     }
 

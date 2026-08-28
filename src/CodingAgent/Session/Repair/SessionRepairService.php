@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Session\Repair;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
@@ -16,7 +17,6 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
@@ -34,13 +34,14 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 {
     private const string SYNTHETIC_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
 
+    private ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec;
+
     public function __construct(
         private EventStoreInterface $eventStore,
         private RunStoreInterface $runStore,
         private RunStateReducer $runStateReducer,
         private ReplayEventPreparer $replayEventPreparer,
         private EventFactory $eventFactory,
-        private AgentMessageNormalizer $messageNormalizer,
         private AgentMessageToolCallSequenceValidator $toolCallSequenceValidator,
         private RunLockManager $lockManager,
         private LoggerInterface $logger,
@@ -48,6 +49,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private ToolBatchStoreInterface $toolBatchStore,
         private NormalizerInterface&DenormalizerInterface $serializer,
     ) {
+        $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
 
     public function repair(string $runId, bool $apply): RepairResult
@@ -166,7 +168,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $stepId = $replayed->activeStepId ?? \sprintf('repair-cancel-%d', hrtime(true));
         $eventSpecs = [];
 
-        if ($this->llmStepRemainedIncomplete($sorted)) {
+        if ($this->llmStepRemainedIncomplete($sorted, $replayed)) {
             $eventSpecs[] = [
                 'type' => RunEventTypeEnum::LlmStepAborted->value,
                 'payload' => [
@@ -294,21 +296,10 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             $orderIndex = \is_int($info['order_index'] ?? null) ? $info['order_index'] : 0;
 
             if ($this->hasDurableToolEnd($sorted, $toolCallId)) {
-                $this->appendMissingToolMessageEvents(
-                    eventSpecs: $eventSpecs,
-                    events: $sorted,
-                    runId: $runId,
-                    turnNo: $turnNo,
-                    stepId: $stepId,
-                    toolCallId: $toolCallId,
-                    toolName: $toolName,
-                    orderIndex: $orderIndex,
-                );
-
                 continue;
             }
 
-            // No durable end yet — keep the existing full synthetic cancelled group.
+            // No durable end yet — append one typed synthetic cancellation result.
             $this->appendSyntheticCancelledToolResultEvents(
                 eventSpecs: $eventSpecs,
                 runId: $runId,
@@ -320,9 +311,16 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             );
         }
 
-        if ([] === $eventSpecs) {
-            return $this->noRepairResult('No repairable corruption detected.');
-        }
+        // ToolBatchCommitted is the retained ordering boundary. It flushes every
+        // durable end for this incomplete batch, including ends that predate repair.
+        $eventSpecs[] = [
+            'type' => RunEventTypeEnum::ToolBatchCommitted->value,
+            'payload' => [
+                'count' => \count($missingIds),
+                'turn_no' => $turnNo,
+                'step_id' => $stepId,
+            ],
+        ];
 
         return $this->appendProposedRepairEvents(
             runId: $runId,
@@ -494,88 +492,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     }
 
     /**
-     * Rebuild a tool message from durable result/end payloads when present.
-     *
-     * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
-     * @param list<RunEvent>                                           $events
-     */
-    private function appendMissingToolMessageEvents(
-        array &$eventSpecs,
-        array $events,
-        string $runId,
-        int $turnNo,
-        string $stepId,
-        string $toolCallId,
-        string $toolName,
-        int $orderIndex,
-    ): void {
-        $endPayload = $this->latestToolExecutionEndPayload($events, $toolCallId);
-        $resultText = \is_string($endPayload['result'] ?? null) ? $endPayload['result'] : self::SYNTHETIC_CANCEL_MESSAGE;
-        $isError = true === ($endPayload['is_error'] ?? false)
-            || true === ($endPayload['cancelled'] ?? false)
-            || self::SYNTHETIC_CANCEL_MESSAGE === $resultText;
-
-        $toolResult = new ToolCallResult(
-            runId: $runId,
-            turnNo: $turnNo,
-            stepId: $stepId,
-            attempt: 1,
-            idempotencyKey: hash('sha256', \sprintf('repair-msg-%s-%s', $runId, $toolCallId)),
-            toolCallId: $toolCallId,
-            orderIndex: $orderIndex,
-            result: [
-                'tool_name' => $toolName,
-                'content' => [['type' => 'text', 'text' => $resultText]],
-            ],
-            isError: $isError,
-            error: $isError ? [
-                'type' => true === ($endPayload['cancelled'] ?? false) ? 'cancelled' : 'error',
-                'message' => $resultText,
-            ] : null,
-        );
-
-        $toolMsg = $this->messageNormalizer->toolMessage($toolResult);
-        $toolMsgArray = $toolMsg->toArray();
-
-        $eventSpecs[] = [
-            'type' => RunEventTypeEnum::MessageStart->value,
-            'payload' => [
-                'message_role' => 'tool',
-                'tool_call_id' => $toolCallId,
-            ],
-        ];
-        $eventSpecs[] = [
-            'type' => RunEventTypeEnum::MessageEnd->value,
-            'payload' => [
-                'message_role' => 'tool',
-                'tool_call_id' => $toolCallId,
-                'message' => $toolMsgArray,
-            ],
-        ];
-    }
-
-    /**
-     * @param list<RunEvent> $events
-     *
-     * @return array<string, mixed>
-     */
-    private function latestToolExecutionEndPayload(array $events, string $toolCallId): array
-    {
-        $payload = [];
-        foreach ($events as $event) {
-            if (RunEventTypeEnum::ToolExecutionEnd->value !== $event->type) {
-                continue;
-            }
-            if (($event->payload['tool_call_id'] ?? null) !== $toolCallId) {
-                continue;
-            }
-            $payload = $event->payload;
-        }
-
-        return $payload;
-    }
-
-    /**
      * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
      */
     private function appendSyntheticCancelledToolResultEvents(
@@ -607,42 +523,8 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         );
 
         $eventSpecs[] = [
-            'type' => RunEventTypeEnum::ToolCallResultReceived->value,
-            'payload' => [
-                'tool_call_id' => $toolCallId,
-                'order_index' => $orderIndex,
-                'is_error' => true,
-            ],
-        ];
-        $eventSpecs[] = [
             'type' => RunEventTypeEnum::ToolExecutionEnd->value,
-            'payload' => [
-                'tool_call_id' => $toolCallId,
-                'order_index' => $orderIndex,
-                'is_error' => true,
-                'result' => self::SYNTHETIC_CANCEL_MESSAGE,
-                'cancelled' => true,
-                'cancellation_reason' => 'user',
-            ],
-        ];
-
-        $toolMsg = $this->messageNormalizer->toolMessage($syntheticResult);
-        $toolMsgArray = $toolMsg->toArray();
-
-        $eventSpecs[] = [
-            'type' => RunEventTypeEnum::MessageStart->value,
-            'payload' => [
-                'message_role' => 'tool',
-                'tool_call_id' => $toolCallId,
-            ],
-        ];
-        $eventSpecs[] = [
-            'type' => RunEventTypeEnum::MessageEnd->value,
-            'payload' => [
-                'message_role' => 'tool',
-                'tool_call_id' => $toolCallId,
-                'message' => $toolMsgArray,
-            ],
+            'payload' => $this->toolExecutionEndPayloadCodec->toEventPayload($syntheticResult),
         ];
     }
 
@@ -685,67 +567,31 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     }
 
     /**
-     * Tracks the latest open assistant phase across canonical events (message_start/end,
-     * llm_step_completed/aborted, turn_advanced). Returns true when an assistant message_start
-     * was never closed by a matching message_end or terminal LLM step event — i.e. cancellation
-     * abandoned an in-flight assistant turn that still needs an llm_step_aborted append.
+     * Only an active LLM operation needs an abort during cancellation. Retained
+     * operation state distinguishes it from direct shell and compaction work;
+     * completed/failed/aborted LLM events clear the operation during replay.
      *
      * @param list<RunEvent> $events
      */
-    private function llmStepRemainedIncomplete(array $events): bool
+    private function llmStepRemainedIncomplete(array $events, RunState $replayed): bool
     {
-        $openAssistantMessageId = null;
-        $openStepId = null;
+        $operation = $replayed->currentOperation;
+        if (null === $operation || [] !== $replayed->pendingShellToolCalls) {
+            return false;
+        }
 
-        foreach ($events as $event) {
-            if (RunEventTypeEnum::MessageStart->value === $event->type) {
-                $role = \is_string($event->payload['message_role'] ?? null) ? $event->payload['message_role'] : null;
-                if ('assistant' === $role) {
-                    $openAssistantMessageId = \is_string($event->payload['message_id'] ?? null) ? $event->payload['message_id'] : 'assistant';
-                    $openStepId = null;
-                }
-
-                continue;
+        foreach (array_reverse($events) as $event) {
+            if (RunEventTypeEnum::ContextCompactionStarted->value === $event->type
+                && $operation->stepId === ($event->payload['step_id'] ?? null)) {
+                return false;
             }
-
-            if (RunEventTypeEnum::MessageEnd->value === $event->type) {
-                $role = \is_string($event->payload['message_role'] ?? null) ? $event->payload['message_role'] : null;
-                if ('assistant' === $role) {
-                    $messageId = \is_string($event->payload['message_id'] ?? null) ? $event->payload['message_id'] : null;
-                    if (null === $openAssistantMessageId || null === $messageId || $messageId === $openAssistantMessageId) {
-                        $openAssistantMessageId = null;
-                    }
-                }
-
-                continue;
-            }
-
-            if (RunEventTypeEnum::LlmStepCompleted->value === $event->type) {
-                $stepId = \is_string($event->payload['step_id'] ?? null) ? $event->payload['step_id'] : null;
-                if (null === $openStepId || (null !== $stepId && $stepId === $openStepId)) {
-                    $openAssistantMessageId = null;
-                    $openStepId = null;
-                }
-
-                continue;
-            }
-
-            if (RunEventTypeEnum::LlmStepAborted->value === $event->type) {
-                $stepId = \is_string($event->payload['step_id'] ?? null) ? $event->payload['step_id'] : null;
-                if (null === $openStepId || (null !== $stepId && $stepId === $openStepId)) {
-                    $openAssistantMessageId = null;
-                    $openStepId = null;
-                }
-
-                continue;
-            }
-
-            if (RunEventTypeEnum::TurnAdvanced->value === $event->type) {
-                $openStepId = \is_string($event->payload['step_id'] ?? null) ? $event->payload['step_id'] : $openStepId;
+            if (RunEventTypeEnum::TurnAdvanced->value === $event->type
+                && $operation->stepId === ($event->payload['step_id'] ?? null)) {
+                return true;
             }
         }
 
-        return null !== $openAssistantMessageId;
+        return false;
     }
 
     /**
@@ -757,7 +603,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             if (RunEventTypeEnum::ToolExecutionEnd->value !== $event->type) {
                 continue;
             }
-            if (($event->payload['tool_call_id'] ?? null) === $toolCallId) {
+            if ($this->toolExecutionEndPayloadCodec->fromEventPayload($event->payload)->toolCallId === $toolCallId) {
                 return true;
             }
         }

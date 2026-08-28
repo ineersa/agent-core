@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -12,6 +13,7 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -48,8 +50,10 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         $eventStore = $this->createEventStore();
         $toolExecutor = $this->createToolExecutor('hello');
         $commandBus = new TestMessageBus();
+        [$serializer] = AttributeSerializerValidatorTestFactory::create();
+        $codec = new ToolExecutionEndPayloadCodec($serializer);
 
-        $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore, $commandBus);
+        $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore, $commandBus, $codec);
         $worker(new ExecuteShellToolCall(
             runId: 'run-standalone',
             turnNo: 2,
@@ -76,8 +80,13 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         $this->assertSame(2, $this->appendedEvents[1]->seq);
         $this->assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $this->appendedEvents[1]->type);
         $this->assertSame(2, $this->appendedEvents[1]->turnNo);
-        $this->assertSame('sh_tc_1', $this->appendedEvents[1]->payload['tool_call_id'] ?? null);
-        $this->assertStringContainsString('hello', (string) ($this->appendedEvents[1]->payload['result'] ?? ''));
+        $typedResult = $codec->fromEventPayload($this->appendedEvents[1]->payload);
+        $this->assertSame('run-standalone', $typedResult->runId());
+        $this->assertSame(2, $typedResult->turnNo());
+        $this->assertSame('sh_tc_1', $typedResult->toolCallId);
+        $this->assertSame(['command' => 'echo hello'], $typedResult->result['arguments'] ?? null);
+        $this->assertSame([['type' => 'text', 'text' => 'hello']], $typedResult->result['content'] ?? null);
+        $this->assertFalse($typedResult->isError);
 
         // Seq 3: agent_end (final event, written only for standalone)
         $this->assertSame(3, $this->appendedEvents[2]->seq);
@@ -125,10 +134,17 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
     public function testNonStandaloneDoesNotWriteAgentEnd(): void
     {
         $eventStore = $this->createEventStore();
-        $toolExecutor = $this->createToolExecutor('result');
+        $toolExecutor = $this->createToolExecutor('result', isError: true);
         $commandBus = new TestMessageBus();
+        [$serializer] = AttributeSerializerValidatorTestFactory::create();
+        $codec = new ToolExecutionEndPayloadCodec($serializer);
 
-        $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore, $commandBus);
+        $worker = new ExecuteShellToolCallWorker(
+            $toolExecutor,
+            $eventStore,
+            $commandBus,
+            $codec,
+        );
         $worker(new ExecuteShellToolCall(
             runId: 'run-inline',
             turnNo: 2,
@@ -140,6 +156,11 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         $this->assertCount(2, $this->appendedEvents, 'Non-standalone shell must produce only tool_exec events.');
         $this->assertSame(RunEventTypeEnum::ToolExecutionStart->value, $this->appendedEvents[0]->type);
         $this->assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $this->appendedEvents[1]->type);
+        $typedResult = $codec->fromEventPayload($this->appendedEvents[1]->payload);
+        $this->assertSame('run-inline', $typedResult->runId());
+        $this->assertSame('sh_tc_2', $typedResult->toolCallId);
+        $this->assertSame([['type' => 'text', 'text' => 'result']], $typedResult->result['content'] ?? null);
+        $this->assertTrue($typedResult->isError);
 
         // No AgentEnd.
         foreach ($this->appendedEvents as $event) {
@@ -233,11 +254,13 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
     /**
      * Creates a stubbed ToolExecutor that returns a fixed result text.
      */
-    private function createToolExecutor(string $resultText): ToolExecutorInterface
+    private function createToolExecutor(string $resultText, bool $isError = false): ToolExecutorInterface
     {
-        return new class($resultText) implements ToolExecutorInterface {
-            public function __construct(private readonly string $resultText)
-            {
+        return new class($resultText, $isError) implements ToolExecutorInterface {
+            public function __construct(
+                private readonly string $resultText,
+                private readonly bool $isError,
+            ) {
             }
 
             public function execute(ToolCall $toolCall): ToolResult
@@ -246,7 +269,7 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
                     toolCallId: $toolCall->toolCallId,
                     toolName: $toolCall->toolName,
                     content: [['type' => 'text', 'text' => $this->resultText]],
-                    isError: false,
+                    isError: $this->isError,
                 );
             }
         };

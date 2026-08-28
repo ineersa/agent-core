@@ -111,12 +111,15 @@ final class OmSourceBlockBuilder
                     break;
 
                 case 'tool_execution_end':
-                case 'tool_call_result_received':
-                    $toolCallId = (string) ($event->payload['tool_call_id'] ?? '');
-                    $name = (string) ($event->payload['tool_name'] ?? 'tool');
-                    $result = $event->payload['result'] ?? $event->payload['output'] ?? '';
-                    $resultText = \is_string($result) ? $result : $this->jsonCompact($result);
-                    $isError = (bool) ($event->payload['is_error'] ?? false);
+                    $typedResult = $event->payload['tool_result'] ?? null;
+                    if (!\is_array($typedResult)) {
+                        throw new \UnexpectedValueException('ToolExecutionEnd requires an array tool_result payload.');
+                    }
+                    $toolCallId = (string) ($typedResult['tool_call_id'] ?? '');
+                    $result = \is_array($typedResult['result'] ?? null) ? $typedResult['result'] : [];
+                    $name = (string) ($result['tool_name'] ?? 'tool');
+                    $resultText = $this->messageText($result);
+                    $isError = true === ($typedResult['is_error'] ?? false);
                     $digested = $this->truncateToolResultWithDigest($resultText);
                     $resultLine = \sprintf(
                         '[Tool result for %s @ %s]%s:',
@@ -143,18 +146,6 @@ final class OmSourceBlockBuilder
                         ];
                     } else {
                         $blocks[] = $this->singleBlock($event, 'tool_result', $resultLine);
-                    }
-                    break;
-
-                case 'message_end':
-                    $message = $event->payload['message'] ?? null;
-                    if (\is_array($message) && 'tool' === ($message['role'] ?? null)) {
-                        $text = $this->messageText($message);
-                        $blocks[] = $this->singleBlock(
-                            $event,
-                            'tool_message',
-                            $this->formatRoleLine('Tool', $timestamp, $this->truncateToolResultWithDigest($text)),
-                        );
                     }
                     break;
 

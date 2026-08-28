@@ -88,7 +88,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -149,7 +149,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -225,7 +225,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -326,7 +326,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -562,7 +562,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $lateHandler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
             $observeBus,
         );
@@ -708,7 +708,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -856,7 +856,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -1144,7 +1144,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -1210,7 +1210,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer()),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
             new TestMessageBus(),
         );

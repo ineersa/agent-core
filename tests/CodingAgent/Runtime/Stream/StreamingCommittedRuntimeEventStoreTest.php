@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Stream;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
@@ -25,7 +27,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
     {
         $inner = new RecordingEventStore();
         $sink = new RecordingCommittedStdoutSink();
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
 
         $store = new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, true);
         $store->append(new RunEvent('run-a', 5, 0, RunEventTypeEnum::RunStarted->value, []));
@@ -41,7 +43,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
         $childRunId = 'child-subagent-run-7f3a';
         $inner = new RecordingEventStore();
         $sink = new RecordingCommittedStdoutSink();
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
 
         $store = new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, true);
         $store->append(new RunEvent($childRunId, 3, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]));
@@ -56,7 +58,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
     {
         $inner = new RecordingEventStore();
         $sink = new RecordingCommittedStdoutSink();
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
 
         $store = new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, true);
         $store->appendMany([
@@ -71,7 +73,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
     {
         $inner = new RecordingEventStore();
         $sink = new RecordingCommittedStdoutSink();
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
         $store = new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, true);
 
         iterator_to_array($store->rangeFor('run-a', 1, 1));
@@ -84,7 +86,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
     {
         $inner = new RecordingEventStore();
         $sink = new RecordingCommittedStdoutSink();
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
 
         $store = new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, false);
         $store->append(new RunEvent('run-a', 1, 0, RunEventTypeEnum::RunStarted->value, []));

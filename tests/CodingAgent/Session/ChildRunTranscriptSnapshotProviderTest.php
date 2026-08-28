@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -33,7 +36,7 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
     {
         $events = [
             $this->runEvent(RunEventTypeEnum::TurnAdvanced->value, 1, 1, ['turn_no' => 1, 'step_id' => 's1']),
-            $this->runEvent(RunEventTypeEnum::LlmStepCompleted->value, 5, 1, ['text' => 'Child scout answer']),
+            $this->runEvent(RunEventTypeEnum::LlmStepCompleted->value, 5, 1, $this->assistantPayload('Child scout answer')),
             $this->runEvent(RunEventTypeEnum::ToolBatchCommitted->value, 6, 1, ['batch_id' => 'b1']),
         ];
 
@@ -51,10 +54,10 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
     public function testSecondSnapshotDoesNotLeakBlocksFromFirstRun(): void
     {
         $eventsRunA = [
-            $this->runEvent(RunEventTypeEnum::LlmStepCompleted->value, 2, 1, ['text' => 'Run A only'], runId: 'child-a'),
+            $this->runEvent(RunEventTypeEnum::LlmStepCompleted->value, 2, 1, $this->assistantPayload('Run A only'), runId: 'child-a'),
         ];
         $eventsRunB = [
-            $this->runEvent(RunEventTypeEnum::LlmStepCompleted->value, 3, 1, ['text' => 'Run B only'], runId: 'child-b'),
+            $this->runEvent(RunEventTypeEnum::LlmStepCompleted->value, 3, 1, $this->assistantPayload('Run B only'), runId: 'child-b'),
         ];
 
         $store = $this->createStub(EventStoreInterface::class);
@@ -89,11 +92,16 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
                 'order_index' => 0,
                 'arguments' => ['command' => 'echo child-shell'],
             ]),
-            $this->runEvent(RunEventTypeEnum::ToolExecutionEnd->value, 2, 1, [
-                'tool_call_id' => 'sh_child_1',
-                'is_error' => false,
-                'result' => "child-shell\n",
-            ]),
+            $this->runEvent(RunEventTypeEnum::ToolExecutionEnd->value, 2, 1, (new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))->toEventPayload(new ToolCallResult(
+                runId: $this->childRunId,
+                turnNo: 1,
+                stepId: 'shell-step',
+                attempt: 1,
+                idempotencyKey: 'shell-result',
+                toolCallId: 'sh_child_1',
+                orderIndex: 0,
+                result: ['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => "child-shell\n"]], 'arguments' => ['command' => 'echo child-shell']],
+            ))),
         ];
 
         $snapshot = $this->createProvider($events)->snapshot($this->childRunId);
@@ -127,7 +135,7 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
     private function createProviderWithStore(EventStoreInterface $store): ChildRunTranscriptSnapshotProvider
     {
         $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
-        $translator = new RuntimeEventTranslator($eventDispatcher);
+        $translator = new RuntimeEventTranslator($eventDispatcher, new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $eventMapper = new RuntimeEventMapper($translator);
 
         $dispatcher = new EventDispatcher();
@@ -138,6 +146,17 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
         $transcriptProjector = new TranscriptProjector($dispatcher, $projectionState);
 
         return new ChildRunTranscriptSnapshotProvider($store, $eventMapper, $transcriptProjector);
+    }
+
+    /** @return array<string, mixed> */
+    private function assistantPayload(string $text): array
+    {
+        return [
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => $text]],
+            ],
+        ];
     }
 
     /** @param array<string, mixed> $payload */

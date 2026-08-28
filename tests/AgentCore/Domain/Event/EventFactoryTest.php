@@ -21,14 +21,14 @@ final class EventFactoryTest extends TestCase
             runId: 'run-factory',
             seq: 10,
             turnNo: 2,
-            type: 'turn_start',
+            type: 'run_started',
             payload: ['turn' => 2],
         );
 
         $this->assertSame('run-factory', $event->runId);
         $this->assertSame(10, $event->seq);
         $this->assertSame(2, $event->turnNo);
-        $this->assertSame('turn_start', $event->type);
+        $this->assertSame('run_started', $event->type);
         $this->assertSame(['turn' => 2], $event->payload);
     }
 
@@ -43,8 +43,8 @@ final class EventFactoryTest extends TestCase
             turnNo: 1,
             startSeq: 5,
             eventSpecs: [
-                ['type' => 'turn_start', 'payload' => []],
-                ['type' => 'message_start', 'payload' => ['role' => 'user']],
+                ['type' => 'run_started', 'payload' => []],
+                ['type' => 'tool_execution_start', 'payload' => ['tool_call_id' => 'call-1']],
             ],
         );
 
@@ -62,8 +62,8 @@ final class EventFactoryTest extends TestCase
             turnNo: 1,
             startSeq: 0,
             eventSpecs: [
-                ['type' => 'turn_start', 'payload' => [], 'turn_no' => 2],
-                ['type' => 'message_start', 'payload' => ['role' => 'user']],
+                ['type' => 'run_started', 'payload' => [], 'turn_no' => 2],
+                ['type' => 'tool_execution_start', 'payload' => ['tool_call_id' => 'call-1']],
             ],
         );
 

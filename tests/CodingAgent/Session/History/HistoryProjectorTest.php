@@ -63,7 +63,7 @@ final class HistoryProjectorTest extends TestCase
             $this->event(2, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]),
             // Internal tool-cycle turn: no human command between anchors.
             $this->event(3, 2, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2, 'step_id' => 'advance-after-tools']),
-            $this->event(4, 2, RunEventTypeEnum::LlmStepCompleted->value, ['text' => 'assistant reply']),
+            $this->event(4, 2, RunEventTypeEnum::LlmStepCompleted->value),
             $this->event(5, 2, RunEventTypeEnum::AgentCommandApplied->value, [
                 'kind' => 'follow_up',
                 'text' => 'Next human',
@@ -92,7 +92,7 @@ final class HistoryProjectorTest extends TestCase
                 'text' => 'Generated context budget reminder',
             ]),
             $this->event(4, 2, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2]),
-            $this->event(5, 2, RunEventTypeEnum::LlmStepCompleted->value, ['text' => 'Assistant only']),
+            $this->event(5, 2, RunEventTypeEnum::LlmStepCompleted->value),
             $this->event(6, 1, RunEventTypeEnum::AgentCommandApplied->value, [
                 'kind' => 'steer',
                 'text' => 'Real steer',

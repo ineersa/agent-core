@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\ChildRun\Progress;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
@@ -50,7 +52,7 @@ final class SubagentProgressEventAppenderTest extends TestCase
             SubagentProgressSerializerTestSupport::normalizer(),
             SubagentProgressSerializerTestSupport::validator(),
             $sink,
-            new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher())),
+            new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))),
             true,
         );
         /** @var SubagentProgressSnapshotInterface $progress */
@@ -78,7 +80,7 @@ final class SubagentProgressEventAppenderTest extends TestCase
             SubagentProgressSerializerTestSupport::normalizer(),
             SubagentProgressSerializerTestSupport::validator(),
             $sink,
-            new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher())),
+            new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))),
             true,
         );
         /** @var SubagentProgressSnapshotInterface $progress */
@@ -115,7 +117,7 @@ final class SubagentProgressEventAppenderTest extends TestCase
             SubagentProgressSerializerTestSupport::normalizer(),
             SubagentProgressSerializerTestSupport::validator(),
             $sink,
-            new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher())),
+            new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))),
             false,
         );
         /** @var SubagentProgressSnapshotInterface $progress */
