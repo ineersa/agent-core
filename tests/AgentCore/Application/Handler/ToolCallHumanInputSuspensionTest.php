@@ -365,7 +365,6 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
     {
         $activeRunContext = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
         $eventStore = new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore();
-        $commandStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore();
         $collector = new ToolBatchCollector();
         $execute = $this->call('run-seq', 'step-seq', 'call-seq', 0);
         $collector->registerExpectedBatch('run-seq', 1, 'step-seq', [$execute]);

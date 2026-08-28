@@ -15,7 +15,6 @@ use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -182,7 +181,6 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
     {
         $activeRunContext = new TestActiveRunContext();
         $eventStore = new InMemoryEventStore();
-        $commandStore = new InMemoryCommandStore();
         $runCommit = new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,

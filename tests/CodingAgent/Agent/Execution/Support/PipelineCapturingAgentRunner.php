@@ -42,9 +42,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
 
     public static function create(EventStoreInterface $eventStore): self
     {
-        $commandBus = new TestMessageBus();
         $executionBus = new TestMessageBus();
-        $commandStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore();
         $activeRunContext = new TestActiveRunContext();
         $runCommit = new RunCommit(
             activeRunContext: $activeRunContext,
