@@ -6,11 +6,11 @@ namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
-use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
@@ -126,10 +126,12 @@ final class RepairCommandHandlerTest extends TestCase
         return new SessionRepairService(
             eventStore: new InMemoryEventStore(),
             activeRunContext: new TestActiveRunContext(),
-            runStateReducer: new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()),
+            runStateReducer: new RunStateReducer(
+                AttributeSerializerValidatorTestFactory::denormalizer(),
+                new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
+            ),
             replayEventPreparer: new ReplayEventPreparer(),
             eventFactory: new EventFactory(),
-            messageNormalizer: new AgentMessageNormalizer(),
             toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
             lockManager: new RunLockManager(new LockFactory(new FlockStore(sys_get_temp_dir()))),
             logger: new NullLogger(),

@@ -18,7 +18,7 @@ final class ExtensionSessionEventReaderTest extends TestCase
     {
         $events = new InMemoryEventStore();
         $events->seed(new RunEvent('run-1', 1, 0, 'run_started', ['ignored' => true], new \DateTimeImmutable('2026-01-01T00:00:00+00:00')));
-        $events->seed(new RunEvent('run-1', 3, 1, 'message_end', ['text' => 'kept'], new \DateTimeImmutable('2026-01-01T00:00:01+00:00')));
+        $events->seed(new RunEvent('run-1', 3, 1, 'tool_batch_committed', ['count' => 1], new \DateTimeImmutable('2026-01-01T00:00:01+00:00')));
         $events->seed(new RunEvent('run-1', 5, 2, 'agent_end', ['status' => 'completed'], new \DateTimeImmutable('2026-01-01T00:00:02+00:00')));
 
         $reader = new ExtensionSessionEventReader($events, new TestLogger());
@@ -29,8 +29,8 @@ final class ExtensionSessionEventReaderTest extends TestCase
         $this->assertSame([3, 5], array_map(static fn ($event): int => $event->seq, $range));
         $this->assertSame('run-1', $range[0]->runId);
         $this->assertSame(1, $range[0]->turnNo);
-        $this->assertSame('message_end', $range[0]->type);
-        $this->assertSame(['text' => 'kept'], $range[0]->payload);
+        $this->assertSame('tool_batch_committed', $range[0]->type);
+        $this->assertSame(['count' => 1], $range[0]->payload);
         $this->assertSame('2026-01-01T00:00:01+00:00', $range[0]->createdAt);
     }
 

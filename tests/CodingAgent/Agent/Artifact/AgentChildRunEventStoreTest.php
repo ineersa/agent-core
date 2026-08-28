@@ -263,9 +263,9 @@ final class AgentChildRunEventStoreTest extends TestCase
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
 
         $events = [
-            new RunEvent(runId: $agentRunId, seq: 3, turnNo: 1, type: 'tool_execution.completed'),
+            new RunEvent(runId: $agentRunId, seq: 3, turnNo: 1, type: 'tool_execution_end'),
             new RunEvent(runId: $agentRunId, seq: 1, turnNo: 0, type: 'run_started'),
-            new RunEvent(runId: $agentRunId, seq: 2, turnNo: 1, type: 'tool_execution.started'),
+            new RunEvent(runId: $agentRunId, seq: 2, turnNo: 1, type: 'tool_execution_start'),
         ];
 
         $store->appendMany($events);
@@ -496,7 +496,7 @@ final class AgentChildRunEventStoreTest extends TestCase
         mkdir(\dirname($path), 0775, true);
         file_put_contents($path, json_encode($normalizer->normalize($agentRunId, 99, 0, 'run_started', []), \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
 
-        $persisted = $store->append(new RunEvent(runId: $agentRunId, seq: 0, turnNo: 1, type: 'agent_start'));
+        $persisted = $store->append(new RunEvent(runId: $agentRunId, seq: 0, turnNo: 1, type: 'agent_end'));
         $this->assertSame(100, $persisted->seq);
 
         $events = $store->allFor($agentRunId);

@@ -71,8 +71,8 @@ final class SessionCatalogRecoveryServiceTest extends IsolatedKernelTestCase
         $this->assertNotFalse($originalBytes);
         $this->assertStringContainsString('Tell me about testing.', $originalBytes);
 
-        // Enrich fixture with model/reasoning/model_changed for metadata recovery.
-        $this->appendRunStartedMetadataAndModelChange($eventsPath, $sessionId, $originalBytes);
+        // Enrich fixture with authoritative run-start metadata for recovery.
+        $this->appendRunStartedMetadata($eventsPath, $sessionId, $originalBytes);
         $originalBytes = file_get_contents($eventsPath);
         $this->assertNotFalse($originalBytes);
 
@@ -343,7 +343,7 @@ final class SessionCatalogRecoveryServiceTest extends IsolatedKernelTestCase
      * @param non-empty-string $sessionId
      * @param non-empty-string $originalBytes
      */
-    private function appendRunStartedMetadataAndModelChange(string $eventsPath, string $sessionId, string $originalBytes): void
+    private function appendRunStartedMetadata(string $eventsPath, string $sessionId, string $originalBytes): void
     {
         $lines = array_values(array_filter(explode("\n", trim($originalBytes)), static fn (string $l): bool => '' !== $l));
         $this->assertNotEmpty($lines);
@@ -354,26 +354,12 @@ final class SessionCatalogRecoveryServiceTest extends IsolatedKernelTestCase
         $inner = $payload['payload'] ?? [];
         $this->assertIsArray($inner);
         $inner['metadata'] = [
-            'model' => 'openai/old-model',
+            'model' => 'deepseek/deepseek-v4-flash',
             'reasoning' => 'medium',
         ];
         $payload['payload'] = $inner;
         $first['payload'] = $payload;
         $lines[0] = json_encode($first, \JSON_THROW_ON_ERROR);
-
-        $now = (new \DateTimeImmutable())->format(\DATE_ATOM);
-        $lines[] = json_encode([
-            'schema_version' => '1.0',
-            'run_id' => $sessionId,
-            'seq' => 100,
-            'turn_no' => 3,
-            'type' => 'model_changed',
-            'payload' => [
-                'model' => 'deepseek/deepseek-v4-flash',
-                'previous_model' => 'openai/old-model',
-            ],
-            'ts' => $now,
-        ], \JSON_THROW_ON_ERROR);
 
         file_put_contents($eventsPath, implode("\n", $lines)."\n");
     }

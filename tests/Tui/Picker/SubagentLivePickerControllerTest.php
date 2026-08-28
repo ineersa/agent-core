@@ -149,7 +149,7 @@ final class SubagentLivePickerControllerTest extends TestCase
                     $childRunId,
                     1,
                     'run_started',
-                    ['user_messages' => [['role' => 'user', 'content' => 'child export unique marker']]],
+                    ['payload' => ['messages' => [['role' => 'user', 'content' => 'child export unique marker']]]],
                 ),
             ],
         );
@@ -520,7 +520,7 @@ final class SubagentLivePickerControllerTest extends TestCase
                     'child-run-export-persist',
                     1,
                     'run_started',
-                    ['user_messages' => [['role' => 'user', 'content' => 'persist marker']]],
+                    ['payload' => ['messages' => [['role' => 'user', 'content' => 'persist marker']]]],
                 ),
             ],
         );
@@ -585,7 +585,7 @@ final class SubagentLivePickerControllerTest extends TestCase
                     'child-dismiss-done',
                     1,
                     'run_started',
-                    ['user_messages' => [['role' => 'user', 'content' => 'dismiss feedback marker']]],
+                    ['payload' => ['messages' => [['role' => 'user', 'content' => 'dismiss feedback marker']]]],
                 ),
             ],
         );
@@ -782,7 +782,7 @@ final class SubagentLivePickerControllerTest extends TestCase
             'seq' => 1,
             'turn_no' => 1,
             'type' => 'run_started',
-            'payload' => ['user_messages' => [['role' => 'user', 'content' => $userContent]]],
+            'payload' => ['payload' => ['messages' => [['role' => 'user', 'content' => $userContent]]]],
             'ts' => '2026-01-01T00:00:00+00:00',
         ];
         file_put_contents($sessionDir.'/events.jsonl', json_encode($event, \JSON_THROW_ON_ERROR)."\n");

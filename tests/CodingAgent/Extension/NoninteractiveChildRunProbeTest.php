@@ -62,7 +62,7 @@ final class NoninteractiveChildRunProbeTest extends TestCase
             runId: $runId,
             seq: 1,
             turnNo: 0,
-            type: RunEventTypeEnum::TurnStart->value,
+            type: RunEventTypeEnum::AgentEnd->value,
             payload: [],
             createdAt: new \DateTimeImmutable(),
         ));

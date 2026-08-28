@@ -28,7 +28,7 @@ use Symfony\Component\Lock\LockFactory;
  *
  * @see CommandStoreInterface
  * @see InMemoryCommandStore — single-process reference implementation
- * @see \Ineersa\CodingAgent\Session\SessionRunStore — reference CAS+lock pattern
+ * @see \Ineersa\AgentCore\Application\Handler\RunLockManager — run-scoped ordering boundary
  */
 final class CacheCommandStore implements CommandStoreInterface
 {

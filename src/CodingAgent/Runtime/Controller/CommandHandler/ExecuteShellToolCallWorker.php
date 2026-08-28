@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
@@ -45,6 +47,7 @@ final readonly class ExecuteShellToolCallWorker
         private ToolExecutorInterface $toolExecutor,
         private EventStoreInterface $eventStore,
         private MessageBusInterface $commandBus,
+        private ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec,
         private ?LoggerInterface $logger = null,
     ) {
     }
@@ -116,27 +119,31 @@ final readonly class ExecuteShellToolCallWorker
             runId: $runId,
         ));
 
-        // Extract the result text from the ToolResult's content blocks.
-        $resultText = '';
-        foreach ($result->content as $contentBlock) {
-            if (\is_array($contentBlock) && 'text' === ($contentBlock['type'] ?? '')) {
-                $resultText .= (string) ($contentBlock['text'] ?? '');
-            } elseif (\is_string($contentBlock)) {
-                $resultText .= $contentBlock;
-            }
-        }
+        // Persist the direct executor's raw content and details exactly once in
+        // the typed canonical payload; direct shell remains non-model-visible.
+        $toolCallResult = new ToolCallResult(
+            runId: $runId,
+            turnNo: $turnNo,
+            stepId: $message->stepId(),
+            attempt: $message->attempt(),
+            idempotencyKey: $message->idempotencyKey(),
+            toolCallId: $toolCallId,
+            orderIndex: 0,
+            result: [
+                'tool_name' => $result->toolName,
+                'content' => $result->content,
+                'details' => $result->details,
+                'arguments' => $arguments,
+            ],
+            isError: $result->isError,
+        );
 
-        // Emit tool_execution_end event with result text.
         $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: $turnNo,
             type: RunEventTypeEnum::ToolExecutionEnd->value,
-            payload: [
-                'tool_call_id' => $toolCallId,
-                'is_error' => $result->isError,
-                'result' => $resultText,
-            ],
+            payload: $this->toolExecutionEndPayloadCodec->toEventPayload($toolCallResult),
         ));
 
         $this->logger?->info('shell.tool_execution_completed', [

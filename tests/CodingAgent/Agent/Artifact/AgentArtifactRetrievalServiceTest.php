@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
 use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
@@ -228,6 +230,8 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
 
         $secret = 'RAW_TOOL_OUTPUT_SECRET_12345';
+        /** @var ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec */
+        $toolExecutionEndPayloadCodec = self::getContainer()->get(ToolExecutionEndPayloadCodec::class);
         $events = [];
         for ($i = 1; $i <= 25; ++$i) {
             $events[] = new RunEvent(
@@ -235,7 +239,16 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
                 seq: $i,
                 turnNo: 0,
                 type: RunEventTypeEnum::ToolExecutionEnd->value,
-                payload: ['tool_name' => 'bash', 'output' => $secret.'-'.$i],
+                payload: $toolExecutionEndPayloadCodec->toEventPayload(new ToolCallResult(
+                    runId: $childRun,
+                    turnNo: 0,
+                    stepId: 'tool-step',
+                    attempt: 1,
+                    idempotencyKey: 'tool-result-'.$i,
+                    toolCallId: 'call-'.$i,
+                    orderIndex: $i,
+                    result: ['tool_name' => 'bash', 'output' => $secret.'-'.$i],
+                )),
             );
         }
 
@@ -426,6 +439,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
             runStateRebuilder: $rebuilder,
             eventStore: $eventStore ?? $this->createStub(EventStoreInterface::class),
             logger: self::getContainer()->get('logger'),
+            toolExecutionEndPayloadCodec: self::getContainer()->get(ToolExecutionEndPayloadCodec::class),
         );
     }
 

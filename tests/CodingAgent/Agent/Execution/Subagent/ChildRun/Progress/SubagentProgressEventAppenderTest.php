@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\ChildRun\Progress;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
@@ -81,7 +83,10 @@ final class SubagentProgressEventAppenderTest extends TestCase
             SubagentProgressSerializerTestSupport::normalizer(),
             SubagentProgressSerializerTestSupport::validator(),
             $sink,
-            new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher())),
+            new RuntimeEventMapper(new RuntimeEventTranslator(
+                new EventDispatcher(),
+                new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
+            )),
             $streamCommittedEventsToStdout,
         );
     }

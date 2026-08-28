@@ -46,7 +46,7 @@ final class RunEventTest extends TestCase
 
     public function testIsExtensionEventForCoreType(): void
     {
-        $event = new RunEvent(runId: 'r', seq: 1, turnNo: 0, type: 'agent_start');
+        $event = new RunEvent(runId: 'r', seq: 1, turnNo: 0, type: 'run_started');
 
         $this->assertFalse($event->isExtensionEvent());
     }

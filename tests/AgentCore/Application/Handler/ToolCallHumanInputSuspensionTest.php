@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -115,7 +116,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         }
         $this->assertSame('tool_call', $payload['continuation_kind'] ?? null);
         $this->assertSame('call-h', $payload['continuation_ref']['tool_call_id'] ?? null);
-        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer()))->replay(RunState::queued('run-h'), [new RunEvent('run-h', 1, 3, RunEventTypeEnum::WaitingHuman->value, $payload ?? [])]);
+        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued('run-h'), [new RunEvent('run-h', 1, 3, RunEventTypeEnum::WaitingHuman->value, $payload ?? [])]);
         $this->assertSame(HumanInputContinuationKindEnum::ToolCall, $replayed->pendingHumanInputRequests[0]->continuationKind);
         $this->assertSame('q-h', $replayed->pendingHumanInputRequests[0]->questionId);
     }
@@ -169,9 +170,8 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertSame('q-shared', $sibling->nextState?->pendingHumanInputRequests[0]->questionId);
         $this->assertSame([], $sibling->nextState?->messages);
         $eventTypes = array_map(static fn (RunEvent $e): string => $e->type, $sibling->events);
-        $this->assertSame(['tool_call_result_received', 'tool_execution_end'], $eventTypes);
+        $this->assertSame(['tool_execution_end'], $eventTypes);
         $this->assertNotContains(RunEventTypeEnum::ToolBatchCommitted->value, $eventTypes);
-        $this->assertNotContains(RunEventTypeEnum::MessageEnd->value, $eventTypes);
     }
 
     public function testResumeRequeuesExactCallWithoutModelMessage(): void

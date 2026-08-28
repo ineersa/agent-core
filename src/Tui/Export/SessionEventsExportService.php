@@ -409,29 +409,22 @@ HTML;
     /**
      * Render the run_started event: extract user/system/instruction messages.
      *
-     * Real events.jsonl stores messages at payload.payload.messages;
-     * some test fixtures use payload.user_messages.  We try both paths.
+     * Canonical events.jsonl stores messages at payload.payload.messages.
      *
      * @param array<string, mixed> $payload
      */
     private function renderRunStarted(array $payload, string $toolDefinitionsHtml = ''): string
     {
-        // Primary path: payload.payload.messages (real events.jsonl).
         $nestedPayload = $payload['payload'] ?? null;
-        if (\is_array($nestedPayload)) {
-            $messages = $nestedPayload['messages'] ?? null;
-            if (\is_array($messages)) {
-                return $this->renderMessages($messages, $toolDefinitionsHtml);
-            }
+        if (!\is_array($nestedPayload)) {
+            return $toolDefinitionsHtml;
         }
 
-        // Fallback: payload.user_messages (test fixtures and older format).
-        $userMessages = $payload['user_messages'] ?? null;
-        if (\is_array($userMessages)) {
-            return $this->renderMessages($userMessages, $toolDefinitionsHtml);
-        }
+        $messages = $nestedPayload['messages'] ?? null;
 
-        return $toolDefinitionsHtml;
+        return \is_array($messages)
+            ? $this->renderMessages($messages, $toolDefinitionsHtml)
+            : $toolDefinitionsHtml;
     }
 
     /**
@@ -440,26 +433,22 @@ HTML;
      * Real events.jsonl has the assistant_message payload nested:
      *   payload.assistant_message.{content,details.thinking,tool_calls,role}
      *   payload.usage.{input_tokens,output_tokens,total_tokens}
-     *   payload.text (top-level canonical text)
      *   payload.stop_reason
      *
      * @param array<string, mixed> $payload
      */
     private function renderAssistantMessage(array $payload): string
     {
-        $text = self::escapeHtml(self::strFromArray($payload, 'text'));
         $stopReason = self::escapeHtml(self::strFromArray($payload, 'stop_reason'));
-
-        // Thinking is stored at payload.assistant_message.details.thinking
-        // in real events.jsonl.  Also check the simpler payload.details.thinking
-        // path for test fixtures.
         $assistantMessage = $payload['assistant_message'] ?? null;
+        $text = '';
         $thinking = '';
         if (\is_array($assistantMessage)) {
+            $content = $assistantMessage['content'] ?? null;
+            if (\is_array($content)) {
+                $text = self::escapeHtml($this->extractTextFromContentBlocks($content));
+            }
             $thinking = self::escapeHtml(self::strFromNested($assistantMessage, ['details', 'thinking']));
-        }
-        if ('' === $thinking) {
-            $thinking = self::escapeHtml(self::strFromNested($payload, ['details', 'thinking']));
         }
 
         $html = '  <div class="message message-assistant">'."\n";
@@ -619,10 +608,16 @@ HTML;
      */
     private function renderToolEnd(array $payload, array $toolNames = []): string
     {
-        $toolCallId = self::strFromArray($payload, 'tool_call_id');
+        // TUI stays outside AgentCore's typed serializer boundary. This single
+        // export-edge adapter reads the normalized canonical shape directly.
+        $typed = $payload['tool_result'] ?? null;
+        if (!\is_array($typed)) {
+            throw new \UnexpectedValueException('ToolExecutionEnd export requires an array tool_result payload.');
+        }
+        $toolCallId = self::strFromArray($typed, 'tool_call_id');
         $toolName = $toolNames[$toolCallId] ?? '';
-        $isError = (bool) ($payload['is_error'] ?? false);
-        $result = self::strFromArray($payload, 'result');
+        $isError = true === ($typed['is_error'] ?? false);
+        $result = $this->toolResultText($typed);
         $durationMs = \is_int($payload['duration_ms'] ?? null) ? $payload['duration_ms'] : null;
 
         $html = '  <div class="'.($isError ? 'tool-result tool-error' : 'tool-result').'">'."\n";
@@ -650,6 +645,40 @@ HTML;
         $html .= "  </div>\n";
 
         return $html;
+    }
+
+    /**
+     * Export-only adapter for the normalized ToolCallResult shape. It intentionally
+     * does not recreate a cross-layer serializer dependency or leak nested payload
+     * walking into other TUI code.
+     *
+     * @param array<string, mixed> $toolResult
+     */
+    private function toolResultText(array $toolResult): string
+    {
+        $result = $toolResult['result'] ?? null;
+        $content = \is_array($result) ? ($result['content'] ?? null) : null;
+        if (\is_array($content)) {
+            $parts = [];
+            foreach ($content as $part) {
+                if (\is_array($part) && 'text' === ($part['type'] ?? null) && \is_string($part['text'] ?? null)) {
+                    $parts[] = $part['text'];
+                }
+            }
+            if ([] !== $parts) {
+                return implode("\n", $parts);
+            }
+        }
+
+        $error = $toolResult['error'] ?? null;
+        if (true === ($toolResult['is_error'] ?? false) && \is_array($error)) {
+            $message = $error['message'] ?? $error['type'] ?? null;
+            if (\is_string($message)) {
+                return $message;
+            }
+        }
+
+        return '';
     }
 
     /**
@@ -747,7 +776,7 @@ HTML;
         $html = '';
 
         // Messages (user/system/developer).
-        foreach (['messages', 'user_messages'] as $key) {
+        foreach (['messages'] as $key) {
             $msgs = $payload[$key] ?? null;
             if (\is_array($msgs) && [] !== $msgs) {
                 $html .= $this->renderMessages($msgs);

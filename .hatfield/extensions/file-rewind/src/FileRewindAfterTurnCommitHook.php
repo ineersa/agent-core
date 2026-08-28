@@ -37,7 +37,6 @@ final readonly class FileRewindAfterTurnCommitHook implements AfterTurnCommitHoo
         if (($this->has($context, 'agent_command_queued') || $this->has($context, 'agent_command_applied'))
             && !$this->has($context, 'tool_batch_committed')
             && !$this->has($context, 'llm_step_completed')
-            && !$this->has($context, 'turn_end')
             && !$this->has($context, 'agent_end')
         ) {
             return;
@@ -48,7 +47,7 @@ final readonly class FileRewindAfterTurnCommitHook implements AfterTurnCommitHoo
     private function resolveCaptureAnchorSeq(AfterTurnCommitHookContextDTO $context): ?int
     {
         foreach ($context->events as $event) {
-            if ('turn_end' === $event->type || 'agent_end' === $event->type) {
+            if ('agent_end' === $event->type) {
                 return $event->seq;
             }
         }
@@ -56,7 +55,6 @@ final readonly class FileRewindAfterTurnCommitHook implements AfterTurnCommitHoo
         // Completed assistant step without in-flight tool work in this commit (post-tool final answer).
         if ($this->has($context, 'llm_step_completed')
             && !$this->has($context, 'tool_execution_start')
-            && !$this->has($context, 'tool_call_result_received')
         ) {
             foreach ($context->events as $event) {
                 if ('llm_step_completed' === $event->type) {
@@ -66,10 +64,8 @@ final readonly class FileRewindAfterTurnCommitHook implements AfterTurnCommitHoo
         }
 
         // Post-tool stable file state: tool_batch_committed marks applied tool effects on disk.
-        // The same commit batch includes tool_call_result_received / message_end — that is expected.
         if ($this->has($context, 'tool_batch_committed')
             && !$this->has($context, 'llm_step_completed')
-            && !$this->has($context, 'turn_end')
             && !$this->has($context, 'agent_end')
             && !$this->has($context, 'tool_execution_start')
         ) {

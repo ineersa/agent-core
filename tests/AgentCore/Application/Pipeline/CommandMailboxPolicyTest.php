@@ -104,12 +104,6 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $this->assertSame(['steer-1', 'steer-2'], $appliedSteerKeys);
 
-        $superseded = array_values(array_filter(
-            $events,
-            static fn (\Ineersa\AgentCore\Domain\Event\RunEvent $event): bool => 'agent_command_superseded' === $event->type,
-        ));
-        $this->assertSame([], $superseded);
-
         $this->assertSame([], $fixture->commandStore->pending($runId));
 
         $llmSteps = array_values(array_filter(
@@ -394,12 +388,6 @@ final class CommandMailboxPolicyTest extends TestCase
             $appliedSteerKeys[] = (string) ($event->payload['idempotency_key'] ?? '');
         }
         $this->assertSame(['stop-steer-1', 'stop-steer-2'], $appliedSteerKeys);
-
-        $superseded = array_values(array_filter(
-            $events,
-            static fn (\Ineersa\AgentCore\Domain\Event\RunEvent $event): bool => 'agent_command_superseded' === $event->type,
-        ));
-        $this->assertSame([], $superseded);
 
         $this->assertSame([], $fixture->commandStore->pending($runId));
 

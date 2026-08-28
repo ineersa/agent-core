@@ -318,9 +318,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'model' => $message->model,
                 'reasoning' => $message->reasoning,
                 'usage' => $message->usage,
-                'tool_calls_count' => \count($toolCalls),
                 'assistant_message' => $assistantMessagePayload,
-                'text' => $assistantMessage->asText(),
                 ...$this->availableToolsPayload($message),
             ],
         ]];

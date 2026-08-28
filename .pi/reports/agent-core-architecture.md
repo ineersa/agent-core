@@ -11,7 +11,7 @@
 AgentCore follows a clean layered architecture within a modular monolith:
 
 ```
-Contract/        — Pure interfaces (RunStoreInterface, EventStoreInterface, CommandStoreInterface, etc.)
+Contract/        — Pure interfaces (ActiveRunContextInterface, EventStoreInterface, CommandStoreInterface, etc.)
 Domain/          — Value objects, enums, events, messages, run state, DTOs (no business logic)
 Application/     — Pipeline handlers, orchestrators, services, batch coordinators
 Infrastructure/  — Symfony AI adapter, Messenger wiring, in-memory/Doctrine storage
@@ -22,7 +22,7 @@ The pipeline operates on two Symfony Messenger buses:
 - **`agent.command.bus`** — RunOrchestrator receives StartRun, ApplyCommand, AdvanceRun, LlmStepResult, ToolCallResult
 - **`agent.execution.bus`** — ExecuteLlmStepWorker and ExecuteToolCallWorker execute side-effect work
 
-Handlers return `HandlerResult` (nextState + events + effects + postCommit callbacks), which `RunMessageProcessor` commits through `RunCommit` with CAS retry and exponential backoff.
+Handlers return `HandlerResult` (nextState + events + effects + postCommit callbacks), which `RunMessageProcessor` commits through `RunCommit`: canonical event append, payload-free operational projection/process-local context replacement, then best-effort effects and hooks.
 
 Deptrac validates: **0 violations, 591 uncovered (expected internal calls), 856 allowed**.
 
@@ -55,7 +55,7 @@ Deptrac validates: **0 violations, 591 uncovered (expected internal calls), 856 
 **File:** `src/AgentCore/Application/Pipeline/LlmStepResultHandler.php` — **430 lines, 7 constructor dependencies**
 
 This handler has 7 major code paths:
-1. **Stale result** (line ~83) — increment version, emit `stale_result_ignored`
+1. **Stale result** (line ~83) — increment version and record the stale metric
 2. **Aborted/cancelling** (line ~95) — emit `llm_step_aborted` + `agent_end`, turn-completed callbacks
 3. **LLM error** (line ~131) — transition to Failed, emit `llm_step_failed`, turn-completed
 4. **No tool calls → stop boundary** (line ~182) — apply stop-boundary commands, decide continue vs complete
@@ -75,7 +75,7 @@ The `resolveToolPolicy()`, `resolveActiveSet()`, `resolveToolSchemas()` private 
 - Both iterate pending commands from `commandStore->pending()`
 - Both handle `supersededSteerKeys()` for steer deduplication
 - Both validate/reject/hydrate steer and follow-up commands with the same `AgentMessage::fromPayload()` logic
-- Both produce the same event spectrums (`agent_command_superseded`, `agent_command_rejected`, `agent_command_applied`)
+- Both produce the same command lifecycle outcomes (rejection and application)
 - Both delegate extension commands through `applyExtensionCommand()`
 - Both call `copyState()` with message overrides
 
@@ -139,7 +139,6 @@ Each is a 20-line closure that creates an `AdvanceRun` message and dispatches it
 ### 2.9 Thin Contract Files (Many Single-Method Interfaces)
 
 Several contract files are under 15 lines:
-- `Contract/IdempotencyStoreInterface.php` — 2 methods
 - `Contract/SpanProviderInterface.php` — likely small
 - `Contract/Hook/ConvertToLlmHookInterface.php` — single method
 - `Contract/Hook/LlmStreamObserverInterface.php` — 4 methods

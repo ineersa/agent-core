@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -22,7 +25,7 @@ final class RuntimeEventMapperTest extends TestCase
     protected function setUp(): void
     {
         $this->mapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher()),
+            new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
         );
     }
 
@@ -127,12 +130,7 @@ final class RuntimeEventMapperTest extends TestCase
 
     public function testNormalizesToolExecutionEndCancelledToToolExecutionCancelled(): void
     {
-        $event = $this->runEvent('tool_execution_end', [
-            'tool_call_id' => 'call-cancel',
-            'order_index' => 0,
-            'is_error' => true,
-            'result' => 'Tool execution cancelled by user.',
-        ]);
+        $event = $this->runEvent('tool_execution_end', $this->toolEndPayload('call-cancel', true, 'Tool execution cancelled by user.', ['type' => 'cancelled', 'message' => 'Tool execution cancelled by user.']));
 
         $result = $this->mapper->toRuntimeEvent($event);
 
@@ -142,14 +140,7 @@ final class RuntimeEventMapperTest extends TestCase
 
     public function testNormalizesToolExecutionEndStructuredCancellationMetadataToToolExecutionCancelled(): void
     {
-        $event = $this->runEvent('tool_execution_end', [
-            'tool_call_id' => 'call-rich-cancel',
-            'order_index' => 0,
-            'is_error' => true,
-            'result' => 'Subagent scout cancelled by parent run.',
-            'cancelled' => true,
-            'cancellation_reason' => 'user',
-        ]);
+        $event = $this->runEvent('tool_execution_end', $this->toolEndPayload('call-rich-cancel', true, 'Subagent scout cancelled by parent run.', ['type' => 'cancelled', 'message' => 'Subagent scout cancelled by parent run.']));
 
         $result = $this->mapper->toRuntimeEvent($event);
 
@@ -271,55 +262,6 @@ final class RuntimeEventMapperTest extends TestCase
         $this->assertSame('tool_use', $result->payload['stop_reason']);
     }
 
-    public function testNormalizesLlmStepCompletedUsesExplicitTextKey(): void
-    {
-        // When LlmStepResultHandler emits 'text' via AssistantMessage::asText(),
-        // the mapper should use that key preferentially over walking the
-        // normalized assistant_message content array.
-        $event = $this->runEvent('llm_step_completed', [
-            'step_id' => 'turn-1-llm-7',
-            'stop_reason' => 'stop',
-            'text' => 'Source-extracted via AssistantMessage::asText()',
-            'assistant_message' => [
-                'role' => 'assistant',
-                'content' => [
-                    ['type' => 'text', 'text' => 'Legacy-walked text that should be ignored'],
-                ],
-            ],
-        ]);
-
-        $result = $this->mapper->toRuntimeEvent($event);
-
-        $this->assertNotNull($result);
-        $this->assertSame(
-            'Source-extracted via AssistantMessage::asText()',
-            $result->payload['text'],
-            'Should use explicit text key, not walk the normalized payload',
-        );
-    }
-
-    public function testNormalizesLlmStepCompletedTextKeyFallsBackToLegacy(): void
-    {
-        // When 'text' key is missing (older events), falls back to walking
-        // the assistant_message content array.
-        $event = $this->runEvent('llm_step_completed', [
-            'step_id' => 'turn-1-llm-8',
-            'stop_reason' => 'stop',
-            // No 'text' key — legacy path
-            'assistant_message' => [
-                'role' => 'assistant',
-                'content' => [
-                    ['type' => 'text', 'text' => 'Legacy text here'],
-                ],
-            ],
-        ]);
-
-        $result = $this->mapper->toRuntimeEvent($event);
-
-        $this->assertNotNull($result);
-        $this->assertSame('Legacy text here', $result->payload['text']);
-    }
-
     public function testNormalizesLlmStepCompletedMissingAssistantMessage(): void
     {
         $event = $this->runEvent('llm_step_completed', [
@@ -421,11 +363,7 @@ final class RuntimeEventMapperTest extends TestCase
 
     public function testNormalizesToolExecutionEndSuccess(): void
     {
-        $event = $this->runEvent('tool_execution_end', [
-            'tool_call_id' => 'call-read',
-            'is_error' => false,
-            'order_index' => 0,
-        ]);
+        $event = $this->runEvent('tool_execution_end', $this->toolEndPayload('call-read'));
 
         $result = $this->mapper->toRuntimeEvent($event);
 
@@ -436,11 +374,7 @@ final class RuntimeEventMapperTest extends TestCase
 
     public function testNormalizesToolExecutionEndError(): void
     {
-        $event = $this->runEvent('tool_execution_end', [
-            'tool_call_id' => 'call-broken',
-            'is_error' => true,
-            'order_index' => 1,
-        ]);
+        $event = $this->runEvent('tool_execution_end', $this->toolEndPayload('call-broken', true));
 
         $result = $this->mapper->toRuntimeEvent($event);
 
@@ -451,12 +385,7 @@ final class RuntimeEventMapperTest extends TestCase
 
     public function testNormalizesToolExecutionEndPassesThroughResultText(): void
     {
-        $event = $this->runEvent('tool_execution_end', [
-            'tool_call_id' => 'call-read',
-            'is_error' => false,
-            'order_index' => 0,
-            'result' => 'actual tool output content',
-        ]);
+        $event = $this->runEvent('tool_execution_end', $this->toolEndPayload('call-read', false, 'actual tool output content'));
 
         $result = $this->mapper->toRuntimeEvent($event);
 
@@ -469,20 +398,13 @@ final class RuntimeEventMapperTest extends TestCase
 
     public function testNormalizesToolExecutionEndOmitsResultWhenNotString(): void
     {
-        $event = $this->runEvent('tool_execution_end', [
-            'tool_call_id' => 'call-read',
-            'is_error' => false,
-            'order_index' => 0,
-            'result' => 42,
-        ]);
+        $event = $this->runEvent('tool_execution_end', $this->toolEndPayload('call-read'));
 
         $result = $this->mapper->toRuntimeEvent($event);
 
         $this->assertNotNull($result);
         $this->assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
-        // Translator only forwards string results; non-string should be omitted
-        // so the projector falls back to "{tool_name} completed".
-        $this->assertArrayNotHasKey('result', $result->payload);
+        $this->assertSame('read completed', $result->payload['result']);
     }
 
     // ── HITL normalization ───────────────────────────────────────────────────
@@ -660,15 +582,6 @@ final class RuntimeEventMapperTest extends TestCase
 
     // ── Skipped internal events ──────────────────────────────────────────────
 
-    public function testSkipsToolCallResultReceived(): void
-    {
-        $event = $this->runEvent('tool_call_result_received', ['tool_call_id' => 'call-x']);
-
-        $result = $this->mapper->toRuntimeEvent($event);
-
-        $this->assertNull($result);
-    }
-
     public function testSkipsToolBatchCommitted(): void
     {
         $event = $this->runEvent('tool_batch_committed', ['count' => 3]);
@@ -721,15 +634,6 @@ final class RuntimeEventMapperTest extends TestCase
         $this->assertNull($result);
     }
 
-    public function testSkipsAgentCommandSuperseded(): void
-    {
-        $event = $this->runEvent('agent_command_superseded', ['kind' => 'steer']);
-
-        $result = $this->mapper->toRuntimeEvent($event);
-
-        $this->assertNull($result);
-    }
-
     public function testSkipsHistoryPositionSet(): void
     {
         $event = $this->runEvent('history_position_set', [
@@ -757,20 +661,6 @@ final class RuntimeEventMapperTest extends TestCase
         $this->assertNotNull($result);
         $this->assertSame(RuntimeEventTypeEnum::StatusUpdated->value, $result->type);
         $this->assertSame('agent_command_rejected', $result->payload['debug.raw_type']);
-    }
-
-    public function testNormalizesStaleResultIgnoredToStatusUpdated(): void
-    {
-        $event = $this->runEvent('stale_result_ignored', [
-            'result' => 'tool_call_result',
-            'tool_call_id' => 'call-stale',
-        ]);
-
-        $result = $this->mapper->toRuntimeEvent($event);
-
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::StatusUpdated->value, $result->type);
-        $this->assertSame('stale_result_ignored', $result->payload['debug.raw_type']);
     }
 
     // ── Compaction ───────────────────────────────────────────────────────────
@@ -893,6 +783,23 @@ final class RuntimeEventMapperTest extends TestCase
     }
 
     // ── Test helpers ─────────────────────────────────────────────────────────
+
+    /** @param array<string, mixed>|null $error */
+    private function toolEndPayload(string $toolCallId, bool $isError = false, string $text = '', ?array $error = null): array
+    {
+        return (new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))->toEventPayload(new ToolCallResult(
+            runId: $this->runId,
+            turnNo: 1,
+            stepId: 'step-1',
+            attempt: 1,
+            idempotencyKey: 'result-'.$toolCallId,
+            toolCallId: $toolCallId,
+            orderIndex: 0,
+            result: ['tool_name' => 'read', 'content' => '' === $text ? [] : [['type' => 'text', 'text' => $text]]],
+            isError: $isError,
+            error: $error,
+        ));
+    }
 
     /**
      * @param array<string, mixed> $payload

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
@@ -33,15 +35,15 @@ final class SessionTranscriptProviderTest extends TestCase
             $this->runEvent('run_started', 1, 0, ['payload' => ['messages' => []]]),
             $this->turnAdvanced(2, 1),
             $this->historyPositionSetEvent(3, 1, null, 'continue'),
-            $this->runEvent('llm_step_completed', 4, 1, ['text' => 'Answer A']),
+            $this->runEvent('llm_step_completed', 4, 1, $this->assistantPayload('Answer A')),
             $this->turnAdvanced(5, 2),
             $this->historyPositionSetEvent(6, 2, 1, 'continue'),
-            $this->runEvent('llm_step_completed', 7, 2, ['text' => 'Answer B discarded']),
+            $this->runEvent('llm_step_completed', 7, 2, $this->assistantPayload('Answer B discarded')),
             $this->historyPositionSetEvent(8, 1, 2, 'history_select'),
             $this->runEvent(RunEventTypeEnum::HistoryTailDiscarded->value, 9, 1, ['after_turn_no' => 1]),
             $this->turnAdvanced(10, 3),
             $this->historyPositionSetEvent(11, 3, 1, 'continue'),
-            $this->runEvent('llm_step_completed', 12, 3, ['text' => 'Answer C active']),
+            $this->runEvent('llm_step_completed', 12, 3, $this->assistantPayload('Answer C active')),
         ];
 
         $provider = $this->createProvider($events);
@@ -59,6 +61,17 @@ final class SessionTranscriptProviderTest extends TestCase
         $this->assertStringNotContainsString('Answer B discarded', $joined);
     }
 
+    /** @return array<string, mixed> */
+    private function assistantPayload(string $text): array
+    {
+        return [
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => $text]],
+            ],
+        ];
+    }
+
     /** @param list<RunEvent> $events */
     private function createProvider(array $events): SessionTranscriptProvider
     {
@@ -68,7 +81,7 @@ final class SessionTranscriptProviderTest extends TestCase
         $projector = new HistoryProjector();
         $replayFilter = new HistoryReplayFilter($projector);
         $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
-        $translator = new RuntimeEventTranslator($eventDispatcher);
+        $translator = new RuntimeEventTranslator($eventDispatcher, new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $eventMapper = new RuntimeEventMapper($translator);
 
         $dispatcher = new EventDispatcher();

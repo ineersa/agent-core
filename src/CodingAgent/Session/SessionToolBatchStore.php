@@ -24,7 +24,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  *   .hatfield/sessions/<runId>/runtime/tool-batches/<turnNo>_<stepHash>.json
  *
  * Child agent runs (subagent/fork): parent-scoped artifact tree only — never
- * .hatfield/sessions/<childRunId>/ (see AgentChildRunStore).
+ * .hatfield/sessions/<childRunId>/; AgentChildRunDirectory resolves their location.
  *
  * Lock ordering (must hold):
  *   1. RunLockManager per-run lock (RunMessageProcessor)

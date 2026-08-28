@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -20,6 +21,7 @@ final class DeferredChildRunEventProjector
 
     public function __construct(
         private readonly DenormalizerInterface $denormalizer,
+        private readonly ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec,
         private readonly SubagentChildToolProgressPresentationFormatter $presentationFormatter = new SubagentChildToolProgressPresentationFormatter(),
     ) {
     }
@@ -136,14 +138,17 @@ final class DeferredChildRunEventProjector
 
             if (RunEventTypeEnum::ToolExecutionEnd->value === $type) {
                 ++$toolCount;
-                $toolCallId = \is_string($payload['tool_call_id'] ?? null) ? $payload['tool_call_id'] : null;
+                $typedResult = $this->toolExecutionEndPayloadCodec->fromEventPayload($payload);
+                $toolCallId = $typedResult->toolCallId;
                 $displayLine = null;
-                if (null !== $toolCallId && isset($pendingById[$toolCallId])) {
+                if (isset($pendingById[$toolCallId])) {
                     $displayLine = $pendingById[$toolCallId]->displayLine;
                     unset($pendingById[$toolCallId]);
                 }
                 if (null === $displayLine) {
-                    $name = \is_string($payload['tool_name'] ?? null) ? $payload['tool_name'] : 'tool';
+                    $name = \is_string($typedResult->result['tool_name'] ?? null)
+                        ? $typedResult->result['tool_name']
+                        : 'tool';
                     $displayLine = $this->presentationFormatter->formatToolDisplayLine($name, []);
                 }
                 $recentTools[] = $displayLine;
