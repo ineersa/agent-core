@@ -280,6 +280,15 @@ final class TickPollListenerTest extends TestCase
                 'default' => 'default text',
                 'prompt' => 'Enter your input:',
                 'schema' => ['type' => 'string'],
+                'trigger_input' => 'rm ΔΟΚΙΜΉ',
+                'trigger_input_label' => 'Command',
+                'match_spans' => [
+                    ['start' => 0, 'length' => 2],
+                    ['start' => -1, 'length' => 4],
+                    ['start' => 3, 'length' => 0],
+                    ['start' => '3', 'length' => 4],
+                    'malformed',
+                ],
             ],
         );
 
@@ -294,6 +303,9 @@ final class TickPollListenerTest extends TestCase
         $this->assertTrue($active->allowOther, 'Model-turn HITL free-form remains available');
         $this->assertSame('hitl_'.substr(hash('sha256', 'run-rich|q_rich'), 0, 16), $active->requestId);
         $this->assertSame('q_rich', $active->questionId);
+        $this->assertSame('rm ΔΟΚΙΜΉ', $active->triggerInput);
+        $this->assertSame('Command', $active->triggerInputLabel);
+        $this->assertSame([['start' => 0, 'length' => 2]], $active->triggerMatchSpans);
         $this->assertTrue($active->transcript);
     }
 

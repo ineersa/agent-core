@@ -10,6 +10,7 @@ use Symfony\Component\Tui\Style\Padding;
 use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Widget\MarkdownWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
+use Symfony\Component\Tui\Widget\Util\StringUtils;
 
 /**
  * Compact markdown prompt rendering for active HITL overlays (QuestionController).
@@ -43,10 +44,11 @@ final class QuestionOverlayPromptRenderer
         TuiTheme $theme,
     ): TextWidget {
         $spans = $this->mergedSpans($input, $matchSpans);
-        $text = $label.":\n";
+        $text = $this->safeText($label).":\n";
         $cursor = 0;
+        $warningColor = $theme->getPalette()->get(ThemeColorEnum::Warning);
         $highlight = new Style(
-            color: '' !== $theme->getPalette()->get(ThemeColorEnum::Warning) ? $theme->getPalette()->get(ThemeColorEnum::Warning) : null,
+            color: '' !== $warningColor ? $warningColor : null,
             bold: true,
         );
 
@@ -125,13 +127,20 @@ final class QuestionOverlayPromptRenderer
 
     private function safeText(string $text): string
     {
-        // TextWidget renders literal text (not Symfony markup); represent every
-        // terminal control byte except meaningful tab/newline visibly so untrusted
-        // tool input cannot inject terminal escape sequences.
-        return preg_replace_callback(
-            '/[\x00-\x08\x0B-\x1F\x7F-\x9F]/',
-            static fn (array $match): string => \sprintf('\\x%02X', \ord($match[0])),
+        // TextWidget renders literal text rather than Symfony markup but passes ANSI
+        // through. Normalize malformed UTF-8 first, then represent Unicode control
+        // code points visibly (except meaningful tab/newline) so valid continuation
+        // bytes are never mistaken for C1 controls and terminal injection is inert.
+        $text = StringUtils::sanitizeUtf8($text);
+        $escaped = preg_replace_callback(
+            '/[\x{00}-\x{08}\x{0B}-\x{1F}\x{7F}-\x{9F}]/u',
+            static fn (array $match): string => \sprintf('\\x%02X', mb_ord($match[0])),
             $text,
-        ) ?? $text;
+        );
+        if (null === $escaped) {
+            throw new \LogicException('Unable to escape SafeGuard trigger text.');
+        }
+
+        return $escaped;
     }
 }

@@ -227,7 +227,7 @@ class QuestionControllerTest extends TestCase
     #[Test]
     public function testChoiceOverlayRendersSafeHighlightedTriggerInputWithoutTruncation(): void
     {
-        $input = "rm α && rmdir β\nrm <fg=red>literal</fg> \x1B[31mnot-a-style";
+        $input = "rm α && rmdir β\nrm <fg=red>literal</fg> \x1B[31mnot-a-style ΔΟΚΙΜΉ 一二三";
         $harness = new VirtualTuiHarness(
             columns: 42,
             rows: 30,
@@ -247,7 +247,7 @@ class QuestionControllerTest extends TestCase
             choices: [new QuestionOption('✅ Allow'), new QuestionOption('❌ Deny')],
             allowOther: false,
             triggerInput: $input,
-            triggerInputLabel: 'Command',
+            triggerInputLabel: "Command \x1B[31m",
             // Repeated, overlapping, and Unicode byte spans merge deterministically.
             triggerMatchSpans: [
                 ['start' => 0, 'length' => 2],
@@ -261,10 +261,10 @@ class QuestionControllerTest extends TestCase
         $text = $harness->plainScreenText();
         $ansi = $harness->ansiOutput();
 
-        $this->assertStringContainsString('Command:', $text);
+        $this->assertStringContainsString('Command \\x1B[31m:', $text);
         $this->assertStringContainsString('rm α && rmdir β', $text);
         $this->assertStringContainsString('rm <fg=red>literal</fg>', $text);
-        $this->assertStringContainsString('\\x1B[31mnot-a-style', $text);
+        $this->assertStringContainsString('\\x1B[31mnot-a-style ΔΟΚΙΜΉ 一二三', $text);
         $this->assertStringNotContainsString('…', $text, 'Trigger input must wrap instead of truncate.');
         $this->assertStringContainsString(new Style(color: 'yellow', bold: true)->apply('rm'), $ansi);
     }

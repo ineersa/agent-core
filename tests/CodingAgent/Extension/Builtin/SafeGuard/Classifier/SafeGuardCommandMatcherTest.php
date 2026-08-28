@@ -72,16 +72,16 @@ final class SafeGuardCommandMatcherTest extends TestCase
 
     public function testDecisionEvidenceIncludesEveryRepeatedAndOverlappingPatternMatch(): void
     {
-        $command = "rm one && rmdir two && rm three\nrm four";
+        $command = 'env | env | printenv |';
 
         $result = $this->matcher->classify($command);
 
         $this->assertSame($command, $result->triggerInput);
         $this->assertSame([
-            ['start' => 0, 'length' => 2],
-            ['start' => 10, 'length' => 5],
-            ['start' => 23, 'length' => 2],
-            ['start' => 32, 'length' => 2],
+            ['start' => 0, 'length' => 3],
+            ['start' => 0, 'length' => 5],
+            ['start' => 6, 'length' => 5],
+            ['start' => 12, 'length' => 10],
         ], $result->matchSpans);
     }
 
