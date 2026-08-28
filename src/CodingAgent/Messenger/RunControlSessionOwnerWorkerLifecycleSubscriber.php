@@ -88,7 +88,9 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriber
     /** @param list<string> $transportNames */
     private static function isRunControlWorker(array $transportNames): bool
     {
-        return \in_array('run_control', $transportNames, true);
+        // ConsumerSupervisor launches run_control alone. A combined ad-hoc
+        // consumer must not become a second projection owner by coincidence.
+        return ['run_control'] === array_values($transportNames);
     }
 
     private static function lockResource(string $sessionId): string
