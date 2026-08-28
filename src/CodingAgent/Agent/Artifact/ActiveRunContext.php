@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
+use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunOperationalProjectionWriterInterface;
@@ -19,21 +20,33 @@ final class ActiveRunContext implements ActiveRunContextInterface
         private readonly RunStateRebuilderInterface $runStateRebuilder,
         private readonly RunOperationalProjectionWriterInterface $projectionWriter,
         private readonly RunOwnerSessionResolver $ownerSessionResolver,
+        private readonly ?RunMetrics $metrics = null,
     ) {
     }
 
     public function stateFor(string $runId): RunState
     {
         if (isset($this->states[$runId])) {
+            $this->metrics?->recordActiveContextCacheHit();
+
             return $this->states[$runId];
         }
 
-        $replay = $this->runStateRebuilder->rebuildIfStale(RunState::queued($runId), $runId);
-        $state = $replay->rebuiltState ?? RunState::queued($runId);
-        $this->persist($state);
-        $this->states[$runId] = $state;
+        $startedAt = hrtime(true);
+        $eventCount = 0;
+        $success = false;
+        try {
+            $replay = $this->runStateRebuilder->rebuildIfStale(RunState::queued($runId), $runId);
+            $eventCount = $replay->eventCount;
+            $state = $replay->rebuiltState ?? RunState::queued($runId);
+            $this->persist($state);
+            $this->states[$runId] = $state;
+            $success = true;
 
-        return $state;
+            return $state;
+        } finally {
+            $this->metrics?->recordCanonicalReplay($eventCount, $success, (hrtime(true) - $startedAt) / 1_000_000);
+        }
     }
 
     public function remember(RunState $state): void

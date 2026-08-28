@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Messenger;
 
+use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\CodingAgent\Entity\RunOperationalProjectionRepository;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -34,6 +35,7 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriber
         private readonly LoggerInterface $logger,
         #[Autowire('%env(HATFIELD_SESSION_ID)%')]
         private readonly string $sessionId,
+        private readonly ?RunMetrics $metrics = null,
     ) {
     }
 
@@ -51,6 +53,7 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriber
 
         $lock = $this->lockFactory->createLock(self::lockResource($sessionId), ttl: null, autoRelease: true);
         if (!$lock->acquire(blocking: false)) {
+            $this->metrics?->incrementOwnerFenceConflicts();
             $this->logger->error('run_control session owner lock conflict', [
                 'component' => 'run_control_session_owner',
                 'event_type' => 'run_control.session_owner_lock_conflict',
@@ -62,12 +65,18 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriber
 
         $this->sessionOwnerLock = $lock;
 
+        $startedAt = hrtime(true);
+        $success = false;
+        $deleted = 0;
         try {
-            $this->projectionRepository->deleteForOwnerSession($sessionId);
+            $deleted = $this->projectionRepository->deleteForOwnerSession($sessionId);
+            $success = true;
         } catch (\Throwable $exception) {
             $this->releaseSessionOwnerLock();
 
             throw $exception;
+        } finally {
+            $this->metrics?->recordStartupCleanup($success, $success ? $deleted : 0, (hrtime(true) - $startedAt) / 1_000_000);
         }
 
         $this->logger->info('run_control session owner lock acquired and projection cleared', [

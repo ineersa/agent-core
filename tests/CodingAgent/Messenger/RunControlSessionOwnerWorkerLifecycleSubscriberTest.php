@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Messenger;
 
 use Doctrine\DBAL\Connection;
+use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -74,7 +75,8 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends Isolated
         $first->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control')));
         $this->repository->replace($this->projection('recreated-a', 'session-a'));
 
-        $second = $this->subscriber('session-a', $factory);
+        $metrics = new RunMetrics();
+        $second = new RunControlSessionOwnerWorkerLifecycleSubscriber($this->repository, $factory, new TestLogger(), 'session-a', $metrics);
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('already owned');
         try {
@@ -86,6 +88,7 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends Isolated
                 'A competing worker must fail before it clears the current owner projection.',
             );
             $first->onWorkerStopped(new WorkerStoppedEvent($this->worker('run_control')));
+            $this->assertSame(1, $metrics->snapshot()['run_control_owner']['fence_conflicts']);
         }
     }
 

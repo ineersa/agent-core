@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Entity;
 
 use Doctrine\DBAL\Connection;
+use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
@@ -30,6 +31,25 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
         $container = self::getContainer();
         $this->connection = $container->get(Connection::class);
         $this->repository = $container->get('test.run_operational_projection_repository');
+    }
+
+    public function testAggregateProjectionAndStatusMetricsContainOnlyBoundedCounts(): void
+    {
+        $metrics = new RunMetrics();
+        $writer = new RunOperationalProjectionWriter(new RunOperationalProjectionRepository($this->connection, $metrics));
+        $writer->replace('alpha', new RunState('alpha', RunStatus::Running));
+        $writer->replace('alpha', new RunState('beta', RunStatus::Running));
+
+        $repository = new RunOperationalProjectionRepository($this->connection, $metrics);
+        $this->assertSame(RunStatus::Running, $repository->findOperationalStatus('alpha')?->status);
+        $this->assertNull($repository->findOperationalStatus('missing'));
+
+        $snapshot = $metrics->snapshot();
+        $this->assertSame(['state' => 2, 'tool' => 0, 'human' => 0], $snapshot['projection_replacements']['rows_written']);
+        $this->assertSame(['parent' => 1, 'child' => 1], $snapshot['projection_replacements']['owner_kind']);
+        $this->assertSame(43, $snapshot['projection_replacements']['logical_scalar_bytes']);
+        $this->assertSame(['attempts' => 2, 'misses' => 1, 'errors' => 0], array_intersect_key($snapshot['operational_status_reads'], array_flip(['attempts', 'misses', 'errors'])));
+        $this->assertStringNotContainsString('alpha', json_encode($snapshot, \JSON_THROW_ON_ERROR));
     }
 
     public function testParentAndChildProjectionCleanupIsScopedAndCascadesDependencies(): void

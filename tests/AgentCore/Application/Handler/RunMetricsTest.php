@@ -27,7 +27,16 @@ final class RunMetricsTest extends TestCase
         $metrics->recordToolLatency(275.0, true, true);
 
         $metrics->incrementStaleResultCount(2);
-        $metrics->incrementReplayRebuildCount('canonical_events');
+        $metrics->recordOperationalStatusRead(false, false, 1.0);
+        $metrics->recordOperationalStatusRead(true, true, 2.0);
+        $metrics->recordProjectionReplacement(true, 'parent', 2, 1, 42, 3.0);
+        $metrics->recordProjectionReplacement(false, 'child', 0, 0, 0, 4.0);
+        $metrics->recordActiveContextCacheHit();
+        $metrics->recordCanonicalReplay(4, true, 5.0);
+        $metrics->recordCanonicalReplay(0, false, 6.0);
+        $metrics->recordStartupCleanup(true, 3, 7.0);
+        $metrics->recordStartupCleanup(false, 0, 8.0);
+        $metrics->incrementOwnerFenceConflicts();
 
         $snapshot = $metrics->snapshot();
 
@@ -44,10 +53,21 @@ final class RunMetricsTest extends TestCase
         $this->assertSame(0.5, $snapshot['tools']['timeout_rate']);
 
         $this->assertSame(3, $snapshot['command_queue_lag']['max']);
-        $this->assertSame(3, $snapshot['command_queue_lag']['by_run']['run-metrics-1']);
+        $this->assertArrayNotHasKey('by_run', $snapshot['command_queue_lag']);
+        $this->assertStringNotContainsString('run-metrics-1', json_encode($snapshot, \JSON_THROW_ON_ERROR));
 
         $this->assertSame(2, $snapshot['stale_result_count']);
-        $this->assertSame(1, $snapshot['replay_rebuild_count']);
-        $this->assertSame(1, $snapshot['replay_rebuild_by_source']['canonical_events']);
+        $this->assertSame(['attempts' => 2, 'misses' => 1, 'errors' => 1], array_intersect_key($snapshot['operational_status_reads'], array_flip(['attempts', 'misses', 'errors'])));
+        $this->assertSame(1, $snapshot['projection_replacements']['successes']);
+        $this->assertSame(1, $snapshot['projection_replacements']['errors']);
+        $this->assertSame(['state' => 1, 'tool' => 2, 'human' => 1], $snapshot['projection_replacements']['rows_written']);
+        $this->assertSame(['parent' => 1, 'child' => 0], $snapshot['projection_replacements']['owner_kind']);
+        $this->assertSame(42, $snapshot['projection_replacements']['logical_scalar_bytes']);
+        $this->assertSame(1, $snapshot['active_context']['cache_hits']);
+        $this->assertSame(2, $snapshot['active_context']['cache_misses']);
+        $this->assertSame(4, $snapshot['active_context']['canonical_replay']['events']);
+        $this->assertSame(1, $snapshot['run_control_owner']['startup_cleanup_errors']);
+        $this->assertSame(3, $snapshot['run_control_owner']['startup_cleanup_state_rows_deleted']);
+        $this->assertSame(1, $snapshot['run_control_owner']['fence_conflicts']);
     }
 }

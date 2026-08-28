@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
 use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
+use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunOperationalProjectionWriterInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -35,6 +36,28 @@ final class ActiveRunContextTest extends IsolatedKernelTestCase
         $context = $this->context($rebuilder, $writer);
         $this->assertSame($rebuilt, $context->stateFor($runId));
         $this->assertSame($rebuilt, $context->stateFor($runId));
+    }
+
+    public function testCacheMetricsRecordOneReplayForMissAndHitsWithoutReplaying(): void
+    {
+        $runId = 'metric-run';
+        $state = new RunState($runId, RunStatus::Running);
+        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
+        $writer = $this->createMock(RunOperationalProjectionWriterInterface::class);
+        $rebuilder->expects($this->once())->method('rebuildIfStale')->willReturn(RunStateReplayResult::rebuilt($state, 4, 4, true));
+        $writer->expects($this->once())->method('replace');
+        $metrics = new RunMetrics();
+        $context = new ActiveRunContext($rebuilder, $writer, new RunOwnerSessionResolver($this->directory()), $metrics);
+
+        $context->stateFor($runId);
+        $context->stateFor($runId);
+
+        $snapshot = $metrics->snapshot();
+        $this->assertSame(1, $snapshot['active_context']['cache_misses']);
+        $this->assertSame(1, $snapshot['active_context']['cache_hits']);
+        $this->assertSame(1, $snapshot['active_context']['canonical_replay']['count']);
+        $this->assertSame(4, $snapshot['active_context']['canonical_replay']['events']);
+        $this->assertSame(1, $snapshot['active_context']['canonical_replay']['successes']);
     }
 
     public function testStateForNoEventsPersistsAndCachesQueuedState(): void
@@ -95,14 +118,15 @@ final class ActiveRunContextTest extends IsolatedKernelTestCase
                 }
             },
         );
-
-        $context = $this->context($rebuilder, $writer);
+        $metrics = new RunMetrics();
+        $context = new ActiveRunContext($rebuilder, $writer, new RunOwnerSessionResolver($this->directory()), $metrics);
         try {
             $context->stateFor($runId);
             $this->fail('Projection failure must propagate.');
         } catch (\RuntimeException $e) {
             $this->assertSame('projection unavailable', $e->getMessage());
         }
+        $this->assertSame(1, $metrics->snapshot()['active_context']['canonical_replay']['errors']);
         $this->assertSame($state, $context->stateFor($runId));
     }
 

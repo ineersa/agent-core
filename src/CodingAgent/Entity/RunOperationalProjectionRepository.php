@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\DBAL\Connection;
+use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
@@ -17,8 +18,10 @@ use Symfony\Component\Clock\Clock;
  */
 final readonly class RunOperationalProjectionRepository implements RunOperationalStatusReaderInterface
 {
-    public function __construct(private Connection $connection)
-    {
+    public function __construct(
+        private Connection $connection,
+        private ?RunMetrics $metrics = null,
+    ) {
     }
 
     public function replace(RunOperationalProjectionDTO $projection): void
@@ -32,34 +35,61 @@ final readonly class RunOperationalProjectionRepository implements RunOperationa
      */
     public function replaceStateToolCallsAndHumanInputs(RunOperationalProjectionDTO $projection, array $toolCalls, array $humanInputs): void
     {
-        $this->connection->transactional(function () use ($projection, $toolCalls, $humanInputs): void {
-            $this->replaceProjection($projection);
-            $this->replaceToolCallRows($projection->runId, $toolCalls);
-            $this->replaceHumanInputRows($projection->runId, $humanInputs);
-        });
+        $startedAt = hrtime(true);
+        $success = false;
+        try {
+            $this->connection->transactional(function () use ($projection, $toolCalls, $humanInputs): void {
+                $this->replaceProjection($projection);
+                $this->replaceToolCallRows($projection->runId, $toolCalls);
+                $this->replaceHumanInputRows($projection->runId, $humanInputs);
+            });
+            $success = true;
+        } finally {
+            $this->metrics?->recordProjectionReplacement(
+                $success,
+                $projection->ownerSessionId === $projection->runId ? 'parent' : 'child',
+                \count($toolCalls),
+                \count($humanInputs),
+                $this->logicalScalarBytes($projection, $toolCalls, $humanInputs),
+                (hrtime(true) - $startedAt) / 1_000_000,
+            );
+        }
     }
 
     public function findOperationalStatus(string $runId): ?RunOperationalStatusDTO
     {
-        $row = $this->connection->fetchAssociative(<<<'SQL'
+        $startedAt = hrtime(true);
+        $miss = false;
+        $error = false;
+        try {
+            $row = $this->connection->fetchAssociative(<<<'SQL'
 SELECT run_id, status, operation_turn_no, operation_step_id, operation_attempt, operation_key
 FROM run_operational_state WHERE run_id = :run_id
 SQL, ['run_id' => $runId]);
-        if (false === $row) {
-            return null;
-        }
+            if (false === $row) {
+                $miss = true;
 
-        $operation = null;
-        if (null !== $row['operation_key']) {
-            $operation = new CurrentOperationDTO(
-                (int) $row['operation_turn_no'],
-                (string) $row['operation_step_id'],
-                (int) $row['operation_attempt'],
-                (string) $row['operation_key'],
-            );
-        }
+                return null;
+            }
 
-        return new RunOperationalStatusDTO((string) $row['run_id'], RunStatus::from((string) $row['status']), $operation);
+            $operation = null;
+            if (null !== $row['operation_key']) {
+                $operation = new CurrentOperationDTO(
+                    (int) $row['operation_turn_no'],
+                    (string) $row['operation_step_id'],
+                    (int) $row['operation_attempt'],
+                    (string) $row['operation_key'],
+                );
+            }
+
+            return new RunOperationalStatusDTO((string) $row['run_id'], RunStatus::from((string) $row['status']), $operation);
+        } catch (\Throwable $exception) {
+            $error = true;
+
+            throw $exception;
+        } finally {
+            $this->metrics?->recordOperationalStatusRead($miss, $error, (hrtime(true) - $startedAt) / 1_000_000);
+        }
     }
 
     /** @param list<RunOperationalToolCallDTO> $toolCalls */
@@ -159,6 +189,29 @@ SQL, [
                 'created_at' => $now, 'updated_at' => $now,
             ]);
         }
+    }
+
+    /**
+     * @param list<RunOperationalToolCallDTO>   $toolCalls
+     * @param list<RunOperationalHumanInputDTO> $humanInputs
+     */
+    private function logicalScalarBytes(RunOperationalProjectionDTO $projection, array $toolCalls, array $humanInputs): int
+    {
+        $values = [
+            $projection->runId, $projection->ownerSessionId, $projection->status->value, $projection->turnNo,
+            $projection->activeStepId, $projection->currentOperation?->turnNo, $projection->currentOperation?->stepId,
+            $projection->currentOperation?->attempt, $projection->currentOperation?->idempotencyKey,
+            $projection->lastAppliedAdvanceKey, $projection->lastAppliedCompactionKey, $projection->retryableFailure,
+            $projection->retryAttempts, $projection->lastEventSequence, $projection->transitionVersion,
+        ];
+        foreach ($toolCalls as $toolCall) {
+            array_push($values, $toolCall->batchId, $toolCall->toolCallId, $toolCall->orderIndex, $toolCall->status, $toolCall->attempt);
+        }
+        foreach ($humanInputs as $humanInput) {
+            array_push($values, $humanInput->questionId, $humanInput->orderIndex, $humanInput->continuationKind, $humanInput->toolCallId, $humanInput->status);
+        }
+
+        return array_sum(array_map(static fn (mixed $value): int => \is_string($value) ? \strlen($value) : (null === $value ? 0 : \strlen((string) (int) $value)), $values));
     }
 
     /** @param list<RunOperationalHumanInputDTO> $humanInputs */
