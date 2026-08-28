@@ -246,14 +246,33 @@ def project_file(events: list[tuple[dict[str, Any], int]], scope: str, totals: T
 
 
 def add_legacy_state(totals: Totals, scope: str, decoded: Any) -> None:
-    if not isinstance(decoded, dict) or not isinstance(decoded.get("runId"), str) or not isinstance(decoded.get("status"), str):
+    if not isinstance(decoded, dict):
         totals.operational_unsupported[(scope, "state")] += 1
         return
-    run_id = decoded["runId"]
-    state_fields = ("runId", "status", "turnNo", "activeStepId", "lastSeq", "version")
+
+    is_camel_case = isinstance(decoded.get("runId"), str) and isinstance(decoded.get("status"), str)
+    is_snake_case = isinstance(decoded.get("run_id"), str) and isinstance(decoded.get("status"), str)
+    if not is_camel_case and not is_snake_case:
+        totals.operational_unsupported[(scope, "state")] += 1
+        return
+
+    fields = {
+        "run_id": "runId" if is_camel_case else "run_id",
+        "status": "status",
+        "turn_no": "turnNo" if is_camel_case else "turn_no",
+        "active_step_id": "activeStepId" if is_camel_case else "active_step_id",
+        "last_seq": "lastSeq" if is_camel_case else "last_seq",
+        "version": "version",
+    }
+    run_id = decoded[fields["run_id"]]
     totals.operational_rows[(scope, "state")] += 1
-    totals.operational_bytes[(scope, "state")] += 38 + sum(len(str(decoded[field]).encode("utf-8")) for field in state_fields if decoded.get(field) is not None)
-    tool_calls = decoded.get("currentToolCalls", [])
+    totals.operational_bytes[(scope, "state")] += 38 + sum(
+        len(str(decoded[field]).encode("utf-8"))
+        for field in fields.values()
+        if decoded.get(field) is not None
+    )
+
+    tool_calls = decoded.get("currentToolCalls" if is_camel_case else "pending_tool_calls", [])
     if not isinstance(tool_calls, list):
         totals.operational_unsupported[(scope, "tool")] += 1
     else:
@@ -264,18 +283,24 @@ def add_legacy_state(totals: Totals, scope: str, decoded: Any) -> None:
                 continue
             totals.operational_rows[(scope, "tool")] += 1
             totals.operational_bytes[(scope, "tool")] += 38 + len(run_id.encode("utf-8")) + sum(len(str(tool[field]).encode("utf-8")) for field in required if tool[field] is not None)
-    human_inputs = decoded.get("pendingHumanInputRequests", [])
+
+    human_inputs = decoded.get("pendingHumanInputRequests" if is_camel_case else "pending_human_input_requests", [])
     if not isinstance(human_inputs, list):
         totals.operational_unsupported[(scope, "human")] += 1
-    else:
-        for index, request in enumerate(human_inputs):
-            if not isinstance(request, dict) or not isinstance(request.get("questionId"), str) or not isinstance(request.get("continuationKind"), str):
-                totals.operational_unsupported[(scope, "human")] += 1
-                continue
-            tool_call_id = request.get("continuationRef", {}).get("tool_call_id") if isinstance(request.get("continuationRef"), dict) else None
-            totals.operational_rows[(scope, "human")] += 1
-            values = (run_id, request["questionId"], index, request["continuationKind"], tool_call_id, "waiting")
-            totals.operational_bytes[(scope, "human")] += 38 + sum(len(str(value).encode("utf-8")) for value in values if value is not None)
+        return
+
+    question_id_field = "questionId" if is_camel_case else "question_id"
+    continuation_kind_field = "continuationKind" if is_camel_case else "continuation_kind"
+    continuation_ref_field = "continuationRef" if is_camel_case else "continuation_ref"
+    for index, request in enumerate(human_inputs):
+        if not isinstance(request, dict) or not isinstance(request.get(question_id_field), str) or not isinstance(request.get(continuation_kind_field), str):
+            totals.operational_unsupported[(scope, "human")] += 1
+            continue
+        continuation_ref = request.get(continuation_ref_field)
+        tool_call_id = continuation_ref.get("tool_call_id") if isinstance(continuation_ref, dict) else None
+        totals.operational_rows[(scope, "human")] += 1
+        values = (run_id, request[question_id_field], index, request[continuation_kind_field], tool_call_id, "waiting")
+        totals.operational_bytes[(scope, "human")] += 38 + sum(len(str(value).encode("utf-8")) for value in values if value is not None)
 
 
 def audit(root: Path, field_paths: tuple[str, ...], project_final: bool) -> Totals:

@@ -93,20 +93,27 @@ flowchart LR
 ```
 
 ```text
+INPUT_FINGERPRINT before_after=unchanged files=85651 bytes=1245887063 mtime_ns_sum=153037241344613307196979
 SCHEMA audit=3 privacy=aggregate-only
 STATE_JSON scope=parent files=6 total_bytes=3571779 p50_bytes=553984 p95_bytes=665304 max_bytes=1239421 malformed=0
 STATE_JSON scope=child files=232 total_bytes=218668686 p50_bytes=807366 p95_bytes=2026729 max_bytes=2835871 malformed=0
-OPERATIONAL scope=parent row=state rows=0 logical_scalar_bytes=0 unsupported_shapes=6
+OPERATIONAL scope=parent row=state rows=6 logical_scalar_bytes=538 unsupported_shapes=0
 OPERATIONAL scope=parent row=tool rows=0 logical_scalar_bytes=0 unsupported_shapes=0
-OPERATIONAL scope=parent row=human rows=0 logical_scalar_bytes=0 unsupported_shapes=0
-OPERATIONAL scope=child row=state rows=0 logical_scalar_bytes=0 unsupported_shapes=232
+OPERATIONAL scope=parent row=human rows=1 logical_scalar_bytes=85 unsupported_shapes=0
+OPERATIONAL scope=child row=state rows=232 logical_scalar_bytes=28808 unsupported_shapes=0
 OPERATIONAL scope=child row=tool rows=0 logical_scalar_bytes=0 unsupported_shapes=0
 OPERATIONAL scope=child row=human rows=0 logical_scalar_bytes=0 unsupported_shapes=0
 OPERATIONAL_BOUND row=state max_varchar_bytes=1562 timestamps_bytes=38 sqlite_utf8_length_caveat=declared_char_limits_not_file_allocation
 OPERATIONAL_BOUND row=tool max_varchar_bytes=797 timestamps_bytes=38 sqlite_utf8_length_caveat=declared_char_limits_not_file_allocation
 OPERATIONAL_BOUND row=human max_varchar_bytes=829 timestamps_bytes=38 sqlite_utf8_length_caveat=declared_char_limits_not_file_allocation
+SCHEMA benchmark=1 privacy=aggregate-only measurement=container_boot_before_baseline_parse_filter_reduce_retained_state peak=memory_get_peak_usage_true_minus_baseline_after_memory_reset_peak_usage
+DATASET scope=parent event_files=6 event_bytes=107757806
+REPLAY_RESULT scope=parent status=measured candidates_skipped=5 events=44 duration_ms=33 peak_memory_delta_bytes=0
+DATASET scope=child event_files=232 event_bytes=280207574
+REPLAY_RESULT scope=child status=measured candidates_skipped=210 events=4 duration_ms=2 peak_memory_delta_bytes=0
 ```
 
 ```bash
 python3 tools/session-storage-audit.py --project-final /path/to/.hatfield
+php tools/storage-replay-benchmark.php /path/to/.hatfield
 ```

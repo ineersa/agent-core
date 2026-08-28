@@ -113,6 +113,44 @@ final class SessionStorageAuditTest extends TestCase
         }
     }
 
+    #[Test]
+    public function recognizesHistoricalSnakeCaseOperationalScalarsWithoutDisclosingThem(): void
+    {
+        $statePath = $this->projectDir.'/.hatfield/sessions/parent-sentinel/state.json';
+        mkdir(\dirname($statePath), 0777, true);
+        file_put_contents($statePath, json_encode([
+            'run_id' => 'snake-run-sentinel',
+            'status' => 'waiting_human',
+            'turn_no' => 7,
+            'active_step_id' => 'snake-step-sentinel',
+            'last_seq' => 13,
+            'version' => 2,
+            'pending_tool_calls' => [],
+            'pending_human_input_requests' => [[
+                'question_id' => 'snake-question-sentinel',
+                'continuation_kind' => 'tool_call',
+                'continuation_ref' => ['tool_call_id' => 'snake-tool-sentinel'],
+            ]],
+        ], \JSON_THROW_ON_ERROR));
+
+        $process = new Process([
+            'python3',
+            \dirname(__DIR__, 3).'/tools/session-storage-audit.py',
+            $this->projectDir.'/.hatfield',
+        ]);
+        $process->setTimeout(10.0);
+        $process->run();
+
+        $output = $process->getOutput().$process->getErrorOutput();
+        $this->assertSame(0, $process->getExitCode(), $output);
+        $this->assertStringContainsString('OPERATIONAL scope=parent row=state rows=1 logical_scalar_bytes=', $output);
+        $this->assertStringContainsString('OPERATIONAL scope=parent row=tool rows=0 logical_scalar_bytes=0 unsupported_shapes=0', $output);
+        $this->assertStringContainsString('OPERATIONAL scope=parent row=human rows=1 logical_scalar_bytes=', $output);
+        foreach (['snake-run-sentinel', 'snake-step-sentinel', 'snake-question-sentinel', 'snake-tool-sentinel'] as $sentinel) {
+            $this->assertStringNotContainsString($sentinel, $output);
+        }
+    }
+
     /** @param array<string, mixed> $payload */
     private function event(int $seq, string $type, array $payload = []): array
     {
