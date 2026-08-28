@@ -11,7 +11,17 @@ use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardToolCallHook;
 use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionKindEnum;
+use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
+use Ineersa\Tui\Question\QuestionKind;
+use Ineersa\Tui\Question\QuestionOption;
+use Ineersa\Tui\Question\QuestionRequest;
+use Ineersa\Tui\Question\QuestionSource;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
+use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Style\Style;
 
 /** SafeGuard classification + approval answer mapping (no interactive Always-allow). */
 final class SafeGuardToolCallHookTest extends TestCase
@@ -54,6 +64,63 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
     }
 
+    public function testApprovalPromptContainsEscapedInputWithClassifierMatchesStyledAsMarkdown(): void
+    {
+        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        $_ENV['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
+        $_SERVER['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
+        $command = 'rm first && rmdir second && rm third';
+
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO('evidence', 'bash', ['command' => $command], 0));
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame(
+            "Allow destructive command?\n\n**Command:**\n\n`rm`&#32;first&#32;\\&\\&&#32;`rmdir`&#32;second&#32;\\&\\&&#32;`rm`&#32;third",
+            $dto->details['prompt'] ?? null,
+        );
+        $this->assertArrayNotHasKey('trigger_input', $dto->details);
+        $this->assertArrayNotHasKey('match_spans', $dto->details);
+    }
+
+    public function testApprovalMarkdownRendersExactUntrustedMultilineInputWithStyledMatches(): void
+    {
+        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        $_ENV['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
+        $_SERVER['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
+        $command = " env |grep <fg=red>*literal*</fg> \x1B[31m ΔΟΚΙΜΉ\nprintenv | sort";
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO('render', 'bash', ['command' => $command], 0));
+        $prompt = (string) ($dto->details['prompt'] ?? '');
+
+        $harness = new VirtualTuiHarness(
+            columns: 42,
+            rows: 24,
+            palette: new ThemePalette('safeguard-prompt', [
+                ThemeColorEnum::Accent->value => 'cyan',
+                ThemeColorEnum::Prompt->value => 'magenta',
+                ThemeColorEnum::MarkdownCode->value => 'yellow',
+                ThemeColorEnum::Text->value => 'white',
+            ]),
+        );
+        $controller = new QuestionController(new QuestionCoordinator(), $harness->screen());
+        $controller->open(new QuestionRequest(
+            requestId: 'safeguard-markdown',
+            source: QuestionSource::AgentCore,
+            kind: QuestionKind::Choice,
+            prompt: $prompt,
+            choices: [new QuestionOption('✅ Allow'), new QuestionOption('❌ Deny')],
+            allowOther: false,
+        ));
+
+        $text = $harness->plainScreenText();
+        $this->assertStringContainsString('Allow sensitive information access?', $text);
+        $this->assertStringContainsString('Command:', $text);
+        $this->assertStringContainsString('env |grep <fg=red>*literal*</fg> [31m', $text);
+        $this->assertStringContainsString('ΔΟΚΙΜΉ', $text);
+        $this->assertStringContainsString('printenv | sort', $text);
+        $this->assertStringNotContainsString('…', $text);
+        $this->assertStringContainsString(new Style(color: 'yellow')->apply('env |'), $harness->ansiOutput());
+    }
+
     public function testBashDestructiveRequiresApprovalWithAllowDenyOnly(): void
     {
         putenv('HATFIELD_APPROVAL_CHANNEL=controller');
@@ -72,6 +139,7 @@ final class SafeGuardToolCallHookTest extends TestCase
         $_SERVER['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
         $dto = $this->hook->onToolCall(new ToolCallContextDTO('c4', 'write', ['path' => '/tmp/out.txt', 'content' => 'x'], 0));
         $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertStringContainsString("**Path:**\n\n\\/tmp\\/out\\.txt", (string) ($dto->details['prompt'] ?? ''));
     }
 
     public function testRawSettingsMutationWithChannelStillRequiresApproval(): void
