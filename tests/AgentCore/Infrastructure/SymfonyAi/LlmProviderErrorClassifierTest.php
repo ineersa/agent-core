@@ -98,6 +98,9 @@ final class LlmProviderErrorClassifierTest extends TestCase
             ['invalid_request_error', LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST],
             ['unsupported_model', LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST],
             ['content_policy_violation', LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST],
+            ['invalid_argument', LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST],
+            ['validation_error', LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST],
+            ['usage_limit_reached', LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING],
         ];
     }
 

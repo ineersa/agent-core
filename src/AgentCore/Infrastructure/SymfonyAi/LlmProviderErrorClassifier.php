@@ -39,6 +39,7 @@ final class LlmProviderErrorClassifier
         'GoUsageLimitError',
         'FreeUsageLimitError',
         'insufficient_credits',
+        'usage_limit_reached',
     ];
 
     private const array TRANSPORT_ERROR_PATTERNS = [
@@ -109,6 +110,7 @@ final class LlmProviderErrorClassifier
         'bad_request',
         'content_filter',
         'content_policy_violation',
+        'invalid_argument',
         'invalid_parameter',
         'invalid_request_error',
         'model_not_found',
@@ -116,6 +118,7 @@ final class LlmProviderErrorClassifier
         'safety_violation',
         'unsupported_feature',
         'unsupported_model',
+        'validation_error',
     ];
 
     /**

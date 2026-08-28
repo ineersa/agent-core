@@ -199,7 +199,11 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 // Keep actionable provider/transport detail, but drop stale retry-policy
                 // prose from the classified user_message (e.g. "Will retry automatically.").
                 $originalDetail = rtrim(trim(preg_replace(
-                    '/\s*Will retry automatically\.?/i',
+                    [
+                        '/\s*Will retry automatically\.?/i',
+                        '/\s*\(retryable\)/i',
+                        '/\s+— retryable(?=\))/i',
+                    ],
                     '',
                     $userMessage,
                 ) ?? $userMessage), '. ');
