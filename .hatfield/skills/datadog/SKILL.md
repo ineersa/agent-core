@@ -21,6 +21,6 @@ description: Investigate Datadog logs, traces, metrics, monitors, dashboards, an
 
 ## Tool naming and output
 
-- Use the runtime catalog, not assumed names. Hatfield exposes Datadog MCP tools as `datadog_<tool>`; Pi subagents expose them as `datadog__<tool>`.
+- Use the runtime catalog, not assumed names. Hatfield exposes Datadog MCP tools as `datadog_<tool>`.
 - The connected catalog includes read-oriented log, span/trace, metric, monitor, dashboard, incident, event, service/dependency, host, notebook, and Datadog-guide tools. It also includes internal `_dd_*` tools marked `do-not-call`; never invoke those.
 - Include in every handoff: question, exact query or identifier, time range, source tool, relevant limit/aggregation, concise evidence, correlation, and uncertainty. Do not paste raw log bodies or unrelated tenant data.
