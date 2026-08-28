@@ -29,19 +29,18 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
 
     public function replace(RunOperationalState $replacement): void
     {
+        $violations = $this->validator->validate($replacement);
+        if (0 !== $violations->count()) {
+            throw new ValidationFailedException($replacement, $violations);
+        }
+
         $entityManager = $this->getEntityManager();
         $entityManager->wrapInTransaction(function () use ($entityManager, $replacement): void {
             $state = $this->find($replacement->runId);
             if ($state instanceof RunOperationalState) {
                 $state->replaceFrom($replacement);
             } else {
-                $state = $replacement;
-                $entityManager->persist($state);
-            }
-
-            $violations = $this->validator->validate($state);
-            if (0 !== $violations->count()) {
-                throw new ValidationFailedException($state, $violations);
+                $entityManager->persist($replacement);
             }
 
             $entityManager->flush();

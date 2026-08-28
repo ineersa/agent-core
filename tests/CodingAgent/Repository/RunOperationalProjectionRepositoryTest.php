@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Repository;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Tools\SchemaTool;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
@@ -113,11 +115,41 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
         $this->assertSame(0, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM run_operational_human_input WHERE run_id = ?', ['child-1']));
     }
 
-    public function testSymfonyValidationRejectsAnUnboundedProjectionBeforeFlush(): void
+    public function testSymfonyValidationRejectsAnUnboundedProjectionWithoutDirtyingManagedState(): void
     {
-        $this->expectException(ValidationFailedException::class);
+        $this->repository->replace($this->projection('run-1', 'session-1', RunStatus::Running));
 
-        $this->repository->replace($this->projection(str_repeat('x', 256), 'session-1', RunStatus::Running));
+        try {
+            $this->repository->replace($this->projection('run-1', str_repeat('x', 256), RunStatus::Running));
+            $this->fail('An unbounded owner session ID must fail validation.');
+        } catch (ValidationFailedException $exception) {
+            $this->assertGreaterThan(0, $exception->getViolations()->count());
+        }
+
+        $this->repository->replace($this->projection('run-2', 'session-2', RunStatus::Running));
+        $this->assertSame('session-1', $this->connection->fetchOne('SELECT owner_session_id FROM run_operational_state WHERE run_id = ?', ['run-1']));
+    }
+
+    public function testDoctrineMetadataMatchesTheMigratedOperationalTables(): void
+    {
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $configuration = $entityManager->getConnection()->getConfiguration();
+        $previousFilter = $configuration->getSchemaAssetsFilter();
+        $tables = ['run_operational_state', 'run_operational_tool_call', 'run_operational_human_input'];
+        $configuration->setSchemaAssetsFilter(static fn (string $asset): bool => \in_array($asset, $tables, true));
+
+        try {
+            $metadata = array_map($entityManager->getClassMetadata(...), [
+                RunOperationalState::class,
+                RunOperationalToolCall::class,
+                RunOperationalHumanInput::class,
+            ]);
+            $updateSql = (new SchemaTool($entityManager))->getUpdateSchemaSql($metadata);
+        } finally {
+            $configuration->setSchemaAssetsFilter($previousFilter);
+        }
+
+        $this->assertSame([], $updateSql, implode("\n", $updateSql));
     }
 
     public function testSchemaContainsOnlyApprovedPayloadFreeColumns(): void

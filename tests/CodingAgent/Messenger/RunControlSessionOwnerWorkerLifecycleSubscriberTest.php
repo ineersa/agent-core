@@ -5,6 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Messenger;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Mapping\ClassMetadata;
+use Doctrine\ORM\Persisters\Entity\EntityPersister;
+use Doctrine\ORM\UnitOfWork;
+use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -22,6 +27,7 @@ use Symfony\Component\Messenger\Event\WorkerStartedEvent;
 use Symfony\Component\Messenger\Event\WorkerStoppedEvent;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 use Symfony\Component\Messenger\Worker;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /** Proves the dedicated run_control process fences session-local projection ownership before polling. */
 final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends IsolatedKernelTestCase
@@ -97,6 +103,34 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends Isolated
         $replacement->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control')));
 
         $this->assertNull($this->repository->findOperationalStatus('recreated-a'));
+    }
+
+    public function testCleanupFailureReleasesOwnerFenceForReplacementWorker(): void
+    {
+        $factory = new LockFactory(new InMemoryStore());
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $registry = $this->createStub(ManagerRegistry::class);
+        $unitOfWork = $this->createStub(UnitOfWork::class);
+        $persister = $this->createStub(EntityPersister::class);
+        $registry->method('getManagerForClass')->willReturn($entityManager);
+        $entityManager->method('getClassMetadata')->willReturn(new ClassMetadata(RunOperationalState::class));
+        $entityManager->method('getUnitOfWork')->willReturn($unitOfWork);
+        $unitOfWork->method('getEntityPersister')->willReturn($persister);
+        $persister->method('loadAll')->willReturn([$this->projection('parent-a', 'session-a')]);
+        $entityManager->expects($this->once())->method('wrapInTransaction')->willThrowException(new \RuntimeException('database unavailable'));
+        $failingRepository = new RunOperationalProjectionRepository($registry, $this->createStub(ValidatorInterface::class));
+        $failingSubscriber = new RunControlSessionOwnerWorkerLifecycleSubscriber($failingRepository, $factory, new TestLogger(), 'session-a');
+
+        try {
+            $failingSubscriber->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control')));
+            $this->fail('Cleanup failure must abort worker startup.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('database unavailable', $exception->getMessage());
+        }
+
+        $replacement = $this->subscriber('session-a', $factory);
+        $replacement->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control')));
+        $replacement->onWorkerStopped(new WorkerStoppedEvent($this->worker('run_control')));
     }
 
     public function testRunControlWithoutStableSessionFailsBeforeCleanup(): void

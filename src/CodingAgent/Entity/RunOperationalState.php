@@ -122,8 +122,8 @@ final class RunOperationalState
         $now = Clock::get()->now();
         $this->createdAt = $now;
         $this->updatedAt = $now;
+        $this->runId = $runId;
         $this->replaceScalars(
-            $runId,
             $ownerSessionId,
             $status,
             $turnNo,
@@ -158,8 +158,11 @@ final class RunOperationalState
 
     public function replaceFrom(self $replacement): void
     {
+        if ($this->runId !== $replacement->runId) {
+            throw new \LogicException('An operational projection cannot change its run identity.');
+        }
+
         $this->replaceScalars(
-            $replacement->runId,
             $replacement->ownerSessionId,
             $replacement->status,
             $replacement->turnNo,
@@ -187,18 +190,6 @@ final class RunOperationalState
         $this->humanInputs->add($humanInput);
     }
 
-    /** @return Collection<int, RunOperationalToolCall> */
-    public function toolCalls(): Collection
-    {
-        return $this->toolCalls;
-    }
-
-    /** @return Collection<int, RunOperationalHumanInput> */
-    public function humanInputs(): Collection
-    {
-        return $this->humanInputs;
-    }
-
     #[Assert\Callback]
     public function validateOperation(ExecutionContextInterface $context): void
     {
@@ -210,7 +201,6 @@ final class RunOperationalState
     }
 
     private function replaceScalars(
-        string $runId,
         string $ownerSessionId,
         RunStatus $status,
         int $turnNo,
@@ -223,7 +213,6 @@ final class RunOperationalState
         int $lastEventSequence,
         int $transitionVersion,
     ): void {
-        $this->runId = $runId;
         $this->ownerSessionId = $ownerSessionId;
         $this->status = $status;
         $this->turnNo = $turnNo;
