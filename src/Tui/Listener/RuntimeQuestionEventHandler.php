@@ -96,9 +96,6 @@ final class RuntimeQuestionEventHandler
             toolCallId: (string) ($p['tool_call_id'] ?? ''),
             toolName: (string) ($p['tool_name'] ?? ''),
             transcript: true,
-            triggerInput: \is_string($p['trigger_input'] ?? null) ? $p['trigger_input'] : null,
-            triggerInputLabel: \is_string($p['trigger_input_label'] ?? null) ? $p['trigger_input_label'] : 'Input',
-            triggerMatchSpans: $this->triggerMatchSpans($p['match_spans'] ?? []),
         );
 
         // Enqueue the question with answer and cancel callbacks.
@@ -431,29 +428,6 @@ final class RuntimeQuestionEventHandler
                 // Same as onAnswer: leave catalog/live WaitingHuman alone.
             },
         );
-    }
-
-    /**
-     * @return list<array{start: int, length: int}>
-     */
-    private function triggerMatchSpans(mixed $spans): array
-    {
-        if (!\is_array($spans)) {
-            return [];
-        }
-
-        $normalized = [];
-        foreach ($spans as $span) {
-            if (!\is_array($span) || !\is_int($span['start'] ?? null) || !\is_int($span['length'] ?? null)) {
-                continue;
-            }
-            if ($span['start'] < 0 || $span['length'] <= 0) {
-                continue;
-            }
-            $normalized[] = ['start' => $span['start'], 'length' => $span['length']];
-        }
-
-        return $normalized;
     }
 
     private function hitlRequestId(string $runId, string $questionId): string

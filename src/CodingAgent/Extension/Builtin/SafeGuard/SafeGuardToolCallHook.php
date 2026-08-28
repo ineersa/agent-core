@@ -134,7 +134,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
             $categoryLabel = $settingsMutation ? 'settings mutation' : $this->friendlyCategory($decision->kind);
 
             return ToolCallDecisionDTO::requireApproval(
-                prompt: \sprintf('Allow %s: %s?', $categoryLabel, $decision->reason),
+                prompt: $this->approvalPrompt($categoryLabel, $decision, $context),
                 questionId: $questionId,
                 schema: [
                     'type' => 'string',
@@ -144,9 +144,6 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                     'category' => $decision->kind->value,
                     'command' => $this->extractCommand($context),
                     'path' => $this->extractPath($context),
-                    'trigger_input' => $decision->triggerInput,
-                    'trigger_input_label' => $this->triggerInputLabel($context),
-                    'match_spans' => $decision->matchSpans,
                     'tool_name' => $decision->toolName,
                     'intercepted' => true,
                 ],
@@ -219,17 +216,68 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         );
     }
 
-    private function triggerInputLabel(ToolCallContextDTO $context): string
+    private function approvalPrompt(
+        string $categoryLabel,
+        Policy\SafeGuardDecision $decision,
+        ToolCallContextDTO $context,
+    ): string {
+        $prompt = \sprintf('Allow %s?', $categoryLabel);
+        if (null === $decision->triggerInput) {
+            return $prompt;
+        }
+
+        $label = null !== $this->extractCommand($context)
+            ? 'Command'
+            : (null !== $this->extractPath($context) ? 'Path' : 'Operation');
+        $input = $decision->triggerInput;
+        $markdown = '';
+        $cursor = 0;
+        foreach ($decision->matchSpans as $span) {
+            $markdown .= $this->escapeMarkdown(substr($input, $cursor, $span['start'] - $cursor));
+            $markdown .= '**'.$this->escapeMarkdown(substr($input, $span['start'], $span['length'])).'**';
+            $cursor = $span['start'] + $span['length'];
+        }
+        $markdown .= $this->escapeMarkdown(substr($input, $cursor));
+
+        return $prompt."\n\n**{$label}:**\n\n".$markdown;
+    }
+
+    private function escapeMarkdown(string $text): string
     {
-        if (null !== $this->extractCommand($context)) {
-            return 'Command';
-        }
-
-        if (null !== $this->extractPath($context)) {
-            return 'Path';
-        }
-
-        return 'Operation';
+        return strtr($text, [
+            '\\' => '\\\\',
+            '`' => '\\`',
+            '!' => '\\!',
+            '"' => '\\"',
+            '#' => '\\#',
+            '$' => '\\$',
+            '%' => '\\%',
+            '&' => '\\&',
+            "'" => "\\'",
+            '(' => '\\(',
+            ')' => '\\)',
+            '*' => '\\*',
+            '_' => '\\_',
+            '{' => '\\{',
+            '}' => '\\}',
+            '+' => '\\+',
+            ',' => '\\,',
+            '-' => '\\-',
+            '.' => '\\.',
+            '/' => '\\/',
+            ':' => '\\:',
+            ';' => '\\;',
+            '<' => '\\<',
+            '=' => '\\=',
+            '>' => '\\>',
+            '?' => '\\?',
+            '@' => '\\@',
+            '[' => '\\[',
+            ']' => '\\]',
+            '^' => '\\^',
+            '|' => '\\|',
+            '~' => '\\~',
+        ]);
     }
 
     /**

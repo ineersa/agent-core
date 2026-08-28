@@ -78,24 +78,21 @@ final class SafeGuardCommandMatcherTest extends TestCase
 
         $this->assertSame($command, $result->triggerInput);
         $this->assertSame([
-            ['start' => 0, 'length' => 3],
             ['start' => 0, 'length' => 5],
             ['start' => 6, 'length' => 5],
             ['start' => 12, 'length' => 10],
         ], $result->matchSpans);
     }
 
-    public function testCustomPatternEvidenceUsesOriginalUnicodeInput(): void
+    public function testCustomUnicodeSubstringPreservesExactInputWithoutInventingRegexEvidence(): void
     {
         $command = 'echo δοκιμή && echo ΔΟΚΙΜΉ';
 
         $result = $this->matcher->classify($command, ['δοκιμή']);
 
         $this->assertSame(SafeGuardDecisionKind::CustomDangerous, $result->kind);
-        $this->assertSame([
-            ['start' => 5, 'length' => \strlen('δοκιμή')],
-            ['start' => 26, 'length' => \strlen('ΔΟΚΙΜΉ')],
-        ], $result->matchSpans);
+        $this->assertSame($command, $result->triggerInput);
+        $this->assertSame([], $result->matchSpans);
     }
 
     public function testChmodWithoutDigitsIsAllowed(): void

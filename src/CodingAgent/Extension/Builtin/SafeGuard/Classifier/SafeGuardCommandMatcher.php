@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecision;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecisionKind;
 
+use function Symfony\Component\String\u;
+
 /**
  * Faithful PHP port of Pi's classify.ts bash command classification.
  *
@@ -78,55 +80,59 @@ final class SafeGuardCommandMatcher
     public function classify(string $command, array $dangerousCommandPatterns = []): SafeGuardDecision
     {
         // 1. Hard block: sudo — never allowlisted, never asked
-        if (1 === preg_match(self::SUDO_PATTERN, $command)) {
-            return $this->blockedCommand(
-                SafeGuardDecisionKind::HardBlock,
-                'sudo commands are not allowed',
-                $command,
-                [self::SUDO_PATTERN],
+        if ([] !== $spans = $this->matchSpans($command, [self::SUDO_PATTERN])) {
+            return SafeGuardDecision::block(
+                kind: SafeGuardDecisionKind::HardBlock,
+                reason: 'sudo commands are not allowed',
+                toolName: '',
+                triggerInput: $command,
+                matchSpans: $spans,
             );
         }
 
         // 2. Built-in destructive patterns
-        if ($this->matchesAny($command, self::DESTRUCTIVE_PATTERNS)) {
-            return $this->blockedCommand(
-                SafeGuardDecisionKind::Destructive,
-                'Destructive command',
-                $command,
-                self::DESTRUCTIVE_PATTERNS,
+        if ([] !== $spans = $this->matchSpans($command, self::DESTRUCTIVE_PATTERNS)) {
+            return SafeGuardDecision::block(
+                kind: SafeGuardDecisionKind::Destructive,
+                reason: 'Destructive command',
+                toolName: '',
+                triggerInput: $command,
+                matchSpans: $spans,
             );
         }
 
         // 3. Built-in dangerous git patterns
-        if ($this->matchesAny($command, self::DANGEROUS_GIT_PATTERNS)) {
-            return $this->blockedCommand(
-                SafeGuardDecisionKind::DangerousGit,
-                'Dangerous git operation',
-                $command,
-                self::DANGEROUS_GIT_PATTERNS,
+        if ([] !== $spans = $this->matchSpans($command, self::DANGEROUS_GIT_PATTERNS)) {
+            return SafeGuardDecision::block(
+                kind: SafeGuardDecisionKind::DangerousGit,
+                reason: 'Dangerous git operation',
+                toolName: '',
+                triggerInput: $command,
+                matchSpans: $spans,
             );
         }
 
         // 4. Sensitive info exposure (env, printenv)
-        if ($this->matchesAny($command, self::SENSITIVE_INFO_PATTERNS)) {
-            return $this->blockedCommand(
-                SafeGuardDecisionKind::SensitiveInfo,
-                'Exposes environment variables',
-                $command,
-                self::SENSITIVE_INFO_PATTERNS,
+        if ([] !== $spans = $this->matchSpans($command, self::SENSITIVE_INFO_PATTERNS)) {
+            return SafeGuardDecision::block(
+                kind: SafeGuardDecisionKind::SensitiveInfo,
+                reason: 'Exposes environment variables',
+                toolName: '',
+                triggerInput: $command,
+                matchSpans: $spans,
             );
         }
 
-        // 5. User-defined dangerous patterns from policy
+        // 5. User-defined dangerous patterns remain normalized substring rules,
+        // not regex rules, so they carry the exact input without regex spans.
         $normalized = $this->normalizeCommand($command);
         foreach ($dangerousCommandPatterns as $pattern) {
-            $normalizedPattern = $this->normalizeCommand($pattern);
-            if (str_contains($normalized, $normalizedPattern)) {
-                return $this->blockedCommand(
-                    SafeGuardDecisionKind::CustomDangerous,
-                    'Matched custom dangerous pattern',
-                    $command,
-                    $this->literalPattern($pattern),
+            if (u($normalized)->containsAny($this->normalizeCommand($pattern))) {
+                return SafeGuardDecision::block(
+                    kind: SafeGuardDecisionKind::CustomDangerous,
+                    reason: 'Matched custom dangerous pattern',
+                    toolName: '',
+                    triggerInput: $command,
                 );
             }
         }
@@ -152,38 +158,6 @@ final class SafeGuardCommandMatcher
         }
 
         return false;
-    }
-
-    /**
-     * @param list<string> $patterns
-     */
-    private function matchesAny(string $command, array $patterns): bool
-    {
-        foreach ($patterns as $pattern) {
-            if (1 === preg_match($pattern, $command)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * @param list<string> $patterns
-     */
-    private function blockedCommand(
-        SafeGuardDecisionKind $kind,
-        string $reason,
-        string $command,
-        array $patterns,
-    ): SafeGuardDecision {
-        return SafeGuardDecision::block(
-            kind: $kind,
-            reason: $reason,
-            toolName: '',
-            triggerInput: $command,
-            matchSpans: $this->matchSpans($command, $patterns),
-        );
     }
 
     /**
@@ -214,24 +188,21 @@ final class SafeGuardCommandMatcher
 
         usort($spans, static fn (array $left, array $right): int => [$left['start'], $left['length']] <=> [$right['start'], $right['length']]);
 
-        return $spans;
-    }
+        $merged = [];
+        foreach ($spans as $span) {
+            $last = array_key_last($merged);
+            if (null === $last || $span['start'] > $merged[$last]['start'] + $merged[$last]['length']) {
+                $merged[] = $span;
+                continue;
+            }
 
-    /**
-     * Convert the existing normalized custom-substring policy into a literal
-     * case-insensitive regex solely to record its evidence in the original input.
-     * Classification remains the established normalized substring check above.
-     *
-     * @return list<string>
-     */
-    private function literalPattern(string $pattern): array
-    {
-        $parts = preg_split('/\s+/u', trim($pattern), -1, \PREG_SPLIT_NO_EMPTY);
-        if (false === $parts || [] === $parts) {
-            return [];
+            $merged[$last]['length'] = max(
+                $merged[$last]['length'],
+                $span['start'] + $span['length'] - $merged[$last]['start'],
+            );
         }
 
-        return ['/'.implode('\\s+', array_map(static fn (string $part): string => preg_quote($part, '/'), $parts)).'/iu'];
+        return $merged;
     }
 
     /**
@@ -241,6 +212,10 @@ final class SafeGuardCommandMatcher
      */
     private function normalizeCommand(string $command): string
     {
-        return trim(mb_strtolower(preg_replace('/\s+/', ' ', $command) ?? $command));
+        return u($command)
+            ->replaceMatches('/\s+/', ' ')
+            ->trim()
+            ->lower()
+            ->toString();
     }
 }

@@ -195,14 +195,6 @@ final class QuestionController
         // Interactive kinds: transcript may not carry the same prompt; keep a short prompt line without truncation.
         $theme = $this->screen->theme();
         $this->container->add($this->promptRenderer->buildPromptWidget($request->prompt, $theme));
-        if (null !== $request->triggerInput) {
-            $this->container->add($this->promptRenderer->buildTriggerInputWidget(
-                $request->triggerInputLabel,
-                $request->triggerInput,
-                $request->triggerMatchSpans,
-                $theme,
-            ));
-        }
 
         $items = $this->buildItems($request);
         $items = $this->styleConfirmItems($items, $request->kind);
