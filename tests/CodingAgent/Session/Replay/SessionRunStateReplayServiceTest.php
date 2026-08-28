@@ -266,6 +266,59 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertSame([], $final->pendingToolCalls);
     }
 
+    public function testReplayAttachedShellResultNeverFlushesIntoInterleavedLlmToolBatch(): void
+    {
+        $shellIdempotencyKey = 'attached-shell-key';
+        $shellToolCallId = 'sh_'.hash('sha256', $shellIdempotencyKey);
+
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 1, 1, [
+            'turn_no' => 1,
+            'step_id' => 'llm-step',
+            'operation_idempotency_key' => 'llm-key',
+        ]);
+        // Attached shells coexist with the current LLM operation and become
+        // transcript-only pending identities during canonical replay.
+        $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandApplied->value, 2, 1, [
+            'kind' => 'shell_command',
+            'idempotency_key' => $shellIdempotencyKey,
+            'standalone' => false,
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::ToolExecutionStart->value, 3, 1, [
+            'tool_call_id' => $shellToolCallId,
+            'tool_name' => 'bash',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 4, 1, [
+            'step_id' => 'llm-step',
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [],
+                'tool_calls' => [
+                    ['id' => 'llm-tool', 'name' => 'read', 'arguments' => [], 'order_index' => 0],
+                ],
+            ],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::ToolExecutionStart->value, 5, 1, [
+            'tool_call_id' => 'llm-tool',
+            'tool_name' => 'read',
+            'order_index' => 0,
+        ]);
+        // The shell end is intentionally interleaved before the later LLM
+        // batch boundary: without the pending-shell guard, that boundary
+        // would incorrectly flush this transcript-only output to the model.
+        $this->appendEventWithTurn(RunEventTypeEnum::ToolExecutionEnd->value, 6, 1, $this->toolEndPayload($shellToolCallId, 'bash', 'shell output'));
+        $this->appendEventWithTurn(RunEventTypeEnum::ToolExecutionEnd->value, 7, 1, $this->toolEndPayload('llm-tool', 'read', 'LLM result'));
+        $this->appendEventWithTurn(RunEventTypeEnum::ToolBatchCommitted->value, 8, 1, ['count' => 1]);
+
+        $rebuilt = $this->service->rebuildIfStale(RunState::queued($this->runId), $this->runId)->rebuiltState;
+
+        $this->assertNotNull($rebuilt);
+        $this->assertSame([], $rebuilt->pendingShellToolCalls);
+        $this->assertCount(2, $rebuilt->messages);
+        $toolMessages = array_values(array_filter($rebuilt->messages, static fn ($message): bool => 'tool' === $message->role));
+        $this->assertSame(['llm-tool'], array_map(static fn ($message): ?string => $message->toolCallId, $toolMessages));
+        $this->assertSame('LLM result', $toolMessages[0]->content[0]['text']);
+    }
+
     public function testReplayAssistantTextWithTopLevelToolCallsPreservesMetadataForValidator(): void
     {
         $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [

@@ -227,6 +227,11 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         }
 
         if (!$outcome->accepted) {
+            // An untracked terminal result cannot change canonical state or the
+            // user-visible stream, but remains observable through the bounded
+            // stale-result metric.
+            $this->metrics?->incrementStaleResultCount();
+
             return new HandlerResult();
         }
 

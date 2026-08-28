@@ -160,7 +160,7 @@ final class SubagentProgressEventsFixture
                     $childRunId,
                     1,
                     'run_started',
-                    ['user_messages' => [['role' => 'user', 'content' => 'Child-only export marker scout-e2e']]],
+                    ['payload' => ['messages' => [['role' => 'user', 'content' => 'Child-only export marker scout-e2e']]]],
                 ),
             ],
         );

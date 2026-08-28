@@ -409,29 +409,22 @@ HTML;
     /**
      * Render the run_started event: extract user/system/instruction messages.
      *
-     * Real events.jsonl stores messages at payload.payload.messages;
-     * some test fixtures use payload.user_messages.  We try both paths.
+     * Canonical events.jsonl stores messages at payload.payload.messages.
      *
      * @param array<string, mixed> $payload
      */
     private function renderRunStarted(array $payload, string $toolDefinitionsHtml = ''): string
     {
-        // Primary path: payload.payload.messages (real events.jsonl).
         $nestedPayload = $payload['payload'] ?? null;
-        if (\is_array($nestedPayload)) {
-            $messages = $nestedPayload['messages'] ?? null;
-            if (\is_array($messages)) {
-                return $this->renderMessages($messages, $toolDefinitionsHtml);
-            }
+        if (!\is_array($nestedPayload)) {
+            return $toolDefinitionsHtml;
         }
 
-        // Fallback: payload.user_messages (test fixtures and older format).
-        $userMessages = $payload['user_messages'] ?? null;
-        if (\is_array($userMessages)) {
-            return $this->renderMessages($userMessages, $toolDefinitionsHtml);
-        }
+        $messages = $nestedPayload['messages'] ?? null;
 
-        return $toolDefinitionsHtml;
+        return \is_array($messages)
+            ? $this->renderMessages($messages, $toolDefinitionsHtml)
+            : $toolDefinitionsHtml;
     }
 
     /**
@@ -783,7 +776,7 @@ HTML;
         $html = '';
 
         // Messages (user/system/developer).
-        foreach (['messages', 'user_messages'] as $key) {
+        foreach (['messages'] as $key) {
             $msgs = $payload[$key] ?? null;
             if (\is_array($msgs) && [] !== $msgs) {
                 $html .= $this->renderMessages($msgs);
