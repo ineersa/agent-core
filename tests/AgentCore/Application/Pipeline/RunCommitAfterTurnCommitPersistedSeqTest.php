@@ -7,20 +7,16 @@ namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
-use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
-use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
-use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -44,29 +40,20 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             }
         };
 
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(RunState::queued('child-run-1'), 0);
+        $activeRunContext = new TestActiveRunContext();
+        $previous = RunState::queued('child-run-1');
+        $activeRunContext->remember($previous);
         $eventStore = new InMemoryEventStore();
 
-        $replayService = new SessionHotPromptReplayService(
-            eventStore: $eventStore,
-            promptStateStore: new InMemoryPromptStateStore(),
-            promptStateReplayService: new PromptStateReplayService(),
-            replayEventPreparer: new ReplayEventPreparer(),
-        );
-
         $commit = new RunCommit(
-            runStore: $runStore,
+            activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             commandStore: new InMemoryCommandStore(),
-            hotPromptStateRebuilder: $replayService,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(),
             hookDispatcher: new HookDispatcher([$subscriber]),
         );
 
-        $previous = $runStore->get('child-run-1');
-        $this->assertNotNull($previous);
         $next = new RunState(
             runId: 'child-run-1',
             status: RunStatus::Running,
@@ -82,7 +69,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             new RunEvent('child-run-1', 0, 1, 'turn_advanced', ['turn_no' => 1]),
         ];
 
-        $this->assertTrue($commit->commit($previous, $next, $events, []));
+        $commit->commit($previous, $next, $events, []);
         $this->assertInstanceOf(AfterTurnCommitHookContext::class, $captured);
         $this->assertCount(2, $captured->events);
         $this->assertSame(1, $captured->events[0]->seq);
@@ -94,8 +81,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
 
         // The assigned-sequence bump (input seq 0 -> persisted seq 2) must
         // preserve the in-flight retry episode, not reset retryAttempts to 0.
-        $persisted = $runStore->get('child-run-1');
-        $this->assertNotNull($persisted);
+        $persisted = $activeRunContext->stateFor('child-run-1');
         $this->assertSame(3, $persisted->retryAttempts);
         $this->assertTrue($persisted->retryableFailure);
     }

@@ -615,7 +615,7 @@ abstract class ControllerE2eTestCase extends TestCase
         if (!is_dir($sessionDir)) {
             $missing[] = 'session dir ('.$sessionDir.')';
         } else {
-            foreach (['events.jsonl', 'state.json'] as $file) {
+            foreach (['events.jsonl'] as $file) {
                 $path = $sessionDir.'/'.$file;
                 if (!is_file($path)) {
                     $missing[] = $file;

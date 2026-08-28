@@ -11,7 +11,7 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
@@ -54,7 +54,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      * @param iterable<ConvertToLlmHookInterface>     $convertToLlmHooks
      */
     public function __construct(
-        private RunStoreInterface $runStore,
+        private RunOperationalStatusReaderInterface $statusReader,
         private AgentMessageConverter $messageConverter,
         private DynamicToolDescriptionProcessor $toolDescriptionProcessor,
         private SymfonyPlatformInterface $platform,
@@ -366,7 +366,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         }
 
         if (null !== $request->input->runId) {
-            return new RunCancellationToken($this->runStore, $request->input->runId);
+            return new RunCancellationToken($this->statusReader, $request->input->runId);
         }
 
         return new NullCancellationToken();

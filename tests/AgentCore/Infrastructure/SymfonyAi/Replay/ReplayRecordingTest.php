@@ -265,7 +265,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
             model: 'test-model'), 0);
 
         return new LlmPlatformAdapter(
-            runStore: $runStore,
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,

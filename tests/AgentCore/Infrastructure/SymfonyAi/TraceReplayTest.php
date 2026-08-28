@@ -134,7 +134,7 @@ final class TraceReplayTest extends KernelTestCase
         );
 
         $adapter = new LlmPlatformAdapter(
-            runStore: $runStore,
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -349,7 +349,7 @@ final class TraceReplayTest extends KernelTestCase
         );
 
         $adapter = new LlmPlatformAdapter(
-            runStore: $runStore,
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,

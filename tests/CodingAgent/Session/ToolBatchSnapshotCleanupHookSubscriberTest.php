@@ -9,18 +9,16 @@ use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
-use Ineersa\AgentCore\Domain\Run\PromptState;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -100,51 +98,17 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         $this->assertNull($store->load('run-1', 2, 's2'));
     }
 
-    public function testCleanupNotInvokedWhenRunCommitFails(): void
-    {
-        $store = $this->createStore();
-        $finalized = new ToolBatchStateDTO([], [], [], [], [], true, 2);
-        $store->save('run-1', 1, 'step-1', $finalized);
-
-        $stalePrev = RunState::queued('run-1');
-        $runStoreForCommit = new InMemoryRunStore();
-        $runStoreForCommit->compareAndSwap(RunState::queued('run-1'), 0);
-        $live = $runStoreForCommit->get('run-1');
-        $this->assertNotNull($live);
-        $runStoreForCommit->compareAndSwap(new RunState(
-            runId: 'run-1',
-            status: RunStatus::Running,
-            version: $live->version + 1,
-            turnNo: 1,
-            lastSeq: 0,
-            model: 'test-model'), $live->version);
-
-        $commit = $this->createRunCommit($store, $runStoreForCommit);
-        $next = new RunState(runId: 'run-1', status: RunStatus::Running, version: $stalePrev->version + 1, turnNo: 1, lastSeq: 2, model: 'test-model');
-        $events = [
-            new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolBatchCommitted->value, [
-                'count' => 1,
-                'turn_no' => 1,
-                'step_id' => 'step-1',
-            ]),
-        ];
-
-        $this->assertFalse($commit->commit($stalePrev, $next, $events, []));
-        $this->assertNotNull($store->load('run-1', 1, 'step-1'));
-    }
-
     public function testCleanupInvokedAfterSuccessfulRunCommit(): void
     {
         $store = $this->createStore();
         $finalized = new ToolBatchStateDTO([], [], [], [], [], true, 2);
         $store->save('run-1', 1, 'step-1', $finalized);
 
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(RunState::queued('run-1'), 0);
-        $commit = $this->createRunCommit($store, $runStore);
+        $activeRunContext = new TestActiveRunContext();
+        $prev = RunState::queued('run-1');
+        $activeRunContext->remember($prev);
+        $commit = $this->createRunCommit($store, $activeRunContext);
 
-        $prev = $runStore->get('run-1');
-        $this->assertNotNull($prev);
         $next = new RunState(runId: 'run-1', status: RunStatus::Running, version: $prev->version + 1, turnNo: 1, lastSeq: 2, model: 'test-model');
         $events = [
             new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolBatchCommitted->value, [
@@ -154,7 +118,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             ]),
         ];
 
-        $this->assertTrue($commit->commit($prev, $next, $events, []));
+        $commit->commit($prev, $next, $events, []);
         $this->assertNull($store->load('run-1', 1, 'step-1'));
     }
 
@@ -179,17 +143,16 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         );
     }
 
-    private function createRunCommit(SessionToolBatchStore $store, InMemoryRunStore $runStore): RunCommit
+    private function createRunCommit(SessionToolBatchStore $store, TestActiveRunContext $activeRunContext): RunCommit
     {
         $hookDispatcher = new HookDispatcher([
             new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger()),
         ]);
 
         return new RunCommit(
-            runStore: $runStore,
+            activeRunContext: $activeRunContext,
             eventStore: new CleanupHookSubscriberNoOpEventStore(),
             commandStore: new InMemoryCommandStore(),
-            hotPromptStateRebuilder: new CleanupHookSubscriberNoOpHotPromptRebuilder(),
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(),
             hookDispatcher: $hookDispatcher,
@@ -236,22 +199,5 @@ final class CleanupHookSubscriberNoOpEventStore implements EventStoreInterface
     public function allFor(string $runId): array
     {
         return [];
-    }
-}
-
-final class CleanupHookSubscriberNoOpHotPromptRebuilder implements HotPromptStateRebuilderInterface
-{
-    public function rebuildHotPromptState(RunState $state): PromptState
-    {
-        return new PromptState(
-            runId: $state->runId,
-            source: 'test',
-            eventCount: 0,
-            lastSeq: 0,
-            missingSequences: [],
-            isContiguous: true,
-            tokenEstimate: 0,
-            messages: [],
-        );
     }
 }

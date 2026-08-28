@@ -4,262 +4,78 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
-use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
-use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
+use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
-use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Regression: commit must not emit one INFO line per canonical event.
- */
+/** Regression: commits log one canonical-event summary, not one line per event. */
 final class RunCommitLoggingTest extends TestCase
 {
-    public function testCommitLogsSummaryOnlyNotPerEventAppends(): void
+    public function testCommitLogsSummaryOnlyAfterRememberingPersistedState(): void
     {
         $logger = new TestLogger();
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(RunState::queued('run-1'), 0);
-
+        $activeRunContext = new TestActiveRunContext();
+        $previous = RunState::queued('run-1');
+        $activeRunContext->remember($previous);
         $eventStore = new RecordingEventStore();
 
-        $replayService = new SessionHotPromptReplayService(
-            eventStore: $eventStore,
-            promptStateStore: new InMemoryPromptStateStore(),
-            promptStateReplayService: new PromptStateReplayService(),
-            replayEventPreparer: new ReplayEventPreparer(),
-        );
-
-        $stepDispatcher = new StepDispatcher(new TestMessageBus(), new TestMessageBus());
-
         $commit = new RunCommit(
-            runStore: $runStore,
+            activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             commandStore: new InMemoryCommandStore(),
-            hotPromptStateRebuilder: $replayService,
-            stepDispatcher: $stepDispatcher,
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: $logger,
         );
-
-        $previous = $runStore->get('run-1');
-        $this->assertNotNull($previous);
 
         $next = new RunState(
             runId: 'run-1',
             status: RunStatus::Running,
             version: $previous->version + 1,
             turnNo: 1,
-            lastSeq: 2,
-            model: 'test-model');
-
+            lastSeq: 0,
+            model: 'test-model',
+        );
         $events = [
-            new RunEvent('run-1', 1, 1, 'user.message', ['text' => 'hi']),
-            new RunEvent('run-1', 2, 1, 'assistant.message', ['text' => 'ok']),
+            new RunEvent('run-1', 0, 1, 'user.message', ['text' => 'hi']),
+            new RunEvent('run-1', 0, 1, 'assistant.message', ['text' => 'ok']),
         ];
 
-        $this->assertTrue($commit->commit($previous, $next, $events, []));
+        $commit->commit($previous, $next, $events);
+
         $this->assertSame(1, $eventStore->appendManyCalls);
         $this->assertCount(2, $eventStore->appended);
+        $this->assertSame(2, $activeRunContext->stateFor('run-1')->lastSeq);
+        $this->assertSame($next->version + 1, $activeRunContext->stateFor('run-1')->version);
 
         $messages = array_column($logger->records, 'message');
         $this->assertContains('persistence.events_committed', $messages);
         $this->assertNotContains('event_store.appended', $messages);
     }
 
-    public function testLastSeqBumpUsesReloadedStateWhenPostPersistCasFails(): void
+    public function testNoEventCommitStillRemembersHandlerStateWithoutDiagnosticBump(): void
     {
-        $logger = new TestLogger();
-        $inner = new InMemoryRunStore();
-        $inner->compareAndSwap(RunState::queued('run-1'), 0);
-        $inner->compareAndSwap(new RunState(
-            runId: 'run-1',
-            status: RunStatus::Running,
-            version: 1,
-            turnNo: 0,
-            lastSeq: 0,
-            model: 'test-model'), 0);
+        $activeRunContext = new TestActiveRunContext();
+        $previous = RunState::queued('run-1');
+        $activeRunContext->remember($previous);
+        $next = $previous->with(['status' => RunStatus::Running, 'version' => $previous->version + 1]);
 
-        $runStore = new FailsSecondCompareAndSwapRunStore($inner);
-        $eventStore = new RecordingEventStore();
-
-        $replayService = new SessionHotPromptReplayService(
-            eventStore: $eventStore,
-            promptStateStore: new InMemoryPromptStateStore(),
-            promptStateReplayService: new PromptStateReplayService(),
-            replayEventPreparer: new ReplayEventPreparer(),
-        );
-
-        $commit = new RunCommit(
-            runStore: $runStore,
-            eventStore: $eventStore,
+        (new RunCommit(
+            activeRunContext: $activeRunContext,
+            eventStore: new RecordingEventStore(),
             commandStore: new InMemoryCommandStore(),
-            hotPromptStateRebuilder: $replayService,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
-            logger: $logger,
-        );
+            logger: new TestLogger(),
+        ))->commit($previous, $next, []);
 
-        $previous = $inner->get('run-1');
-        $this->assertNotNull($previous);
-
-        $next = new RunState(
-            runId: 'run-1',
-            status: RunStatus::Running,
-            version: $previous->version + 1,
-            turnNo: 1,
-            lastSeq: 0,
-            model: 'test-model');
-
-        $events = [
-            new RunEvent('run-1', 99, 1, 'user.message', ['text' => 'hi']),
-            new RunEvent('run-1', 99, 1, 'assistant.message', ['text' => 'ok']),
-        ];
-
-        $this->assertTrue($commit->commit($previous, $next, $events, []));
-
-        $messages = array_column($logger->records, 'message');
-        $this->assertContains('persistence.last_seq_cas_conflict', $messages);
-        $this->assertCount(2, $eventStore->appended);
-
-        $stored = $inner->get('run-1');
-        $this->assertNotNull($stored);
-        // First CAS (running v2) succeeded; lastSeq bump CAS failed so lastSeq may remain 0.
-        $this->assertSame(2, $stored->version);
-        $this->assertSame(0, $stored->lastSeq);
-    }
-
-    public function testCommitMetricsUseStoreTruthWhenPostPersistLastSeqCasFails(): void
-    {
-        $metrics = new RunMetrics();
-        $logger = new TestLogger();
-        $inner = new InMemoryRunStore();
-        $inner->compareAndSwap(RunState::queued('run-1'), 0);
-        $inner->compareAndSwap(new RunState(
-            runId: 'run-1',
-            status: RunStatus::Running,
-            version: 1,
-            turnNo: 0,
-            lastSeq: 0,
-            model: 'test-model'), 0);
-
-        $runStore = new ReloadsCompletedAfterSecondCasFailRunStore($inner);
-        $eventStore = new RecordingEventStore();
-
-        $commit = new RunCommit(
-            runStore: $runStore,
-            eventStore: $eventStore,
-            commandStore: new InMemoryCommandStore(),
-            hotPromptStateRebuilder: new SessionHotPromptReplayService(
-                eventStore: $eventStore,
-                promptStateStore: new InMemoryPromptStateStore(),
-                promptStateReplayService: new PromptStateReplayService(),
-                replayEventPreparer: new ReplayEventPreparer(),
-            ),
-            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
-            logger: $logger,
-            metrics: $metrics,
-        );
-
-        $previous = $inner->get('run-1');
-        $this->assertNotNull($previous);
-
-        $next = new RunState(
-            runId: 'run-1',
-            status: RunStatus::Running,
-            version: $previous->version + 1,
-            turnNo: 1,
-            lastSeq: 0,
-            model: 'test-model');
-
-        $events = [
-            new RunEvent('run-1', 99, 1, 'user.message', ['text' => 'hi']),
-        ];
-
-        $this->assertTrue($commit->commit($previous, $next, $events, []));
-
-        $snapshot = $metrics->snapshot();
-        $this->assertSame(0, $snapshot['active_runs_by_status'][RunStatus::Running->value] ?? 0);
-        $this->assertSame(1, $snapshot['active_runs_by_status'][RunStatus::Completed->value] ?? 0,
-            'Metrics must use reloaded store truth (Completed), not the intended post-persist Running bump state.');
-    }
-}
-
-final class ReloadsCompletedAfterSecondCasFailRunStore implements RunStoreInterface
-{
-    private int $casCalls = 0;
-
-    public function __construct(private readonly InMemoryRunStore $inner)
-    {
-    }
-
-    public function get(string $runId): ?RunState
-    {
-        if ($this->casCalls >= 2) {
-            return new RunState(
-                runId: $runId,
-                status: RunStatus::Completed,
-                version: 3,
-                turnNo: 0,
-                lastSeq: 0,
-                model: 'test-model');
-        }
-
-        return $this->inner->get($runId);
-    }
-
-    public function compareAndSwap(RunState $state, int $expectedVersion): bool
-    {
-        ++$this->casCalls;
-        if (2 === $this->casCalls) {
-            return false;
-        }
-
-        return $this->inner->compareAndSwap($state, $expectedVersion);
-    }
-
-    public function findRunningStaleBefore(\DateTimeImmutable $threshold): array
-    {
-        return $this->inner->findRunningStaleBefore($threshold);
-    }
-}
-
-final class FailsSecondCompareAndSwapRunStore implements RunStoreInterface
-{
-    private int $casCalls = 0;
-
-    public function __construct(private readonly InMemoryRunStore $inner)
-    {
-    }
-
-    public function get(string $runId): ?RunState
-    {
-        return $this->inner->get($runId);
-    }
-
-    public function compareAndSwap(RunState $state, int $expectedVersion): bool
-    {
-        ++$this->casCalls;
-        if (2 === $this->casCalls) {
-            return false;
-        }
-
-        return $this->inner->compareAndSwap($state, $expectedVersion);
-    }
-
-    public function findRunningStaleBefore(\DateTimeImmutable $threshold): array
-    {
-        return $this->inner->findRunningStaleBefore($threshold);
+        $this->assertSame($next, $activeRunContext->stateFor('run-1'));
     }
 }
 
@@ -272,8 +88,7 @@ final class RecordingEventStore implements EventStoreInterface
 
     public function append(RunEvent $event): RunEvent
     {
-        $seq = \count($this->appended) + 1;
-        $persisted = new RunEvent($event->runId, $seq, $event->turnNo, $event->type, $event->payload, $event->createdAt);
+        $persisted = new RunEvent($event->runId, \count($this->appended) + 1, $event->turnNo, $event->type, $event->payload, $event->createdAt);
         $this->appended[] = $persisted;
 
         return $persisted;
@@ -282,12 +97,8 @@ final class RecordingEventStore implements EventStoreInterface
     public function appendMany(array $events): array
     {
         ++$this->appendManyCalls;
-        $out = [];
-        foreach ($events as $event) {
-            $out[] = $this->append($event);
-        }
 
-        return $out;
+        return array_map($this->append(...), $events);
     }
 
     public function latestSequenceFor(string $runId): ?int
@@ -299,15 +110,13 @@ final class RecordingEventStore implements EventStoreInterface
 
     public function firstFor(string $runId): ?RunEvent
     {
-        $events = $this->allFor($runId);
-
-        return $events[0] ?? null;
+        return $this->allFor($runId)[0] ?? null;
     }
 
     public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
     {
-        foreach ($this->appended as $event) {
-            if ($event->runId === $runId && $event->seq >= $startSeq && $event->seq <= $endSeq) {
+        foreach ($this->allFor($runId) as $event) {
+            if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
                 yield $event;
             }
         }
@@ -315,14 +124,11 @@ final class RecordingEventStore implements EventStoreInterface
 
     public function reverseFor(string $runId): iterable
     {
-        return [];
+        return array_reverse($this->allFor($runId));
     }
 
     public function allFor(string $runId): array
     {
-        return array_values(array_filter(
-            $this->appended,
-            static fn (RunEvent $event): bool => $event->runId === $runId,
-        ));
+        return array_values(array_filter($this->appended, static fn (RunEvent $event): bool => $event->runId === $runId));
     }
 }

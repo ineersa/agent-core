@@ -199,7 +199,7 @@ final readonly class RunStateReducer
             'turnNo' => $turnNo,
             'errorMessage' => null,
             'activeStepId' => $stepId,
-            'currentOperation' => \is_string($key) && '' !== $key
+            'currentOperation' => \is_string($stepId) && '' !== $stepId && \is_string($key) && '' !== $key
                 ? new CurrentOperationDTO($turnNo, $stepId, $attempt, $key)
                 : null,
             'retryableFailure' => false,

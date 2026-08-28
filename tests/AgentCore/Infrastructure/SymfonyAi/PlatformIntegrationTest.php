@@ -166,7 +166,7 @@ final class PlatformIntegrationTest extends TestCase
         );
 
         $adapter = new LlmPlatformAdapter(
-            runStore: $runStore,
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor($toolbox),
             platform: $platform,
@@ -389,7 +389,7 @@ final class PlatformIntegrationTest extends TestCase
         );
 
         $adapter = new LlmPlatformAdapter(
-            runStore: $runStore,
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -501,7 +501,7 @@ final class PlatformIntegrationTest extends TestCase
             );
 
             $adapter = new LlmPlatformAdapter(
-                runStore: $runStore,
+                statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
                 messageConverter: new AgentMessageConverter(),
                 toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
                 platform: $platform,
@@ -544,7 +544,7 @@ final class PlatformIntegrationTest extends TestCase
         );
 
         $adapter = new LlmPlatformAdapter(
-            runStore: new InMemoryRunStore(),
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -860,7 +860,7 @@ final class PlatformIntegrationTest extends TestCase
         );
 
         $adapter = new LlmPlatformAdapter(
-            runStore: $runStore,
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -934,7 +934,7 @@ final class PlatformIntegrationTest extends TestCase
         );
 
         $adapter = new LlmPlatformAdapter(
-            runStore: $runStore,
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -983,7 +983,7 @@ final class PlatformIntegrationTest extends TestCase
         });
 
         return new LlmPlatformAdapter(
-            runStore: $runStore,
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(
                 new class implements ToolboxInterface {

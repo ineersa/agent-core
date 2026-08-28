@@ -17,8 +17,6 @@ use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
-use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
-use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -32,14 +30,11 @@ use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
-use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -79,7 +74,7 @@ final class CommandMailboxPolicyTest extends TestCase
             idempotencyKey: 'advance-idemp-1',
         ));
 
-        $state = $fixture->runStore->get($runId);
+        $state = $fixture->activeRunContext->stateFor($runId);
         $this->assertNotNull($state);
 
         $userMessages = array_values(array_filter(
@@ -174,7 +169,7 @@ final class CommandMailboxPolicyTest extends TestCase
             turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
-            idempotencyKey: $fixture->runStore->get($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
+            idempotencyKey: $fixture->activeRunContext->stateFor($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
             assistantMessage: null,
             usage: [],
             stopReason: 'error',
@@ -213,7 +208,7 @@ final class CommandMailboxPolicyTest extends TestCase
             (string) ($continueRejections[0]->payload['reason'] ?? ''),
         );
 
-        $state = $fixture->runStore->get($runId);
+        $state = $fixture->activeRunContext->stateFor($runId);
         $this->assertNotNull($state);
         // Failed LLM retry with no streaming/tools: cancel terminalizes immediately (issue #205).
         $this->assertSame(RunStatus::Cancelled, $state->status);
@@ -239,7 +234,7 @@ final class CommandMailboxPolicyTest extends TestCase
             attempt: 1,
             idempotencyKey: 'advance-idemp-1',
         ));
-        $activeState = $fixture->runStore->get($runId);
+        $activeState = $fixture->activeRunContext->stateFor($runId);
         $this->assertNotNull($activeState);
         $this->assertNotNull($activeState->currentOperation);
 
@@ -265,7 +260,7 @@ final class CommandMailboxPolicyTest extends TestCase
             payload: [],
         ));
 
-        $state = $fixture->runStore->get($runId);
+        $state = $fixture->activeRunContext->stateFor($runId);
         $this->assertNotNull($state);
         $this->assertSame(RunStatus::Running, $state->status);
 
@@ -313,14 +308,14 @@ final class CommandMailboxPolicyTest extends TestCase
             turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
-            idempotencyKey: $fixture->runStore->get($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
+            idempotencyKey: $fixture->activeRunContext->stateFor($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
             assistantMessage: null,
             usage: [],
             stopReason: 'stop',
             error: null,
         ));
 
-        $state = $fixture->runStore->get($runId);
+        $state = $fixture->activeRunContext->stateFor($runId);
         $this->assertNotNull($state);
         // shouldContinue=true keeps the run Running
         $this->assertSame(RunStatus::Running, $state->status);
@@ -367,14 +362,14 @@ final class CommandMailboxPolicyTest extends TestCase
             turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
-            idempotencyKey: $fixture->runStore->get($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
+            idempotencyKey: $fixture->activeRunContext->stateFor($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
             assistantMessage: null,
             usage: [],
             stopReason: 'stop',
             error: null,
         ));
 
-        $state = $fixture->runStore->get($runId);
+        $state = $fixture->activeRunContext->stateFor($runId);
         $this->assertNotNull($state);
         $this->assertSame(RunStatus::Running, $state->status, 'Run should remain Running after steers at stop boundary');
 
@@ -438,14 +433,14 @@ final class CommandMailboxPolicyTest extends TestCase
             turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
-            idempotencyKey: $fixture->runStore->get($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
+            idempotencyKey: $fixture->activeRunContext->stateFor($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
             assistantMessage: null,
             usage: [],
             stopReason: 'stop',
             error: null,
         ));
 
-        $state = $fixture->runStore->get($runId);
+        $state = $fixture->activeRunContext->stateFor($runId);
         $this->assertNotNull($state);
         // shouldContinue=false should complete the run
         $this->assertSame(RunStatus::Completed, $state->status);
@@ -567,7 +562,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
     private function currentTurnNo(CommandMailboxFixture $fixture, string $runId): int
     {
-        $state = $fixture->runStore->get($runId);
+        $state = $fixture->activeRunContext->stateFor($runId);
         $this->assertNotNull($state);
 
         return $state->turnNo;
@@ -575,11 +570,9 @@ final class CommandMailboxPolicyTest extends TestCase
 
     private function createFixture(int $maxPendingCommands = 100): CommandMailboxFixture
     {
-        $runStore = new InMemoryRunStore();
+        $activeRunContext = new TestActiveRunContext();
         $eventStore = new InMemoryEventStore();
         $commandStore = new InMemoryCommandStore();
-
-        $replayService = new SessionHotPromptReplayService($eventStore, new InMemoryPromptStateStore(), new PromptStateReplayService(), new ReplayEventPreparer());
 
         $commandBus = new TestMessageBus();
         $executionBus = new TestMessageBus();
@@ -593,21 +586,19 @@ final class CommandMailboxPolicyTest extends TestCase
         $toolBatchCollector = new ToolBatchCollector();
 
         $runCommit = new RunCommit(
-            runStore: $runStore,
+            activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             commandStore: $commandStore,
-            hotPromptStateRebuilder: $replayService,
             stepDispatcher: $stepDispatcher,
             logger: new NullLogger(),
             hookDispatcher: null,
         );
 
         $runMessageProcessor = new RunMessageProcessor(
-            runStore: $runStore,
+            activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
             stepDispatcher: $stepDispatcher,
-            logger: new NullLogger(),
             handlers: [
                 new StartRunHandler(
                     eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
@@ -648,10 +639,10 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $orchestrator = new RunOrchestrator(
             runMessageProcessor: $runMessageProcessor,
-            activeRunContext: new TestActiveRunContext(),
+            activeRunContext: $activeRunContext,
         );
 
-        return new CommandMailboxFixture($orchestrator, $runStore, $eventStore, $commandStore, $commandBus, $executionBus);
+        return new CommandMailboxFixture($orchestrator, $activeRunContext, $eventStore, $commandStore, $commandBus, $executionBus);
     }
 
     private function startRun(string $runId): StartRun
@@ -725,7 +716,7 @@ final readonly class CommandMailboxFixture
 {
     public function __construct(
         public RunOrchestrator $orchestrator,
-        public InMemoryRunStore $runStore,
+        public TestActiveRunContext $activeRunContext,
         public InMemoryEventStore $eventStore,
         public InMemoryCommandStore $commandStore,
         public TestMessageBus $commandBus,

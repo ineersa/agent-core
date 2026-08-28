@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
-use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
@@ -30,7 +29,7 @@ final readonly class ExecuteToolCallWorker
         private MessageBusInterface $commandBus,
         private DeferredToolCompletionRepositoryInterface $deferredToolCompletionRepository,
         private ToolExecutionResultStore $resultStore,
-        private ?RunStoreInterface $runStore = null,
+        private RunOperationalStatusReaderInterface $statusReader,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
         private ?EventDispatcherInterface $eventDispatcher = null,
@@ -101,9 +100,7 @@ final readonly class ExecuteToolCallWorker
             return null;
         }
 
-        $cancelToken = null !== $this->runStore
-            ? new RunCancellationToken($this->runStore, $message->runId())
-            : new NullCancellationToken();
+        $cancelToken = new RunCancellationToken($this->statusReader, $message->runId());
 
         $batchToolCallCount = 1;
         if (\is_array($message->assistantMessage)) {

@@ -5,12 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\ChildRun\Preparation;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
@@ -81,15 +78,6 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
             'content' => [['type' => 'text', 'text' => $canonicalContext]],
             'metadata' => ['source' => 'agents_context'],
         ]]);
-
-        $legacyStore = self::getContainer()->get(RunStoreInterface::class);
-        $this->assertTrue($legacyStore->compareAndSwap(new RunState(
-            runId: $parentRunId,
-            status: RunStatus::Running,
-            version: 0,
-            messages: [new AgentMessage(role: 'user-context', content: [['type' => 'text', 'text' => 'STALE_SNAPSHOT_CONTEXT']], metadata: ['source' => 'agents_context'])],
-            model: 'stale/model',
-        ), 0));
 
         $factory = self::getContainer()->get(SubagentChildLaunchInputFactory::class);
         \assert($factory instanceof SubagentChildLaunchInputFactory);

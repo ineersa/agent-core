@@ -1014,7 +1014,6 @@ services:
   Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor:
     arguments:
       $handlers: !tagged_iterator agent_core.run_message_handler
-      $runStateRebuilder: '@Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface'
       $historyTailDiscard: '@Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface'
 
   Ineersa\AgentCore\Application\Handler\StepDispatcher:

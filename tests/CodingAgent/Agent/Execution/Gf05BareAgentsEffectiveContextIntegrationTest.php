@@ -52,9 +52,9 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
         // Parent run identity must be a pure-digit hatfield_session id.
         // createSession() allocates a real DB PK so ParaTest workers cannot collide.
         $parentRunId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('launch child after context');
-        $parentRunStore = self::getContainer()->get(RunStoreInterface::class);
+        $parentRunStore = new InMemoryRunStore();
         $eventStore = self::getContainer()->get(EventStoreInterface::class);
-        $parentRunner = PipelineCapturingAgentRunner::create($parentRunStore, $eventStore);
+        $parentRunner = PipelineCapturingAgentRunner::create($eventStore);
         self::getContainer()->set(AgentRunnerInterface::class, $parentRunner);
 
         self::getContainer()->get(InProcessAgentSessionClient::class)->start(new StartRunRequest(
@@ -78,7 +78,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
 
         $childRunStore = new InMemoryRunStore();
         $childEventStore = new InMemoryEventStore();
-        $childRunner = PipelineCapturingAgentRunner::create($childRunStore, $childEventStore);
+        $childRunner = PipelineCapturingAgentRunner::create($childEventStore);
 
         $service = $this->buildSubagentService(
             parentRunStore: $parentRunStore,

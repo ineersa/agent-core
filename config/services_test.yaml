@@ -76,6 +76,16 @@ services:
     class: Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService
     public: true
 
+  # Legacy state-store tests retain direct access until the immediate physical
+  # cleanup removes the dormant RunStore cluster. No production service uses it.
+  test.child_aware_run_store:
+    alias: Ineersa\CodingAgent\Agent\Artifact\ChildAwareRunStore
+    public: true
+
+  test.legacy_run_store:
+    alias: Ineersa\AgentCore\Contract\RunStoreInterface
+    public: true
+
   # TEST-ONLY access to the private operational projection repository for
   # kernel/database integration tests. The production service remains private.
   test.run_operational_projection_repository:

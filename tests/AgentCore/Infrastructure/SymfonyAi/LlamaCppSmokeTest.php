@@ -219,7 +219,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
 
         // ── Adapter ──
         $adapter = new LlmPlatformAdapter(
-            runStore: $runStore,
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,

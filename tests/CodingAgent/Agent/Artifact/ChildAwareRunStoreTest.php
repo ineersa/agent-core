@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\CodingAgent\Agent\Artifact\ChildAwareRunStore;
 use Ineersa\CodingAgent\Session\SessionRunStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 
@@ -14,7 +13,7 @@ final class ChildAwareRunStoreTest extends IsolatedKernelTestCase
 {
     public function testGetReturnsNullForUnknownRunId(): void
     {
-        $store = self::getContainer()->get(ChildAwareRunStore::class);
+        $store = self::getContainer()->get('test.child_aware_run_store');
 
         $result = $store->get('nonexistent-run-id');
         $this->assertNull($result);
@@ -22,7 +21,7 @@ final class ChildAwareRunStoreTest extends IsolatedKernelTestCase
 
     public function testGetHandlesParentRun(): void
     {
-        $store = self::getContainer()->get(ChildAwareRunStore::class);
+        $store = self::getContainer()->get('test.child_aware_run_store');
         $parentStore = self::getContainer()->get(SessionRunStore::class);
 
         // Write a parent-run state and verify the router finds it.
@@ -43,7 +42,7 @@ final class ChildAwareRunStoreTest extends IsolatedKernelTestCase
 
     public function testCompareAndSwapHandlesParentRun(): void
     {
-        $store = self::getContainer()->get(ChildAwareRunStore::class);
+        $store = self::getContainer()->get('test.child_aware_run_store');
 
         $state = new RunState(runId: 'parent-cas', status: RunStatus::Running, version: 0, model: 'test-model');
         $success = $store->compareAndSwap($state, 0);

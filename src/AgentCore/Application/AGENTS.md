@@ -45,7 +45,7 @@ There is **no** `CollectToolBatch` message type in `src/` (stale historical name
 
 ## Events and commit
 
-- `RunCommit::commit()` owns durable persistence of `RunEvent` via `EventStoreInterface` (`append` / `appendMany`), CAS on `RunStoreInterface`, effect dispatch via `StepDispatcher`, and after-turn hooks via `HookDispatcher`
+- `RunCommit::commit()` appends canonical `RunEvent` via `EventStoreInterface` (`append` / `appendMany`), then persists the narrow projection and active context before effect dispatch via `StepDispatcher` and after-turn hooks via `HookDispatcher`
 - Extension lifecycle hooks use `HookSubscriberInterface` / after-turn context from committed events, aggregated in registration order by `HookDispatcher`
 
 ## Linear history / replay contracts

@@ -12,7 +12,6 @@ use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\StartRun;
@@ -37,36 +36,29 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
 
     public function __construct(
         private readonly RunOrchestrator $orchestrator,
-        private readonly RunStoreInterface $runStore,
         private readonly EventStoreInterface $eventStore,
     ) {
     }
 
-    public static function create(RunStoreInterface $runStore, EventStoreInterface $eventStore): self
+    public static function create(EventStoreInterface $eventStore): self
     {
         $commandBus = new TestMessageBus();
         $executionBus = new TestMessageBus();
         $commandStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore();
+        $activeRunContext = new TestActiveRunContext();
         $runCommit = new RunCommit(
-            runStore: $runStore,
+            activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             commandStore: $commandStore,
-            hotPromptStateRebuilder: new \Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService(
-                $eventStore,
-                new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore(),
-                new \Ineersa\AgentCore\Application\Replay\PromptStateReplayService(),
-                new \Ineersa\AgentCore\Application\Replay\ReplayEventPreparer(),
-            ),
             stepDispatcher: new StepDispatcher(new TestMessageBus(), $executionBus),
             logger: new NullLogger(),
             hookDispatcher: null,
         );
         $processor = new RunMessageProcessor(
-            runStore: $runStore,
+            activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), $executionBus),
-            logger: new NullLogger(),
             handlers: [
                 new StartRunHandler(
                     eventFactory: new EventFactory(),
@@ -75,7 +67,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
             ],
         );
 
-        return new self(new RunOrchestrator($processor, new TestActiveRunContext()), $runStore, $eventStore);
+        return new self(new RunOrchestrator($processor, $activeRunContext), $eventStore);
     }
 
     public function start(StartRunInput $input): string

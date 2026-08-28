@@ -60,6 +60,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             $bus,
             new InMemoryDeferredToolCompletionRepository(),
             $store,
+            new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
         ))(new ExecuteToolCall('run-susp', 2, 'turn-2-tools-1', 1, 'idemp', 'call-susp', 'bash', ['command' => 'env'], 0));
 
         $this->assertInstanceOf(ToolCallResult::class, $bus->messages[0] ?? null);
@@ -321,7 +322,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
     public function testSuspensionThenTerminalToolCallResultsBothCommitDespiteSharedExecuteKey(): void
     {
-        $runStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore();
+        $activeRunContext = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
         $eventStore = new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore();
         $commandStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore();
         $collector = new ToolBatchCollector();
@@ -335,37 +336,21 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             ->withActiveStepId('step-seq')
             ->withPendingToolCalls(['call-seq' => false])
             ->build();
-        $this->assertTrue($runStore->compareAndSwap($running, 0));
+        $activeRunContext->remember($running);
 
         $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), AttributeSerializerValidatorTestFactory::denormalizer());
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
-            runStore: $runStore,
+            activeRunContext: $activeRunContext,
             runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
-                runStore: $runStore,
+                activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
                 commandStore: $commandStore,
-                hotPromptStateRebuilder: new class implements \Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface {
-                    public function rebuildHotPromptState(RunState $state): \Ineersa\AgentCore\Domain\Run\PromptState
-                    {
-                        return new \Ineersa\AgentCore\Domain\Run\PromptState(
-                            runId: $state->runId,
-                            source: 'test',
-                            eventCount: 0,
-                            lastSeq: 0,
-                            missingSequences: [],
-                            isContiguous: true,
-                            tokenEstimate: 0,
-                            messages: [],
-                        );
-                    }
-                },
                 stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()),
                 logger: new \Psr\Log\NullLogger(),
             ),
             stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             handlers: [$handler],
-            logger: new \Psr\Log\NullLogger(),
         );
 
         $request = PendingHumanInputRequestDTO::toolCallFromPayload(
@@ -384,14 +369,14 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertNotSame($suspension->idempotencyKey(), $terminal->idempotencyKey());
 
         $processor->process('result.tool', $suspension);
-        $afterSuspension = $runStore->get('run-seq');
+        $afterSuspension = $activeRunContext->stateFor('run-seq');
         $this->assertNotNull($afterSuspension);
         $this->assertSame(RunStatus::WaitingHuman, $afterSuspension->status);
         $this->assertSame(['call-seq' => false], $afterSuspension->pendingToolCalls);
 
         // Duplicate suspension must dedup without state change.
         $processor->process('result.tool', $suspension);
-        $this->assertSame($afterSuspension->version, $runStore->get('run-seq')?->version);
+        $this->assertSame($afterSuspension->version, $activeRunContext->stateFor('run-seq')?->version);
 
         // Answer path clears WaitingHuman before the resumed terminal ToolCallResult arrives.
         $resumed = RunStateBuilder::running('run-seq')
@@ -403,13 +388,13 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             ->withPendingHumanInputRequests([])
             ->withStatus(RunStatus::Running)
             ->build();
-        $this->assertTrue($runStore->compareAndSwap($resumed, $afterSuspension->version));
+        $activeRunContext->remember($resumed);
 
         // Resume requeues the exact call into a fresh batch (as resumeHumanInputAnswer does).
         $collector->registerExpectedBatch('run-seq', 1, 'step-seq', [$execute]);
 
         $processor->process('result.tool', $terminal);
-        $afterTerminal = $runStore->get('run-seq');
+        $afterTerminal = $activeRunContext->stateFor('run-seq');
         $this->assertNotNull($afterTerminal);
         // Single-call batch finalizes to empty pendingToolCalls (complete path).
         $this->assertSame([], $afterTerminal->pendingToolCalls);
@@ -419,12 +404,12 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         // Duplicate terminal must dedup (no further commit).
         $versionAfterTerminal = $afterTerminal->version;
         $processor->process('result.tool', $terminal);
-        $this->assertSame($versionAfterTerminal, $runStore->get('run-seq')?->version);
+        $this->assertSame($versionAfterTerminal, $activeRunContext->stateFor('run-seq')?->version);
     }
 
     public function testPostCommitEffectDispatchFailureRedrivesExactCallWithoutMarkingApplied(): void
     {
-        $runStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore();
+        $activeRunContext = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
         $eventStore = new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore();
         $commandStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore();
         $collector = new ToolBatchCollector();
@@ -445,7 +430,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 ),
             ])
             ->build();
-        $this->assertTrue($runStore->compareAndSwap($waiting, 0));
+        $activeRunContext->remember($waiting);
 
         $executionBus = new class implements \Symfony\Component\Messenger\MessageBusInterface {
             public int $attempts = 0;
@@ -478,33 +463,17 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         );
 
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
-            runStore: $runStore,
+            activeRunContext: $activeRunContext,
             runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
-                runStore: $runStore,
+                activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
                 commandStore: $commandStore,
-                hotPromptStateRebuilder: new class implements \Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface {
-                    public function rebuildHotPromptState(RunState $state): \Ineersa\AgentCore\Domain\Run\PromptState
-                    {
-                        return new \Ineersa\AgentCore\Domain\Run\PromptState(
-                            runId: $state->runId,
-                            source: 'test',
-                            eventCount: 0,
-                            lastSeq: 0,
-                            missingSequences: [],
-                            isContiguous: true,
-                            tokenEstimate: 0,
-                            messages: [],
-                        );
-                    }
-                },
                 stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), $executionBus),
                 logger: new \Psr\Log\NullLogger(),
             ),
             stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), $executionBus),
             handlers: [$handler],
-            logger: new \Psr\Log\NullLogger(),
         );
 
         $command = new \Ineersa\AgentCore\Domain\Message\ApplyCommand(
@@ -524,7 +493,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             $this->assertStringContainsString('Failed to dispatch execution effect', $exception->getMessage());
         }
 
-        $afterFail = $runStore->get('run-pc');
+        $afterFail = $activeRunContext->stateFor('run-pc');
         $this->assertNotNull($afterFail);
         $this->assertSame(RunStatus::Running, $afterFail->status);
         $this->assertSame([], $afterFail->pendingHumanInputRequests);
@@ -541,7 +510,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
     public function testMultiRequestPostCommitRedriveWhileSiblingStillWaiting(): void
     {
-        $runStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore();
+        $activeRunContext = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
         $eventStore = new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore();
         $commandStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore();
         $collector = new ToolBatchCollector(defaultMaxParallelism: 2);
@@ -570,7 +539,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 ),
             ])
             ->build();
-        $this->assertTrue($runStore->compareAndSwap($waiting, 0));
+        $activeRunContext->remember($waiting);
 
         $executionBus = new class implements \Symfony\Component\Messenger\MessageBusInterface {
             public int $attempts = 0;
@@ -603,33 +572,17 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         );
 
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
-            runStore: $runStore,
+            activeRunContext: $activeRunContext,
             runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
-                runStore: $runStore,
+                activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
                 commandStore: $commandStore,
-                hotPromptStateRebuilder: new class implements \Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface {
-                    public function rebuildHotPromptState(RunState $state): \Ineersa\AgentCore\Domain\Run\PromptState
-                    {
-                        return new \Ineersa\AgentCore\Domain\Run\PromptState(
-                            runId: $state->runId,
-                            source: 'test',
-                            eventCount: 0,
-                            lastSeq: 0,
-                            missingSequences: [],
-                            isContiguous: true,
-                            tokenEstimate: 0,
-                            messages: [],
-                        );
-                    }
-                },
                 stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), $executionBus),
                 logger: new \Psr\Log\NullLogger(),
             ),
             stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), $executionBus),
             handlers: [$handler],
-            logger: new \Psr\Log\NullLogger(),
         );
 
         $command = new \Ineersa\AgentCore\Domain\Message\ApplyCommand(
@@ -649,7 +602,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             $this->assertStringContainsString('Failed to dispatch execution effect', $exception->getMessage());
         }
 
-        $afterFail = $runStore->get('run-fifo');
+        $afterFail = $activeRunContext->stateFor('run-fifo');
         $this->assertNotNull($afterFail);
         // q1 applied; q2 still pending → status remains WaitingHuman (the multi-request gap).
         $this->assertSame(RunStatus::WaitingHuman, $afterFail->status);
@@ -662,7 +615,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         // Redelivery of q1 while active FIFO head is q2 must redrive q1 without re-answering q2.
         $processor->process('command', $command);
 
-        $afterRetry = $runStore->get('run-fifo');
+        $afterRetry = $activeRunContext->stateFor('run-fifo');
         $this->assertNotNull($afterRetry);
         $this->assertSame(RunStatus::WaitingHuman, $afterRetry->status);
         $this->assertCount(1, $afterRetry->pendingHumanInputRequests);

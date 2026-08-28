@@ -86,7 +86,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
 
         $childRunStore = new InMemoryRunStore();
         $eventStore = new InMemoryEventStore();
-        $pipelineRunner = PipelineCapturingAgentRunner::create($childRunStore, $eventStore);
+        $pipelineRunner = PipelineCapturingAgentRunner::create($eventStore);
 
         $service = $this->buildSubagentService(
             parentRunStore: $parentRunStore,
@@ -195,7 +195,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
 
         $childRunStore = new InMemoryRunStore();
         $eventStore = new InMemoryEventStore();
-        $pipelineRunner = PipelineCapturingAgentRunner::create($childRunStore, $eventStore);
+        $pipelineRunner = PipelineCapturingAgentRunner::create($eventStore);
 
         $service = $this->buildSubagentService(
             parentRunStore: $parentRunStore,
@@ -282,7 +282,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
 
         $childRunStore = new InMemoryRunStore();
         $eventStore = new InMemoryEventStore();
-        $pipelineRunner = PipelineCapturingAgentRunner::create($childRunStore, $eventStore);
+        $pipelineRunner = PipelineCapturingAgentRunner::create($eventStore);
         $service = $this->buildSubagentService(
             parentRunStore: $parentRunStore,
             childRunStore: $childRunStore,
