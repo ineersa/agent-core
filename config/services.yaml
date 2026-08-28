@@ -684,8 +684,6 @@ services:
   Ineersa\AgentCore\Contract\ActiveRunContextInterface:
     alias: Ineersa\CodingAgent\Agent\Artifact\ActiveRunContext
 
-  Ineersa\AgentCore\Contract\RunOperationalProjectionWriterInterface:
-    alias: Ineersa\CodingAgent\Session\Projection\RunOperationalProjectionWriter
 
   Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface:
     alias: Ineersa\CodingAgent\Session\History\HistorySelectionService

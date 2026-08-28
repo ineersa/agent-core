@@ -7,11 +7,9 @@ namespace Ineersa\CodingAgent\Entity;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
-use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Validator\Constraints as Assert;
-use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /** Latest bounded run coordination projection; canonical payload/history remains in events.jsonl. */
 #[ORM\Entity]
@@ -100,183 +98,19 @@ final class RunOperationalState
     /** @var Collection<int, RunOperationalToolCall> */
     #[ORM\OneToMany(targetEntity: RunOperationalToolCall::class, mappedBy: 'run', cascade: ['persist', 'remove'], orphanRemoval: true)]
     #[Assert\Valid]
-    private Collection $toolCalls;
+    public Collection $toolCalls;
 
     /** @var Collection<int, RunOperationalHumanInput> */
     #[ORM\OneToMany(targetEntity: RunOperationalHumanInput::class, mappedBy: 'run', cascade: ['persist', 'remove'], orphanRemoval: true)]
     #[Assert\Valid]
-    private Collection $humanInputs;
+    public Collection $humanInputs;
 
-    public function __construct(
-        string $runId,
-        string $ownerSessionId,
-        RunStatus $status,
-        int $turnNo,
-        ?string $activeStepId,
-        ?CurrentOperationDTO $currentOperation,
-        ?string $lastAppliedAdvanceKey,
-        ?string $lastAppliedCompactionKey,
-        bool $retryableFailure,
-        int $retryAttempts,
-        int $lastEventSequence,
-        int $transitionVersion,
-    ) {
+    public function __construct()
+    {
         $this->toolCalls = new ArrayCollection();
         $this->humanInputs = new ArrayCollection();
         $now = Clock::get()->now();
         $this->createdAt = $now;
         $this->updatedAt = $now;
-        $this->runId = $runId;
-        $this->replaceScalars(
-            $ownerSessionId,
-            $status,
-            $turnNo,
-            $activeStepId,
-            $currentOperation,
-            $lastAppliedAdvanceKey,
-            $lastAppliedCompactionKey,
-            $retryableFailure,
-            $retryAttempts,
-            $lastEventSequence,
-            $transitionVersion,
-        );
-    }
-
-    public function currentOperation(): ?CurrentOperationDTO
-    {
-        if (null === $this->operationKey) {
-            return null;
-        }
-
-        if (null === $this->operationTurnNo || null === $this->operationStepId || null === $this->operationAttempt) {
-            throw new \UnexpectedValueException('Persisted current operation is incomplete.');
-        }
-
-        return new CurrentOperationDTO(
-            $this->operationTurnNo,
-            $this->operationStepId,
-            $this->operationAttempt,
-            $this->operationKey,
-        );
-    }
-
-    public function replaceFrom(self $replacement): void
-    {
-        if ($this->runId !== $replacement->runId) {
-            throw new \LogicException('An operational projection cannot change its run identity.');
-        }
-
-        $this->replaceScalars(
-            $replacement->ownerSessionId,
-            $replacement->status,
-            $replacement->turnNo,
-            $replacement->activeStepId,
-            $replacement->currentOperation(),
-            $replacement->lastAppliedAdvanceKey,
-            $replacement->lastAppliedCompactionKey,
-            $replacement->retryableFailure,
-            $replacement->retryAttempts,
-            $replacement->lastEventSequence,
-            $replacement->transitionVersion,
-        );
-
-        $this->synchronizeToolCalls($replacement->toolCalls);
-        $this->synchronizeHumanInputs($replacement->humanInputs);
-    }
-
-    public function addToolCall(RunOperationalToolCall $toolCall): void
-    {
-        $this->toolCalls->add($toolCall);
-    }
-
-    public function addHumanInput(RunOperationalHumanInput $humanInput): void
-    {
-        $this->humanInputs->add($humanInput);
-    }
-
-    #[Assert\Callback]
-    public function validateOperation(ExecutionContextInterface $context): void
-    {
-        $values = [$this->operationTurnNo, $this->operationStepId, $this->operationAttempt, $this->operationKey];
-        $present = \count(array_filter($values, static fn (mixed $value): bool => null !== $value));
-        if (0 !== $present && 4 !== $present) {
-            $context->buildViolation('Current operation fields must be all present or all absent.')->addViolation();
-        }
-    }
-
-    private function replaceScalars(
-        string $ownerSessionId,
-        RunStatus $status,
-        int $turnNo,
-        ?string $activeStepId,
-        ?CurrentOperationDTO $currentOperation,
-        ?string $lastAppliedAdvanceKey,
-        ?string $lastAppliedCompactionKey,
-        bool $retryableFailure,
-        int $retryAttempts,
-        int $lastEventSequence,
-        int $transitionVersion,
-    ): void {
-        $this->ownerSessionId = $ownerSessionId;
-        $this->status = $status;
-        $this->turnNo = $turnNo;
-        $this->activeStepId = $activeStepId;
-        $this->operationTurnNo = $currentOperation?->turnNo;
-        $this->operationStepId = $currentOperation?->stepId;
-        $this->operationAttempt = $currentOperation?->attempt;
-        $this->operationKey = $currentOperation?->idempotencyKey;
-        $this->lastAppliedAdvanceKey = $lastAppliedAdvanceKey;
-        $this->lastAppliedCompactionKey = $lastAppliedCompactionKey;
-        $this->retryableFailure = $retryableFailure;
-        $this->retryAttempts = $retryAttempts;
-        $this->lastEventSequence = $lastEventSequence;
-        $this->transitionVersion = $transitionVersion;
-    }
-
-    /** @param Collection<int, RunOperationalToolCall> $desired */
-    private function synchronizeToolCalls(Collection $desired): void
-    {
-        $existing = [];
-        foreach ($this->toolCalls as $toolCall) {
-            $existing[$toolCall->identity()] = $toolCall;
-        }
-
-        foreach ($desired as $toolCall) {
-            $identity = $toolCall->identity();
-            if (isset($existing[$identity])) {
-                $existing[$identity]->replaceFrom($toolCall);
-                unset($existing[$identity]);
-                continue;
-            }
-
-            $this->toolCalls->add($toolCall->forRun($this));
-        }
-
-        foreach ($existing as $toolCall) {
-            $this->toolCalls->removeElement($toolCall);
-        }
-    }
-
-    /** @param Collection<int, RunOperationalHumanInput> $desired */
-    private function synchronizeHumanInputs(Collection $desired): void
-    {
-        $existing = [];
-        foreach ($this->humanInputs as $humanInput) {
-            $existing[$humanInput->questionId] = $humanInput;
-        }
-
-        foreach ($desired as $humanInput) {
-            if (isset($existing[$humanInput->questionId])) {
-                $existing[$humanInput->questionId]->replaceFrom($humanInput);
-                unset($existing[$humanInput->questionId]);
-                continue;
-            }
-
-            $this->humanInputs->add($humanInput->forRun($this));
-        }
-
-        foreach ($existing as $humanInput) {
-            $this->humanInputs->removeElement($humanInput);
-        }
     }
 }

@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Validator\Constraints as Assert;
 
-/** Current tool-call coordination only; concrete tool payload stays in the execution payload store. */
+/** Current tool-call coordination only; concrete payload remains in the execution payload store. */
 #[ORM\Entity]
 #[ORM\Table(name: 'run_operational_tool_call')]
 #[ORM\Index(name: 'idx_run_operational_tool_current', columns: ['run_id', 'batch_id', 'status', 'order_index'])]
@@ -52,39 +52,10 @@ final class RunOperationalToolCall
     #[ORM\Column(name: 'updated_at', type: 'datetime_immutable')]
     public \DateTimeImmutable $updatedAt;
 
-    public function __construct(
-        RunOperationalState $run,
-        string $batchId,
-        string $toolCallId,
-        int $orderIndex,
-        RunOperationalToolCallStatusEnum $status,
-        int $attempt,
-    ) {
-        $this->run = $run;
-        $this->batchId = $batchId;
-        $this->toolCallId = $toolCallId;
-        $this->orderIndex = $orderIndex;
-        $this->status = $status;
-        $this->attempt = $attempt;
+    public function __construct()
+    {
         $now = Clock::get()->now();
         $this->createdAt = $now;
         $this->updatedAt = $now;
-    }
-
-    public function identity(): string
-    {
-        return $this->batchId."\0".$this->toolCallId;
-    }
-
-    public function forRun(RunOperationalState $run): self
-    {
-        return new self($run, $this->batchId, $this->toolCallId, $this->orderIndex, $this->status, $this->attempt);
-    }
-
-    public function replaceFrom(self $replacement): void
-    {
-        $this->orderIndex = $replacement->orderIndex;
-        $this->status = $replacement->status;
-        $this->attempt = $replacement->attempt;
     }
 }

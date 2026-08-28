@@ -6,8 +6,8 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
-use Ineersa\AgentCore\Contract\RunOperationalProjectionWriterInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 
 /** Process-local run_control context; canonical replay is only performed on a cache miss. */
 final class ActiveRunContext implements ActiveRunContextInterface
@@ -17,8 +17,7 @@ final class ActiveRunContext implements ActiveRunContextInterface
 
     public function __construct(
         private readonly RunStateRebuilderInterface $runStateRebuilder,
-        private readonly RunOperationalProjectionWriterInterface $projectionWriter,
-        private readonly RunOwnerSessionResolver $ownerSessionResolver,
+        private readonly RunOperationalProjectionRepository $projectionRepository,
     ) {
     }
 
@@ -60,6 +59,6 @@ final class ActiveRunContext implements ActiveRunContextInterface
 
     private function persist(RunState $state): void
     {
-        $this->projectionWriter->replace($this->ownerSessionResolver->ownerSessionIdFor($state->runId), $state);
+        $this->projectionRepository->replace($state);
     }
 }
