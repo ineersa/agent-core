@@ -75,7 +75,7 @@ final class SafeGuardToolCallHookTest extends TestCase
 
         $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
         $this->assertSame(
-            "Allow destructive command?\n\n**Command:**\n\n**rm** first \\&\\& **rmdir** second \\&\\& **rm** third",
+            "Allow destructive command?\n\n**Command:**\n\n`rm`&#32;first&#32;\\&\\&&#32;`rmdir`&#32;second&#32;\\&\\&&#32;`rm`&#32;third",
             $dto->details['prompt'] ?? null,
         );
         $this->assertArrayNotHasKey('trigger_input', $dto->details);
@@ -87,7 +87,7 @@ final class SafeGuardToolCallHookTest extends TestCase
         putenv('HATFIELD_APPROVAL_CHANNEL=controller');
         $_ENV['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
         $_SERVER['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
-        $command = "rm <fg=red>*literal*</fg> \x1B[31m ΔΟΚΙΜΉ\nrmdir second";
+        $command = " env |grep <fg=red>*literal*</fg> \x1B[31m ΔΟΚΙΜΉ\nprintenv | sort";
         $dto = $this->hook->onToolCall(new ToolCallContextDTO('render', 'bash', ['command' => $command], 0));
         $prompt = (string) ($dto->details['prompt'] ?? '');
 
@@ -97,6 +97,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             palette: new ThemePalette('safeguard-prompt', [
                 ThemeColorEnum::Accent->value => 'cyan',
                 ThemeColorEnum::Prompt->value => 'magenta',
+                ThemeColorEnum::MarkdownCode->value => 'yellow',
                 ThemeColorEnum::Text->value => 'white',
             ]),
         );
@@ -111,12 +112,13 @@ final class SafeGuardToolCallHookTest extends TestCase
         ));
 
         $text = $harness->plainScreenText();
-        $this->assertStringContainsString('Allow destructive command?', $text);
+        $this->assertStringContainsString('Allow sensitive information access?', $text);
         $this->assertStringContainsString('Command:', $text);
-        $this->assertStringContainsString('rm <fg=red>*literal*</fg> [31m ΔΟΚΙΜΉ', $text);
-        $this->assertStringContainsString('rmdir second', $text);
+        $this->assertStringContainsString('env |grep <fg=red>*literal*</fg> [31m', $text);
+        $this->assertStringContainsString('ΔΟΚΙΜΉ', $text);
+        $this->assertStringContainsString('printenv | sort', $text);
         $this->assertStringNotContainsString('…', $text);
-        $this->assertStringContainsString(new Style(bold: true)->apply('rm'), $harness->ansiOutput());
+        $this->assertStringContainsString(new Style(color: 'yellow')->apply('env |'), $harness->ansiOutput());
     }
 
     public function testBashDestructiveRequiresApprovalWithAllowDenyOnly(): void

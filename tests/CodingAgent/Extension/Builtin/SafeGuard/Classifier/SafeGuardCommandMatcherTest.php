@@ -95,6 +95,13 @@ final class SafeGuardCommandMatcherTest extends TestCase
         $this->assertSame([], $result->matchSpans);
     }
 
+    public function testEmptyCustomPatternRetainsFailClosedMatchAllBehavior(): void
+    {
+        $result = $this->matcher->classify('echo safe', ['']);
+
+        $this->assertSame(SafeGuardDecisionKind::CustomDangerous, $result->kind);
+    }
+
     public function testChmodWithoutDigitsIsAllowed(): void
     {
         $result = $this->matcher->classify('chmod +x file');

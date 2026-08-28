@@ -127,7 +127,8 @@ final class SafeGuardCommandMatcher
         // not regex rules, so they carry the exact input without regex spans.
         $normalized = $this->normalizeCommand($command);
         foreach ($dangerousCommandPatterns as $pattern) {
-            if (u($normalized)->containsAny($this->normalizeCommand($pattern))) {
+            $normalizedPattern = $this->normalizeCommand($pattern);
+            if ('' === $normalizedPattern || u($normalized)->containsAny($normalizedPattern)) {
                 return SafeGuardDecision::block(
                     kind: SafeGuardDecisionKind::CustomDangerous,
                     reason: 'Matched custom dangerous pattern',
