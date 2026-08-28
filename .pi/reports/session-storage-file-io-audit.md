@@ -4,11 +4,11 @@
 
 ## Privacy-safe measurement tool
 
-`tools/session-storage-audit.py` is the sole reusable measurement tool:
+`~/.hatfield/tools/session-storage-audit.py` is the reusable user-level measurement tool:
 
 ```bash
-python3 tools/session-storage-audit.py /absolute/path/to/.hatfield
-python3 tools/session-storage-audit.py --project-final /absolute/path/to/.hatfield
+python3 ~/.hatfield/tools/session-storage-audit.py /absolute/path/to/.hatfield
+python3 ~/.hatfield/tools/session-storage-audit.py --project-final /absolute/path/to/.hatfield
 ```
 
 Its output is fixed labels, approved schema field paths, and numeric aggregates only. It never prints the supplied root, file names, run/tool identifiers, type strings outside the fixed current/removed vocabulary (other types are labelled `unsupported`), payload values, or malformed input. It is read-only and requires an existing directory named `.hatfield`.
@@ -106,14 +106,14 @@ OPERATIONAL scope=child row=human rows=0 logical_scalar_bytes=0 unsupported_shap
 OPERATIONAL_BOUND row=state max_varchar_bytes=1562 timestamps_bytes=38 sqlite_utf8_length_caveat=declared_char_limits_not_file_allocation
 OPERATIONAL_BOUND row=tool max_varchar_bytes=797 timestamps_bytes=38 sqlite_utf8_length_caveat=declared_char_limits_not_file_allocation
 OPERATIONAL_BOUND row=human max_varchar_bytes=829 timestamps_bytes=38 sqlite_utf8_length_caveat=declared_char_limits_not_file_allocation
-SCHEMA benchmark=1 privacy=aggregate-only measurement=container_boot_before_baseline_parse_filter_reduce_retained_state peak=memory_get_peak_usage_true_minus_baseline_after_memory_reset_peak_usage
-DATASET scope=parent event_files=6 event_bytes=107757806
-REPLAY_RESULT scope=parent status=measured candidates_skipped=5 events=44 duration_ms=33 peak_memory_delta_bytes=0
-DATASET scope=child event_files=232 event_bytes=280207574
-REPLAY_RESULT scope=child status=measured candidates_skipped=210 events=4 duration_ms=2 peak_memory_delta_bytes=0
+SCHEMA benchmark=2 privacy=aggregate-only measurement=container_boot_before_baseline_parse_filter_reduce_retained_state peak=memory_get_peak_usage_true_minus_baseline_after_memory_reset_peak_usage
+DATASET scope=parent source=synthetic_current_schema event_files=1 event_bytes=43117264
+REPLAY_RESULT scope=parent status=measured candidates_skipped=0 events=10326 duration_ms=201 peak_memory_delta_bytes=46137344
+DATASET scope=child source=synthetic_current_schema event_files=1 event_bytes=3751623
+REPLAY_RESULT scope=child status=measured candidates_skipped=0 events=927 duration_ms=16 peak_memory_delta_bytes=2097152
 ```
 
 ```bash
-python3 tools/session-storage-audit.py --project-final /path/to/.hatfield
-php tools/storage-replay-benchmark.php /path/to/.hatfield
+python3 ~/.hatfield/tools/session-storage-audit.py --project-final /path/to/.hatfield
+php ~/.hatfield/tools/storage-replay-benchmark.php --synthetic-current
 ```
