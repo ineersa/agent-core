@@ -121,8 +121,15 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
             // push a third handler, and confuse PHPUnit's exception
             // handler tracking for subsequent test classes.
             self::$kernel->shutdown();
-            self::$booted = false;
         }
+
+        // KernelTestCase keeps its kernel reference in a static property shared
+        // by all test classes in this worker. The next isolated class must not
+        // boot that stale kernel after its CWD has been removed: its compiled
+        // container can still require proxy files from the previous cache root.
+        self::$kernel = null;
+        self::$class = null;
+        self::$booted = false;
 
         // Clean up the isolated directory tree.
         if (isset(self::$classCwd) && is_dir(self::$classCwd)) {

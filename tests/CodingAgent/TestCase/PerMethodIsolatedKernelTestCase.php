@@ -81,8 +81,15 @@ abstract class PerMethodIsolatedKernelTestCase extends KernelTestCase
             // re-boot, which would push an extra exception handler and
             // leak it onto the handler stack for downstream test classes.
             self::$kernel->shutdown();
-            self::$booted = false;
         }
+
+        // KernelTestCase keeps its kernel reference in a static property shared
+        // by all test classes in this worker. Clear it before removing this
+        // method's CWD so the next kernel boot cannot reuse a container whose
+        // proxy paths belong to this isolated cache root.
+        self::$kernel = null;
+        self::$class = null;
+        self::$booted = false;
 
         // Clean up the isolated directory tree.
         if (isset($this->isolatedCwd) && is_dir($this->isolatedCwd)) {

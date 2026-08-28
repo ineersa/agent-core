@@ -110,6 +110,7 @@ final class SafeGuardClassifier
             kind: SafeGuardDecisionKind::CustomDangerous,
             reason: \sprintf('settings %s scope=%s path=%s', $operation, $scope, $path),
             toolName: $this->settingsToolName,
+            triggerInput: \sprintf('%s scope=%s path=%s', $operation, $scope, $path),
         );
     }
 
@@ -152,6 +153,8 @@ final class SafeGuardClassifier
             kind: $decision->kind,
             reason: $decision->reason,
             toolName: $this->bashToolName,
+            triggerInput: $decision->triggerInput,
+            matchSpans: $decision->matchSpans,
         );
     }
 
@@ -196,6 +199,7 @@ final class SafeGuardClassifier
             kind: SafeGuardDecisionKind::WriteOutsideCwd,
             reason: \sprintf('Write outside working directory: %s', $rawPath),
             toolName: $this->writeToolName,
+            triggerInput: $rawPath,
         );
     }
 
@@ -233,6 +237,7 @@ final class SafeGuardClassifier
             kind: SafeGuardDecisionKind::ProtectedRead,
             reason: \sprintf('Protected file — may contain secrets: %s', $rawPath),
             toolName: $this->readToolName,
+            triggerInput: $rawPath,
         );
     }
 }
