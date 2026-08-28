@@ -19,14 +19,6 @@ final readonly class CurrentToolCallDTO
         public RunOperationalToolCallStatusEnum $status,
         public int $attempt,
     ) {
-        foreach (['batchId' => $batchId, 'toolCallId' => $toolCallId] as $name => $value) {
-            if ('' === trim($value) || mb_strlen($value) > self::ID_MAX_LENGTH) {
-                throw new \InvalidArgumentException($name.' must be bounded and non-blank.');
-            }
-        }
-        if ($orderIndex < 0 || $attempt < 0) {
-            throw new \InvalidArgumentException('Tool order and attempt must not be negative.');
-        }
     }
 
     public function withStatus(RunOperationalToolCallStatusEnum $status): self

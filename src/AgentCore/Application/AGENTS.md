@@ -35,7 +35,7 @@ Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`)
 - `StartRun` — `AgentRunner::start()`
 - `ApplyCommand` — `AgentRunner` continue/steer/followUp/cancel/answerHuman via `applyCoreCommand()`
 - `ApplyShellCommand` — `AgentRunner::shell()`, controller shell path, in-process shell send
-- `AdvanceRun` — post-commit kickoffs (`StartRunHandler`, apply/LLM follow-up callbacks), `ExecuteShellToolCallWorker` wake after standalone shell `AgentEnd`, stale-run resume command
+- `AdvanceRun` — post-commit kickoffs (`StartRunHandler`, apply/LLM/shell follow-up callbacks), stale-run resume command
 - `AdvanceRun` / `CompactRun` — state-transition effects through `RunMessageProcessor` / `RunCommit` → `agent.command.bus` → `run_control`
 - `ExecuteLlmStep` / `ExecuteToolCall` / `ExecuteCompactionStep` — external-I/O effects through `RunMessageProcessor` / `RunCommit` → `agent.execution.bus`
 - `CompactRun` — auto-compaction hooks, manual `/compact`, pre-LLM compaction guard / overflow recovery paths

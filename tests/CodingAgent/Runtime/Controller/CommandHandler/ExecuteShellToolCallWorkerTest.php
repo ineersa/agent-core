@@ -4,17 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
-use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
-use Ineersa\AgentCore\Domain\Message\InvalidateRunContext;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -34,36 +31,27 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
     }
 
     /**
-     * Thesis: ExecuteShellToolCallWorker must write tool_execution_start,
-     * tool_execution_end, and (standalone) AgentEnd in strict ascending
-     * seq order from a single process, so EventStore ordering is
-     * deterministic and lifecycle event order-conformant.
-     *
-     * After AgentEnd, standalone must dispatch exactly one AdvanceRun with
-     * deterministic step/idempotency identity so a follow_up queued in the
-     * tool-end→AgentEnd window is drained (issue #183).
-     *
-     * Regression: async dispatch must not let AgentEnd race ahead of
-     * tool_exec events (issue #183).
+     * The execution worker only writes the in-flight start event. Completion
+     * is a durable ToolCallResult routed to run_control, the sole writer of
+     * completion and standalone terminal events.
      */
-    public function testStandaloneWritesEventsInOrder(): void
+    public function testStandaloneDispatchesResultToRunControl(): void
     {
         $eventStore = $this->createEventStore();
         $toolExecutor = $this->createToolExecutor('hello');
         $commandBus = new TestMessageBus();
-        [$serializer] = AttributeSerializerValidatorTestFactory::create();
-        $codec = new ToolExecutionEndPayloadCodec($serializer);
-
-        $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore, $commandBus, $codec);
+        $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore, $commandBus);
         $worker(new ExecuteShellToolCall(
             runId: 'run-standalone',
             turnNo: 2,
+            stepId: 'shell-step',
+            attempt: 2,
             toolCallId: 'sh_tc_1',
             commandText: 'echo hello',
             standalone: true,
         ));
 
-        $this->assertCount(3, $this->appendedEvents, 'Standalone shell must produce 3 events.');
+        $this->assertCount(1, $this->appendedEvents, 'Worker must only append the in-flight start event.');
 
         // Seq 1: tool_execution_start
         $this->assertSame(1, $this->appendedEvents[0]->seq);
@@ -77,54 +65,16 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         $this->assertArrayNotHasKey('timeout', $this->appendedEvents[0]->payload['arguments'] ?? []);
         $this->assertArrayNotHasKey('timeout', $this->appendedEvents[0]->payload);
 
-        // Seq 2: tool_execution_end
-        $this->assertSame(2, $this->appendedEvents[1]->seq);
-        $this->assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $this->appendedEvents[1]->type);
-        $this->assertSame(2, $this->appendedEvents[1]->turnNo);
-        $typedResult = $codec->fromEventPayload($this->appendedEvents[1]->payload);
-        $this->assertSame('run-standalone', $typedResult->runId());
-        $this->assertSame(2, $typedResult->turnNo());
-        $this->assertSame('sh_tc_1', $typedResult->toolCallId);
-        $this->assertSame(['command' => 'echo hello'], $typedResult->result['arguments'] ?? null);
-        $this->assertSame([['type' => 'text', 'text' => 'hello']], $typedResult->result['content'] ?? null);
-        $this->assertFalse($typedResult->isError);
-
-        // Seq 3: agent_end (final event, written only for standalone)
-        $this->assertSame(3, $this->appendedEvents[2]->seq);
-        $this->assertSame(RunEventTypeEnum::AgentEnd->value, $this->appendedEvents[2]->type);
-        $this->assertSame('completed', $this->appendedEvents[2]->payload['reason'] ?? null);
-
-        // Ascending seq order
-        for ($i = 1; $i < \count($this->appendedEvents); ++$i) {
-            $this->assertGreaterThan(
-                $this->appendedEvents[$i - 1]->seq,
-                $this->appendedEvents[$i]->seq,
-                \sprintf('Event at index %d must have seq > previous', $i),
-            );
-        }
-
-        // AgentEnd must be the final lifecycle event.
-        $this->assertSame(
-            RunEventTypeEnum::AgentEnd->value,
-            $this->appendedEvents[array_key_last($this->appendedEvents)]->type,
-            'AgentEnd must be the final event for standalone shell commands.',
-        );
-
-        $this->assertCount(2, $commandBus->messages, 'Standalone shell must invalidate before dispatching AdvanceRun.');
-        $this->assertInstanceOf(InvalidateRunContext::class, $commandBus->messages[0]);
-        $this->assertSame('run-standalone', $commandBus->messages[0]->runId());
-        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[1]);
-
-        /** @var AdvanceRun $advance */
-        $advance = $commandBus->messages[1];
-        $this->assertSame('run-standalone', $advance->runId());
-        $this->assertSame(2, $advance->turnNo());
-        $this->assertSame(1, $advance->attempt());
-        $this->assertSame('shell-standalone-advance-sh_tc_1', $advance->stepId());
-        $this->assertSame(
-            hash('sha256', 'run-standalone|shell-standalone-advance-sh_tc_1'),
-            $advance->idempotencyKey(),
-        );
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(ToolCallResult::class, $commandBus->messages[0]);
+        $result = $commandBus->messages[0];
+        $this->assertSame('shell-step', $result->stepId());
+        $this->assertSame(2, $result->attempt());
+        $this->assertSame(hash('sha256', 'run-standalone|sh_tc_1'), $result->idempotencyKey());
+        $this->assertSame('sh_tc_1', $result->toolCallId);
+        $this->assertSame(['command' => 'echo hello'], $result->result['arguments'] ?? null);
+        $this->assertTrue($result->result['standalone'] ?? false);
+        $this->assertFalse($result->isError);
     }
 
     /**
@@ -139,44 +89,27 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         $eventStore = $this->createEventStore();
         $toolExecutor = $this->createToolExecutor('result', isError: true);
         $commandBus = new TestMessageBus();
-        [$serializer] = AttributeSerializerValidatorTestFactory::create();
-        $codec = new ToolExecutionEndPayloadCodec($serializer);
-
-        $worker = new ExecuteShellToolCallWorker(
-            $toolExecutor,
-            $eventStore,
-            $commandBus,
-            $codec,
-        );
+        $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore, $commandBus);
         $worker(new ExecuteShellToolCall(
             runId: 'run-inline',
             turnNo: 2,
+            stepId: 'inline-step',
+            attempt: 1,
             toolCallId: 'sh_tc_2',
             commandText: 'echo inline',
             standalone: false,
         ));
 
-        $this->assertCount(2, $this->appendedEvents, 'Non-standalone shell must produce only tool_exec events.');
+        $this->assertCount(1, $this->appendedEvents);
         $this->assertSame(RunEventTypeEnum::ToolExecutionStart->value, $this->appendedEvents[0]->type);
-        $this->assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $this->appendedEvents[1]->type);
-        $typedResult = $codec->fromEventPayload($this->appendedEvents[1]->payload);
-        $this->assertSame('run-inline', $typedResult->runId());
-        $this->assertSame('sh_tc_2', $typedResult->toolCallId);
-        $this->assertSame([['type' => 'text', 'text' => 'result']], $typedResult->result['content'] ?? null);
-        $this->assertTrue($typedResult->isError);
-
-        // No AgentEnd.
-        foreach ($this->appendedEvents as $event) {
-            $this->assertNotSame(
-                RunEventTypeEnum::AgentEnd->value,
-                $event->type,
-                'Non-standalone shell must not emit AgentEnd.',
-            );
-        }
-
-        $this->assertCount(1, $commandBus->messages, 'Non-standalone shell must invalidate the run_control cache.');
-        $this->assertInstanceOf(InvalidateRunContext::class, $commandBus->messages[0]);
-        $this->assertSame('run-inline', $commandBus->messages[0]->runId());
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(ToolCallResult::class, $commandBus->messages[0]);
+        $result = $commandBus->messages[0];
+        $this->assertSame('run-inline', $result->runId());
+        $this->assertSame('sh_tc_2', $result->toolCallId);
+        $this->assertSame([['type' => 'text', 'text' => 'result']], $result->result['content'] ?? null);
+        $this->assertFalse($result->result['standalone'] ?? true);
+        $this->assertTrue($result->isError);
     }
 
     /**

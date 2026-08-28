@@ -860,11 +860,13 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             }
 
             return new ExecuteShellToolCall(
-                $runId,
-                $operation->turnNo,
-                $toolCallId,
-                ltrim(substr($text, 1)),
-                $standalone,
+                runId: $runId,
+                turnNo: $operation->turnNo,
+                stepId: $operation->stepId,
+                attempt: $operation->attempt,
+                toolCallId: $toolCallId,
+                commandText: ltrim(substr($text, 1)),
+                standalone: $standalone,
             );
         }
 

@@ -358,7 +358,11 @@ final class AgentResumeExecutionService
         }
 
         try {
-            $state = $replayedChildStates[$entry->agentRunId] ??= $this->rebuildChildState($entry->agentRunId);
+            $state = $replayedChildStates[$entry->agentRunId] ?? null;
+            if (null === $state) {
+                $state = $this->rebuildChildState($entry->agentRunId);
+                $replayedChildStates[$entry->agentRunId] = $state;
+            }
         } catch (\Throwable $e) {
             throw new ToolCallException(\sprintf('Child run "%s" is unusable for resume.', $entry->agentRunId), retryable: false, previous: $e);
         }

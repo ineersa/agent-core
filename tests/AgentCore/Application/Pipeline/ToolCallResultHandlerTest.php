@@ -51,6 +51,57 @@ final class ToolCallResultHandlerTest extends TestCase
         parent::tearDown();
     }
 
+    public function testStandaloneShellResultIsCommittedByRunControlAndDuplicateIsNoOp(): void
+    {
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: new ToolBatchCollector(),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        $state = RunStateBuilder::running('run-shell')
+            ->withVersion(3)
+            ->withTurnNo(2)
+            ->withLastSeq(4)
+            ->withActiveStepId('shell-step')
+            ->build()
+            ->with([
+                'pendingShellToolCalls' => ['shell-call' => true],
+                'currentToolCalls' => [new CurrentToolCallDTO(
+                    ToolBatchIdentity::fromTurnAndStep(2, 'shell-step'),
+                    'shell-call',
+                    0,
+                    RunOperationalToolCallStatusEnum::Running,
+                    2,
+                )],
+            ]);
+        $message = ToolCallResultBuilder::success('run-shell')
+            ->withTurnNo(2)
+            ->withStepId('shell-step')
+            ->withIdempotencyKey('shell-result')
+            ->withToolCallId('shell-call')
+            ->withOrderIndex(0)
+            ->withResult([
+                'tool_name' => 'bash',
+                'content' => [['type' => 'text', 'text' => 'done']],
+                'arguments' => ['command' => 'echo done'],
+                'standalone' => true,
+            ])
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertSame(RunStatus::Completed, $result->nextState?->status);
+        $this->assertSame([], $result->nextState?->pendingShellToolCalls);
+        $this->assertSame([], $result->nextState?->currentToolCalls);
+        $this->assertSame(
+            [RunEventTypeEnum::ToolExecutionEnd->value, RunEventTypeEnum::AgentEnd->value],
+            array_map(static fn ($event): string => $event->type, $result->events),
+        );
+        $this->assertSame([], $handler->handle($message, $result->nextState)->events);
+    }
+
     public function testHandleAcceptedPendingResultReturnsPostCommitEffectsForNextToolCall(): void
     {
         $collector = new ToolBatchCollector();

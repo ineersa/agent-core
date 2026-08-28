@@ -159,6 +159,8 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
         $effect = new ExecuteShellToolCall(
             runId: $state->runId,
             turnNo: $owningTurnNo,
+            stepId: $message->stepId(),
+            attempt: $message->attempt(),
             toolCallId: $toolCallId,
             commandText: $shellText,
             standalone: $standalone,

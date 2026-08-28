@@ -114,12 +114,7 @@ final readonly class PendingHumanInputRequestDTO
             return null;
         }
 
-        $toolCallId = $this->continuationRef['tool_call_id'] ?? null;
-        if (!\is_string($toolCallId) || '' === $toolCallId) {
-            throw new \LogicException('ToolCall human input is missing its validated tool_call_id.');
-        }
-
-        return $toolCallId;
+        return $this->continuationRef['tool_call_id'];
     }
 
     /**

@@ -16,16 +16,12 @@ final readonly class ExecuteShellToolCall extends AbstractAgentBusMessage
     public function __construct(
         string $runId,
         int $turnNo,
+        string $stepId,
+        int $attempt,
         public string $toolCallId,
         public string $commandText,
         public bool $standalone,
     ) {
-        parent::__construct(
-            runId: $runId,
-            turnNo: $turnNo,
-            stepId: '',
-            attempt: 1,
-            idempotencyKey: hash('sha256', $runId.'|'.$toolCallId),
-        );
+        parent::__construct($runId, $turnNo, $stepId, $attempt, hash('sha256', $runId.'|'.$toolCallId));
     }
 }
