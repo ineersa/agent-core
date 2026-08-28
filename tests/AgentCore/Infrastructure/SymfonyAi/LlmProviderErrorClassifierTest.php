@@ -76,6 +76,66 @@ final class LlmProviderErrorClassifierTest extends TestCase
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST, $result['error_category']);
     }
 
+    #[DataProvider('permanentStructuredSignalProvider')]
+    public function testClassifyPermanentStructuredSignals(string $signal, string $expectedCategory): void
+    {
+        $result = $this->classifier->classify([
+            'type' => 'RuntimeException',
+            'message' => \sprintf('[%s/provider_error]', $signal),
+        ]);
+
+        $this->assertFalse($result['retryable']);
+        $this->assertSame($expectedCategory, $result['error_category']);
+    }
+
+    /** @return list<array{string, string}> */
+    public static function permanentStructuredSignalProvider(): array
+    {
+        return [
+            ['invalid_api_key', LlmProviderErrorClassifier::CATEGORY_AUTH],
+            ['permission_denied', LlmProviderErrorClassifier::CATEGORY_AUTH],
+            ['invalid_parameter', LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST],
+            ['invalid_request_error', LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST],
+            ['unsupported_model', LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST],
+            ['content_policy_violation', LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST],
+        ];
+    }
+
+    #[DataProvider('localFailureTypeProvider')]
+    public function testClassifyLocalAndCancellationFailuresAsNonRetryable(string $type): void
+    {
+        $result = $this->classifier->classify([
+            'type' => $type,
+            'message' => 'local failure',
+        ]);
+
+        $this->assertFalse($result['retryable']);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_UNKNOWN, $result['error_category']);
+    }
+
+    /** @return list<array{string}> */
+    public static function localFailureTypeProvider(): array
+    {
+        return [
+            [\TypeError::class],
+            [\LogicException::class],
+            [\JsonException::class],
+            ['Amp\\CancelledException'],
+        ];
+    }
+
+    public function testClassifyTimeoutCancellationAsRetryableTimeout(): void
+    {
+        $result = $this->classifier->classify([
+            'type' => 'Amp\\CancelledException',
+            'message' => 'The operation was cancelled.',
+            'previous_exception_class' => 'Amp\\TimeoutException',
+        ]);
+
+        $this->assertTrue($result['retryable']);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_TIMEOUT, $result['error_category']);
+    }
+
     // ── Transient 429 rate limit (retryable) ───────────────────────────────
 
     public function testClassifyTransient429(): void
@@ -358,17 +418,29 @@ final class LlmProviderErrorClassifierTest extends TestCase
 
     // ── Unknown errors ─────────────────────────────────────────────────────
 
-    public function testClassifyUnknownError(): void
+    public function testClassifyUnknownProviderErrorAsRetryableByDefault(): void
     {
         $result = $this->classifier->classify([
             'type' => 'RuntimeException',
             'message' => 'Something unexpected happened',
-            'http_status_code' => 418, // I'm a teapot
+            'http_status_code' => 418, // Unknown provider status remains bounded by AgentCore retries.
         ]);
 
-        $this->assertFalse($result['retryable']);
+        $this->assertTrue($result['retryable']);
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result['error_category']);
         $this->assertStringContainsString('Something unexpected', $result['user_message']);
+        $this->assertStringContainsString('Will retry automatically', $result['user_message']);
+    }
+
+    public function testClassifyObservedServerErrorWithoutDedicatedTransientSignal(): void
+    {
+        $result = $this->classifier->classify([
+            'type' => 'RuntimeException',
+            'message' => '[server_error/server_error]',
+        ]);
+
+        $this->assertTrue($result['retryable']);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result['error_category']);
     }
 
     // ── Response body preview is stripped ──────────────────────────────────
@@ -415,15 +487,19 @@ final class LlmProviderErrorClassifierTest extends TestCase
 
     // ── Empty error ────────────────────────────────────────────────────────
 
-    public function testClassifyEmptyError(): void
+    public function testClassifyEmptyProviderErrorAsRetryableByDefault(): void
     {
         $result = $this->classifier->classify([
             'type' => 'RuntimeException',
             'message' => '',
         ]);
 
-        $this->assertFalse($result['retryable']);
+        $this->assertTrue($result['retryable']);
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result['error_category']);
+        $this->assertSame(
+            'LLM provider error (retryable). Will retry automatically.',
+            $result['user_message'],
+        );
     }
 
     // ── Context-overflow detection ────────────────────────────────────────

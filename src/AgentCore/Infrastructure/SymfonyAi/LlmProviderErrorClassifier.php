@@ -58,12 +58,72 @@ final class LlmProviderErrorClassifier
         'websocketclosed',
     ];
 
+    /** @var list<string> */
+    private const array AUTH_EXCEPTION_TYPES = [
+        'AuthenticationException',
+        'AuthorizationException',
+    ];
+
+    /** @var list<string> */
+    private const array BAD_REQUEST_EXCEPTION_TYPES = [
+        'BadRequestException',
+        'ContentFilterException',
+        'ExceedContextSizeException',
+        'InvalidArgumentException',
+        'InvalidRequestException',
+        'MaxOutputTokensException',
+        'MissingModelSupportException',
+        'ModelNotFoundException',
+        'ValidationException',
+    ];
+
+    /** @var list<string> */
+    private const array LOCAL_FAILURE_EXCEPTION_TYPES = [
+        'AssertionError',
+        'Error',
+        'ErrorException',
+        'JsonException',
+        'LogicException',
+        'OutOfBoundsException',
+        'ParseError',
+        'TypeError',
+    ];
+
+    /** @var list<string> */
+    private const array CANCELLATION_EXCEPTION_TYPES = [
+        'CancelledException',
+        'CancellationException',
+        'CanceledException',
+    ];
+
+    /** @var list<string> */
+    private const array AUTH_STRUCTURED_SIGNALS = [
+        'authentication_error',
+        'invalid_api_key',
+        'permission_denied',
+        'unauthorized',
+    ];
+
+    /** @var list<string> */
+    private const array BAD_REQUEST_STRUCTURED_SIGNALS = [
+        'bad_request',
+        'content_filter',
+        'content_policy_violation',
+        'invalid_parameter',
+        'invalid_request_error',
+        'model_not_found',
+        'policy_violation',
+        'safety_violation',
+        'unsupported_feature',
+        'unsupported_model',
+    ];
+
     /**
-     * Exact structured provider signals for transient server overload / unavailability.
+     * Exact structured provider signals retained for server categorization.
      *
-     * Matched only as whole allowlisted tokens (e.g. from bounded `[code/type]` stream
-     * text or response_error_code / response_error_type). Do not broaden to prose like
-     * "overloaded" or "service unavailable".
+     * Retry eligibility no longer depends on this list: unknown provider-operation
+     * failures use the bounded default-retry policy. These tokens only produce the
+     * more specific server category and safe user message.
      */
     private const array TRANSIENT_SERVER_STRUCTURED_SIGNALS = [
         'server_is_overloaded',
@@ -126,13 +186,20 @@ final class LlmProviderErrorClassifier
         ], static fn (string $v): bool => '' !== $v));
 
         // Priority-based classification using composite text and structured fields.
-        // Structured overload/service-unavailable signals run after auth/status and
-        // after message-pattern billing so terminal quota text remains non-retryable.
+        // Known permanent conditions are denied before transport/default handling.
+        // Only errors reaching this classifier from the provider-operation boundary
+        // receive the bounded default-retry fallback.
         [$category, $retryable, $userMessage] = $this->classifyByExceptionType($errorType, $allErrorText, $statusCode)
             ?? $this->classifyByStatusCode($statusCode, $allErrorText, $responseErrorCode, $responseErrorType, $retryAfterMs)
-            ?? $this->classifyByMessagePattern($allErrorText)
+            ?? $this->classifyByTerminalMessagePattern($allErrorText)
+            ?? $this->classifyByStructuredPermanentSignal($responseErrorCode, $responseErrorType, $errorMessage)
+            ?? $this->classifyByTransportPattern($allErrorText)
             ?? $this->classifyByStructuredServerSignal($responseErrorCode, $responseErrorType, $errorMessage)
-            ?? [self::CATEGORY_PROVIDER, false, \sprintf('LLM provider error: %s', self::truncate($errorMessage, 200))];
+            ?? [
+                self::CATEGORY_PROVIDER,
+                true,
+                self::defaultRetryMessage($errorMessage),
+            ];
 
         $result = $error + [
             'retryable' => $retryable,
@@ -186,25 +253,37 @@ final class LlmProviderErrorClassifier
      */
     private function classifyByExceptionType(string $errorType, string $errorMessage, ?int $statusCode): ?array
     {
-        // Authentication / auth errors — never retryable
-        if (str_contains($errorType, 'AuthenticationException') || 401 === $statusCode) {
+        $shortType = self::shortExceptionType($errorType);
+
+        if (\in_array($shortType, self::AUTH_EXCEPTION_TYPES, true) || 401 === $statusCode) {
             $detail = self::truncate($errorMessage, 200);
 
-            return [self::CATEGORY_AUTH, false, \sprintf('LLM provider authentication failed (HTTP 401). Check your API key or OAuth credentials. %s', '' !== $detail ? $detail : '')];
+            return [self::CATEGORY_AUTH, false, \sprintf('LLM provider authentication failed. Check your API key or OAuth credentials.%s', '' !== $detail ? ' '.$detail : '')];
         }
 
-        // Bad request errors — never retryable
-        if (str_contains($errorType, 'BadRequestException') || 400 === $statusCode) {
+        if (\in_array($shortType, self::BAD_REQUEST_EXCEPTION_TYPES, true) || 400 === $statusCode) {
             $detail = self::truncate($errorMessage, 200);
 
-            return [self::CATEGORY_BAD_REQUEST, false, \sprintf('LLM provider rejected the request (HTTP 400): %s', $detail)];
+            return [self::CATEGORY_BAD_REQUEST, false, \sprintf('LLM provider rejected the request: %s', $detail)];
+        }
+
+        if ('TimeoutException' === $shortType
+            || (\in_array($shortType, self::CANCELLATION_EXCEPTION_TYPES, true) && str_contains($errorMessage, 'TimeoutException'))
+        ) {
+            return [self::CATEGORY_TIMEOUT, true, 'LLM provider request timed out (retryable). Will retry automatically.'];
+        }
+
+        if (\in_array($shortType, self::CANCELLATION_EXCEPTION_TYPES, true)) {
+            return [self::CATEGORY_UNKNOWN, false, 'LLM request was cancelled.'];
+        }
+
+        if (\in_array($shortType, self::LOCAL_FAILURE_EXCEPTION_TYPES, true)) {
+            return [self::CATEGORY_UNKNOWN, false, 'LLM request failed before reaching a retryable provider condition.'];
         }
 
         // Rate limit exceptions from Symfony AI — retryable with Retry-After hint
-        if (str_contains($errorType, 'RateLimitExceededException')) {
-            $userMsg = 'LLM provider rate limit reached (retryable). Will retry automatically.';
-
-            return [self::CATEGORY_RATE_LIMIT, true, $userMsg];
+        if ('RateLimitExceededException' === $shortType) {
+            return [self::CATEGORY_RATE_LIMIT, true, 'LLM provider rate limit reached (retryable). Will retry automatically.'];
         }
 
         return null;
@@ -220,6 +299,18 @@ final class LlmProviderErrorClassifier
     {
         if (null === $statusCode) {
             return null;
+        }
+
+        if (\in_array($statusCode, [401, 403], true)) {
+            return [self::CATEGORY_AUTH, false, \sprintf('LLM provider authorization failed (HTTP %d). Check your credentials and permissions.', $statusCode)];
+        }
+
+        if (402 === $statusCode) {
+            return [self::CATEGORY_QUOTA_BILLING, false, 'LLM provider quota or billing limit reached. Try switching provider/model or updating your quota.'];
+        }
+
+        if (\in_array($statusCode, [400, 404, 405, 413, 415, 422, 501], true)) {
+            return [self::CATEGORY_BAD_REQUEST, false, \sprintf('LLM provider rejected or does not support the request (HTTP %d).', $statusCode)];
         }
 
         // Terminal billing/quota from error body patterns — check all available text
@@ -256,56 +347,65 @@ final class LlmProviderErrorClassifier
     /**
      * @return array{string, bool, string}|null
      */
-    private function classifyByMessagePattern(string $errorMessage): ?array
+    private function classifyByTerminalMessagePattern(string $errorMessage): ?array
     {
         if ('' === $errorMessage) {
             return null;
         }
 
-        // Check transport/network errors before general billing
-        if (self::matchesAny($errorMessage, self::TRANSPORT_ERROR_PATTERNS)) {
-            return [self::CATEGORY_NETWORK, true, 'LLM provider network error (retryable). Check your connection and try again.'];
-        }
-
-        // Terminal billing/quota from message
         if (self::matchesAny($errorMessage, self::TERMINAL_BILLING_PATTERNS)) {
             return [self::CATEGORY_QUOTA_BILLING, false, 'LLM provider quota or billing limit reached. Try switching provider/model or updating your quota.'];
+        }
+
+        if (self::matchesAny($errorMessage, self::CONTEXT_OVERFLOW_PATTERNS)) {
+            return [self::CATEGORY_BAD_REQUEST, false, \sprintf('LLM provider context limit exceeded: %s', self::truncate($errorMessage, 200))];
         }
 
         return null;
     }
 
     /**
-     * Classify allowlisted structured overload / service-unavailable signals.
+     * @return array{string, bool, string}|null
+     */
+    private function classifyByTransportPattern(string $errorMessage): ?array
+    {
+        if ('' !== $errorMessage && self::matchesAny($errorMessage, self::TRANSPORT_ERROR_PATTERNS)) {
+            return [self::CATEGORY_NETWORK, true, 'LLM provider network error (retryable). Check your connection and try again.'];
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{string, bool, string}|null
+     */
+    private function classifyByStructuredPermanentSignal(mixed $responseErrorCode, mixed $responseErrorType, string $errorMessage): ?array
+    {
+        foreach (self::structuredSignals($responseErrorCode, $responseErrorType, $errorMessage) as $signal) {
+            if (\in_array($signal, self::AUTH_STRUCTURED_SIGNALS, true)) {
+                return [self::CATEGORY_AUTH, false, 'LLM provider rejected the request credentials or permissions.'];
+            }
+
+            if (\in_array($signal, self::BAD_REQUEST_STRUCTURED_SIGNALS, true)) {
+                return [self::CATEGORY_BAD_REQUEST, false, 'LLM provider rejected or does not support the request.'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Classify exact structured overload / service-unavailable signals.
      *
-     * Matches exact response_error_code / response_error_type tokens and whole
-     * slash-separated segments inside a bounded bracketed stream message such as
-     * `[server_is_overloaded/service_unavailable_error]`. Substring prose is ignored.
+     * These signals refine category and safe display text. Unknown provider-operation
+     * failures are independently retryable through the bounded fallback.
      *
      * @return array{string, bool, string}|null
      */
     private function classifyByStructuredServerSignal(mixed $responseErrorCode, mixed $responseErrorType, string $errorMessage): ?array
     {
-        $candidates = [];
-        if (\is_string($responseErrorCode) && '' !== $responseErrorCode) {
-            $candidates[] = $responseErrorCode;
-        }
-        if (\is_string($responseErrorType) && '' !== $responseErrorType) {
-            $candidates[] = $responseErrorType;
-        }
-
-        // Bounded stream form from ResultConverter::generateErrorMessage(): [code/type/param]
-        if (1 === preg_match('/\[([^\]]+)\]/', $errorMessage, $matches)) {
-            foreach (explode('/', $matches[1]) as $segment) {
-                $segment = trim($segment);
-                if ('' !== $segment) {
-                    $candidates[] = $segment;
-                }
-            }
-        }
-
-        foreach ($candidates as $candidate) {
-            if (\in_array(strtolower($candidate), self::TRANSIENT_SERVER_STRUCTURED_SIGNALS, true)) {
+        foreach (self::structuredSignals($responseErrorCode, $responseErrorType, $errorMessage) as $signal) {
+            if (\in_array($signal, self::TRANSIENT_SERVER_STRUCTURED_SIGNALS, true)) {
                 return [
                     self::CATEGORY_SERVER,
                     true,
@@ -315,6 +415,31 @@ final class LlmProviderErrorClassifier
         }
 
         return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function structuredSignals(mixed $responseErrorCode, mixed $responseErrorType, string $errorMessage): array
+    {
+        $signals = [];
+        foreach ([$responseErrorCode, $responseErrorType] as $value) {
+            if (\is_string($value) && '' !== $value) {
+                $signals[] = strtolower($value);
+            }
+        }
+
+        // Bounded stream form from ResultConverter::generateErrorMessage(): [code/type/param]
+        if (1 === preg_match('/\[([^]]+)]/', $errorMessage, $matches)) {
+            foreach (explode('/', $matches[1]) as $segment) {
+                $segment = strtolower(trim($segment));
+                if ('' !== $segment) {
+                    $signals[] = $segment;
+                }
+            }
+        }
+
+        return array_values(array_unique($signals));
     }
 
     /**
@@ -331,6 +456,22 @@ final class LlmProviderErrorClassifier
         }
 
         return false;
+    }
+
+    private static function shortExceptionType(string $errorType): string
+    {
+        $separator = strrpos($errorType, '\\');
+
+        return false === $separator ? $errorType : substr($errorType, $separator + 1);
+    }
+
+    private static function defaultRetryMessage(string $errorMessage): string
+    {
+        $detail = self::truncate($errorMessage, 200);
+
+        return 'LLM provider error (retryable).'
+            .('' !== $detail ? ' '.$detail : '')
+            .' Will retry automatically.';
     }
 
     private static function truncate(string $value, int $maxLength): string

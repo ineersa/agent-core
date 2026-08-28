@@ -63,18 +63,7 @@ final class LlmPlatformAdapterTest extends TestCase
             new \RuntimeException('Codex WebSocket request frame could not be sent.'),
         );
 
-        $adapter = new LlmPlatformAdapter(
-            runStore: new InMemoryRunStore(),
-            messageConverter: new AgentMessageConverter(),
-            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
-            platform: $platform,
-            transformContextHooks: [],
-            convertToLlmHooks: [],
-            streamObserver: null,
-            costCalculator: null,
-            logger: new NullLogger(),
-            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-        );
+        $adapter = $this->createAdapter($platform);
 
         $result = $adapter->invoke(new ModelInvocationRequest(
             model: 'openai-codex/gpt-5.6-sol',
@@ -99,6 +88,38 @@ final class LlmPlatformAdapterTest extends TestCase
             $result->error['message'] ?? null,
         );
         $this->assertSame('openai-codex/gpt-5.6-sol', $result->error['request_model'] ?? null);
+    }
+
+    public function testUnknownProviderFailureUsesBoundedDefaultRetryClassification(): void
+    {
+        $platform = $this->createStub(SymfonyPlatformInterface::class);
+        $platform->method('invoke')->willThrowException(new \RuntimeException('[server_error/server_error]'));
+
+        $result = $this->createAdapter($platform)->invoke(new ModelInvocationRequest(
+            model: 'openai-codex/gpt-5.6-sol',
+            input: new ModelInvocationInput(runId: 'run-provider-default-retry', turnNo: 1, stepId: 'step-provider-error'),
+        ));
+
+        $this->assertSame('error', $result->stopReason);
+        $this->assertIsArray($result->error);
+        $this->assertTrue($result->error['retryable'] ?? false);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result->error['error_category'] ?? null);
+    }
+
+    public function testLocalProgrammingFailureAtProviderBoundaryRemainsNonRetryable(): void
+    {
+        $platform = $this->createStub(SymfonyPlatformInterface::class);
+        $platform->method('invoke')->willThrowException(new \TypeError('invalid local value'));
+
+        $result = $this->createAdapter($platform)->invoke(new ModelInvocationRequest(
+            model: 'openai-codex/gpt-5.6-sol',
+            input: new ModelInvocationInput(runId: 'run-local-failure', turnNo: 1, stepId: 'step-local-failure'),
+        ));
+
+        $this->assertSame('error', $result->stopReason);
+        $this->assertIsArray($result->error);
+        $this->assertFalse($result->error['retryable'] ?? true);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_UNKNOWN, $result->error['error_category'] ?? null);
     }
 
     public function testExtractResponseDiagnosticsOmitsProviderControlledFreeText(): void
@@ -301,6 +322,22 @@ final class LlmPlatformAdapterTest extends TestCase
         $encoded = json_encode($logger->records);
         $this->assertIsString($encoded);
         $this->assertStringNotContainsString($secret, $encoded, 'Sensitive exception/header/body text must never reach diagnostic logs.');
+    }
+
+    private function createAdapter(SymfonyPlatformInterface $platform): LlmPlatformAdapter
+    {
+        return new LlmPlatformAdapter(
+            runStore: new InMemoryRunStore(),
+            messageConverter: new AgentMessageConverter(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            platform: $platform,
+            transformContextHooks: [],
+            convertToLlmHooks: [],
+            streamObserver: null,
+            costCalculator: null,
+            logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
     }
 
     /**

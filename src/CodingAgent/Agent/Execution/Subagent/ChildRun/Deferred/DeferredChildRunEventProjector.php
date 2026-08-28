@@ -94,6 +94,7 @@ final class DeferredChildRunEventProjector
 
             if (RunEventTypeEnum::LlmStepCompleted->value === $type) {
                 ++$llmStepCount;
+                $errorMessage = null;
                 $usage = \is_array($payload['usage'] ?? null) ? $payload['usage'] : [];
                 $turnInput = $this->intVal($usage['input_tokens'] ?? 0);
                 $inputTokens += $turnInput;
