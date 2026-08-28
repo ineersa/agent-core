@@ -77,6 +77,8 @@ final class SessionStorageAuditTest extends TestCase
         ];
         file_put_contents($parent, $this->jsonl($parentEvents));
         file_put_contents($child, $this->jsonl($childEvents));
+        file_put_contents(\dirname($parent).'/state.json', json_encode(['runId' => 'run-id-sentinel', 'status' => 'running', 'turnNo' => 1, 'activeStepId' => 'step-id-sentinel', 'lastSeq' => 7, 'version' => 2, 'currentToolCalls' => [['batchId' => 'batch-sentinel', 'toolCallId' => 'tool-id-sentinel', 'orderIndex' => 0, 'status' => 'running', 'attempt' => 1]], 'pendingHumanInputRequests' => [['questionId' => 'question-sentinel', 'continuationKind' => 'tool_call', 'continuationRef' => ['tool_call_id' => 'tool-id-sentinel']]]], \JSON_THROW_ON_ERROR));
+        file_put_contents(\dirname($child).'/state.json', json_encode(['runId' => 'child-id-sentinel', 'status' => 'completed', 'turnNo' => 1, 'lastSeq' => 6, 'version' => 1, 'currentToolCalls' => 'unsupported-shape'], \JSON_THROW_ON_ERROR));
 
         $process = new Process([
             'python3',
@@ -91,6 +93,12 @@ final class SessionStorageAuditTest extends TestCase
         $this->assertSame(0, $process->getExitCode(), $output);
         $this->assertStringContainsString('SCOPE scope=parent files=1 records=7', $output);
         $this->assertStringContainsString('SCOPE scope=child files=1 records=6', $output);
+        $this->assertStringContainsString('STATE_JSON scope=parent files=1 total_bytes=', $output);
+        $this->assertStringContainsString('STATE_JSON scope=child files=1 total_bytes=', $output);
+        $this->assertStringContainsString('OPERATIONAL scope=parent row=state rows=1', $output);
+        $this->assertStringContainsString('OPERATIONAL scope=parent row=tool rows=1', $output);
+        $this->assertStringContainsString('OPERATIONAL scope=parent row=human rows=1', $output);
+        $this->assertStringContainsString('OPERATIONAL scope=child row=tool rows=0 logical_scalar_bytes=0 unsupported_shapes=1', $output);
         $this->assertStringContainsString('EVENT scope=parent type=tool_execution_end records=1', $output);
         $this->assertStringContainsString('FIELD scope=parent type=llm_step_completed path=payload.text present=1', $output);
         $this->assertStringContainsString('PROJECTED_EVENT scope=parent type=tool_execution_end records=1', $output);
@@ -100,7 +108,7 @@ final class SessionStorageAuditTest extends TestCase
         $this->assertStringNotContainsString('PROJECTED_EVENT scope=parent type=message_end', $output);
         $this->assertStringNotContainsString('PROJECTED_EVENT scope=parent type=tool_call_result_received', $output);
         $this->assertStringNotContainsString('PROJECTED_EVENT scope=parent type=stale_result_ignored', $output);
-        foreach (['run-id-sentinel', 'step-id-sentinel', 'key-sentinel', 'tool-id-sentinel', 'tool-output-sentinel', 'assistant-text-sentinel', 'filename-sentinel', 'child-prompt-sentinel'] as $secret) {
+        foreach (['run-id-sentinel', 'step-id-sentinel', 'key-sentinel', 'tool-id-sentinel', 'tool-output-sentinel', 'assistant-text-sentinel', 'filename-sentinel', 'child-prompt-sentinel', 'batch-sentinel', 'question-sentinel', 'child-id-sentinel', 'unsupported-shape'] as $secret) {
             $this->assertStringNotContainsString($secret, $output);
         }
     }

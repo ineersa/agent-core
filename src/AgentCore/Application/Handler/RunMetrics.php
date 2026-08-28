@@ -127,10 +127,6 @@ final class RunMetrics
         }
     }
 
-    public function incrementReplayRebuildCount(string $source): void
-    { /* retained compatibility aggregate; cache-miss metrics are authoritative */
-    }
-
     public function recordOperationalStatusRead(bool $miss, bool $error, float $durationMs): void
     {
         ++$this->operationalStatusReadAttempts;

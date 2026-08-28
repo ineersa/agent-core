@@ -47,7 +47,7 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
         $snapshot = $metrics->snapshot();
         $this->assertSame(['state' => 2, 'tool' => 0, 'human' => 0], $snapshot['projection_replacements']['rows_written']);
         $this->assertSame(['parent' => 1, 'child' => 1], $snapshot['projection_replacements']['owner_kind']);
-        $this->assertSame(43, $snapshot['projection_replacements']['logical_scalar_bytes']);
+        $this->assertSame(119, $snapshot['projection_replacements']['logical_scalar_bytes']);
         $this->assertSame(['attempts' => 2, 'misses' => 1, 'errors' => 0], array_intersect_key($snapshot['operational_status_reads'], array_flip(['attempts', 'misses', 'errors'])));
         $this->assertStringNotContainsString('alpha', json_encode($snapshot, \JSON_THROW_ON_ERROR));
     }
@@ -105,7 +105,8 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
 
     public function testProjectionWriterMapsOnlyCurrentStateAndHumanInputIdentities(): void
     {
-        $writer = new RunOperationalProjectionWriter($this->repository);
+        $metrics = new RunMetrics();
+        $writer = new RunOperationalProjectionWriter(new RunOperationalProjectionRepository($this->connection, $metrics));
         $writer->replace('session-1', new RunState(
             'child-1', RunStatus::WaitingHuman, version: 7, turnNo: 3, lastSeq: 11,
             activeStepId: 'step-3', currentOperation: new CurrentOperationDTO(3, 'step-3', 2, 'operation-3'),
@@ -124,6 +125,7 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
         $this->assertSame(['session-1', 'waiting_human', 3, 'step-3', 3, 'step-3', 2, 'operation-3', 'advance-3', 'compact-3', 1, 2, 11, 7], $this->connection->fetchNumeric('SELECT owner_session_id, status, turn_no, active_step_id, operation_turn_no, operation_step_id, operation_attempt, operation_key, last_applied_advance_key, last_applied_compaction_key, retryable_failure, retry_attempts, last_event_sequence, transition_version FROM run_operational_state WHERE run_id = ?', ['child-1']));
         $this->assertSame([['question-1', 0, 'model_turn', null, 'waiting'], ['question-2', 1, 'tool_call', 'tool-2', 'waiting']], $this->connection->fetchAllNumeric('SELECT question_id, order_index, continuation_kind, tool_call_id, status FROM run_operational_human_input WHERE run_id = ? ORDER BY order_index', ['child-1']));
         $this->assertSame([['batch-3', 'tool-1', 0, 'completed', 2], ['batch-3', 'tool-2', 1, 'waiting_human', 2]], $this->connection->fetchAllNumeric('SELECT batch_id, tool_call_id, order_index, status, attempt FROM run_operational_tool_call WHERE run_id = ? ORDER BY order_index', ['child-1']));
+        $this->assertSame(409, $metrics->snapshot()['projection_replacements']['logical_scalar_bytes']);
 
         $writer->replace('session-1', new RunState('child-1', RunStatus::Running));
         $this->assertSame(0, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM run_operational_tool_call WHERE run_id = ?', ['child-1']));

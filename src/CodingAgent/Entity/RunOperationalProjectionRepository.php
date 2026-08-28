@@ -205,13 +205,18 @@ SQL, [
             $projection->retryAttempts, $projection->lastEventSequence, $projection->transitionVersion,
         ];
         foreach ($toolCalls as $toolCall) {
-            array_push($values, $toolCall->batchId, $toolCall->toolCallId, $toolCall->orderIndex, $toolCall->status, $toolCall->attempt);
+            array_push($values, $projection->runId, $toolCall->batchId, $toolCall->toolCallId, $toolCall->orderIndex, $toolCall->status, $toolCall->attempt);
         }
         foreach ($humanInputs as $humanInput) {
-            array_push($values, $humanInput->questionId, $humanInput->orderIndex, $humanInput->continuationKind, $humanInput->toolCallId, $humanInput->status);
+            array_push($values, $projection->runId, $humanInput->questionId, $humanInput->orderIndex, $humanInput->continuationKind, $humanInput->toolCallId, $humanInput->status);
         }
 
-        return array_sum(array_map(static fn (mixed $value): int => \is_string($value) ? \strlen($value) : (null === $value ? 0 : \strlen((string) (int) $value)), $values));
+        // Every replaced row persists created_at and updated_at in SQLite's fixed
+        // YYYY-MM-DD HH:MM:SS representation. Logical scalar bytes account for
+        // scalar values, not SQLite page allocation or indexes.
+        $timestampBytes = 2 * 19 * (1 + \count($toolCalls) + \count($humanInputs));
+
+        return $timestampBytes + array_sum(array_map(static fn (mixed $value): int => \is_string($value) ? \strlen($value) : (null === $value ? 0 : \strlen((string) (int) $value)), $values));
     }
 
     /** @param list<RunOperationalHumanInputDTO> $humanInputs */

@@ -40,6 +40,9 @@ Sessions may be renamed via `/rename`. Display names are metadata only — they 
 - **`events.jsonl`**: append-only Run/TUI events used for resume and history; it is the canonical run authority.
 - Active run-control workers replay canonical events on cache miss and retain the current `RunState` only in process memory.
 - The payload-free `run_operational_state`, `run_operational_tool_call`, and `run_operational_human_input` database projection supports bounded operational coordination. It never stores prompt history or other full payloads and is rebuilt from canonical events when needed.
+- The single session-owned run-control consumer uses ordinary transactional upserts, not optimistic CAS. It appends canonical events before replacing the projection and memory cache; projection failure invalidates memory and replay recovers from events.
+- The run-control startup fence acquires session ownership before polling, then clears that owner’s disposable parent and child projection rows. Execution workers make only narrow indexed status reads for cancellation.
+- New and resumed active runs perform zero `state.json` reads or writes. No PHP memory limit changes are made before measured evidence.
 - Sequence allocation uses `sequence.cursor` so multi-writer paths do not collide.
 
 Runtime projects events into the TUI transcript. Keep transient stream deltas separate from canonical replay. During active polling, observers pass their last successfully applied canonical sequence into the runtime client; in-process delivery reverse-reads only the unseen durable suffix, while transient deltas remain unfiltered and are delivered first. The observer advances its cursor only after successful forwarding/application, so a failed poll retries the same canonical suffix rather than losing it.

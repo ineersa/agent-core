@@ -64,6 +64,21 @@ def event_paths(root: Path) -> Iterable[Path]:
             if name == "events.jsonl" for path in (Path(directory, name),))
 
 
+def state_paths(root: Path) -> Iterable[Path]:
+    sessions = root / "sessions"
+    if not sessions.is_dir():
+        return []
+    return (path for directory, _, names in os.walk(sessions) for name in names
+            if name == "state.json" for path in (Path(directory, name),))
+
+
+def percentile(values: list[int], percent: int) -> int:
+    if not values:
+        return 0
+    ordered = sorted(values)
+    return ordered[(len(ordered) - 1) * percent // 100]
+
+
 def stable_type(raw: Any) -> str:
     if raw in CURRENT_TYPES or raw in REMOVED_TYPES:
         return str(raw)
@@ -166,6 +181,12 @@ class Totals:
         self.removed_bytes = Counter[str]()
         self.unprojectable_tool_ends = Counter[str]()
         self.unprojectable_tool_end_source_bytes = Counter[str]()
+        self.state_files = Counter[str]()
+        self.state_bytes: dict[str, list[int]] = defaultdict(list)
+        self.state_malformed = Counter[str]()
+        self.operational_rows: dict[tuple[str, str], int] = Counter()
+        self.operational_bytes: dict[tuple[str, str], int] = Counter()
+        self.operational_unsupported: dict[tuple[str, str], int] = Counter()
 
     def add(self, scope: str, event: dict[str, Any], raw_line_bytes: int) -> None:
         event_type = stable_type(event.get("type"))
@@ -224,8 +245,50 @@ def project_file(events: list[tuple[dict[str, Any], int]], scope: str, totals: T
                 field_totals[1] += encoded_bytes(value)
 
 
+def add_legacy_state(totals: Totals, scope: str, decoded: Any) -> None:
+    if not isinstance(decoded, dict) or not isinstance(decoded.get("runId"), str) or not isinstance(decoded.get("status"), str):
+        totals.operational_unsupported[(scope, "state")] += 1
+        return
+    run_id = decoded["runId"]
+    state_fields = ("runId", "status", "turnNo", "activeStepId", "lastSeq", "version")
+    totals.operational_rows[(scope, "state")] += 1
+    totals.operational_bytes[(scope, "state")] += 38 + sum(len(str(decoded[field]).encode("utf-8")) for field in state_fields if decoded.get(field) is not None)
+    tool_calls = decoded.get("currentToolCalls", [])
+    if not isinstance(tool_calls, list):
+        totals.operational_unsupported[(scope, "tool")] += 1
+    else:
+        for tool in tool_calls:
+            required = ("batchId", "toolCallId", "orderIndex", "status", "attempt")
+            if not isinstance(tool, dict) or any(field not in tool for field in required):
+                totals.operational_unsupported[(scope, "tool")] += 1
+                continue
+            totals.operational_rows[(scope, "tool")] += 1
+            totals.operational_bytes[(scope, "tool")] += 38 + len(run_id.encode("utf-8")) + sum(len(str(tool[field]).encode("utf-8")) for field in required if tool[field] is not None)
+    human_inputs = decoded.get("pendingHumanInputRequests", [])
+    if not isinstance(human_inputs, list):
+        totals.operational_unsupported[(scope, "human")] += 1
+    else:
+        for index, request in enumerate(human_inputs):
+            if not isinstance(request, dict) or not isinstance(request.get("questionId"), str) or not isinstance(request.get("continuationKind"), str):
+                totals.operational_unsupported[(scope, "human")] += 1
+                continue
+            tool_call_id = request.get("continuationRef", {}).get("tool_call_id") if isinstance(request.get("continuationRef"), dict) else None
+            totals.operational_rows[(scope, "human")] += 1
+            values = (run_id, request["questionId"], index, request["continuationKind"], tool_call_id, "waiting")
+            totals.operational_bytes[(scope, "human")] += 38 + sum(len(str(value).encode("utf-8")) for value in values if value is not None)
+
+
 def audit(root: Path, field_paths: tuple[str, ...], project_final: bool) -> Totals:
     totals = Totals(field_paths)
+    for path in state_paths(root):
+        scope = scope_for(path)
+        totals.state_files[scope] += 1
+        try:
+            raw = path.read_bytes()
+            totals.state_bytes[scope].append(len(raw))
+            add_legacy_state(totals, scope, json.loads(raw))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            totals.state_malformed[scope] += 1
     for path in event_paths(root):
         scope = scope_for(path)
         totals.files[scope] += 1
@@ -259,10 +322,17 @@ def ratio(numerator: int, denominator: int) -> str:
 
 
 def output(totals: Totals, project_final: bool) -> None:
-    print("SCHEMA audit=2 privacy=aggregate-only")
+    print("SCHEMA audit=3 privacy=aggregate-only")
     print("ACCOUNTING line_bytes=raw_jsonl_line_including_lf value_bytes=compact_utf8_json_inclusive overlap=additive fields=selected_only malformed=excluded")
+    print("OPERATIONAL_BOUND row=state max_varchar_bytes=1562 timestamps_bytes=38 sqlite_utf8_length_caveat=declared_char_limits_not_file_allocation")
+    print("OPERATIONAL_BOUND row=tool max_varchar_bytes=797 timestamps_bytes=38 sqlite_utf8_length_caveat=declared_char_limits_not_file_allocation")
+    print("OPERATIONAL_BOUND row=human max_varchar_bytes=829 timestamps_bytes=38 sqlite_utf8_length_caveat=declared_char_limits_not_file_allocation")
     for scope in ("parent", "child"):
         print(f"SCOPE scope={scope} files={totals.files[scope]} records={totals.records[scope]} line_bytes={totals.line_bytes[scope]} malformed={totals.malformed[scope]} unsupported={totals.unsupported[scope]}")
+        sizes = totals.state_bytes[scope]
+        print(f"STATE_JSON scope={scope} files={totals.state_files[scope]} total_bytes={sum(sizes)} p50_bytes={percentile(sizes, 50)} p95_bytes={percentile(sizes, 95)} max_bytes={max(sizes, default=0)} malformed={totals.state_malformed[scope]}")
+        for row_kind in ("state", "tool", "human"):
+            print(f"OPERATIONAL scope={scope} row={row_kind} rows={totals.operational_rows[(scope, row_kind)]} logical_scalar_bytes={totals.operational_bytes[(scope, row_kind)]} unsupported_shapes={totals.operational_unsupported[(scope, row_kind)]}")
     for (scope, event_type), (records, bytes_) in sorted(totals.types.items()):
         print(f"EVENT scope={scope} type={event_type} records={records} line_bytes={bytes_}")
     for (scope, event_type, field_path), (records, bytes_) in sorted(totals.fields.items()):

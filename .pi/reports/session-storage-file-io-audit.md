@@ -77,3 +77,36 @@ This tool reports encoded JSONL bytes, not filesystem block allocation, decompre
 ## Final residue audit
 
 The final audit searches `src`, `tests`, `docs`, `.pi/reports`, `tools`, and `.hatfield/extensions` for the ten removed canonical event names, top-level LLM duplicate fields, legacy tool-result/message authority, and receipt-ledger documentation. Active source/test/tool/extension branches must be empty; historical names are allowed only in this report’s methodology/baseline or the matrix breaking-removal appendix.
+
+## Final operational evidence
+
+```mermaid
+flowchart LR
+    Legacy[/legacy state.json/]:::legacy --> Audit{{aggregate-only audit}}:::tool
+    Events[/events.jsonl/]:::events --> Audit
+    Audit --> Parent([parent aggregates]):::result
+    Audit --> Child([child aggregates]):::result
+    classDef legacy fill:#5c5c5c,color:#fff,stroke:#bdbdbd
+    classDef events fill:#53610f,color:#fff,stroke:#d8f36a
+    classDef tool fill:#0b7285,color:#fff,stroke:#66d9e8
+    classDef result fill:#12613a,color:#fff,stroke:#69db9b
+```
+
+```text
+SCHEMA audit=3 privacy=aggregate-only
+STATE_JSON scope=parent files=6 total_bytes=3571779 p50_bytes=553984 p95_bytes=665304 max_bytes=1239421 malformed=0
+STATE_JSON scope=child files=232 total_bytes=218668686 p50_bytes=807366 p95_bytes=2026729 max_bytes=2835871 malformed=0
+OPERATIONAL scope=parent row=state rows=0 logical_scalar_bytes=0 unsupported_shapes=6
+OPERATIONAL scope=parent row=tool rows=0 logical_scalar_bytes=0 unsupported_shapes=0
+OPERATIONAL scope=parent row=human rows=0 logical_scalar_bytes=0 unsupported_shapes=0
+OPERATIONAL scope=child row=state rows=0 logical_scalar_bytes=0 unsupported_shapes=232
+OPERATIONAL scope=child row=tool rows=0 logical_scalar_bytes=0 unsupported_shapes=0
+OPERATIONAL scope=child row=human rows=0 logical_scalar_bytes=0 unsupported_shapes=0
+OPERATIONAL_BOUND row=state max_varchar_bytes=1562 timestamps_bytes=38 sqlite_utf8_length_caveat=declared_char_limits_not_file_allocation
+OPERATIONAL_BOUND row=tool max_varchar_bytes=797 timestamps_bytes=38 sqlite_utf8_length_caveat=declared_char_limits_not_file_allocation
+OPERATIONAL_BOUND row=human max_varchar_bytes=829 timestamps_bytes=38 sqlite_utf8_length_caveat=declared_char_limits_not_file_allocation
+```
+
+```bash
+python3 tools/session-storage-audit.py --project-final /path/to/.hatfield
+```
