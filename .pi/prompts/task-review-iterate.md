@@ -6,4 +6,4 @@ argument-hint: "<task-or-pr>"
 Address code review feedback for task or PR: `$ARGUMENTS`
 
 If the argument is empty or still the literal placeholder `<task-or-pr>`, ask the user for the task slug or PR URL/number instead of guessing.
-Load if not loaded yet `task-workflow` skill and follow the `task-review-iterate` phase, using Pi's reviewer workflow for re-review.
+Load `task-workflow` skill and follow the `task-review-iterate` phase, using Pi's reviewer workflow for re-review.

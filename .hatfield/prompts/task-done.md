@@ -6,4 +6,4 @@ argument-hint: "<task>"
 Complete reviewed task: `$ARGUMENTS`
 
 If the task argument is empty or still the literal placeholder `<task>`, ask the user for the task slug instead of guessing.
-Load if not loaded yet the `task-workflow` skill and follow the `task-done` phase.
+Load the `task-workflow` skill and follow the `task-done` phase.
