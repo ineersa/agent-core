@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -30,7 +29,6 @@ final class RunCommitLoggingTest extends TestCase
         $commit = new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
-            commandStore: new InMemoryCommandStore(),
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: $logger,
         );
@@ -70,7 +68,6 @@ final class RunCommitLoggingTest extends TestCase
         (new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: new RecordingEventStore(),
-            commandStore: new InMemoryCommandStore(),
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(),
         ))->commit($previous, $next, []);

@@ -386,7 +386,6 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
-                commandStore: $commandStore,
                 stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()),
                 logger: new \Psr\Log\NullLogger(),
             ),
@@ -509,7 +508,6 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
-                commandStore: $commandStore,
                 stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), $executionBus),
                 logger: new \Psr\Log\NullLogger(),
             ),
@@ -618,7 +616,6 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
-                commandStore: $commandStore,
                 stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), $executionBus),
                 logger: new \Psr\Log\NullLogger(),
             ),

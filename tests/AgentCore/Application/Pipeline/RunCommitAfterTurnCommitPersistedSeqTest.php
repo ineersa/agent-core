@@ -12,7 +12,6 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
@@ -48,7 +47,6 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
         $commit = new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
-            commandStore: new InMemoryCommandStore(),
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(),
             hookDispatcher: new HookDispatcher([$subscriber]),

@@ -49,7 +49,6 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
         $runCommit = new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
-            commandStore: $commandStore,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), $executionBus),
             logger: new NullLogger(),
             hookDispatcher: null,

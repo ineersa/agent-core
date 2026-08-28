@@ -186,7 +186,6 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
         $runCommit = new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
-            commandStore: $commandStore,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new NullLogger(),
             hookDispatcher: null,

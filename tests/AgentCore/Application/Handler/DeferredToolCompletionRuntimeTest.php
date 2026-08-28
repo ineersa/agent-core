@@ -26,7 +26,6 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
@@ -382,7 +381,6 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
             runCommit: new RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
-                commandStore: new InMemoryCommandStore(),
                 stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
                 logger: new NullLogger(),
             ),

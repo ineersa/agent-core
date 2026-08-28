@@ -576,7 +576,6 @@ final class CommandMailboxPolicyTest extends TestCase
         $runCommit = new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
-            commandStore: $commandStore,
             stepDispatcher: $stepDispatcher,
             logger: new NullLogger(),
             hookDispatcher: null,

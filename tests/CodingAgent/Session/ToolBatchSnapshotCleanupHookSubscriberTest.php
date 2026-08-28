@@ -16,7 +16,6 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
@@ -152,7 +151,6 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         return new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: new CleanupHookSubscriberNoOpEventStore(),
-            commandStore: new InMemoryCommandStore(),
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(),
             hookDispatcher: $hookDispatcher,

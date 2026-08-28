@@ -84,7 +84,7 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
         $this->assertNull($this->store->fetchById($child['id']));
         $this->assertFileDoesNotExist($parent['log']);
         $this->assertFileDoesNotExist($child['status']);
-        $this->assertFalse($this->lifecycle->isAlive($parent['pid']));
+        $this->assertProcessStopped($parent['pid']);
 
         $this->assertNotNull($this->store->fetchById($foreign['id']));
         $this->assertFileExists($foreign['log']);
@@ -104,7 +104,19 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
         $this->assertFileDoesNotExist($accepted['log']);
         $this->assertFileDoesNotExist($accepted['status']);
         $this->assertFileDoesNotExist($accepted['pid_file']);
-        $this->assertFalse($this->lifecycle->isAlive($accepted['pid']));
+        $this->assertProcessStopped($accepted['pid']);
+    }
+
+    private function assertProcessStopped(int $pid): void
+    {
+        // Signal delivery is synchronous, but Linux may retain /proc briefly
+        // while init reaps the killed wrapper. Poll that positive OS condition;
+        // the bound is only a failure safety cap, not an elapsed-time assertion.
+        for ($attempt = 0; $attempt < 100 && $this->lifecycle->isAlive($pid); ++$attempt) {
+            usleep(10_000);
+        }
+
+        $this->assertFalse($this->lifecycle->isAlive($pid));
     }
 
     /**
