@@ -11,11 +11,17 @@ use PHPUnit\Framework\Attributes\Group;
  * call completes through the controller JSONL + Messenger pipeline and persists
  * canonical session evidence.
  *
- * Cancel/follow-up remains in ControllerReplayBashCancelFollowUpTest (started-
- * then-cancel only). SafeGuardApproval covers outside-CWD write + HITL, not
- * this unguarded completion path. This case restores the deleted
- * ControllerReplaySmokeTest contract with early-exit waits and a fail-loud
- * post-tool fixture so exhaustion cannot silently invent a done response.
+ * The former started-bash-then-cancel controller journey was a scheduling race:
+ * it could not deterministically establish a process-interaction window under
+ * normal gate contention. Its contracts are covered at their stable seams:
+ * active-tool cancellation and terminalization by ApplyCommandHandlerTest and
+ * ToolCallResultHandlerTest; cancelled-run follow-up dispatch by
+ * ApplyCommandHandlerTest and AdvanceRunHandlerTest; and replay-controller
+ * follow-up assistant output by ControllerReplayAutoCompactionLifecycleTest.
+ * SafeGuardApproval covers outside-CWD write + HITL, not this unguarded
+ * completion path. This case restores the deleted ControllerReplaySmokeTest
+ * contract with early-exit waits and a fail-loud post-tool fixture so exhaustion
+ * cannot silently invent a done response.
  *
  * @group controller-replay
  */
