@@ -33,7 +33,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * Unified agent command — interactive TUI by default, plus headless/controller modes.
  *
  * Public installs expose this as the default `hatfield` entrypoint. Session data
- * lives under .hatfield/sessions/<session-id>/ (state.json + events.jsonl).
+ * lives under .hatfield/sessions/<session-id>/events.jsonl.
  */
 #[AsCommand(
     name: 'agent',

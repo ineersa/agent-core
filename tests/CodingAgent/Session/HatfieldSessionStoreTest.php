@@ -60,7 +60,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->assertSame($session->providerCacheKey, $sessionAgain->providerCacheKey);
 
         // Core files created (no metadata.yaml)
-        $this->assertFileExists($sessionPath.'/state.json');
+        $this->assertFileDoesNotExist($sessionPath.'/state.json');
         $this->assertFileExists($sessionPath.'/events.jsonl');
         $this->assertFileDoesNotExist($sessionPath.'/transcript.jsonl');
         $this->assertFileDoesNotExist($sessionPath.'/idempotency.jsonl');

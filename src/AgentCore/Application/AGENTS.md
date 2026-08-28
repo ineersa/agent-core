@@ -53,7 +53,7 @@ There is **no** `CollectToolBatch` message type in `src/` (stale historical name
 Ordered retained-history projection lives in **CodingAgent** (`CodingAgent\Session\History`). AgentCore emits canonical history events (`turn_advanced`, `history_position_set`, `history_tail_discarded`) and depends on:
 
 - `RunStateRebuilderInterface` → App `SessionRunStateReplayService` (filter retained history before reducing `RunState`; integrity checks use full stream)
-- `HotPromptStateRebuilderInterface` → App `SessionHotPromptReplayService`
+- `HotPromptIntegrityVerifierInterface` → App `SessionReplayIntegrityVerifier` (validates canonical event sequence continuity)
 - `HistorySelectionServiceInterface` / `HistoryTailDiscardInterface` → App history services; `HistoryTailDiscardInterface` is the mutate-behind-tip choke point used by `RunMessageProcessor`
 
 See `docs/session-storage.md` (linear history model).

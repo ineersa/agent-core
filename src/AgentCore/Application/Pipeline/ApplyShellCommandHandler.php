@@ -109,7 +109,7 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
                 'idempotency_key' => $message->idempotencyKey(),
                 'text' => $rawInput,
                 'options' => [],
-                // Repair replays canonical events rather than state.json. Keep
+                // Repair replays canonical events. Keep
                 // every shell execution self-describing without retaining a
                 // receipt history or adding a separate storage record.
                 'standalone' => $standalone,

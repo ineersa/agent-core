@@ -3,17 +3,6 @@ services:
     autowire: true
     autoconfigure: true
 
-  # File-backed stores (canonical container: .hatfield/sessions/<runId>/)
-  # session_id === run_id in Hatfield.
-  #
-  # Parent-scoped child agent runs are routed transparently through
-  # ChildAwareRunStore and ChildAwareEventStore, which delegate to
-  # AgentChildRunStore / AgentChildRunEventStore when the runId
-  # resolves to a child artifact; otherwise to SessionRunStore /
-  # SessionRunEventStore for normal parent runs.
-  Ineersa\AgentCore\Contract\RunStoreInterface:
-    alias: Ineersa\CodingAgent\Agent\Artifact\ChildAwareRunStore
-
   # Durable append goes to ChildAwareEventStore; decorator may emit mapped RuntimeEvents
   # on stdout after commit when HATFIELD_CONSUMER_STDOUT_EVENTS=1 (see services.yaml).
   # ConsumerSupervisor sets that env for every messenger:consume subprocess it launches;
@@ -21,12 +10,8 @@ services:
   Ineersa\AgentCore\Contract\EventStoreInterface:
     alias: Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore
 
-
   Ineersa\AgentCore\Contract\AgentRunnerInterface:
     alias: Ineersa\AgentCore\Application\Pipeline\AgentRunner
 
   Ineersa\AgentCore\Contract\CommandStoreInterface:
     alias: Ineersa\AgentCore\Infrastructure\Storage\CacheCommandStore
-
-  Ineersa\AgentCore\Contract\PromptStateStoreInterface:
-    alias: Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore

@@ -91,7 +91,6 @@ MD;
 - artifact_dir: {artifact_dir}
 - metadata_path: {metadata_path}
 - events_path: {events_path}
-- state_path: {state_path}
 MD;
 
     public function __construct(
@@ -365,7 +364,6 @@ MD;
             'artifact_dir' => $p->artifactDir,
             'metadata_path' => $p->metadataPath,
             'events_path' => $p->eventsPath,
-            'state_path' => $p->statePath,
         ]);
     }
 

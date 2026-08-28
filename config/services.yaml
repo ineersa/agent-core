@@ -684,11 +684,8 @@ services:
   Ineersa\AgentCore\Contract\RunOperationalProjectionWriterInterface:
     alias: Ineersa\CodingAgent\Entity\RunOperationalProjectionWriter
 
-  Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface:
-    alias: Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService
-
   Ineersa\AgentCore\Contract\Replay\HotPromptIntegrityVerifierInterface:
-    alias: Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService
+    alias: Ineersa\CodingAgent\Session\Replay\SessionReplayIntegrityVerifier
 
   Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface:
     alias: Ineersa\CodingAgent\Session\History\HistorySelectionService
@@ -1160,14 +1157,6 @@ services:
       $runStateRebuilder: '@Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface'
 
   # ─── AGENT-05 Subagent tool storage routing ─────────────────────────
-
-  # ChildAwareRunStore — delegates RunStoreInterface between parent-scoped
-  # SessionRunStore (parent runs) and AgentChildRunStore (child runs).
-  # Explicit wiring needed because $parentStore must point to the concrete
-  # SessionRunStore, not itself (would be a cycle).
-  Ineersa\CodingAgent\Agent\Artifact\ChildAwareRunStore:
-    arguments:
-      $parentStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
 
   # ChildAwareEventStore — delegates EventStoreInterface between parent-scoped
   # SessionRunEventStore (parent runs) and AgentChildRunEventStore (child runs).

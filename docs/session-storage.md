@@ -22,7 +22,6 @@ Base path: `sessions.path` setting (default under project `.hatfield/sessions/`)
 ```text
 .hatfield/sessions/<session_id>/
   events.jsonl          # canonical event log
-  state.json            # durable run/projection state
   sequence.cursor       # event sequence allocation
   artifacts/            # child agent artifacts (when used)
   ...                   # other runtime sidecars as created
@@ -36,10 +35,11 @@ Table `hatfield_session` stores id, display name, timestamps, provider cache key
 
 Sessions may be renamed via `/rename`. Display names are metadata only — they do not change `session_id`.
 
-## Events and state
+## Events and operational state
 
-- **`events.jsonl`**: append-only Run/TUI events used for resume and history.
-- **`state.json`**: durable state snapshot for process/runtime recovery (not a second conversation source of truth).
+- **`events.jsonl`**: append-only Run/TUI events used for resume and history; it is the canonical run authority.
+- Active run-control workers replay canonical events on cache miss and retain the current `RunState` only in process memory.
+- The payload-free `run_operational_state`, `run_operational_tool_call`, and `run_operational_human_input` database projection supports bounded operational coordination. It never stores prompt history or other full payloads and is rebuilt from canonical events when needed.
 - Sequence allocation uses `sequence.cursor` so multi-writer paths do not collide.
 
 Runtime projects events into the TUI transcript. Keep transient stream deltas separate from canonical replay. During active polling, observers pass their last successfully applied canonical sequence into the runtime client; in-process delivery reverse-reads only the unseen durable suffix, while transient deltas remain unfiltered and are delivered first. The observer advances its cursor only after successful forwarding/application, so a failed poll retries the same canonical suffix rather than losing it.
@@ -65,12 +65,12 @@ Deferred subagent supervision (single and parallel) uses durable batch records a
 If `.hatfield/state.sqlite` is deleted or loses `hatfield_session` rows while session directories remain, startup reconciles **canonical** positive-digit directories that contain `events.jsonl`:
 
 - **Canonical IDs only:** directory name must be a positive decimal whose integer round-trip equals the original string (rejects `0`, `007`, non-digits, and integer-overflow aliases).
-- **Preserved:** directory name as `session_id` / `run_id`; existing `events.jsonl` / `state.json` bytes are never rewritten or truncated.
+- **Preserved:** directory name as `session_id` / `run_id`; existing canonical `events.jsonl` bytes are never rewritten or truncated.
 - **Recovered into the row when present in events:** initial user prompt (and default display name from it), current model (including later `model_changed`), reasoning from `run_started` metadata, child `parent_run_id` when present.
 - **Not event-backed:** a fresh UUIDv7 `provider_cache_key` is generated; renames and other DB-only fields are not restored when absent from events.
 - **Not recoverable from session events (SQLite-only):** deferred subagent batches/children, background processes, pending tool questions, messenger queues, and other app-state tables.
 
-New session creation uses atomic exclusive `mkdir` of the leaf session path and fails closed before writing `state.json` / `events.jsonl` when any directory, file, or symlink already occupies that path (including malformed orphans). Concurrent recovery inserts are idempotent via `ON CONFLICT(id) DO NOTHING` on the primary key. Corrupt event logs are skipped with privacy-safe diagnostics; DB/storage infrastructure failures hard-fail startup.
+New session creation uses atomic exclusive `mkdir` of the leaf session path and fails closed before writing `events.jsonl` when any directory, file, or symlink already occupies that path (including malformed orphans). Concurrent recovery inserts are idempotent via `ON CONFLICT(id) DO NOTHING` on the primary key. Corrupt event logs are skipped with privacy-safe diagnostics; DB/storage infrastructure failures hard-fail startup.
 
 ## History (`/history`)
 
@@ -92,7 +92,7 @@ Session access uses cooperative locking so two interactive controllers do not co
 
 ## Transition validity
 
-Run-control delivery is at-least-once. A completed or stale control message is acknowledged as a pure no-op; this is separate from normal Messenger retry/redelivery of an **execution** message for an operation that remains current and unfinished. `/repair --apply` is explicit user-authorized same-token redrive, never automatic recovery. There is no receipt ledger: the run lock and CAS serialize transitions while committed state, mailbox entries, tool-batch snapshots, and active operation identities are the bounded guards. Repair appends no completion events; workers and result handlers remain authoritative. Existing `idempotency.jsonl` artifacts are inert user data: no migration, pruner, or deletion is performed, and new parent and child operations never create them.
+Run-control delivery is at-least-once. A completed or stale control message is acknowledged as a pure no-op; this is separate from normal Messenger retry/redelivery of an **execution** message for an operation that remains current and unfinished. `/repair --apply` is explicit user-authorized same-token redrive, never automatic recovery. There is no receipt ledger: the run lock serializes transitions while canonical events, the payload-free operational projection, mailbox entries, tool-batch snapshots, and active operation identities are the bounded guards. Repair appends no completion events; workers and result handlers remain authoritative. Existing `idempotency.jsonl` artifacts are inert user data: no migration, pruner, or deletion is performed, and new parent and child operations never create them.
 
 | Scope | Expected current token | Committed evidence | Completed/stale duplicate behavior | Same-active/unfinished retry behavior | Stranded repair action |
 |---|---|---|---|---|---|

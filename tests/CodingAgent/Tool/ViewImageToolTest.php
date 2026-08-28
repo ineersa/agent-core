@@ -635,7 +635,7 @@ final class ViewImageToolTest extends TestCase
         $normalizer = new AgentMessageNormalizer();
         $agentMessage = $normalizer->toolMessage($result);
 
-        // Serialize to array (as state.json would)
+        // Serialize to an array for the tool input fixture
         $serialized = $agentMessage->toArray();
 
         $serializedJson = json_encode($serialized);

@@ -667,7 +667,6 @@ final class AgentArtifactRegistryTest extends TestCase
                     'artifact_dir' => 'artifacts/agents/agent_01HX',
                     'metadata_path' => 'artifacts/agents/agent_01HX/metadata.json',
                     'events_path' => 'artifacts/agents/agent_01HX/events.jsonl',
-                    'state_path' => 'artifacts/agents/agent_01HX/state.json',
                 ],
             ]],
         ]));
@@ -748,7 +747,6 @@ final class AgentArtifactRegistryTest extends TestCase
                     'artifact_dir' => 'artifacts/agents/',
                     'metadata_path' => 'artifacts/agents//metadata.json',
                     'events_path' => 'artifacts/agents//events.jsonl',
-                    'state_path' => 'artifacts/agents//state.json',
                 ],
             ]],
         ]));
@@ -781,7 +779,6 @@ final class AgentArtifactRegistryTest extends TestCase
                     'artifact_dir' => 'artifacts/agents/evil_dir',
                     'metadata_path' => 'artifacts/agents/agent_01HX/metadata.json',
                     'events_path' => 'artifacts/agents/agent_01HX/events.jsonl',
-                    'state_path' => 'artifacts/agents/agent_01HX/state.json',
                 ],
             ]],
         ]));

@@ -61,16 +61,6 @@ final class SessionAgentArtifactPathResolver
         return $this->sessionsBasePath.'/'.$parentRunId.'/'.$relative;
     }
 
-    public function statePath(string $parentRunId, string $artifactId): string
-    {
-        $this->validatePathComponent($parentRunId, 'parentRunId');
-        $this->validatePathComponent($artifactId, 'artifactId');
-
-        $relative = $this->relativeArtifactDir($artifactId).'/state.json';
-
-        return $this->sessionsBasePath.'/'.$parentRunId.'/'.$relative;
-    }
-
     public function eventsPath(string $parentRunId, string $artifactId): string
     {
         $this->validatePathComponent($parentRunId, 'parentRunId');

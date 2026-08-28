@@ -309,7 +309,6 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('- metadata_path: artifacts/agents/'.$artifactId.'/metadata.json', $out);
         $this->assertStringNotContainsString('handoff_path', $out);
         $this->assertStringContainsString('- events_path: artifacts/agents/'.$artifactId.'/events.jsonl', $out);
-        $this->assertStringContainsString('- state_path: artifacts/agents/'.$artifactId.'/state.json', $out);
         $this->assertStringNotContainsString($isolatedRoot, $out);
         $this->assertStringNotContainsString($isolatedRoot.'/.hatfield/sessions', $out);
     }
