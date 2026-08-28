@@ -25,7 +25,7 @@ final class RuntimeEventMapperTest extends TestCase
     protected function setUp(): void
     {
         $this->mapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher()),
+            new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
         );
     }
 
@@ -130,12 +130,7 @@ final class RuntimeEventMapperTest extends TestCase
 
     public function testNormalizesToolExecutionEndCancelledToToolExecutionCancelled(): void
     {
-        $event = $this->runEvent('tool_execution_end', [
-            'tool_call_id' => 'call-cancel',
-            'order_index' => 0,
-            'is_error' => true,
-            'result' => 'Tool execution cancelled by user.',
-        ]);
+        $event = $this->runEvent('tool_execution_end', $this->toolEndPayload('call-cancel', true, 'Tool execution cancelled by user.', ['type' => 'cancelled', 'message' => 'Tool execution cancelled by user.']));
 
         $result = $this->mapper->toRuntimeEvent($event);
 
@@ -145,14 +140,7 @@ final class RuntimeEventMapperTest extends TestCase
 
     public function testNormalizesToolExecutionEndStructuredCancellationMetadataToToolExecutionCancelled(): void
     {
-        $event = $this->runEvent('tool_execution_end', [
-            'tool_call_id' => 'call-rich-cancel',
-            'order_index' => 0,
-            'is_error' => true,
-            'result' => 'Subagent scout cancelled by parent run.',
-            'cancelled' => true,
-            'cancellation_reason' => 'user',
-        ]);
+        $event = $this->runEvent('tool_execution_end', $this->toolEndPayload('call-rich-cancel', true, 'Subagent scout cancelled by parent run.', ['type' => 'cancelled', 'message' => 'Subagent scout cancelled by parent run.']));
 
         $result = $this->mapper->toRuntimeEvent($event);
 
@@ -424,11 +412,7 @@ final class RuntimeEventMapperTest extends TestCase
 
     public function testNormalizesToolExecutionEndSuccess(): void
     {
-        $event = $this->runEvent('tool_execution_end', [
-            'tool_call_id' => 'call-read',
-            'is_error' => false,
-            'order_index' => 0,
-        ]);
+        $event = $this->runEvent('tool_execution_end', $this->toolEndPayload('call-read'));
 
         $result = $this->mapper->toRuntimeEvent($event);
 
@@ -439,11 +423,7 @@ final class RuntimeEventMapperTest extends TestCase
 
     public function testNormalizesToolExecutionEndError(): void
     {
-        $event = $this->runEvent('tool_execution_end', [
-            'tool_call_id' => 'call-broken',
-            'is_error' => true,
-            'order_index' => 1,
-        ]);
+        $event = $this->runEvent('tool_execution_end', $this->toolEndPayload('call-broken', true));
 
         $result = $this->mapper->toRuntimeEvent($event);
 
@@ -452,45 +432,9 @@ final class RuntimeEventMapperTest extends TestCase
         $this->assertTrue($result->payload['is_error']);
     }
 
-    public function testTypedToolExecutionEndResultWinsOverStagedDisplayDuplicate(): void
-    {
-        [$serializer] = AttributeSerializerValidatorTestFactory::create();
-        $codec = new ToolExecutionEndPayloadCodec($serializer);
-        $typed = new ToolCallResult(
-            runId: $this->runId,
-            turnNo: 1,
-            stepId: 'step-1',
-            attempt: 1,
-            idempotencyKey: 'key-1',
-            toolCallId: 'call-typed',
-            orderIndex: 2,
-            result: ['tool_name' => 'read', 'content' => [['type' => 'text', 'text' => 'canonical output']]],
-        );
-        $event = $this->runEvent('tool_execution_end', array_merge([
-            'tool_call_id' => 'call-conflict',
-            'order_index' => 99,
-            'is_error' => true,
-            'result' => 'staged display duplicate',
-        ], $codec->toEventPayload($typed)));
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), $codec));
-
-        $result = $mapper->toRuntimeEvent($event);
-
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
-        $this->assertSame('call-typed', $result->payload['tool_call_id']);
-        $this->assertSame(2, $result->payload['order_index']);
-        $this->assertSame('canonical output', $result->payload['result']);
-    }
-
     public function testNormalizesToolExecutionEndPassesThroughResultText(): void
     {
-        $event = $this->runEvent('tool_execution_end', [
-            'tool_call_id' => 'call-read',
-            'is_error' => false,
-            'order_index' => 0,
-            'result' => 'actual tool output content',
-        ]);
+        $event = $this->runEvent('tool_execution_end', $this->toolEndPayload('call-read', false, 'actual tool output content'));
 
         $result = $this->mapper->toRuntimeEvent($event);
 
@@ -503,20 +447,13 @@ final class RuntimeEventMapperTest extends TestCase
 
     public function testNormalizesToolExecutionEndOmitsResultWhenNotString(): void
     {
-        $event = $this->runEvent('tool_execution_end', [
-            'tool_call_id' => 'call-read',
-            'is_error' => false,
-            'order_index' => 0,
-            'result' => 42,
-        ]);
+        $event = $this->runEvent('tool_execution_end', $this->toolEndPayload('call-read'));
 
         $result = $this->mapper->toRuntimeEvent($event);
 
         $this->assertNotNull($result);
         $this->assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
-        // Translator only forwards string results; non-string should be omitted
-        // so the projector falls back to "{tool_name} completed".
-        $this->assertArrayNotHasKey('result', $result->payload);
+        $this->assertSame('read completed', $result->payload['result']);
     }
 
     // ── HITL normalization ───────────────────────────────────────────────────
@@ -694,15 +631,6 @@ final class RuntimeEventMapperTest extends TestCase
 
     // ── Skipped internal events ──────────────────────────────────────────────
 
-    public function testSkipsToolCallResultReceived(): void
-    {
-        $event = $this->runEvent('tool_call_result_received', ['tool_call_id' => 'call-x']);
-
-        $result = $this->mapper->toRuntimeEvent($event);
-
-        $this->assertNull($result);
-    }
-
     public function testSkipsToolBatchCommitted(): void
     {
         $event = $this->runEvent('tool_batch_committed', ['count' => 3]);
@@ -791,20 +719,6 @@ final class RuntimeEventMapperTest extends TestCase
         $this->assertNotNull($result);
         $this->assertSame(RuntimeEventTypeEnum::StatusUpdated->value, $result->type);
         $this->assertSame('agent_command_rejected', $result->payload['debug.raw_type']);
-    }
-
-    public function testNormalizesStaleResultIgnoredToStatusUpdated(): void
-    {
-        $event = $this->runEvent('stale_result_ignored', [
-            'result' => 'tool_call_result',
-            'tool_call_id' => 'call-stale',
-        ]);
-
-        $result = $this->mapper->toRuntimeEvent($event);
-
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::StatusUpdated->value, $result->type);
-        $this->assertSame('stale_result_ignored', $result->payload['debug.raw_type']);
     }
 
     // ── Compaction ───────────────────────────────────────────────────────────
@@ -927,6 +841,23 @@ final class RuntimeEventMapperTest extends TestCase
     }
 
     // ── Test helpers ─────────────────────────────────────────────────────────
+
+    /** @param array<string, mixed>|null $error */
+    private function toolEndPayload(string $toolCallId, bool $isError = false, string $text = '', ?array $error = null): array
+    {
+        return (new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))->toEventPayload(new ToolCallResult(
+            runId: $this->runId,
+            turnNo: 1,
+            stepId: 'step-1',
+            attempt: 1,
+            idempotencyKey: 'result-'.$toolCallId,
+            toolCallId: $toolCallId,
+            orderIndex: 0,
+            result: ['tool_name' => 'read', 'content' => '' === $text ? [] : [['type' => 'text', 'text' => $text]]],
+            isError: $isError,
+            error: $error,
+        ));
+    }
 
     /**
      * @param array<string, mixed> $payload

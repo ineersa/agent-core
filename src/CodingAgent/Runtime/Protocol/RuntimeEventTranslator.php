@@ -42,7 +42,7 @@ final class RuntimeEventTranslator
      */
     public function __construct(
         private readonly EventDispatcherInterface $eventDispatcher,
-        private readonly ?ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec = null,
+        private readonly ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec,
         private readonly AgentMessageNormalizer $messageNormalizer = new AgentMessageNormalizer(),
     ) {
         $this->dispatchTable = [
@@ -67,13 +67,11 @@ final class RuntimeEventTranslator
             RunEventTypeEnum::AgentCommandApplied->value => $this->onAgentCommandApplied(...),
             // Cancel / fallback
             RunEventTypeEnum::AgentCommandRejected->value => $this->onStatusUpdated(...),
-            RunEventTypeEnum::StaleResultIgnored->value => $this->onStatusUpdated(...),
             // Compaction
             RunEventTypeEnum::ContextCompactionStarted->value => $this->onCompactionStarted(...),
             RunEventTypeEnum::ContextCompacted->value => $this->onCompactionCompleted(...),
             RunEventTypeEnum::ContextCompactionFailed->value => $this->onCompactionFailed(...),
             // Drop (internal bookkeeping)
-            RunEventTypeEnum::ToolCallResultReceived->value => $this->drop(...),
             RunEventTypeEnum::ToolBatchCommitted->value => $this->drop(...),
             RunEventTypeEnum::AgentCommandQueued->value => $this->onAgentCommandQueued(...),
             RunEventTypeEnum::AgentCommandSuperseded->value => $this->drop(...),
@@ -338,18 +336,11 @@ final class RuntimeEventTranslator
     private function onToolExecutionEnded(RunEvent $runEvent): RuntimeEvent
     {
         $p = $runEvent->payload;
-        if (null !== $this->toolExecutionEndPayloadCodec) {
-            $typedResult = $this->toolExecutionEndPayloadCodec->fromEventPayload($p);
-            $isError = $typedResult->isError;
-            $resultText = $this->toolResultText($typedResult);
-            $toolCallId = $typedResult->toolCallId;
-            $orderIndex = $typedResult->orderIndex;
-        } else {
-            $isError = (bool) ($p['is_error'] ?? false);
-            $resultText = isset($p['result']) && \is_string($p['result']) ? $p['result'] : '';
-            $toolCallId = (string) ($p['tool_call_id'] ?? '');
-            $orderIndex = (int) ($p['order_index'] ?? 0);
-        }
+        $typedResult = $this->toolExecutionEndPayloadCodec->fromEventPayload($p);
+        $isError = $typedResult->isError;
+        $resultText = $this->toolResultText($typedResult);
+        $toolCallId = $typedResult->toolCallId;
+        $orderIndex = $typedResult->orderIndex;
 
         $payload = [
             'tool_call_id' => $toolCallId,
@@ -367,10 +358,7 @@ final class RuntimeEventTranslator
             $payload['duration_ms'] = $p['duration_ms'];
         }
 
-        $isStructuredCancel = (bool) ($p['cancelled'] ?? false);
-        // Structured metadata is preferred; text heuristic remains for legacy events.
-        $isUserCancelled = $isStructuredCancel
-            || ($isError && str_contains(strtolower($resultText), 'cancelled by user'));
+        $isUserCancelled = $isError && 'cancelled' === ($typedResult->error['type'] ?? null);
 
         $type = match (true) {
             $isUserCancelled => RuntimeEventTypeEnum::ToolExecutionCancelled->value,

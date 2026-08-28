@@ -44,7 +44,7 @@ final class EventFactoryTest extends TestCase
             startSeq: 5,
             eventSpecs: [
                 ['type' => 'turn_start', 'payload' => []],
-                ['type' => 'message_start', 'payload' => ['role' => 'user']],
+                ['type' => 'tool_execution_start', 'payload' => ['tool_call_id' => 'call-1']],
             ],
         );
 
@@ -63,7 +63,7 @@ final class EventFactoryTest extends TestCase
             startSeq: 0,
             eventSpecs: [
                 ['type' => 'turn_start', 'payload' => [], 'turn_no' => 2],
-                ['type' => 'message_start', 'payload' => ['role' => 'user']],
+                ['type' => 'tool_execution_start', 'payload' => ['tool_call_id' => 'call-1']],
             ],
         );
 

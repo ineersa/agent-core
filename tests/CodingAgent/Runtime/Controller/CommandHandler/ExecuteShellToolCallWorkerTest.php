@@ -80,8 +80,6 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         $this->assertSame(2, $this->appendedEvents[1]->seq);
         $this->assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $this->appendedEvents[1]->type);
         $this->assertSame(2, $this->appendedEvents[1]->turnNo);
-        $this->assertSame('sh_tc_1', $this->appendedEvents[1]->payload['tool_call_id'] ?? null);
-        $this->assertStringContainsString('hello', (string) ($this->appendedEvents[1]->payload['result'] ?? ''));
         $typedResult = $codec->fromEventPayload($this->appendedEvents[1]->payload);
         $this->assertSame('run-standalone', $typedResult->runId());
         $this->assertSame(2, $typedResult->turnNo());

@@ -21,8 +21,8 @@ final class DeferredChildRunEventProjector
 
     public function __construct(
         private readonly DenormalizerInterface $denormalizer,
+        private readonly ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec,
         private readonly SubagentChildToolProgressPresentationFormatter $presentationFormatter = new SubagentChildToolProgressPresentationFormatter(),
-        private readonly ?ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec = null,
     ) {
     }
 
@@ -138,19 +138,17 @@ final class DeferredChildRunEventProjector
 
             if (RunEventTypeEnum::ToolExecutionEnd->value === $type) {
                 ++$toolCount;
-                $toolCallId = \is_string($payload['tool_call_id'] ?? null) ? $payload['tool_call_id'] : null;
+                $typedResult = $this->toolExecutionEndPayloadCodec->fromEventPayload($payload);
+                $toolCallId = $typedResult->toolCallId;
                 $displayLine = null;
-                if (null !== $toolCallId && isset($pendingById[$toolCallId])) {
+                if (isset($pendingById[$toolCallId])) {
                     $displayLine = $pendingById[$toolCallId]->displayLine;
                     unset($pendingById[$toolCallId]);
                 }
                 if (null === $displayLine) {
-                    $typedResult = null === $this->toolExecutionEndPayloadCodec
-                        ? null
-                        : $this->toolExecutionEndPayloadCodec->fromEventPayload($payload);
-                    $name = null === $typedResult
-                        ? (\is_string($payload['tool_name'] ?? null) ? $payload['tool_name'] : 'tool')
-                        : (\is_string($typedResult->result['tool_name'] ?? null) ? $typedResult->result['tool_name'] : 'tool');
+                    $name = \is_string($typedResult->result['tool_name'] ?? null)
+                        ? $typedResult->result['tool_name']
+                        : 'tool';
                     $displayLine = $this->presentationFormatter->formatToolDisplayLine($name, []);
                 }
                 $recentTools[] = $displayLine;

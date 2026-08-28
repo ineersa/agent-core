@@ -119,19 +119,8 @@ final readonly class ExecuteShellToolCallWorker
             runId: $runId,
         ));
 
-        // Extract the result text from the ToolResult's content blocks.
-        $resultText = '';
-        foreach ($result->content as $contentBlock) {
-            if (\is_array($contentBlock) && 'text' === ($contentBlock['type'] ?? '')) {
-                $resultText .= (string) ($contentBlock['text'] ?? '');
-            } elseif (\is_string($contentBlock)) {
-                $resultText .= $contentBlock;
-            }
-        }
-
-        // Preserve the direct executor's raw content and details once in the
-        // staged typed payload. Existing top-level fields remain for current
-        // runtime/replay consumers until the authority cutover pass.
+        // Persist the direct executor's raw content and details exactly once in
+        // the typed canonical payload; direct shell remains non-model-visible.
         $toolCallResult = new ToolCallResult(
             runId: $runId,
             turnNo: $turnNo,
@@ -149,17 +138,12 @@ final readonly class ExecuteShellToolCallWorker
             isError: $result->isError,
         );
 
-        // Emit tool_execution_end event with result text.
         $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: $turnNo,
             type: RunEventTypeEnum::ToolExecutionEnd->value,
-            payload: array_merge([
-                'tool_call_id' => $toolCallId,
-                'is_error' => $result->isError,
-                'result' => $resultText,
-            ], $this->toolExecutionEndPayloadCodec->toEventPayload($toolCallResult)),
+            payload: $this->toolExecutionEndPayloadCodec->toEventPayload($toolCallResult),
         ));
 
         $this->logger?->info('shell.tool_execution_completed', [

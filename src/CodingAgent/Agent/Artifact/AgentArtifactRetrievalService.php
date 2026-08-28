@@ -101,7 +101,7 @@ MD;
         private readonly RunStoreInterface $runStore,
         private readonly EventStoreInterface $eventStore,
         private readonly LoggerInterface $logger,
-        private readonly ?ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec = null,
+        private readonly ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec,
     ) {
     }
 
@@ -468,10 +468,8 @@ MD;
      */
     private function summarizeToolEnd(array $payload): string
     {
-        $typedResult = null === $this->toolExecutionEndPayloadCodec
-            ? null
-            : $this->toolExecutionEndPayloadCodec->fromEventPayload($payload);
-        $name = $typedResult?->result['tool_name'] ?? $payload['tool_name'] ?? $payload['toolName'] ?? 'unknown';
+        $typedResult = $this->toolExecutionEndPayloadCodec->fromEventPayload($payload);
+        $name = $typedResult->result['tool_name'] ?? 'unknown';
         $exit = $payload['exit_code'] ?? $payload['exitCode'] ?? null;
         $base = \is_string($name) ? 'tool end: '.$name : 'tool end';
         if (\is_int($exit)) {

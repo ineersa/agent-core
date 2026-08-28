@@ -126,12 +126,11 @@ final class SubagentProgressEventsFixture
             'Unique collapsed-tail marker: scout-handoff-tail-line',
         ];
         $finalResult = implode("\n", $handoffLines);
-        $events[] = self::event($sessionId, 10, 1, 'tool_execution_end', [
-            'tool_call_id' => $toolCallId,
-            'order_index' => 0,
-            'is_error' => false,
-            'result' => $finalResult,
-        ], $now);
+        $events[] = self::event($sessionId, 10, 1, 'tool_execution_end', self::toolEndPayload(
+            sessionId: $sessionId,
+            toolCallId: $toolCallId,
+            text: $finalResult,
+        ), $now);
         $events[] = self::event($sessionId, 11, 2, 'turn_advanced', ['step_id' => 'turn-2', 'turn_no' => 2], $now);
         $events[] = self::event($sessionId, 12, 2, 'llm_step_completed', [
             'step_id' => 'turn-2',
@@ -270,26 +269,12 @@ final class SubagentProgressEventsFixture
             'order_index' => 0,
         ], $now);
         $toolResultText = "Multiline picker children completed.\nArtifacts: agent_e2e_fork_nl, agent_e2e_scout_nl";
-        $events[] = self::event($sessionId, 7, 1, 'tool_call_result_received', [
-            'tool_call_id' => $toolCallId,
-            'order_index' => 0,
-            'is_error' => false,
-        ], $now);
         $events[] = self::event($sessionId, 8, 1, 'tool_execution_end', [
-            'tool_call_id' => $toolCallId,
-            'order_index' => 0,
-            'is_error' => false,
-            'result' => $toolResultText,
-        ], $now);
-        // Prompt-visible tool message is required for post-resume AdvanceRun / follow-up LLM turns.
-        $events[] = self::event($sessionId, 9, 1, 'message_end', [
-            'message_role' => 'tool',
-            'message' => [
-                'role' => 'tool',
-                'content' => [['type' => 'text', 'text' => $toolResultText]],
-                'tool_call_id' => $toolCallId,
-                'tool_name' => 'subagent',
-                'is_error' => false,
+            'tool_result' => [
+                'run_id' => $sessionId, 'turn_no' => 1, 'step_id' => 'turn-1', 'attempt' => 1,
+                'idempotency_key' => 'result-'.$toolCallId, 'tool_call_id' => $toolCallId, 'order_index' => 0,
+                'result' => ['tool_name' => 'subagent', 'content' => [['type' => 'text', 'text' => $toolResultText]]],
+                'is_error' => false, 'error' => null, 'pending_human_input' => null,
             ],
         ], $now);
         $events[] = self::event($sessionId, 10, 1, 'tool_batch_committed', [], $now);
@@ -446,12 +431,11 @@ final class SubagentProgressEventsFixture
             'subagent_progress' => $progress,
             'order_index' => 0,
         ], $now);
-        $events[] = self::event($sessionId, 7, 1, 'tool_execution_end', [
-            'tool_call_id' => $toolCallId,
-            'order_index' => 0,
-            'is_error' => false,
-            'result' => "Parallel subagents completed.\nArtifacts: agent_e2e_alpha_pick, agent_e2e_bravo_pick, agent_e2e_charlie_pick",
-        ], $now);
+        $events[] = self::event($sessionId, 7, 1, 'tool_execution_end', self::toolEndPayload(
+            sessionId: $sessionId,
+            toolCallId: $toolCallId,
+            text: "Parallel subagents completed.\nArtifacts: agent_e2e_alpha_pick, agent_e2e_bravo_pick, agent_e2e_charlie_pick",
+        ), $now);
         $events[] = self::event($sessionId, 8, 2, 'turn_advanced', ['step_id' => 'turn-2', 'turn_no' => 2], $now);
         $events[] = self::event($sessionId, 9, 2, 'llm_step_completed', [
             'step_id' => 'turn-2',
@@ -469,6 +453,26 @@ final class SubagentProgressEventsFixture
         }
         file_put_contents($sessionDir.'/events.jsonl', $jsonl);
         file_put_contents($sessionDir.'/sequence.cursor', "9\n");
+    }
+
+    /** @return array<string, mixed> */
+    private static function toolEndPayload(string $sessionId, string $toolCallId, string $text): array
+    {
+        return [
+            'tool_result' => [
+                'run_id' => $sessionId,
+                'turn_no' => 1,
+                'step_id' => 'turn-1',
+                'attempt' => 1,
+                'idempotency_key' => 'result-'.$toolCallId,
+                'tool_call_id' => $toolCallId,
+                'order_index' => 0,
+                'result' => ['tool_name' => 'subagent', 'content' => [['type' => 'text', 'text' => $text]]],
+                'is_error' => false,
+                'error' => null,
+                'pending_human_input' => null,
+            ],
+        ];
     }
 
     /**

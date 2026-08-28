@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Support;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
@@ -75,7 +77,7 @@ final class ResumeSessionInitializerTestFactory
         );
 
         $mapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher())
+            new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))
         );
 
         $dispatcher = new EventDispatcher();

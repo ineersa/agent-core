@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
@@ -234,7 +235,22 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
                 seq: $i,
                 turnNo: 0,
                 type: RunEventTypeEnum::ToolExecutionEnd->value,
-                payload: ['tool_name' => 'bash', 'output' => $secret.'-'.$i],
+                payload: ['tool_result' => [
+                    'run_id' => $childRun,
+                    'turn_no' => 0,
+                    'step_id' => 'artifact-events',
+                    'attempt' => 1,
+                    'idempotency_key' => 'result-'.$i,
+                    'tool_call_id' => 'call-'.$i,
+                    'order_index' => $i,
+                    'result' => [
+                        'tool_name' => 'bash',
+                        'content' => [['type' => 'text', 'text' => $secret.'-'.$i]],
+                    ],
+                    'is_error' => false,
+                    'error' => null,
+                    'pending_human_input' => null,
+                ]],
             );
         }
 
@@ -410,6 +426,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
             runStore: $runStore ?? $this->createStub(RunStoreInterface::class),
             eventStore: $eventStore ?? $this->createStub(EventStoreInterface::class),
             logger: self::getContainer()->get('logger'),
+            toolExecutionEndPayloadCodec: self::getContainer()->get(ToolExecutionEndPayloadCodec::class),
         );
     }
 

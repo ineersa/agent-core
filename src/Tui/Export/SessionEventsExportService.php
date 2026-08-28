@@ -619,14 +619,16 @@ HTML;
      */
     private function renderToolEnd(array $payload, array $toolNames = []): string
     {
-        // TUI stays outside AgentCore's typed serializer boundary. This localized
-        // presentation adapter reads the normalized canonical shape once; Pass 3B
-        // removes the staged top-level fallback fields.
-        $typed = \is_array($payload['tool_result'] ?? null) ? $payload['tool_result'] : null;
-        $toolCallId = \is_array($typed) ? self::strFromArray($typed, 'tool_call_id') : self::strFromArray($payload, 'tool_call_id');
+        // TUI stays outside AgentCore's typed serializer boundary. This single
+        // export-edge adapter reads the normalized canonical shape directly.
+        $typed = $payload['tool_result'] ?? null;
+        if (!\is_array($typed)) {
+            throw new \UnexpectedValueException('ToolExecutionEnd export requires an array tool_result payload.');
+        }
+        $toolCallId = self::strFromArray($typed, 'tool_call_id');
         $toolName = $toolNames[$toolCallId] ?? '';
-        $isError = \is_array($typed) ? true === ($typed['is_error'] ?? false) : (bool) ($payload['is_error'] ?? false);
-        $result = \is_array($typed) ? $this->toolResultText($typed) : self::strFromArray($payload, 'result');
+        $isError = true === ($typed['is_error'] ?? false);
+        $result = $this->toolResultText($typed);
         $durationMs = \is_int($payload['duration_ms'] ?? null) ? $payload['duration_ms'] : null;
 
         $html = '  <div class="'.($isError ? 'tool-result tool-error' : 'tool-result').'">'."\n";

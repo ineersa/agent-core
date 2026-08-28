@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
@@ -68,7 +70,7 @@ final class SessionTranscriptProviderTest extends TestCase
         $projector = new HistoryProjector();
         $replayFilter = new HistoryReplayFilter($projector);
         $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
-        $translator = new RuntimeEventTranslator($eventDispatcher);
+        $translator = new RuntimeEventTranslator($eventDispatcher, new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $eventMapper = new RuntimeEventMapper($translator);
 
         $dispatcher = new EventDispatcher();

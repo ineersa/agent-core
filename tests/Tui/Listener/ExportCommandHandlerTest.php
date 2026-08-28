@@ -576,12 +576,11 @@ final class ExportCommandHandlerTest extends TestCase
                 'tool_name' => 'bash',
                 'order_index' => 0,
             ]),
-            $this->makeEvent(3, 1, 'tool_execution_end', [
-                'tool_call_id' => 'tc1',
-                'order_index' => 0,
-                'is_error' => false,
-                'result' => '<div>Injected HTML</div>',
-            ]),
+            $this->makeEvent(3, 1, 'tool_execution_end', $this->toolEndPayload(
+                toolCallId: 'tc1',
+                toolName: 'bash',
+                text: '<div>Injected HTML</div>',
+            )),
         ]);
 
         $path = $this->projectDir.'/tool-escaped.html';
@@ -611,12 +610,11 @@ final class ExportCommandHandlerTest extends TestCase
                 'tool_name' => 'bash',
                 'order_index' => 0,
             ]),
-            $this->makeEvent(3, 1, 'tool_execution_end', [
-                'tool_call_id' => 'tc-ls',
-                'order_index' => 0,
-                'is_error' => false,
-                'result' => 'file1.txt\nfile2.txt',
-            ]),
+            $this->makeEvent(3, 1, 'tool_execution_end', $this->toolEndPayload(
+                toolCallId: 'tc-ls',
+                toolName: 'bash',
+                text: "file1.txt\nfile2.txt",
+            )),
         ]);
 
         $path = $this->projectDir.'/tool-render.html';
@@ -928,12 +926,11 @@ You are a helpful assistant.
                 'tool_name' => 'bash',
                 'order_index' => 0,
             ]),
-            $this->makeEvent(4, 1, 'tool_execution_end', [
-                'tool_call_id' => 'call_abc',
-                'order_index' => 0,
-                'is_error' => false,
-                'result' => 'total 8',
-            ]),
+            $this->makeEvent(4, 1, 'tool_execution_end', $this->toolEndPayload(
+                toolCallId: 'call_abc',
+                toolName: 'bash',
+                text: 'total 8',
+            )),
         ]);
 
         $path = $this->projectDir.'/tool-args.html';
@@ -1071,12 +1068,11 @@ You are a helpful assistant.
                 'tool_name' => 'bash',
                 'order_index' => 0,
             ]),
-            $this->makeEvent(4, 1, 'tool_execution_end', [
-                'tool_call_id' => 'xss1',
-                'order_index' => 0,
-                'is_error' => false,
-                'result' => '<svg onload=alert(1)>',
-            ]),
+            $this->makeEvent(4, 1, 'tool_execution_end', $this->toolEndPayload(
+                toolCallId: 'xss1',
+                toolName: 'bash',
+                text: '<svg onload=alert(1)>',
+            )),
             $this->makeEvent(5, 1, 'agent_command_applied', [
                 'kind' => 'follow_up',
                 'text' => '<b>bold attempt</b>',
@@ -1161,6 +1157,29 @@ You are a helpful assistant.
             'type' => $type,
             'payload' => $payload,
             'ts' => '2026-01-01T00:00:00+00:00',
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function toolEndPayload(string $toolCallId, string $toolName, string $text, int $orderIndex = 0, bool $isError = false): array
+    {
+        return [
+            'tool_result' => [
+                'run_id' => 'test-session',
+                'turn_no' => 1,
+                'step_id' => 'tool-end-'.$toolCallId,
+                'attempt' => 1,
+                'idempotency_key' => 'result-'.$toolCallId,
+                'tool_call_id' => $toolCallId,
+                'order_index' => $orderIndex,
+                'result' => [
+                    'tool_name' => $toolName,
+                    'content' => [['type' => 'text', 'text' => $text]],
+                ],
+                'is_error' => $isError,
+                'error' => null,
+                'pending_human_input' => null,
+            ],
         ];
     }
 

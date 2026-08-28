@@ -190,9 +190,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             turnNo: 1,
             status: 'running',
             events: [
-                new AfterTurnCommitEventSummaryDTO(7, 'tool_call_result_received'),
                 new AfterTurnCommitEventSummaryDTO(8, 'tool_execution_end'),
-                new AfterTurnCommitEventSummaryDTO(10, 'message_end'),
                 new AfterTurnCommitEventSummaryDTO(11, 'tool_batch_committed'),
                 new AfterTurnCommitEventSummaryDTO(12, 'agent_command_applied'),
             ],

@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -89,11 +92,16 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
                 'order_index' => 0,
                 'arguments' => ['command' => 'echo child-shell'],
             ]),
-            $this->runEvent(RunEventTypeEnum::ToolExecutionEnd->value, 2, 1, [
-                'tool_call_id' => 'sh_child_1',
-                'is_error' => false,
-                'result' => "child-shell\n",
-            ]),
+            $this->runEvent(RunEventTypeEnum::ToolExecutionEnd->value, 2, 1, (new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))->toEventPayload(new ToolCallResult(
+                runId: $this->childRunId,
+                turnNo: 1,
+                stepId: 'shell-step',
+                attempt: 1,
+                idempotencyKey: 'shell-result',
+                toolCallId: 'sh_child_1',
+                orderIndex: 0,
+                result: ['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => "child-shell\n"]], 'arguments' => ['command' => 'echo child-shell']],
+            ))),
         ];
 
         $snapshot = $this->createProvider($events)->snapshot($this->childRunId);
@@ -127,7 +135,7 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
     private function createProviderWithStore(EventStoreInterface $store): ChildRunTranscriptSnapshotProvider
     {
         $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
-        $translator = new RuntimeEventTranslator($eventDispatcher);
+        $translator = new RuntimeEventTranslator($eventDispatcher, new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $eventMapper = new RuntimeEventMapper($translator);
 
         $dispatcher = new EventDispatcher();
