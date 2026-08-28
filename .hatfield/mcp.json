@@ -8,6 +8,13 @@
     "jetbrains-index": {
       "url": "http://127.0.0.1:29175/index-mcp/streamable-http",
       "availability": "all"
+    },
+    "datadog": {
+      "url": "https://mcp.datadoghq.com/v1/mcp",
+      "headers": {
+        "Authorization": "Bearer ${DATADOG_MCP_KEY}"
+      },
+      "availability": "specific"
     }
   }
 }
