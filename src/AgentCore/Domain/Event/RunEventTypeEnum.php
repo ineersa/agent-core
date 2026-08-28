@@ -13,18 +13,13 @@ namespace Ineersa\AgentCore\Domain\Event;
 enum RunEventTypeEnum: string
 {
     // ── Lifecycle events (ordered stream) ────────────────────────────────
-    case AgentStart = 'agent_start';
-    case TurnStart = 'turn_start';
-    case MessageUpdate = 'message_update';
     case ToolExecutionStart = 'tool_execution_start';
     case ToolExecutionUpdate = 'tool_execution_update';
     case ToolExecutionEnd = 'tool_execution_end';
-    case TurnEnd = 'turn_end';
     case AgentEnd = 'agent_end';
 
     // ── Pipeline events ──────────────────────────────────────────────────
     case RunStarted = 'run_started';
-    case ModelChanged = 'model_changed';
     case TurnAdvanced = 'turn_advanced';
     case LlmStepCompleted = 'llm_step_completed';
     case LlmStepFailed = 'llm_step_failed';
@@ -33,7 +28,6 @@ enum RunEventTypeEnum: string
     case AgentCommandApplied = 'agent_command_applied';
     case AgentCommandRejected = 'agent_command_rejected';
     case AgentCommandQueued = 'agent_command_queued';
-    case AgentCommandSuperseded = 'agent_command_superseded';
     case ToolBatchCommitted = 'tool_batch_committed';
     case ModelNotification = 'model_notification';
     // ── Compaction events ──────────────────────────────────────────────

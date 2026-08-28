@@ -35,7 +35,7 @@ final class ResumeCanonicalEventsFixture
         $events[] = [
             'schema_version' => '1.0', 'run_id' => $sessionId, 'seq' => 4, 'turn_no' => 1, 'type' => 'llm_step_completed',
             'payload' => [
-                'step_id' => 'turn-1', 'stop_reason' => 'stop', 'text' => 'Here is the answer you requested.', 'tool_calls_count' => 0,
+                'step_id' => 'turn-1', 'stop_reason' => 'stop',
                 'assistant_message' => [
                     'role' => 'assistant',
                     'content' => [['type' => 'text', 'text' => 'Here is the answer you requested.']],
@@ -50,7 +50,7 @@ final class ResumeCanonicalEventsFixture
         $events[] = [
             'schema_version' => '1.0', 'run_id' => $sessionId, 'seq' => 7, 'turn_no' => 2, 'type' => 'llm_step_completed',
             'payload' => [
-                'step_id' => 'turn-2', 'stop_reason' => 'tool_call', 'text' => null, 'tool_calls_count' => 1,
+                'step_id' => 'turn-2', 'stop_reason' => 'tool_call',
                 'assistant_message' => [
                     'role' => 'assistant', 'content' => null,
                     'tool_calls' => [['id' => 'call_read_e2e_001', 'name' => 'read', 'arguments' => ['path' => '/tmp/example.txt'], 'order_index' => 0]],

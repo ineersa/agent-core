@@ -61,7 +61,6 @@ final class SubagentProgressEventsFixture
         $events[] = self::event($sessionId, 4, 1, 'llm_step_completed', [
             'step_id' => 'turn-1',
             'stop_reason' => 'tool_call',
-            'tool_calls_count' => 1,
             'assistant_message' => [
                 'role' => 'assistant',
                 'content' => null,
@@ -135,7 +134,6 @@ final class SubagentProgressEventsFixture
         $events[] = self::event($sessionId, 12, 2, 'llm_step_completed', [
             'step_id' => 'turn-2',
             'stop_reason' => 'stop',
-            'text' => 'Subagent finished.',
             'assistant_message' => [
                 'role' => 'assistant',
                 'content' => [['type' => 'text', 'text' => 'Subagent finished.']],
@@ -238,7 +236,6 @@ final class SubagentProgressEventsFixture
         $events[] = self::event($sessionId, 4, 1, 'llm_step_completed', [
             'step_id' => 'turn-1',
             'stop_reason' => 'tool_call',
-            'tool_calls_count' => 1,
             'assistant_message' => [
                 'role' => 'assistant',
                 'content' => null,
@@ -282,7 +279,6 @@ final class SubagentProgressEventsFixture
         $events[] = self::event($sessionId, 12, 2, 'llm_step_completed', [
             'step_id' => 'turn-2',
             'stop_reason' => 'stop',
-            'text' => 'Multiline picker children finished.',
             'assistant_message' => [
                 'role' => 'assistant',
                 'content' => [['type' => 'text', 'text' => 'Multiline picker children finished.']],
@@ -400,7 +396,6 @@ final class SubagentProgressEventsFixture
         $events[] = self::event($sessionId, 4, 1, 'llm_step_completed', [
             'step_id' => 'turn-1',
             'stop_reason' => 'tool_call',
-            'tool_calls_count' => 1,
             'assistant_message' => [
                 'role' => 'assistant',
                 'content' => null,
@@ -440,7 +435,6 @@ final class SubagentProgressEventsFixture
         $events[] = self::event($sessionId, 9, 2, 'llm_step_completed', [
             'step_id' => 'turn-2',
             'stop_reason' => 'stop',
-            'text' => 'Parallel subagents finished.',
             'assistant_message' => [
                 'role' => 'assistant',
                 'content' => [['type' => 'text', 'text' => 'Parallel subagents finished.']],

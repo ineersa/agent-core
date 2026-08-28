@@ -48,7 +48,6 @@ final class RuntimeEventTranslator
         $this->dispatchTable = [
             // Lifecycle
             RunEventTypeEnum::RunStarted->value => $this->onRunStarted(...),
-            RunEventTypeEnum::ModelChanged->value => $this->onModelChanged(...),
             RunEventTypeEnum::TurnAdvanced->value => $this->onTurnStarted(...),
             RunEventTypeEnum::AgentEnd->value => $this->onAgentEnd(...),
             // Assistant stream
@@ -74,7 +73,6 @@ final class RuntimeEventTranslator
             // Drop (internal bookkeeping)
             RunEventTypeEnum::ToolBatchCommitted->value => $this->drop(...),
             RunEventTypeEnum::AgentCommandQueued->value => $this->onAgentCommandQueued(...),
-            RunEventTypeEnum::AgentCommandSuperseded->value => $this->drop(...),
             // Drop (history metadata — not user-visible; run.history_position_changed is emitted by selection handlers)
             RunEventTypeEnum::HistoryPositionSet->value => $this->drop(...),
             RunEventTypeEnum::HistoryTailDiscarded->value => $this->drop(...),
@@ -114,21 +112,6 @@ final class RuntimeEventTranslator
     }
 
     // ── Lifecycle ──────────────────────────────────────────────────────────
-
-    private function onModelChanged(RunEvent $runEvent): RuntimeEvent
-    {
-        $p = $runEvent->payload;
-
-        return new RuntimeEvent(
-            type: RuntimeEventTypeEnum::ModelChanged->value,
-            runId: $runEvent->runId,
-            seq: $runEvent->seq,
-            payload: [
-                'model' => (string) ($p['model'] ?? ''),
-                'previous_model' => $p['previous_model'] ?? null,
-            ],
-        );
-    }
 
     private function onRunStarted(RunEvent $runEvent): RuntimeEvent
     {
@@ -189,12 +172,7 @@ final class RuntimeEventTranslator
     {
         $p = $runEvent->payload;
 
-        // Prefer the explicit text key when available (source-side extraction
-        // via AssistantMessage::asText()).  Fall back to walking the
-        // normalized assistant_message content array for backward compat.
-        $text = \is_string($p['text'] ?? null) && '' !== $p['text']
-            ? $p['text']
-            : $this->extractAssistantText($p['assistant_message'] ?? null);
+        $text = $this->extractAssistantText($p['assistant_message'] ?? null);
 
         $payload = [
             'message_id' => (string) ($p['step_id'] ?? ''),

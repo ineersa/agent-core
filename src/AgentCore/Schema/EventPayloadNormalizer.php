@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Schema;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 
 final readonly class EventPayloadNormalizer
 {
@@ -102,12 +103,21 @@ final readonly class EventPayloadNormalizer
 
     public function toPublicType(string $internalType): string
     {
-        return $internalType;
+        return $this->supportedType($internalType);
     }
 
     public function toInternalType(string $publicType): string
     {
-        return $publicType;
+        return $this->supportedType($publicType);
+    }
+
+    private function supportedType(string $type): string
+    {
+        if (null === RunEventTypeEnum::tryFrom($type)) {
+            throw new \UnexpectedValueException(\sprintf('Unsupported canonical RunEvent type: "%s".', $type));
+        }
+
+        return $type;
     }
 
     private function isCompatibleSchemaVersion(string $schemaVersion): bool

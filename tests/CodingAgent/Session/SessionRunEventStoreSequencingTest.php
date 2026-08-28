@@ -103,9 +103,9 @@ final class SessionRunEventStoreSequencingTest extends TestCase
         file_put_contents(FileRunSequenceAllocator::counterPathForEventsLog($eventsPath), "2\n");
 
         $persisted = $this->store->appendMany([
-            new RunEvent($runId, 0, 1, 'a', []),
-            new RunEvent($runId, 0, 1, 'b', []),
-            new RunEvent($runId, 0, 1, 'c', []),
+            new RunEvent($runId, 0, 1, 'tool_execution_start', []),
+            new RunEvent($runId, 0, 1, 'tool_execution_update', []),
+            new RunEvent($runId, 0, 1, 'tool_execution_end', []),
         ]);
 
         $this->assertSame([3, 4, 5], array_map(static fn (RunEvent $e): int => $e->seq, $persisted));

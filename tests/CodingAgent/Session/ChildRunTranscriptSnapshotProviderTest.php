@@ -36,7 +36,7 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
     {
         $events = [
             $this->runEvent(RunEventTypeEnum::TurnAdvanced->value, 1, 1, ['turn_no' => 1, 'step_id' => 's1']),
-            $this->runEvent(RunEventTypeEnum::LlmStepCompleted->value, 5, 1, ['text' => 'Child scout answer']),
+            $this->runEvent(RunEventTypeEnum::LlmStepCompleted->value, 5, 1, $this->assistantPayload('Child scout answer')),
             $this->runEvent(RunEventTypeEnum::ToolBatchCommitted->value, 6, 1, ['batch_id' => 'b1']),
         ];
 
@@ -54,10 +54,10 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
     public function testSecondSnapshotDoesNotLeakBlocksFromFirstRun(): void
     {
         $eventsRunA = [
-            $this->runEvent(RunEventTypeEnum::LlmStepCompleted->value, 2, 1, ['text' => 'Run A only'], runId: 'child-a'),
+            $this->runEvent(RunEventTypeEnum::LlmStepCompleted->value, 2, 1, $this->assistantPayload('Run A only'), runId: 'child-a'),
         ];
         $eventsRunB = [
-            $this->runEvent(RunEventTypeEnum::LlmStepCompleted->value, 3, 1, ['text' => 'Run B only'], runId: 'child-b'),
+            $this->runEvent(RunEventTypeEnum::LlmStepCompleted->value, 3, 1, $this->assistantPayload('Run B only'), runId: 'child-b'),
         ];
 
         $store = $this->createStub(EventStoreInterface::class);
@@ -146,6 +146,17 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
         $transcriptProjector = new TranscriptProjector($dispatcher, $projectionState);
 
         return new ChildRunTranscriptSnapshotProvider($store, $eventMapper, $transcriptProjector);
+    }
+
+    /** @return array<string, mixed> */
+    private function assistantPayload(string $text): array
+    {
+        return [
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => $text]],
+            ],
+        ];
     }
 
     /** @param array<string, mixed> $payload */

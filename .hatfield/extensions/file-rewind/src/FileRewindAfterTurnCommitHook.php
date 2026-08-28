@@ -37,7 +37,6 @@ final readonly class FileRewindAfterTurnCommitHook implements AfterTurnCommitHoo
         if (($this->has($context, 'agent_command_queued') || $this->has($context, 'agent_command_applied'))
             && !$this->has($context, 'tool_batch_committed')
             && !$this->has($context, 'llm_step_completed')
-            && !$this->has($context, 'turn_end')
             && !$this->has($context, 'agent_end')
         ) {
             return;
@@ -48,7 +47,7 @@ final readonly class FileRewindAfterTurnCommitHook implements AfterTurnCommitHoo
     private function resolveCaptureAnchorSeq(AfterTurnCommitHookContextDTO $context): ?int
     {
         foreach ($context->events as $event) {
-            if ('turn_end' === $event->type || 'agent_end' === $event->type) {
+            if ('agent_end' === $event->type) {
                 return $event->seq;
             }
         }
@@ -67,7 +66,6 @@ final readonly class FileRewindAfterTurnCommitHook implements AfterTurnCommitHoo
         // Post-tool stable file state: tool_batch_committed marks applied tool effects on disk.
         if ($this->has($context, 'tool_batch_committed')
             && !$this->has($context, 'llm_step_completed')
-            && !$this->has($context, 'turn_end')
             && !$this->has($context, 'agent_end')
             && !$this->has($context, 'tool_execution_start')
         ) {

@@ -440,26 +440,22 @@ HTML;
      * Real events.jsonl has the assistant_message payload nested:
      *   payload.assistant_message.{content,details.thinking,tool_calls,role}
      *   payload.usage.{input_tokens,output_tokens,total_tokens}
-     *   payload.text (top-level canonical text)
      *   payload.stop_reason
      *
      * @param array<string, mixed> $payload
      */
     private function renderAssistantMessage(array $payload): string
     {
-        $text = self::escapeHtml(self::strFromArray($payload, 'text'));
         $stopReason = self::escapeHtml(self::strFromArray($payload, 'stop_reason'));
-
-        // Thinking is stored at payload.assistant_message.details.thinking
-        // in real events.jsonl.  Also check the simpler payload.details.thinking
-        // path for test fixtures.
         $assistantMessage = $payload['assistant_message'] ?? null;
+        $text = '';
         $thinking = '';
         if (\is_array($assistantMessage)) {
+            $content = $assistantMessage['content'] ?? null;
+            if (\is_array($content)) {
+                $text = self::escapeHtml($this->extractTextFromContentBlocks($content));
+            }
             $thinking = self::escapeHtml(self::strFromNested($assistantMessage, ['details', 'thinking']));
-        }
-        if ('' === $thinking) {
-            $thinking = self::escapeHtml(self::strFromNested($payload, ['details', 'thinking']));
         }
 
         $html = '  <div class="message message-assistant">'."\n";

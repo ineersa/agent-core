@@ -593,7 +593,7 @@ final class SessionInitializerTest extends TestCase
             'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
         ]));
         $this->seedCanonicalEvent(new RunEvent(runId: $runId, seq: 2, turnNo: 1, type: 'llm_step_completed', payload: [
-            'step_id' => 'step-2', 'text' => 'Hello', 'usage' => ['input_tokens' => 120, 'output_tokens' => 30],
+            'step_id' => 'step-2', 'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Hello']]], 'usage' => ['input_tokens' => 120, 'output_tokens' => 30],
         ]));
 
         $historyProvider = $this->createMock(HistoryProviderInterface::class);

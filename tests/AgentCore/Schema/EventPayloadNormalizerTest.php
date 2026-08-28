@@ -111,16 +111,16 @@ final class EventPayloadNormalizerTest extends TestCase
             'run_id' => 'roundtrip-run',
             'seq' => 42,
             'turn_no' => 2,
-            'type' => 'tool_result',
-            'payload' => ['result' => 'ok'],
+            'type' => 'tool_batch_committed',
+            'payload' => ['count' => 1],
         ];
 
         $normalized = $normalizer->normalize(
             runId: 'roundtrip-run',
             seq: 42,
             turnNo: 2,
-            type: 'tool_result',
-            payload: ['result' => 'ok'],
+            type: 'tool_batch_committed',
+            payload: ['count' => 1],
         );
 
         $this->assertArrayHasKey('schema_version', $normalized);
@@ -131,7 +131,23 @@ final class EventPayloadNormalizerTest extends TestCase
         $this->assertSame('roundtrip-run', $denormalized->runId);
         $this->assertSame(42, $denormalized->seq);
         $this->assertSame(2, $denormalized->turnNo);
-        $this->assertSame('tool_result', $denormalized->type);
-        $this->assertSame('ok', $denormalized->payload['result']);
+        $this->assertSame('tool_batch_committed', $denormalized->type);
+        $this->assertSame(1, $denormalized->payload['count']);
+    }
+
+    #[Test]
+    public function denormalizeRejectsRemovedCanonicalEventType(): void
+    {
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('Unsupported canonical RunEvent type: "agent_start".');
+
+        $this->normalizer->denormalizeRunEvent([
+            'schema_version' => '1.0',
+            'run_id' => 'test-run',
+            'seq' => 1,
+            'turn_no' => 0,
+            'type' => 'agent_start',
+            'payload' => [],
+        ]);
     }
 }

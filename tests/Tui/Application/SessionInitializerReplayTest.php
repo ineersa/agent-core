@@ -157,7 +157,7 @@ final class SessionInitializerReplayTest extends TestCase
         // llm_step_completed with assistant response
         $this->append($runId, 2, 'llm_step_completed', [
             'step_id' => 'step-2',
-            'text' => 'Hi there! How can I help?',
+            'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Hi there! How can I help?']]],
         ]);
 
         $state = new TuiSessionState($runId, true);
@@ -211,7 +211,6 @@ final class SessionInitializerReplayTest extends TestCase
         // 2: llm_step_completed (assistant with tool calls)
         $this->append($runId, 2, 'llm_step_completed', [
             'step_id' => 'step-2',
-            'text' => 'Let me read that file.',
             'assistant_message' => [
                 'role' => 'assistant',
                 'content' => [['type' => 'text', 'text' => 'Let me read that file.']],
@@ -327,7 +326,7 @@ final class SessionInitializerReplayTest extends TestCase
         ]);
         $this->append($runId, 2, 'llm_step_completed', [
             'step_id' => 'step-2',
-            'text' => 'Done turn one.',
+            'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Done turn one.']]],
         ]);
         $this->append($runId, 117, 'agent_end', ['reason' => 'completed']);
 
@@ -427,7 +426,7 @@ final class SessionInitializerReplayTest extends TestCase
 
         $this->append($runId, 2, 'llm_step_completed', [
             'step_id' => 'step-2',
-            'text' => 'First response',
+            'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'First response']]],
         ]);
 
         // Replay session
@@ -665,7 +664,7 @@ final class SessionInitializerReplayTest extends TestCase
         ]);
         $this->append($runId, 2, 'llm_step_completed', [
             'step_id' => 'step-1',
-            'message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Ok']]],
+            'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Ok']]],
         ]);
         $this->append($runId, 3, 'agent_end', ['reason' => 'completed']);
         $this->append($runId, 4, 'context_compaction_started', [
@@ -693,7 +692,7 @@ final class SessionInitializerReplayTest extends TestCase
                 ],
             ],
         ]);
-        $this->append($runId, 2, 'turn_started', ['turn_no' => 1]);
+        $this->append($runId, 2, 'turn_advanced', ['turn_no' => 1]);
 
         $state = new TuiSessionState($runId, true);
         $this->sessionInit->buildInitialTranscript($state, $this->eventApplier);

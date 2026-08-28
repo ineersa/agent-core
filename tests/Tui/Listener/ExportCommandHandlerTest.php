@@ -175,7 +175,10 @@ final class ExportCommandHandlerTest extends TestCase
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => 'The sky is blue.',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'The sky is blue.']],
+                ],
                 'stop_reason' => 'end_turn',
             ]),
             $this->makeEvent(3, 1, 'agent_end', [
@@ -211,7 +214,10 @@ final class ExportCommandHandlerTest extends TestCase
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => 'Tools are available.',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Tools are available.']],
+                ],
                 'stop_reason' => 'end_turn',
                 'available_tools' => [
                     'read',
@@ -262,7 +268,10 @@ final class ExportCommandHandlerTest extends TestCase
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => 'No tools snapshot.',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'No tools snapshot.']],
+                ],
                 'stop_reason' => 'end_turn',
             ]),
         ]);
@@ -314,14 +323,20 @@ final class ExportCommandHandlerTest extends TestCase
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => 'Response.',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Response.']],
+                ],
                 'stop_reason' => 'end_turn',
                 'available_tools' => ['read', 'bash'],
                 'available_tools_schema_tokens_estimate' => 42,
             ]),
             $this->makeEvent(3, 2, 'llm_step_completed', [
                 'step_id' => 's3',
-                'text' => 'Second turn.',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Second turn.']],
+                ],
                 'stop_reason' => 'end_turn',
                 'available_tools' => ['read', 'bash'],
                 'available_tools_schema_tokens_estimate' => 42,
@@ -409,7 +424,10 @@ final class ExportCommandHandlerTest extends TestCase
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => 'Response.',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Response.']],
+                ],
                 'stop_reason' => 'end_turn',
             ]),
         ];
@@ -438,7 +456,10 @@ final class ExportCommandHandlerTest extends TestCase
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => 'Response text.',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Response text.']],
+                ],
                 'stop_reason' => 'end_turn',
             ]),
         ]);
@@ -467,7 +488,10 @@ final class ExportCommandHandlerTest extends TestCase
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => 'Response.',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Response.']],
+                ],
                 'stop_reason' => 'end_turn',
             ]),
         ];
@@ -540,7 +564,10 @@ final class ExportCommandHandlerTest extends TestCase
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => '<img src=x onerror=alert(1)>',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => '<img src=x onerror=alert(1)>']],
+                ],
                 'stop_reason' => 'end_turn',
             ]),
         ]);
@@ -640,7 +667,10 @@ final class ExportCommandHandlerTest extends TestCase
             $this->makeEvent(2, 1, 'turn_advanced', ['turn_no' => 1]),
             $this->makeEvent(3, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => 'Response.',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Response.']],
+                ],
                 'stop_reason' => 'end_turn',
             ]),
             $this->makeEvent(4, 1, 'agent_end', ['reason' => 'completed']),
@@ -678,7 +708,10 @@ final class ExportCommandHandlerTest extends TestCase
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => 'The capital of France is Paris.',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'The capital of France is Paris.']],
+                ],
                 'stop_reason' => 'end_turn',
             ]),
         ]);
@@ -777,9 +810,12 @@ You are a helpful assistant.
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => 'Here is the answer.',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Here is the answer.']],
+                    'details' => ['thinking' => 'Hmm, let me reason about this...'],
+                ],
                 'stop_reason' => 'end_turn',
-                'details' => ['thinking' => 'Hmm, let me reason about this...'],
             ]),
         ]);
 
@@ -816,7 +852,10 @@ You are a helpful assistant.
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => 'Response.',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Response.']],
+                ],
                 'stop_reason' => 'end_turn',
             ]),
         ]);
@@ -851,10 +890,10 @@ You are a helpful assistant.
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => 'Answer.',
                 'stop_reason' => 'end_turn',
                 'assistant_message' => [
                     'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Answer.']],
                     'details' => ['thinking' => 'Let me reason step by step...'],
                 ],
             ]),
@@ -881,7 +920,10 @@ You are a helpful assistant.
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => 'Response.',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Response.']],
+                ],
                 'stop_reason' => 'end_turn',
                 'usage' => ['input_tokens' => 7214, 'output_tokens' => 59, 'total_tokens' => 7273],
             ]),
@@ -911,10 +953,11 @@ You are a helpful assistant.
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => 'Calling tool...',
                 'stop_reason' => 'tool_call',
                 'usage' => ['input_tokens' => 100, 'output_tokens' => 20, 'total_tokens' => 120],
                 'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Calling tool...']],
                     'tool_calls' => [
                         ['id' => 'call_abc', 'name' => 'bash', 'arguments' => '{"command":"ls -la"}'],
                         ['id' => 'call_def', 'name' => 'read', 'arguments' => '{"path":"/tmp/file.txt"}'],
@@ -962,7 +1005,10 @@ You are a helpful assistant.
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => 'Response 1.',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Response 1.']],
+                ],
                 'stop_reason' => 'end_turn',
             ]),
             $this->makeEvent(3, 1, 'agent_command_applied', [
@@ -1053,9 +1099,10 @@ You are a helpful assistant.
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
-                'text' => '<iframe src=evil>',
                 'stop_reason' => 'end_turn',
                 'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => '<iframe src=evil>']],
                     'details' => ['thinking' => '<script>think_evil()</script>'],
                     'tool_calls' => [
                         ['id' => 'xss1', 'name' => 'bash', 'arguments' => '{"cmd":"<img onerror=alert(1)>"}'],

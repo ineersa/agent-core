@@ -75,7 +75,7 @@ final class SessionRepairServiceTest extends TestCase
         $runId = '1';
         $factory = new EventFactory();
         $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 1, 1, [
-            ['type' => RunEventTypeEnum::AgentStart->value, 'payload' => ['messages' => []]],
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['messages' => []]],
             ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 1, 'step_id' => 'follow_up-1']],
             ['type' => RunEventTypeEnum::AgentEnd->value, 'payload' => ['reason' => 'completed']],
         ]));
@@ -581,7 +581,7 @@ final class SessionRepairServiceTest extends TestCase
         $runId = 'dup';
         $factory = new EventFactory();
         $this->persistRunEvents($runId, [
-            $factory->event($runId, 1, 0, RunEventTypeEnum::AgentStart->value, []),
+            $factory->event($runId, 1, 0, RunEventTypeEnum::RunStarted->value, []),
             $factory->event($runId, 2, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]),
             $factory->event($runId, 3, 1, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
             $factory->event($runId, 3, 1, RunEventTypeEnum::AgentCommandApplied->value, ['kind' => 'cancel']),
@@ -606,10 +606,8 @@ final class SessionRepairServiceTest extends TestCase
         $runId = 'stream';
         $factory = new EventFactory();
         $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 1, 1, [
-            ['type' => RunEventTypeEnum::AgentStart->value, 'payload' => []],
-            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 1, 'step_id' => 'llm-1']],
             ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => []],
-            ['type' => RunEventTypeEnum::MessageUpdate->value, 'payload' => ['message_id' => 'm1', 'delta' => 'partial']],
+            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 1, 'step_id' => 'llm-1']],
         ]));
 
         $runStore = new InMemoryRunStore();
@@ -638,7 +636,7 @@ final class SessionRepairServiceTest extends TestCase
         $runId = 'missing';
         $factory = new EventFactory();
         $this->persistRunEvents($runId, [
-            $factory->event($runId, 1, 0, RunEventTypeEnum::AgentStart->value, []),
+            $factory->event($runId, 1, 0, RunEventTypeEnum::RunStarted->value, []),
             $factory->event($runId, 2, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]),
             $factory->event($runId, 4, 1, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
         ]);
@@ -686,7 +684,7 @@ final class SessionRepairServiceTest extends TestCase
         $factory = new EventFactory();
         $turnNo = 33;
         $events = $factory->eventsFromSpecs($runId, $turnNo, 1, [
-            ['type' => RunEventTypeEnum::AgentStart->value, 'payload' => ['messages' => []]],
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['messages' => []]],
             ['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => ['kind' => 'follow_up', 'payload' => ['text' => 'continue']]],
             ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => $turnNo, 'step_id' => self::STEP_ID]],
             ['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => ['kind' => 'cancel']],
@@ -752,7 +750,7 @@ final class SessionRepairServiceTest extends TestCase
         $runId = 'missing-state';
         $factory = new EventFactory();
         $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 1, 1, [
-            ['type' => RunEventTypeEnum::AgentStart->value, 'payload' => []],
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => []],
             ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 1, 'step_id' => 's1']],
         ]));
 
@@ -773,7 +771,7 @@ final class SessionRepairServiceTest extends TestCase
         $firstStep = 'follow_up-first';
         $secondStep = 'follow_up-second';
         $events = $factory->eventsFromSpecs($runId, 33, 1, [
-            ['type' => RunEventTypeEnum::AgentStart->value, 'payload' => ['messages' => []]],
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['messages' => []]],
             ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 1, 'step_id' => $firstStep]],
             ['type' => RunEventTypeEnum::LlmStepCompleted->value, 'payload' => ['step_id' => $firstStep, 'assistant_message' => ['role' => 'assistant', 'content' => 'done']]],
             ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 33, 'step_id' => $secondStep]],
@@ -831,7 +829,7 @@ final class SessionRepairServiceTest extends TestCase
         $turnNo = 33;
         $factory = new EventFactory();
         $specs = [
-            ['type' => RunEventTypeEnum::AgentStart->value, 'payload' => ['messages' => []]],
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['messages' => []]],
             ['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => ['kind' => 'follow_up', 'payload' => ['text' => 'run subagent']]],
             ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => $turnNo, 'step_id' => 'follow_up-abc']],
             ['type' => RunEventTypeEnum::LlmStepCompleted->value, 'payload' => [
@@ -886,7 +884,7 @@ final class SessionRepairServiceTest extends TestCase
         $turnNo = 33;
         $factory = new EventFactory();
         $specs = [
-            ['type' => RunEventTypeEnum::AgentStart->value, 'payload' => ['messages' => []]],
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['messages' => []]],
             ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => $turnNo, 'step_id' => self::STEP_ID]],
             ['type' => RunEventTypeEnum::LlmStepCompleted->value, 'payload' => [
                 'step_id' => self::STEP_ID,

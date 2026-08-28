@@ -262,55 +262,6 @@ final class RuntimeEventMapperTest extends TestCase
         $this->assertSame('tool_use', $result->payload['stop_reason']);
     }
 
-    public function testNormalizesLlmStepCompletedUsesExplicitTextKey(): void
-    {
-        // When LlmStepResultHandler emits 'text' via AssistantMessage::asText(),
-        // the mapper should use that key preferentially over walking the
-        // normalized assistant_message content array.
-        $event = $this->runEvent('llm_step_completed', [
-            'step_id' => 'turn-1-llm-7',
-            'stop_reason' => 'stop',
-            'text' => 'Source-extracted via AssistantMessage::asText()',
-            'assistant_message' => [
-                'role' => 'assistant',
-                'content' => [
-                    ['type' => 'text', 'text' => 'Legacy-walked text that should be ignored'],
-                ],
-            ],
-        ]);
-
-        $result = $this->mapper->toRuntimeEvent($event);
-
-        $this->assertNotNull($result);
-        $this->assertSame(
-            'Source-extracted via AssistantMessage::asText()',
-            $result->payload['text'],
-            'Should use explicit text key, not walk the normalized payload',
-        );
-    }
-
-    public function testNormalizesLlmStepCompletedTextKeyFallsBackToLegacy(): void
-    {
-        // When 'text' key is missing (older events), falls back to walking
-        // the assistant_message content array.
-        $event = $this->runEvent('llm_step_completed', [
-            'step_id' => 'turn-1-llm-8',
-            'stop_reason' => 'stop',
-            // No 'text' key — legacy path
-            'assistant_message' => [
-                'role' => 'assistant',
-                'content' => [
-                    ['type' => 'text', 'text' => 'Legacy text here'],
-                ],
-            ],
-        ]);
-
-        $result = $this->mapper->toRuntimeEvent($event);
-
-        $this->assertNotNull($result);
-        $this->assertSame('Legacy text here', $result->payload['text']);
-    }
-
     public function testNormalizesLlmStepCompletedMissingAssistantMessage(): void
     {
         $event = $this->runEvent('llm_step_completed', [
@@ -677,15 +628,6 @@ final class RuntimeEventMapperTest extends TestCase
     public function testSkipsAgentCommandQueuedForCompact(): void
     {
         $event = $this->runEvent('agent_command_queued', ['kind' => 'compact']);
-
-        $result = $this->mapper->toRuntimeEvent($event);
-
-        $this->assertNull($result);
-    }
-
-    public function testSkipsAgentCommandSuperseded(): void
-    {
-        $event = $this->runEvent('agent_command_superseded', ['kind' => 'steer']);
 
         $result = $this->mapper->toRuntimeEvent($event);
 

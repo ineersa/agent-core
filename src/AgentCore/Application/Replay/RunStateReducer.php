@@ -80,7 +80,6 @@ final readonly class RunStateReducer
 
         $nextState = match ($event->type) {
             RunEventTypeEnum::RunStarted->value => $this->applyRunStarted($event, $state, $messages),
-            RunEventTypeEnum::ModelChanged->value => $this->applyModelChanged($payload, $state),
             RunEventTypeEnum::TurnAdvanced->value => $this->applyTurnAdvanced($payload, $state),
             RunEventTypeEnum::AgentCommandApplied->value => $this->applyAgentCommandApplied($payload, $state, $messages),
             RunEventTypeEnum::AgentCommandRejected->value => $this->applyCommandRejected($payload, $state),
@@ -92,13 +91,8 @@ final readonly class RunStateReducer
             RunEventTypeEnum::ToolBatchCommitted->value => $this->applyToolBatchCommitted($state, $pendingToolCalls, $messages, $completedToolResultsByCallId),
             RunEventTypeEnum::WaitingHuman->value => $this->applyWaitingHuman($event->payload, $state),
             RunEventTypeEnum::AgentEnd->value => $this->applyAgentEnd($payload, $state),
-            RunEventTypeEnum::AgentStart->value,
-            RunEventTypeEnum::TurnStart->value,
-            RunEventTypeEnum::MessageUpdate->value,
             RunEventTypeEnum::ToolExecutionUpdate->value,
-            RunEventTypeEnum::TurnEnd->value,
-            RunEventTypeEnum::AgentCommandQueued->value,
-            RunEventTypeEnum::AgentCommandSuperseded->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::AgentCommandQueued->value => $this->applyNoMutation($event, $state),
             RunEventTypeEnum::ContextCompactionRequested->value => $this->applyNoMutation($event, $state),
             RunEventTypeEnum::ContextCompactionStarted->value => $this->applyContextCompactionStarted($payload, $state),
             RunEventTypeEnum::ContextCompacted->value => $this->applyContextCompacted($payload, $state, $messages),
@@ -167,23 +161,6 @@ final readonly class RunStateReducer
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
             model: $model,
         );
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function applyModelChanged(array $payload, RunState $state): RunState
-    {
-        $model = $payload['model'] ?? null;
-        if (!\is_string($model)) {
-            return $state;
-        }
-        $model = trim($model);
-        if ('' === $model) {
-            return $state;
-        }
-
-        return $state->with(['model' => $model]);
     }
 
     /**
