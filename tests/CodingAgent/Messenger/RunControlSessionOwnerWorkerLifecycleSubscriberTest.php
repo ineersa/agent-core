@@ -40,11 +40,13 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends Isolated
 
     public function testRunControlStartCleansOnlyItsOwnerParentChildAndDependencies(): void
     {
-        $this->repository->replace($this->projection('parent-a', 'session-a'));
-        $this->repository->replace($this->projection('child-a', 'session-a'));
-        $this->repository->replace($this->projection('parent-b', 'session-b'));
-        $this->repository->replaceToolCalls('child-a', [new RunOperationalToolCallDTO('batch-a', 'tool-a', 0, 'pending', 1)]);
-        $this->repository->replaceHumanInputs('child-a', [new RunOperationalHumanInputDTO('question-a', 0, 'tool_call', 'tool-a', 'waiting')]);
+        $this->repository->replaceStateToolCallsAndHumanInputs($this->projection('parent-a', 'session-a'), [], []);
+        $this->repository->replaceStateToolCallsAndHumanInputs(
+            $this->projection('child-a', 'session-a'),
+            [new RunOperationalToolCallDTO('batch-a', 'tool-a', 0, 'pending', 1)],
+            [new RunOperationalHumanInputDTO('question-a', 0, 'tool_call', 'tool-a', 'waiting')],
+        );
+        $this->repository->replaceStateToolCallsAndHumanInputs($this->projection('parent-b', 'session-b'), [], []);
 
         $subscriber = $this->subscriber('session-a', new LockFactory(new InMemoryStore()));
         $subscriber->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control')));
@@ -59,7 +61,7 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends Isolated
 
     public function testNonDedicatedRunControlWorkerNeverAcquiresOrCleans(): void
     {
-        $this->repository->replace($this->projection('parent-a', 'session-a'));
+        $this->repository->replaceStateToolCallsAndHumanInputs($this->projection('parent-a', 'session-a'), [], []);
         $subscriber = $this->subscriber('session-a', new LockFactory(new InMemoryStore()));
 
         $subscriber->onWorkerStarted(new WorkerStartedEvent($this->worker('tool')));
@@ -73,7 +75,7 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends Isolated
         $factory = new LockFactory(new InMemoryStore());
         $first = $this->subscriber('session-a', $factory);
         $first->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control')));
-        $this->repository->replace($this->projection('recreated-a', 'session-a'));
+        $this->repository->replaceStateToolCallsAndHumanInputs($this->projection('recreated-a', 'session-a'), [], []);
 
         $metrics = new RunMetrics();
         $second = new RunControlSessionOwnerWorkerLifecycleSubscriber($this->repository, $factory, new TestLogger(), 'session-a', $metrics);
@@ -98,7 +100,7 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends Isolated
         $first = $this->subscriber('session-a', $factory);
         $first->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control')));
         $first->onWorkerStopped(new WorkerStoppedEvent($this->worker('run_control')));
-        $this->repository->replace($this->projection('recreated-a', 'session-a'));
+        $this->repository->replaceStateToolCallsAndHumanInputs($this->projection('recreated-a', 'session-a'), [], []);
 
         $replacement = $this->subscriber('session-a', $factory);
         $replacement->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control')));
@@ -133,7 +135,7 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends Isolated
 
     public function testRunControlWithoutStableSessionFailsBeforeCleanup(): void
     {
-        $this->repository->replace($this->projection('parent-a', 'session-a'));
+        $this->repository->replaceStateToolCallsAndHumanInputs($this->projection('parent-a', 'session-a'), [], []);
         $subscriber = $this->subscriber('unknown', new LockFactory(new InMemoryStore()));
 
         $this->expectException(\RuntimeException::class);

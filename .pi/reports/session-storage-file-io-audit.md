@@ -59,20 +59,9 @@ Across those child tool results, historical nested attribution was `tool_executi
 
 The snapshot also measured child `run_started.payload.messages=39,947,463` bytes (92.6% of child start bytes). No savings are claimed for it. Earlier parent-only persisted nonterminal progress was a separate historical bug; final nonterminal progress is transient.
 
-## Deterministic benign fixture result
-
-`tests/AgentCore/Tools/SessionStorageAuditTest.php` invokes the real CLI against an isolated synthetic `.hatfield` tree. Its values and IDs are sentinels specifically to prove the output boundary does not leak them.
-
-| Scope | Source records | Final projected records | Removed records | Required retained proof |
-|---|---:|---:|---:|---|
-| parent | 7 | 2 | 5 | one typed `tool_execution_end` and slim `llm_step_completed.assistant_message` remain |
-| child | 6 | 1 | 5 | `run_started` remains and is attributed as child |
-
-The test also proves: parent/child line attribution; old receipt/message/stale rows vanish from projected event output; projected LLM field attribution contains `assistant_message` but neither removed field; and output contains none of the fixture’s identifiers, prompt/tool/assistant content, or filename sentinel. It completes in well under ten seconds.
-
 ## Limitations
 
-This tool reports encoded JSONL bytes, not filesystem block allocation, decompression, physical reads, decode peak memory, or runtime frequency. The original dataset was live and can change; only the committed aggregate baseline above is reproducible here. Re-run the tool only against the exact original root when available, after sentinel coverage is green, and record its aggregate output without copying payloads.
+The user-level tool reports encoded JSONL bytes, not filesystem block allocation, decompression, physical reads, decode peak memory, or runtime frequency. The original dataset was live and can change; only the committed aggregate baseline above is reproducible here. Re-run it only against the exact original root when available and record its aggregate output without copying payloads.
 
 ## Final residue audit
 

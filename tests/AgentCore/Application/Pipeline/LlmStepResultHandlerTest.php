@@ -57,14 +57,14 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 4,
             activeStepId: 'turn-1-step',
-            currentOperation: new CurrentOperationDTO(1, 'turn-1-step', 1, 'llm-idempotency-1'),
+            currentOperation: new CurrentOperationDTO(1, 'turn-1-step', 2, 'llm-idempotency-1'),
             model: 'test-model');
 
         $message = new LlmStepResult(
             runId: 'run-llm-handler-1',
             turnNo: 1,
             stepId: 'turn-1-step',
-            attempt: 1,
+            attempt: 2,
             idempotencyKey: 'llm-idempotency-1',
             assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([
                 [
@@ -101,7 +101,8 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertCount(1, $result->nextState->currentToolCalls);
         $this->assertSame('tool-call-1', $result->nextState->currentToolCalls[0]->toolCallId);
         $this->assertSame('running', $result->nextState->currentToolCalls[0]->status->value);
-        $this->assertSame(1, $result->events[1]->payload['attempt'] ?? null);
+        $this->assertSame(2, $result->nextState->currentToolCalls[0]->attempt);
+        $this->assertSame(2, $result->events[1]->payload['attempt'] ?? null);
 
         $this->assertCount(2, $result->events);
         $this->assertSame('llm_step_completed', $result->events[0]->type);
@@ -116,6 +117,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertCount(1, $executionBus->messages);
         $this->assertInstanceOf(ExecuteToolCall::class, $executionBus->messages[0]);
         $this->assertSame('tool-call-1', $executionBus->messages[0]->toolCallId);
+        $this->assertSame(2, $executionBus->messages[0]->attempt());
     }
 
     public function testAbortedDoesNotAppendAssistantMessageToState(): void

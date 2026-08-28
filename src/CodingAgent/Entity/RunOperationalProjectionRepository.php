@@ -24,11 +24,6 @@ final readonly class RunOperationalProjectionRepository implements RunOperationa
     ) {
     }
 
-    public function replace(RunOperationalProjectionDTO $projection): void
-    {
-        $this->replaceProjection($projection);
-    }
-
     /**
      * @param list<RunOperationalToolCallDTO>   $toolCalls
      * @param list<RunOperationalHumanInputDTO> $humanInputs
@@ -90,22 +85,6 @@ SQL, ['run_id' => $runId]);
         } finally {
             $this->metrics?->recordOperationalStatusRead($miss, $error, (hrtime(true) - $startedAt) / 1_000_000);
         }
-    }
-
-    /** @param list<RunOperationalToolCallDTO> $toolCalls */
-    public function replaceToolCalls(string $runId, array $toolCalls): void
-    {
-        $this->connection->transactional(function () use ($runId, $toolCalls): void {
-            $this->replaceToolCallRows($runId, $toolCalls);
-        });
-    }
-
-    /** @param list<RunOperationalHumanInputDTO> $humanInputs */
-    public function replaceHumanInputs(string $runId, array $humanInputs): void
-    {
-        $this->connection->transactional(function () use ($runId, $humanInputs): void {
-            $this->replaceHumanInputRows($runId, $humanInputs);
-        });
     }
 
     public function deleteForOwnerSession(string $ownerSessionId): int

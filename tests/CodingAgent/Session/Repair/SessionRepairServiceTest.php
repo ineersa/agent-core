@@ -267,30 +267,6 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame($before, $this->readEvents($runId));
     }
 
-    public function testHistoricalShellWithoutStandaloneEvidenceIsRefusedWithoutDispatch(): void
-    {
-        $runId = 'repair-historical-shell';
-        $key = 'historical-shell-key';
-        $factory = new EventFactory();
-        $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 0, 1, [
-            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
-            ['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => [
-                'kind' => 'shell_command',
-                'text' => '!printf historical-shell',
-                'idempotency_key' => $key,
-            ]],
-        ]));
-        $store = new TestActiveRunContext();
-        $store->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 2));
-        $bus = new TestMessageBus();
-        $service = $this->createService($store, dispatcherBus: $bus);
-
-        $result = $service->repair($runId, true);
-
-        $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $result->refusalReason);
-        $this->assertSame([], $bus->messages);
-    }
-
     /**
      * @return iterable<string, array{childTurn: bool}>
      */

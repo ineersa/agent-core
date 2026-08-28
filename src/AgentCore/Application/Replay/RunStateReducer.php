@@ -210,35 +210,21 @@ final readonly class RunStateReducer
             }
 
             $toolCallId = 'sh_'.hash('sha256', $key);
-
-            if (true !== ($payload['standalone'] ?? null)) {
-                return $state->with([
-                    'pendingShellToolCalls' => [...$state->pendingShellToolCalls, $toolCallId => true],
-                    'currentToolCalls' => [...$state->currentToolCalls, new CurrentToolCallDTO(
-                        ToolBatchIdentity::fromTurnAndStep($state->turnNo, $state->activeStepId ?? 'shell'),
-                        $toolCallId,
-                        0,
-                        RunOperationalToolCallStatusEnum::Pending,
-                        1,
-                    )],
-                ]);
-            }
-
             $rawOperation = $payload['current_operation'] ?? null;
             if (!\is_array($rawOperation)) {
-                throw new \UnexpectedValueException('Standalone shell command event is missing a normalized current_operation.');
+                throw new \UnexpectedValueException('Shell command event is missing a normalized current_operation.');
             }
 
             try {
                 $operation = $this->denormalizer->denormalize($rawOperation, CurrentOperationDTO::class);
             } catch (\Throwable $exception) {
-                throw new \UnexpectedValueException('Standalone shell command event contains an invalid current_operation.', 0, $exception);
+                throw new \UnexpectedValueException('Shell command event contains an invalid current_operation.', 0, $exception);
             }
             if (!$operation instanceof CurrentOperationDTO) {
-                throw new \UnexpectedValueException('Standalone shell command current_operation must denormalize to CurrentOperationDTO.');
+                throw new \UnexpectedValueException('Shell command current_operation must denormalize to CurrentOperationDTO.');
             }
 
-            return $state->with([
+            $changes = [
                 'pendingShellToolCalls' => [...$state->pendingShellToolCalls, $toolCallId => true],
                 'currentToolCalls' => [...$state->currentToolCalls, new CurrentToolCallDTO(
                     ToolBatchIdentity::fromTurnAndStep($operation->turnNo, $operation->stepId),
@@ -247,8 +233,12 @@ final readonly class RunStateReducer
                     RunOperationalToolCallStatusEnum::Pending,
                     $operation->attempt,
                 )],
-                'currentOperation' => $operation,
-            ]);
+            ];
+            if (true === ($payload['standalone'] ?? null)) {
+                $changes['currentOperation'] = $operation;
+            }
+
+            return $state->with($changes);
         }
 
         // steer / follow_up / append_message: append message to prompt context
@@ -443,9 +433,10 @@ final readonly class RunStateReducer
 
         if (null !== $toolCallId) {
             $pendingToolCalls[$toolCallId] = false;
+            $attempt = \is_int($payload['attempt'] ?? null) ? $payload['attempt'] : null;
 
             return $state->with([
-                'currentToolCalls' => $this->withToolStatus($state->currentToolCalls, $toolCallId, RunOperationalToolCallStatusEnum::Running),
+                'currentToolCalls' => $this->withToolStatus($state->currentToolCalls, $toolCallId, RunOperationalToolCallStatusEnum::Running, $attempt),
             ]);
         }
 
@@ -748,11 +739,17 @@ final readonly class RunStateReducer
      *
      * @return list<CurrentToolCallDTO>
      */
-    private function withToolStatus(array $toolCalls, string $toolCallId, RunOperationalToolCallStatusEnum $status): array
+    private function withToolStatus(array $toolCalls, string $toolCallId, RunOperationalToolCallStatusEnum $status, ?int $attempt = null): array
     {
         return array_map(
             static fn (CurrentToolCallDTO $toolCall): CurrentToolCallDTO => $toolCall->toolCallId === $toolCallId
-                ? $toolCall->withStatus($status)
+                ? new CurrentToolCallDTO(
+                    $toolCall->batchId,
+                    $toolCall->toolCallId,
+                    $toolCall->orderIndex,
+                    $status,
+                    $attempt ?? $toolCall->attempt,
+                )
                 : $toolCall,
             $toolCalls,
         );

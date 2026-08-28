@@ -15,7 +15,10 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
+use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
@@ -102,7 +105,11 @@ final class ToolCallResultHandlerTest extends TestCase
                 'tool-b' => false,
             ])
             ->withActiveStepId('turn-1-step')
-            ->build();
+            ->build()
+            ->with(['currentToolCalls' => [
+                new CurrentToolCallDTO(ToolBatchIdentity::fromTurnAndStep(1, 'turn-1-step'), 'tool-a', 0, RunOperationalToolCallStatusEnum::Running, 1),
+                new CurrentToolCallDTO(ToolBatchIdentity::fromTurnAndStep(1, 'turn-1-step'), 'tool-b', 1, RunOperationalToolCallStatusEnum::Running, 1),
+            ]]);
 
         $message = ToolCallResultBuilder::success('run-tool-handler-1')
             ->withTurnNo(1)
@@ -126,6 +133,7 @@ final class ToolCallResultHandlerTest extends TestCase
             'tool-a' => true,
             'tool-b' => false,
         ], $result->nextState->pendingToolCalls);
+        $this->assertSame([RunOperationalToolCallStatusEnum::Completed, RunOperationalToolCallStatusEnum::Running], array_map(static fn (CurrentToolCallDTO $toolCall): RunOperationalToolCallStatusEnum => $toolCall->status, $result->nextState->currentToolCalls));
 
         $this->assertCount(1, $result->events);
         $this->assertSame('tool_execution_end', $result->events[0]->type);

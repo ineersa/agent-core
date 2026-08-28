@@ -286,7 +286,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 $toolCall['id'],
                 $toolCall['order_index'],
                 RunOperationalToolCallStatusEnum::Running,
-                1,
+                $message->attempt(),
             );
         }
 
@@ -302,7 +302,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 runId: $runId,
                 turnNo: $state->turnNo,
                 stepId: $message->stepId(),
-                attempt: 1,
+                attempt: $message->attempt(),
                 idempotencyKey: hash('sha256', \sprintf('%s|%s|%s', $runId, $message->stepId(), $toolCall['id'])),
                 toolCallId: $toolCall['id'],
                 toolName: $toolCall['name'],

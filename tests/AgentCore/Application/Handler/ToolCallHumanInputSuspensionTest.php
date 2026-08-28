@@ -19,10 +19,13 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
+use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
@@ -93,12 +96,21 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             ['question_id' => 'q-h', 'prompt' => 'Allow id?'],
             ['run_id' => 'run-h', 'turn_no' => 3, 'step_id' => 'step-h', 'tool_call_id' => 'call-h'],
         );
+        $initialState = RunStateBuilder::running('run-h')->withTurnNo(3)->withLastSeq(5)->withActiveStepId('step-h')->withPendingToolCalls(['call-h' => false])->build()->with([
+            'currentToolCalls' => [new CurrentToolCallDTO(
+                ToolBatchIdentity::fromTurnAndStep(3, 'step-h'),
+                'call-h',
+                0,
+                RunOperationalToolCallStatusEnum::Running,
+                1,
+            )],
+        ]);
         $result = (new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), AttributeSerializerValidatorTestFactory::denormalizer()))->handle(
             ToolCallResultFactory::fromExecuteToolCallAndHumanInputSuspension(
                 $this->call('run-h', 'step-h', 'call-h', 0, 3),
                 new ToolExecutionHumanInputSuspension($request),
             ),
-            RunStateBuilder::running('run-h')->withTurnNo(3)->withLastSeq(5)->withActiveStepId('step-h')->withPendingToolCalls(['call-h' => false])->build(),
+            $initialState,
         );
 
         $this->assertSame(RunStatus::WaitingHuman, $result->nextState?->status);
@@ -108,17 +120,32 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertArrayNotHasKey('continuation_kind', $result->nextState->pendingHumanInputRequests[0]->payload);
         $this->assertArrayNotHasKey('continuation_ref', $result->nextState->pendingHumanInputRequests[0]->payload);
 
-        $payload = null;
+        $waitingEvent = null;
         foreach ($result->events as $event) {
             if (RunEventTypeEnum::WaitingHuman->value === $event->type) {
-                $payload = $event->payload;
+                $waitingEvent = $event;
             }
         }
-        $this->assertSame('tool_call', $payload['continuation_kind'] ?? null);
-        $this->assertSame('call-h', $payload['continuation_ref']['tool_call_id'] ?? null);
-        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued('run-h'), [new RunEvent('run-h', 1, 3, RunEventTypeEnum::WaitingHuman->value, $payload ?? [])]);
+        $this->assertNotNull($waitingEvent);
+        $this->assertSame('tool_call', $waitingEvent->payload['continuation_kind'] ?? null);
+        $this->assertSame('call-h', $waitingEvent->payload['continuation_ref']['tool_call_id'] ?? null);
+        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued('run-h'), [
+            new RunEvent('run-h', 1, 0, RunEventTypeEnum::RunStarted->value, ['payload' => ['messages' => []]]),
+            new RunEvent('run-h', 2, 3, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 3, 'step_id' => 'step-h']),
+            new RunEvent('run-h', 3, 3, RunEventTypeEnum::LlmStepCompleted->value, [
+                'step_id' => 'step-h',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [],
+                    'tool_calls' => [['id' => 'call-h', 'name' => 'ask', 'arguments' => [], 'order_index' => 0]],
+                ],
+            ]),
+            new RunEvent('run-h', 4, 3, RunEventTypeEnum::ToolExecutionStart->value, ['tool_call_id' => 'call-h', 'tool_name' => 'ask', 'order_index' => 0, 'attempt' => 1]),
+            $waitingEvent,
+        ]);
         $this->assertSame(HumanInputContinuationKindEnum::ToolCall, $replayed->pendingHumanInputRequests[0]->continuationKind);
         $this->assertSame('q-h', $replayed->pendingHumanInputRequests[0]->questionId);
+        $this->assertSame(RunOperationalToolCallStatusEnum::WaitingHuman, $replayed->currentToolCalls[0]->status);
     }
 
     public function testOrdinarySiblingResultWhileSuspendedPreservesWaitingHumanWithoutBatchCommit(): void
@@ -135,7 +162,11 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             ->withLastSeq(3)
             ->withActiveStepId('step-par')
             ->withPendingToolCalls(['call-1' => false, 'call-2' => false])
-            ->build();
+            ->build()
+            ->with(['currentToolCalls' => [
+                new CurrentToolCallDTO(ToolBatchIdentity::fromTurnAndStep(1, 'step-par'), 'call-1', 0, RunOperationalToolCallStatusEnum::Running, 1),
+                new CurrentToolCallDTO(ToolBatchIdentity::fromTurnAndStep(1, 'step-par'), 'call-2', 1, RunOperationalToolCallStatusEnum::Running, 1),
+            ]]);
 
         $suspend = $handler->handle(
             ToolCallResultFactory::fromExecuteToolCallAndHumanInputSuspension(
@@ -149,6 +180,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         );
         $this->assertSame(RunStatus::WaitingHuman, $suspend->nextState?->status);
         $this->assertSame(['call-1' => false, 'call-2' => false], $suspend->nextState?->pendingToolCalls);
+        $this->assertSame([RunOperationalToolCallStatusEnum::WaitingHuman, RunOperationalToolCallStatusEnum::Running], array_map(static fn (CurrentToolCallDTO $toolCall): RunOperationalToolCallStatusEnum => $toolCall->status, $suspend->nextState?->currentToolCalls ?? []));
 
         $sibling = $handler->handle(
             new ToolCallResult(
@@ -166,6 +198,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
         $this->assertSame(RunStatus::WaitingHuman, $sibling->nextState?->status);
         $this->assertSame(['call-1' => false, 'call-2' => true], $sibling->nextState?->pendingToolCalls);
+        $this->assertSame([RunOperationalToolCallStatusEnum::WaitingHuman, RunOperationalToolCallStatusEnum::Completed], array_map(static fn (CurrentToolCallDTO $toolCall): RunOperationalToolCallStatusEnum => $toolCall->status, $sibling->nextState?->currentToolCalls ?? []));
         $this->assertCount(1, $sibling->nextState?->pendingHumanInputRequests ?? []);
         $this->assertSame('q-shared', $sibling->nextState?->pendingHumanInputRequests[0]->questionId);
         $this->assertSame([], $sibling->nextState?->messages);
@@ -219,7 +252,14 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                     ['run_id' => 'run-h2', 'turn_no' => 2, 'step_id' => 'step-h2', 'tool_call_id' => 'call-h2'],
                 ),
             ])
-            ->build();
+            ->build()
+            ->with(['currentToolCalls' => [new CurrentToolCallDTO(
+                ToolBatchIdentity::fromTurnAndStep(2, 'step-h2'),
+                'call-h2',
+                0,
+                RunOperationalToolCallStatusEnum::WaitingHuman,
+                1,
+            )]]);
         $result = $handler2->handle(new \Ineersa\AgentCore\Domain\Message\ApplyCommand(
             runId: 'run-h2',
             turnNo: 2,
@@ -232,6 +272,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
         $this->assertSame(RunStatus::Running, $result->nextState?->status);
         $this->assertSame([], $result->nextState?->pendingHumanInputRequests);
+        $this->assertSame(RunOperationalToolCallStatusEnum::Running, $result->nextState?->currentToolCalls[0]->status);
         $this->assertSame($state->messages, $result->nextState?->messages);
         $this->assertCount(1, $result->postCommitEffects);
         $this->assertInstanceOf(ExecuteToolCall::class, $result->postCommitEffects[0]);

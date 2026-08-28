@@ -16,9 +16,4 @@ final readonly class RunOperationalStatusDTO
         public ?CurrentOperationDTO $currentOperation,
     ) {
     }
-
-    public function cancellationRequested(): bool
-    {
-        return RunStatus::Cancelling === $this->status;
-    }
 }
