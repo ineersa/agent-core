@@ -551,8 +551,8 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertTrue($commandBus->messages[0]->payload['auto_retry'] ?? false);
         $this->assertSame(1, $commandBus->messages[0]->payload['retry_attempt'] ?? null);
         $this->assertSame([], $commandBus->messages[0]->options);
-        $this->assertCount(1, $commandBus->envelopes);
-        $delayStamp = $commandBus->envelopes[0]->last(DelayStamp::class);
+        $this->assertNotNull($commandBus->lastEnvelope);
+        $delayStamp = $commandBus->lastEnvelope->last(DelayStamp::class);
         $this->assertInstanceOf(DelayStamp::class, $delayStamp);
         $this->assertSame(60000, $delayStamp->getDelay(), 'Provider Retry-After must override the shorter configured delay without exceeding the cap.');
 

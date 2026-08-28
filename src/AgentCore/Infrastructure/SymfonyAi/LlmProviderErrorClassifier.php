@@ -59,66 +59,43 @@ final class LlmProviderErrorClassifier
         'websocketclosed',
     ];
 
-    /** @var list<string> */
-    private const array AUTH_EXCEPTION_TYPES = [
-        'AuthenticationException',
-        'AuthorizationException',
+    private const array NON_RETRYABLE_EXCEPTION_CATEGORIES = [
+        'AuthenticationException' => self::CATEGORY_AUTH,
+        'AuthorizationException' => self::CATEGORY_AUTH,
+        'BadRequestException' => self::CATEGORY_BAD_REQUEST,
+        'ContentFilterException' => self::CATEGORY_BAD_REQUEST,
+        'ExceedContextSizeException' => self::CATEGORY_BAD_REQUEST,
+        'InvalidArgumentException' => self::CATEGORY_BAD_REQUEST,
+        'InvalidRequestException' => self::CATEGORY_BAD_REQUEST,
+        'MaxOutputTokensException' => self::CATEGORY_BAD_REQUEST,
+        'MissingModelSupportException' => self::CATEGORY_BAD_REQUEST,
+        'ModelNotFoundException' => self::CATEGORY_BAD_REQUEST,
+        'ValidationException' => self::CATEGORY_BAD_REQUEST,
     ];
 
-    /** @var list<string> */
-    private const array BAD_REQUEST_EXCEPTION_TYPES = [
-        'BadRequestException',
-        'ContentFilterException',
-        'ExceedContextSizeException',
-        'InvalidArgumentException',
-        'InvalidRequestException',
-        'MaxOutputTokensException',
-        'MissingModelSupportException',
-        'ModelNotFoundException',
-        'ValidationException',
-    ];
-
-    /** @var list<string> */
-    private const array LOCAL_FAILURE_EXCEPTION_TYPES = [
-        'AssertionError',
-        'Error',
-        'ErrorException',
-        'JsonException',
-        'LogicException',
-        'OutOfBoundsException',
-        'ParseError',
-        'TypeError',
-    ];
-
-    /** @var list<string> */
     private const array CANCELLATION_EXCEPTION_TYPES = [
         'CancelledException',
         'CancellationException',
         'CanceledException',
     ];
 
-    /** @var list<string> */
-    private const array AUTH_STRUCTURED_SIGNALS = [
-        'authentication_error',
-        'invalid_api_key',
-        'permission_denied',
-        'unauthorized',
-    ];
-
-    /** @var list<string> */
-    private const array BAD_REQUEST_STRUCTURED_SIGNALS = [
-        'bad_request',
-        'content_filter',
-        'content_policy_violation',
-        'invalid_argument',
-        'invalid_parameter',
-        'invalid_request_error',
-        'model_not_found',
-        'policy_violation',
-        'safety_violation',
-        'unsupported_feature',
-        'unsupported_model',
-        'validation_error',
+    private const array NON_RETRYABLE_STRUCTURED_SIGNAL_CATEGORIES = [
+        'authentication_error' => self::CATEGORY_AUTH,
+        'invalid_api_key' => self::CATEGORY_AUTH,
+        'permission_denied' => self::CATEGORY_AUTH,
+        'unauthorized' => self::CATEGORY_AUTH,
+        'bad_request' => self::CATEGORY_BAD_REQUEST,
+        'content_filter' => self::CATEGORY_BAD_REQUEST,
+        'content_policy_violation' => self::CATEGORY_BAD_REQUEST,
+        'invalid_argument' => self::CATEGORY_BAD_REQUEST,
+        'invalid_parameter' => self::CATEGORY_BAD_REQUEST,
+        'invalid_request_error' => self::CATEGORY_BAD_REQUEST,
+        'model_not_found' => self::CATEGORY_BAD_REQUEST,
+        'policy_violation' => self::CATEGORY_BAD_REQUEST,
+        'safety_violation' => self::CATEGORY_BAD_REQUEST,
+        'unsupported_feature' => self::CATEGORY_BAD_REQUEST,
+        'unsupported_model' => self::CATEGORY_BAD_REQUEST,
+        'validation_error' => self::CATEGORY_BAD_REQUEST,
     ];
 
     /**
@@ -194,10 +171,8 @@ final class LlmProviderErrorClassifier
         // receive the bounded default-retry fallback.
         [$category, $retryable, $userMessage] = $this->classifyByExceptionType($errorType, $allErrorText, $statusCode)
             ?? $this->classifyByStatusCode($statusCode, $allErrorText, $responseErrorCode, $responseErrorType, $retryAfterMs)
-            ?? $this->classifyByTerminalMessagePattern($allErrorText)
-            ?? $this->classifyByStructuredPermanentSignal($responseErrorCode, $responseErrorType, $errorMessage)
-            ?? $this->classifyByTransportPattern($allErrorText)
-            ?? $this->classifyByStructuredServerSignal($responseErrorCode, $responseErrorType, $errorMessage)
+            ?? $this->classifyByMessagePattern($allErrorText)
+            ?? $this->classifyByStructuredSignal($responseErrorCode, $responseErrorType, $errorMessage)
             ?? [
                 self::CATEGORY_PROVIDER,
                 true,
@@ -258,16 +233,23 @@ final class LlmProviderErrorClassifier
     {
         $shortType = self::shortExceptionType($errorType);
 
-        if (\in_array($shortType, self::AUTH_EXCEPTION_TYPES, true) || 401 === $statusCode) {
+        $nonRetryableCategory = self::NON_RETRYABLE_EXCEPTION_CATEGORIES[$shortType] ?? null;
+        if (self::CATEGORY_AUTH === $nonRetryableCategory || 401 === $statusCode) {
             $detail = self::truncate($errorMessage, 200);
 
             return [self::CATEGORY_AUTH, false, \sprintf('LLM provider authentication failed. Check your API key or OAuth credentials.%s', '' !== $detail ? ' '.$detail : '')];
         }
 
-        if (\in_array($shortType, self::BAD_REQUEST_EXCEPTION_TYPES, true) || 400 === $statusCode) {
-            $detail = self::truncate($errorMessage, 200);
+        if (self::CATEGORY_BAD_REQUEST === $nonRetryableCategory || 400 === $statusCode) {
+            return [self::CATEGORY_BAD_REQUEST, false, \sprintf('LLM provider rejected the request: %s', self::truncate($errorMessage, 200))];
+        }
 
-            return [self::CATEGORY_BAD_REQUEST, false, \sprintf('LLM provider rejected the request: %s', $detail)];
+        // Let structured permanent HTTP failures outrank transient wrapper types.
+        if (\in_array($statusCode, [402, 403, 404, 405, 413, 415, 422, 501], true)
+            || (429 === $statusCode && self::matchesAny($errorMessage, self::TERMINAL_BILLING_PATTERNS))
+            || (\in_array($statusCode, [500, 502, 503, 504], true) && self::matchesAny($errorMessage, self::CONTEXT_OVERFLOW_PATTERNS))
+        ) {
+            return null;
         }
 
         if ('TimeoutException' === $shortType
@@ -280,16 +262,17 @@ final class LlmProviderErrorClassifier
             return [self::CATEGORY_UNKNOWN, false, 'LLM request was cancelled.'];
         }
 
-        if (\in_array($shortType, self::LOCAL_FAILURE_EXCEPTION_TYPES, true)) {
+        if (is_a($errorType, \Error::class, true)
+            || is_a($errorType, \LogicException::class, true)
+            || is_a($errorType, \ErrorException::class, true)
+            || is_a($errorType, \JsonException::class, true)
+        ) {
             return [self::CATEGORY_UNKNOWN, false, 'LLM request failed before reaching a retryable provider condition.'];
         }
 
-        // Rate limit exceptions from Symfony AI — retryable with Retry-After hint
-        if ('RateLimitExceededException' === $shortType) {
-            return [self::CATEGORY_RATE_LIMIT, true, 'LLM provider rate limit reached (retryable). Will retry automatically.'];
-        }
-
-        return null;
+        return 'RateLimitExceededException' === $shortType
+            ? [self::CATEGORY_RATE_LIMIT, true, 'LLM provider rate limit reached (retryable). Will retry automatically.']
+            : null;
     }
 
     /**
@@ -350,7 +333,7 @@ final class LlmProviderErrorClassifier
     /**
      * @return array{string, bool, string}|null
      */
-    private function classifyByTerminalMessagePattern(string $errorMessage): ?array
+    private function classifyByMessagePattern(string $errorMessage): ?array
     {
         if ('' === $errorMessage) {
             return null;
@@ -364,60 +347,31 @@ final class LlmProviderErrorClassifier
             return [self::CATEGORY_BAD_REQUEST, false, \sprintf('LLM provider context limit exceeded: %s', self::truncate($errorMessage, 200))];
         }
 
-        return null;
+        return self::matchesAny($errorMessage, self::TRANSPORT_ERROR_PATTERNS)
+            ? [self::CATEGORY_NETWORK, true, 'LLM provider network error (retryable). Check your connection and try again.']
+            : null;
     }
 
     /**
      * @return array{string, bool, string}|null
      */
-    private function classifyByTransportPattern(string $errorMessage): ?array
+    private function classifyByStructuredSignal(mixed $responseErrorCode, mixed $responseErrorType, string $errorMessage): ?array
     {
-        if ('' !== $errorMessage && self::matchesAny($errorMessage, self::TRANSPORT_ERROR_PATTERNS)) {
-            return [self::CATEGORY_NETWORK, true, 'LLM provider network error (retryable). Check your connection and try again.'];
-        }
-
-        return null;
-    }
-
-    /**
-     * @return array{string, bool, string}|null
-     */
-    private function classifyByStructuredPermanentSignal(mixed $responseErrorCode, mixed $responseErrorType, string $errorMessage): ?array
-    {
+        $serverFailure = false;
         foreach (self::structuredSignals($responseErrorCode, $responseErrorType, $errorMessage) as $signal) {
-            if (\in_array($signal, self::AUTH_STRUCTURED_SIGNALS, true)) {
+            $category = self::NON_RETRYABLE_STRUCTURED_SIGNAL_CATEGORIES[$signal] ?? null;
+            if (self::CATEGORY_AUTH === $category) {
                 return [self::CATEGORY_AUTH, false, 'LLM provider rejected the request credentials or permissions.'];
             }
-
-            if (\in_array($signal, self::BAD_REQUEST_STRUCTURED_SIGNALS, true)) {
+            if (self::CATEGORY_BAD_REQUEST === $category) {
                 return [self::CATEGORY_BAD_REQUEST, false, 'LLM provider rejected or does not support the request.'];
             }
+            $serverFailure = $serverFailure || \in_array($signal, self::TRANSIENT_SERVER_STRUCTURED_SIGNALS, true);
         }
 
-        return null;
-    }
-
-    /**
-     * Classify exact structured overload / service-unavailable signals.
-     *
-     * These signals refine category and safe display text. Unknown provider-operation
-     * failures are independently retryable through the bounded fallback.
-     *
-     * @return array{string, bool, string}|null
-     */
-    private function classifyByStructuredServerSignal(mixed $responseErrorCode, mixed $responseErrorType, string $errorMessage): ?array
-    {
-        foreach (self::structuredSignals($responseErrorCode, $responseErrorType, $errorMessage) as $signal) {
-            if (\in_array($signal, self::TRANSIENT_SERVER_STRUCTURED_SIGNALS, true)) {
-                return [
-                    self::CATEGORY_SERVER,
-                    true,
-                    'LLM provider server temporarily unavailable (retryable). Will retry automatically.',
-                ];
-            }
-        }
-
-        return null;
+        return $serverFailure
+            ? [self::CATEGORY_SERVER, true, 'LLM provider server temporarily unavailable (retryable). Will retry automatically.']
+            : null;
     }
 
     /**
@@ -442,7 +396,7 @@ final class LlmProviderErrorClassifier
             }
         }
 
-        return array_values(array_unique($signals));
+        return $signals;
     }
 
     /**

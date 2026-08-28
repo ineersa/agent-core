@@ -38,12 +38,12 @@ final class LlmProviderErrorClassifierTest extends TestCase
         // The detail message is included but truncated — it's not a raw body leak.
     }
 
-    public function testClassify401StatusCode(): void
+    public function testClassifyPermanentStatusOverridesTransientException(): void
     {
         $result = $this->classifier->classify([
-            'type' => 'RuntimeException',
-            'message' => 'HTTP 401 returned',
-            'http_status_code' => 401,
+            'type' => 'RateLimitExceededException',
+            'message' => 'HTTP 403 returned',
+            'http_status_code' => 403,
         ]);
 
         $this->assertFalse($result['retryable']);

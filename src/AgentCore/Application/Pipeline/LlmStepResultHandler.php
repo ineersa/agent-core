@@ -189,9 +189,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 && $nextRetryAttempt <= $maxAttempts;
 
             $retriesExhausted = $retryable && !$isContextOverflow && !$canAutoRetry && $currentAttempts >= $maxAttempts;
-            $retryDelayMs = $canAutoRetry
-                ? $this->retryDelayMs($nextRetryAttempt, $error['retry_after_ms'] ?? null)
-                : 0;
 
             if ($retriesExhausted) {
                 $retryable = false;
@@ -263,7 +260,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                     $message->stepId(),
                     $nextRetryAttempt,
                     $maxAttempts,
-                    $retryDelayMs,
                     $error,
                 );
             } elseif ($retriesExhausted) {
@@ -587,13 +583,15 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         string $stepId,
         int $retryAttempt,
         int $maxRetries,
-        int $delayMs,
         array $error,
     ): callable {
-        return function () use ($runId, $turnNo, $stepId, $retryAttempt, $maxRetries, $delayMs, $error): void {
-            if (null === $this->commandBus) {
-                return;
-            }
+        return function () use ($runId, $turnNo, $stepId, $retryAttempt, $maxRetries, $error): void {
+            $configuredDelayMs = $this->agentRetryBaseDelayMs > 0
+                ? $this->agentRetryBaseDelayMs * (2 ** max(0, $retryAttempt - 1))
+                : 0;
+            $retryAfterMs = $error['retry_after_ms'] ?? null;
+            $providerDelayMs = \is_int($retryAfterMs) ? max(0, $retryAfterMs) : 0;
+            $delayMs = min(max($configuredDelayMs, $providerDelayMs), max(0, $this->agentRetryMaxDelayMs));
 
             $continueStepId = \sprintf('auto-retry-%s-%d', $stepId, $retryAttempt);
             $idempotencyKey = hash('sha256', \sprintf('%s|auto-retry|%s|%d', $runId, $stepId, $retryAttempt));
@@ -631,18 +629,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         };
     }
 
-    private function retryDelayMs(int $retryAttempt, mixed $retryAfterMs): int
-    {
-        $configuredDelayMs = 0;
-        if ($this->agentRetryBaseDelayMs > 0) {
-            $configuredDelayMs = $this->agentRetryBaseDelayMs * (2 ** max(0, $retryAttempt - 1));
-        }
-
-        $providerDelayMs = \is_int($retryAfterMs) ? max(0, $retryAfterMs) : 0;
-
-        return min(max($configuredDelayMs, $providerDelayMs), max(0, $this->agentRetryMaxDelayMs));
-    }
-
     /**
      * @param array<string, mixed> $error
      */
@@ -673,30 +659,18 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         array $error,
         array $extra = [],
     ): array {
+        $errorCode = $error['response_error_code'] ?? $error['response_error_type'] ?? null;
+
         return [
             'run_id' => $runId,
             'session_id' => $runId,
             'component' => 'llm',
             'event_type' => $eventType,
             'error_category' => \is_string($error['error_category'] ?? null) ? $error['error_category'] : LlmProviderErrorClassifier::CATEGORY_UNKNOWN,
-            'error_code' => $this->providerErrorCode($error),
+            'error_code' => \is_string($errorCode) && '' !== $errorCode ? $errorCode : 'unknown',
             'retry_attempt' => $retryAttempt,
             'max_retries' => $maxRetries,
             ...$extra,
         ];
-    }
-
-    /**
-     * @param array<string, mixed> $error
-     */
-    private function providerErrorCode(array $error): string
-    {
-        foreach (['response_error_code', 'response_error_type'] as $key) {
-            if (\is_string($error[$key] ?? null) && '' !== $error[$key]) {
-                return $error[$key];
-            }
-        }
-
-        return 'unknown';
     }
 }
