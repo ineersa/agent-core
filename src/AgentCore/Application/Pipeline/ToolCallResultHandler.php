@@ -13,8 +13,10 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
+use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
+use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -199,6 +201,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
+                'currentToolCalls' => [],
                 'messages' => $messages,
                 'retryableFailure' => false,
                 'retryAttempts' => 0,
@@ -309,6 +312,10 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
         $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
+        $currentToolCalls = $outcome->complete
+            ? []
+            : $this->withToolStatus($state->currentToolCalls, $message->toolCallId, RunOperationalToolCallStatusEnum::Completed);
+
         $nextState = $state->with([
             'status' => $status,
             'version' => $state->version + 1,
@@ -316,6 +323,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             'isStreaming' => false,
             'streamingMessage' => null,
             'pendingToolCalls' => $pendingToolCalls,
+            'currentToolCalls' => $currentToolCalls,
             'messages' => $messages,
             'retryableFailure' => false,
             'pendingHumanInputRequests' => $pendingHumanInputRequests,
@@ -391,10 +399,26 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'retryableFailure' => false,
+                'currentToolCalls' => $this->withToolStatus($state->currentToolCalls, $message->toolCallId, RunOperationalToolCallStatusEnum::WaitingHuman),
                 'pendingHumanInputRequests' => $pendingHumanInputRequests,
             ]),
             events: $events,
             postCommitEffects: $effects,
+        );
+    }
+
+    /**
+     * @param list<CurrentToolCallDTO> $toolCalls
+     *
+     * @return list<CurrentToolCallDTO>
+     */
+    private function withToolStatus(array $toolCalls, string $toolCallId, RunOperationalToolCallStatusEnum $status): array
+    {
+        return array_map(
+            static fn (CurrentToolCallDTO $toolCall): CurrentToolCallDTO => $toolCall->toolCallId === $toolCallId
+                ? $toolCall->withStatus($status)
+                : $toolCall,
+            $toolCalls,
         );
     }
 

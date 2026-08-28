@@ -26,11 +26,15 @@ final readonly class RunOperationalProjectionRepository implements RunOperationa
         $this->replaceProjection($projection);
     }
 
-    /** @param list<RunOperationalHumanInputDTO> $humanInputs */
-    public function replaceStateAndHumanInputs(RunOperationalProjectionDTO $projection, array $humanInputs): void
+    /**
+     * @param list<RunOperationalToolCallDTO>   $toolCalls
+     * @param list<RunOperationalHumanInputDTO> $humanInputs
+     */
+    public function replaceStateToolCallsAndHumanInputs(RunOperationalProjectionDTO $projection, array $toolCalls, array $humanInputs): void
     {
-        $this->connection->transactional(function () use ($projection, $humanInputs): void {
+        $this->connection->transactional(function () use ($projection, $toolCalls, $humanInputs): void {
             $this->replaceProjection($projection);
+            $this->replaceToolCallRows($projection->runId, $toolCalls);
             $this->replaceHumanInputRows($projection->runId, $humanInputs);
         });
     }
@@ -62,15 +66,7 @@ SQL, ['run_id' => $runId]);
     public function replaceToolCalls(string $runId, array $toolCalls): void
     {
         $this->connection->transactional(function () use ($runId, $toolCalls): void {
-            $this->connection->delete('run_operational_tool_call', ['run_id' => $runId]);
-            $now = Clock::get()->now()->format('Y-m-d H:i:s');
-            foreach ($toolCalls as $toolCall) {
-                $this->connection->insert('run_operational_tool_call', [
-                    'run_id' => $runId, 'batch_id' => $toolCall->batchId, 'tool_call_id' => $toolCall->toolCallId,
-                    'order_index' => $toolCall->orderIndex, 'status' => $toolCall->status, 'attempt' => $toolCall->attempt,
-                    'created_at' => $now, 'updated_at' => $now,
-                ]);
-            }
+            $this->replaceToolCallRows($runId, $toolCalls);
         });
     }
 
@@ -149,6 +145,20 @@ SQL, [
             'created_at' => $now,
             'updated_at' => $now,
         ]);
+    }
+
+    /** @param list<RunOperationalToolCallDTO> $toolCalls */
+    private function replaceToolCallRows(string $runId, array $toolCalls): void
+    {
+        $this->connection->delete('run_operational_tool_call', ['run_id' => $runId]);
+        $now = Clock::get()->now()->format('Y-m-d H:i:s');
+        foreach ($toolCalls as $toolCall) {
+            $this->connection->insert('run_operational_tool_call', [
+                'run_id' => $runId, 'batch_id' => $toolCall->batchId, 'tool_call_id' => $toolCall->toolCallId,
+                'order_index' => $toolCall->orderIndex, 'status' => $toolCall->status, 'attempt' => $toolCall->attempt,
+                'created_at' => $now, 'updated_at' => $now,
+            ]);
+        }
     }
 
     /** @param list<RunOperationalHumanInputDTO> $humanInputs */

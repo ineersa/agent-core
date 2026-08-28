@@ -21,8 +21,11 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
+use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
+use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
@@ -145,6 +148,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
+                'currentToolCalls' => [],
                 'currentOperation' => null,
                 // Keep existing messages unchanged (no aborted assistant
                 // message appended).
@@ -236,6 +240,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
+                'currentToolCalls' => [],
                 'currentOperation' => null,
                 'errorMessage' => $userMessage,
                 'retryableFailure' => $canAutoRetry,
@@ -273,8 +278,16 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         $messages[] = $this->messageNormalizer->assistantMessage($assistantMessage);
 
         $pendingToolCalls = [];
+        $currentToolCalls = [];
         foreach ($toolCalls as $toolCall) {
             $pendingToolCalls[$toolCall['id']] = false;
+            $currentToolCalls[] = new CurrentToolCallDTO(
+                ToolBatchIdentity::fromTurnAndStep($state->turnNo, $message->stepId()),
+                $toolCall['id'],
+                $toolCall['order_index'],
+                RunOperationalToolCallStatusEnum::Running,
+                1,
+            );
         }
 
         $assistantMessagePayload = $this->messageNormalizer->assistantMessagePayload($assistantMessage);
@@ -335,6 +348,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         if ([] === $toolCalls) {
             $stateAfterAssistant = $state->with([
                 'pendingToolCalls' => [],
+                'currentToolCalls' => [],
                 'errorMessage' => null,
                 'messages' => $messages,
                 'retryableFailure' => false,
@@ -381,6 +395,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
+                'currentToolCalls' => [],
                 'currentOperation' => null,
                 'errorMessage' => null,
                 'retryableFailure' => false,
@@ -411,6 +426,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                     'tool_call_id' => $effect->toolCallId,
                     'tool_name' => $effect->toolName,
                     'order_index' => $effect->orderIndex,
+                    'attempt' => $effect->attempt(),
                     'mode' => $effect->mode,
                 ],
             ];
@@ -425,6 +441,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             'isStreaming' => false,
             'streamingMessage' => null,
             'pendingToolCalls' => $pendingToolCalls,
+            'currentToolCalls' => $currentToolCalls,
             'currentOperation' => null,
             'errorMessage' => null,
             'messages' => $messages,

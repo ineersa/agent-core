@@ -10,8 +10,11 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
+use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
+use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /**
@@ -179,6 +182,13 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
             // this bounded descriptor.
             'currentOperation' => $standalone ? $operation : $state->currentOperation,
             'pendingShellToolCalls' => [...$state->pendingShellToolCalls, $toolCallId => true],
+            'currentToolCalls' => [...$state->currentToolCalls, new CurrentToolCallDTO(
+                ToolBatchIdentity::fromTurnAndStep($owningTurnNo, $message->stepId()),
+                $toolCallId,
+                0,
+                RunOperationalToolCallStatusEnum::Pending,
+                $message->attempt(),
+            )],
             'retryableFailure' => $startsChildTurn ? false : $state->retryableFailure,
             // A child turn starts a fresh retry episode; an in-place shell on
             // an active run keeps the episode counter intact.

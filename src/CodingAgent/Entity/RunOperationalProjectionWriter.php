@@ -18,7 +18,7 @@ final readonly class RunOperationalProjectionWriter implements RunOperationalPro
 
     public function replace(string $ownerSessionId, RunState $state): void
     {
-        $this->repository->replaceStateAndHumanInputs(
+        $this->repository->replaceStateToolCallsAndHumanInputs(
             new RunOperationalProjectionDTO(
                 $state->runId,
                 $ownerSessionId,
@@ -32,6 +32,16 @@ final readonly class RunOperationalProjectionWriter implements RunOperationalPro
                 $state->retryAttempts,
                 $state->lastSeq,
                 $state->version,
+            ),
+            array_map(
+                static fn (\Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO $toolCall): RunOperationalToolCallDTO => new RunOperationalToolCallDTO(
+                    $toolCall->batchId,
+                    $toolCall->toolCallId,
+                    $toolCall->orderIndex,
+                    $toolCall->status->value,
+                    $toolCall->attempt,
+                ),
+                $state->currentToolCalls,
             ),
             $this->humanInputs($state->pendingHumanInputRequests),
         );

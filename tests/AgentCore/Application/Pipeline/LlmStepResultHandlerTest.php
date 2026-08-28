@@ -98,6 +98,10 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertSame(4, $result->nextState->version);
         $this->assertSame(6, $result->nextState->lastSeq);
         $this->assertSame(['tool-call-1' => false], $result->nextState->pendingToolCalls);
+        $this->assertCount(1, $result->nextState->currentToolCalls);
+        $this->assertSame('tool-call-1', $result->nextState->currentToolCalls[0]->toolCallId);
+        $this->assertSame('running', $result->nextState->currentToolCalls[0]->status->value);
+        $this->assertSame(1, $result->events[1]->payload['attempt'] ?? null);
 
         $this->assertCount(2, $result->events);
         $this->assertSame('llm_step_completed', $result->events[0]->type);

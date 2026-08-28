@@ -6,8 +6,10 @@ namespace Ineersa\CodingAgent\Tests\Entity;
 
 use Doctrine\DBAL\Connection;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
+use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
+use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Entity\RunOperationalHumanInputDTO;
@@ -89,6 +91,10 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
             activeStepId: 'step-3', currentOperation: new CurrentOperationDTO(3, 'step-3', 2, 'operation-3'),
             lastAppliedAdvanceKey: 'advance-3', lastAppliedCompactionKey: 'compact-3', retryableFailure: true, retryAttempts: 2,
             errorMessage: 'not persisted', model: 'not persisted',
+            currentToolCalls: [
+                new CurrentToolCallDTO('batch-3', 'tool-1', 0, RunOperationalToolCallStatusEnum::Completed, 2),
+                new CurrentToolCallDTO('batch-3', 'tool-2', 1, RunOperationalToolCallStatusEnum::WaitingHuman, 2),
+            ],
             pendingHumanInputRequests: [
                 new PendingHumanInputRequestDTO('question-1', HumanInputContinuationKindEnum::ModelTurn, ['question_id' => 'question-1', 'prompt' => 'not persisted']),
                 new PendingHumanInputRequestDTO('question-2', HumanInputContinuationKindEnum::ToolCall, ['question_id' => 'question-2'], ['run_id' => 'child-1', 'turn_no' => 3, 'step_id' => 'step-3', 'tool_call_id' => 'tool-2']),
@@ -97,9 +103,10 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
 
         $this->assertSame(['session-1', 'waiting_human', 3, 'step-3', 3, 'step-3', 2, 'operation-3', 'advance-3', 'compact-3', 1, 2, 11, 7], $this->connection->fetchNumeric('SELECT owner_session_id, status, turn_no, active_step_id, operation_turn_no, operation_step_id, operation_attempt, operation_key, last_applied_advance_key, last_applied_compaction_key, retryable_failure, retry_attempts, last_event_sequence, transition_version FROM run_operational_state WHERE run_id = ?', ['child-1']));
         $this->assertSame([['question-1', 0, 'model_turn', null, 'waiting'], ['question-2', 1, 'tool_call', 'tool-2', 'waiting']], $this->connection->fetchAllNumeric('SELECT question_id, order_index, continuation_kind, tool_call_id, status FROM run_operational_human_input WHERE run_id = ? ORDER BY order_index', ['child-1']));
-        $this->assertSame(0, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM run_operational_tool_call WHERE run_id = ?', ['child-1']));
+        $this->assertSame([['batch-3', 'tool-1', 0, 'completed', 2], ['batch-3', 'tool-2', 1, 'waiting_human', 2]], $this->connection->fetchAllNumeric('SELECT batch_id, tool_call_id, order_index, status, attempt FROM run_operational_tool_call WHERE run_id = ? ORDER BY order_index', ['child-1']));
 
         $writer->replace('session-1', new RunState('child-1', RunStatus::Running));
+        $this->assertSame(0, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM run_operational_tool_call WHERE run_id = ?', ['child-1']));
         $this->assertSame(0, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM run_operational_human_input WHERE run_id = ?', ['child-1']));
     }
 

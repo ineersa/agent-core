@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\AgentCore\Domain\Message\InvalidateRunContext;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
@@ -109,11 +110,13 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
             'AgentEnd must be the final event for standalone shell commands.',
         );
 
-        $this->assertCount(1, $commandBus->messages, 'Standalone shell must dispatch exactly one AdvanceRun.');
-        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
+        $this->assertCount(2, $commandBus->messages, 'Standalone shell must invalidate before dispatching AdvanceRun.');
+        $this->assertInstanceOf(InvalidateRunContext::class, $commandBus->messages[0]);
+        $this->assertSame('run-standalone', $commandBus->messages[0]->runId());
+        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[1]);
 
         /** @var AdvanceRun $advance */
-        $advance = $commandBus->messages[0];
+        $advance = $commandBus->messages[1];
         $this->assertSame('run-standalone', $advance->runId());
         $this->assertSame(2, $advance->turnNo());
         $this->assertSame(1, $advance->attempt());
@@ -171,7 +174,9 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
             );
         }
 
-        $this->assertSame([], $commandBus->messages, 'Non-standalone shell must not dispatch AdvanceRun.');
+        $this->assertCount(1, $commandBus->messages, 'Non-standalone shell must invalidate the run_control cache.');
+        $this->assertInstanceOf(InvalidateRunContext::class, $commandBus->messages[0]);
+        $this->assertSame('run-inline', $commandBus->messages[0]->runId());
     }
 
     /**

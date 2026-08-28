@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\AgentCore\Domain\Message\InvalidateRunContext;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
@@ -96,6 +97,7 @@ final readonly class ExecuteShellToolCallWorker
                 'tool_call_id' => $toolCallId,
                 'tool_name' => 'bash',
                 'order_index' => 0,
+                'attempt' => $message->attempt(),
                 'arguments' => $arguments,
             ],
         ));
@@ -153,6 +155,15 @@ final readonly class ExecuteShellToolCallWorker
             'tool_call_id' => $toolCallId,
             'is_error' => $result->isError,
         ]);
+
+        // This worker is a canonical side-event writer, not an operational
+        // projection writer. Invalidate the run_control cache after durable
+        // completion so its next transition replays this event stream.
+        try {
+            $this->commandBus->dispatch(new InvalidateRunContext($runId));
+        } catch (ExceptionInterface $exception) {
+            throw new \RuntimeException('Failed to dispatch run-context invalidation after shell completion.', previous: $exception);
+        }
 
         // Standalone shell commands need a terminal
         // AgentEnd event so the TUI poller transitions from Running to
