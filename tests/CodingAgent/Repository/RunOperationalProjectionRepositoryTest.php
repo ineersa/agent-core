@@ -53,8 +53,26 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
         $this->assertSame([['tool-1', 'running', 2], ['tool-2', 'waiting_human', 2]], $this->connection->fetchAllNumeric('SELECT tool_call_id, status, attempt FROM run_operational_tool_call ORDER BY order_index'));
         $this->assertSame([['question-1', 'tool_call', 'tool-2', 'waiting']], $this->connection->fetchAllNumeric('SELECT question_id, continuation_kind, tool_call_id, status FROM run_operational_human_input'));
 
-        $this->repository->replace($this->state(RunStatus::Running, [new CurrentToolCallDTO('batch-2', 'tool-3', 0, RunOperationalToolCallStatusEnum::Pending, 1)]));
-        $this->assertSame([['batch-2', 'tool-3']], $this->connection->fetchAllNumeric('SELECT batch_id, tool_call_id FROM run_operational_tool_call'));
+        // Reuse managed children with the same composite identifiers instead of
+        // replacing them with duplicate objects in Doctrine's identity map.
+        $this->repository->replace($this->state(
+            RunStatus::Running,
+            [
+                new CurrentToolCallDTO('batch-1', 'tool-1', 1, RunOperationalToolCallStatusEnum::Completed, 3),
+                new CurrentToolCallDTO('batch-2', 'tool-3', 0, RunOperationalToolCallStatusEnum::Pending, 1),
+            ],
+            [
+                new PendingHumanInputRequestDTO('question-1', HumanInputContinuationKindEnum::ToolCall, ['question_id' => 'question-1'], ['tool_call_id' => 'tool-1']),
+            ],
+        ));
+        $this->assertSame(
+            [['batch-1', 'tool-1', 'completed', 3], ['batch-2', 'tool-3', 'pending', 1]],
+            $this->connection->fetchAllNumeric('SELECT batch_id, tool_call_id, status, attempt FROM run_operational_tool_call ORDER BY batch_id, tool_call_id'),
+        );
+        $this->assertSame([['question-1', 'tool-1']], $this->connection->fetchAllNumeric('SELECT question_id, tool_call_id FROM run_operational_human_input'));
+
+        $this->repository->replace($this->state(RunStatus::Completed));
+        $this->assertSame(0, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM run_operational_tool_call'));
         $this->assertSame(0, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM run_operational_human_input'));
     }
 

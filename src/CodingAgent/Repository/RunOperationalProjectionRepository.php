@@ -163,20 +163,50 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
             $state->{$property} = $replacement->{$property};
         }
 
-        foreach ($state->toolCalls->toArray() as $toolCall) {
+        $managedToolCalls = [];
+        foreach ($state->toolCalls as $toolCall) {
+            $managedToolCalls[$toolCall->batchId."\0".$toolCall->toolCallId] = $toolCall;
+        }
+        foreach ($replacement->toolCalls as $replacementToolCall) {
+            $key = $replacementToolCall->batchId."\0".$replacementToolCall->toolCallId;
+            $toolCall = $managedToolCalls[$key] ?? null;
+            if (!$toolCall instanceof RunOperationalToolCall) {
+                $replacementToolCall->run = $state;
+                $state->toolCalls->add($replacementToolCall);
+
+                continue;
+            }
+
+            $toolCall->orderIndex = $replacementToolCall->orderIndex;
+            $toolCall->status = $replacementToolCall->status;
+            $toolCall->attempt = $replacementToolCall->attempt;
+            unset($managedToolCalls[$key]);
+        }
+        foreach ($managedToolCalls as $toolCall) {
             $state->toolCalls->removeElement($toolCall);
         }
-        foreach ($replacement->toolCalls as $toolCall) {
-            $toolCall->run = $state;
-            $state->toolCalls->add($toolCall);
-        }
 
-        foreach ($state->humanInputs->toArray() as $humanInput) {
-            $state->humanInputs->removeElement($humanInput);
+        $managedHumanInputs = [];
+        foreach ($state->humanInputs as $humanInput) {
+            $managedHumanInputs[$humanInput->questionId] = $humanInput;
         }
-        foreach ($replacement->humanInputs as $humanInput) {
-            $humanInput->run = $state;
-            $state->humanInputs->add($humanInput);
+        foreach ($replacement->humanInputs as $replacementHumanInput) {
+            $humanInput = $managedHumanInputs[$replacementHumanInput->questionId] ?? null;
+            if (!$humanInput instanceof RunOperationalHumanInput) {
+                $replacementHumanInput->run = $state;
+                $state->humanInputs->add($replacementHumanInput);
+
+                continue;
+            }
+
+            $humanInput->orderIndex = $replacementHumanInput->orderIndex;
+            $humanInput->continuationKind = $replacementHumanInput->continuationKind;
+            $humanInput->toolCallId = $replacementHumanInput->toolCallId;
+            $humanInput->status = $replacementHumanInput->status;
+            unset($managedHumanInputs[$replacementHumanInput->questionId]);
+        }
+        foreach ($managedHumanInputs as $humanInput) {
+            $state->humanInputs->removeElement($humanInput);
         }
     }
 
