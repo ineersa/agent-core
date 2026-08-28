@@ -173,6 +173,7 @@ final class LlmProviderErrorClassifier
             ?? $this->classifyByStatusCode($statusCode, $allErrorText, $responseErrorCode, $responseErrorType, $retryAfterMs)
             ?? $this->classifyByMessagePattern($allErrorText)
             ?? $this->classifyByStructuredSignal($responseErrorCode, $responseErrorType, $errorMessage)
+            ?? $this->classifyByTransportPattern($allErrorText)
             ?? [
                 self::CATEGORY_PROVIDER,
                 true,
@@ -229,31 +230,31 @@ final class LlmProviderErrorClassifier
     /**
      * @return array{string, bool, string}|null
      */
-    private function classifyByExceptionType(string $errorType, string $errorMessage, ?int $statusCode): ?array
+    private function classifyByExceptionType(string $errorType, string $allErrorText, ?int $statusCode): ?array
     {
         $shortType = self::shortExceptionType($errorType);
 
         $nonRetryableCategory = self::NON_RETRYABLE_EXCEPTION_CATEGORIES[$shortType] ?? null;
         if (self::CATEGORY_AUTH === $nonRetryableCategory || 401 === $statusCode) {
-            $detail = self::truncate($errorMessage, 200);
+            $detail = self::truncate($allErrorText, 200);
 
             return [self::CATEGORY_AUTH, false, \sprintf('LLM provider authentication failed. Check your API key or OAuth credentials.%s', '' !== $detail ? ' '.$detail : '')];
         }
 
         if (self::CATEGORY_BAD_REQUEST === $nonRetryableCategory || 400 === $statusCode) {
-            return [self::CATEGORY_BAD_REQUEST, false, \sprintf('LLM provider rejected the request: %s', self::truncate($errorMessage, 200))];
+            return [self::CATEGORY_BAD_REQUEST, false, \sprintf('LLM provider rejected the request: %s', self::truncate($allErrorText, 200))];
         }
 
         // Let structured permanent HTTP failures outrank transient wrapper types.
         if (\in_array($statusCode, [402, 403, 404, 405, 413, 415, 422, 501], true)
-            || (429 === $statusCode && self::matchesAny($errorMessage, self::TERMINAL_BILLING_PATTERNS))
-            || (\in_array($statusCode, [500, 502, 503, 504], true) && self::matchesAny($errorMessage, self::CONTEXT_OVERFLOW_PATTERNS))
+            || (429 === $statusCode && self::matchesAny($allErrorText, self::TERMINAL_BILLING_PATTERNS))
+            || (\in_array($statusCode, [500, 502, 503, 504], true) && self::matchesAny($allErrorText, self::CONTEXT_OVERFLOW_PATTERNS))
         ) {
             return null;
         }
 
         if ('TimeoutException' === $shortType
-            || (\in_array($shortType, self::CANCELLATION_EXCEPTION_TYPES, true) && str_contains($errorMessage, 'TimeoutException'))
+            || (\in_array($shortType, self::CANCELLATION_EXCEPTION_TYPES, true) && str_contains($allErrorText, 'TimeoutException'))
         ) {
             return [self::CATEGORY_TIMEOUT, true, 'LLM provider request timed out (retryable). Will retry automatically.'];
         }
@@ -347,9 +348,7 @@ final class LlmProviderErrorClassifier
             return [self::CATEGORY_BAD_REQUEST, false, \sprintf('LLM provider context limit exceeded: %s', self::truncate($errorMessage, 200))];
         }
 
-        return self::matchesAny($errorMessage, self::TRANSPORT_ERROR_PATTERNS)
-            ? [self::CATEGORY_NETWORK, true, 'LLM provider network error (retryable). Check your connection and try again.']
-            : null;
+        return null;
     }
 
     /**
@@ -371,6 +370,16 @@ final class LlmProviderErrorClassifier
 
         return $serverFailure
             ? [self::CATEGORY_SERVER, true, 'LLM provider server temporarily unavailable (retryable). Will retry automatically.']
+            : null;
+    }
+
+    /**
+     * @return array{string, bool, string}|null
+     */
+    private function classifyByTransportPattern(string $errorMessage): ?array
+    {
+        return self::matchesAny($errorMessage, self::TRANSPORT_ERROR_PATTERNS)
+            ? [self::CATEGORY_NETWORK, true, 'LLM provider network error (retryable). Check your connection and try again.']
             : null;
     }
 

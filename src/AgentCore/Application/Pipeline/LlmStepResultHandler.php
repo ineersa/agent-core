@@ -209,7 +209,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                     $maxAttempts,
                     '' !== $originalDetail ? ': '.$originalDetail : '',
                 );
-                $errorMessage = $userMessage;
                 $error['user_message'] = $userMessage;
             }
 
@@ -659,7 +658,10 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         array $error,
         array $extra = [],
     ): array {
-        $errorCode = $error['response_error_code'] ?? $error['response_error_type'] ?? null;
+        $errorCode = $error['response_error_code'] ?? null;
+        if (!\is_string($errorCode) || '' === $errorCode) {
+            $errorCode = $error['response_error_type'] ?? null;
+        }
 
         return [
             'run_id' => $runId,

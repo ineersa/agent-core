@@ -81,7 +81,7 @@ final class LlmProviderErrorClassifierTest extends TestCase
     {
         $result = $this->classifier->classify([
             'type' => 'RuntimeException',
-            'message' => \sprintf('[%s/provider_error]', $signal),
+            'message' => \sprintf('[%s/provider_error] network timeout', $signal),
         ]);
 
         $this->assertFalse($result['retryable']);
