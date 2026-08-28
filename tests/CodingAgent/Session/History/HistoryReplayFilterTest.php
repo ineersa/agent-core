@@ -27,14 +27,14 @@ final class HistoryReplayFilterTest extends TestCase
             $this->event(1, 0, RunEventTypeEnum::RunStarted->value),
             $this->event(2, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]),
             $this->event(3, 1, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 1]),
-            $this->event(4, 1, RunEventTypeEnum::LlmStepCompleted->value, ['text' => 'A1']),
+            $this->event(4, 1, RunEventTypeEnum::LlmStepCompleted->value),
             $this->event(5, 2, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2]),
             $this->event(6, 2, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 2]),
-            $this->event(7, 2, RunEventTypeEnum::LlmStepCompleted->value, ['text' => 'A2']),
+            $this->event(7, 2, RunEventTypeEnum::LlmStepCompleted->value),
             $this->event(8, 1, RunEventTypeEnum::HistoryTailDiscarded->value, ['after_turn_no' => 1]),
             $this->event(9, 3, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 3]),
             $this->event(10, 3, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 3]),
-            $this->event(11, 3, RunEventTypeEnum::LlmStepCompleted->value, ['text' => 'A3']),
+            $this->event(11, 3, RunEventTypeEnum::LlmStepCompleted->value),
         ];
 
         $filtered = $this->filter->filter($events);
@@ -48,13 +48,10 @@ final class HistoryReplayFilterTest extends TestCase
                 ], true)),
         )));
         $this->assertSame([1, 3], $turnNos);
-        $texts = [];
-        foreach ($filtered as $event) {
-            if (RunEventTypeEnum::LlmStepCompleted->value === $event->type) {
-                $texts[] = $event->payload['text'] ?? null;
-            }
-        }
-        $this->assertSame(['A1', 'A3'], $texts);
+        $this->assertCount(2, array_filter(
+            $filtered,
+            static fn (RunEvent $event): bool => RunEventTypeEnum::LlmStepCompleted->value === $event->type,
+        ));
     }
 
     #[Test]
@@ -64,22 +61,22 @@ final class HistoryReplayFilterTest extends TestCase
             $this->event(1, 0, RunEventTypeEnum::RunStarted->value),
             $this->event(2, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]),
             $this->event(3, 1, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 1]),
-            $this->event(4, 1, RunEventTypeEnum::LlmStepCompleted->value, ['text' => 'A1']),
+            $this->event(4, 1, RunEventTypeEnum::LlmStepCompleted->value),
             // Internal retained turn with no human prompt.
             $this->event(5, 2, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2, 'step_id' => 'advance-after-tools']),
-            $this->event(6, 2, RunEventTypeEnum::LlmStepCompleted->value, ['text' => 'tool cycle']),
+            $this->event(6, 2, RunEventTypeEnum::LlmStepCompleted->value),
             $this->event(7, 3, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 3]),
-            $this->event(8, 3, RunEventTypeEnum::LlmStepCompleted->value, ['text' => 'A3']),
+            $this->event(8, 3, RunEventTypeEnum::LlmStepCompleted->value),
         ];
 
         $filtered = $this->filter->filterAtPosition($events, 2);
-        $texts = [];
-        foreach ($filtered as $event) {
-            if (RunEventTypeEnum::LlmStepCompleted->value === $event->type) {
-                $texts[] = $event->payload['text'] ?? null;
-            }
-        }
-        $this->assertSame(['A1', 'tool cycle'], $texts);
+        $this->assertSame([1, 2], array_values(array_map(
+            static fn (RunEvent $event): int => $event->turnNo,
+            array_filter(
+                $filtered,
+                static fn (RunEvent $event): bool => RunEventTypeEnum::LlmStepCompleted->value === $event->type,
+            ),
+        )));
     }
 
     #[Test]
@@ -124,7 +121,7 @@ final class HistoryReplayFilterTest extends TestCase
                 'position_turn_no' => 1,
                 'reason' => 'continue',
             ]),
-            $this->event(4, 1, RunEventTypeEnum::LlmStepCompleted->value, ['text' => 'done']),
+            $this->event(4, 1, RunEventTypeEnum::LlmStepCompleted->value),
             $this->event(5, 1, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
             $this->event(6, 1, RunEventTypeEnum::AgentCommandQueued->value, [
                 'kind' => 'follow_up',
