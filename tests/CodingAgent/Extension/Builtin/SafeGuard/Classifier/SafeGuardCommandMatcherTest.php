@@ -70,6 +70,34 @@ final class SafeGuardCommandMatcherTest extends TestCase
         }
     }
 
+    public function testDecisionEvidenceIncludesEveryRepeatedAndOverlappingPatternMatch(): void
+    {
+        $command = "rm one && rmdir two && rm three\nrm four";
+
+        $result = $this->matcher->classify($command);
+
+        $this->assertSame($command, $result->triggerInput);
+        $this->assertSame([
+            ['start' => 0, 'length' => 2],
+            ['start' => 10, 'length' => 5],
+            ['start' => 23, 'length' => 2],
+            ['start' => 32, 'length' => 2],
+        ], $result->matchSpans);
+    }
+
+    public function testCustomPatternEvidenceUsesOriginalUnicodeInput(): void
+    {
+        $command = 'echo δοκιμή && echo ΔΟΚΙΜΉ';
+
+        $result = $this->matcher->classify($command, ['δοκιμή']);
+
+        $this->assertSame(SafeGuardDecisionKind::CustomDangerous, $result->kind);
+        $this->assertSame([
+            ['start' => 5, 'length' => \strlen('δοκιμή')],
+            ['start' => 26, 'length' => \strlen('ΔΟΚΙΜΉ')],
+        ], $result->matchSpans);
+    }
+
     public function testChmodWithoutDigitsIsAllowed(): void
     {
         $result = $this->matcher->classify('chmod +x file');

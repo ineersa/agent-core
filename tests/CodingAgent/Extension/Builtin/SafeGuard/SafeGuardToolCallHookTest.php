@@ -54,6 +54,25 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
     }
 
+    public function testApprovalCarriesClassifierTriggerEvidence(): void
+    {
+        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        $_ENV['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
+        $_SERVER['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
+        $command = 'rm first && rmdir second && rm third';
+
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO('evidence', 'bash', ['command' => $command], 0));
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame($command, $dto->details['trigger_input'] ?? null);
+        $this->assertSame('Command', $dto->details['trigger_input_label'] ?? null);
+        $this->assertSame([
+            ['start' => 0, 'length' => 2],
+            ['start' => 12, 'length' => 5],
+            ['start' => 28, 'length' => 2],
+        ], $dto->details['match_spans'] ?? null);
+    }
+
     public function testBashDestructiveRequiresApprovalWithAllowDenyOnly(): void
     {
         putenv('HATFIELD_APPROVAL_CHANNEL=controller');

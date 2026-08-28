@@ -12,6 +12,7 @@ use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -19,6 +20,7 @@ use Ineersa\Tui\Transcript\ThemeStyleSheetFactory;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Render\Renderer;
+use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\EditorWidget;
@@ -220,6 +222,51 @@ class QuestionControllerTest extends TestCase
             $joined,
             'Native selected row must resolve the question-scoped Accent style',
         );
+    }
+
+    #[Test]
+    public function testChoiceOverlayRendersSafeHighlightedTriggerInputWithoutTruncation(): void
+    {
+        $input = "rm α && rmdir β\nrm <fg=red>literal</fg> \x1B[31mnot-a-style";
+        $harness = new VirtualTuiHarness(
+            columns: 42,
+            rows: 30,
+            palette: new ThemePalette('trigger', [
+                ThemeColorEnum::Accent->value => 'cyan',
+                ThemeColorEnum::Prompt->value => 'magenta',
+                ThemeColorEnum::Warning->value => 'yellow',
+                ThemeColorEnum::Text->value => 'white',
+            ]),
+        );
+        $controller = new QuestionController(new QuestionCoordinator(), $harness->screen());
+        $controller->open(new QuestionRequest(
+            requestId: 'safeguard-trigger',
+            source: QuestionSource::AgentCore,
+            kind: QuestionKind::Choice,
+            prompt: 'Allow destructive command?',
+            choices: [new QuestionOption('✅ Allow'), new QuestionOption('❌ Deny')],
+            allowOther: false,
+            triggerInput: $input,
+            triggerInputLabel: 'Command',
+            // Repeated, overlapping, and Unicode byte spans merge deterministically.
+            triggerMatchSpans: [
+                ['start' => 0, 'length' => 2],
+                ['start' => 0, 'length' => 2],
+                ['start' => 9, 'length' => 5],
+                ['start' => 9, 'length' => 5],
+                ['start' => 18, 'length' => 2],
+            ],
+        ));
+
+        $text = $harness->plainScreenText();
+        $ansi = $harness->ansiOutput();
+
+        $this->assertStringContainsString('Command:', $text);
+        $this->assertStringContainsString('rm α && rmdir β', $text);
+        $this->assertStringContainsString('rm <fg=red>literal</fg>', $text);
+        $this->assertStringContainsString('\\x1B[31mnot-a-style', $text);
+        $this->assertStringNotContainsString('…', $text, 'Trigger input must wrap instead of truncate.');
+        $this->assertStringContainsString(new Style(color: 'yellow', bold: true)->apply('rm'), $ansi);
     }
 
     #[Test]

@@ -144,6 +144,9 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                     'category' => $decision->kind->value,
                     'command' => $this->extractCommand($context),
                     'path' => $this->extractPath($context),
+                    'trigger_input' => $decision->triggerInput,
+                    'trigger_input_label' => $this->triggerInputLabel($context),
+                    'match_spans' => $decision->matchSpans,
                     'tool_name' => $decision->toolName,
                     'intercepted' => true,
                 ],
@@ -214,6 +217,19 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                 ),
             ],
         );
+    }
+
+    private function triggerInputLabel(ToolCallContextDTO $context): string
+    {
+        if (null !== $this->extractCommand($context)) {
+            return 'Command';
+        }
+
+        if (null !== $this->extractPath($context)) {
+            return 'Path';
+        }
+
+        return 'Operation';
     }
 
     /**
