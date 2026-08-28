@@ -56,12 +56,13 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends Isolated
         $this->assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM run_operational_human_input WHERE run_id = ?', ['child-a']));
     }
 
-    public function testNonRunControlWorkerNeverAcquiresOrCleans(): void
+    public function testNonDedicatedRunControlWorkerNeverAcquiresOrCleans(): void
     {
         $this->repository->replace($this->projection('parent-a', 'session-a'));
         $subscriber = $this->subscriber('session-a', new LockFactory(new InMemoryStore()));
 
         $subscriber->onWorkerStarted(new WorkerStartedEvent($this->worker('tool')));
+        $subscriber->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control', 'tool')));
 
         $this->assertSame(RunStatus::Running, $this->repository->findOperationalStatus('parent-a')?->status);
     }
@@ -146,10 +147,14 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends Isolated
         return new RunControlSessionOwnerWorkerLifecycleSubscriber($this->repository, $lockFactory, new TestLogger(), $sessionId);
     }
 
-    private function worker(string $transport): Worker
+    private function worker(string ...$transports): Worker
     {
-        $worker = new Worker([$transport => new InMemoryTransport()], new TestMessageBus());
-        $worker->getMetadata()->set(['transportNames' => [$transport]]);
+        $receivers = [];
+        foreach ($transports as $transport) {
+            $receivers[$transport] = new InMemoryTransport();
+        }
+        $worker = new Worker($receivers, new TestMessageBus());
+        $worker->getMetadata()->set(['transportNames' => $transports]);
 
         return $worker;
     }
