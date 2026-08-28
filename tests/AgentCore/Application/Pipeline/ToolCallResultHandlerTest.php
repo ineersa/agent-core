@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
 use Doctrine\ORM\EntityManagerInterface;
-use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
@@ -157,14 +156,12 @@ final class ToolCallResultHandlerTest extends TestCase
 
     public function testUntrackedCurrentTokenRedeliveryIsIdempotentNoOp(): void
     {
-        $metrics = new RunMetrics();
         $handler = new ToolCallResultHandler(
             toolBatchCollector: new ToolBatchCollector(),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
-            metrics: $metrics,
         );
 
         $state = RunStateBuilder::running('run-untracked-current-token')
@@ -187,7 +184,6 @@ final class ToolCallResultHandlerTest extends TestCase
             $this->assertSame([], $result->postCommitEffects);
             $this->assertSame([], $result->postCommit);
         }
-        $this->assertSame(2, $metrics->snapshot()['stale_result_count']);
     }
 
     public function testCancellingWithPendingToolCallsSynthesizesToolMessages(): void

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCallbackFactory;
-use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
@@ -48,7 +47,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         private NormalizerInterface $normalizer,
         private ?ToolSetResolverInterface $toolSetResolver = null,
         private ?ToolboxInterface $toolbox = null,
-        private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
         private ?MessageBusInterface $commandBus = null,
         private ?LlmProviderErrorClassifier $errorClassifier = null,
@@ -160,7 +158,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
-                postCommit: $this->turnCompletedCallbacks($runId, $state->turnNo),
             );
         }
 
@@ -249,7 +246,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
-            $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
+            $postCommit = [];
 
             if ($canAutoRetry) {
                 $postCommit[] = $this->autoRetryContinueCallback(
@@ -402,9 +399,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'retryAttempts' => 0,
             ]);
 
-            $postCommit = [
-                ...$this->turnCompletedCallbacks($runId, $state->turnNo),
-            ];
+            $postCommit = [];
 
             $followUpAdvance = $shouldContinue ? $this->followUpAdvanceCallback($runId, $state->turnNo, 'stop-boundary-follow-up') : null;
             if (null !== $followUpAdvance) {
@@ -536,14 +531,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         }
 
         return $schemas;
-    }
-
-    /**
-     * @return list<callable(): void>
-     */
-    private function turnCompletedCallbacks(string $runId, int $turnNo): array
-    {
-        return null === $this->metrics ? [] : $this->metrics->turnCompletedCallback($runId, $turnNo);
     }
 
     private function followUpAdvanceCallback(string $runId, int $turnNo, string $prefix): ?callable

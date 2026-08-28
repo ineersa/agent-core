@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Messenger;
 
-use Ineersa\AgentCore\Application\Handler\RunMetrics;
-use Ineersa\CodingAgent\Entity\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -20,9 +19,11 @@ use Symfony\Component\Messenger\Event\WorkerStoppedEvent;
  * This listener is deliberately limited to the dedicated run_control worker:
  * that worker is the sole future writer of the projection. The process keeps
  * this flock for its entire lifetime, so a competing worker fails before it
- * can clear or process the same session's coordination rows. InProcess runtime
- * has no Messenger worker lifecycle, so it intentionally does not enter this
- * process-only fence or cleanup path.
+ * can clear or process the same session's coordination rows. This is not a
+ * SQLite-operation lock: it fences the process-local state owner across
+ * controller crashes/restarts. InProcess runtime has no Messenger worker
+ * lifecycle, so it intentionally does not enter this process-only fence or
+ * cleanup path.
  */
 final class RunControlSessionOwnerWorkerLifecycleSubscriber
 {
@@ -35,15 +36,18 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriber
         private readonly LoggerInterface $logger,
         #[Autowire('%env(HATFIELD_SESSION_ID)%')]
         private readonly string $sessionId,
-        private readonly ?RunMetrics $metrics = null,
     ) {
     }
 
     #[AsEventListener(event: WorkerStartedEvent::class, priority: 256)]
     public function onWorkerStarted(WorkerStartedEvent $event): void
     {
-        if (!self::isRunControlWorker($event->getWorker()->getMetadata()->getTransportNames())) {
+        $transportNames = $event->getWorker()->getMetadata()->getTransportNames();
+        if (!\in_array('run_control', $transportNames, true)) {
             return;
+        }
+        if (1 !== \count($transportNames)) {
+            throw new \RuntimeException('run_control must run as a dedicated Messenger consumer.');
         }
 
         $sessionId = trim($this->sessionId);
@@ -51,9 +55,10 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriber
             throw new \RuntimeException('run_control worker requires a stable HATFIELD_SESSION_ID before processing messages.');
         }
 
+        // Flock has no lease to renew: ttl=null holds until explicit release,
+        // object destruction, or OS cleanup when the worker process exits.
         $lock = $this->lockFactory->createLock(self::lockResource($sessionId), ttl: null, autoRelease: true);
         if (!$lock->acquire(blocking: false)) {
-            $this->metrics?->incrementOwnerFenceConflicts();
             $this->logger->error('run_control session owner lock conflict', [
                 'component' => 'run_control_session_owner',
                 'event_type' => 'run_control.session_owner_lock_conflict',
@@ -65,18 +70,12 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriber
 
         $this->sessionOwnerLock = $lock;
 
-        $startedAt = hrtime(true);
-        $success = false;
-        $deleted = 0;
         try {
-            $deleted = $this->projectionRepository->deleteForOwnerSession($sessionId);
-            $success = true;
+            $this->projectionRepository->deleteForOwnerSession($sessionId);
         } catch (\Throwable $exception) {
             $this->releaseSessionOwnerLock();
 
             throw $exception;
-        } finally {
-            $this->metrics?->recordStartupCleanup($success, $success ? $deleted : 0, (hrtime(true) - $startedAt) / 1_000_000);
         }
 
         $this->logger->info('run_control session owner lock acquired and projection cleared', [
@@ -89,17 +88,9 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriber
     #[AsEventListener(event: WorkerStoppedEvent::class)]
     public function onWorkerStopped(WorkerStoppedEvent $event): void
     {
-        if (self::isRunControlWorker($event->getWorker()->getMetadata()->getTransportNames())) {
+        if (\in_array('run_control', $event->getWorker()->getMetadata()->getTransportNames(), true)) {
             $this->releaseSessionOwnerLock();
         }
-    }
-
-    /** @param list<string> $transportNames */
-    private static function isRunControlWorker(array $transportNames): bool
-    {
-        // ConsumerSupervisor launches run_control alone. A combined ad-hoc
-        // consumer must not become a second projection owner by coincidence.
-        return ['run_control'] === array_values($transportNames);
     }
 
     private static function lockResource(string $sessionId): string

@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
-use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
-use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
@@ -21,11 +19,9 @@ final readonly class RunCommit
     public function __construct(
         private ActiveRunContextInterface $activeRunContext,
         private EventStoreInterface $eventStore,
-        private CommandStoreInterface $commandStore,
         private StepDispatcher $stepDispatcher,
         private LoggerInterface $logger,
         private ?HookDispatcher $hookDispatcher = null,
-        private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
     ) {
     }
@@ -40,7 +36,7 @@ final readonly class RunCommit
      */
     public function commit(RunState $state, RunState $nextState, array $events, array $effects = []): void
     {
-        $persist = function () use ($state, $nextState, $events, $effects): RunState {
+        $persist = function () use ($nextState, $events, $effects): RunState {
             /** @var list<RunEvent> $persistedEvents */
             $persistedEvents = [];
             if ([] !== $events) {
@@ -65,7 +61,6 @@ final readonly class RunCommit
             $this->activeRunContext->remember($committedState);
 
             $this->logCommittedEvents($committedState, $persistedEvents);
-            $this->trackCommitMetrics($state, $committedState);
 
             if ([] !== $effects) {
                 try {
@@ -110,16 +105,6 @@ final readonly class RunCommit
             'event_count' => \count($events),
             'effects_count' => \count($effects),
         ], $persist);
-    }
-
-    private function trackCommitMetrics(RunState $state, RunState $nextState): void
-    {
-        if (null === $this->metrics) {
-            return;
-        }
-
-        $this->metrics->recordRunStatusTransition($state->status, $nextState->status);
-        $this->metrics->setCommandQueueLag($nextState->runId, $this->commandStore->countPending($nextState->runId));
     }
 
     /** @param list<RunEvent> $events */

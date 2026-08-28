@@ -208,7 +208,7 @@ These are appropriate for the ports & adapters pattern. However, `Hook/` contain
 
 ### Candidate 5: Extract `RunCommit` Side-Effects into Post-Commit Pipeline
 
-**Cluster:** `Application/Pipeline/RunCommit`, `Application/Handler/ReplayService`, `Application/Handler/HookDispatcher`, `Application/Handler/RunMetrics`
+**Cluster:** `Application/Pipeline/RunCommit`, `Application/Handler/ReplayService`, `Application/Handler/HookDispatcher`, `Application/Handler/RunTracer`
 
 **Why coupled:** `RunCommit::commit()` does atomic CAS+persistence AND fires replay rebuild, hook dispatch, effect dispatch, and metrics — all in one method. These are best-effort side-effects that shouldn't be entangled with the commit path.
 

@@ -10,7 +10,9 @@ use Ineersa\AgentCore\Domain\Message\InvalidateRunContext;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
- * Appends parent-session canonical events and invalidates run_control context.
+ * Appends parent-session canonical events, then asks the sole run_control
+ * process to discard its cached state. A dispatch failure propagates after
+ * the canonical append remains durable.
  */
 final readonly class CommittedRunEventAppender
 {
@@ -23,7 +25,7 @@ final readonly class CommittedRunEventAppender
     public function append(RunEvent $event): RunEvent
     {
         $persisted = $this->eventStore->append($event);
-        $this->invalidate($persisted->runId);
+        $this->commandBus->dispatch(new InvalidateRunContext($persisted->runId));
 
         return $persisted;
     }
@@ -41,15 +43,8 @@ final readonly class CommittedRunEventAppender
 
         $persisted = $this->eventStore->appendMany($events);
         $last = $persisted[array_key_last($persisted)];
-        $this->invalidate($last->runId);
+        $this->commandBus->dispatch(new InvalidateRunContext($last->runId));
 
         return $persisted;
-    }
-
-    private function invalidate(string $runId): void
-    {
-        // Event persistence and Messenger dispatch are non-transactional: a
-        // dispatch failure propagates after the canonical event remains durable.
-        $this->commandBus->dispatch(new InvalidateRunContext($runId));
     }
 }

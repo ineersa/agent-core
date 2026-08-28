@@ -30,7 +30,6 @@ final readonly class ExecuteToolCallWorker
         private DeferredToolCompletionRepositoryInterface $deferredToolCompletionRepository,
         private ToolExecutionResultStore $resultStore,
         private RunOperationalStatusReaderInterface $statusReader,
-        private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
         private ?EventDispatcherInterface $eventDispatcher = null,
     ) {
@@ -135,8 +134,6 @@ final readonly class ExecuteToolCallWorker
             ],
         );
 
-        $startedAt = hrtime(true);
-
         RunLogContext::enter(['event_type' => 'tool.execute.started']);
 
         try {
@@ -152,10 +149,6 @@ final readonly class ExecuteToolCallWorker
                     'tool_name' => $message->toolName,
                 ], $executeTool)
             ;
-
-            $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
-            $timedOut = \is_array($toolResult->details) && true === ($toolResult->details['timed_out'] ?? false);
-            $this->metrics?->recordToolLatency($durationMs, $toolResult->isError, $timedOut);
 
             if ($this->isDeferredOutcome($toolResult)) {
                 $correlation = $this->registerDeferredExecution($message, $toolResult);
@@ -174,9 +167,6 @@ final readonly class ExecuteToolCallWorker
 
             return ToolCallResultFactory::fromExecuteToolCallAndToolResult($message, $toolResult);
         } catch (\Throwable $exception) {
-            $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
-            $this->metrics?->recordToolLatency($durationMs, true, false);
-
             return ToolCallResultFactory::fromExecuteToolCallAndThrowable($message, $exception);
         } finally {
             RunLogContext::leave(); // event_type scope

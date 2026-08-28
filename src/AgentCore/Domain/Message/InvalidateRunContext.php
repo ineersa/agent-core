@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Message;
 
 /**
- * Internal run-control notification that canonical event persistence invalidated
- * a process-local active context. It deliberately carries no transition data.
+ * Cross-process cache-invalidation command for canonical events appended
+ * outside run_control. Messenger routes it to the sole run_control consumer;
+ * RunOrchestrator removes this run from ActiveRunContext, and the next state
+ * transition rebuilds it from events.jsonl. It carries no event payload or
+ * transition data because the canonical log is the recovery source.
  */
 final readonly class InvalidateRunContext
 {

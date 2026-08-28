@@ -99,7 +99,7 @@ services:
     alias: Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository
 
   Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface:
-    alias: Ineersa\CodingAgent\Entity\RunOperationalProjectionRepository
+    alias: Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository
 
   # ─── Error capture (env-driven config, not a per-catch delegation service) ───
 
@@ -682,10 +682,7 @@ services:
     alias: Ineersa\CodingAgent\Agent\Artifact\ActiveRunContext
 
   Ineersa\AgentCore\Contract\RunOperationalProjectionWriterInterface:
-    alias: Ineersa\CodingAgent\Entity\RunOperationalProjectionWriter
-
-  Ineersa\AgentCore\Contract\Replay\HotPromptIntegrityVerifierInterface:
-    alias: Ineersa\CodingAgent\Session\Replay\SessionReplayIntegrityVerifier
+    alias: Ineersa\CodingAgent\Session\Projection\RunOperationalProjectionWriter
 
   Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface:
     alias: Ineersa\CodingAgent\Session\History\HistorySelectionService

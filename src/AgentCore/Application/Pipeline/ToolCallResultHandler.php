@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCallbackFactory;
-use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -35,7 +34,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         private ToolCallExtractor $toolCallExtractor,
         private AgentMessageNormalizer $messageNormalizer,
         private NormalizerInterface&DenormalizerInterface $serializer,
-        private ?RunMetrics $metrics = null,
         private ?MessageBusInterface $commandBus = null,
     ) {
         $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
@@ -91,8 +89,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
             if ($preserveIncoming) {
                 $pendingToolCalls[$message->toolCallId] = true;
-            } else {
-                $this->metrics?->incrementStaleResultCount();
             }
 
             // Cancellation can land after some results were accepted while the batch was
@@ -207,7 +203,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 'retryAttempts' => 0,
             ]);
 
-            $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
+            $postCommit = [];
             $postCancelAdvance = $this->postCancelAdvanceCallback($runId, $state->turnNo);
             if (null !== $postCancelAdvance) {
                 $postCommit[] = $postCancelAdvance;
@@ -230,11 +226,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         }
 
         if (!$outcome->accepted) {
-            // An untracked terminal result cannot change canonical state or the
-            // user-visible stream, but remains observable through the bounded
-            // stale-result metric.
-            $this->metrics?->incrementStaleResultCount();
-
             return new HandlerResult();
         }
 
@@ -297,8 +288,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                     PendingHumanInputRequestDTO::modelTurnFromInterruptPayload($interruptPayload),
                 ];
             }
-
-            $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
 
             if (null === $interruptPayload) {
                 $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo);
@@ -574,13 +563,5 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         }
 
         return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, 'advance-after-tools', 'Failed to dispatch AdvanceRun after tool batch completion.');
-    }
-
-    /**
-     * @return list<callable(): void>
-     */
-    private function turnCompletedCallbacks(string $runId, int $turnNo): array
-    {
-        return null === $this->metrics ? [] : $this->metrics->turnCompletedCallback($runId, $turnNo);
     }
 }

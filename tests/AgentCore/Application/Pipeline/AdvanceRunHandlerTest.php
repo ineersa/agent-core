@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
-use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
@@ -32,12 +31,9 @@ final class AdvanceRunHandlerTest extends TestCase
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
-        $metrics = new RunMetrics();
-
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
-            metrics: $metrics,
         );
 
         $state = RunStateBuilder::create('run-advance-handler-1')
@@ -77,11 +73,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertFalse(property_exists($result->effects[0], 'model'), 'Scheduling must not snapshot a model onto ExecuteLlmStep.');
 
         $this->assertSame([], $result->postCommitEffects);
-        $this->assertCount(1, $result->postCommit);
-
-        ($result->postCommit[0])();
-
-        $this->assertIsArray($metrics->snapshot());
+        $this->assertSame([], $result->postCommit);
     }
 
     public function testCommittedAdvanceDoesNotDrainLaterMailboxCommandAndNextAdvanceCanApplyIt(): void
@@ -409,12 +401,9 @@ final class AdvanceRunHandlerTest extends TestCase
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
-        $metrics = new RunMetrics();
-
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
-            metrics: $metrics,
         );
 
         $state = RunStateBuilder::create('run-all-resolved')

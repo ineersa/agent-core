@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
-use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
@@ -104,7 +103,7 @@ final class ExecutionWorkerTest extends TestCase
         $this->assertStringContainsString('MalformedToolCallSequenceException', $result->error['type'] ?? '');
     }
 
-    public function testLlmWorkerRecordsLatencyErrorAndTracingSpans(): void
+    public function testLlmWorkerRecordsFailureTracingSpan(): void
     {
         $platform = new class implements PlatformInterface {
             public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
@@ -116,11 +115,10 @@ final class ExecutionWorkerTest extends TestCase
         };
 
         $commandBus = new TestMessageBus();
-        $metrics = new RunMetrics();
         $traceLogger = new TestLogger();
         $tracer = new RunTracer($traceLogger);
 
-        $worker = new ExecuteLlmStepWorker($platform, $commandBus, $metrics, $tracer);
+        $worker = new ExecuteLlmStepWorker($platform, $commandBus, tracer: $tracer);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-worker-obs-1',
@@ -132,11 +130,6 @@ final class ExecutionWorkerTest extends TestCase
             toolsRef: 'toolset:run:run-worker-obs-1:turn:2',
         ));
 
-        $snapshot = $metrics->snapshot();
-
-        $this->assertSame(1, $snapshot['llm']['calls']);
-        $this->assertSame(1, $snapshot['llm']['errors']);
-
         $llmFinishSpans = array_values(array_filter(
             $traceLogger->records,
             static fn (array $record): bool => 'agent_loop.trace.finish' === $record['message']
@@ -145,49 +138,6 @@ final class ExecutionWorkerTest extends TestCase
 
         $this->assertCount(1, $llmFinishSpans);
         $this->assertSame('error', $llmFinishSpans[0]['context']['status']);
-    }
-
-    public function testToolWorkerRecordsTimeoutRateFromToolResultDetails(): void
-    {
-        $toolExecutor = new class implements ToolExecutorInterface {
-            public function execute(ToolCall $toolCall): ToolResult
-            {
-                return new ToolResult(
-                    toolCallId: $toolCall->toolCallId,
-                    toolName: $toolCall->toolName,
-                    content: [[
-                        'type' => 'text',
-                        'text' => 'timeout',
-                    ]],
-                    details: [
-                        'timed_out' => true,
-                    ],
-                    isError: true,
-                );
-            }
-        };
-
-        $commandBus = new TestMessageBus();
-        $metrics = new RunMetrics();
-        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), $metrics);
-
-        $worker(new ExecuteToolCall(
-            runId: 'run-worker-obs-2',
-            turnNo: 1,
-            stepId: 'turn-1-tools-1',
-            attempt: 1,
-            idempotencyKey: 'tool-obs-1',
-            toolCallId: 'call-timeout-1',
-            toolName: 'web_search',
-            args: ['query' => 'timeout'],
-            orderIndex: 0,
-        ));
-
-        $snapshot = $metrics->snapshot();
-
-        $this->assertSame(1, $snapshot['tools']['calls']);
-        $this->assertSame(1, $snapshot['tools']['timeouts']);
-        $this->assertSame(1.0, $snapshot['tools']['timeout_rate']);
     }
 
     public function testToolWorkerDispatchesToolCallResult(): void
@@ -385,11 +335,10 @@ final class ExecutionWorkerTest extends TestCase
         };
 
         $commandBus = new TestMessageBus();
-        $metrics = new RunMetrics();
         $testLogger = new TestLogger();
 
         // Non-null logger passed so the worker logs (bypasses NullLogger default).
-        $worker = new ExecuteLlmStepWorker($platform, $commandBus, $metrics, null, $testLogger);
+        $worker = new ExecuteLlmStepWorker($platform, $commandBus, logger: $testLogger);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-empty-metrics-1',
@@ -400,11 +349,6 @@ final class ExecutionWorkerTest extends TestCase
             contextRef: 'hot:run:run-empty-metrics-1',
             toolsRef: 'toolset:run:run-empty-metrics-1:turn:3',
         ));
-
-        // Metrics: the empty response should be counted as an error call.
-        $snapshot = $metrics->snapshot();
-        $this->assertSame(1, $snapshot['llm']['calls']);
-        $this->assertSame(1, $snapshot['llm']['errors']);
 
         // Logger: should emit llm.request.failed with error_type=empty_response,
         // NOT llm.request.completed.

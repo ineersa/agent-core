@@ -25,7 +25,7 @@
 | `ExtensionApi` | 8 | Public extension API: interfaces, DTOs, enums (stable boundary) |
 | `Extension/Builtin/SafeGuard` | 13 | SafeGuard extension: hooks, classifier, policy, config |
 | `Tool` | 16 | ToolRegistry, RegistryBackedToolbox, ToolRuntime, tool implementations |
-| `Session` | 5 | HatfieldSessionStore, SessionRunEventStore, SessionReplayIntegrityVerifier |
+| `Session` | 4 | HatfieldSessionStore, SessionRunEventStore, canonical replay |
 | `Skills` | 6 | Skill discovery, registry, context building, rendering |
 | `SystemPrompt` | 3 | System prompt builder, AGENTS.md context discovery/rendering |
 | `Logging` | 8 | Log reader, log parser, filter, context processor, Monolog handler |

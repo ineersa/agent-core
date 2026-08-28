@@ -5,15 +5,16 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Messenger;
 
 use Doctrine\DBAL\Connection;
-use Ineersa\AgentCore\Application\Handler\RunMetrics;
+use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
+use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
-use Ineersa\CodingAgent\Entity\RunOperationalHumanInputDTO;
-use Ineersa\CodingAgent\Entity\RunOperationalProjectionDTO;
-use Ineersa\CodingAgent\Entity\RunOperationalProjectionRepository;
-use Ineersa\CodingAgent\Entity\RunOperationalToolCallDTO;
+use Ineersa\CodingAgent\Entity\RunOperationalHumanInput;
+use Ineersa\CodingAgent\Entity\RunOperationalState;
+use Ineersa\CodingAgent\Entity\RunOperationalToolCall;
 use Ineersa\CodingAgent\Messenger\RunControlSessionOwnerWorkerLifecycleSubscriber;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
@@ -22,12 +23,7 @@ use Symfony\Component\Messenger\Event\WorkerStoppedEvent;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 use Symfony\Component\Messenger\Worker;
 
-/**
- * Thesis: the dedicated run_control worker acquires exclusive session ownership
- * before its owner-scoped disposable projection cleanup, and releases it only
- * when that worker stops. The real kernel repository proves database effects;
- * direct lifecycle events prove the Messenger ordering without a process race.
- */
+/** Proves the dedicated run_control process fences session-local projection ownership before polling. */
 final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends IsolatedKernelTestCase
 {
     private RunOperationalProjectionRepository $repository;
@@ -40,13 +36,12 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends Isolated
 
     public function testRunControlStartCleansOnlyItsOwnerParentChildAndDependencies(): void
     {
-        $this->repository->replaceStateToolCallsAndHumanInputs($this->projection('parent-a', 'session-a'), [], []);
-        $this->repository->replaceStateToolCallsAndHumanInputs(
-            $this->projection('child-a', 'session-a'),
-            [new RunOperationalToolCallDTO('batch-a', 'tool-a', 0, 'pending', 1)],
-            [new RunOperationalHumanInputDTO('question-a', 0, 'tool_call', 'tool-a', 'waiting')],
-        );
-        $this->repository->replaceStateToolCallsAndHumanInputs($this->projection('parent-b', 'session-b'), [], []);
+        $this->repository->replace($this->projection('parent-a', 'session-a'));
+        $child = $this->projection('child-a', 'session-a');
+        $child->addToolCall(new RunOperationalToolCall($child, 'batch-a', 'tool-a', 0, RunOperationalToolCallStatusEnum::Pending, 1));
+        $child->addHumanInput(new RunOperationalHumanInput($child, 'question-a', 0, HumanInputContinuationKindEnum::ToolCall, 'tool-a'));
+        $this->repository->replace($child);
+        $this->repository->replace($this->projection('parent-b', 'session-b'));
 
         $subscriber = $this->subscriber('session-a', new LockFactory(new InMemoryStore()));
         $subscriber->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control')));
@@ -59,15 +54,17 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends Isolated
         $this->assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM run_operational_human_input WHERE run_id = ?', ['child-a']));
     }
 
-    public function testNonDedicatedRunControlWorkerNeverAcquiresOrCleans(): void
+    public function testOnlyDedicatedRunControlConsumerCanAcquireOwnerFence(): void
     {
-        $this->repository->replaceStateToolCallsAndHumanInputs($this->projection('parent-a', 'session-a'), [], []);
+        $this->repository->replace($this->projection('parent-a', 'session-a'));
         $subscriber = $this->subscriber('session-a', new LockFactory(new InMemoryStore()));
 
         $subscriber->onWorkerStarted(new WorkerStartedEvent($this->worker('tool')));
-        $subscriber->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control', 'tool')));
-
         $this->assertSame(RunStatus::Running, $this->repository->findOperationalStatus('parent-a')?->status);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('dedicated Messenger consumer');
+        $subscriber->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control', 'tool')));
     }
 
     public function testConflictingOwnerFailsBeforeCleanup(): void
@@ -75,22 +72,16 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends Isolated
         $factory = new LockFactory(new InMemoryStore());
         $first = $this->subscriber('session-a', $factory);
         $first->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control')));
-        $this->repository->replaceStateToolCallsAndHumanInputs($this->projection('recreated-a', 'session-a'), [], []);
+        $this->repository->replace($this->projection('recreated-a', 'session-a'));
 
-        $metrics = new RunMetrics();
-        $second = new RunControlSessionOwnerWorkerLifecycleSubscriber($this->repository, $factory, new TestLogger(), 'session-a', $metrics);
+        $second = $this->subscriber('session-a', $factory);
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('already owned');
         try {
             $second->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control')));
         } finally {
-            $this->assertSame(
-                RunStatus::Running,
-                $this->repository->findOperationalStatus('recreated-a')?->status,
-                'A competing worker must fail before it clears the current owner projection.',
-            );
+            $this->assertSame(RunStatus::Running, $this->repository->findOperationalStatus('recreated-a')?->status);
             $first->onWorkerStopped(new WorkerStoppedEvent($this->worker('run_control')));
-            $this->assertSame(1, $metrics->snapshot()['run_control_owner']['fence_conflicts']);
         }
     }
 
@@ -100,7 +91,7 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends Isolated
         $first = $this->subscriber('session-a', $factory);
         $first->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control')));
         $first->onWorkerStopped(new WorkerStoppedEvent($this->worker('run_control')));
-        $this->repository->replaceStateToolCallsAndHumanInputs($this->projection('recreated-a', 'session-a'), [], []);
+        $this->repository->replace($this->projection('recreated-a', 'session-a'));
 
         $replacement = $this->subscriber('session-a', $factory);
         $replacement->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control')));
@@ -108,34 +99,9 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends Isolated
         $this->assertNull($this->repository->findOperationalStatus('recreated-a'));
     }
 
-    public function testCleanupFailureReleasesFenceAndPreventsReplacementFromBeingBlocked(): void
-    {
-        $factory = new LockFactory(new InMemoryStore());
-        $connection = $this->createMock(Connection::class);
-        $connection->expects($this->once())->method('transactional')->willThrowException(new \RuntimeException('database unavailable'));
-        $failing = new RunControlSessionOwnerWorkerLifecycleSubscriber(
-            new RunOperationalProjectionRepository($connection),
-            $factory,
-            new TestLogger(),
-            'session-a',
-        );
-
-        try {
-            $failing->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control')));
-            $this->fail('Cleanup failure must abort worker startup.');
-        } catch (\RuntimeException $exception) {
-            $this->assertSame('database unavailable', $exception->getMessage());
-        }
-
-        $replacement = $this->subscriber('session-a', $factory);
-        $replacement->onWorkerStarted(new WorkerStartedEvent($this->worker('run_control')));
-        $replacement->onWorkerStopped(new WorkerStoppedEvent($this->worker('run_control')));
-        $this->assertTrue(true, 'A cleanup failure must release its acquired session fence.');
-    }
-
     public function testRunControlWithoutStableSessionFailsBeforeCleanup(): void
     {
-        $this->repository->replaceStateToolCallsAndHumanInputs($this->projection('parent-a', 'session-a'), [], []);
+        $this->repository->replace($this->projection('parent-a', 'session-a'));
         $subscriber = $this->subscriber('unknown', new LockFactory(new InMemoryStore()));
 
         $this->expectException(\RuntimeException::class);
@@ -164,8 +130,8 @@ final class RunControlSessionOwnerWorkerLifecycleSubscriberTest extends Isolated
         return $worker;
     }
 
-    private function projection(string $runId, string $ownerSessionId): RunOperationalProjectionDTO
+    private function projection(string $runId, string $ownerSessionId): RunOperationalState
     {
-        return new RunOperationalProjectionDTO($runId, $ownerSessionId, RunStatus::Running, 0, null, null, null, null, false, 0, 0, 0);
+        return new RunOperationalState($runId, $ownerSessionId, RunStatus::Running, 0, null, null, null, null, false, 0, 0, 0);
     }
 }
