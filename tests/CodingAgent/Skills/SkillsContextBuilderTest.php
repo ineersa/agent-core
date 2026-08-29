@@ -220,6 +220,27 @@ ARCH_BODY_UNIQUE');
         $this->assertStringContainsString("\n\nfocus on errors", $expanded);
     }
 
+    public function testCaseFoldedCommandCollisionKeepsFirstDiscoveredSkill(): void
+    {
+        $projectSkillDir = $this->tmpDir.'/.hatfield/skills/project-skill';
+        mkdir($projectSkillDir, 0777, true);
+        file_put_contents($projectSkillDir.'/SKILL.md', "---\nname: Foo\ndescription: Project skill\n---\n\nPROJECT_BODY");
+
+        $userSkillDir = $this->tmpDir.'/home/.hatfield/skills/user-skill';
+        mkdir($userSkillDir, 0777, true);
+        file_put_contents($userSkillDir.'/SKILL.md', "---\nname: foo\ndescription: User skill\n---\n\nUSER_BODY");
+
+        $builder = $this->createBuilder(cwd: $this->tmpDir);
+        $commands = $builder->allSkillCommands();
+        $expanded = $builder->expandSkillCommand('/skill:foo');
+
+        $this->assertCount(1, $commands);
+        $this->assertSame('skill:foo', $commands[0]->name);
+        $this->assertSame('Project skill', $commands[0]->description);
+        $this->assertStringContainsString('PROJECT_BODY', $expanded);
+        $this->assertStringNotContainsString('USER_BODY', $expanded);
+    }
+
     public function testExpandSkillCommandPassthroughUnknown(): void
     {
         $builder = $this->createBuilder(cwd: $this->tmpDir);

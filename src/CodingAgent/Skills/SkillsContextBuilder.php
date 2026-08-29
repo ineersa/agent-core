@@ -129,13 +129,14 @@ final readonly class SkillsContextBuilder implements SkillCatalogInterface
     {
         $commands = [];
         foreach ($this->discovery->discover() as $skill) {
-            $commands[] = new SkillCommand(
-                name: 'skill:'.strtolower($skill->name),
+            $name = 'skill:'.strtolower($skill->name);
+            $commands[$name] ??= new SkillCommand(
+                name: $name,
                 description: $skill->description,
             );
         }
 
-        return $commands;
+        return array_values($commands);
     }
 
     /**
@@ -165,9 +166,6 @@ final readonly class SkillsContextBuilder implements SkillCatalogInterface
         }
 
         $discovered = $this->discovery->discover();
-        $collisions = $this->discovery->getCollisions();
-        $registry = new SkillRegistry($discovered, extractor: $this->extractor, collisions: $collisions);
-
         $skill = null;
         foreach ($discovered as $candidate) {
             if (0 === strcasecmp($candidate->name, $skillName)) {
@@ -179,6 +177,11 @@ final readonly class SkillsContextBuilder implements SkillCatalogInterface
             return $text;
         }
 
+        $registry = new SkillRegistry(
+            $discovered,
+            extractor: $this->extractor,
+            collisions: $this->discovery->getCollisions(),
+        );
         $body = $registry->readBody($skill);
         $skillBlock = $this->renderer->renderPreloadedSkill($skill, $body);
 
