@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
+use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
@@ -228,6 +230,8 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
 
         $secret = 'RAW_TOOL_OUTPUT_SECRET_12345';
+        /** @var ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec */
+        $toolExecutionEndPayloadCodec = self::getContainer()->get(ToolExecutionEndPayloadCodec::class);
         $events = [];
         for ($i = 1; $i <= 25; ++$i) {
             $events[] = new RunEvent(
@@ -235,30 +239,22 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
                 seq: $i,
                 turnNo: 0,
                 type: RunEventTypeEnum::ToolExecutionEnd->value,
-                payload: ['tool_result' => [
-                    'run_id' => $childRun,
-                    'turn_no' => 0,
-                    'step_id' => 'artifact-events',
-                    'attempt' => 1,
-                    'idempotency_key' => 'result-'.$i,
-                    'tool_call_id' => 'call-'.$i,
-                    'order_index' => $i,
-                    'result' => [
-                        'tool_name' => 'bash',
-                        'content' => [['type' => 'text', 'text' => $secret.'-'.$i]],
-                    ],
-                    'is_error' => false,
-                    'error' => null,
-                    'pending_human_input' => null,
-                ]],
+                payload: $toolExecutionEndPayloadCodec->toEventPayload(new ToolCallResult(
+                    runId: $childRun,
+                    turnNo: 0,
+                    stepId: 'tool-step',
+                    attempt: 1,
+                    idempotencyKey: 'tool-result-'.$i,
+                    toolCallId: 'call-'.$i,
+                    orderIndex: $i,
+                    result: ['tool_name' => 'bash', 'output' => $secret.'-'.$i],
+                )),
             );
         }
 
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->once())->method('allFor')->with($this->identicalTo($childRun))->willReturn($events);
-        $runStore = $this->createStub(RunStoreInterface::class);
-
-        $service = $this->makeService($runStore, $eventStore);
+        $service = $this->makeService(eventStore: $eventStore);
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'events', 'limit' => 5]));
 
         $this->assertStringContainsString('Showing last 5 of 25 events', $out);
@@ -286,11 +282,17 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         }
 
         $state = new RunState(runId: $childRun, status: RunStatus::Completed, messages: $messages, model: 'test-model');
-        $runStore = $this->createMock(RunStoreInterface::class);
-        $runStore->expects($this->once())->method('get')->with($this->identicalTo($childRun))->willReturn($state);
+        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
+        $rebuilder->expects($this->once())
+            ->method('rebuildIfStale')
+            ->with(
+                $this->callback(static fn (RunState $queued): bool => $queued->runId === $childRun && 0 === $queued->lastSeq),
+                $this->identicalTo($childRun),
+            )
+            ->willReturn(RunStateReplayResult::rebuilt($state, 44, 44, true));
         $eventStore = $this->createStub(EventStoreInterface::class);
 
-        $service = $this->makeService($runStore, $eventStore);
+        $service = $this->makeService(rebuilder: $rebuilder, eventStore: $eventStore);
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'history', 'limit' => 3]));
 
         $this->assertStringContainsString('Showing last 3 of', $out);
@@ -320,7 +322,6 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('- metadata_path: artifacts/agents/'.$artifactId.'/metadata.json', $out);
         $this->assertStringNotContainsString('handoff_path', $out);
         $this->assertStringContainsString('- events_path: artifacts/agents/'.$artifactId.'/events.jsonl', $out);
-        $this->assertStringContainsString('- state_path: artifacts/agents/'.$artifactId.'/state.json', $out);
         $this->assertStringNotContainsString($isolatedRoot, $out);
         $this->assertStringNotContainsString($isolatedRoot.'/.hatfield/sessions', $out);
     }
@@ -350,17 +351,24 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
         $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Cancelled, summary: 'Child run was cancelled.');
 
-        $runStore = $this->createStub(RunStoreInterface::class);
-        $runStore->method('get')->willReturn(new RunState(
+        $state = new RunState(
             runId: $childRun,
             status: RunStatus::Cancelled,
             version: 1,
             turnNo: 4,
             lastSeq: 18,
             messages: [],
-            model: 'test-model'));
+            model: 'test-model');
+        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
+        $rebuilder->expects($this->once())
+            ->method('rebuildIfStale')
+            ->with(
+                $this->callback(static fn (RunState $queued): bool => $queued->runId === $childRun && 0 === $queued->lastSeq),
+                $this->identicalTo($childRun),
+            )
+            ->willReturn(RunStateReplayResult::rebuilt($state, 18, 18, true));
 
-        $service = $this->makeService(runStore: $runStore);
+        $service = $this->makeService(rebuilder: $rebuilder);
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'metadata']));
 
         $this->assertStringContainsString('status: cancelled', $out);
@@ -417,13 +425,18 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
     }
 
     private function makeService(
-        ?RunStoreInterface $runStore = null,
+        ?RunStateRebuilderInterface $rebuilder = null,
         ?EventStoreInterface $eventStore = null,
     ): AgentArtifactRetrievalService {
+        if (null === $rebuilder) {
+            $rebuilder = $this->createStub(RunStateRebuilderInterface::class);
+            $rebuilder->method('rebuildIfStale')->willReturn(RunStateReplayResult::noEvents());
+        }
+
         return new AgentArtifactRetrievalService(
             artifactRegistry: $this->registry,
             childRunDirectory: $this->directory,
-            runStore: $runStore ?? $this->createStub(RunStoreInterface::class),
+            runStateRebuilder: $rebuilder,
             eventStore: $eventStore ?? $this->createStub(EventStoreInterface::class),
             logger: self::getContainer()->get('logger'),
             toolExecutionEndPayloadCodec: self::getContainer()->get(ToolExecutionEndPayloadCodec::class),

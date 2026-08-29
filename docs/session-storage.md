@@ -13,7 +13,6 @@ description: Session identity, storage layout, events, resume, locking, and hist
 - Each session row also stores immutable `provider_cache_key` (UUIDv7) for provider correlation where supported (for example Codex `prompt_cache_key`). Other providers may ignore it on the wire.
 - Everything needed to resume lives under the session directory plus the `hatfield_session` DB row — there is no global `.hatfield/runs/` registry.
 - Canonical conversation source is append-only `events.jsonl`. Transcript projection rebuilds from events on resume.
-- Canonical event types are exactly `RunEventTypeEnum`; unsupported or removed wire types fail loudly during normalization/replay. Active-development logs written before the vocabulary cleanup are intentionally unsupported.
 - There is **no** `metadata.yaml` in the session directory.
 
 ## Directory layout
@@ -23,7 +22,6 @@ Base path: `sessions.path` setting (default under project `.hatfield/sessions/`)
 ```text
 .hatfield/sessions/<session_id>/
   events.jsonl          # canonical event log
-  state.json            # durable run/projection state
   sequence.cursor       # event sequence allocation
   artifacts/            # child agent artifacts (when used)
   ...                   # other runtime sidecars as created
@@ -37,13 +35,17 @@ Table `hatfield_session` stores id, display name, timestamps, provider cache key
 
 Sessions may be renamed via `/rename`. Display names are metadata only — they do not change `session_id`.
 
-## Events and state
+## Events and operational state
 
-- **`events.jsonl`**: append-only Run/TUI events used for resume and history.
-- **`state.json`**: durable state snapshot for process/runtime recovery (not a second conversation source of truth).
+- **`events.jsonl`**: append-only Run/TUI events used for resume and history; it is the canonical run authority.
+- Active run-control workers replay canonical events on cache miss and retain the current `RunState` only in process memory.
+- The payload-free `run_operational_state`, `run_operational_tool_call`, and `run_operational_human_input` database projection supports bounded operational coordination. It never stores prompt history or other full payloads and is rebuilt from canonical events when needed.
+- The single session-owned run-control consumer uses ordinary transactional upserts, not optimistic CAS. It appends canonical events before replacing the projection and memory cache; projection failure invalidates memory and replay recovers from events.
+- The controller acquires the session-owner lock, synchronously clears that owner’s disposable parent and child projection rows, and only then launches run-control and execution consumers. Execution workers make only narrow indexed status reads for cancellation.
+- New and resumed active runs perform zero `state.json` reads or writes. Legacy event schemas removed before this cutover are unsupported; no fallback reader or event migration is retained. A current-schema synthetic benchmark matching the observed largest parent event bytes/count (43,117,264 bytes; 10,326 events) replayed in 201 ms with a 46,137,344-byte post-baseline peak delta; the child fixture (3,751,623 bytes; 927 events) replayed in 16 ms with a 2,097,152-byte delta. No PHP memory-limit change is made from this evidence.
 - Sequence allocation uses `sequence.cursor` so multi-writer paths do not collide.
 
-Runtime projects events into the TUI transcript. Keep transient stream deltas separate from canonical replay. Terminal `tool_execution_end.payload.tool_result` is the sole complete durable tool-result authority; replay creates ordered model-visible tool messages at `tool_batch_committed`, while direct-shell results remain non-model-visible. Nonterminal `tool_execution_update` is transient only; terminal snapshots remain canonical for child-artifact recovery. `llm_step_completed.assistant_message` owns assistant text and tool calls for runtime/export; it has no top-level `text` or `tool_calls_count` duplicate. During active polling, observers pass their last successfully applied canonical sequence into the runtime client; in-process delivery reverse-reads only the unseen durable suffix, while transient deltas remain unfiltered and are delivered first. The observer advances its cursor only after successful forwarding/application, so a failed poll retries the same canonical suffix rather than losing it.
+Runtime projects events into the TUI transcript. Keep transient stream deltas separate from canonical replay. During active polling, observers pass their last successfully applied canonical sequence into the runtime client; in-process delivery reverse-reads only the unseen durable suffix, while transient deltas remain unfiltered and are delivered first. The observer advances its cursor only after successful forwarding/application, so a failed poll retries the same canonical suffix rather than losing it.
 
 ## Child artifacts
 
@@ -66,12 +68,12 @@ Deferred subagent supervision (single and parallel) uses durable batch records a
 If `.hatfield/state.sqlite` is deleted or loses `hatfield_session` rows while session directories remain, startup reconciles **canonical** positive-digit directories that contain `events.jsonl`:
 
 - **Canonical IDs only:** directory name must be a positive decimal whose integer round-trip equals the original string (rejects `0`, `007`, non-digits, and integer-overflow aliases).
-- **Preserved:** directory name as `session_id` / `run_id`; existing `events.jsonl` / `state.json` bytes are never rewritten or truncated.
-- **Recovered into the row when present in events:** initial user prompt (and default display name from it), current model and reasoning from `run_started` metadata, child `parent_run_id` when present.
+- **Preserved:** directory name as `session_id` / `run_id`; existing canonical `events.jsonl` bytes are never rewritten or truncated.
+- **Recovered into the row when present in events:** initial user prompt (and default display name from it), current model (including later `model_changed`), reasoning from `run_started` metadata, child `parent_run_id` when present.
 - **Not event-backed:** a fresh UUIDv7 `provider_cache_key` is generated; renames and other DB-only fields are not restored when absent from events.
 - **Not recoverable from session events (SQLite-only):** deferred subagent batches/children, background processes, pending tool questions, messenger queues, and other app-state tables.
 
-New session creation uses atomic exclusive `mkdir` of the leaf session path and fails closed before writing `state.json` / `events.jsonl` when any directory, file, or symlink already occupies that path (including malformed orphans). Concurrent recovery inserts are idempotent via `ON CONFLICT(id) DO NOTHING` on the primary key. Corrupt event logs are skipped with privacy-safe diagnostics; DB/storage infrastructure failures hard-fail startup.
+New session creation uses atomic exclusive `mkdir` of the leaf session path and fails closed before writing `events.jsonl` when any directory, file, or symlink already occupies that path (including malformed orphans). Concurrent recovery inserts are idempotent via `ON CONFLICT(id) DO NOTHING` on the primary key. Corrupt event logs are skipped with privacy-safe diagnostics; DB/storage infrastructure failures hard-fail startup.
 
 ## History (`/history`)
 
@@ -93,7 +95,7 @@ Session access uses cooperative locking so two interactive controllers do not co
 
 ## Transition validity
 
-Run-control delivery is at-least-once. A completed or stale control message is acknowledged as a pure no-op; this is separate from normal Messenger retry/redelivery of an **execution** message for an operation that remains current and unfinished. `/repair --apply` is explicit user-authorized same-token redrive, never automatic recovery. The run lock and CAS serialize transitions while committed state, mailbox entries, tool-batch snapshots, and active operation identities are the bounded guards. Repair appends no completion events; workers and result handlers remain authoritative.
+Run-control delivery is at-least-once. A completed or stale control message is acknowledged as a pure no-op; this is separate from normal Messenger retry/redelivery of an **execution** message for an operation that remains current and unfinished. `/repair --apply` is explicit user-authorized same-token redrive, never automatic recovery. There is no receipt ledger: the run lock serializes transitions while canonical events, the payload-free operational projection, mailbox entries, tool-batch snapshots, and active operation identities are the bounded guards. Repair appends no completion events; workers and result handlers remain authoritative. Existing `idempotency.jsonl` artifacts are inert user data: no migration, pruner, or deletion is performed, and new parent and child operations never create them.
 
 | Scope | Expected current token | Committed evidence | Completed/stale duplicate behavior | Same-active/unfinished retry behavior | Stranded repair action |
 |---|---|---|---|---|---|
@@ -102,7 +104,7 @@ Run-control delivery is at-least-once. A completed or stale control message is a
 | `command.apply_shell` | Current shell command token (`turn`/`step`/attempt/key) and pending shell identity | Canonical `agent_command_applied`; pending shell state while execution is active, then canonical reverse-scan evidence after completion | No-op without another shell effect | The current `ExecuteShellToolCall` may retry through Messenger | `/repair --apply` reconstructs and redrives the same direct-shell operation |
 | `command.advance` | Expected predecessor turn and advance idempotency key | Replayed `lastAppliedAdvanceKey` plus successor/terminal or compaction-request event evidence | No-op before mailbox drain or successor dispatch | A still-valid advance control delivery may perform the one transition | `/repair --apply` dispatches deterministic idle `AdvanceRun` at the current boundary |
 | `result.llm` | Current LLM operation: turn, step, attempt, and idempotency key | Replayed bounded current-operation checkpoint and LLM completion/terminal events | No-op; no assistant message, batch, or effect is repeated | The current `ExecuteLlmStep` may retry through Messenger | `/repair --apply` redispatches the exact current LLM operation |
-| `result.tool` | Active batch, pending tool-call identity, terminal/suspension state, and human-input request identity | Durable tool-batch snapshot plus canonical typed `tool_execution_end` result and commit boundary | No-op, including untracked ordinary results; no stale diagnostic event is appended | Pending tool execution messages may retry; parallel out-of-order collection remains valid | `/repair --apply` redrives durable pending/in-flight calls; waiting-for-human-input is not dispatched |
+| `result.tool` | Active batch, pending tool-call identity, terminal/suspension state, and human-input request identity | Durable tool-batch snapshot plus canonical tool result/execution/message events | No-op, including untracked ordinary results; no stale diagnostic event is appended | Pending tool execution messages may retry; parallel out-of-order collection remains valid | `/repair --apply` redrives durable pending/in-flight calls; waiting-for-human-input is not dispatched |
 | `command.compact` | Current compaction request key and turn | Compaction request/start/failure evidence, current compaction operation, and last-applied compaction key | No-op before preparation hooks or worker dispatch | The current `ExecuteCompactionStep` may retry through Messenger | `/repair --apply` redrives only a current compaction with its durable prepared worker request; historical starts without that payload are refused |
 | `result.compaction` | Current compaction turn, step, attempt, and request key | Replayed current compaction operation and terminal compaction evidence | No-op; no false stale-failure lifecycle event | The matching current execution result may be delivered normally | `/repair --apply` uses the same durable prepared request when available; otherwise it refuses safely |
 

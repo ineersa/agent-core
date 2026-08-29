@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
@@ -210,6 +211,26 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $this->assertSame(['', ''], $platform->requestModels);
     }
 
+    public function testForwardsCoordinatorPreparedMessagesToPlatform(): void
+    {
+        $platform = $this->createAlternatingPlatform([new AssistantMessage(new Text('done'))]);
+        $worker = new ExecuteLlmStepWorker($platform, new TestMessageBus(), logger: new TestLogger());
+        $messages = [new AgentMessage('user', [['type' => 'text', 'text' => 'private coordinator context']])];
+
+        $worker(new ExecuteLlmStep(
+            runId: 'run-direct-context',
+            turnNo: 1,
+            stepId: 'step-1',
+            attempt: 1,
+            idempotencyKey: 'key-1',
+            contextRef: 'hot:run:run-direct-context',
+            toolsRef: 'tools-1',
+            messages: $messages,
+        ));
+
+        $this->assertSame($messages, $platform->requests[0]->input->messages);
+    }
+
     // ── helpers ──
 
     /**
@@ -239,6 +260,9 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             /** @var list<string> */
             public array $requestModels = [];
 
+            /** @var list<ModelInvocationRequest> */
+            public array $requests = [];
+
             /** @var list<AssistantMessage|PlatformInvocationResult> */
             private array $responses;
 
@@ -256,6 +280,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
                 ++$this->invocationCount;
                 $this->lastRequestModel = $request->model;
                 $this->requestModels[] = $request->model;
+                $this->requests[] = $request;
 
                 $item = $this->responses[min($index, \count($this->responses) - 1)];
 

@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use PHPUnit\Framework\TestCase;
 
 final class HookDispatcherContractTest extends TestCase
@@ -23,6 +25,7 @@ final class HookDispatcherContractTest extends TestCase
                     status: 'mutated-by-subscriber',
                     events: $context->events,
                     effectsCount: $context->effectsCount + 1,
+                    runState: $context->runState,
                 );
             }
         };
@@ -35,6 +38,7 @@ final class HookDispatcherContractTest extends TestCase
             status: 'running',
             events: [new AfterTurnCommitEventSummary(seq: 7, type: 'agent_end')],
             effectsCount: 3,
+            runState: new RunState('run-stage-01', RunStatus::Running, turnNo: 2),
         ));
 
         $this->assertSame('run-stage-01', $result->runId);

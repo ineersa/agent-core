@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobMessage;
@@ -89,6 +91,7 @@ final class ChildExtensionOmIsolationTest extends TestCase
             status: 'completed',
             events: [],
             effectsCount: 0,
+            runState: new RunState('child-om-1', RunStatus::Completed, turnNo: 1),
         ));
 
         $this->assertFalse($ran, 'OM after-turn hook must not run for child without OM selection');

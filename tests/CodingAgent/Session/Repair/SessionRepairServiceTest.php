@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -25,10 +26,10 @@ use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -46,6 +47,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 #[Group('session-repair')]
 final class SessionRepairServiceTest extends TestCase
@@ -80,14 +82,14 @@ final class SessionRepairServiceTest extends TestCase
             ['type' => RunEventTypeEnum::AgentEnd->value, 'payload' => ['reason' => 'completed']],
         ]));
 
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(
+        $runStore = new TestActiveRunContext();
+        $runStore->remember(new RunState(
             runId: $runId,
             status: RunStatus::Completed,
             version: 1,
             turnNo: 1,
             lastSeq: 3,
-            model: 'test-model'), 0);
+            model: 'test-model'));
 
         $service = $this->createService($runStore);
         $before = $this->readEvents($runId);
@@ -118,8 +120,8 @@ final class SessionRepairServiceTest extends TestCase
                 'operation_idempotency_key' => $key,
             ]],
         ]));
-        $store = new InMemoryRunStore();
-        $store->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 2, activeStepId: $stepId), 0);
+        $store = new TestActiveRunContext();
+        $store->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 2, activeStepId: $stepId));
         $bus = new TestMessageBus();
         $service = $this->createService($store, dispatcherBus: $bus);
 
@@ -172,8 +174,8 @@ final class SessionRepairServiceTest extends TestCase
                 'worker_request' => $serializer->normalize($workerRequest),
             ]],
         ]));
-        $store = new InMemoryRunStore();
-        $store->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Compacting, version: 1, turnNo: 4, lastSeq: 2, activeStepId: 'compact-step'), 0);
+        $store = new TestActiveRunContext();
+        $store->remember(new RunState(runId: $runId, status: RunStatus::Compacting, version: 1, turnNo: 4, lastSeq: 2, activeStepId: 'compact-step'));
         $bus = new TestMessageBus();
         $service = $this->createService($store, dispatcherBus: $bus);
         $before = $this->readEvents($runId);
@@ -215,8 +217,8 @@ final class SessionRepairServiceTest extends TestCase
                 'worker_request' => $serializer->normalize($request),
             ]],
         ]));
-        $store = new InMemoryRunStore();
-        $store->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Compacting, version: 1, turnNo: 4, lastSeq: 2, activeStepId: 'compact-step'), 0);
+        $store = new TestActiveRunContext();
+        $store->remember(new RunState(runId: $runId, status: RunStatus::Compacting, version: 1, turnNo: 4, lastSeq: 2, activeStepId: 'compact-step'));
         $bus = new TestMessageBus();
 
         $result = $this->createService($store, dispatcherBus: $bus)->repair($runId, true);
@@ -243,8 +245,8 @@ final class SessionRepairServiceTest extends TestCase
                 ),
             ]],
         ]));
-        $store = new InMemoryRunStore();
-        $store->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 2), 0);
+        $store = new TestActiveRunContext();
+        $store->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 2));
         $bus = new TestMessageBus();
         $service = $this->createService($store, dispatcherBus: $bus);
         $before = $this->readEvents($runId);
@@ -263,30 +265,6 @@ final class SessionRepairServiceTest extends TestCase
             $this->assertFalse($message->standalone);
         }
         $this->assertSame($before, $this->readEvents($runId));
-    }
-
-    public function testHistoricalShellWithoutStandaloneEvidenceIsRefusedWithoutDispatch(): void
-    {
-        $runId = 'repair-historical-shell';
-        $key = 'historical-shell-key';
-        $factory = new EventFactory();
-        $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 0, 1, [
-            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
-            ['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => [
-                'kind' => 'shell_command',
-                'text' => '!printf historical-shell',
-                'idempotency_key' => $key,
-            ]],
-        ]));
-        $store = new InMemoryRunStore();
-        $store->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 2), 0);
-        $bus = new TestMessageBus();
-        $service = $this->createService($store, dispatcherBus: $bus);
-
-        $result = $service->repair($runId, true);
-
-        $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $result->refusalReason);
-        $this->assertSame([], $bus->messages);
     }
 
     /**
@@ -332,15 +310,15 @@ final class SessionRepairServiceTest extends TestCase
         }
         $events = $factory->eventsFromSpecs($runId, $turnNo, 1, $specs);
         $this->persistRunEvents($runId, $events);
-        $store = new InMemoryRunStore();
-        $store->compareAndSwap(new RunState(
+        $store = new TestActiveRunContext();
+        $store->remember(new RunState(
             runId: $runId,
             status: $childTurn ? RunStatus::Running : RunStatus::Queued,
             version: 1,
             turnNo: $turnNo,
             lastSeq: \count($events),
             activeStepId: $stepId,
-        ), 0);
+        ));
         $bus = new TestMessageBus();
         $service = $this->createService($store, dispatcherBus: $bus);
 
@@ -374,8 +352,8 @@ final class SessionRepairServiceTest extends TestCase
             maxParallelism: 2,
         ));
         $this->persistActiveToolBatchEvents($runId, $stepId);
-        $store = new InMemoryRunStore();
-        $store->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 3, activeStepId: $stepId), 0);
+        $store = new TestActiveRunContext();
+        $store->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 3, activeStepId: $stepId));
         $bus = new TestMessageBus();
         $service = $this->createService($store, dispatcherBus: $bus, toolBatchStore: $batchStore);
         $before = $this->readEvents($runId);
@@ -409,8 +387,8 @@ final class SessionRepairServiceTest extends TestCase
             awaitingHumanInput: ['call-human' => 'question-1'],
         ));
         $this->persistActiveToolBatchEvents($runId, $stepId, waitingHuman: true);
-        $store = new InMemoryRunStore();
-        $store->compareAndSwap(new RunState(runId: $runId, status: RunStatus::WaitingHuman, version: 1, turnNo: 3, lastSeq: 4, activeStepId: $stepId), 0);
+        $store = new TestActiveRunContext();
+        $store->remember(new RunState(runId: $runId, status: RunStatus::WaitingHuman, version: 1, turnNo: 3, lastSeq: 4, activeStepId: $stepId));
         $bus = new TestMessageBus();
         $service = $this->createService($store, dispatcherBus: $bus, toolBatchStore: $batchStore);
         $before = $this->readEvents($runId);
@@ -428,10 +406,10 @@ final class SessionRepairServiceTest extends TestCase
         $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 0, 1, [
             ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
         ]));
-        $store = new InMemoryRunStore();
-        $store->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 1), 0);
+        $store = new TestActiveRunContext();
+        $store->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 1));
         $bus = new TestMessageBus();
-        $service = $this->createService($store, dispatcherBus: $bus);
+        $service = $this->createService($store, commandBus: $bus);
         $before = $this->readEvents($runId);
         $key = hash('sha256', $runId.'|repair-advance|0|1');
 
@@ -587,8 +565,8 @@ final class SessionRepairServiceTest extends TestCase
             $factory->event($runId, 3, 1, RunEventTypeEnum::AgentCommandApplied->value, ['kind' => 'cancel']),
         ]);
 
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(RunState::queued($runId), 0);
+        $runStore = new TestActiveRunContext();
+        $runStore->remember(RunState::queued($runId));
 
         $service = $this->createService($runStore);
         $before = $this->readRawLines($runId);
@@ -610,8 +588,8 @@ final class SessionRepairServiceTest extends TestCase
             ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 1, 'step_id' => 'llm-1']],
         ]));
 
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(
+        $runStore = new TestActiveRunContext();
+        $runStore->remember(new RunState(
             runId: $runId,
             status: RunStatus::Running,
             version: 1,
@@ -620,7 +598,7 @@ final class SessionRepairServiceTest extends TestCase
             isStreaming: true,
             streamingMessage: ['message_id' => 'm1'],
             activeStepId: 'llm-1',
-            model: 'test-model'), 0);
+            model: 'test-model'));
 
         $service = $this->createService($runStore);
         $before = $this->readRawLines($runId);
@@ -641,8 +619,8 @@ final class SessionRepairServiceTest extends TestCase
             $factory->event($runId, 4, 1, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
         ]);
 
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(RunState::queued($runId), 0);
+        $runStore = new TestActiveRunContext();
+        $runStore->remember(RunState::queued($runId));
 
         $service = $this->createService($runStore);
         $before = $this->readRawLines($runId);
@@ -659,8 +637,8 @@ final class SessionRepairServiceTest extends TestCase
         $events = $this->buildCanonicalToolTurnPrefix($runId, includeToolStart: true, includeCompletedToolGroup: false);
         $this->persistRunEvents($runId, $events);
 
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(
+        $runStore = new TestActiveRunContext();
+        $runStore->remember(new RunState(
             runId: $runId,
             status: RunStatus::Running,
             version: 1,
@@ -668,7 +646,7 @@ final class SessionRepairServiceTest extends TestCase
             lastSeq: \count($events),
             pendingToolCalls: [self::TOOL_CALL_ID => false],
             activeStepId: self::STEP_ID,
-            model: 'test-model'), 0);
+            model: 'test-model'));
 
         $service = $this->createService($runStore);
         $before = $this->readRawLines($runId);
@@ -692,15 +670,15 @@ final class SessionRepairServiceTest extends TestCase
         ]);
         $this->persistRunEvents($runId, $events);
 
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(
+        $runStore = new TestActiveRunContext();
+        $runStore->remember(new RunState(
             runId: $runId,
             status: RunStatus::Cancelling,
             version: 1,
             turnNo: $turnNo,
             lastSeq: \count($events),
             activeStepId: self::STEP_ID,
-            model: 'test-model'), 0);
+            model: 'test-model'));
 
         $service = $this->createService($runStore);
         $prefix = \count($events);
@@ -745,25 +723,6 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame($runId, $logger->records[0]['context']['run_id']);
     }
 
-    public function testRunStateUnavailableRefusalLogsStructuredRefusal(): void
-    {
-        $runId = 'missing-state';
-        $factory = new EventFactory();
-        $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 1, 1, [
-            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => []],
-            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 1, 'step_id' => 's1']],
-        ]));
-
-        $logger = new TestLogger();
-        $service = $this->createService(runStore: new InMemoryRunStore(), logger: $logger);
-        $result = $service->repair($runId, true);
-
-        $this->assertSame(SessionRepairRefusalReasonEnum::RunStateUnavailable, $result->refusalReason);
-        $this->assertCount(1, $logger->records);
-        $this->assertSame('session_repair.refused', $logger->records[0]['message']);
-        $this->assertSame('run_state_unavailable', $logger->records[0]['context']['refusal_reason']);
-    }
-
     public function testMultiTurnLlmAbortTargetsOnlyLatestIncompletePhase(): void
     {
         $runId = 'multi-turn-llm';
@@ -779,15 +738,15 @@ final class SessionRepairServiceTest extends TestCase
         ]);
         $this->persistRunEvents($runId, $events);
 
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(
+        $runStore = new TestActiveRunContext();
+        $runStore->remember(new RunState(
             runId: $runId,
             status: RunStatus::Cancelling,
             version: 1,
             turnNo: 33,
             lastSeq: \count($events),
             activeStepId: $secondStep,
-            model: 'test-model'), 0);
+            model: 'test-model'));
 
         $service = $this->createService($runStore);
         $prefix = \count($events);
@@ -1072,10 +1031,11 @@ final class SessionRepairServiceTest extends TestCase
         $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 3, 1, $specs));
     }
 
-    private function createService(?InMemoryRunStore $runStore = null, ?TestLogger $logger = null, ?TestMessageBus $dispatcherBus = null, ?ToolBatchStoreInterface $toolBatchStore = null): SessionRepairService
+    private function createService(?ActiveRunContextInterface $activeRunContext = null, ?TestLogger $logger = null, ?TestMessageBus $dispatcherBus = null, ?ToolBatchStoreInterface $toolBatchStore = null, ?MessageBusInterface $commandBus = null): SessionRepairService
     {
-        $runStore ??= new InMemoryRunStore();
+        $activeRunContext ??= new TestActiveRunContext();
         $dispatcherBus ??= new TestMessageBus();
+        $commandBus ??= new TestMessageBus();
         $toolBatchStore ??= $this->createStub(ToolBatchStoreInterface::class);
 
         $appConfig = new AppConfig(
@@ -1103,24 +1063,25 @@ final class SessionRepairServiceTest extends TestCase
 
         return new SessionRepairService(
             eventStore: $eventStore,
-            runStore: $runStore,
+            activeRunContext: $activeRunContext,
             runStateReducer: new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             replayEventPreparer: new ReplayEventPreparer(),
             eventFactory: new EventFactory(),
             toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
             lockManager: new RunLockManager(new LockFactory(new FlockStore($lockDir))),
             logger: $logger ?? new NullLogger(),
-            stepDispatcher: new StepDispatcher($dispatcherBus),
+            stepDispatcher: new StepDispatcher($commandBus, $dispatcherBus),
             toolBatchStore: $toolBatchStore,
             serializer: AttributeSerializerValidatorTestFactory::create()[0],
+            commandBus: $commandBus,
         );
     }
 
-    private function createStaleCancellationRunStore(string $runId, bool $unresolvedTool): InMemoryRunStore
+    private function createStaleCancellationRunStore(string $runId, bool $unresolvedTool): TestActiveRunContext
     {
-        $runStore = new InMemoryRunStore();
+        $runStore = new TestActiveRunContext();
         $eventCount = \count($this->buildStaleCancellationEvents($runId, $unresolvedTool));
-        $runStore->compareAndSwap(new RunState(
+        $runStore->remember(new RunState(
             runId: $runId,
             status: RunStatus::Cancelling,
             version: 1,
@@ -1128,7 +1089,7 @@ final class SessionRepairServiceTest extends TestCase
             lastSeq: $eventCount,
             pendingToolCalls: $unresolvedTool ? [self::TOOL_CALL_ID => false] : [self::TOOL_CALL_ID => true],
             activeStepId: self::STEP_ID,
-            model: 'test-model'), 0);
+            model: 'test-model'));
 
         return $runStore;
     }

@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Messenger;
 
 use Doctrine\DBAL\DriverManager;
-use Ineersa\CodingAgent\Migrations\MessengerTransportSchemaEnsurer;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Psr\Log\NullLogger;
 use Symfony\Component\Messenger\Bridge\Doctrine\Transport\Connection as DoctrineMessengerConnection;
 use Symfony\Component\Messenger\Bridge\Doctrine\Transport\DoctrineTransport;
 use Symfony\Component\Messenger\Envelope;
@@ -43,7 +41,10 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
             'path' => $path,
             'driverOptions' => [\PDO::ATTR_TIMEOUT => 5],
         ]);
-        (new MessengerTransportSchemaEnsurer($fresh, new NullLogger()))();
+        $this->assertTrue(
+            $fresh->createSchemaManager()->tablesExist(['messenger_messages']),
+            'The generated transport migration must provision Messenger storage before a queue is created.',
+        );
 
         $configuration = DoctrineMessengerConnection::buildConfiguration(
             \sprintf(

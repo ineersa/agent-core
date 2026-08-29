@@ -1,0 +1,7 @@
+migrations_paths:
+    'DoctrineMigrations\MessengerTransport': '../../migrations/messenger_transport'
+table_storage:
+    table_name: doctrine_migration_versions
+all_or_nothing: true
+transactional: true
+check_database_platform: true

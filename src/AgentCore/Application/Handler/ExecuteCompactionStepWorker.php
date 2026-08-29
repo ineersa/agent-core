@@ -35,7 +35,6 @@ final readonly class ExecuteCompactionStepWorker
     public function __construct(
         private PlatformInterface $platform,
         private MessageBusInterface $commandBus,
-        private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -123,7 +122,6 @@ final readonly class ExecuteCompactionStepWorker
             ;
 
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
-            $this->metrics?->recordLlmLatency($durationMs, null !== $response->error);
 
             if (null !== $response->error) {
                 $this->logger->warning('compaction.request.failed', [
@@ -165,7 +163,6 @@ final readonly class ExecuteCompactionStepWorker
             );
         } catch (\Throwable $exception) {
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
-            $this->metrics?->recordLlmLatency($durationMs, true);
 
             $rawMessage = $exception->getMessage();
 

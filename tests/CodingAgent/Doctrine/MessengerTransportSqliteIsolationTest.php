@@ -6,9 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Doctrine;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
-use Ineersa\CodingAgent\Migrations\MessengerTransportSchemaEnsurer;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Psr\Log\NullLogger;
 
 /**
  * Proves Symfony boots two distinct SQLite DBAL connections for app state vs
@@ -62,7 +60,10 @@ final class MessengerTransportSqliteIsolationTest extends IsolatedKernelTestCase
             'path' => $transportPath,
             'driverOptions' => [\PDO::ATTR_TIMEOUT => 5],
         ]);
-        (new MessengerTransportSchemaEnsurer($freshTransport, new NullLogger()))();
+        $this->assertTrue(
+            $freshTransport->createSchemaManager()->tablesExist(['messenger_messages']),
+            'The dedicated transport migration must provision messenger_messages before consumers use it.',
+        );
 
         $this->defaultConnection->beginTransaction();
         $this->defaultConnection->executeStatement(

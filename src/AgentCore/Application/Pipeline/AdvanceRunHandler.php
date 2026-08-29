@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCallbackFactory;
-use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -23,7 +22,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
     public function __construct(
         private CommandMailboxPolicy $commandMailboxPolicy,
         private EventFactory $eventFactory,
-        private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
         private ?PreLlmCompactionGuardInterface $preLlmCompactionGuard = null,
         private ?MessageBusInterface $commandBus = null,
@@ -102,6 +100,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
                 'pendingShellToolCalls' => [],
+                'activeStepId' => null,
                 'currentOperation' => null,
                 'lastAppliedAdvanceKey' => $message->idempotencyKey(),
                 'retryableFailure' => false,
@@ -368,6 +367,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             idempotencyKey: hash('sha256', \sprintf('%s|llm|%d|%s', $runId, $nextTurnNo, $nextStepId)),
             contextRef: \sprintf('hot:run:%s', $runId),
             toolsRef: \sprintf('toolset:run:%s:turn:%d', $runId, $nextTurnNo),
+            messages: $preparedState->messages,
         );
 
         $previousTurnNo = $preparedState->turnNo > 0 ? $preparedState->turnNo : null;
@@ -419,18 +419,10 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             'retryableFailure' => false,
         ]);
 
-        $postCommit = [];
-        if (null !== $this->metrics) {
-            $postCommit[] = function () use ($runId, $nextTurnNo): void {
-                $this->metrics->recordTurnStarted($runId, $nextTurnNo);
-            };
-        }
-
         return new HandlerResult(
             nextState: $nextState,
             events: $events,
             effects: [$effect],
-            postCommit: $postCommit,
         );
     }
 

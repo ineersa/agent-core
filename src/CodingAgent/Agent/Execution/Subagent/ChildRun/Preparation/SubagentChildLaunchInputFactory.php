@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation;
 
-use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
@@ -25,7 +26,7 @@ final class SubagentChildLaunchInputFactory
     public function __construct(
         private readonly AgentPromptBuilder $promptBuilder,
         private readonly SkillsContextBuilder $skillsContextBuilder,
-        private readonly RunStoreInterface $parentRunStore,
+        private readonly RunStateRebuilderInterface $runStateRebuilder,
         private readonly AppConfig $appConfig,
         private readonly ChildExtensionSelectionService $childExtensionSelection,
         private readonly ToolRegistryInterface $toolRegistry,
@@ -268,7 +269,9 @@ final class SubagentChildLaunchInputFactory
 
     private function extractUserContextBySource(string $parentRunId, string $source): string
     {
-        $state = $this->parentRunStore->get($parentRunId);
+        $state = $this->runStateRebuilder
+            ->rebuildIfStale(RunState::queued($parentRunId), $parentRunId)
+            ->rebuiltState;
         if (null === $state) {
             return '';
         }

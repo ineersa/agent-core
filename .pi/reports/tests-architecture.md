@@ -346,7 +346,7 @@ Only ~15% of tests use `#[CoversClass]` or `@covers` annotations. Tests that do 
 tests/AgentCore/ (37 files)
   Application/Handler/ (12): AfterTurnCommitSerializerRegressionTest, CommandRouterContractTest,
     ExecutionFailureDrillTest, ExecutionWorkerTest, HookDispatcherContractTest, InMemoryToolBatchStoreTest,
-    ReplayServiceTest, RunLockManagerTest, RunMetricsTest, RunTracerTest,
+    ReplayServiceTest, RunLockManagerTest, RunTracerTest,
     ToolBatchCollectorDurableTest, ToolBatchCollectorTest, ToolExecutionPolicyResolverTest, ToolExecutorTest
   Application/Pipeline/ (6): AdvanceRunHandlerTest, ApplyCommandHandlerTest, CommandMailboxPolicyTest,
     LlmStepResultHandlerTest, StartRunHandlerTest, ToolCallResultHandlerTest

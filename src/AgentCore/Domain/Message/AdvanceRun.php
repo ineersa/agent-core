@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
-final readonly class AdvanceRun extends AbstractAgentBusMessage
+final readonly class AdvanceRun extends AbstractAgentBusMessage implements RunControlTransitionMessageInterface
 {
     /**
      * Initializes the advance run event with run, turn, step, attempt, and idempotency identifiers.

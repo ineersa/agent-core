@@ -60,7 +60,6 @@ final class SubagentChildLiveViewFixtureSupport
                     'metadata_path' => $artifactRel.'/metadata.json',
                     'handoff_path' => $artifactRel.'/handoff.md',
                     'events_path' => $artifactRel.'/events.jsonl',
-                    'state_path' => $artifactRel.'/state.json',
                 ],
             ]],
         ];

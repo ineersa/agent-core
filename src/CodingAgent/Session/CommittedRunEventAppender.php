@@ -5,27 +5,27 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Run\RunState;
-use Psr\Log\LoggerInterface;
+use Ineersa\AgentCore\Domain\Message\InvalidateRunContext;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
- * Appends parent-session events through a committed store and syncs parent RunState.lastSeq.
+ * Appends parent-session canonical events, then asks the sole run_control
+ * process to discard its cached state. A dispatch failure propagates after
+ * the canonical append remains durable.
  */
 final readonly class CommittedRunEventAppender
 {
     public function __construct(
         private EventStoreInterface $eventStore,
-        private RunStoreInterface $runStore,
-        private LoggerInterface $logger,
+        private MessageBusInterface $commandBus,
     ) {
     }
 
     public function append(RunEvent $event): RunEvent
     {
         $persisted = $this->eventStore->append($event);
-        $this->syncParentLastSeq($persisted->runId, $persisted->seq);
+        $this->commandBus->dispatch(new InvalidateRunContext($persisted->runId));
 
         return $persisted;
     }
@@ -43,32 +43,8 @@ final readonly class CommittedRunEventAppender
 
         $persisted = $this->eventStore->appendMany($events);
         $last = $persisted[array_key_last($persisted)];
-        $this->syncParentLastSeq($last->runId, $last->seq);
+        $this->commandBus->dispatch(new InvalidateRunContext($last->runId));
 
         return $persisted;
-    }
-
-    private function syncParentLastSeq(string $runId, int $seq): void
-    {
-        $state = $this->runStore->get($runId);
-        if (null === $state || $state->lastSeq >= $seq) {
-            return;
-        }
-
-        // LastSeq sync is a pure version/seq bump: like RunCommit and
-        // incrementStateVersion, it must not drop retry accounting.
-        $nextState = $state->with([
-            'version' => $state->version + 1,
-            'lastSeq' => $seq,
-        ]);
-
-        if (!$this->runStore->compareAndSwap($nextState, $state->version)) {
-            $this->logger->debug('sequenced_event_append.last_seq_cas_skipped', [
-                'run_id' => $runId,
-                'target_seq' => $seq,
-                'component' => 'session.event_store',
-                'event_type' => 'sequenced_event_append.last_seq_cas_skipped',
-            ]);
-        }
     }
 }

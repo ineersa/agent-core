@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCallbackFactory;
-use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -13,8 +12,10 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
+use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
+use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -33,7 +34,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         private ToolCallExtractor $toolCallExtractor,
         private AgentMessageNormalizer $messageNormalizer,
         private NormalizerInterface&DenormalizerInterface $serializer,
-        private ?RunMetrics $metrics = null,
         private ?MessageBusInterface $commandBus = null,
     ) {
         $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
@@ -56,6 +56,10 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         }
 
         $runId = $message->runId();
+
+        if (isset($state->pendingShellToolCalls[$message->toolCallId])) {
+            return $this->handleShellResult($message, $state);
+        }
 
         // Completed or superseded tool results are harmless redeliveries. The
         // collector remains the authority for active parallel calls and HITL.
@@ -89,8 +93,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
             if ($preserveIncoming) {
                 $pendingToolCalls[$message->toolCallId] = true;
-            } else {
-                $this->metrics?->incrementStaleResultCount();
             }
 
             // Cancellation can land after some results were accepted while the batch was
@@ -199,12 +201,15 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
+                'currentToolCalls' => [],
                 'messages' => $messages,
+                'activeStepId' => null,
+                'currentOperation' => null,
                 'retryableFailure' => false,
                 'retryAttempts' => 0,
             ]);
 
-            $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
+            $postCommit = [];
             $postCancelAdvance = $this->postCancelAdvanceCallback($runId, $state->turnNo);
             if (null !== $postCancelAdvance) {
                 $postCommit[] = $postCancelAdvance;
@@ -227,11 +232,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         }
 
         if (!$outcome->accepted) {
-            // An untracked terminal result cannot change canonical state or the
-            // user-visible stream, but remains observable through the bounded
-            // stale-result metric.
-            $this->metrics?->incrementStaleResultCount();
-
             return new HandlerResult();
         }
 
@@ -295,8 +295,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 ];
             }
 
-            $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
-
             if (null === $interruptPayload) {
                 $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo);
                 if (null !== $followUpAdvance) {
@@ -309,6 +307,10 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
         $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
+        $currentToolCalls = $outcome->complete
+            ? []
+            : $this->withToolStatus($state->currentToolCalls, $message->toolCallId, RunOperationalToolCallStatusEnum::Completed);
+
         $nextState = $state->with([
             'status' => $status,
             'version' => $state->version + 1,
@@ -316,6 +318,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             'isStreaming' => false,
             'streamingMessage' => null,
             'pendingToolCalls' => $pendingToolCalls,
+            'currentToolCalls' => $currentToolCalls,
             'messages' => $messages,
             'retryableFailure' => false,
             'pendingHumanInputRequests' => $pendingHumanInputRequests,
@@ -326,6 +329,54 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             events: $events,
             postCommitEffects: $effects,
             postCommit: $postCommit,
+        );
+    }
+
+    private function handleShellResult(ToolCallResult $message, RunState $state): HandlerResult
+    {
+        $eventSpecs = [[
+            'type' => RunEventTypeEnum::ToolExecutionEnd->value,
+            'payload' => $this->toolExecutionEndPayloadCodec->toEventPayload($message),
+        ]];
+
+        $standalone = \is_array($message->result) && true === ($message->result['standalone'] ?? false);
+        if ($standalone) {
+            $eventSpecs[] = [
+                'type' => RunEventTypeEnum::AgentEnd->value,
+                'payload' => ['reason' => 'completed'],
+            ];
+        }
+
+        $events = $this->eventFactory->eventsFromSpecs(
+            $message->runId(),
+            $state->turnNo,
+            $state->lastSeq + 1,
+            $eventSpecs,
+        );
+        $pendingShellToolCalls = $state->pendingShellToolCalls;
+        unset($pendingShellToolCalls[$message->toolCallId]);
+        $currentToolCalls = array_values(array_filter(
+            $state->currentToolCalls,
+            static fn (CurrentToolCallDTO $toolCall): bool => $toolCall->toolCallId !== $message->toolCallId,
+        ));
+
+        return new HandlerResult(
+            nextState: $state->with([
+                'status' => $standalone ? RunStatus::Completed : $state->status,
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($events),
+                'pendingToolCalls' => $standalone ? [] : $state->pendingToolCalls,
+                'pendingShellToolCalls' => $pendingShellToolCalls,
+                'currentToolCalls' => $currentToolCalls,
+                'activeStepId' => $standalone ? null : $state->activeStepId,
+                'currentOperation' => $standalone ? null : $state->currentOperation,
+                'isStreaming' => false,
+                'streamingMessage' => null,
+                'retryableFailure' => $standalone ? false : $state->retryableFailure,
+                'retryAttempts' => $standalone ? 0 : $state->retryAttempts,
+            ]),
+            events: $events,
+            postCommit: $standalone ? [$this->shellCompletionAdvanceCallback($message->runId(), $state->turnNo)] : [],
         );
     }
 
@@ -391,10 +442,26 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'retryableFailure' => false,
+                'currentToolCalls' => $this->withToolStatus($state->currentToolCalls, $message->toolCallId, RunOperationalToolCallStatusEnum::WaitingHuman),
                 'pendingHumanInputRequests' => $pendingHumanInputRequests,
             ]),
             events: $events,
             postCommitEffects: $effects,
+        );
+    }
+
+    /**
+     * @param list<CurrentToolCallDTO> $toolCalls
+     *
+     * @return list<CurrentToolCallDTO>
+     */
+    private function withToolStatus(array $toolCalls, string $toolCallId, RunOperationalToolCallStatusEnum $status): array
+    {
+        return array_map(
+            static fn (CurrentToolCallDTO $toolCall): CurrentToolCallDTO => $toolCall->toolCallId === $toolCallId
+                ? $toolCall->withStatus($status)
+                : $toolCall,
+            $toolCalls,
         );
     }
 
@@ -534,6 +601,16 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         );
     }
 
+    private function shellCompletionAdvanceCallback(string $runId, int $turnNo): callable
+    {
+        if (null === $this->commandBus) {
+            return static function (): void {
+            };
+        }
+
+        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, 'shell-standalone-advance', 'Failed to dispatch AdvanceRun after standalone shell completion.');
+    }
+
     private function postCancelAdvanceCallback(string $runId, int $turnNo): ?callable
     {
         if (null === $this->commandBus) {
@@ -550,13 +627,5 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         }
 
         return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, 'advance-after-tools', 'Failed to dispatch AdvanceRun after tool batch completion.');
-    }
-
-    /**
-     * @return list<callable(): void>
-     */
-    private function turnCompletedCallbacks(string $runId, int $turnNo): array
-    {
-        return null === $this->metrics ? [] : $this->metrics->turnCompletedCallback($runId, $turnNo);
     }
 }

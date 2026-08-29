@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\ContextBudget;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
@@ -32,7 +31,6 @@ final readonly class ContextBudgetReminderHookSubscriber implements HookSubscrib
 
     public function __construct(
         private EventStoreInterface $eventStore,
-        private RunStoreInterface $runStore,
         private AgentRunnerInterface $agentRunner,
         private ContextBudgetReminderConfig $config,
         private AppConfig $appConfig,
@@ -51,7 +49,7 @@ final readonly class ContextBudgetReminderHookSubscriber implements HookSubscrib
             return $context;
         }
 
-        $contextWindow = $this->resolveContextWindow($context->runId);
+        $contextWindow = $this->resolveContextWindow($context);
         if (null === $contextWindow) {
             return $context;
         }
@@ -190,15 +188,14 @@ final readonly class ContextBudgetReminderHookSubscriber implements HookSubscrib
         return implode('', $parts);
     }
 
-    private function resolveContextWindow(string $runId): ?int
+    private function resolveContextWindow(AfterTurnCommitHookContext $context): ?int
     {
-        $fromRun = $this->contextWindowFromRunStarted($this->eventStore->firstFor($runId));
+        $fromRun = $this->contextWindowFromRunStarted($this->eventStore->firstFor($context->runId));
         if (null !== $fromRun) {
             return $fromRun;
         }
 
-        $runState = $this->runStore->get($runId);
-        $model = null !== $runState && null !== $runState->model ? trim($runState->model) : '';
+        $model = null !== $context->runState->model ? trim($context->runState->model) : '';
 
         return $this->contextWindowFromCatalog('' !== $model ? $model : null);
     }

@@ -11,15 +11,17 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\InvalidateRunContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
+use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Session\History\HistoryProjector;
 use Ineersa\CodingAgent\Session\History\HistorySelectionService;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Lock\Store\InMemoryStore;
 
 final class HistorySelectionServiceTest extends TestCase
 {
@@ -115,8 +117,9 @@ final class HistorySelectionServiceTest extends TestCase
             }
         };
 
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 2, lastSeq: 6, model: 'test-model'), 0);
+        $activeRunContext = new TestActiveRunContext();
+        $activeRunContext->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 2, lastSeq: 6, model: 'test-model'));
+        $commandBus = new TestMessageBus();
 
         $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
         $rebuilder->expects($this->once())
@@ -132,11 +135,12 @@ final class HistorySelectionServiceTest extends TestCase
         $service = new HistorySelectionService(
             eventStore: $eventStore,
             runStateRebuilder: $rebuilder,
-            runStore: $runStore,
-            lockManager: new RunLockManager(new LockFactory(new FlockStore(sys_get_temp_dir()))),
+            activeRunContext: $activeRunContext,
+            lockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
+            commandBus: $commandBus,
         );
 
         $result = $service->selectPrompt($runId, 1);
@@ -147,6 +151,10 @@ final class HistorySelectionServiceTest extends TestCase
         $this->assertSame(RunEventTypeEnum::HistoryPositionSet->value, $appended[0]->type);
         $this->assertSame(0, $appended[0]->payload['position_turn_no']);
         $this->assertSame(1, $appended[0]->payload['selected_prompt_turn_no']);
+        $this->assertSame($result['rebuiltState'], $activeRunContext->stateFor($runId));
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(InvalidateRunContext::class, $commandBus->messages[0]);
+        $this->assertSame($runId, $commandBus->messages[0]->runId());
     }
 
     public function testSelectMiddlePromptPositionsAtPredecessorAndReturnsEditorText(): void
@@ -251,8 +259,9 @@ final class HistorySelectionServiceTest extends TestCase
             }
         };
 
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 9, model: 'test-model'), 0);
+        $activeRunContext = new TestActiveRunContext();
+        $activeRunContext->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 9, model: 'test-model'));
+        $commandBus = new TestMessageBus();
 
         $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
         $rebuilder->expects($this->once())
@@ -268,11 +277,12 @@ final class HistorySelectionServiceTest extends TestCase
         $service = new HistorySelectionService(
             eventStore: $eventStore,
             runStateRebuilder: $rebuilder,
-            runStore: $runStore,
-            lockManager: new RunLockManager(new LockFactory(new FlockStore(sys_get_temp_dir()))),
+            activeRunContext: $activeRunContext,
+            lockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
+            commandBus: $commandBus,
         );
 
         $result = $service->selectPrompt($runId, 2);
@@ -285,6 +295,10 @@ final class HistorySelectionServiceTest extends TestCase
         $this->assertSame(3, $appended[0]->payload['previous_position_turn_no']);
         $this->assertSame(2, $appended[0]->payload['selected_prompt_turn_no']);
         $this->assertSame('history_select', $appended[0]->payload['reason']);
+        $this->assertSame($result['rebuiltState'], $activeRunContext->stateFor($runId));
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(InvalidateRunContext::class, $commandBus->messages[0]);
+        $this->assertSame($runId, $commandBus->messages[0]->runId());
     }
 
     public function testSelectInternalRetainedTurnWithoutPromptIsRejected(): void
@@ -357,17 +371,18 @@ final class HistorySelectionServiceTest extends TestCase
             }
         };
 
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 5, model: 'test-model'), 0);
+        $activeRunContext = new TestActiveRunContext();
+        $activeRunContext->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 5, model: 'test-model'));
 
         $service = new HistorySelectionService(
             eventStore: $eventStore,
             runStateRebuilder: $this->createStub(RunStateRebuilderInterface::class),
-            runStore: $runStore,
-            lockManager: new RunLockManager(new LockFactory(new FlockStore(sys_get_temp_dir()))),
+            activeRunContext: $activeRunContext,
+            lockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
+            commandBus: new TestMessageBus(),
         );
 
         $this->expectException(\RuntimeException::class);
@@ -442,8 +457,8 @@ final class HistorySelectionServiceTest extends TestCase
             }
         };
 
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 2, model: 'test-model'), 0);
+        $activeRunContext = new TestActiveRunContext();
+        $activeRunContext->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 2, model: 'test-model'));
 
         $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
         $rebuilder->expects($this->never())->method('rebuildAtPosition');
@@ -451,11 +466,12 @@ final class HistorySelectionServiceTest extends TestCase
         $service = new HistorySelectionService(
             eventStore: $eventStore,
             runStateRebuilder: $rebuilder,
-            runStore: $runStore,
-            lockManager: new RunLockManager(new LockFactory(new FlockStore(sys_get_temp_dir()))),
+            activeRunContext: $activeRunContext,
+            lockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
+            commandBus: new TestMessageBus(),
         );
 
         try {

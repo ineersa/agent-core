@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
+use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
@@ -57,8 +57,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
         $marker = 'GF05_PROJECT_INSTRUCTION_MARKER';
         $agentsContext = '<project_context><project_instructions path="/x/AGENTS.md">'.$marker.'</project_instructions></project_context>';
 
-        $parentRunStore = new InMemoryRunStore();
-        $parentRunStore->compareAndSwap(new RunState(
+        $parentState = new RunState(
             runId: $parentRunId,
             status: RunStatus::Running,
             version: 1,
@@ -78,17 +77,14 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             ],
             activeStepId: 'parent-step',
             retryableFailure: false,
-            model: 'test-model'),
-            0,
+            model: 'test-model',
         );
 
-        $childRunStore = new InMemoryRunStore();
         $eventStore = new InMemoryEventStore();
-        $pipelineRunner = PipelineCapturingAgentRunner::create($childRunStore, $eventStore);
+        $pipelineRunner = PipelineCapturingAgentRunner::create($eventStore);
 
         $service = $this->buildSubagentService(
-            parentRunStore: $parentRunStore,
-            childRunStore: $childRunStore,
+            parentState: $parentState,
             eventStore: $eventStore,
             agentRunner: $pipelineRunner,
             catalog: new AgentDefinitionCatalog([
@@ -150,8 +146,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
 
     public function testChildSystemTextOmitsSynthesizedDynamicMcpDescriptionButProviderSchemaKeepsTool(): void
     {
-        $parentRunStore = new InMemoryRunStore();
-        $parentRunStore->compareAndSwap(new RunState(
+        $parentState = new RunState(
             runId: 'parent-mcp',
             status: RunStatus::Running,
             version: 1,
@@ -164,8 +159,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             messages: [],
             activeStepId: 'p',
             retryableFailure: false,
-            model: 'test-model'),
-            0,
+            model: 'test-model',
         );
 
         $registry = new ToolRegistry();
@@ -191,13 +185,11 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             promptLine: 'fork — parent only',
         );
 
-        $childRunStore = new InMemoryRunStore();
         $eventStore = new InMemoryEventStore();
-        $pipelineRunner = PipelineCapturingAgentRunner::create($childRunStore, $eventStore);
+        $pipelineRunner = PipelineCapturingAgentRunner::create($eventStore);
 
         $service = $this->buildSubagentService(
-            parentRunStore: $parentRunStore,
-            childRunStore: $childRunStore,
+            parentState: $parentState,
             eventStore: $eventStore,
             agentRunner: $pipelineRunner,
             catalog: new AgentDefinitionCatalog([
@@ -254,8 +246,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
 
     public function testOrdinaryChildOmitsAgentsDefinitionsContext(): void
     {
-        $parentRunStore = new InMemoryRunStore();
-        $parentRunStore->compareAndSwap(new RunState(
+        $parentState = new RunState(
             runId: 'parent-no-agents-def',
             status: RunStatus::Running,
             version: 1,
@@ -274,16 +265,13 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             ],
             activeStepId: 'p',
             retryableFailure: false,
-            model: 'test-model'),
-            0,
+            model: 'test-model',
         );
 
-        $childRunStore = new InMemoryRunStore();
         $eventStore = new InMemoryEventStore();
-        $pipelineRunner = PipelineCapturingAgentRunner::create($childRunStore, $eventStore);
+        $pipelineRunner = PipelineCapturingAgentRunner::create($eventStore);
         $service = $this->buildSubagentService(
-            parentRunStore: $parentRunStore,
-            childRunStore: $childRunStore,
+            parentState: $parentState,
             eventStore: $eventStore,
             agentRunner: $pipelineRunner,
             catalog: new AgentDefinitionCatalog([
@@ -316,8 +304,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
     }
 
     private function buildSubagentService(
-        RunStoreInterface $parentRunStore,
-        RunStoreInterface $childRunStore,
+        RunState $parentState,
         EventStoreInterface $eventStore,
         PipelineCapturingAgentRunner $agentRunner,
         AgentDefinitionCatalog $catalog,
@@ -333,8 +320,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
             'artifactRegistry' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry::class),
             'agentRunner' => $agentRunner,
-            'runStore' => $this->pollingChildRunStore($childRunStore),
-            'parentRunStore' => $parentRunStore,
+            'runStateRebuilder' => $this->rebuildParentState($parentState),
             'eventStore' => $eventStore,
             'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
             'metadataReader' => new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
@@ -354,48 +340,14 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
         ]);
     }
 
-    private function pollingChildRunStore(RunStoreInterface $inner): RunStoreInterface
+    private function rebuildParentState(RunState $parentState): RunStateRebuilderInterface
     {
-        return new class($inner) implements RunStoreInterface {
-            public function __construct(private RunStoreInterface $inner)
-            {
-            }
+        $rebuilder = $this->createStub(RunStateRebuilderInterface::class);
+        $rebuilder->method('rebuildIfStale')->willReturn(
+            RunStateReplayResult::rebuilt($parentState, $parentState->lastSeq, 1, true),
+        );
 
-            public function get(string $runId): ?RunState
-            {
-                $state = $this->inner->get($runId);
-                if (null !== $state) {
-                    return new RunState(
-                        runId: $state->runId,
-                        status: RunStatus::Completed,
-                        version: max(1, $state->version),
-                        turnNo: $state->turnNo,
-                        lastSeq: $state->lastSeq,
-                        isStreaming: false,
-                        streamingMessage: null,
-                        pendingToolCalls: [],
-                        errorMessage: null,
-                        messages: $state->messages,
-                        activeStepId: $state->activeStepId,
-                        retryableFailure: false,
-                        pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                        model: $state->model,
-                    );
-                }
-
-                return null;
-            }
-
-            public function compareAndSwap(RunState $state, int $expectedVersion): bool
-            {
-                return $this->inner->compareAndSwap($state, $expectedVersion);
-            }
-
-            public function findRunningStaleBefore(\DateTimeImmutable $updatedBefore): array
-            {
-                return $this->inner->findRunningStaleBefore($updatedBefore);
-            }
-        };
+        return $rebuilder;
     }
 
     private function emptyMcpToolsResolver(): AgentMcpToolsResolver

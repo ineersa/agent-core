@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Contract\Compaction\CompactResult;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
@@ -41,11 +40,10 @@ use PHPUnit\Framework\TestCase;
 final class AutoCompactionHookSubscriberTest extends TestCase
 {
     private AutoCompactionHookSubscriber $subscriber;
-    /** @var RunStoreInterface&\PHPUnit\Framework\MockObject\MockObject */
-    private $runStore;
     /** @var EventStoreInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $eventStore;
     private ProviderContextUsageResolver $providerUsageResolver;
+    private RunState $committedRunState;
     private CompactionConfig $compactionConfig;
     /** @var RunModelResolverInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $modelResolver;
@@ -56,8 +54,8 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->runStore = $this->createMock(RunStoreInterface::class);
         $this->eventStore = $this->createMock(EventStoreInterface::class);
+        $this->committedRunState = $this->createRunState();
         $this->providerUsageResolver = new ProviderContextUsageResolver($this->eventStore);
         $this->compactionConfig = new CompactionConfig(
             autoEnabled: true,
@@ -90,7 +88,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $this->metadataReader = new SubagentRunMetadataReader(new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::denormalizer());
 
         $this->subscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
@@ -115,13 +112,9 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ];
         $runState = $this->createRunState($messages);
 
-        $this->runStore->expects($this->once())
-            ->method('get')
-            ->willReturn($runState);
-
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);  // 12000 > 11000, no auto started event
 
-        $context = $this->createHookContext();
+        $context = $this->createHookContext(runState: $runState);
         $this->subscriber->handleAfterTurnCommit($context);
 
         $this->assertCount(1, $this->commandBus->messages);
@@ -144,9 +137,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ];
         $runState = $this->createRunState($messages);
 
-        $this->runStore->expects($this->once())
-            ->method('get')
-            ->willReturn($runState);
+        $this->committedRunState = $runState;
 
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(5000)]);  // 5000 < 11000
 
@@ -171,9 +162,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ];
         $runState = $this->createRunState($messages);
 
-        $this->runStore->expects($this->once())
-            ->method('get')
-            ->willReturn($runState);
+        $this->committedRunState = $runState;
 
         // No llm_step_completed events at all.
         $this->stubChronologicalEvents([]);
@@ -195,7 +184,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             compactAfterTokens: 1,
         );
         $subscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
             $this->providerUsageResolver,
             $disabledConfig,
             $this->modelResolver,
@@ -253,9 +241,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ];
         $runState = $this->createRunState($messages, activeStepId: 'compact-1234567890');
 
-        $this->runStore->expects($this->once())
-            ->method('get')
-            ->willReturn($runState);
+        $this->committedRunState = $runState;
 
         $context = $this->createHookContext();
         $this->subscriber->handleAfterTurnCommit($context);
@@ -275,7 +261,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->makeTextMessage('user', 'Hello'),
         ]);
 
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
 
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]); // exceeds 11000
 
@@ -297,7 +283,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ];
         $runState = $this->createRunState($messages);
 
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
 
         // Event store: measurement at seq 1; auto attempt at seq 5.
         // The measurement is ineligible (1 <= 5) after the attempt.
@@ -350,7 +336,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             ->willReturn('openai/gpt-4');
 
         $subscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
             $this->providerUsageResolver,
             $configWithOverride,
             $modelResolver,
@@ -364,29 +349,12 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ];
         $runState = $this->createRunState($messages);
 
-        $this->runStore->expects($this->once())
-            ->method('get')
-            ->willReturn($runState);
+        $this->committedRunState = $runState;
 
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]); // 12000 < 50000 override
 
         $context = $this->createHookContext();
         $subscriber->handleAfterTurnCommit($context);
-
-        $this->assertCount(0, $this->commandBus->messages);
-    }
-
-    // ─────────────────────────────────────────────────────────────────
-    //  Test: null run state
-    // ─────────────────────────────────────────────────────────────────
-
-    public function testDoesNotDispatchWhenRunStateMissing(): void
-    {
-        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
-        $this->runStore->method('get')->willReturn(null);
-
-        $context = $this->createHookContext();
-        $this->subscriber->handleAfterTurnCommit($context);
 
         $this->assertCount(0, $this->commandBus->messages);
     }
@@ -411,7 +379,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
         ]);
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         // RunStarted clears the resolved flag and returns early (no dispatch).
@@ -432,7 +400,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
         ]);
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         // effectsCount > 0 means intermediate orchestration commit — skip.
@@ -459,7 +427,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
         ]);
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
 
         // Event store: measurement at seq 1; auto attempt at seq 5.
         // Measurement is ineligible (seq 1 <= seq 5).
@@ -496,7 +464,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
         ]);
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         // Pre-condition: dispatch auto-compaction, then lifecycle sets resolved.
@@ -528,7 +496,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
         ]);
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         $this->subscriber->handleAfterTurnCommit($this->createHookContext());
@@ -561,7 +529,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
         ]);
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
 
         // Event log: provider measurement at seq 74, auto failed-only at
         // seq 79 (no started event — the prepare-failure path).
@@ -597,7 +565,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // Fresh service instance — no in-memory state.
         $freshSubscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
@@ -633,7 +600,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
         ]);
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
 
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
@@ -676,7 +643,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
         ]);
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
 
         // Provider usage exceeds threshold — the hook WOULD dispatch
         // auto-compaction if not for the ToolBatchCommitted guard.
@@ -718,7 +685,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
         ]);
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
 
         // Event log:
         //  - OLD provider measurement at seq 1 (12000 > 11000)
@@ -795,7 +762,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
         ]);
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
 
         // Provider usage exceeds threshold — the hook WOULD dispatch
         // auto-compaction if not for the AgentCommandQueued guard.
@@ -830,7 +797,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
         ]);
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
 
         // Provider usage exceeds threshold — the hook WOULD dispatch
         // auto-compaction if not for the AgentCommandApplied guard.
@@ -869,7 +836,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $messages = [$compactSummaryMsg, $freshUserMsg, $freshAssistantMsg];
         $runState = $this->createRunState($messages);
 
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
 
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
@@ -920,7 +887,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         };
 
         $summaryOnlySubscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
@@ -959,7 +925,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $messages = [$compactSummaryMsg, $freshUserMsg, $freshAssistantMsg, $recentUserMsg, $recentAssistantMsg];
         $runState = $this->createRunState($messages);
 
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
 
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
@@ -1010,7 +976,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         };
 
         $summaryPlusFreshSubscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
@@ -1044,7 +1009,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ];
         $runState = $this->createRunState($messages);
 
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
 
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
@@ -1078,7 +1043,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         };
 
         $failedSubscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
@@ -1092,32 +1056,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         $this->assertCount(0, $this->commandBus->messages,
             'Auto compaction must silently skip when preparation is not ready.');
-    }
-
-    /**
-     * Thesis: when RunState is absent from the store, the auto-compaction
-     * hook must NOT dispatch CompactRun and must NOT fatal.
-     *
-     * Under normal operation RunState always exists for runs processed
-     * by after-turn hooks, but this is defensive against concurrent
-     * store eviction, corruption, or edge cases where the hook fires
-     * for a run whose state has been removed.
-     */
-    public function testSkipsWhenRunStateMissingBeforePreparation(): void
-    {
-        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
-
-        // RunState absent: no stubbed return from runStore->get()
-        // Under #[AllowMockObjectsWithoutExpectations] this returns null.
-
-        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
-
-        $context = $this->createHookContext();
-        $this->subscriber->handleAfterTurnCommit($context);
-
-        $this->assertCount(0, $this->commandBus->messages,
-            'Must skip without fatal when RunState is missing from store '
-            .'— null $runState must not dereference in prepare().');
     }
 
     /**
@@ -1163,7 +1101,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $compactionService->expects($this->never())->method('prepare');
 
         $subscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
@@ -1175,7 +1112,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $messages = [$this->makeTextMessage('user', 'Hello')];
         $runState = $this->createRunState($messages);
 
-        $this->runStore->method('get')->willReturn($runState);
+        $this->committedRunState = $runState;
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         $subscriber->handleAfterTurnCommit($this->createHookContext());
@@ -1206,7 +1143,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             model: null);
     }
 
-    private function createHookContext(array $eventTypes = [], int $effectsCount = 0): AfterTurnCommitHookContext
+    private function createHookContext(array $eventTypes = [], int $effectsCount = 0, ?RunState $runState = null): AfterTurnCommitHookContext
     {
         $events = array_map(
             static fn (string $type): AfterTurnCommitEventSummary => new AfterTurnCommitEventSummary(seq: 1, type: $type),
@@ -1219,6 +1156,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             status: 'running',
             events: $events,
             effectsCount: $effectsCount,
+            runState: $runState ?? $this->committedRunState,
         );
     }
 

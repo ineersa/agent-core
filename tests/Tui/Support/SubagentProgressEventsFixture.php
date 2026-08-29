@@ -295,25 +295,6 @@ final class SubagentProgressEventsFixture
         }
         file_put_contents($sessionDir.'/events.jsonl', $jsonl);
         file_put_contents($sessionDir.'/sequence.cursor', (string) $maxSeq."\n");
-        // Hot checkpoint matching completed terminal events so follow-up AdvanceRun
-        // does not bail on a missing/stale rebuild path during pure --resume boots.
-        file_put_contents($sessionDir.'/state.json', json_encode([
-            'run_id' => $sessionId,
-            'status' => 'completed',
-            'version' => 1,
-            'turn_no' => 2,
-            'last_seq' => $maxSeq,
-            'is_streaming' => false,
-            'streaming_message' => null,
-            'pending_tool_calls' => [],
-            'error_message' => null,
-            'messages' => [],
-            'active_step_id' => null,
-            'retryable_failure' => false,
-            'retry_attempts' => 0,
-            'pending_human_input_requests' => [],
-            'model' => 'llama_cpp_test/test',
-        ], \JSON_THROW_ON_ERROR | \JSON_PRETTY_PRINT)."\n");
     }
 
     /**

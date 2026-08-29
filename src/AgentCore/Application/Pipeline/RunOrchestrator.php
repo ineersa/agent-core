@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\RunTracer;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
+use Ineersa\AgentCore\Domain\Message\InvalidateRunContext;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -30,6 +32,7 @@ final readonly class RunOrchestrator
 
     public function __construct(
         private RunMessageProcessor $runMessageProcessor,
+        private ActiveRunContextInterface $activeRunContext,
         private ?RunTracer $tracer = null,
     ) {
     }
@@ -79,7 +82,6 @@ final readonly class RunOrchestrator
      * Handles AdvanceRun message to trigger next step execution.
      */
     #[AsMessageHandler(bus: 'agent.command.bus')]
-    #[AsMessageHandler(bus: 'agent.execution.bus')]
     public function onAdvanceRun(AdvanceRun $message): void
     {
         $this->dispatch(
@@ -121,14 +123,11 @@ final readonly class RunOrchestrator
     /**
      * Handles CompactRun message to initiate compaction.
      *
-     * Registered on both buses because CompactRun may arrive as an effect
-     * dispatched through StepDispatcher (→ agent.execution.bus) when the
-     * pre-LLM compaction guard triggers from AdvanceRunHandler, or as a
-     * direct dispatch on agent.command.bus from AutoCompactionHookSubscriber
-     * or manual /compact.
+     * This is a run-control transition and therefore only runs on the command
+     * bus; its asynchronous model work is emitted separately as
+     * ExecuteCompactionStep on the execution bus.
      */
     #[AsMessageHandler(bus: 'agent.command.bus')]
-    #[AsMessageHandler(bus: 'agent.execution.bus')]
     public function onCompactRun(CompactRun $message): void
     {
         $this->dispatch(
@@ -151,6 +150,17 @@ final readonly class RunOrchestrator
             $message,
             ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId()],
         );
+    }
+
+    /**
+     * Handles a canonical-event side-channel notification without replaying,
+     * processing, or persisting run state. The next run-control transition
+     * rebuilds the invalidated process-local context from canonical events.
+     */
+    #[AsMessageHandler(bus: 'agent.command.bus')]
+    public function onInvalidateRunContext(InvalidateRunContext $message): void
+    {
+        $this->activeRunContext->invalidate($message->runId());
     }
 
     /**

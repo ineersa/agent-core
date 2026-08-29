@@ -10,23 +10,18 @@ use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
-use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
-use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PromptContractTestSupport;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\ProviderBoundaryCaptureSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -184,35 +179,26 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
 
     public static function create(): self
     {
-        $runStore = new InMemoryRunStore();
+        $activeRunContext = new TestActiveRunContext();
         $eventStore = new InMemoryEventStore();
-        $commandStore = new InMemoryCommandStore();
         $runCommit = new RunCommit(
-            runStore: $runStore,
+            activeRunContext: $activeRunContext,
             eventStore: $eventStore,
-            commandStore: $commandStore,
-            hotPromptStateRebuilder: new SessionHotPromptReplayService(
-                $eventStore,
-                new InMemoryPromptStateStore(),
-                new PromptStateReplayService(),
-                new ReplayEventPreparer(),
-            ),
-            stepDispatcher: new StepDispatcher(new TestMessageBus()),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new NullLogger(),
             hookDispatcher: null,
         );
         $processor = new RunMessageProcessor(
-            runStore: $runStore,
+            activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
-            stepDispatcher: new StepDispatcher(new TestMessageBus()),
-            logger: new NullLogger(),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             handlers: [
                 new StartRunHandler(new EventFactory(), TestSerializerFactory::normalizer()),
             ],
         );
 
-        return new self(new RunOrchestrator($processor), $eventStore);
+        return new self(new RunOrchestrator($processor, $activeRunContext), $eventStore);
     }
 
     public function start(StartRunInput $input): string

@@ -22,7 +22,6 @@ use function Symfony\Component\String\u;
  * .hatfield/sessions/). Each session is a directory containing:
  *
  *   <session-id>/
- *     state.json          AgentCore RunState hot state cache (via SessionRunStore)
  *     events.jsonl        AgentCore RunEvent canonical stream (via SessionRunEventStore)
  *     (no separate projection file — transcript rebuilt from events.jsonl)
  *
@@ -43,8 +42,8 @@ use function Symfony\Component\String\u;
  * There is no separate public_id column.
  *
  * Session metadata updates are persisted via Doctrine ORM with its own
- * transactional guarantees. State and event files are locked independently
- * by their respective stores (SessionRunStore, SessionRunEventStore).
+ * transactional guarantees. Canonical event files are locked by
+ * SessionRunEventStore.
  */
 final class HatfieldSessionStore
 {
@@ -62,7 +61,7 @@ final class HatfieldSessionStore
      * integer ID, generates the initial session name from the prompt
      * (trimmed, collapsed to one line, capped at 200 chars), then
      * creates the session directory under .hatfield/sessions/<id>/
-     * containing state.json and events.jsonl (both empty).
+     * containing an empty events.jsonl.
      *
      * Metadata is the DB row — no metadata.yaml is written.
      *
@@ -382,12 +381,12 @@ final class HatfieldSessionStore
     }
 
     /**
-     * Create the session directory exclusively and write empty state/events files.
+     * Create the session directory exclusively and write an empty canonical event file.
      *
      * Session metadata is the DB row; no metadata.yaml is written.
      * Uses a non-recursive atomic mkdir on the leaf path so an existing
      * orphan directory/file/symlink (or concurrent create winner) fails closed
-     * before any state.json / events.jsonl writes can truncate content.
+     * before the events.jsonl write can truncate content.
      */
     private function writeSessionFiles(string $sessionId, string $prompt): void
     {
@@ -405,10 +404,8 @@ final class HatfieldSessionStore
             throw new \RuntimeException(\sprintf('Refusing to create session "%s": path already exists at "%s".', $sessionId, $sessionPath));
         }
 
-        file_put_contents($sessionPath.'/state.json', '');
         file_put_contents($sessionPath.'/events.jsonl', '');
 
-        chmod($sessionPath.'/state.json', 0644);
         chmod($sessionPath.'/events.jsonl', 0644);
     }
 

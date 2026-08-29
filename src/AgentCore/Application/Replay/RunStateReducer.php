@@ -12,9 +12,13 @@ use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
+use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
+use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
+use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 final readonly class RunStateReducer
@@ -38,6 +42,7 @@ final readonly class RunStateReducer
             turnNo: 0,
             lastSeq: 0,
             pendingHumanInputRequests: $existingState->pendingHumanInputRequests,
+            currentToolCalls: [],
             model: $existingState->model,
         );
 
@@ -183,7 +188,7 @@ final readonly class RunStateReducer
             'turnNo' => $turnNo,
             'errorMessage' => null,
             'activeStepId' => $stepId,
-            'currentOperation' => \is_string($key) && '' !== $key
+            'currentOperation' => \is_string($stepId) && '' !== $stepId && \is_string($key) && '' !== $key
                 ? new CurrentOperationDTO($turnNo, $stepId, $attempt, $key)
                 : null,
             'retryableFailure' => false,
@@ -205,31 +210,35 @@ final readonly class RunStateReducer
             }
 
             $toolCallId = 'sh_'.hash('sha256', $key);
-
-            if (true !== ($payload['standalone'] ?? null)) {
-                return $state->with([
-                    'pendingShellToolCalls' => [...$state->pendingShellToolCalls, $toolCallId => true],
-                ]);
-            }
-
             $rawOperation = $payload['current_operation'] ?? null;
             if (!\is_array($rawOperation)) {
-                throw new \UnexpectedValueException('Standalone shell command event is missing a normalized current_operation.');
+                throw new \UnexpectedValueException('Shell command event is missing a normalized current_operation.');
             }
 
             try {
                 $operation = $this->denormalizer->denormalize($rawOperation, CurrentOperationDTO::class);
             } catch (\Throwable $exception) {
-                throw new \UnexpectedValueException('Standalone shell command event contains an invalid current_operation.', 0, $exception);
+                throw new \UnexpectedValueException('Shell command event contains an invalid current_operation.', 0, $exception);
             }
             if (!$operation instanceof CurrentOperationDTO) {
-                throw new \UnexpectedValueException('Standalone shell command current_operation must denormalize to CurrentOperationDTO.');
+                throw new \UnexpectedValueException('Shell command current_operation must denormalize to CurrentOperationDTO.');
             }
 
-            return $state->with([
+            $changes = [
                 'pendingShellToolCalls' => [...$state->pendingShellToolCalls, $toolCallId => true],
-                'currentOperation' => $operation,
-            ]);
+                'currentToolCalls' => [...$state->currentToolCalls, new CurrentToolCallDTO(
+                    ToolBatchIdentity::fromTurnAndStep($operation->turnNo, $operation->stepId),
+                    $toolCallId,
+                    0,
+                    RunOperationalToolCallStatusEnum::Pending,
+                    $operation->attempt,
+                )],
+            ];
+            if (true === ($payload['standalone'] ?? null)) {
+                $changes['currentOperation'] = $operation;
+            }
+
+            return $state->with($changes);
         }
 
         // steer / follow_up / append_message: append message to prompt context
@@ -275,11 +284,17 @@ final readonly class RunStateReducer
 
             // Intermediate RunState.messages stay stale; final replay() copies the
             // by-ref $messages accumulator (ModelTurn may have appended above).
+            $toolCallId = \is_string($payload['tool_call_id'] ?? null) ? $payload['tool_call_id'] : null;
+            $currentToolCalls = null === $toolCallId
+                ? $state->currentToolCalls
+                : $this->withToolStatus($state->currentToolCalls, $toolCallId, RunOperationalToolCallStatusEnum::Running);
+
             return $state->with([
                 'status' => [] !== $remaining ? RunStatus::WaitingHuman : RunStatus::Running,
                 'errorMessage' => null,
                 'retryableFailure' => false,
                 'retryAttempts' => 0,
+                'currentToolCalls' => $currentToolCalls,
                 'pendingHumanInputRequests' => $remaining,
             ]);
         }
@@ -290,6 +305,10 @@ final readonly class RunStateReducer
 
             return $state->with([
                 'status' => RunStatus::Cancelling,
+                'currentToolCalls' => array_map(
+                    static fn (CurrentToolCallDTO $toolCall): CurrentToolCallDTO => $toolCall->withStatus(RunOperationalToolCallStatusEnum::Cancelled),
+                    $state->currentToolCalls,
+                ),
                 'errorMessage' => $reason,
                 'retryableFailure' => false,
                 'retryAttempts' => 0,
@@ -337,6 +356,8 @@ final readonly class RunStateReducer
         $pendingToolCalls = [];
 
         $assistantPayload = \is_array($payload['assistant_message'] ?? null) ? $payload['assistant_message'] : null;
+        $currentToolCalls = [];
+        $stepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : $state->activeStepId;
 
         if (null !== $assistantPayload) {
             // Replay the assistant payload via a dedicated helper that
@@ -355,6 +376,15 @@ final readonly class RunStateReducer
                 }
 
                 $pendingToolCalls[$toolCall['id']] = false;
+                if (null !== $stepId && '' !== $stepId) {
+                    $currentToolCalls[] = new CurrentToolCallDTO(
+                        ToolBatchIdentity::fromTurnAndStep($state->turnNo, $stepId),
+                        $toolCall['id'],
+                        \is_int($toolCall['order_index'] ?? null) ? $toolCall['order_index'] : \count($currentToolCalls),
+                        RunOperationalToolCallStatusEnum::Running,
+                        1,
+                    );
+                }
             }
         }
 
@@ -363,6 +393,7 @@ final readonly class RunStateReducer
             'errorMessage' => null,
             'retryableFailure' => false,
             'retryAttempts' => 0,
+            'currentToolCalls' => $currentToolCalls,
             'currentOperation' => null,
         ]);
     }
@@ -384,6 +415,7 @@ final readonly class RunStateReducer
             'isStreaming' => false,
             'streamingMessage' => null,
             'pendingToolCalls' => [],
+            'currentToolCalls' => [],
             'currentOperation' => null,
             'errorMessage' => $errorMessage,
             'retryableFailure' => $retryable,
@@ -401,6 +433,11 @@ final readonly class RunStateReducer
 
         if (null !== $toolCallId) {
             $pendingToolCalls[$toolCallId] = false;
+            $attempt = \is_int($payload['attempt'] ?? null) ? $payload['attempt'] : null;
+
+            return $state->with([
+                'currentToolCalls' => $this->withToolStatus($state->currentToolCalls, $toolCallId, RunOperationalToolCallStatusEnum::Running, $attempt),
+            ]);
         }
 
         return $state;
@@ -429,12 +466,22 @@ final readonly class RunStateReducer
             $pendingShellToolCalls = $state->pendingShellToolCalls;
             unset($pendingShellToolCalls[$toolCallId]);
 
-            return $state->with(['pendingShellToolCalls' => $pendingShellToolCalls]);
+            return $state->with([
+                'pendingShellToolCalls' => $pendingShellToolCalls,
+                'currentToolCalls' => array_values(array_filter(
+                    $state->currentToolCalls,
+                    static fn (CurrentToolCallDTO $toolCall): bool => $toolCall->toolCallId !== $toolCallId,
+                )),
+            ]);
         }
 
         $completedToolResultsByCallId[$toolCallId] = $result;
 
-        return $state;
+        return $state->with([
+            'currentToolCalls' => $this->withToolStatus($state->currentToolCalls, $toolCallId, $result->isError
+                ? RunOperationalToolCallStatusEnum::Failed
+                : RunOperationalToolCallStatusEnum::Completed),
+        ]);
     }
 
     /**
@@ -461,7 +508,7 @@ final readonly class RunStateReducer
         $completedToolResultsByCallId = [];
         $pendingToolCalls = [];
 
-        return $state;
+        return $state->with(['currentToolCalls' => []]);
     }
 
     /**
@@ -482,8 +529,16 @@ final readonly class RunStateReducer
             $request = PendingHumanInputRequestDTO::modelTurnFromInterruptPayload($payload);
         }
 
+        $toolCallId = HumanInputContinuationKindEnum::ToolCall === $request->continuationKind
+            && \is_string($request->continuationRef['tool_call_id'] ?? null)
+            ? $request->continuationRef['tool_call_id']
+            : null;
+
         return $state->with([
             'status' => RunStatus::WaitingHuman,
+            'currentToolCalls' => null === $toolCallId
+                ? $state->currentToolCalls
+                : $this->withToolStatus($state->currentToolCalls, $toolCallId, RunOperationalToolCallStatusEnum::WaitingHuman),
             'pendingHumanInputRequests' => [...$state->pendingHumanInputRequests, $request],
         ]);
     }
@@ -506,7 +561,6 @@ final readonly class RunStateReducer
             'isStreaming' => false,
             'streamingMessage' => null,
             'pendingToolCalls' => [],
-            'pendingShellToolCalls' => [],
             'activeStepId' => null,
             'currentOperation' => null,
             'retryableFailure' => false,
@@ -676,6 +730,27 @@ final readonly class RunStateReducer
             'status' => $resolveCompacting ?? $state->status,
             'retryAttempts' => 0,
         ]);
+    }
+
+    /**
+     * @param list<CurrentToolCallDTO> $toolCalls
+     *
+     * @return list<CurrentToolCallDTO>
+     */
+    private function withToolStatus(array $toolCalls, string $toolCallId, RunOperationalToolCallStatusEnum $status, ?int $attempt = null): array
+    {
+        return array_map(
+            static fn (CurrentToolCallDTO $toolCall): CurrentToolCallDTO => $toolCall->toolCallId === $toolCallId
+                ? new CurrentToolCallDTO(
+                    $toolCall->batchId,
+                    $toolCall->toolCallId,
+                    $toolCall->orderIndex,
+                    $status,
+                    $attempt ?? $toolCall->attempt,
+                )
+                : $toolCall,
+            $toolCalls,
+        );
     }
 
     private function currentCompactionKey(RunState $state): ?string

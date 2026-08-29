@@ -13,8 +13,10 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
+use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -123,6 +125,12 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertSame($expectedOwningTurn, $result->nextState->turnNo);
         $this->assertSame($lastSeq + \count($expectedEventTypes), $result->nextState->lastSeq);
         $this->assertSame($state->messages, $result->nextState->messages, 'Shell must not pollute model messages');
+        $this->assertCount(1, $result->nextState->currentToolCalls);
+        $liveToolCall = $result->nextState->currentToolCalls[0];
+        $this->assertSame(ToolBatchIdentity::fromTurnAndStep($expectedOwningTurn, 'shell-step-1'), $liveToolCall->batchId);
+        $this->assertSame('sh_'.hash('sha256', 'shell-idem-1'), $liveToolCall->toolCallId);
+        $this->assertSame(RunOperationalToolCallStatusEnum::Pending, $liveToolCall->status);
+        $this->assertSame(1, $liveToolCall->attempt);
 
         $this->assertCount(\count($expectedEventTypes), $result->events);
         foreach ($expectedEventTypes as $index => $type) {
@@ -158,8 +166,15 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertSame($expectedStandalone, $effect->standalone);
         $this->assertSame('sh_'.hash('sha256', 'shell-idem-1'), $effect->toolCallId);
 
+        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued('run-shell-1'), $result->events);
+        $this->assertCount(1, $replayed->currentToolCalls);
+        $replayedToolCall = $replayed->currentToolCalls[0];
+        $this->assertSame($liveToolCall->batchId, $replayedToolCall->batchId);
+        $this->assertSame($liveToolCall->toolCallId, $replayedToolCall->toolCallId);
+        $this->assertSame($liveToolCall->status, $replayedToolCall->status);
+        $this->assertSame($liveToolCall->attempt, $replayedToolCall->attempt);
+
         if ($expectedStandalone) {
-            $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued('run-shell-1'), $result->events);
             $this->assertNotNull($replayed->currentOperation);
             $this->assertTrue($replayed->currentOperation->matches($expectedOwningTurn,
                 'shell-step-1',

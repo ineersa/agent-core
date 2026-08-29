@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCallbackFactory;
-use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
@@ -21,8 +20,11 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
+use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
+use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
 use Psr\Log\LoggerInterface;
@@ -46,7 +48,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         private NormalizerInterface $normalizer,
         private ?ToolSetResolverInterface $toolSetResolver = null,
         private ?ToolboxInterface $toolbox = null,
-        private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
         private ?MessageBusInterface $commandBus = null,
         private ?LlmProviderErrorClassifier $errorClassifier = null,
@@ -145,6 +146,8 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
+                'currentToolCalls' => [],
+                'activeStepId' => null,
                 'currentOperation' => null,
                 // Keep existing messages unchanged (no aborted assistant
                 // message appended).
@@ -156,7 +159,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
-                postCommit: $this->turnCompletedCallbacks($runId, $state->turnNo),
             );
         }
 
@@ -228,6 +230,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
+                'currentToolCalls' => [],
                 'currentOperation' => null,
                 'errorMessage' => $userMessage,
                 'retryableFailure' => $canAutoRetry,
@@ -236,7 +239,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
-            $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
+            $postCommit = [];
 
             if ($canAutoRetry) {
                 $postCommit[] = $this->autoRetryContinueCallback(
@@ -274,8 +277,16 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         $messages[] = $this->messageNormalizer->assistantMessage($assistantMessage);
 
         $pendingToolCalls = [];
+        $currentToolCalls = [];
         foreach ($toolCalls as $toolCall) {
             $pendingToolCalls[$toolCall['id']] = false;
+            $currentToolCalls[] = new CurrentToolCallDTO(
+                ToolBatchIdentity::fromTurnAndStep($state->turnNo, $message->stepId()),
+                $toolCall['id'],
+                $toolCall['order_index'],
+                RunOperationalToolCallStatusEnum::Running,
+                $message->attempt(),
+            );
         }
 
         $assistantMessagePayload = $this->messageNormalizer->assistantMessagePayload($assistantMessage);
@@ -290,7 +301,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 runId: $runId,
                 turnNo: $state->turnNo,
                 stepId: $message->stepId(),
-                attempt: 1,
+                attempt: $message->attempt(),
                 idempotencyKey: hash('sha256', \sprintf('%s|%s|%s', $runId, $message->stepId(), $toolCall['id'])),
                 toolCallId: $toolCall['id'],
                 toolName: $toolCall['name'],
@@ -336,6 +347,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         if ([] === $toolCalls) {
             $stateAfterAssistant = $state->with([
                 'pendingToolCalls' => [],
+                'currentToolCalls' => [],
                 'errorMessage' => null,
                 'messages' => $messages,
                 'retryableFailure' => false,
@@ -382,15 +394,14 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'isStreaming' => false,
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
+                'currentToolCalls' => [],
                 'currentOperation' => null,
                 'errorMessage' => null,
                 'retryableFailure' => false,
                 'retryAttempts' => 0,
             ]);
 
-            $postCommit = [
-                ...$this->turnCompletedCallbacks($runId, $state->turnNo),
-            ];
+            $postCommit = [];
 
             $followUpAdvance = $shouldContinue ? $this->followUpAdvanceCallback($runId, $state->turnNo, 'stop-boundary-follow-up') : null;
             if (null !== $followUpAdvance) {
@@ -412,6 +423,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                     'tool_call_id' => $effect->toolCallId,
                     'tool_name' => $effect->toolName,
                     'order_index' => $effect->orderIndex,
+                    'attempt' => $effect->attempt(),
                     'mode' => $effect->mode,
                 ],
             ];
@@ -426,6 +438,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             'isStreaming' => false,
             'streamingMessage' => null,
             'pendingToolCalls' => $pendingToolCalls,
+            'currentToolCalls' => $currentToolCalls,
             'currentOperation' => null,
             'errorMessage' => null,
             'messages' => $messages,
@@ -520,14 +533,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         }
 
         return $schemas;
-    }
-
-    /**
-     * @return list<callable(): void>
-     */
-    private function turnCompletedCallbacks(string $runId, int $turnNo): array
-    {
-        return null === $this->metrics ? [] : $this->metrics->turnCompletedCallback($runId, $turnNo);
     }
 
     private function followUpAdvanceCallback(string $runId, int $turnNo, string $prefix): ?callable

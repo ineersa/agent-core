@@ -108,6 +108,7 @@ final class ExecutionFailureDrillTest extends TestCase
             commandBus: new FailingOnceMessageBus(new TransportException('simulated dispatch crash')),
             deferredToolCompletionRepository: new InMemoryDeferredToolCompletionRepository(),
             resultStore: new ToolExecutionResultStore(),
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
         );
 
         try {
@@ -118,7 +119,7 @@ final class ExecutionFailureDrillTest extends TestCase
         }
 
         $collectingBus = new TestMessageBus();
-        $retryWorker = new ExecuteToolCallWorker($toolExecutor, $collectingBus, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore());
+        $retryWorker = new ExecuteToolCallWorker($toolExecutor, $collectingBus, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
         $retryWorker($message);
 
         $this->assertCount(1, $collectingBus->messages);

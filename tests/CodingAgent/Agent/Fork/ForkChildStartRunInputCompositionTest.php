@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
@@ -30,9 +28,6 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
                 metadata: ['tool_calls' => [['name' => 'fork', 'id' => 'tc-fork-1']]],
             ),
         ];
-
-        $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
-        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: $parentMessages, turnNo: 1, model: 'test-model'), 0);
 
         /** @var ForkChildLaunchInputBuilder $builder */
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
@@ -86,9 +81,6 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
     public function testStartRunInputSystemPromptMatchesCanonicalFirstMessage(): void
     {
         $parentRunId = 'parent-fork-sys-1';
-        $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
-        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: [], turnNo: 1, model: 'test-model'), 0);
-
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
         $identity = new ChildRunIdentityDTO(
             parentRunId: $parentRunId,
@@ -134,9 +126,6 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             ),
         ];
 
-        $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
-        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: $parentMessages, turnNo: 1, model: 'test-model'), 0);
-
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
         $identity = new ChildRunIdentityDTO(
             parentRunId: $parentRunId,
@@ -164,11 +153,6 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
                 && $summaryText === ($m->content[0]['text'] ?? null),
         ));
         $this->assertCount(1, $found, 'Canonical compact summary must survive sanitizer and composition.');
-
-        $parentAfter = $runStore->get($parentRunId);
-        $this->assertCount(\count($parentMessages), $parentAfter->messages);
-        $this->assertSame($summaryText, $parentAfter->messages[0]->content[0]['text'] ?? null);
-        $this->assertTrue($parentAfter->messages[0]->metadata['compact_summary'] ?? false);
     }
 
     public function testPreparedForkChildMessagesExcludeAgentsDefinitionsContext(): void
@@ -187,9 +171,6 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
                 metadata: ['tool_calls' => [['name' => 'fork', 'id' => 'tc-fork-defs']]],
             ),
         ];
-        $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
-        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: $parentMessages, turnNo: 1, model: 'test-model'), 0);
-
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
         $identity = new ChildRunIdentityDTO(
             parentRunId: $parentRunId,
@@ -222,9 +203,6 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
     public function testPreparedForkChildSystemPromptOmitsForkAndSubagentToolGuidance(): void
     {
         $parentRunId = 'parent-fork-sys-tools';
-        $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
-        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: [], turnNo: 1, model: 'test-model'), 0);
-
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
         $identity = new ChildRunIdentityDTO(
             parentRunId: $parentRunId,
@@ -286,9 +264,6 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
     public function testForkChildOmitsAgentChildContractAndKeepsFinalityPlusCompactHandoffContract(): void
     {
         $parentRunId = 'parent-fork-no-contract';
-        $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
-        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: [], turnNo: 1, model: 'test-model'), 0);
-
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
         $identity = new ChildRunIdentityDTO(
             parentRunId: $parentRunId,

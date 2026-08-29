@@ -182,6 +182,7 @@ function test_tui(?string $filter = null): void
         @mkdir('var/test', 0755, true);
         $migrate = run_test_db_migrate_bounded(
             qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+                .' && '.qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --em=messenger_transport --configuration=config/migrations/messenger_transport.yaml --no-interaction --allow-no-migration'
         );
         if (0 !== $migrate['exitCode']) {
             $detail = '' !== trim($migrate['output']) ? $migrate['output'] : 'exit '.$migrate['exitCode'];
@@ -266,6 +267,7 @@ function test_controller(): void
     @mkdir('var/test', 0755, true);
     $migrate = run_test_db_migrate_bounded(
         qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+            .' && '.qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --em=messenger_transport --configuration=config/migrations/messenger_transport.yaml --no-interaction --allow-no-migration'
     );
     if (0 !== $migrate['exitCode']) {
         $detail = '' !== trim($migrate['output']) ? $migrate['output'] : 'exit '.$migrate['exitCode'];
@@ -329,6 +331,7 @@ function test_controller_replay(): void
     @mkdir('var/test', 0755, true);
     $migrate = run_test_db_migrate_bounded(
         qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+            .' && '.qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --em=messenger_transport --configuration=config/migrations/messenger_transport.yaml --no-interaction --allow-no-migration'
     );
     if (0 !== $migrate['exitCode']) {
         $detail = '' !== trim($migrate['output']) ? $migrate['output'] : 'exit '.$migrate['exitCode'];

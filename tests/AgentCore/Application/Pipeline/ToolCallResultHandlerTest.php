@@ -5,19 +5,30 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
 use Doctrine\ORM\EntityManagerInterface;
-use Ineersa\AgentCore\Application\Handler\RunMetrics;
+use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
+use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
+use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
+use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
+use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
+use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -47,6 +58,113 @@ final class ToolCallResultHandlerTest extends TestCase
     {
         TestDirectoryIsolation::removeDirectory($this->toolBatchProjectDir);
         parent::tearDown();
+    }
+
+    public function testStandaloneShellCompletionPreservesAttachedShellAndWakesMailbox(): void
+    {
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: new ToolBatchCollector(),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        $state = RunStateBuilder::running('run-shell')
+            ->withVersion(3)
+            ->withTurnNo(2)
+            ->withLastSeq(4)
+            ->withActiveStepId('shell-step')
+            ->build()
+            ->with([
+                'pendingShellToolCalls' => ['shell-call-a' => true, 'shell-call-b' => true],
+                'currentOperation' => new CurrentOperationDTO(2, 'shell-step', 2, 'shell-operation'),
+                'currentToolCalls' => [
+                    new CurrentToolCallDTO(
+                        ToolBatchIdentity::fromTurnAndStep(2, 'shell-step'),
+                        'shell-call-a',
+                        0,
+                        RunOperationalToolCallStatusEnum::Running,
+                        2,
+                    ),
+                    new CurrentToolCallDTO(
+                        ToolBatchIdentity::fromTurnAndStep(2, 'shell-step'),
+                        'shell-call-b',
+                        1,
+                        RunOperationalToolCallStatusEnum::Running,
+                        2,
+                    ),
+                ],
+            ]);
+        $standalone = ToolCallResultBuilder::success('run-shell')
+            ->withTurnNo(2)
+            ->withStepId('shell-step')
+            ->withIdempotencyKey('shell-result-a')
+            ->withToolCallId('shell-call-a')
+            ->withOrderIndex(0)
+            ->withResult([
+                'tool_name' => 'bash',
+                'content' => [['type' => 'text', 'text' => 'A done']],
+                'arguments' => ['command' => 'echo A'],
+                'standalone' => true,
+            ])
+            ->build();
+
+        $completedStandalone = $handler->handle($standalone, $state);
+
+        $this->assertSame(RunStatus::Completed, $completedStandalone->nextState?->status);
+        $this->assertSame([], $completedStandalone->nextState?->pendingToolCalls);
+        $this->assertSame(['shell-call-b' => true], $completedStandalone->nextState?->pendingShellToolCalls);
+        $this->assertSame(['shell-call-b'], array_map(static fn (CurrentToolCallDTO $call): string => $call->toolCallId, $completedStandalone->nextState?->currentToolCalls ?? []));
+        $this->assertNull($completedStandalone->nextState?->activeStepId);
+        $this->assertNull($completedStandalone->nextState?->currentOperation);
+        $this->assertSame(
+            [RunEventTypeEnum::ToolExecutionEnd->value, RunEventTypeEnum::AgentEnd->value],
+            array_map(static fn ($event): string => $event->type, $completedStandalone->events),
+        );
+        $this->assertSame([], $handler->handle($standalone, $completedStandalone->nextState)->events);
+
+        $commandStore = new InMemoryCommandStore();
+        $commandStore->enqueue(new PendingCommand(
+            runId: 'run-shell',
+            kind: CoreCommandKind::FollowUp,
+            idempotencyKey: 'queued-during-shell',
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'follow up']]]],
+            options: new CommandCancellationOptions(safe: false),
+        ));
+        $advance = new AdvanceRunHandler(
+            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, new CommandRouter([])),
+            eventFactory: new EventFactory(),
+        );
+        $woken = $advance->handle(AdvanceRunMessageBuilder::create('run-shell')
+            ->withTurnNo(2)
+            ->withStepId('shell-follow-up-step')
+            ->withIdempotencyKey('shell-standalone-advance')
+            ->build(), $completedStandalone->nextState);
+
+        $this->assertNotNull($woken->nextState, 'Standalone shell wake must be accepted to drain a command queued during execution.');
+        $this->assertCount(1, $woken->nextState->messages);
+
+        $attached = ToolCallResultBuilder::success('run-shell')
+            ->withTurnNo(2)
+            ->withStepId('shell-step')
+            ->withIdempotencyKey('shell-result-b')
+            ->withToolCallId('shell-call-b')
+            ->withOrderIndex(1)
+            ->withResult([
+                'tool_name' => 'bash',
+                'content' => [['type' => 'text', 'text' => 'B done']],
+                'arguments' => ['command' => 'echo B'],
+                'standalone' => false,
+            ])
+            ->build();
+        $completedAttached = $handler->handle($attached, $completedStandalone->nextState);
+
+        $this->assertSame([], $completedAttached->nextState?->pendingShellToolCalls);
+        $this->assertSame([], $completedAttached->nextState?->currentToolCalls);
+        $this->assertSame([RunEventTypeEnum::ToolExecutionEnd->value], array_map(static fn ($event): string => $event->type, $completedAttached->events));
+        $typedAttachedResult = (new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))
+            ->fromEventPayload($completedAttached->events[0]->payload);
+        $this->assertSame($attached->result, $typedAttachedResult->result);
     }
 
     public function testHandleAcceptedPendingResultReturnsPostCommitEffectsForNextToolCall(): void
@@ -102,7 +220,11 @@ final class ToolCallResultHandlerTest extends TestCase
                 'tool-b' => false,
             ])
             ->withActiveStepId('turn-1-step')
-            ->build();
+            ->build()
+            ->with(['currentToolCalls' => [
+                new CurrentToolCallDTO(ToolBatchIdentity::fromTurnAndStep(1, 'turn-1-step'), 'tool-a', 0, RunOperationalToolCallStatusEnum::Running, 1),
+                new CurrentToolCallDTO(ToolBatchIdentity::fromTurnAndStep(1, 'turn-1-step'), 'tool-b', 1, RunOperationalToolCallStatusEnum::Running, 1),
+            ]]);
 
         $message = ToolCallResultBuilder::success('run-tool-handler-1')
             ->withTurnNo(1)
@@ -126,6 +248,7 @@ final class ToolCallResultHandlerTest extends TestCase
             'tool-a' => true,
             'tool-b' => false,
         ], $result->nextState->pendingToolCalls);
+        $this->assertSame([RunOperationalToolCallStatusEnum::Completed, RunOperationalToolCallStatusEnum::Running], array_map(static fn (CurrentToolCallDTO $toolCall): RunOperationalToolCallStatusEnum => $toolCall->status, $result->nextState->currentToolCalls));
 
         $this->assertCount(1, $result->events);
         $this->assertSame('tool_execution_end', $result->events[0]->type);
@@ -149,14 +272,12 @@ final class ToolCallResultHandlerTest extends TestCase
 
     public function testUntrackedCurrentTokenRedeliveryIsIdempotentNoOp(): void
     {
-        $metrics = new RunMetrics();
         $handler = new ToolCallResultHandler(
             toolBatchCollector: new ToolBatchCollector(),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
-            metrics: $metrics,
         );
 
         $state = RunStateBuilder::running('run-untracked-current-token')
@@ -179,7 +300,6 @@ final class ToolCallResultHandlerTest extends TestCase
             $this->assertSame([], $result->postCommitEffects);
             $this->assertSame([], $result->postCommit);
         }
-        $this->assertSame(2, $metrics->snapshot()['stale_result_count']);
     }
 
     public function testCancellingWithPendingToolCallsSynthesizesToolMessages(): void
@@ -229,6 +349,8 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertSame(4, $result->nextState->version);
         $this->assertSame(7, $result->nextState->lastSeq);
         $this->assertSame([], $result->nextState->pendingToolCalls);
+        $this->assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->currentOperation);
 
         // Messages: original assistant + synthetic tool
         $this->assertCount(2, $result->nextState->messages);

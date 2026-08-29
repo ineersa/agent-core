@@ -98,6 +98,9 @@ services:
   Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface:
     alias: Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository
 
+  Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface:
+    alias: Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository
+
   # ─── Error capture (env-driven config, not a per-catch delegation service) ───
 
   Ineersa\CodingAgent\Runtime\Contract\RuntimeErrorCaptureConfig:
@@ -377,6 +380,13 @@ services:
     arguments:
       $connection: '@doctrine.dbal.default_connection'
 
+  app.migrations.messenger_transport_executor:
+    class: Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor
+    arguments:
+      $connection: '@doctrine.dbal.messenger_transport_connection'
+      $knownMigrations:
+        - DoctrineMigrations\MessengerTransport\Version20260828224203
+
   # Outer transactions on messenger_transport use BEGIN IMMEDIATE (see doctrine.yaml).
   # autoconfigure: false keeps middleware registration explicit and connection-scoped.
   Ineersa\CodingAgent\Infrastructure\Doctrine\MessengerSqliteImmediateTransactionMiddleware:
@@ -384,14 +394,10 @@ services:
     tags:
       - { name: doctrine.middleware, connection: messenger_transport }
 
-  Ineersa\CodingAgent\Migrations\MessengerTransportSchemaEnsurer:
-    arguments:
-      $connection: '@doctrine.dbal.messenger_transport_connection'
-
   Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator:
     arguments:
-      $executor: '@Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor'
-      $transportSchemaEnsurer: '@Ineersa\CodingAgent\Migrations\MessengerTransportSchemaEnsurer'
+      $applicationMigrationExecutor: '@Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor'
+      $transportMigrationExecutor: '@app.migrations.messenger_transport_executor'
       $sessionCatalogRecovery: '@Ineersa\CodingAgent\Session\SessionCatalogRecoveryService'
 
   # HatfieldModelCatalog — build from AppConfig.ai so all consumers share the
@@ -675,11 +681,9 @@ services:
   Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface:
     alias: Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService
 
-  Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface:
-    alias: Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService
+  Ineersa\AgentCore\Contract\ActiveRunContextInterface:
+    alias: Ineersa\CodingAgent\Agent\Artifact\ActiveRunContext
 
-  Ineersa\AgentCore\Contract\Replay\HotPromptIntegrityVerifierInterface:
-    alias: Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService
 
   Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface:
     alias: Ineersa\CodingAgent\Session\History\HistorySelectionService
@@ -1003,7 +1007,6 @@ services:
   Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor:
     arguments:
       $handlers: !tagged_iterator agent_core.run_message_handler
-      $runStateRebuilder: '@Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface'
       $historyTailDiscard: '@Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface'
 
   Ineersa\AgentCore\Application\Handler\StepDispatcher:
@@ -1142,22 +1145,14 @@ services:
 
   # ─── AGENT-05 Subagent execution service ──────────────────────────
 
-  # Subagent child-run stack: child RunStore auto-wires to ChildAwareRunStore; parent RunStore
-  # binds to SessionRunStore for prompt/metadata. Parent progress events append via
+  # Subagent child-run stack: parent prompt context is rebuilt from canonical
+  # events at the explicit child-launch boundary. Parent progress events append via
   # CommittedRunEventAppender only (seq 0 input; committed store allocates persisted seq).
   Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory:
     arguments:
-      $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
+      $runStateRebuilder: '@Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface'
 
   # ─── AGENT-05 Subagent tool storage routing ─────────────────────────
-
-  # ChildAwareRunStore — delegates RunStoreInterface between parent-scoped
-  # SessionRunStore (parent runs) and AgentChildRunStore (child runs).
-  # Explicit wiring needed because $parentStore must point to the concrete
-  # SessionRunStore, not itself (would be a cycle).
-  Ineersa\CodingAgent\Agent\Artifact\ChildAwareRunStore:
-    arguments:
-      $parentStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
 
   # ChildAwareEventStore — delegates EventStoreInterface between parent-scoped
   # SessionRunEventStore (parent runs) and AgentChildRunEventStore (child runs).
@@ -1168,7 +1163,15 @@ services:
   Ineersa\CodingAgent\Session\CommittedRunEventAppender:
     arguments:
       $eventStore: '@Ineersa\AgentCore\Contract\EventStoreInterface'
-      $runStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
+      $commandBus: '@agent.command.bus'
+
+  Ineersa\CodingAgent\Session\History\HistorySelectionService:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
+  Ineersa\CodingAgent\Session\Repair\SessionRepairService:
+    arguments:
+      $commandBus: '@agent.command.bus'
 
   Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore:
     arguments:

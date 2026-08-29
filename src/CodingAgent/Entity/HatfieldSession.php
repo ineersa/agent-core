@@ -30,6 +30,7 @@ use Doctrine\ORM\Mapping as ORM;
  */
 #[ORM\Entity(repositoryClass: HatfieldSessionRepository::class)]
 #[ORM\Table(name: 'hatfield_session')]
+#[ORM\UniqueConstraint(name: 'uniq_hatfield_session_provider_cache_key', columns: ['provider_cache_key'])]
 #[ORM\HasLifecycleCallbacks]
 class HatfieldSession
 {
@@ -72,7 +73,7 @@ class HatfieldSession
 
     /** User-visible session display name, initialized from the first user message
      * and later renameable via /rename. Capped at 200 characters. */
-    #[ORM\Column(type: 'string', length: 200)]
+    #[ORM\Column(type: 'string', length: 200, options: ['default' => ''])]
     public string $name = '';
 
     /**
