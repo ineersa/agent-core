@@ -181,8 +181,8 @@ final class HeadlessController
         // One agent consumer: parent subagent tool orchestration/polling is isolated
         // from generic tool workers so child tool calls are not starved.
         $this->consumerSupervisor->launch('agent');
-        // - run_control consumes StartRun, ApplyCommand, and run results
-        //   (LlmStepResult, ToolCallResult, CompactionStepResult); AdvanceRun stays sync on the bus
+        // - run_control consumes StartRun, ApplyCommand, run results, and
+        //   AdvanceRun/CompactRun transitions as the single state owner
         // - llm consumes ExecuteLlmStep (ASYNC-04)
         // - tool consumes ExecuteToolCall (generic tools; not subagent)
         // - agent consumes ExecuteToolCall when toolName=subagent (AGENT-07)

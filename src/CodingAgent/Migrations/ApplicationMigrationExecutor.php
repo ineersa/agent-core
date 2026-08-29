@@ -62,10 +62,8 @@ final class ApplicationMigrationExecutor
      *      migrations may depend on earlier DDL in this list).
      *   4. The runtime executor will apply it on next agent boot.
      *
-     * Messenger run_control workers run StartupDatabaseMigrator in the same
-     * process before consuming messages; subscribers on WorkerStarted assume
-     * tables from KNOWN_MIGRATIONS already exist — do not query new tables
-     * without registering their migration here first.
+     * The controller runs StartupDatabaseMigrator before launching Messenger
+     * consumers, so handlers may assume registered migration tables exist.
      *
      * @var list<class-string<AbstractMigration>>
      */
@@ -124,7 +122,7 @@ final class ApplicationMigrationExecutor
         foreach ($this->knownMigrations as $class) {
             $versionId = $this->resolveVersionId($class);
 
-            if ($this->isApplied($versionId)) {
+            if ($this->isApplied($class, $versionId)) {
                 continue;
             }
 
@@ -167,11 +165,11 @@ final class ApplicationMigrationExecutor
      * Check whether a migration version has already been applied, by
      * querying the doctrine_migration_versions metadata table.
      */
-    private function isApplied(string $versionId): bool
+    private function isApplied(string $class, string $versionId): bool
     {
         $row = $this->connection->fetchOne(
-            'SELECT 1 FROM doctrine_migration_versions WHERE version = ? OR version = ?',
-            [$versionId, 'DoctrineMigrations\\'.$versionId],
+            'SELECT 1 FROM doctrine_migration_versions WHERE version IN (?, ?, ?)',
+            [$class, $versionId, 'DoctrineMigrations\\'.$versionId],
         );
 
         return false !== $row;

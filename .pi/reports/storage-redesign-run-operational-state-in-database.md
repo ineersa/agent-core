@@ -49,13 +49,13 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    Parent([parent run owner]):::parent
-    Child([child run owner]):::child
+    Parent([top-level run owner]):::parent
+    Child([child run]):::child
     Parent -->|owner_session_id| State[(state row)]:::db
-    Child -->|owner_session_id parent| ChildState[(child state row)]:::db
+    Child -->|parent_run_id + owner_session_id| ChildState[(child state row)]:::db
     ChildState --> ChildTool[(child tool rows)]:::db
     ChildState --> ChildHuman[(child human rows)]:::db
-    Fence{{session owner fence}}:::control --> Cleanup[owner scoped startup cleanup]:::control
+    Lock{{controller session-owner lock}}:::control --> Cleanup[owner-scoped startup cleanup]:::control
     Cleanup --> State
     Cleanup --> ChildState
     classDef parent fill:#4b2e83,color:#fff,stroke:#c4a7ff
@@ -67,6 +67,7 @@ flowchart TD
 ```sql
 CREATE TABLE run_operational_state (
     run_id VARCHAR(255) NOT NULL PRIMARY KEY,
+    parent_run_id VARCHAR(255) DEFAULT NULL,
     owner_session_id VARCHAR(255) NOT NULL,
     status VARCHAR(32) NOT NULL,
     turn_no INTEGER NOT NULL,

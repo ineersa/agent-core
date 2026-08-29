@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Contract;
 use Ineersa\AgentCore\Domain\Run\RunState;
 
 /**
- * Process-local run_control ownership of active full run context.
+ * Process-local active run context with operational projection persistence.
  */
 interface ActiveRunContextInterface
 {

@@ -412,6 +412,9 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             'streamingMessage' => null,
         ]);
 
+        // Repair runs outside run_control's lock. Its canonical append remains
+        // authoritative; the invalidation below makes the sole state owner replay
+        // before its next transition if a concurrent projection write won the race.
         $this->activeRunContext->remember($persisted);
 
         // Event persistence and run-control invalidation are non-transactional:

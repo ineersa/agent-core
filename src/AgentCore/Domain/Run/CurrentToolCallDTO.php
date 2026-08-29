@@ -10,8 +10,6 @@ namespace Ineersa\AgentCore\Domain\Run;
  */
 final readonly class CurrentToolCallDTO
 {
-    public const int ID_MAX_LENGTH = 255;
-
     public function __construct(
         public string $batchId,
         public string $toolCallId,

@@ -51,6 +51,26 @@ final class MessengerTransportMigrationExecutorTest extends TestCase
         ));
     }
 
+    public function testConsoleRecordedTransportFqcnIsRecognizedOnStartup(): void
+    {
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/console-recorded.sqlite');
+        $migration = \DoctrineMigrations\MessengerTransport\Version20260828224203::class;
+        $executor = new ApplicationMigrationExecutor($connection, new NullLogger(), [$migration]);
+        $executor();
+
+        // Doctrine's console stores the complete migration class as the version.
+        $connection->update(
+            'doctrine_migration_versions',
+            ['version' => $migration],
+            [],
+        );
+
+        (new ApplicationMigrationExecutor($connection, new NullLogger(), [$migration]))();
+
+        $this->assertTrue($connection->createSchemaManager()->tablesExist(['messenger_messages']));
+        $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM doctrine_migration_versions'));
+    }
+
     private function createSqliteConnection(string $dbPath): Connection
     {
         return DriverManager::getConnection([
