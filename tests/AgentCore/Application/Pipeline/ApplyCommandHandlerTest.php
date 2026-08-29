@@ -23,7 +23,7 @@ use PHPUnit\Framework\TestCase;
 
 final class ApplyCommandHandlerTest extends TestCase
 {
-    public function testContinueCommandProducesPostCommitFollowUpAdvance(): void
+    public function testAutoRetryContinuePreservesAttemptAndProducesFollowUpAdvance(): void
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
@@ -52,6 +52,7 @@ final class ApplyCommandHandlerTest extends TestCase
             lastSeq: 5,
             messages: [new AgentMessage(role: 'tool', content: [])],
             retryableFailure: true,
+            retryAttempts: 1,
             model: 'test-model');
 
         $message = new ApplyCommand(
@@ -61,7 +62,7 @@ final class ApplyCommandHandlerTest extends TestCase
             attempt: 1,
             idempotencyKey: 'continue-idempotency-1',
             kind: CoreCommandKind::Continue,
-            payload: [],
+            payload: ['auto_retry' => true, 'retry_attempt' => 1],
         );
 
         $result = $handler->handle($message, $state);
@@ -72,6 +73,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame(6, $result->nextState->lastSeq);
         $this->assertNull($result->nextState->errorMessage);
         $this->assertFalse($result->nextState->retryableFailure);
+        $this->assertSame(1, $result->nextState->retryAttempts);
 
         $this->assertCount(1, $result->events);
         $this->assertSame('agent_command_applied', $result->events[0]->type);

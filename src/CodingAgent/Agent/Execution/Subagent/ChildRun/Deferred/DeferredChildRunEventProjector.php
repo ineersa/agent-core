@@ -94,6 +94,7 @@ final class DeferredChildRunEventProjector
 
             if (RunEventTypeEnum::LlmStepCompleted->value === $type) {
                 ++$llmStepCount;
+                $errorMessage = null;
                 $usage = \is_array($payload['usage'] ?? null) ? $payload['usage'] : [];
                 $turnInput = $this->intVal($usage['input_tokens'] ?? 0);
                 $inputTokens += $turnInput;
@@ -207,8 +208,9 @@ final class DeferredChildRunEventProjector
             // committedStatus=Failed. Do not let that override the nonterminal projection.
             // Rely on endsWithRetryPendingLlmFailure (not "last summary is LlmStepFailed"):
             // trailing ModelNotification specs keep the flag set without being status events.
-            // Later tails (retry start/success/exhausted failure) clear the flag and apply
-            // committed status normally.
+            // Deferred children cannot accept unrelated commands while this retry is pending;
+            // their next commit is the retry start, success, or exhausted failure, which clears
+            // the per-apply flag and applies committed status normally.
             if (!(RunStatus::Failed === $committedStatus && $endsWithRetryPendingLlmFailure)) {
                 $status = $committedStatus;
             }

@@ -116,10 +116,11 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             [
                 new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepFailed->value, [
                     'error' => [
-                        'message' => 'Codex WebSocket request frame could not be sent.',
-                        'user_message' => 'LLM provider network error (retryable). Will retry automatically.',
+                        'type' => \Symfony\AI\Platform\Exception\ServerException::class,
+                        'message' => 'Server error.',
+                        'user_message' => 'LLM provider server error interrupted the response stream.',
                         'retryable' => true,
-                        'error_category' => 'network',
+                        'error_category' => 'server',
                     ],
                     'retryable' => true,
                     'step_id' => 'advance-after-tools-sync',
@@ -141,20 +142,41 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertSame(1, $retryPending->llmStepCount);
         $this->assertSame(2, $retryPending->lastCommittedSeq);
         $this->assertSame(
-            'LLM provider network error (retryable). Will retry automatically.',
+            'LLM provider server error interrupted the response stream.',
             $retryPending->errorMessage,
         );
+
+        $recovered = $projector->apply(
+            $retryPending,
+            [
+                new AfterTurnCommitEventSummary(3, RunEventTypeEnum::LlmStepCompleted->value, [
+                    'usage' => ['input_tokens' => 12, 'output_tokens' => 2, 'total_tokens' => 14],
+                    'assistant_message' => [
+                        'role' => 'assistant',
+                        'content' => [['type' => 'text', 'text' => 'Recovered.']],
+                    ],
+                ]),
+                new AfterTurnCommitEventSummary(4, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
+            ],
+            committedStatus: RunStatus::Completed,
+            committedTurnNo: 48,
+        );
+
+        $this->assertSame(RunStatus::Completed, $recovered->childStatus);
+        $this->assertTrue($recovered->childStatus->isTerminal());
+        $this->assertNull($recovered->errorMessage);
+        $this->assertSame(2, $recovered->llmStepCount);
 
         // Later exhausted/non-retryable failure in a batched tail clears pending-retry
         // and remains terminal Failed (forgotten flag reset would leave Running).
         $exhausted = $projector->apply(
             $retryPending,
             [
-                new AfterTurnCommitEventSummary(3, RunEventTypeEnum::ModelNotification->value, [
+                new AfterTurnCommitEventSummary(5, RunEventTypeEnum::ModelNotification->value, [
                     'source' => 'transform_hook',
                     'message' => 'ignored between attempts',
                 ]),
-                new AfterTurnCommitEventSummary(4, RunEventTypeEnum::LlmStepFailed->value, [
+                new AfterTurnCommitEventSummary(6, RunEventTypeEnum::LlmStepFailed->value, [
                     'error' => [
                         'message' => 'Codex WebSocket request frame could not be sent.',
                         'user_message' => 'Automatic LLM retry attempts exhausted after 2 retry attempt(s).',
@@ -176,7 +198,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertTrue($exhausted->childStatus->isTerminal());
         $this->assertSame(48, $exhausted->childTurnNo);
         $this->assertSame(2, $exhausted->llmStepCount);
-        $this->assertSame(4, $exhausted->lastCommittedSeq);
+        $this->assertSame(6, $exhausted->lastCommittedSeq);
         $this->assertSame(
             'Automatic LLM retry attempts exhausted after 2 retry attempt(s).',
             $exhausted->errorMessage,
