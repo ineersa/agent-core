@@ -15,6 +15,8 @@ use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
  */
 final class OmSourceBlockBuilder
 {
+    private const int TOOL_RESULT_MAX_TOKENS = 5_000;
+
     private const int TOOL_DIGEST_PREFIX_CHARS = 400;
 
     private const int TOOL_DIGEST_SUFFIX_CHARS = 200;
@@ -229,12 +231,12 @@ final class OmSourceBlockBuilder
 
     private function truncateToolResultWithDigest(string $text): string
     {
-        $chars = mb_strlen($text, 'UTF-8');
-        $sha = hash('sha256', $text);
-        if ($chars <= self::TOOL_DIGEST_PREFIX_CHARS + self::TOOL_DIGEST_SUFFIX_CHARS + 64) {
+        if (OmTokenEstimator::estimate($text) <= self::TOOL_RESULT_MAX_TOKENS) {
             return $text;
         }
 
+        $chars = mb_strlen($text, 'UTF-8');
+        $sha = hash('sha256', $text);
         $prefix = mb_substr($text, 0, self::TOOL_DIGEST_PREFIX_CHARS, 'UTF-8');
         $suffix = mb_substr($text, -self::TOOL_DIGEST_SUFFIX_CHARS, null, 'UTF-8');
 

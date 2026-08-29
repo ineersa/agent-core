@@ -162,8 +162,8 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('- **Observations:** 1 recorded / 0 dropped / 1 active / 1 visible', $status);
         $this->assertStringContainsString('- **Reflections:** 1 recorded / 1 visible', $status);
         $this->assertStringContainsString('- **Coverage:** through event 3', $status);
-        $this->assertStringContainsString('- **Next reflection:** ~9 / 40,000 tokens (0%)', $status);
-        $this->assertStringContainsString('- **Active observation pool:** ~9 / 30,000 max tokens (0%)', $status);
+        $this->assertStringContainsString('- **Next reflection:** ~11 / 40,000 tokens (0%)', $status);
+        $this->assertStringContainsString('- **Active observation pool:** ~11 / 30,000 max tokens (0%)', $status);
         $this->assertStringContainsString('- **Pipeline:** Observer → delta Reflector → bounded Dropper (async FIFO)', $status);
         $this->assertStringContainsString('- **Compaction:** instant projection of current durable memory (no model wait)', $status);
         $this->assertStringContainsString('> Durable memory state only; worker and queue liveness are not tracked here.', $status);
