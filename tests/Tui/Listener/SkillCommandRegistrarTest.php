@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Listener;
 use Ineersa\CodingAgent\Runtime\Contract\SkillCatalogInterface;
 use Ineersa\CodingAgent\Runtime\Contract\SkillCommand;
 use Ineersa\Tui\Command\CommandMetadata;
+use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandCatalog;
@@ -64,6 +65,24 @@ final class SkillCommandRegistrarTest extends TestCase
         );
         $this->assertInstanceOf(DispatchRuntime::class, $result);
         $this->assertSame('/skill:castor list tasks', $result->payload);
+    }
+
+    #[Test]
+    public function mixedCaseInvocationDispatchesToLowercaseSkillCommand(): void
+    {
+        $this->catalog->method('allSkillCommands')->willReturn([
+            new SkillCommand(name: 'skill:datadog-logs', description: 'Datadog logs'),
+        ]);
+
+        $registrar = new SkillCommandRegistrar($this->catalog);
+        $registrar->registerCatalog($this->commandCatalog);
+
+        $command = (new CommandParser())->parse('/skill:DataDog-Logs focus on errors');
+        $this->assertInstanceOf(SlashCommand::class, $command);
+
+        $result = (new SlashCommandRegistry($this->commandCatalog))->execute($command);
+        $this->assertInstanceOf(DispatchRuntime::class, $result);
+        $this->assertSame('/skill:DataDog-Logs focus on errors', $result->payload);
     }
 
     #[Test]

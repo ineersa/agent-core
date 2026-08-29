@@ -14,7 +14,7 @@ namespace Ineersa\CodingAgent\Runtime\Contract;
 final readonly class SkillCommand
 {
     public function __construct(
-        /** Slash command name including the skill: prefix (e.g. skill:castor). */
+        /** Lowercase slash command name including the skill: prefix (e.g. skill:castor). */
         public string $name,
         /** Short description for autocomplete and /help. */
         public string $description,

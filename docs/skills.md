@@ -83,9 +83,10 @@ Every discovered skill (including on-demand-only) registers as `/skill:<name>`:
 ```
 
 Expansion happens at the in-process runtime boundary (same path as prompt
-templates). The skill body is injected as a `<skill name="…" location="…">`
-block; trailing arguments are appended after the block. Unknown `/skill:…`
-names pass through unchanged.
+templates). Command matching is case-insensitive. The skill body is injected as
+a `<skill name="…" location="…">` block; trailing arguments are appended after
+the block. Unknown `/skill:…` names pass through unchanged at the runtime
+boundary. The TUI rejects them as unregistered commands before dispatch.
 
 ## SKILL.md frontmatter
 

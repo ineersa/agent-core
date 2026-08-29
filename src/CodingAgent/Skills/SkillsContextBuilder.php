@@ -130,7 +130,7 @@ final readonly class SkillsContextBuilder implements SkillCatalogInterface
         $commands = [];
         foreach ($this->discovery->discover() as $skill) {
             $commands[] = new SkillCommand(
-                name: 'skill:'.$skill->name,
+                name: 'skill:'.strtolower($skill->name),
                 description: $skill->description,
             );
         }
@@ -146,7 +146,7 @@ final readonly class SkillsContextBuilder implements SkillCatalogInterface
      */
     public function expandSkillCommand(string $text): string
     {
-        if (!str_starts_with($text, '/skill:')) {
+        if (0 !== strncasecmp($text, '/skill:', \strlen('/skill:'))) {
             return $text;
         }
 
@@ -155,14 +155,10 @@ final readonly class SkillsContextBuilder implements SkillCatalogInterface
             return $text;
         }
 
-        $spaceIndex = strpos($rest, ' ');
-        if (false === $spaceIndex) {
-            $skillName = $rest;
-            $args = '';
-        } else {
-            $skillName = substr($rest, 0, $spaceIndex);
-            $args = trim(substr($rest, $spaceIndex + 1));
-        }
+        $parts = preg_split('/\s+/', $rest, 2);
+        \assert(\is_array($parts));
+        $skillName = $parts[0];
+        $args = isset($parts[1]) ? trim($parts[1]) : '';
 
         if ('' === $skillName) {
             return $text;
@@ -172,7 +168,13 @@ final readonly class SkillsContextBuilder implements SkillCatalogInterface
         $collisions = $this->discovery->getCollisions();
         $registry = new SkillRegistry($discovered, extractor: $this->extractor, collisions: $collisions);
 
-        $skill = $registry->get($skillName);
+        $skill = null;
+        foreach ($discovered as $candidate) {
+            if (0 === strcasecmp($candidate->name, $skillName)) {
+                $skill = $candidate;
+                break;
+            }
+        }
         if (null === $skill) {
             return $text;
         }

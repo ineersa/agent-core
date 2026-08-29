@@ -204,6 +204,22 @@ ARCH_BODY_UNIQUE');
         $this->assertStringNotContainsString('/skill:noinvoke', $expanded);
     }
 
+    public function testExpandSkillCommandMatchesMixedCaseNameAndWhitespaceArguments(): void
+    {
+        $skillDir = $this->tmpDir.'/.hatfield/skills/datadog-logs';
+        mkdir($skillDir, 0777, true);
+        file_put_contents($skillDir.'/SKILL.md', "---\nname: DataDog-Logs\ndescription: Hidden\ndisable-model-invocation: true\n---\n\nDATADOG_BODY");
+
+        $builder = $this->createBuilder(cwd: $this->tmpDir);
+        $commands = $builder->allSkillCommands();
+        $expanded = $builder->expandSkillCommand("/SKILL:datadog-logs\t focus on errors");
+
+        $this->assertSame('skill:datadog-logs', $commands[0]->name ?? null);
+        $this->assertStringContainsString('<skill name="DataDog-Logs"', $expanded);
+        $this->assertStringContainsString('DATADOG_BODY', $expanded);
+        $this->assertStringContainsString("\n\nfocus on errors", $expanded);
+    }
+
     public function testExpandSkillCommandPassthroughUnknown(): void
     {
         $builder = $this->createBuilder(cwd: $this->tmpDir);
