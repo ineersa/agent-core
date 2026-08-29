@@ -232,6 +232,74 @@ final class SkillDiscoveryTest extends TestCase
         $this->assertFalse($skills[0]->modelInvocationEnabled);
     }
 
+    public function testDisableModelInvocationDefaultsToEnabled(): void
+    {
+        $skillDir = $this->tmpDir.'/.hatfield/skills/default-invoke';
+        mkdir($skillDir, 0777, true);
+        file_put_contents($skillDir.'/SKILL.md', "---\nname: default-invoke\ndescription: Default skill\n---\n\nBody");
+
+        $discovery = $this->createDiscovery(cwd: $this->tmpDir);
+        $skills = $discovery->discover();
+
+        $this->assertCount(1, $skills);
+        $this->assertTrue($skills[0]->modelInvocationEnabled);
+    }
+
+    public function testDisableModelInvocationCoercesTruthyValues(): void
+    {
+        $skillDir = $this->tmpDir.'/.hatfield/skills/string-true';
+        mkdir($skillDir, 0777, true);
+        file_put_contents($skillDir.'/SKILL.md', "---\nname: string-true\ndescription: String true\ndisable-model-invocation: \"true\"\n---\n\nBody");
+
+        $discovery = $this->createDiscovery(cwd: $this->tmpDir);
+        $skills = $discovery->discover();
+
+        $this->assertCount(1, $skills);
+        $this->assertFalse($skills[0]->modelInvocationEnabled);
+    }
+
+    public function testDisableModelInvocationFalseKeepsEnabled(): void
+    {
+        $skillDir = $this->tmpDir.'/.hatfield/skills/explicit-false';
+        mkdir($skillDir, 0777, true);
+        file_put_contents($skillDir.'/SKILL.md', "---\nname: explicit-false\ndescription: Explicit false\ndisable-model-invocation: false\n---\n\nBody");
+
+        $discovery = $this->createDiscovery(cwd: $this->tmpDir);
+        $skills = $discovery->discover();
+
+        $this->assertCount(1, $skills);
+        $this->assertTrue($skills[0]->modelInvocationEnabled);
+    }
+
+    public function testCollisionKeepsWinnerDisableModelInvocationFlag(): void
+    {
+        $additionalDir = $this->tmpDir.'/prio';
+        mkdir($additionalDir.'/shared', 0777, true);
+        file_put_contents(
+            $additionalDir.'/shared/SKILL.md',
+            "---\nname: shared\ndescription: Priority on-demand\ndisable-model-invocation: true\n---\n\nPrio body",
+        );
+
+        mkdir($this->tmpDir.'/.hatfield/skills/shared', 0777, true);
+        file_put_contents(
+            $this->tmpDir.'/.hatfield/skills/shared/SKILL.md',
+            "---\nname: shared\ndescription: Lower discoverable\n---\n\nLower body",
+        );
+
+        $config = new SkillsConfig(
+            noSkills: false,
+            skillsPaths: [$additionalDir],
+        );
+
+        $discovery = $this->createDiscovery(cwd: $this->tmpDir, config: $config);
+        $skills = $discovery->discover();
+
+        $this->assertCount(1, $skills);
+        $this->assertSame('shared', $skills[0]->name);
+        $this->assertFalse($skills[0]->modelInvocationEnabled);
+        $this->assertStringContainsString('prio', $skills[0]->skillDirectory);
+    }
+
     public function testNameDefaultsToDirName(): void
     {
         $skillDir = $this->tmpDir.'/.hatfield/skills/defaultname';

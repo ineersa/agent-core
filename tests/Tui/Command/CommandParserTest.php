@@ -155,6 +155,16 @@ final class CommandParserTest extends TestCase
         $this->assertSame('123cmd', $result->name);
     }
 
+    public function testSlashSkillColonName(): void
+    {
+        $result = $this->parser->parse('/skill:datadog-logs focus');
+
+        $this->assertInstanceOf(SlashCommand::class, $result);
+        $this->assertSame('skill:datadog-logs', $result->name);
+        $this->assertSame('focus', $result->args);
+        $this->assertSame('/skill:datadog-logs focus', $result->originalText);
+    }
+
     // ─── ShellCommand cases ─────────────────────────────────────────────
 
     public function testShellSingleExclamation(): void
