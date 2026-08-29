@@ -5,21 +5,30 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
+use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
+use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
 use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
+use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -68,6 +77,7 @@ final class ToolCallResultHandlerTest extends TestCase
             ->build()
             ->with([
                 'pendingShellToolCalls' => ['shell-call' => true],
+                'currentOperation' => new CurrentOperationDTO(2, 'shell-step', 2, 'shell-operation'),
                 'currentToolCalls' => [new CurrentToolCallDTO(
                     ToolBatchIdentity::fromTurnAndStep(2, 'shell-step'),
                     'shell-call',
@@ -93,13 +103,37 @@ final class ToolCallResultHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         $this->assertSame(RunStatus::Completed, $result->nextState?->status);
+        $this->assertSame([], $result->nextState?->pendingToolCalls);
         $this->assertSame([], $result->nextState?->pendingShellToolCalls);
         $this->assertSame([], $result->nextState?->currentToolCalls);
+        $this->assertNull($result->nextState?->activeStepId);
+        $this->assertNull($result->nextState?->currentOperation);
         $this->assertSame(
             [RunEventTypeEnum::ToolExecutionEnd->value, RunEventTypeEnum::AgentEnd->value],
             array_map(static fn ($event): string => $event->type, $result->events),
         );
         $this->assertSame([], $handler->handle($message, $result->nextState)->events);
+
+        $commandStore = new InMemoryCommandStore();
+        $commandStore->enqueue(new PendingCommand(
+            runId: 'run-shell',
+            kind: CoreCommandKind::FollowUp,
+            idempotencyKey: 'queued-during-shell',
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'follow up']]]],
+            options: new CommandCancellationOptions(safe: false),
+        ));
+        $advance = new AdvanceRunHandler(
+            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, new CommandRouter([])),
+            eventFactory: new EventFactory(),
+        );
+        $woken = $advance->handle(AdvanceRunMessageBuilder::create('run-shell')
+            ->withTurnNo(2)
+            ->withStepId('shell-follow-up-step')
+            ->withIdempotencyKey('shell-standalone-advance')
+            ->build(), $result->nextState);
+
+        $this->assertNotNull($woken->nextState, 'Standalone shell wake must be accepted to drain a command queued during execution.');
+        $this->assertCount(1, $woken->nextState->messages);
     }
 
     public function testHandleAcceptedPendingResultReturnsPostCommitEffectsForNextToolCall(): void
