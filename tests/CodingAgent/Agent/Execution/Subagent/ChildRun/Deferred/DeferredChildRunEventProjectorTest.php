@@ -116,10 +116,11 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             [
                 new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepFailed->value, [
                     'error' => [
-                        'message' => '[server_error/server_error]',
-                        'user_message' => 'LLM provider error (retryable). [server_error/server_error] Will retry automatically.',
+                        'type' => \Symfony\AI\Platform\Exception\ServerException::class,
+                        'message' => 'Server error.',
+                        'user_message' => 'LLM provider server error interrupted the response stream.',
                         'retryable' => true,
-                        'error_category' => 'provider',
+                        'error_category' => 'server',
                     ],
                     'retryable' => true,
                     'step_id' => 'advance-after-tools-sync',
@@ -141,7 +142,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertSame(1, $retryPending->llmStepCount);
         $this->assertSame(2, $retryPending->lastCommittedSeq);
         $this->assertSame(
-            'LLM provider error (retryable). [server_error/server_error] Will retry automatically.',
+            'LLM provider server error interrupted the response stream.',
             $retryPending->errorMessage,
         );
 

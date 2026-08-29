@@ -25,12 +25,10 @@ final class TestMessageBus implements MessageBusInterface
     /** @var list<object> */
     public array $messages = [];
 
-    public ?Envelope $lastEnvelope = null;
-
     public function dispatch(object $message, array $stamps = []): Envelope
     {
         $this->messages[] = $message;
 
-        return $this->lastEnvelope = new Envelope($message, $stamps);
+        return new Envelope($message, $stamps);
     }
 }

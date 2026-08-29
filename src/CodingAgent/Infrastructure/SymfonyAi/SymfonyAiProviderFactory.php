@@ -7,11 +7,9 @@ namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpRetryPolicy;
-use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpRetryStrategy;
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
 use Ineersa\Platform\Bridge\Generic\SanitizedGenericModelClient;
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\Generic\Completions\ModelClient as GenericCompletionsModelClient;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
 use Symfony\AI\Platform\Bridge\Generic\Embeddings\ModelClient as GenericEmbeddingsModelClient;
@@ -79,18 +77,11 @@ class SymfonyAiProviderFactory
     /**
      * Return a configured HttpClient for outgoing LLM requests.
      *
-     * When an HttpClient is explicitly injected (e.g. test environment
-     * via services_test.yaml, or by a test replay factory), use it
-     * directly.  Otherwise create a default one wrapped with Symfony's
-     * {@see RetryableHttpClient}, whose orchestration (attempt loop,
-     * cancel-before-retry, cancellable pauses) is driven by
-     * {@see LlmHttpRetryStrategy}.
-     *
-     * No logger is passed to RetryableHttpClient: its built-in retry log
-     * includes the raw exception message, which would violate logging
-     * privacy. The strategy emits its own privacy-safe retry log instead.
+     * An explicitly injected client is used directly. Otherwise Symfony's
+     * RetryableHttpClient owns transport/status retries, backoff, and standard
+     * Retry-After handling.
      */
-    private function getHttpClient(?string $providerId = null): HttpClientInterface
+    private function getHttpClient(): HttpClientInterface
     {
         if (null !== $this->httpClient) {
             return $this->httpClient;
@@ -103,13 +94,12 @@ class SymfonyAiProviderFactory
             maxRetries: $http?->maxRetries,
             baseDelayMs: $http?->baseDelayMs,
             maxDelayMs: $http?->maxDelayMs,
-            logger: $this->logger,
         );
         $baseClient = HttpClient::create($policy->httpClientOptions());
 
         return new RetryableHttpClient(
             $baseClient,
-            new LlmHttpRetryStrategy($policy, $this->logger ?? new NullLogger(), $providerId),
+            $policy->retryStrategy(),
             maxRetries: $policy->maxRetries,
         );
     }
@@ -119,7 +109,7 @@ class SymfonyAiProviderFactory
      */
     private function buildProvider(AiProviderConfig $provider): ProviderInterface
     {
-        $httpClient = $this->getHttpClient($provider->id);
+        $httpClient = $this->getHttpClient();
 
         foreach ($this->builders as $builder) {
             if ($builder->supports($provider)) {

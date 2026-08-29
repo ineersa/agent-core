@@ -29,7 +29,8 @@ use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Messenger\Stamp\DelayStamp;
+use Symfony\AI\Platform\Exception\ExceedContextSizeException;
+use Symfony\AI\Platform\Exception\ServerException;
 
 final class LlmStepResultHandlerTest extends TestCase
 {
@@ -477,8 +478,6 @@ final class LlmStepResultHandlerTest extends TestCase
             commandBus: $commandBus,
             errorClassifier: $classifier,
             agentRetryMaxAttempts: 2,
-            agentRetryBaseDelayMs: 1000,
-            agentRetryMaxDelayMs: 60000,
             logger: $logger,
         );
 
@@ -496,17 +495,14 @@ final class LlmStepResultHandlerTest extends TestCase
             retryAttempts: 0,
             model: 'test-model');
 
-        // Session 45 regression: a no-status provider code unknown to the classifier
-        // must enter the existing bounded AgentCore retry path without a new allowlist.
         $classifiedError = $classifier->classify([
-            'type' => 'RuntimeException',
-            'message' => '[server_error/server_error]',
+            'type' => ServerException::class,
+            'message' => 'Server error.',
             'response_error_code' => 'server_error',
-            'retry_after_ms' => 90000,
         ]);
         $this->assertTrue($classifiedError['retryable'] ?? false);
         $this->assertSame(
-            \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier::CATEGORY_PROVIDER,
+            \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier::CATEGORY_SERVER,
             $classifiedError['error_category'] ?? null,
         );
 
@@ -551,11 +547,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertTrue($commandBus->messages[0]->payload['auto_retry'] ?? false);
         $this->assertSame(1, $commandBus->messages[0]->payload['retry_attempt'] ?? null);
         $this->assertSame([], $commandBus->messages[0]->options);
-        $this->assertNotNull($commandBus->lastEnvelope);
-        $delayStamp = $commandBus->lastEnvelope->last(DelayStamp::class);
-        $this->assertInstanceOf(DelayStamp::class, $delayStamp);
-        $this->assertSame(60000, $delayStamp->getDelay(), 'Provider Retry-After must override the shorter configured delay without exceeding the cap.');
-
         $this->assertCount(1, $logger->records);
         $this->assertSame('info', $logger->records[0]['level']);
         $this->assertSame('llm.retry.scheduled', $logger->records[0]['message']);
@@ -564,18 +555,18 @@ final class LlmStepResultHandlerTest extends TestCase
             'session_id' => 'run-auto-retry-1',
             'component' => 'llm',
             'event_type' => 'llm.retry.scheduled',
-            'error_category' => 'provider',
-            'error_code' => 'server_error',
+            'error_category' => 'server',
+            'error_type' => ServerException::class,
+            'http_status_code' => null,
             'retry_attempt' => 1,
             'max_retries' => 2,
-            'delay_ms' => 60000,
         ], $logger->records[0]['context']);
 
         $routed = (new CommandRouter([]))->route($commandBus->messages[0]);
         $this->assertSame('core', $routed->status, (string) $routed->reason);
     }
 
-    public function testRetryableErrorAtCapDoesNotDispatchRetryAndStripsAutoRetryPromise(): void
+    public function testRetryableErrorAtCapDoesNotDispatchRetry(): void
     {
         $executionBus = new TestMessageBus();
         $commandBus = new TestMessageBus();
@@ -597,8 +588,6 @@ final class LlmStepResultHandlerTest extends TestCase
             commandBus: $commandBus,
             errorClassifier: $classifier,
             agentRetryMaxAttempts: 2,
-            agentRetryBaseDelayMs: 0,
-            agentRetryMaxDelayMs: 0,
             logger: $logger,
         );
 
@@ -626,13 +615,11 @@ final class LlmStepResultHandlerTest extends TestCase
             usage: [],
             stopReason: null,
             error: [
-                'type' => 'RuntimeException',
-                'message' => 'Server Error',
-                'http_status_code' => 503,
+                'type' => ServerException::class,
+                'message' => 'Server error.',
                 'retryable' => true,
                 'error_category' => 'server',
-                'response_error_code' => 'server_error',
-                'user_message' => 'LLM provider server error (HTTP 503 — retryable). Will retry automatically.',
+                'user_message' => 'LLM provider server error interrupted the response stream.',
             ],
         );
 
@@ -641,15 +628,10 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertNotNull($result->nextState);
         $this->assertFalse($result->nextState->retryableFailure);
         $errorMessage = (string) $result->nextState->errorMessage;
-        // Exhausted wording keeps actionable provider detail without stale retry-policy prose
-        // and without double-period punctuation when the retained detail already ends with '.'.
         $this->assertSame(
-            'Automatic LLM retry attempts exhausted after 2 retry attempt(s): LLM provider server error (HTTP 503). Please retry manually or change provider/model.',
+            'Automatic LLM retry attempts exhausted after 2 retry attempt(s): LLM provider server error interrupted the response stream.',
             $errorMessage,
         );
-        $this->assertStringNotContainsString('..', $errorMessage);
-        $this->assertStringNotContainsString('Will retry automatically', $errorMessage);
-        $this->assertStringNotContainsString('retryable', $errorMessage);
 
         $failed = null;
         foreach ($result->events as $event) {
@@ -664,9 +646,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertSame(2, $result->nextState->retryAttempts);
         $this->assertFalse($failed->payload['retryable'] ?? true);
         $this->assertFalse($failed->payload['error']['retryable'] ?? true);
-        $this->assertStringNotContainsString('Will retry automatically', (string) ($failed->payload['error']['user_message'] ?? ''));
-        $this->assertStringNotContainsString('retryable', (string) ($failed->payload['error']['user_message'] ?? ''));
-
         foreach ($result->postCommit as $callback) {
             $callback();
         }
@@ -676,7 +655,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertSame('llm.retry.exhausted', $logger->records[0]['message']);
         $this->assertSame(2, $logger->records[0]['context']['retry_attempt'] ?? null);
         $this->assertSame(2, $logger->records[0]['context']['max_retries'] ?? null);
-        $this->assertSame('server_error', $logger->records[0]['context']['error_code'] ?? null);
+        $this->assertSame(ServerException::class, $logger->records[0]['context']['error_type'] ?? null);
 
         $duplicate = $handler->handle($message, $result->nextState);
         $this->assertSame([], $duplicate->events);
@@ -760,14 +739,12 @@ final class LlmStepResultHandlerTest extends TestCase
             commandBus: $commandBus,
             errorClassifier: $classifier,
             agentRetryMaxAttempts: 2,
-            agentRetryBaseDelayMs: 0,
-            agentRetryMaxDelayMs: 0,
         );
 
         $error = $classifier->classify([
-            'type' => 'RuntimeException',
+            'type' => ExceedContextSizeException::class,
             'message' => 'Context size has been exceeded.',
-            'http_status_code' => 500,
+            'http_status_code' => 400,
         ]);
 
         $state = new RunState(

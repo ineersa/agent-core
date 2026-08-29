@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\OpenAICodex\ResultConverter;
+use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
 use Symfony\AI\Platform\Result\DeferredResult;
 use Symfony\AI\Platform\Result\RawHttpResult;
@@ -56,7 +57,7 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertSame([], $options['tools'], 'toolsEnabled:false must override any tools key from generic extra options.');
     }
 
-    public function testSynchronousPlatformInvokeExceptionReturnsRetryableNetworkErrorResult(): void
+    public function testSynchronousUnknownExceptionDoesNotBecomeRetryableFromMessageText(): void
     {
         $platform = $this->createStub(SymfonyPlatformInterface::class);
         $platform->method('invoke')->willThrowException(
@@ -80,8 +81,8 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertSame([], $result->deltas);
         $this->assertSame([], $result->usage);
         $this->assertIsArray($result->error);
-        $this->assertTrue($result->error['retryable'] ?? false);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_NETWORK, $result->error['error_category'] ?? null);
+        $this->assertFalse($result->error['retryable'] ?? true);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result->error['error_category'] ?? null);
         $this->assertSame(\RuntimeException::class, $result->error['type'] ?? null);
         $this->assertSame(
             'Codex WebSocket request frame could not be sent.',
@@ -90,10 +91,10 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertSame('openai-codex/gpt-5.6-sol', $result->error['request_model'] ?? null);
     }
 
-    public function testUnknownProviderFailureUsesBoundedDefaultRetryClassification(): void
+    public function testTypedStreamServerFailureUsesBoundedAgentRetry(): void
     {
         $platform = $this->createStub(SymfonyPlatformInterface::class);
-        $platform->method('invoke')->willThrowException(new \RuntimeException('[server_error/server_error]'));
+        $platform->method('invoke')->willThrowException(new ServerException());
 
         $result = $this->createAdapter($platform)->invoke(new ModelInvocationRequest(
             model: 'openai-codex/gpt-5.6-sol',
@@ -103,7 +104,23 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertSame('error', $result->stopReason);
         $this->assertIsArray($result->error);
         $this->assertTrue($result->error['retryable'] ?? false);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result->error['error_category'] ?? null);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_SERVER, $result->error['error_category'] ?? null);
+    }
+
+    public function testTypedHttpServerFailureIsTerminalAfterSymfonyRetries(): void
+    {
+        $platform = $this->createStub(SymfonyPlatformInterface::class);
+        $platform->method('invoke')->willThrowException(new ServerException(503));
+
+        $result = $this->createAdapter($platform)->invoke(new ModelInvocationRequest(
+            model: 'openai-codex/gpt-5.6-sol',
+            input: new ModelInvocationInput(runId: 'run-http-retries-exhausted', turnNo: 1, stepId: 'step-http-error'),
+        ));
+
+        $this->assertIsArray($result->error);
+        $this->assertFalse($result->error['retryable'] ?? true);
+        $this->assertSame(503, $result->error['http_status_code'] ?? null);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_SERVER, $result->error['error_category'] ?? null);
     }
 
     public function testLocalProgrammingFailureAtProviderBoundaryRemainsNonRetryable(): void
@@ -153,7 +170,7 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertSame(404, $diag['http_status_code']);
         $this->assertSame('not_found', $diag['response_error_code']);
         $this->assertSame('missing', $diag['response_error_type']);
-        $this->assertNull($diag['response_error_message']);
+        $this->assertArrayNotHasKey('response_error_message', $diag);
         $this->assertTrue($diag['response_body_is_json']);
         $encoded = json_encode($diag);
         $this->assertIsString($encoded);
@@ -287,21 +304,7 @@ final class LlmPlatformAdapterTest extends TestCase
             'response_error_code' => null,
             'response_error_type' => null,
             'response_error_param' => null,
-            'response_error_message' => null,
-            'retry_after_ms' => null,
         ], $diag, 'Failed diagnostic stages must not change the returned shape.');
-
-        // Scenario B: malformed Retry-After date parsing fails.
-        $dateResponse = $this->createStub(ResponseInterface::class);
-        $dateResponse->method('getStatusCode')->willReturn(429);
-        $dateResponse->method('getHeaders')->willReturn(['retry-after' => [$secret]]);
-        $dateResponse->method('getContent')->willReturn('{}');
-
-        $method->invoke($adapter, new DeferredResult(
-            new ResultConverter(),
-            new RawHttpResult($dateResponse),
-            ['stream' => true],
-        ));
 
         $stages = array_map(
             static fn (array $record): mixed => $record['context']['diagnostic_stage'] ?? null,
@@ -310,7 +313,7 @@ final class LlmPlatformAdapterTest extends TestCase
                 static fn (array $record): bool => 'llm.provider.diagnostic_failed' === $record['message'],
             ),
         );
-        $this->assertSame(['status_code', 'headers', 'body', 'retry_after_date'], array_values($stages));
+        $this->assertSame(['status_code', 'headers', 'body'], array_values($stages));
 
         foreach ($logger->records as $record) {
             $this->assertSame('warning', $record['level']);

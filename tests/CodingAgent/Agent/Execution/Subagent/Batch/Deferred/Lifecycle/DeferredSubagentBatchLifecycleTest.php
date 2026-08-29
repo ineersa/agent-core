@@ -165,10 +165,11 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 2, $c2['childRunId'], RunStatus::Failed, 1, [
             new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepFailed->value, [
                 'error' => [
-                    'message' => '[server_error/server_error]',
-                    'user_message' => 'LLM provider error (retryable). [server_error/server_error] Will retry automatically.',
+                    'type' => \Symfony\AI\Platform\Exception\ServerException::class,
+                    'message' => 'Server error.',
+                    'user_message' => 'LLM provider server error interrupted the response stream.',
                     'retryable' => true,
-                    'error_category' => 'provider',
+                    'error_category' => 'server',
                 ],
                 'retryable' => true,
                 'retry_attempt' => 1,

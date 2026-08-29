@@ -24,6 +24,8 @@ use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\Platform\Result\CancellableRawResultInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
+use Symfony\AI\Platform\Exception\RateLimitExceededException;
+use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\FinishReason\FinishReason;
 use Symfony\AI\Platform\FinishReason\FinishReasonCase;
 use Symfony\AI\Platform\Message\AssistantMessage;
@@ -536,9 +538,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      * Extract privacy-safe response diagnostics from a DeferredResult.
      *
      * Returns structural HTTP metadata only. Provider-controlled free-text fields
-     * (error.message, error_description, detail, raw body) are never copied into
-     * diagnostics — response_error_message stays null here. Downstream classifiers
-     * may still consume response_error_message when another caller supplies it.
+     * and raw response bodies are never copied into diagnostics.
      *
      * @return array<string, mixed>
      */
@@ -566,8 +566,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             'response_error_code' => null,
             'response_error_type' => null,
             'response_error_param' => null,
-            'response_error_message' => null,
-            'retry_after_ms' => null,
         ];
 
         try {
@@ -576,16 +574,9 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $this->logDiagnosticFailure('status_code', $exception);
         }
 
-        // Extract headers including Retry-After for rate-limit feedback
         try {
             $headers = $response->getHeaders(false);
             $diag['response_content_type'] = $headers['content-type'][0] ?? null;
-
-            // Parse Retry-After headers (retry-after-ms has priority)
-            $retryAfterMs = $this->parseRetryAfterHeader($headers);
-            if (null !== $retryAfterMs) {
-                $diag['retry_after_ms'] = $retryAfterMs;
-            }
         } catch (\Throwable $exception) {
             $this->logDiagnosticFailure('headers', $exception);
         }
@@ -640,56 +631,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
-     * Parse Retry-After delay from response headers.
-     *
-     * Supports, in priority order:
-     *   - retry-after-ms (custom header, integer milliseconds)
-     *   - retry-after (standard header — integer seconds or HTTP-date)
-     *
-     * @param array<string, list<string>> $headers
-     *
-     * @return int|null Delay in milliseconds, or null if no Retry-After header
-     */
-    private function parseRetryAfterHeader(array $headers): ?int
-    {
-        // 1. retry-after-ms (custom header)
-        $ms = $headers['retry-after-ms'][0] ?? null;
-        if (null !== $ms && '' !== $ms) {
-            $value = (int) $ms;
-            if ($value > 0) {
-                return $value;
-            }
-        }
-
-        // 2. retry-after (standard: seconds or HTTP date)
-        $retryAfter = $headers['retry-after'][0] ?? null;
-        if (null === $retryAfter || '' === $retryAfter) {
-            return null;
-        }
-
-        $trimmed = trim($retryAfter);
-
-        // Try integer seconds
-        if (ctype_digit($trimmed)) {
-            return (int) $trimmed * 1000;
-        }
-
-        // Try HTTP-date (RFC 1123)
-        try {
-            $date = new \DateTimeImmutable($trimmed);
-            $now = new \DateTimeImmutable('now');
-            $diff = (int) ($date->format('U') - $now->format('U'));
-
-            return $diff > 0 ? $diff * 1000 : 0;
-        } catch (\Throwable $exception) {
-            // Not a valid date — intentional local degradation, logged safely.
-            $this->logDiagnosticFailure('retry_after_date', $exception);
-        }
-
-        return null;
-    }
-
-    /**
      * @param list<DeltaInterface>       $deltas
      * @param array<string, mixed>       $requestSummary     Privacy-safe request summary
      * @param list<ModelNotificationDTO> $modelNotifications generic model notifications
@@ -711,12 +652,11 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             'message' => mb_substr($exception->getMessage(), 0, 500),
         ];
 
-        // Preserve the causal transport exception for classification/retry (e.g. Amp
-        // WebsocketClosedException behind "request frame could not be sent").
-        $previous = $exception->getPrevious();
-        if (null !== $previous) {
-            $error['previous_exception_class'] = $previous::class;
-            $error['previous_exception_message'] = mb_substr($previous->getMessage(), 0, 300);
+        if ($exception instanceof ServerException && null !== $exception->getStatusCode()) {
+            $error['http_status_code'] = $exception->getStatusCode();
+        }
+        if ($exception instanceof RateLimitExceededException && null !== $exception->getRetryAfter()) {
+            $error['retry_after_seconds'] = $exception->getRetryAfter();
         }
 
         // Include response diagnostics when a DeferredResult exists (stream-time failures).

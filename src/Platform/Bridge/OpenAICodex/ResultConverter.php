@@ -12,6 +12,7 @@ use Symfony\AI\Platform\Exception\ContentFilterException;
 use Symfony\AI\Platform\Exception\IncompleteStreamException;
 use Symfony\AI\Platform\Exception\RateLimitExceededException;
 use Symfony\AI\Platform\Exception\RuntimeException;
+use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\Result\MultiPartResult;
 use Symfony\AI\Platform\Result\RawHttpResult;
@@ -69,7 +70,7 @@ final class ResultConverter implements ResultConverterInterface
         }
 
         if (isset($data['error'])) {
-            throw new RuntimeException($this->generateErrorMessage($this->extractStreamError(['error' => $data['error']])));
+            throw $this->createStreamException($this->extractStreamError(['error' => $data['error']]));
         }
 
         if (!isset($data[self::KEY_OUTPUT])) {
@@ -101,6 +102,9 @@ final class ResultConverter implements ResultConverterInterface
         }
 
         $statusCode = $response->getStatusCode();
+        if ($statusCode >= 500) {
+            throw new ServerException($statusCode, $this->extractErrorDiagnostics($response));
+        }
         if ($statusCode < 200 || $statusCode >= 300) {
             throw new RuntimeException($this->formatGenericHttpExceptionMessage($statusCode, $response));
         }
@@ -243,14 +247,14 @@ final class ResultConverter implements ResultConverterInterface
             // silently ignored, producing a null assistant message and an HTTP 400
             // on the subsequent turn.
             if ('error' === $type) {
-                throw new RuntimeException($this->generateErrorMessage($this->extractStreamError($event)));
+                throw $this->createStreamException($this->extractStreamError($event));
             }
 
             // response.failed — the response was rejected by the server.
             if ('response.failed' === $type) {
                 $response = \is_array($event['response'] ?? null) ? $event['response'] : [];
 
-                throw new RuntimeException($this->generateErrorMessage($this->extractStreamError($response)));
+                throw $this->createStreamException($this->extractStreamError($response));
             }
 
             // response.incomplete — context limit or other truncation.
@@ -440,6 +444,22 @@ final class ResultConverter implements ResultConverterInterface
             'param' => \is_string($event['param'] ?? null) ? $event['param'] : null,
             'message' => \is_string($message) && '' !== trim($message) ? mb_substr(trim($message), 0, 500) : null,
         ];
+    }
+
+    /** @param array{code?: string|null, type?: string|null, param?: string|null, message?: string|null} $error */
+    private function createStreamException(array $error): RuntimeException
+    {
+        $message = $this->generateErrorMessage($error);
+        $signals = [$error['code'] ?? null, $error['type'] ?? null];
+
+        if ([] !== array_intersect($signals, ['server_error', 'internal_error'])) {
+            return new ServerException(null, $message);
+        }
+        if ([] !== array_intersect($signals, ['rate_limit_exceeded', 'rate_limit_error', 'too_many_requests'])) {
+            return new RateLimitExceededException(null, $message);
+        }
+
+        return new RuntimeException($message);
     }
 
     /** @param array{code?: string|null, type?: string|null, param?: string|null, message?: string|null} $error */
