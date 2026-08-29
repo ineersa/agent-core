@@ -375,8 +375,8 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
         $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($settings, $this->projectDir);
         $connection = $this->omDatabaseFactory()->connectAndMigrate($paths->databasePath, new NullLogger());
 
-        $obsA = $this->insertObs($connection, 'run-d', 'obs-a', 'low', '2020-01-01 00:00', str_repeat('a', 200), 1);
-        $obsB = $this->insertObs($connection, 'run-d', 'obs-b', 'critical', '2026-01-01 00:00', str_repeat('b', 200), 2);
+        $obsA = $this->insertObs($connection, 'run-d', 'obs-a', 'low', '2020-01-01 00:00', str_repeat('a', 160), 1);
+        $obsB = $this->insertObs($connection, 'run-d', 'obs-b', 'critical', '2026-01-01 00:00', str_repeat('b', 160), 2);
 
         $setHash = OmIdentity::observationSetHash('run-d', [$obsA, $obsB]);
         $generationId = OmIdentity::thresholdGenerationId('run-d', null, $setHash, 'llama_cpp_test/test', '1');
