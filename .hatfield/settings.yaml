@@ -98,7 +98,7 @@ extensions:
         safe_guard:
             allow_write_outside_cwd: [/home/ineersa/projects/agent-core-worktrees, /tmp]
 forks:
-    model: openai-codex/gpt-5.6-terra
+    model: grok-cli/grok-composer-2.5-fast
     thinking_level: medium
     extensions:
         enabled:
