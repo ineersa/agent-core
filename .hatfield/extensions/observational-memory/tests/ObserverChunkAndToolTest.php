@@ -21,11 +21,52 @@ use PHPUnit\Framework\TestCase;
  */
 final class ObserverChunkAndToolTest extends TestCase
 {
-    public function testEstimatorIsCeilUnicodeLengthOverFour(): void
+    public function testEstimatorUsesConservativeUnicodeCharacterRatio(): void
     {
-        $this->assertSame(1, OmTokenEstimator::estimate('abcd'));
-        $this->assertSame(2, OmTokenEstimator::estimate('abcde'));
-        $this->assertSame(3857, OmTokenEstimator::estimate(str_repeat('x', 15_426)));
+        $this->assertSame(1, OmTokenEstimator::estimate('abc'));
+        $this->assertSame(2, OmTokenEstimator::estimate('abcd'));
+        $this->assertSame(4747, OmTokenEstimator::estimate(str_repeat('x', 15_426)));
+        $this->assertSame(3250, OmTokenEstimator::characterBudget(1000));
+    }
+
+    public function testToolResultsRemainCompleteThroughFiveThousandEstimatedTokens(): void
+    {
+        $complete = str_repeat('a', 16_250);
+        $oversized = str_repeat('b', 16_251);
+        $blocks = (new OmSourceBlockBuilder())->build([
+            new SessionEventDTO(
+                'run-tool-results',
+                1,
+                1,
+                'tool_execution_end',
+                ['tool_result' => [
+                    'tool_call_id' => 'complete',
+                    'result' => ['tool_name' => 'read', 'content' => [['type' => 'text', 'text' => $complete]]],
+                    'is_error' => false,
+                ]],
+                '2026-07-26T10:00:00+00:00',
+            ),
+            new SessionEventDTO(
+                'run-tool-results',
+                2,
+                1,
+                'tool_execution_end',
+                ['tool_result' => [
+                    'tool_call_id' => 'oversized',
+                    'result' => ['tool_name' => 'read', 'content' => [['type' => 'text', 'text' => $oversized]]],
+                    'is_error' => false,
+                ]],
+                '2026-07-26T10:00:01+00:00',
+            ),
+        ]);
+
+        $this->assertCount(2, $blocks);
+        $this->assertStringContainsString($complete, $blocks[0]['rendered_text']);
+        $this->assertStringContainsString(
+            '[tool output digest sha256='.hash('sha256', $oversized).' chars=16251]',
+            $blocks[1]['rendered_text'],
+        );
+        $this->assertStringNotContainsString(str_repeat('b', 601), $blocks[1]['rendered_text']);
     }
 
     public function testLargeInteractionPacksUnderEnvelopeInsteadOfHardFail(): void
@@ -66,12 +107,13 @@ final class ObserverChunkAndToolTest extends TestCase
             blocks: $blocks,
             memoryReflections: [],
             memoryObservations: [],
-            envelopeTokens: 800,
+            envelopeTokens: 4_000,
             localTimeFallback: '2026-07-26 12:00',
             fixedOverheadTokens: $fixed,
         );
         $this->assertGreaterThan(1, \count($small));
         foreach ($small as $part) {
+            $this->assertLessThanOrEqual(4_000, $part['token_estimate'] + $fixed);
             $this->assertStringContainsString('CURRENT REFLECTIONS:', $part['user_message']);
             $this->assertStringContainsString('NEW SOURCE-ADDRESSED CONVERSATION CHUNK:', $part['user_message']);
             $this->assertMatchesRegularExpression('/Current local time fallback: \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/', $part['user_message']);
@@ -86,7 +128,7 @@ final class ObserverChunkAndToolTest extends TestCase
             blocks: $blocks,
             memoryReflections: [],
             memoryObservations: [],
-            envelopeTokens: 800,
+            envelopeTokens: 4_000,
             localTimeFallback: '2099-01-01 00:00',
             fixedOverheadTokens: $fixed,
         );

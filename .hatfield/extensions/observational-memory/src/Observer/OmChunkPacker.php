@@ -24,6 +24,10 @@ final class OmChunkPacker
      */
     private const string BLOCK_SEPARATOR = "\n\n";
 
+    private const string SOURCE_SECTION_PREFIX = "\n\nNEW SOURCE-ADDRESSED CONVERSATION CHUNK:\n";
+
+    private const string TIMESTAMP_SEPARATOR = "\n\n";
+
     /**
      * @param list<array{
      *   run_id: string,
@@ -70,7 +74,8 @@ final class OmChunkPacker
         $memoryTokens = OmTokenEstimator::estimate($memoryText);
         $timestampLine = 'Current local time fallback: '.$localTimeFallback;
         $timestampTokens = OmTokenEstimator::estimate($timestampLine);
-        $budgetForSource = max(64, $envelopeTokens - $fixedOverheadTokens - $memoryTokens - $timestampTokens);
+        $framingTokens = OmTokenEstimator::estimate(self::SOURCE_SECTION_PREFIX.self::TIMESTAMP_SEPARATOR);
+        $budgetForSource = max(64, $envelopeTokens - $fixedOverheadTokens - $memoryTokens - $timestampTokens - $framingTokens);
         $separatorTokens = OmTokenEstimator::estimate(self::BLOCK_SEPARATOR);
 
         $chunks = [];
@@ -397,9 +402,9 @@ final class OmChunkPacker
         $partDigest = OmIdentity::partDigest($partText);
         $coverageKey = OmIdentity::coverageKey($chunkKey, $partIndex, $partDigest);
         $userMessage = $memoryText
-            ."\n\nNEW SOURCE-ADDRESSED CONVERSATION CHUNK:\n"
+            .self::SOURCE_SECTION_PREFIX
             .$partText
-            ."\n\n"
+            .self::TIMESTAMP_SEPARATOR
             .$timestampLine;
 
         return [
@@ -424,8 +429,7 @@ final class OmChunkPacker
     private function utf8Parts(string $text, int $budgetTokens): array
     {
         $budgetTokens = max(32, $budgetTokens);
-        // Approx chars from tokens * 4, leave headroom.
-        $maxChars = max(64, $budgetTokens * 4);
+        $maxChars = max(64, OmTokenEstimator::characterBudget($budgetTokens));
         $length = mb_strlen($text, 'UTF-8');
         if ($length <= $maxChars) {
             return [$text];
