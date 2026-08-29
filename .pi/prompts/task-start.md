@@ -5,4 +5,6 @@ argument-hint: "<task>"
 
 Start tracked task: `$ARGUMENTS`
 
-If the task argument is empty or still the literal placeholder `<task>`, ask the user for the task slug instead of guessing. Otherwise, load `.pi/skills/task-workflow/SKILL.md` and follow the `task-start` phase. Choose implementation ownership, implement and record validation under that ownership, then stop before PR preparation or review.
+If the task argument is empty or still the literal placeholder `<task>`, ask the user for the task slug instead of guessing.
+Load `task-workflow` skill and follow the `task-start` phase.
+Choose implementation ownership, implement and record validation under that ownership, then stop before PR preparation or review.

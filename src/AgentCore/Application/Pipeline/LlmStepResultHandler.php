@@ -27,12 +27,13 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
-use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandlerLogComponentInterface
@@ -52,9 +53,8 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         private ?LlmProviderErrorClassifier $errorClassifier = null,
         private ?ToolExecutionSettingsInterface $toolExecutionSettings = null,
         private int $agentRetryMaxAttempts = 2,
-        private int $agentRetryBaseDelayMs = 1000,
-        private int $agentRetryMaxDelayMs = 60000,
         private int $maxParallelism = 1,
+        private LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -191,19 +191,11 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             if ($retriesExhausted) {
                 $retryable = false;
                 $error['retryable'] = false;
-                // Keep actionable provider/transport detail, but drop stale retry-policy
-                // prose from the classified user_message (e.g. "Will retry automatically.").
-                $originalDetail = rtrim(trim(preg_replace(
-                    '/\s*Will retry automatically\.?/i',
-                    '',
-                    $userMessage,
-                ) ?? $userMessage), '. ');
                 $userMessage = \sprintf(
-                    'Automatic LLM retry attempts exhausted after %d retry attempt(s)%s. Please retry manually or change provider/model.',
+                    'Automatic LLM retry attempts exhausted after %d retry attempt(s): %s',
                     $maxAttempts,
-                    '' !== $originalDetail ? ': '.$originalDetail : '',
+                    $userMessage,
                 );
-                $errorMessage = $userMessage;
                 $error['user_message'] = $userMessage;
             }
 
@@ -211,7 +203,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'error' => $error,
                 'retryable' => $retryable,
                 'step_id' => $message->stepId(),
-                'retry_attempt' => $canAutoRetry || $retriesExhausted ? $nextRetryAttempt : $currentAttempts,
+                'retry_attempt' => $canAutoRetry ? $nextRetryAttempt : $currentAttempts,
                 'max_retries' => $maxAttempts,
                 'model' => $message->model,
                 'reasoning' => $message->reasoning,
@@ -241,7 +233,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'currentOperation' => null,
                 'errorMessage' => $userMessage,
                 'retryableFailure' => $canAutoRetry,
-                'retryAttempts' => $canAutoRetry ? $nextRetryAttempt : ($retriesExhausted ? $nextRetryAttempt : $currentAttempts),
+                'retryAttempts' => $canAutoRetry ? $nextRetryAttempt : $currentAttempts,
             ]);
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
@@ -254,6 +246,15 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                     $state->turnNo,
                     $message->stepId(),
                     $nextRetryAttempt,
+                    $maxAttempts,
+                    $error,
+                );
+            } elseif ($retriesExhausted) {
+                $postCommit[] = $this->retryExhaustedTelemetryCallback(
+                    $runId,
+                    $currentAttempts,
+                    $maxAttempts,
+                    $error,
                 );
             }
 
@@ -562,26 +563,20 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         ];
     }
 
-    private function autoRetryContinueCallback(string $runId, int $turnNo, string $stepId, int $retryAttempt): callable
-    {
-        return function () use ($runId, $turnNo, $stepId, $retryAttempt): void {
-            if (null === $this->commandBus) {
-                return;
-            }
-
+    /**
+     * @param array<string, mixed> $error
+     */
+    private function autoRetryContinueCallback(
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        int $retryAttempt,
+        int $maxRetries,
+        array $error,
+    ): callable {
+        return function () use ($runId, $turnNo, $stepId, $retryAttempt, $maxRetries, $error): void {
             $continueStepId = \sprintf('auto-retry-%s-%d', $stepId, $retryAttempt);
             $idempotencyKey = hash('sha256', \sprintf('%s|auto-retry|%s|%d', $runId, $stepId, $retryAttempt));
-
-            $delayMs = 0;
-            if ($this->agentRetryBaseDelayMs > 0) {
-                $exponent = max(0, $retryAttempt - 1);
-                $delayMs = min(
-                    $this->agentRetryBaseDelayMs * (2 ** $exponent),
-                    $this->agentRetryMaxDelayMs,
-                );
-            }
-
-            $stamps = $delayMs > 0 ? [new DelayStamp($delayMs)] : [];
 
             try {
                 $this->commandBus->dispatch(
@@ -598,11 +593,54 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                         ],
                         options: [],
                     ),
-                    $stamps,
                 );
             } catch (ExceptionInterface $exception) {
                 throw new \RuntimeException(\sprintf('Failed to dispatch auto-retry Continue for run %s.', $runId), previous: $exception);
             }
+
+            $this->logger->info('llm.retry.scheduled', $this->retryLogContext(
+                $runId,
+                'llm.retry.scheduled',
+                $retryAttempt,
+                $maxRetries,
+                $error,
+            ));
         };
+    }
+
+    /**
+     * @param array<string, mixed> $error
+     */
+    private function retryExhaustedTelemetryCallback(string $runId, int $retryAttempt, int $maxRetries, array $error): callable
+    {
+        return function () use ($runId, $retryAttempt, $maxRetries, $error): void {
+            $this->logger->error('llm.retry.exhausted', $this->retryLogContext(
+                $runId,
+                'llm.retry.exhausted',
+                $retryAttempt,
+                $maxRetries,
+                $error,
+            ));
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $error
+     *
+     * @return array<string, mixed>
+     */
+    private function retryLogContext(string $runId, string $eventType, int $retryAttempt, int $maxRetries, array $error): array
+    {
+        return [
+            'run_id' => $runId,
+            'session_id' => $runId,
+            'component' => 'llm',
+            'event_type' => $eventType,
+            'error_category' => \is_string($error['error_category'] ?? null) ? $error['error_category'] : LlmProviderErrorClassifier::CATEGORY_UNKNOWN,
+            'error_type' => \is_string($error['type'] ?? null) ? $error['type'] : 'unknown',
+            'http_status_code' => \is_int($error['http_status_code'] ?? null) ? $error['http_status_code'] : null,
+            'retry_attempt' => $retryAttempt,
+            'max_retries' => $maxRetries,
+        ];
     }
 }

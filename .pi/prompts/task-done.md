@@ -5,4 +5,5 @@ argument-hint: "<task>"
 
 Complete reviewed task: `$ARGUMENTS`
 
-If the task argument is empty or still the literal placeholder `<task>`, ask the user for the task slug instead of guessing. Otherwise, load `.pi/skills/task-workflow/SKILL.md` and follow the `task-done` phase.
+If the task argument is empty or still the literal placeholder `<task>`, ask the user for the task slug instead of guessing.
+Load `task-workflow` skill and follow the `task-done` phase.

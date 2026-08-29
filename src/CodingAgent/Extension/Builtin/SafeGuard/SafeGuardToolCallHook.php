@@ -134,7 +134,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
             $categoryLabel = $settingsMutation ? 'settings mutation' : $this->friendlyCategory($decision->kind);
 
             return ToolCallDecisionDTO::requireApproval(
-                prompt: \sprintf('Allow %s: %s?', $categoryLabel, $decision->reason),
+                prompt: $this->approvalPrompt($categoryLabel, $decision, $context),
                 questionId: $questionId,
                 schema: [
                     'type' => 'string',
@@ -214,6 +214,98 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                 ),
             ],
         );
+    }
+
+    private function approvalPrompt(
+        string $categoryLabel,
+        Policy\SafeGuardDecision $decision,
+        ToolCallContextDTO $context,
+    ): string {
+        $prompt = \sprintf('Allow %s?', $categoryLabel);
+        if (null === $decision->triggerInput) {
+            return $prompt;
+        }
+
+        $label = $this->isSettingsMutation($context)
+            ? 'Operation'
+            : (null !== $this->extractCommand($context)
+                ? 'Command'
+                : (null !== $this->extractPath($context) ? 'Path' : 'Operation'));
+        $input = $decision->triggerInput;
+        $markdown = '';
+        $cursor = 0;
+        foreach ($decision->matchSpans as $span) {
+            $markdown .= $this->escapeMarkdown(substr($input, $cursor, $span['start'] - $cursor));
+            $markdown .= $this->styledMatchMarkdown(substr($input, $span['start'], $span['length']));
+            $cursor = $span['start'] + $span['length'];
+        }
+        $markdown .= $this->escapeMarkdown(substr($input, $cursor));
+
+        return $prompt."\n\n**{$label}:**\n\n".$markdown;
+    }
+
+    private function styledMatchMarkdown(string $match): string
+    {
+        if (1 !== preg_match('/\A(\s*)(.*?)(\s*)\z/us', $match, $parts)) {
+            return $this->escapeMarkdown($match);
+        }
+
+        $content = $parts[2];
+        if ('' === $content) {
+            return $this->escapeMarkdown($match);
+        }
+
+        preg_match_all('/`+/', $content, $backtickRuns);
+        $delimiterLength = 1;
+        foreach ($backtickRuns[0] as $run) {
+            $delimiterLength = max($delimiterLength, \strlen($run) + 1);
+        }
+        $delimiter = str_repeat('`', $delimiterLength);
+        $padding = str_starts_with($content, '`') || str_ends_with($content, '`') ? ' ' : '';
+
+        return $this->escapeMarkdown($parts[1])
+            .$delimiter.$padding.$content.$padding.$delimiter
+            .$this->escapeMarkdown($parts[3]);
+    }
+
+    private function escapeMarkdown(string $text): string
+    {
+        return strtr($text, [
+            ' ' => '&#32;',
+            "\t" => '&#9;',
+            '\\' => '\\\\',
+            '`' => '\\`',
+            '!' => '\\!',
+            '"' => '\\"',
+            '#' => '\\#',
+            '$' => '\\$',
+            '%' => '\\%',
+            '&' => '\\&',
+            "'" => "\\'",
+            '(' => '\\(',
+            ')' => '\\)',
+            '*' => '\\*',
+            '_' => '\\_',
+            '{' => '\\{',
+            '}' => '\\}',
+            '+' => '\\+',
+            ',' => '\\,',
+            '-' => '\\-',
+            '.' => '\\.',
+            '/' => '\\/',
+            ':' => '\\:',
+            ';' => '\\;',
+            '<' => '\\<',
+            '=' => '\\=',
+            '>' => '\\>',
+            '?' => '\\?',
+            '@' => '\\@',
+            '[' => '\\[',
+            ']' => '\\]',
+            '^' => '\\^',
+            '|' => '\\|',
+            '~' => '\\~',
+        ]);
     }
 
     /**

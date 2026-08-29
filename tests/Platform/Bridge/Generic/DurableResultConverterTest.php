@@ -11,6 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Exception\BadRequestException;
+use Symfony\AI\Platform\Exception\ExceedContextSizeException;
 use Symfony\AI\Platform\Exception\IncompleteStreamException;
 use Symfony\AI\Platform\Exception\RateLimitExceededException;
 use Symfony\AI\Platform\Exception\RuntimeException as PlatformRuntimeException;
@@ -838,9 +839,19 @@ final class DurableResultConverterTest extends TestCase
     }
 
     #[Test]
-    public function streamingConvertThrowsBadRequestExceptionOn400(): void
+    public function streamingConvertUsesStructuredCodeForContextOverflow(): void
     {
-        $result = $this->streamResultWithStatus(400, '{"error":{"message":"Bad Request: invalid"}}', []);
+        $result = $this->streamResultWithStatus(400, '{"error":{"code":"context_length_exceeded","message":"Invalid request"}}', []);
+
+        $this->expectException(ExceedContextSizeException::class);
+
+        $this->converter->convert($result, ['stream' => true]);
+    }
+
+    #[Test]
+    public function streamingConvertDoesNotInferContextOverflowFromMessage(): void
+    {
+        $result = $this->streamResultWithStatus(400, '{"error":{"message":"context length exceeded"}}', []);
 
         $this->expectException(BadRequestException::class);
 
