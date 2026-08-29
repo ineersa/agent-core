@@ -14,9 +14,9 @@ use PHPUnit\Framework\TestCase;
  * in the TUI, with no raw provider body or prompting content leaked.
  *
  * Uses a replay fixture that returns a 429 HTTP error JSON body. The TUI
- * must display an error block (✕) with sanitized text like "LLM provider
- * rate limit" / "retryable" and must NOT display the raw sentinel string
- * from the fixture body.
+ * must display an error block (✕) with sanitized text explaining that the
+ * rate limit remained after HTTP retries were exhausted and must NOT display
+ * the raw sentinel string from the fixture body.
  *
  * Design:
  *  - Single tmux session with a replay fixture that returns HTTP 429.
@@ -59,7 +59,7 @@ final class TuiProviderErrorE2eTest extends TestCase
      *  1. An error block (✕) appears in the transcript.
      *  2. Sanitized user-facing text is visible (e.g. "LLM provider rate limit").
      *  3. The raw sentinel body text from the fixture is NOT visible.
-     *  4. Safe structured fields (retryable, error_category) are present.
+     *  4. The terminal error does not promise another retry.
      */
     public function testProviderRateLimitErrorShowsSanitizedRedBlock(): void
     {
@@ -104,8 +104,7 @@ final class TuiProviderErrorE2eTest extends TestCase
                 'Transcript must NOT show assistant block for provider error fixture',
             );
 
-            // 2. Sanitized user-facing text must be visible.
-            // The classifier produces "LLM provider rate limit" for 429.
+            // 2. Sanitized terminal text must explain that Symfony HTTP retries were exhausted.
             $fullCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
             $this->assertStringContainsString(
                 'rate limit',
@@ -113,9 +112,14 @@ final class TuiProviderErrorE2eTest extends TestCase
                 'Sanitized rate limit message must be visible in transcript',
             );
             $this->assertStringContainsString(
+                'after http retries were exhausted',
+                strtolower($fullCapture),
+                'Terminal HTTP retry exhaustion must be visible in transcript',
+            );
+            $this->assertStringNotContainsString(
                 'retryable',
                 strtolower($fullCapture),
-                'Sanitized retryable indicator must be visible in transcript',
+                'Terminal HTTP exhaustion must not promise another retry',
             );
 
             // 3. Raw sentinel body text must NOT be visible.

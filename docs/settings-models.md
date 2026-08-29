@@ -72,7 +72,7 @@ If unset, the app injects a safe default HTTP timeout so requests cannot hang fo
 
 ## Agent retry (`ai.agent_retry`)
 
-Sparse retry policy for transient provider failures (counts, backoff) as defined in built-in defaults and overrides.
+Controls the bounded retry count for typed mid-stream provider failures. HTTP status, transport, backoff, and Retry-After handling belong to Symfony HttpClient under `ai.http`.
 
 ## Model reference format
 

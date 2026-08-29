@@ -101,7 +101,7 @@ final class DurableResultConverter extends ResultConverter
             $formatted = ProviderErrorFormatter::format($error);
             $errorMessage = '' !== $formatted ? $formatted : 'Bad Request';
 
-            if ('context_length_exceeded' === ($error['code'] ?? null) || preg_match('/context[_ ]length[_ ]exceeded/i', $errorMessage)) {
+            if ('context_length_exceeded' === ($error['code'] ?? null)) {
                 throw new ExceedContextSizeException($errorMessage);
             }
 

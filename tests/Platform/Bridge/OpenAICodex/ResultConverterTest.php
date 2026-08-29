@@ -14,6 +14,7 @@ use Symfony\AI\Platform\Exception\ContentFilterException;
 use Symfony\AI\Platform\Exception\IncompleteStreamException;
 use Symfony\AI\Platform\Exception\RateLimitExceededException;
 use Symfony\AI\Platform\Exception\RuntimeException;
+use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\Result\InMemoryRawResult;
 use Symfony\AI\Platform\Result\MultiPartResult;
 use Symfony\AI\Platform\Result\RawHttpResult;
@@ -734,10 +735,11 @@ final class ResultConverterTest extends TestCase
 
         try {
             $converter->convert($raw, ['stream' => true]);
-            $this->fail('Expected RuntimeException');
-        } catch (RuntimeException $e) {
+            $this->fail('Expected ServerException');
+        } catch (ServerException $e) {
+            $this->assertSame(500, $e->getStatusCode());
             $this->assertSame(
-                'HTTP 500: [server_error/api_error/model]: deployment unavailable',
+                'Server error (HTTP 500). [server_error/api_error/model]: deployment unavailable',
                 $e->getMessage(),
             );
         }
@@ -780,15 +782,7 @@ final class ResultConverterTest extends TestCase
 
     // -- Stream error handling (regression: silent mid-turn death) --
 
-    /**
-     * Regression test: 'error' events during streaming must throw immediately
-     * instead of being silently ignored (which caused a null assistant message
-     * and HTTP 400 on the next turn).
-     *
-     * Session 5 signal: Codex emits structured overload/service-unavailable codes
-     * that normalize to a privacy-safe bracketed `[code/type]` message only.
-     */
-    public function testStreamErrorEventThrowsRuntimeException(): void
+    public function testStreamServerErrorEventThrowsTypedException(): void
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createStub(ResponseInterface::class);
@@ -798,8 +792,8 @@ final class ResultConverterTest extends TestCase
         $events = [
             ['type' => 'response.output_text.delta', 'delta' => 'Partial'],
             ['type' => 'error', 'error' => [
-                'code' => 'server_is_overloaded',
-                'type' => 'service_unavailable_error',
+                'code' => 'server_error',
+                'type' => 'server_error',
                 'message' => $secret,
             ]],
         ];
@@ -810,8 +804,9 @@ final class ResultConverterTest extends TestCase
             $streamResult = $converter->convert($raw, ['stream' => true]);
             iterator_to_array($streamResult->getContent());
             $this->fail('Expected stream error');
-        } catch (RuntimeException $e) {
-            $this->assertStringContainsString('[server_is_overloaded/service_unavailable_error]', $e->getMessage());
+        } catch (ServerException $e) {
+            $this->assertNull($e->getStatusCode());
+            $this->assertStringContainsString('[server_error/server_error]', $e->getMessage());
             // Bounded provider message is retained for diagnostics.
             $this->assertStringContainsString($secret, $e->getMessage());
         }
