@@ -24,7 +24,6 @@ final class LlmProviderErrorClassifier
 {
     public const string CATEGORY_AUTH = 'auth';
     public const string CATEGORY_BAD_REQUEST = 'bad_request';
-    public const string CATEGORY_QUOTA_BILLING = 'quota_or_billing';
     public const string CATEGORY_RATE_LIMIT = 'rate_limit';
     public const string CATEGORY_SERVER = 'server';
     public const string CATEGORY_TIMEOUT = 'timeout';

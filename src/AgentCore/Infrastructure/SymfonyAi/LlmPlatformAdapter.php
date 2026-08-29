@@ -24,7 +24,6 @@ use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\Platform\Result\CancellableRawResultInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
-use Symfony\AI\Platform\Exception\RateLimitExceededException;
 use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\FinishReason\FinishReason;
 use Symfony\AI\Platform\FinishReason\FinishReasonCase;
@@ -654,9 +653,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         if ($exception instanceof ServerException && null !== $exception->getStatusCode()) {
             $error['http_status_code'] = $exception->getStatusCode();
-        }
-        if ($exception instanceof RateLimitExceededException && null !== $exception->getRetryAfter()) {
-            $error['retry_after_seconds'] = $exception->getRetryAfter();
         }
 
         // Include response diagnostics when a DeferredResult exists (stream-time failures).
