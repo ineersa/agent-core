@@ -57,6 +57,9 @@ final class SkillDiscovery
     /** @var list<array{winner: string, ignored: string, name: string}> */
     private array $collisions = [];
 
+    /** @var array<string, SkillDefinition> */
+    private array $skillsByCommandName = [];
+
     /** @var list<string> Absolute skill directories registered by enabled extensions */
     private array $registeredSkillDirectories = [];
 
@@ -136,6 +139,7 @@ final class SkillDiscovery
         // Scan all search paths
         $skills = [];
         $this->collisions = [];
+        $this->skillsByCommandName = [];
         /** @var array<string, string> $seenNames name → first-seen skill dir */
         $seenNames = [];
 
@@ -168,12 +172,20 @@ final class SkillDiscovery
 
                 $skills[] = $definition;
                 $seenNames[$name] = $skillDir;
+                $this->skillsByCommandName[strtolower($name)] ??= $definition;
             }
         }
 
         $this->cachedResult = $skills;
 
         return $skills;
+    }
+
+    public function findByCommandName(string $name): ?SkillDefinition
+    {
+        $this->discover();
+
+        return $this->skillsByCommandName[strtolower($name)] ?? null;
     }
 
     /**
@@ -366,9 +378,7 @@ final class SkillDiscovery
 
         $name = $frontmatter['name'] ?? basename($skillDir);
         $description = $frontmatter['description'] ?? '';
-        // Strict boolean true only — matches Claude Code / Pi. Strings like
-        // "true"/"false" and other truthy YAML values do not opt out.
-        $disableModelInvocation = true === ($frontmatter['disable-model-invocation'] ?? false);
+        $disableModelInvocation = (bool) ($frontmatter['disable-model-invocation'] ?? false);
 
         return new SkillDefinition(
             name: $name,

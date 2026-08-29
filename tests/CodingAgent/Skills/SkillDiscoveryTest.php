@@ -245,18 +245,17 @@ final class SkillDiscoveryTest extends TestCase
         $this->assertTrue($skills[0]->modelInvocationEnabled);
     }
 
-    public function testDisableModelInvocationIgnoresNonBooleanTrue(): void
+    public function testDisableModelInvocationCoercesTruthyValues(): void
     {
         $skillDir = $this->tmpDir.'/.hatfield/skills/string-true';
         mkdir($skillDir, 0777, true);
-        // String "true" must NOT opt out — only YAML boolean true.
         file_put_contents($skillDir.'/SKILL.md', "---\nname: string-true\ndescription: String true\ndisable-model-invocation: \"true\"\n---\n\nBody");
 
         $discovery = $this->createDiscovery(cwd: $this->tmpDir);
         $skills = $discovery->discover();
 
         $this->assertCount(1, $skills);
-        $this->assertTrue($skills[0]->modelInvocationEnabled);
+        $this->assertFalse($skills[0]->modelInvocationEnabled);
     }
 
     public function testDisableModelInvocationFalseKeepsEnabled(): void

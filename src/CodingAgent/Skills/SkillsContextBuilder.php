@@ -10,8 +10,6 @@ use Psr\Log\LoggerInterface;
 /**
  * Orchestrates skill discovery, registry construction, and context rendering
  * for injection into the initial user-context message.
- *
- * Also expands `/skill:<name>` invocations.
  */
 final readonly class SkillsContextBuilder
 {
@@ -117,54 +115,5 @@ final readonly class SkillsContextBuilder
         }
 
         return implode("\n\n", $parts);
-    }
-
-    /**
-     * Expand a `/skill:<name>` invocation into a full `<skill>` block.
-     *
-     * Unknown skills and non-skill text pass through unchanged. Optional
-     * trailing arguments are appended after the skill block.
-     */
-    public function expandSkillCommand(string $text): string
-    {
-        if (0 !== strncasecmp($text, '/skill:', \strlen('/skill:'))) {
-            return $text;
-        }
-
-        $rest = substr($text, \strlen('/skill:'));
-        if ('' === $rest) {
-            return $text;
-        }
-
-        $parts = preg_split('/\s+/', $rest, 2);
-        \assert(\is_array($parts));
-        $skillName = $parts[0];
-        $args = isset($parts[1]) ? trim($parts[1]) : '';
-
-        if ('' === $skillName) {
-            return $text;
-        }
-
-        $discovered = $this->discovery->discover();
-        $skill = null;
-        foreach ($discovered as $candidate) {
-            if (0 === strcasecmp($candidate->name, $skillName)) {
-                $skill = $candidate;
-                break;
-            }
-        }
-        if (null === $skill) {
-            return $text;
-        }
-
-        $registry = new SkillRegistry(
-            $discovered,
-            extractor: $this->extractor,
-            collisions: $this->discovery->getCollisions(),
-        );
-        $body = $registry->readBody($skill);
-        $skillBlock = $this->renderer->renderPreloadedSkill($skill, $body);
-
-        return '' !== $args ? $skillBlock."\n\n".$args : $skillBlock;
     }
 }

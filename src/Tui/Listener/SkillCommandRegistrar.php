@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
+use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\SlashCommand;
@@ -17,13 +18,13 @@ use Ineersa\Tui\Command\SlashCommandHandler;
  * Runs at priority -100 (same band as prompt templates) so real/built-in
  * registrars win on name collisions. Includes on-demand-only skills so users
  * can still invoke them explicitly even when they are omitted from the model
- * catalog. Expansion of `/skill:<name>` happens later at the in-process
- * runtime boundary, not in the TUI.
+ * catalog.
  */
-final class SkillCommandRegistrar implements SlashCommandCatalogRegistrar
+final class SkillCommandRegistrar implements SlashCommandCatalogRegistrar, SlashCommandHandler
 {
     public function __construct(
         private readonly SkillDiscovery $discovery,
+        private readonly SkillsContextBuilder $contextBuilder,
     ) {
     }
 
@@ -32,31 +33,32 @@ final class SkillCommandRegistrar implements SlashCommandCatalogRegistrar
         return -100;
     }
 
-    public function registerCatalog(SlashCommandCatalog $commandCatalog): void
+    public function registerCatalog(SlashCommandCatalog $catalog): void
     {
-        $handler = new class implements SlashCommandHandler {
-            public function handle(SlashCommand $command): DispatchRuntime
-            {
-                return new DispatchRuntime($command->originalText);
-            }
-        };
-
         foreach ($this->discovery->discover() as $skill) {
             $name = 'skill:'.strtolower($skill->name);
-            if ($commandCatalog->has($name)) {
+            if ($catalog->has($name)) {
                 continue;
             }
 
-            $commandCatalog->register(
+            $catalog->register(
                 new CommandMetadata(
                     name: $name,
                     aliases: [],
                     description: $skill->description,
-                    usage: '/'.$name.' [args]',
-                    acceptsArguments: true,
+                    usage: '/'.$name,
+                    acceptsArguments: false,
                 ),
-                $handler,
+                $this,
             );
         }
+    }
+
+    public function handle(SlashCommand $command): DispatchRuntime
+    {
+        $skill = $this->discovery->findByCommandName(substr($command->name, \strlen('skill:')))
+            ?? throw new \LogicException('Registered skill command is missing from discovery.');
+
+        return new DispatchRuntime($this->contextBuilder->buildFor([$skill->name]));
     }
 }

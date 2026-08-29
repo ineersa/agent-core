@@ -189,60 +189,6 @@ ARCH_BODY_UNIQUE');
         $this->assertStringNotContainsString('<available_skills>', $attached);
     }
 
-    public function testExpandSkillCommandLoadsOnDemandOnlySkill(): void
-    {
-        $skillDir = $this->tmpDir.'/.hatfield/skills/noinvoke';
-        mkdir($skillDir, 0777, true);
-        file_put_contents($skillDir.'/SKILL.md', "---\nname: noinvoke\ndescription: Hidden\ndisable-model-invocation: true\n---\n\nNOINVOKE_BODY");
-
-        $builder = $this->createBuilder(cwd: $this->tmpDir);
-        $expanded = $builder->expandSkillCommand('/skill:noinvoke focus on errors');
-
-        $this->assertStringContainsString('<skill name="noinvoke"', $expanded);
-        $this->assertStringContainsString('NOINVOKE_BODY', $expanded);
-        $this->assertStringContainsString("\n\nfocus on errors", $expanded);
-        $this->assertStringNotContainsString('/skill:noinvoke', $expanded);
-    }
-
-    public function testExpandSkillCommandMatchesMixedCaseNameAndWhitespaceArguments(): void
-    {
-        $skillDir = $this->tmpDir.'/.hatfield/skills/datadog-logs';
-        mkdir($skillDir, 0777, true);
-        file_put_contents($skillDir.'/SKILL.md', "---\nname: DataDog-Logs\ndescription: Hidden\ndisable-model-invocation: true\n---\n\nDATADOG_BODY");
-
-        $builder = $this->createBuilder(cwd: $this->tmpDir);
-        $expanded = $builder->expandSkillCommand("/SKILL:datadog-logs\t focus on errors");
-
-        $this->assertStringContainsString('<skill name="DataDog-Logs"', $expanded);
-        $this->assertStringContainsString('DATADOG_BODY', $expanded);
-        $this->assertStringContainsString("\n\nfocus on errors", $expanded);
-    }
-
-    public function testCaseInsensitiveExpansionKeepsFirstDiscoveredSkill(): void
-    {
-        $projectSkillDir = $this->tmpDir.'/.hatfield/skills/project-skill';
-        mkdir($projectSkillDir, 0777, true);
-        file_put_contents($projectSkillDir.'/SKILL.md', "---\nname: Foo\ndescription: Project skill\n---\n\nPROJECT_BODY");
-
-        $userSkillDir = $this->tmpDir.'/home/.hatfield/skills/user-skill';
-        mkdir($userSkillDir, 0777, true);
-        file_put_contents($userSkillDir.'/SKILL.md', "---\nname: foo\ndescription: User skill\n---\n\nUSER_BODY");
-
-        $builder = $this->createBuilder(cwd: $this->tmpDir);
-        $expanded = $builder->expandSkillCommand('/skill:foo');
-
-        $this->assertStringContainsString('PROJECT_BODY', $expanded);
-        $this->assertStringNotContainsString('USER_BODY', $expanded);
-    }
-
-    public function testExpandSkillCommandPassthroughUnknown(): void
-    {
-        $builder = $this->createBuilder(cwd: $this->tmpDir);
-        $this->assertSame('/skill:missing args', $builder->expandSkillCommand('/skill:missing args'));
-        $this->assertSame('hello', $builder->expandSkillCommand('hello'));
-        $this->assertSame('/review foo', $builder->expandSkillCommand('/review foo'));
-    }
-
     public function testBuildForReturnsEmptyForEmptyNames(): void
     {
         $builder = $this->createBuilder(cwd: $this->tmpDir);

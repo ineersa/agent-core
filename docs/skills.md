@@ -79,14 +79,13 @@ Every discovered skill (including on-demand-only) registers as `/skill:<name>`:
 
 ```text
 /skill:castor
-/skill:datadog-logs focus on 5xx spikes
+/skill:datadog-logs
 ```
 
-Expansion happens at the in-process runtime boundary (same path as prompt
-templates). Command matching is case-insensitive. The skill body is injected as
-a `<skill name="…" location="…">` block; trailing arguments are appended after
-the block. Unknown `/skill:…` names pass through unchanged at the runtime
-boundary. The TUI rejects them as unregistered commands before dispatch.
+The TUI command handler replaces the command with a
+`<skill name="…" location="…">` block before runtime dispatch. Command matching
+is case-insensitive, and skill commands do not accept arguments. Unknown skill
+commands are rejected before dispatch.
 
 ## SKILL.md frontmatter
 
@@ -94,12 +93,11 @@ boundary. The TUI rejects them as unregistered commands before dispatch.
 |---|---|---|
 | `name` | No | Skill name; defaults to the parent directory name |
 | `description` | Recommended | Catalog description; empty description excludes the skill from the model-visible catalog |
-| `disable-model-invocation` | No | When YAML boolean `true`, omit from the model catalog; keep `/skill:` and agent `skills` loading |
+| `disable-model-invocation` | No | When truthy, omit from the model catalog; keep `/skill:` and agent `skills` loading |
 
-Only the boolean YAML value `true` opts out. Missing keys, `false`, strings such
-as `"true"`, and other non-boolean values keep the skill discoverable. Malformed
-YAML frontmatter falls back to parser defaults (directory name, empty
-description, model invocation enabled) without inventing aliases.
+The parsed value is coerced to boolean. Missing and false values keep the skill
+discoverable. Malformed YAML frontmatter falls back to parser defaults
+(directory name, empty description, model invocation enabled).
 
 ## Discovery order (high → low)
 
