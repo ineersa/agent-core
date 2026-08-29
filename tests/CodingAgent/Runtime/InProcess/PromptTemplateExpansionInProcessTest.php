@@ -52,6 +52,24 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
         $this->assertSame(['/nonexistent arg'], $texts);
     }
 
+    public function testStartExpandsOnDemandOnlySkillCommand(): void
+    {
+        $this->writeSkill(
+            'hidden-skill',
+            "---\nname: hidden-skill\ndescription: Hidden\ndisable-model-invocation: true\n---\n\nHIDDEN_SKILL_BODY",
+        );
+
+        $this->startWithPrompt('/skill:hidden-skill inspect failures');
+
+        $this->assertNotNull($this->spyRunner->lastStartInput);
+        $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
+        $this->assertCount(1, $texts);
+        $this->assertStringContainsString('<skill name="hidden-skill"', $texts[0]);
+        $this->assertStringContainsString('HIDDEN_SKILL_BODY', $texts[0]);
+        $this->assertStringContainsString('inspect failures', $texts[0]);
+        $this->assertStringNotContainsString('/skill:hidden-skill', $texts[0]);
+    }
+
     public function testStartPassthroughForNonSlash(): void
     {
         $this->startWithPrompt('hello world');
@@ -194,6 +212,15 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
             mkdir($dir, 0o755, true);
         }
         file_put_contents($dir.'/'.$name.'.md', $content);
+    }
+
+    private function writeSkill(string $name, string $content): void
+    {
+        $dir = $this->isolatedCwd().'/.hatfield/skills/'.$name;
+        if (!is_dir($dir)) {
+            mkdir($dir, 0o755, true);
+        }
+        file_put_contents($dir.'/SKILL.md', $content);
     }
 
     private function client(): InProcessAgentSessionClient

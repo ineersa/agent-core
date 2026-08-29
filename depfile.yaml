@@ -732,6 +732,7 @@ parameters:
     AppSkills:
       - AppConfig
       - AppMarkdown
+      - AppRuntimeContract
       - SymfonyYaml
 
     AppSystemPrompt:

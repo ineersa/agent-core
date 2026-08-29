@@ -5,13 +5,18 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Skills;
 
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\Runtime\Contract\SkillCatalogInterface;
+use Ineersa\CodingAgent\Runtime\Contract\SkillCommand;
 use Psr\Log\LoggerInterface;
 
 /**
  * Orchestrates skill discovery, registry construction, and context rendering
  * for injection into the initial user-context message.
+ *
+ * Also expands `/skill:<name>` invocations and exposes skill slash commands to
+ * the TUI through {@see SkillCatalogInterface}.
  */
-final readonly class SkillsContextBuilder
+final readonly class SkillsContextBuilder implements SkillCatalogInterface
 {
     public function __construct(
         private readonly SkillDiscovery $discovery,
@@ -115,5 +120,66 @@ final readonly class SkillsContextBuilder
         }
 
         return implode("\n\n", $parts);
+    }
+
+    /**
+     * @return list<SkillCommand>
+     */
+    public function allSkillCommands(): array
+    {
+        $commands = [];
+        foreach ($this->discovery->discover() as $skill) {
+            $commands[] = new SkillCommand(
+                name: 'skill:'.$skill->name,
+                description: $skill->description,
+            );
+        }
+
+        return $commands;
+    }
+
+    /**
+     * Expand a `/skill:<name>` invocation into a full `<skill>` block.
+     *
+     * Unknown skills and non-skill text pass through unchanged. Optional
+     * trailing arguments are appended after the skill block.
+     */
+    public function expandSkillCommand(string $text): string
+    {
+        if (!str_starts_with($text, '/skill:')) {
+            return $text;
+        }
+
+        $rest = substr($text, \strlen('/skill:'));
+        if ('' === $rest) {
+            return $text;
+        }
+
+        $spaceIndex = strpos($rest, ' ');
+        if (false === $spaceIndex) {
+            $skillName = $rest;
+            $args = '';
+        } else {
+            $skillName = substr($rest, 0, $spaceIndex);
+            $args = trim(substr($rest, $spaceIndex + 1));
+        }
+
+        if ('' === $skillName) {
+            return $text;
+        }
+
+        $discovered = $this->discovery->discover();
+        $collisions = $this->discovery->getCollisions();
+        $registry = new SkillRegistry($discovered, extractor: $this->extractor, collisions: $collisions);
+
+        $skill = $registry->get($skillName);
+        if (null === $skill) {
+            return $text;
+        }
+
+        $body = $registry->readBody($skill);
+        $skillBlock = $this->renderer->renderPreloadedSkill($skill, $body);
+
+        return '' !== $args ? $skillBlock."\n\n".$args : $skillBlock;
     }
 }

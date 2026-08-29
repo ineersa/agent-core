@@ -43,7 +43,7 @@ System prompt body for the child agent…
 | `tools` | Built-in/MCP allowlist; omit to inherit parent-available tools | omit = inherit |
 | `model` | Optional child model override | parent/default |
 | `thinking` | `off\|minimal\|low\|medium\|high\|xhigh\|max` | parent/default |
-| `skills` | Skill name list | `[]` |
+| `skills` | Skill name list (loads full bodies; works for on-demand-only skills too — see [skills.md](skills.md)) | `[]` |
 | `extensions` | Optional child extension classes (**not** global `extensions.enabled`) | omit = none optional |
 | `inheritProjectContext` | Include project context for the child | `true` |
 | `systemPromptMode` | `replace` or `append` body vs parent system prompt | `replace` |

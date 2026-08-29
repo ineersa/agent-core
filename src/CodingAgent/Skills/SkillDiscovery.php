@@ -366,7 +366,9 @@ final class SkillDiscovery
 
         $name = $frontmatter['name'] ?? basename($skillDir);
         $description = $frontmatter['description'] ?? '';
-        $disableModelInvocation = (bool) ($frontmatter['disable-model-invocation'] ?? false);
+        // Strict boolean true only — matches Claude Code / Pi. Strings like
+        // "true"/"false" and other truthy YAML values do not opt out.
+        $disableModelInvocation = true === ($frontmatter['disable-model-invocation'] ?? false);
 
         return new SkillDefinition(
             name: $name,

@@ -125,10 +125,10 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             );
         }
 
-        // Expand prompt templates in the user input before passing to the model.
-        // Single-pass expansion: if a template body starts with "/other", it
-        // is NOT expanded again — the model receives the literal text.
-        $prompt = $this->promptTemplateService->expandPromptTemplate($request->prompt);
+        // Expand skill commands then prompt templates before passing to the model.
+        // Single-pass: skill expansion first; template expansion does not recurse.
+        $prompt = $this->skillsContextBuilder->expandSkillCommand($request->prompt);
+        $prompt = $this->promptTemplateService->expandPromptTemplate($prompt);
 
         if ('' !== $prompt) {
             $messages[] = new AgentMessage(
@@ -219,10 +219,11 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     {
         $text = $command->text ?? '';
 
-        // Expand prompt templates for user-initiated interactive commands.
-        // answer_human, answer_tool_question, and shell_command carry
-        // machine/payload answers — they are NOT expanded.
+        // Expand skill commands then prompt templates for user-initiated
+        // interactive commands. answer_human, answer_tool_question, and
+        // shell_command carry machine/payload answers — they are NOT expanded.
         if (\in_array($command->type, ['message', 'steer', 'follow_up'], true)) {
+            $text = $this->skillsContextBuilder->expandSkillCommand($text);
             $text = $this->promptTemplateService->expandPromptTemplate($text);
         }
 
