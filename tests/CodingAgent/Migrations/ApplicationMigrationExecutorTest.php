@@ -19,8 +19,8 @@ use Symfony\Component\Uid\UuidV7;
 
 /**
  * Regression: runtime startup uses ApplicationMigrationExecutor's explicit
- * KNOWN_MIGRATIONS list (not filesystem discovery). Messenger queue DDL is
- * ensured separately on messenger_transport via MessengerTransportSchemaEnsurer.
+ * explicit application migration list (not filesystem discovery). Messenger
+ * migrations run separately on the dedicated messenger_transport connection.
  */
 final class ApplicationMigrationExecutorTest extends TestCase
 {
@@ -142,6 +142,16 @@ final class ApplicationMigrationExecutorTest extends TestCase
             $schemaManager->tablesExist(['deferred_subagent_batch', 'deferred_subagent_child']),
             'deferred_subagent_batch and deferred_subagent_child must exist after startup executor (Piece 4A)',
         );
+
+        $this->assertTrue(
+            $schemaManager->tablesExist(['run_operational_state', 'run_operational_tool_call', 'run_operational_human_input']),
+            'All payload-free run operational projection tables must exist after startup executor.',
+        );
+        $recordedOperationalProjection = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260828223857'],
+        );
+        $this->assertNotFalse($recordedOperationalProjection);
 
         $recordedDeferredSingleDrop = $connection->fetchOne(
             'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
@@ -308,7 +318,11 @@ SQL);
 
         $this->recordAppliedMigrationsThrough($connection, 'Version20260710120000');
 
-        $executor = new ApplicationMigrationExecutor($connection, new NullLogger());
+        $executor = new ApplicationMigrationExecutor(
+            $connection,
+            new NullLogger(),
+            [\DoctrineMigrations\Version20260713120000::class],
+        );
         $executor();
 
         $recorded = $connection->fetchOne(
@@ -357,7 +371,11 @@ SQL);
 
         $this->recordAppliedMigrationsThrough($connection, 'Version20260714140000');
 
-        $executor = new ApplicationMigrationExecutor($connection, new NullLogger());
+        $executor = new ApplicationMigrationExecutor(
+            $connection,
+            new NullLogger(),
+            [\DoctrineMigrations\Version20260715120000::class],
+        );
         $executor();
 
         $recordedRepair = $connection->fetchOne(
@@ -377,7 +395,11 @@ SQL);
             $this->assertInstanceOf(UuidV7::class, Uuid::fromString($key));
         }
 
-        $executorAgain = new ApplicationMigrationExecutor($connection, new NullLogger());
+        $executorAgain = new ApplicationMigrationExecutor(
+            $connection,
+            new NullLogger(),
+            [\DoctrineMigrations\Version20260715120000::class],
+        );
         $executorAgain();
         $keysAfterSecondPass = $connection->fetchFirstColumn('SELECT provider_cache_key FROM hatfield_session ORDER BY id');
         $this->assertSame($keys, $keysAfterSecondPass);

@@ -1,6 +1,8 @@
 ---
 name: datadog-logs
 description: Investigate Datadog logs and observability evidence with read-only-first safety
+model: openai-codex/gpt-5.6-luna
+thinking: medium
 tools:
   - read
   - bash

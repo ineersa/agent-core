@@ -11,8 +11,10 @@ use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Session\History\HistoryProjector;
@@ -245,8 +247,8 @@ final class SessionRunStateReplayServiceTest extends TestCase
                 ],
             ],
         ]);
-        $this->appendEvent(RunEventTypeEnum::ToolExecutionStart->value, 2, ['tool_call_id' => 'call-a', 'tool_name' => 'read', 'order_index' => 0]);
-        $this->appendEvent(RunEventTypeEnum::ToolExecutionStart->value, 3, ['tool_call_id' => 'call-b', 'tool_name' => 'read', 'order_index' => 1]);
+        $this->appendEvent(RunEventTypeEnum::ToolExecutionStart->value, 2, ['tool_call_id' => 'call-a', 'tool_name' => 'read', 'order_index' => 0, 'attempt' => 2]);
+        $this->appendEvent(RunEventTypeEnum::ToolExecutionStart->value, 3, ['tool_call_id' => 'call-b', 'tool_name' => 'read', 'order_index' => 1, 'attempt' => 2]);
         // B completes in a first commit before A.
         $this->appendEvent(RunEventTypeEnum::ToolExecutionEnd->value, 4, $this->toolEndPayload('call-b', 'read', 'B', 1));
 
@@ -254,6 +256,10 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertNotNull($partial);
         $this->assertCount(1, $partial->messages);
         $this->assertSame(['call-a' => false, 'call-b' => true], $partial->pendingToolCalls);
+        $this->assertSame(ToolBatchIdentity::fromTurnAndStep(0, 'parallel-step'), $partial->currentToolCalls[0]->batchId);
+        $this->assertSame(['call-a', 'call-b'], array_map(static fn ($toolCall): string => $toolCall->toolCallId, $partial->currentToolCalls));
+        $this->assertSame([RunOperationalToolCallStatusEnum::Running, RunOperationalToolCallStatusEnum::Completed], array_map(static fn ($toolCall): RunOperationalToolCallStatusEnum => $toolCall->status, $partial->currentToolCalls));
+        $this->assertSame([2, 2], array_map(static fn ($toolCall): int => $toolCall->attempt, $partial->currentToolCalls));
 
         // A completes in a later commit, then the durable batch boundary flushes
         // both typed results in model order rather than worker completion order.
@@ -264,6 +270,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertNotNull($final);
         $this->assertSame(['call-a', 'call-b'], array_map(static fn ($message): ?string => $message->toolCallId, \array_slice($final->messages, 1)));
         $this->assertSame([], $final->pendingToolCalls);
+        $this->assertSame([], $final->currentToolCalls);
     }
 
     public function testReplayAttachedShellResultNeverFlushesIntoInterleavedLlmToolBatch(): void
@@ -282,10 +289,17 @@ final class SessionRunStateReplayServiceTest extends TestCase
             'kind' => 'shell_command',
             'idempotency_key' => $shellIdempotencyKey,
             'standalone' => false,
+            'current_operation' => [
+                'turn_no' => 1,
+                'step_id' => 'shell-step',
+                'attempt' => 2,
+                'idempotency_key' => $shellIdempotencyKey,
+            ],
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::ToolExecutionStart->value, 3, 1, [
             'tool_call_id' => $shellToolCallId,
             'tool_name' => 'bash',
+            'attempt' => 2,
         ]);
         $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 4, 1, [
             'step_id' => 'llm-step',
@@ -301,11 +315,19 @@ final class SessionRunStateReplayServiceTest extends TestCase
             'tool_call_id' => 'llm-tool',
             'tool_name' => 'read',
             'order_index' => 0,
+            'attempt' => 3,
         ]);
         // The shell end is intentionally interleaved before the later LLM
         // batch boundary: without the pending-shell guard, that boundary
         // would incorrectly flush this transcript-only output to the model.
         $this->appendEventWithTurn(RunEventTypeEnum::ToolExecutionEnd->value, 6, 1, $this->toolEndPayload($shellToolCallId, 'bash', 'shell output'));
+
+        $afterShell = $this->service->rebuildIfStale(RunState::queued($this->runId), $this->runId)->rebuiltState;
+        $this->assertNotNull($afterShell);
+        $this->assertSame([], $afterShell->pendingShellToolCalls);
+        $this->assertSame(['llm-tool'], array_map(static fn ($toolCall): string => $toolCall->toolCallId, $afterShell->currentToolCalls));
+        $this->assertSame(3, $afterShell->currentToolCalls[0]->attempt);
+
         $this->appendEventWithTurn(RunEventTypeEnum::ToolExecutionEnd->value, 7, 1, $this->toolEndPayload('llm-tool', 'read', 'LLM result'));
         $this->appendEventWithTurn(RunEventTypeEnum::ToolBatchCommitted->value, 8, 1, ['count' => 1]);
 
@@ -317,6 +339,57 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $toolMessages = array_values(array_filter($rebuilt->messages, static fn ($message): bool => 'tool' === $message->role));
         $this->assertSame(['llm-tool'], array_map(static fn ($message): ?string => $message->toolCallId, $toolMessages));
         $this->assertSame('LLM result', $toolMessages[0]->content[0]['text']);
+    }
+
+    public function testReplayStandaloneShellCompletionPreservesAttachedShellUntilItsResultArrives(): void
+    {
+        $standaloneKey = 'standalone-shell-a';
+        $attachedKey = 'attached-shell-b';
+        $standaloneId = 'sh_'.hash('sha256', $standaloneKey);
+        $attachedId = 'sh_'.hash('sha256', $attachedKey);
+
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 'shell-step',
+            'payload' => ['messages' => []],
+        ]);
+        $this->appendEvent(RunEventTypeEnum::AgentCommandApplied->value, 2, [
+            'kind' => 'shell_command',
+            'idempotency_key' => $standaloneKey,
+            'standalone' => true,
+            'current_operation' => [
+                'turn_no' => 0,
+                'step_id' => 'shell-step',
+                'attempt' => 1,
+                'idempotency_key' => $standaloneKey,
+            ],
+        ]);
+        $this->appendEvent(RunEventTypeEnum::AgentCommandApplied->value, 3, [
+            'kind' => 'shell_command',
+            'idempotency_key' => $attachedKey,
+            'standalone' => false,
+            'current_operation' => [
+                'turn_no' => 0,
+                'step_id' => 'shell-step',
+                'attempt' => 1,
+                'idempotency_key' => $attachedKey,
+            ],
+        ]);
+        $this->appendEvent(RunEventTypeEnum::ToolExecutionEnd->value, 4, $this->toolEndPayload($standaloneId, 'bash', 'A done'));
+        $this->appendEvent(RunEventTypeEnum::AgentEnd->value, 5, ['reason' => 'completed']);
+
+        $afterStandalone = $this->service->rebuildIfStale(RunState::queued($this->runId), $this->runId)->rebuiltState;
+
+        $this->assertNotNull($afterStandalone);
+        $this->assertSame(RunStatus::Completed, $afterStandalone->status);
+        $this->assertSame([$attachedId => true], $afterStandalone->pendingShellToolCalls);
+        $this->assertNull($afterStandalone->activeStepId);
+        $this->assertNull($afterStandalone->currentOperation);
+
+        $this->appendEvent(RunEventTypeEnum::ToolExecutionEnd->value, 6, $this->toolEndPayload($attachedId, 'bash', 'B done'));
+        $afterAttached = $this->service->rebuildIfStale(RunState::queued($this->runId), $this->runId)->rebuiltState;
+
+        $this->assertNotNull($afterAttached);
+        $this->assertSame([], $afterAttached->pendingShellToolCalls);
     }
 
     public function testReplayAssistantTextWithTopLevelToolCallsPreservesMetadataForValidator(): void
@@ -457,7 +530,21 @@ final class SessionRunStateReplayServiceTest extends TestCase
             'payload' => ['messages' => []],
         ]);
 
-        $this->appendEvent(RunEventTypeEnum::AgentCommandApplied->value, 2, [
+        $this->appendEvent(RunEventTypeEnum::LlmStepCompleted->value, 2, [
+            'step_id' => 's1',
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [],
+                'tool_calls' => [['id' => 'call-cancel', 'name' => 'read', 'arguments' => [], 'order_index' => 0]],
+            ],
+        ]);
+        $this->appendEvent(RunEventTypeEnum::ToolExecutionStart->value, 3, [
+            'tool_call_id' => 'call-cancel',
+            'tool_name' => 'read',
+            'order_index' => 0,
+            'attempt' => 2,
+        ]);
+        $this->appendEvent(RunEventTypeEnum::AgentCommandApplied->value, 4, [
             'kind' => 'cancel',
             'idempotency_key' => 'idem-c',
             'reason' => 'User cancelled.',
@@ -470,6 +557,9 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $rebuiltState = $result->rebuiltState;
         $this->assertSame(RunStatus::Cancelling, $rebuiltState->status);
         $this->assertSame('User cancelled.', $rebuiltState->errorMessage);
+        $this->assertCount(1, $rebuiltState->currentToolCalls);
+        $this->assertSame(RunOperationalToolCallStatusEnum::Cancelled, $rebuiltState->currentToolCalls[0]->status);
+        $this->assertSame(2, $rebuiltState->currentToolCalls[0]->attempt);
     }
 
     public function testReplayAgentEndCancelled(): void
@@ -489,6 +579,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertTrue($result->rebuilt);
         $this->assertSame(RunStatus::Cancelled, $result->rebuiltState->status);
         $this->assertNull($result->rebuiltState->activeStepId);
+        $this->assertNull($result->rebuiltState->currentOperation);
     }
 
     // ── Error / llm_step_failed replay ──────────────────────────────────────

@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
-use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
@@ -30,8 +29,7 @@ final readonly class ExecuteToolCallWorker
         private MessageBusInterface $commandBus,
         private DeferredToolCompletionRepositoryInterface $deferredToolCompletionRepository,
         private ToolExecutionResultStore $resultStore,
-        private ?RunStoreInterface $runStore = null,
-        private ?RunMetrics $metrics = null,
+        private RunOperationalStatusReaderInterface $statusReader,
         private ?RunTracer $tracer = null,
         private ?EventDispatcherInterface $eventDispatcher = null,
     ) {
@@ -101,9 +99,7 @@ final readonly class ExecuteToolCallWorker
             return null;
         }
 
-        $cancelToken = null !== $this->runStore
-            ? new RunCancellationToken($this->runStore, $message->runId())
-            : new NullCancellationToken();
+        $cancelToken = new RunCancellationToken($this->statusReader, $message->runId());
 
         $batchToolCallCount = 1;
         if (\is_array($message->assistantMessage)) {
@@ -138,8 +134,6 @@ final readonly class ExecuteToolCallWorker
             ],
         );
 
-        $startedAt = hrtime(true);
-
         RunLogContext::enter(['event_type' => 'tool.execute.started']);
 
         try {
@@ -155,10 +149,6 @@ final readonly class ExecuteToolCallWorker
                     'tool_name' => $message->toolName,
                 ], $executeTool)
             ;
-
-            $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
-            $timedOut = \is_array($toolResult->details) && true === ($toolResult->details['timed_out'] ?? false);
-            $this->metrics?->recordToolLatency($durationMs, $toolResult->isError, $timedOut);
 
             if ($this->isDeferredOutcome($toolResult)) {
                 $correlation = $this->registerDeferredExecution($message, $toolResult);
@@ -177,9 +167,6 @@ final readonly class ExecuteToolCallWorker
 
             return ToolCallResultFactory::fromExecuteToolCallAndToolResult($message, $toolResult);
         } catch (\Throwable $exception) {
-            $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
-            $this->metrics?->recordToolLatency($durationMs, true, false);
-
             return ToolCallResultFactory::fromExecuteToolCallAndThrowable($message, $exception);
         } finally {
             RunLogContext::leave(); // event_type scope

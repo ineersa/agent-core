@@ -7,8 +7,9 @@ namespace Ineersa\AgentCore\Domain\Message;
 /**
  * Immutable execution envelope for one LLM turn.
  *
- * The provider resolves the current session model and reasoning at invocation
- * time. Scheduling must not snapshot mutable session selection here.
+ * The coordinator supplies the complete immutable invocation context. This
+ * execution envelope is the only approved process boundary for prompt history;
+ * workers must never load a RunState snapshot to rebuild it.
  */
 final readonly class ExecuteLlmStep extends AbstractAgentBusMessage
 {
@@ -20,6 +21,8 @@ final readonly class ExecuteLlmStep extends AbstractAgentBusMessage
         string $idempotencyKey,
         public string $contextRef,
         public string $toolsRef,
+        /** @var list<AgentMessage> */
+        public array $messages = [],
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
     }

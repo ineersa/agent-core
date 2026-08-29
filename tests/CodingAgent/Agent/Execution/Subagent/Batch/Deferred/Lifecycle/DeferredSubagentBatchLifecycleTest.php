@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Lifecycle;
 
+use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -14,6 +16,7 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
@@ -23,7 +26,6 @@ use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
-use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
@@ -43,6 +45,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\Obse
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\DeferredSubagentBatchProgressDeliveryService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\DeferredSubagentBatchProgressSnapshotFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
@@ -679,6 +682,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             status: 'cancelling',
             events: [],
             effectsCount: 0,
+            runState: new RunState($parent, RunStatus::Cancelling, turnNo: 1),
         ));
         $this->assertSame('cancelling', $result->status);
         $this->assertInstanceOf(InterruptDeferredSubagentBatchMessage::class, $hookBus->messages[0]);
@@ -693,6 +697,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             status: 'running',
             events: [],
             effectsCount: 0,
+            runState: new RunState($parent, RunStatus::Running, turnNo: 1),
         ));
         $this->assertCount(0, $hookBus2->messages);
     }
@@ -1282,6 +1287,81 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertCount(0, $commandBus->messages, 'Redelivered lifecycle observation must not complete parent tool twice');
     }
 
+    public function testFailedChildOutcomeRebuildsCanonicalStateOnce(): void
+    {
+        $identity = new ChildRunIdentityDTO(
+            parentRunId: 'parent-canonical-outcome',
+            childRunId: 'child-canonical-outcome',
+            artifactId: 'artifact-canonical-outcome',
+            displayName: 'scout',
+            taskSummary: 'inspect',
+            launchModel: 'test/model',
+            launchReasoning: 'medium',
+            artifactKind: AgentArtifactKindEnum::Subagent,
+            batchIndex: 1,
+        );
+        $state = new RunState(runId: $identity->childRunId, status: RunStatus::Failed, messages: [new AgentMessage('assistant', [['type' => 'text', 'text' => 'partial']])]);
+        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
+        $rebuilder->expects($this->once())
+            ->method('rebuildIfStale')
+            ->with(
+                $this->callback(static fn (RunState $queued): bool => $queued->runId === $identity->childRunId && RunStatus::Queued === $queued->status),
+                $identity->childRunId,
+            )
+            ->willReturn(RunStateReplayResult::rebuilt($state, 2, 2, true));
+
+        $outcome = $this->createOutcomeFactory($rebuilder)->buildNaturalArtifactOutcome(
+            $identity,
+            new DeferredChildRunLifecycleProjectionDTO(
+                childStatus: RunStatus::Failed,
+                childTurnNo: 1,
+                lastCommittedSeq: 2,
+                model: 'test/model',
+                reasoning: 'medium',
+                errorMessage: 'failed',
+            ),
+        );
+
+        $this->assertSame(AgentArtifactStatusEnum::Failed, $outcome->status);
+        $this->assertSame($state, $outcome->childState);
+    }
+
+    public function testCanonicalChildReplayFailureDegradesToSummaryWithoutChildState(): void
+    {
+        $identity = new ChildRunIdentityDTO(
+            parentRunId: 'parent-canonical-failure',
+            childRunId: 'child-canonical-failure',
+            artifactId: 'artifact-canonical-failure',
+            displayName: 'scout',
+            taskSummary: 'inspect',
+            launchModel: 'test/model',
+            launchReasoning: 'medium',
+            artifactKind: AgentArtifactKindEnum::Subagent,
+            batchIndex: 1,
+        );
+        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
+        $rebuilder->expects($this->once())
+            ->method('rebuildIfStale')
+            ->willThrowException(new \RuntimeException('canonical child replay failed'));
+        $logger = new TestLogger();
+
+        $outcome = $this->createOutcomeFactory($rebuilder, $logger)->buildNaturalArtifactOutcome(
+            $identity,
+            new DeferredChildRunLifecycleProjectionDTO(
+                childStatus: RunStatus::Cancelled,
+                childTurnNo: 1,
+                lastCommittedSeq: 2,
+                model: 'test/model',
+                reasoning: 'medium',
+            ),
+        );
+
+        $this->assertSame(AgentArtifactStatusEnum::Cancelled, $outcome->status);
+        $this->assertNull($outcome->childState);
+        $this->assertSame('deferred_subagent.child_state_load_failed', $logger->records[0]['message']);
+        $this->assertSame($identity->childRunId, $logger->records[0]['context']['child_run_id']);
+    }
+
     /**
      * @param array<int, array<string, mixed>> $appended
      */
@@ -1333,11 +1413,11 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         );
     }
 
-    private function createOutcomeFactory(): DeferredSubagentBatchChildOutcomeFactory
+    private function createOutcomeFactory(?RunStateRebuilderInterface $runStateRebuilder = null, ?TestLogger $logger = null): DeferredSubagentBatchChildOutcomeFactory
     {
         return new DeferredSubagentBatchChildOutcomeFactory(
-            self::getContainer()->get(AgentChildRunStoreFactory::class),
-            new TestLogger(),
+            $runStateRebuilder ?? self::getContainer()->get(RunStateRebuilderInterface::class),
+            $logger ?? new TestLogger(),
         );
     }
 

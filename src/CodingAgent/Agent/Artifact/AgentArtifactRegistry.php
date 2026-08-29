@@ -23,7 +23,6 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  *     <artifactId>/
  *       metadata.json         — per-child identity/status/timestamps
  *       events.jsonl          — canonical RunEvent stream (AgentChildRunEventStore)
- *       state.json            — hot RunState cache (AgentChildRunStore)
  *       handoffs/
  *         index.json          — immutable handoff entries (id, created_at, status, summary, path)
  *         <uuid>.md           — one handoff body per finalize (append-only)
@@ -1039,7 +1038,6 @@ final class AgentArtifactRegistry
         if ($entry->paths->artifactDir !== $expectedPaths->artifactDir
             || $entry->paths->metadataPath !== $expectedPaths->metadataPath
             || $entry->paths->eventsPath !== $expectedPaths->eventsPath
-            || $entry->paths->statePath !== $expectedPaths->statePath
         ) {
             throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" has unexpected paths.', $parentRunId, $entry->artifactId));
         }

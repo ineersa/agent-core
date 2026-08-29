@@ -12,7 +12,7 @@ namespace Ineersa\AgentCore\Domain\Message;
  * a failure event or dispatches an ExecuteCompactionStep for async
  * model invocation.
  */
-final readonly class CompactRun extends AbstractAgentBusMessage
+final readonly class CompactRun extends AbstractAgentBusMessage implements RunControlTransitionMessageInterface
 {
     /**
      * @param string      $runId                   Target run identifier

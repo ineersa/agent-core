@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -92,13 +92,12 @@ MD;
 - artifact_dir: {artifact_dir}
 - metadata_path: {metadata_path}
 - events_path: {events_path}
-- state_path: {state_path}
 MD;
 
     public function __construct(
         private readonly AgentArtifactRegistry $artifactRegistry,
         private readonly AgentChildRunDirectory $childRunDirectory,
-        private readonly RunStoreInterface $runStore,
+        private readonly RunStateRebuilderInterface $runStateRebuilder,
         private readonly EventStoreInterface $eventStore,
         private readonly LoggerInterface $logger,
         private readonly ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec,
@@ -124,11 +123,16 @@ MD;
             $args->trimmedAgentRunId(),
         );
 
+        $childState = match ($mode) {
+            AgentRetrieveModeEnum::Metadata, AgentRetrieveModeEnum::History => $this->loadChildState($entry),
+            default => null,
+        };
+
         return match ($mode) {
             AgentRetrieveModeEnum::Handoff => $this->renderHandoff($entry),
-            AgentRetrieveModeEnum::Metadata => $this->renderMetadata($entry),
+            AgentRetrieveModeEnum::Metadata => $this->renderMetadata($entry, $childState),
             AgentRetrieveModeEnum::Events => $this->renderEvents($entry, $limit),
-            AgentRetrieveModeEnum::History => $this->renderHistory($entry, $limit),
+            AgentRetrieveModeEnum::History => $this->renderHistory($entry, $limit, $childState),
             AgentRetrieveModeEnum::HandoffHistory => $this->renderHandoffHistory($entry, $args->trimmedHandoffId()),
             AgentRetrieveModeEnum::Debug => $this->renderDebug($entry),
         };
@@ -193,7 +197,7 @@ MD;
         return $header."\n\n".$handoff;
     }
 
-    private function renderMetadata(AgentArtifactEntryDTO $entry): string
+    private function renderMetadata(AgentArtifactEntryDTO $entry, ?RunState $state): string
     {
         $vars = $this->identityVars($entry) + [
             'status' => $entry->status->value,
@@ -217,7 +221,6 @@ MD;
             'event_log_section' => '',
         ];
 
-        $state = $this->loadChildState($entry);
         if (null !== $state) {
             $vars['child_state_section'] = implode("\n", [
                 '',
@@ -272,9 +275,8 @@ MD;
         return implode("\n", $lines);
     }
 
-    private function renderHistory(AgentArtifactEntryDTO $entry, int $limit): string
+    private function renderHistory(AgentArtifactEntryDTO $entry, int $limit, ?RunState $state): string
     {
-        $state = $this->loadChildState($entry);
         $messages = null !== $state ? $state->messages : [];
 
         $filtered = [];
@@ -364,7 +366,6 @@ MD;
             'artifact_dir' => $p->artifactDir,
             'metadata_path' => $p->metadataPath,
             'events_path' => $p->eventsPath,
-            'state_path' => $p->statePath,
         ]);
     }
 
@@ -397,7 +398,9 @@ MD;
     private function loadChildState(AgentArtifactEntryDTO $entry): ?RunState
     {
         try {
-            return $this->runStore->get($entry->agentRunId);
+            return $this->runStateRebuilder
+                ->rebuildIfStale(RunState::queued($entry->agentRunId), $entry->agentRunId)
+                ->rebuiltState;
         } catch (\Throwable $e) {
             $this->logger->debug('agent_retrieve.child_state_unavailable', [
                 'component' => 'agent.retrieve',

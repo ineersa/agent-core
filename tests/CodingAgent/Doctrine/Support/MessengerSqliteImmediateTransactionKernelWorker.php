@@ -12,9 +12,7 @@ require dirname(__DIR__, 4).'/vendor/autoload.php';
 
 use DAMA\DoctrineTestBundle\Doctrine\DBAL\StaticDriver;
 use Doctrine\DBAL\Connection;
-use Ineersa\CodingAgent\Migrations\MessengerTransportSchemaEnsurer;
 use Ineersa\CodingAgent\Tests\Doctrine\Support\MessengerSqliteImmediateTransactionKernelTestKernel;
-use Psr\Log\NullLogger;
 
 $mode = $argv[1] ?? '';
 if ('' === $mode) {
@@ -70,14 +68,8 @@ try {
 
 exit(0);
 
-function ensureSchema(Connection $transport): void
-{
-    (new MessengerTransportSchemaEnsurer($transport, new NullLogger()))();
-}
-
 function nestedSavepointProbe(Connection $transport): void
 {
-    ensureSchema($transport);
     $transport->beginTransaction();
     $transport->beginTransaction();
     try {
@@ -103,7 +95,6 @@ function nestedSavepointProbe(Connection $transport): void
 
 function rollbackProbe(Connection $transport): void
 {
-    ensureSchema($transport);
     $transport->beginTransaction();
     try {
         $transport->executeStatement(

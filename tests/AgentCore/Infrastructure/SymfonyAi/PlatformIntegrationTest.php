@@ -10,6 +10,8 @@ use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface;
+use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationOptions;
@@ -17,9 +19,7 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\ProviderRequest;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
-use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\BeforeProviderRequestSubscriber;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
@@ -55,21 +55,6 @@ final class PlatformIntegrationTest extends TestCase
 {
     public function testPlatformInvokerAppliesHookChainAndInjectsDynamicToolDescriptions(): void
     {
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(
-            runId: 'run-stage-05',
-            status: RunStatus::Running,
-            version: 1,
-            turnNo: 2,
-            lastSeq: 5,
-            isStreaming: false,
-            streamingMessage: null,
-            pendingToolCalls: [],
-            errorMessage: null,
-            messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
-            activeStepId: 'turn-2-llm-1',
-            model: 'test-model'), 0);
-
         $calls = [];
 
         $transformHook = new class($calls) implements TransformContextHookInterface {
@@ -166,7 +151,7 @@ final class PlatformIntegrationTest extends TestCase
         );
 
         $adapter = new LlmPlatformAdapter(
-            runStore: $runStore,
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor($toolbox),
             platform: $platform,
@@ -185,6 +170,7 @@ final class PlatformIntegrationTest extends TestCase
                 runId: 'run-stage-05',
                 turnNo: 2,
                 stepId: 'turn-2-llm-1',
+                messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
             ),
             options: new ModelInvocationOptions(
                 extraOptions: [
@@ -333,21 +319,6 @@ final class PlatformIntegrationTest extends TestCase
      */
     public function testCostIsCalculatedWhenRequestModelIsEmptyButResolverReturnsPricedModel(): void
     {
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(
-            runId: 'run-cost-01',
-            status: RunStatus::Running,
-            version: 1,
-            turnNo: 1,
-            lastSeq: 0,
-            isStreaming: false,
-            streamingMessage: null,
-            pendingToolCalls: [],
-            errorMessage: null,
-            messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
-            activeStepId: 'turn-1-llm-1',
-            model: 'test-model'), 0);
-
         $costCalculator = new class implements \Ineersa\AgentCore\Domain\Model\CostCalculatorInterface {
             public ?string $capturedModel = null;
 
@@ -389,7 +360,7 @@ final class PlatformIntegrationTest extends TestCase
         );
 
         $adapter = new LlmPlatformAdapter(
-            runStore: $runStore,
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -408,6 +379,7 @@ final class PlatformIntegrationTest extends TestCase
                 runId: 'run-cost-01',
                 turnNo: 1,
                 stepId: 'turn-1-llm-1',
+                messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
             ),
         ));
 
@@ -436,50 +408,25 @@ final class PlatformIntegrationTest extends TestCase
             $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
             file_put_contents($imagePath, $png);
 
-            $runStore = new InMemoryRunStore();
-            $runStore->compareAndSwap(new RunState(
-                runId: 'run-image-gate-01',
-                status: RunStatus::Running,
-                version: 1,
-                turnNo: 1,
-                lastSeq: 0,
-                isStreaming: false,
-                streamingMessage: null,
-                pendingToolCalls: [],
-                errorMessage: null,
-                messages: [
-                    new AgentMessage('user', [['type' => 'text', 'text' => 'describe image']]),
-                    new AgentMessage(
-                        role: 'assistant',
-                        content: [['type' => 'text', 'text' => 'Calling view_image']],
-                        metadata: [
-                            'tool_calls' => [[
-                                'id' => 'call_view',
-                                'name' => 'view_image',
-                                'args' => ['path' => $imagePath],
-                                'order_index' => 0,
-                            ]],
-                        ],
-                    ),
-                    new AgentMessage(
-                        role: 'tool',
-                        content: [
-                            ['type' => 'text', 'text' => '{"type":"view_image"}'],
-                            [
-                                'type' => 'image_ref',
-                                'path' => $imagePath,
-                                'media_type' => 'image/png',
-                                'bytes' => \strlen($png),
-                                'width' => 1,
-                                'height' => 1,
-                            ],
-                        ],
-                        toolCallId: 'call_view',
-                        toolName: 'view_image',
-                    ),
-                ],
-                activeStepId: 'turn-1-llm-1',
-                model: 'test-model'), 0);
+            $messages = [
+                new AgentMessage('user', [['type' => 'text', 'text' => 'describe image']]),
+                new AgentMessage(
+                    role: 'assistant',
+                    content: [['type' => 'text', 'text' => 'Calling view_image']],
+                    metadata: ['tool_calls' => [[
+                        'id' => 'call_view', 'name' => 'view_image', 'args' => ['path' => $imagePath], 'order_index' => 0,
+                    ]]],
+                ),
+                new AgentMessage(
+                    role: 'tool',
+                    content: [
+                        ['type' => 'text', 'text' => '{"type":"view_image"}'],
+                        ['type' => 'image_ref', 'path' => $imagePath, 'media_type' => 'image/png', 'bytes' => \strlen($png), 'width' => 1, 'height' => 1],
+                    ],
+                    toolCallId: 'call_view',
+                    toolName: 'view_image',
+                ),
+            ];
 
             $checker = $this->createStub(\Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface::class);
             $checker->method('supportsImages')->willReturn(true);
@@ -501,7 +448,7 @@ final class PlatformIntegrationTest extends TestCase
             );
 
             $adapter = new LlmPlatformAdapter(
-                runStore: $runStore,
+                statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
                 messageConverter: new AgentMessageConverter(),
                 toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
                 platform: $platform,
@@ -519,6 +466,7 @@ final class PlatformIntegrationTest extends TestCase
                     runId: 'run-image-gate-01',
                     turnNo: 1,
                     stepId: 'turn-1-llm-1',
+                    messages: $messages,
                 ),
             ));
 
@@ -543,8 +491,9 @@ final class PlatformIntegrationTest extends TestCase
             ],
         );
 
+        $statusReader = new MutableRunOperationalStatusReader('run-cancel');
         $adapter = new LlmPlatformAdapter(
-            runStore: new InMemoryRunStore(),
+            statusReader: $statusReader,
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -560,10 +509,8 @@ final class PlatformIntegrationTest extends TestCase
         $response = $adapter->invoke(new ModelInvocationRequest(
             model: 'gpt-test',
             input: new ModelInvocationInput(
+                runId: 'run-cancel',
                 messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'cancel me']])],
-            ),
-            options: new ModelInvocationOptions(
-                cancelToken: new ToggleCancellationToken(),
             ),
         ));
 
@@ -574,7 +521,6 @@ final class PlatformIntegrationTest extends TestCase
 
     public function testTransformHookNotificationsFlowToPlatformInvocationResult(): void
     {
-        $runStore = new InMemoryRunStore();
         $streamFactory = static function (): \Generator {
             yield new TextDelta('response');
         };
@@ -619,7 +565,7 @@ final class PlatformIntegrationTest extends TestCase
             }
         };
 
-        $adapter = $this->createAdapter($runStore, streamFactory: $streamFactory, transformHooks: [$transformHook]);
+        $adapter = $this->createAdapter(streamFactory: $streamFactory, transformHooks: [$transformHook]);
 
         $response = $adapter->invoke(new ModelInvocationRequest(
             model: 'fake',
@@ -665,8 +611,6 @@ final class PlatformIntegrationTest extends TestCase
 
     public function testTransformHookNotificationsFlowOnProviderError(): void
     {
-        $runStore = new InMemoryRunStore();
-
         // Stream factory that throws after yielding one delta,
         // simulating a provider stream error.
         $streamFactory = static function (): \Generator {
@@ -702,7 +646,7 @@ final class PlatformIntegrationTest extends TestCase
             }
         };
 
-        $adapter = $this->createAdapter($runStore, streamFactory: $streamFactory, transformHooks: [$transformHook]);
+        $adapter = $this->createAdapter(streamFactory: $streamFactory, transformHooks: [$transformHook]);
 
         $response = $adapter->invoke(new ModelInvocationRequest(
             model: 'fake',
@@ -725,7 +669,6 @@ final class PlatformIntegrationTest extends TestCase
 
     public function testNotificationsPresentPreTransformAreNotReEmitted(): void
     {
-        $runStore = new InMemoryRunStore();
         $streamFactory = static function (): \Generator {
             yield new TextDelta('response');
         };
@@ -789,7 +732,7 @@ final class PlatformIntegrationTest extends TestCase
             }
         };
 
-        $adapter = $this->createAdapter($runStore, streamFactory: $streamFactory, transformHooks: [$transformHook]);
+        $adapter = $this->createAdapter(streamFactory: $streamFactory, transformHooks: [$transformHook]);
 
         $response = $adapter->invoke(new ModelInvocationRequest(
             model: 'fake',
@@ -830,21 +773,6 @@ final class PlatformIntegrationTest extends TestCase
      */
     public function testCacheReadTokensFlowToUsagePayload(): void
     {
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(
-            runId: 'run-cache-01',
-            status: RunStatus::Running,
-            version: 1,
-            turnNo: 1,
-            lastSeq: 0,
-            isStreaming: false,
-            streamingMessage: null,
-            pendingToolCalls: [],
-            errorMessage: null,
-            messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
-            activeStepId: 'turn-1-llm-1',
-            model: 'test-model'), 0);
-
         // Fake token usage with cache-read tokens but no explicit cache-creation.
         $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(
             promptTokens: 100,
@@ -860,7 +788,7 @@ final class PlatformIntegrationTest extends TestCase
         );
 
         $adapter = new LlmPlatformAdapter(
-            runStore: $runStore,
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -879,6 +807,7 @@ final class PlatformIntegrationTest extends TestCase
                 runId: 'run-cache-01',
                 turnNo: 1,
                 stepId: 'step-cache-01',
+                messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
             ),
         ));
 
@@ -904,21 +833,6 @@ final class PlatformIntegrationTest extends TestCase
      */
     public function testCacheReadTokensFallbackToCachedTokensInUsagePayload(): void
     {
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(
-            runId: 'run-cache-02',
-            status: RunStatus::Running,
-            version: 1,
-            turnNo: 1,
-            lastSeq: 0,
-            isStreaming: false,
-            streamingMessage: null,
-            pendingToolCalls: [],
-            errorMessage: null,
-            messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
-            activeStepId: 'turn-1-llm-1',
-            model: 'test-model'), 0);
-
         // Only aggregate cached_tokens; no explicit cache_read_tokens.
         $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(
             promptTokens: 200,
@@ -934,7 +848,7 @@ final class PlatformIntegrationTest extends TestCase
         );
 
         $adapter = new LlmPlatformAdapter(
-            runStore: $runStore,
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -953,6 +867,7 @@ final class PlatformIntegrationTest extends TestCase
                 runId: 'run-cache-02',
                 turnNo: 1,
                 stepId: 'step-cache-02',
+                messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
             ),
         ));
 
@@ -972,7 +887,6 @@ final class PlatformIntegrationTest extends TestCase
      * @param iterable<ConvertToLlmHookInterface>     $convertHooks
      */
     private function createAdapter(
-        InMemoryRunStore $runStore,
         ?\Closure $streamFactory = null,
         iterable $transformHooks = [],
         iterable $convertHooks = [],
@@ -983,7 +897,7 @@ final class PlatformIntegrationTest extends TestCase
         });
 
         return new LlmPlatformAdapter(
-            runStore: $runStore,
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(
                 new class implements ToolboxInterface {
@@ -1182,6 +1096,25 @@ final readonly class FakeTokenUsage implements TokenUsageInterface
     public function getTotalTokens(): ?int
     {
         return $this->totalTokens;
+    }
+}
+
+final class MutableRunOperationalStatusReader implements RunOperationalStatusReaderInterface
+{
+    private int $reads = 0;
+
+    public function __construct(private readonly string $runId)
+    {
+    }
+
+    public function findOperationalStatus(string $runId): ?RunOperationalStatusDTO
+    {
+        ++$this->reads;
+        if ($runId !== $this->runId || 1 === $this->reads) {
+            return null;
+        }
+
+        return new RunOperationalStatusDTO($runId, RunStatus::Cancelling, null);
     }
 }
 

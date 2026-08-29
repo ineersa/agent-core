@@ -256,7 +256,8 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
     castor_check_fail_if_wall_exceeded($checkWallDeadline, 'before test database migration');
     $migrateTimeout = min(30, castor_check_remaining_wall_seconds($checkWallDeadline));
     $migrate = run_quiet_command(timeout_check_command(
-        qa_check_run_env_command().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration',
+        qa_check_run_env_command().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+            .' && '.qa_check_run_env_command().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --em=messenger_transport --configuration=config/migrations/messenger_transport.yaml --no-interaction --allow-no-migration',
         $migrateTimeout,
     ));
     if (0 !== $migrate->getExitCode()) {

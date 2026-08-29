@@ -11,7 +11,7 @@
 AgentCore follows a clean layered architecture within a modular monolith:
 
 ```
-Contract/        — Pure interfaces (RunStoreInterface, EventStoreInterface, CommandStoreInterface, etc.)
+Contract/        — Pure interfaces (ActiveRunContextInterface, EventStoreInterface, CommandStoreInterface, etc.)
 Domain/          — Value objects, enums, events, messages, run state, DTOs (no business logic)
 Application/     — Pipeline handlers, orchestrators, services, batch coordinators
 Infrastructure/  — Symfony AI adapter, Messenger wiring, in-memory/Doctrine storage
@@ -22,7 +22,7 @@ The pipeline operates on two Symfony Messenger buses:
 - **`agent.command.bus`** — RunOrchestrator receives StartRun, ApplyCommand, AdvanceRun, LlmStepResult, ToolCallResult
 - **`agent.execution.bus`** — ExecuteLlmStepWorker and ExecuteToolCallWorker execute side-effect work
 
-Handlers return `HandlerResult` (nextState + events + effects + postCommit callbacks), which `RunMessageProcessor` commits through `RunCommit` with CAS retry and exponential backoff.
+Handlers return `HandlerResult` (nextState + events + effects + postCommit callbacks), which `RunMessageProcessor` commits through `RunCommit`: canonical event append, payload-free operational projection/process-local context replacement, then best-effort effects and hooks.
 
 Deptrac validates: **0 violations, 591 uncovered (expected internal calls), 856 allowed**.
 
@@ -208,7 +208,7 @@ These are appropriate for the ports & adapters pattern. However, `Hook/` contain
 
 ### Candidate 5: Extract `RunCommit` Side-Effects into Post-Commit Pipeline
 
-**Cluster:** `Application/Pipeline/RunCommit`, `Application/Handler/ReplayService`, `Application/Handler/HookDispatcher`, `Application/Handler/RunMetrics`
+**Cluster:** `Application/Pipeline/RunCommit`, `Application/Handler/ReplayService`, `Application/Handler/HookDispatcher`, `Application/Handler/RunTracer`
 
 **Why coupled:** `RunCommit::commit()` does atomic CAS+persistence AND fires replay rebuild, hook dispatch, effect dispatch, and metrics — all in one method. These are best-effort side-effects that shouldn't be entangled with the commit path.
 

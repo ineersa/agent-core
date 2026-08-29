@@ -24,11 +24,11 @@ use Symfony\Component\Lock\LockFactory;
  *    'order'     => [idempotencyKey, …]]  // FIFO insertion order
  *
  * All mutating operations are guarded by a LockFactory FlockStore lock
- * keyed by run, mirroring SessionRunStore's compareAndSwap pattern.
+ * keyed by run and consumed in command order.
  *
  * @see CommandStoreInterface
  * @see InMemoryCommandStore — single-process reference implementation
- * @see \Ineersa\CodingAgent\Session\SessionRunStore — reference CAS+lock pattern
+ * @see \Ineersa\AgentCore\Application\Handler\RunLockManager — run-scoped ordering boundary
  */
 final class CacheCommandStore implements CommandStoreInterface
 {

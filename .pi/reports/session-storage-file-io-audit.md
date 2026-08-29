@@ -4,11 +4,11 @@
 
 ## Privacy-safe measurement tool
 
-`tools/session-storage-audit.py` is the sole reusable measurement tool:
+`~/.hatfield/tools/session-storage-audit.py` is the reusable user-level measurement tool:
 
 ```bash
-python3 tools/session-storage-audit.py /absolute/path/to/.hatfield
-python3 tools/session-storage-audit.py --project-final /absolute/path/to/.hatfield
+python3 ~/.hatfield/tools/session-storage-audit.py /absolute/path/to/.hatfield
+python3 ~/.hatfield/tools/session-storage-audit.py --project-final /absolute/path/to/.hatfield
 ```
 
 Its output is fixed labels, approved schema field paths, and numeric aggregates only. It never prints the supplied root, file names, run/tool identifiers, type strings outside the fixed current/removed vocabulary (other types are labelled `unsupported`), payload values, or malformed input. It is read-only and requires an existing directory named `.hatfield`.
@@ -59,21 +59,50 @@ Across those child tool results, historical nested attribution was `tool_executi
 
 The snapshot also measured child `run_started.payload.messages=39,947,463` bytes (92.6% of child start bytes). No savings are claimed for it. Earlier parent-only persisted nonterminal progress was a separate historical bug; final nonterminal progress is transient.
 
-## Deterministic benign fixture result
-
-`tests/AgentCore/Tools/SessionStorageAuditTest.php` invokes the real CLI against an isolated synthetic `.hatfield` tree. Its values and IDs are sentinels specifically to prove the output boundary does not leak them.
-
-| Scope | Source records | Final projected records | Removed records | Required retained proof |
-|---|---:|---:|---:|---|
-| parent | 7 | 2 | 5 | one typed `tool_execution_end` and slim `llm_step_completed.assistant_message` remain |
-| child | 6 | 1 | 5 | `run_started` remains and is attributed as child |
-
-The test also proves: parent/child line attribution; old receipt/message/stale rows vanish from projected event output; projected LLM field attribution contains `assistant_message` but neither removed field; and output contains none of the fixture’s identifiers, prompt/tool/assistant content, or filename sentinel. It completes in well under ten seconds.
-
 ## Limitations
 
-This tool reports encoded JSONL bytes, not filesystem block allocation, decompression, physical reads, decode peak memory, or runtime frequency. The original dataset was live and can change; only the committed aggregate baseline above is reproducible here. Re-run the tool only against the exact original root when available, after sentinel coverage is green, and record its aggregate output without copying payloads.
+The user-level tool reports encoded JSONL bytes, not filesystem block allocation, decompression, physical reads, decode peak memory, or runtime frequency. The original dataset was live and can change; only the committed aggregate baseline above is reproducible here. Re-run it only against the exact original root when available and record its aggregate output without copying payloads.
 
 ## Final residue audit
 
 The final audit searches `src`, `tests`, `docs`, `.pi/reports`, `tools`, and `.hatfield/extensions` for the ten removed canonical event names, top-level LLM duplicate fields, legacy tool-result/message authority, and receipt-ledger documentation. Active source/test/tool/extension branches must be empty; historical names are allowed only in this report’s methodology/baseline or the matrix breaking-removal appendix.
+
+## Final operational evidence
+
+```mermaid
+flowchart LR
+    Legacy[/legacy state.json/]:::legacy --> Audit{{aggregate-only audit}}:::tool
+    Events[/events.jsonl/]:::events --> Audit
+    Audit --> Parent([parent aggregates]):::result
+    Audit --> Child([child aggregates]):::result
+    classDef legacy fill:#5c5c5c,color:#fff,stroke:#bdbdbd
+    classDef events fill:#53610f,color:#fff,stroke:#d8f36a
+    classDef tool fill:#0b7285,color:#fff,stroke:#66d9e8
+    classDef result fill:#12613a,color:#fff,stroke:#69db9b
+```
+
+```text
+INPUT_FINGERPRINT before_after=unchanged files=85651 bytes=1245887063 mtime_ns_sum=153037241344613307196979
+SCHEMA audit=3 privacy=aggregate-only
+STATE_JSON scope=parent files=6 total_bytes=3571779 p50_bytes=553984 p95_bytes=665304 max_bytes=1239421 malformed=0
+STATE_JSON scope=child files=232 total_bytes=218668686 p50_bytes=807366 p95_bytes=2026729 max_bytes=2835871 malformed=0
+OPERATIONAL scope=parent row=state rows=6 logical_scalar_bytes=538 unsupported_shapes=0
+OPERATIONAL scope=parent row=tool rows=0 logical_scalar_bytes=0 unsupported_shapes=0
+OPERATIONAL scope=parent row=human rows=1 logical_scalar_bytes=85 unsupported_shapes=0
+OPERATIONAL scope=child row=state rows=232 logical_scalar_bytes=28808 unsupported_shapes=0
+OPERATIONAL scope=child row=tool rows=0 logical_scalar_bytes=0 unsupported_shapes=0
+OPERATIONAL scope=child row=human rows=0 logical_scalar_bytes=0 unsupported_shapes=0
+OPERATIONAL_BOUND row=state max_varchar_bytes=1562 timestamps_bytes=38 sqlite_utf8_length_caveat=declared_char_limits_not_file_allocation
+OPERATIONAL_BOUND row=tool max_varchar_bytes=797 timestamps_bytes=38 sqlite_utf8_length_caveat=declared_char_limits_not_file_allocation
+OPERATIONAL_BOUND row=human max_varchar_bytes=829 timestamps_bytes=38 sqlite_utf8_length_caveat=declared_char_limits_not_file_allocation
+SCHEMA benchmark=2 privacy=aggregate-only measurement=container_boot_before_baseline_parse_filter_reduce_retained_state peak=memory_get_peak_usage_true_minus_baseline_after_memory_reset_peak_usage
+DATASET scope=parent source=synthetic_current_schema event_files=1 event_bytes=43117264
+REPLAY_RESULT scope=parent status=measured candidates_skipped=0 events=10326 duration_ms=201 peak_memory_delta_bytes=46137344
+DATASET scope=child source=synthetic_current_schema event_files=1 event_bytes=3751623
+REPLAY_RESULT scope=child status=measured candidates_skipped=0 events=927 duration_ms=16 peak_memory_delta_bytes=2097152
+```
+
+```bash
+python3 ~/.hatfield/tools/session-storage-audit.py --project-final /path/to/.hatfield
+php ~/.hatfield/tools/storage-replay-benchmark.php --synthetic-current
+```

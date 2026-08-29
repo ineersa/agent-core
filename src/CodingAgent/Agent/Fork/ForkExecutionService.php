@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Fork;
 
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
@@ -22,7 +23,7 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
     public function __construct(
         private readonly DeferredSubagentBatchLaunchService $deferredBatchLaunch,
         private readonly SubagentRunMetadataReader $metadataReader,
-        private readonly RunStoreInterface $parentRunStore,
+        private readonly RunStateRebuilderInterface $runStateRebuilder,
         private readonly ForkSnapshotSanitizer $snapshotSanitizer,
         private readonly CompactionServiceInterface $compactionService,
     ) {
@@ -38,9 +39,12 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
             throw new ToolCallException('Nested fork launches are not supported.', retryable: false);
         }
 
-        // 1) One parent RunStore read → immutable snapshot. Fork compaction must
-        // use the canonical parent execution model; never re-resolve session/default.
-        $parentState = $this->parentRunStore->get($parentRunId);
+        // 1) Rebuild an immutable parent snapshot from canonical events. Fork
+        // compaction must use the canonical parent execution model; never
+        // re-resolve session/default or trust the legacy state snapshot.
+        $parentState = $this->runStateRebuilder
+            ->rebuildIfStale(RunState::queued($parentRunId), $parentRunId)
+            ->rebuiltState;
         if (null === $parentState) {
             throw new ToolCallException(\sprintf('Fork requires canonical parent run state for run_id=%s before compaction.', $parentRunId), retryable: false);
         }

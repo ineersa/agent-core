@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Launch;
 
+use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -384,15 +385,15 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
     {
         $parentRunId = 'parent-batch-prep';
         $toolCallId = 'call-batch-prep';
-        $parentRunStore = $this->createStub(RunStoreInterface::class);
-        $parentRunStore->method('get')->willReturnCallback(static function (string $runId): RunState {
+        $runStateRebuilder = $this->createStub(RunStateRebuilderInterface::class);
+        $runStateRebuilder->method('rebuildIfStale')->willReturnCallback(static function (RunState $state, string $runId): RunStateReplayResult {
             static $calls = 0;
             ++$calls;
             if ($calls > 1) {
                 throw new \RuntimeException('second child context blew up');
             }
 
-            return new RunState(runId: $runId, status: RunStatus::Running, version: 1, messages: [], model: 'test-model');
+            return RunStateReplayResult::rebuilt(new RunState(runId: $runId, status: RunStatus::Running, version: 1, messages: [], model: 'test-model'), 1, 1, true);
         });
 
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
@@ -412,7 +413,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $batchLaunch = $this->buildBatchLaunchService(
             $agentRunner,
             [$def('first-agent'), $def('second-agent'), $def('third-agent')],
-            parentRunStore: $parentRunStore,
+            runStateRebuilder: $runStateRebuilder,
         );
         $execution = new SubagentExecutionService($batchLaunch);
 
@@ -552,7 +553,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         array $definitions,
         ?TestLogger $logger = null,
         ?AgentsConfig $agentsConfig = null,
-        ?RunStoreInterface $parentRunStore = null,
+        ?RunStateRebuilderInterface $runStateRebuilder = null,
     ): DeferredSubagentBatchLaunchService {
         $logger ??= new TestLogger();
         $artifactLifecycle = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService::class);
@@ -566,7 +567,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $launchInputFactory = new \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory(
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Skills\SkillsContextBuilder::class),
-            $parentRunStore ?? self::getContainer()->get(RunStoreInterface::class),
+            $runStateRebuilder ?? self::getContainer()->get(RunStateRebuilderInterface::class),
             $appConfig,
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\ChildExtensionSelectionService::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Tool\ToolRegistryInterface::class),

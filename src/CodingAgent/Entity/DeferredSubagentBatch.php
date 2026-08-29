@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubag
 
 #[ORM\Entity]
 #[ORM\Table(name: 'deferred_subagent_batch')]
+#[ORM\UniqueConstraint(name: 'uniq_deferred_subagent_batch_lifecycle', columns: ['lifecycle_id'])]
 #[ORM\UniqueConstraint(name: 'uniq_deferred_subagent_batch_parent_tool', columns: ['parent_run_id', 'parent_tool_call_id'])]
 #[ORM\HasLifecycleCallbacks]
 class DeferredSubagentBatch
@@ -22,7 +23,7 @@ class DeferredSubagentBatch
     #[ORM\Column(type: 'integer')]
     public int $id = 0;
 
-    #[ORM\Column(name: 'lifecycle_id', type: 'string', length: 36, unique: true)]
+    #[ORM\Column(name: 'lifecycle_id', type: 'string', length: 36)]
     public string $lifecycleId = '';
 
     #[ORM\Column(name: 'parent_run_id', type: 'string', length: 255)]
@@ -63,7 +64,7 @@ class DeferredSubagentBatch
     public ?\DateTimeImmutable $terminalCompletionEnqueuedAt = null;
 
     #[ORM\Version]
-    #[ORM\Column(name: 'projection_version', type: 'integer')]
+    #[ORM\Column(name: 'projection_version', type: 'integer', options: ['default' => 1])]
     public int $projectionVersion = 1;
 
     #[ORM\Column(name: 'started_at', type: 'datetime_immutable', nullable: true)]

@@ -34,8 +34,8 @@ final class StartupDatabaseMigrator
     private bool $ran = false;
 
     public function __construct(
-        private readonly ApplicationMigrationExecutor $executor,
-        private readonly MessengerTransportSchemaEnsurer $transportSchemaEnsurer,
+        private readonly ApplicationMigrationExecutor $applicationMigrationExecutor,
+        private readonly ApplicationMigrationExecutor $transportMigrationExecutor,
         private readonly SessionCatalogRecoveryService $sessionCatalogRecovery,
         private readonly LoggerInterface $logger,
     ) {
@@ -55,11 +55,11 @@ final class StartupDatabaseMigrator
         $this->ran = true;
 
         try {
-            ($this->executor)();
+            ($this->applicationMigrationExecutor)();
+            ($this->transportMigrationExecutor)();
             // Catalog recovery needs hatfield_session DDL from application migrations
             // and must finish before interactive create/resume/list paths run.
             ($this->sessionCatalogRecovery)();
-            ($this->transportSchemaEnsurer)();
         } catch (\Throwable $e) {
             $this->logger->error('migration_runner.failed', [
                 'component' => 'migration_runner',

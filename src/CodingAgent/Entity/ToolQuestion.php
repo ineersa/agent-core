@@ -25,6 +25,7 @@ use Doctrine\ORM\Mapping as ORM;
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'tool_question')]
+#[ORM\UniqueConstraint(name: 'uniq_tool_question_request_id', columns: ['request_id'])]
 #[ORM\HasLifecycleCallbacks]
 class ToolQuestion
 {
@@ -38,7 +39,7 @@ class ToolQuestion
     public int $id = 0;
 
     /** Unique request ID (e.g. 'bash_bg_run123_tc456_pid789'). */
-    #[ORM\Column(name: 'request_id', type: 'string', length: 255, unique: true)]
+    #[ORM\Column(name: 'request_id', type: 'string', length: 255)]
     public string $requestId = '';
 
     /** The run/session this question belongs to. */
@@ -70,11 +71,11 @@ class ToolQuestion
     public string $prompt = '';
 
     /** Question kind (e.g. 'confirm'). */
-    #[ORM\Column(type: 'string', length: 50)]
+    #[ORM\Column(type: 'string', length: 50, options: ['default' => 'confirm'])]
     public string $kind = 'confirm';
 
     /** Lifecycle status. */
-    #[ORM\Column(name: 'status', type: 'string', length: 255, enumType: ToolQuestionStatusEnum::class)]
+    #[ORM\Column(name: 'status', type: 'string', length: 255, enumType: ToolQuestionStatusEnum::class, options: ['default' => 'pending'])]
     public ToolQuestionStatusEnum $status = ToolQuestionStatusEnum::Pending;
 
     /** The boolean answer, set when status becomes Answered (used by Confirm-kind). */

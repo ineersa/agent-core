@@ -18,19 +18,17 @@ use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
- * Executes one LLM step.  Ordinary turns carry no model on
- * {@see ExecuteLlmStep}: the provider boundary
- * ({@see \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter})
- * resolves the current session model and reasoning at invocation time, and
- * this worker propagates the actually-resolved identity onto the
- * {@see LlmStepResult} for canonical completion/failure events.
+ * Executes one LLM step from the immutable context carried by
+ * {@see ExecuteLlmStep}. The provider boundary resolves only current model
+ * selection; it never reads a run snapshot for prompt history. This worker
+ * propagates the actually-resolved identity onto {@see LlmStepResult} for
+ * canonical completion/failure events.
  */
 final readonly class ExecuteLlmStepWorker
 {
     public function __construct(
         private PlatformInterface $platform,
         private MessageBusInterface $commandBus,
-        private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -98,6 +96,7 @@ final readonly class ExecuteLlmStepWorker
                     stepId: $message->stepId(),
                     contextRef: $message->contextRef,
                     toolsRef: $message->toolsRef,
+                    messages: $message->messages,
                 ),
             ));
 
@@ -143,7 +142,7 @@ final readonly class ExecuteLlmStepWorker
             // like DeepSeek can produce reasoning-only responses when
             // max_tokens is exhausted mid-thinking, and replaying these
             // empty messages causes HTTP 400 "content or tool_calls
-            // must be set". Convert to an error before metrics/logging
+            // must be set". Convert to an error before structured logging
             // so it counts as a failure.  The one-shot retry above may
             // already have recovered; this guard catches the final
             // (possibly retried) result.
@@ -173,9 +172,8 @@ final readonly class ExecuteLlmStepWorker
 
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
 
-            // Detect fully empty platform response BEFORE metrics and
-            // logging so the deficiency is counted as an error, not a
-            // silent success.
+            // Detect a fully empty platform response before logging so the
+            // deficiency is reported as an error, not a silent success.
             $assistantMessage = $response->assistantMessage;
             $hasStreamDeltas = [] !== $response->deltas();
             if (null === $assistantMessage && !$hasStreamDeltas && null === $response->error) {
@@ -203,8 +201,6 @@ final readonly class ExecuteLlmStepWorker
                 );
                 $assistantMessage = null;
             }
-
-            $this->metrics?->recordLlmLatency($durationMs, null !== $response->error);
 
             if (null !== $response->error) {
                 $logCtx = [
@@ -259,7 +255,6 @@ final readonly class ExecuteLlmStepWorker
             );
         } catch (\Throwable $exception) {
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
-            $this->metrics?->recordLlmLatency($durationMs, true);
 
             $this->logger->warning('llm.request.failed', [
                 'duration_ms' => round($durationMs, 3),

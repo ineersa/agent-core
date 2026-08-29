@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
@@ -1198,6 +1199,7 @@ final class ApplyCommandHandlerTest extends TestCase
                 new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hi']]),
             ],
             activeStepId: null,  // idle: no active step
+            currentOperation: new CurrentOperationDTO(2, 'advance-after-tools-stale', 1, 'stale-op-key'),
             retryableFailure: false,
             model: 'test-model');
 
@@ -1218,6 +1220,8 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame(RunStatus::Cancelled, $result->nextState->status,
             'Cancel from idle Running must terminalize to Cancelled, not Cancelling');
         $this->assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->currentOperation,
+            'Immediate cancel must clear stale currentOperation so post-cancel AdvanceRun wake is accepted');
         $this->assertFalse($result->nextState->isStreaming);
 
         // Events: agent_command_applied + agent_end (cancelled reason).
@@ -1270,7 +1274,8 @@ final class ApplyCommandHandlerTest extends TestCase
             messages: [
                 new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Cancel me']]),
             ],
-            activeStepId: null,  // no active work
+            activeStepId: 'stale-step',
+            currentOperation: new CurrentOperationDTO(3, 'stale-step', 1, 'stale-cancelling-op'),
             retryableFailure: false,
             model: 'test-model');
 
@@ -1290,6 +1295,8 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertNotNull($result->nextState);
         $this->assertSame(RunStatus::Cancelled, $result->nextState->status,
             'Cancel while stuck Cancelling with no active work must terminalize');
+        $this->assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->currentOperation);
 
         $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
         $this->assertContains('agent_command_applied', $eventTypes);
@@ -1333,6 +1340,12 @@ final class ApplyCommandHandlerTest extends TestCase
             errorMessage: null,
             messages: [],
             activeStepId: 'advance-after-tools-33525236701801',
+            currentOperation: new CurrentOperationDTO(
+                15,
+                'advance-after-tools-33525236701801',
+                1,
+                'advance-after-tools-op',
+            ),
             retryableFailure: false,
             model: 'test-model');
 
@@ -1350,8 +1363,93 @@ final class ApplyCommandHandlerTest extends TestCase
 
         $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
         $this->assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->currentOperation);
         $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
         $this->assertContains('agent_end', $eventTypes);
+    }
+
+    /**
+     * Session 1 hang: immediate cancel with stale currentOperation must still
+     * accept the post-cancel AdvanceRun wake and drain a queued follow-up.
+     */
+    public function testImmediateCancelClearsCurrentOperationSoPostCancelFollowUpWakeDrains(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter([]);
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+        $commandBus = new TestMessageBus();
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+            commandBus: $commandBus,
+        );
+
+        $followUpText = 'Follow-up after cancel';
+        $commandStore->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand(
+            runId: 'run-cancel-stale-op',
+            kind: CoreCommandKind::AppendMessage,
+            idempotencyKey: 'append-after-cancel',
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $followUpText]]]],
+            options: new \Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions(safe: false),
+        ));
+
+        $state = new RunState(
+            runId: 'run-cancel-stale-op',
+            status: RunStatus::Running,
+            version: 7,
+            turnNo: 4,
+            lastSeq: 40,
+            isStreaming: false,
+            pendingToolCalls: [],
+            messages: [],
+            activeStepId: 'advance-after-tools-10302675929846',
+            currentOperation: new CurrentOperationDTO(
+                4,
+                'advance-after-tools-10302675929846',
+                1,
+                'bf3b9f9cdb84523728729edf1d3a2c922e682a1b7de8f30522cabe59ab4510c3',
+            ),
+            model: 'test-model',
+        );
+
+        $cancelMessage = new ApplyCommand(
+            runId: 'run-cancel-stale-op',
+            turnNo: 4,
+            stepId: 'cancel-stale-op',
+            attempt: 1,
+            idempotencyKey: 'cancel-stale-op-1',
+            kind: CoreCommandKind::Cancel,
+            payload: [],
+        );
+
+        $result = $handler->handle($cancelMessage, $state);
+
+        $this->assertSame(RunStatus::Cancelled, $result->nextState?->status);
+        $this->assertNull($result->nextState?->currentOperation);
+        $this->assertNull($result->nextState?->activeStepId);
+        $this->assertCount(1, $result->postCommit);
+        ($result->postCommit[0])();
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
+
+        $advanceHandler = new AdvanceRunHandler(
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+        );
+        $drainResult = $advanceHandler->handle($commandBus->messages[0], $result->nextState);
+
+        $this->assertNotNull($drainResult->nextState, 'Post-cancel AdvanceRun must not be rejected by stale currentOperation');
+        $this->assertSame(RunStatus::Running, $drainResult->nextState->status);
+        $this->assertCount(1, $drainResult->nextState->messages);
+        $this->assertSame($followUpText, $drainResult->nextState->messages[0]->content[0]['text'] ?? '');
     }
 
     public function testCancelWithUnresolvedPendingToolCallEntersCancelling(): void

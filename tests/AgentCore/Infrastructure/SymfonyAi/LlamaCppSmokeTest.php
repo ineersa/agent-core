@@ -8,9 +8,6 @@ use Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
-use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
@@ -199,27 +196,17 @@ final class LlamaCppSmokeTest extends KernelTestCase
             eventDispatcher: $eventDispatcher,
         );
 
-        // ── Run store: simple turn with deterministic prompt ──
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(
-            runId: $this->sessionId,
-            status: RunStatus::Running,
-            version: 1,
-            turnNo: 1,
-            lastSeq: 1,
-            isStreaming: false,
-            streamingMessage: null,
-            pendingToolCalls: [],
-            errorMessage: null,
-            messages: [
-                new AgentMessage('user', [['type' => 'text', 'text' => '[llm-real:platform-smoke] Respond with exactly one word: hello.']]),
-            ],
-            activeStepId: 'turn-1-llm-1',
-            model: 'test-model'), 0);
+        // The external wire contract is unique to this live provider. The Castor
+        // llm-real lane's timeout is a safety cap, not synchronization; deterministic
+        // adapter tests cover invocation transport below this boundary.
+        $messages = [new AgentMessage('user', [[
+            'type' => 'text',
+            'text' => '[llm-real:platform-smoke] Respond with exactly one word: hello.',
+        ]])];
 
         // ── Adapter ──
         $adapter = new LlmPlatformAdapter(
-            runStore: $runStore,
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -240,6 +227,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
                     runId: $this->sessionId,
                     turnNo: 1,
                     stepId: 'turn-1-llm-1',
+                    messages: $messages,
                 ),
             ));
         } catch (\Throwable $e) {
@@ -482,7 +470,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
             'Session dir: '.$sessionDir,
         ];
 
-        foreach (['state.json', 'events.jsonl'] as $file) {
+        foreach (['events.jsonl'] as $file) {
             $path = $sessionDir.'/'.$file;
             if (!is_file($path)) {
                 $chunks[] = "--- {$file}: missing ---";

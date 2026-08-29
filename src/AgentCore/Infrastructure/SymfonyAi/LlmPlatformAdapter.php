@@ -11,7 +11,7 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
@@ -55,7 +55,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      * @param iterable<ConvertToLlmHookInterface>     $convertToLlmHooks
      */
     public function __construct(
-        private RunStoreInterface $runStore,
+        private RunOperationalStatusReaderInterface $statusReader,
         private AgentMessageConverter $messageConverter,
         private DynamicToolDescriptionProcessor $toolDescriptionProcessor,
         private SymfonyPlatformInterface $platform,
@@ -220,50 +220,14 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
+     * Execution callers must supply typed messages. Prompt reconstruction is
+     * owned by run_control at a lifecycle boundary, never by an I/O worker.
+     *
      * @return list<AgentMessage>
      */
     private function resolveContextMessages(ModelInvocationInput $input): array
     {
-        if (null !== $input->messages) {
-            return $input->messages;
-        }
-
-        if (null === $input->runId) {
-            return [];
-        }
-
-        $state = $this->runStore->get($input->runId);
-        if (null === $state) {
-            return [];
-        }
-
-        return $this->hydrateMessages($state->messages);
-    }
-
-    /**
-     * Convert raw arrays (from JSON-deserialized RunState) back to
-     * AgentMessage objects so downstream converters receive typed values.
-     *
-     * @param list<AgentMessage|array<string, mixed>> $raw
-     *
-     * @return list<AgentMessage>
-     */
-    private function hydrateMessages(array $raw): array
-    {
-        $messages = [];
-
-        foreach ($raw as $entry) {
-            if ($entry instanceof AgentMessage) {
-                $messages[] = $entry;
-            } elseif (\is_array($entry)) {
-                $hydrated = AgentMessage::fromPayload($entry);
-                if (null !== $hydrated) {
-                    $messages[] = $hydrated;
-                }
-            }
-        }
-
-        return $messages;
+        return $input->messages ?? [];
     }
 
     /**
@@ -403,7 +367,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         }
 
         if (null !== $request->input->runId) {
-            return new RunCancellationToken($this->runStore, $request->input->runId);
+            return new RunCancellationToken($this->statusReader, $request->input->runId);
         }
 
         return new NullCancellationToken();

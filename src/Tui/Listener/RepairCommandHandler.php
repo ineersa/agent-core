@@ -81,7 +81,6 @@ final class RepairCommandHandler implements SlashCommandHandler
                 SessionRepairRefusalReasonEnum::ActiveStreaming => 'Session repair refused: the session is actively streaming.',
                 SessionRepairRefusalReasonEnum::AmbiguousPendingWork => 'Session repair refused: pending tool work is ambiguous.',
                 SessionRepairRefusalReasonEnum::NoEvents => 'Session repair refused: no canonical events were found.',
-                SessionRepairRefusalReasonEnum::RunStateUnavailable => 'Session repair refused: run state is unavailable.',
                 SessionRepairRefusalReasonEnum::ReplayValidationFailed => 'Session repair refused: replay validation failed.',
             };
         }

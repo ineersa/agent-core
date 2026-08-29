@@ -101,7 +101,7 @@ Settings precedence: built-in defaults < `~/.hatfield/settings.yaml` < project `
 - `.hatfield/` is tracked; runtime dirs (`sessions/`, `tmp/`, `cache/`, `logs/`) are ignored.
 - Project `.hatfield/settings.yaml` is local config and example—keep in sync with `docs/settings.md` for new keys. Do not recreate `.hatfield.example/`.
 - Theme selection/search paths use Hatfield settings, not container parameters.
-- `session_id === run_id`. Metadata in `hatfield_session` DB table. Session dir: `.hatfield/sessions/<id>/` with canonical `events.jsonl` and `state.json`. Transcript projection rebuilds from events on resume. No `metadata.yaml`. Directory name is canonical; embedded IDs validated on read. Details: `docs/session-storage.md`.
+- `session_id === run_id`. Metadata in `hatfield_session` DB table. Session dir: `.hatfield/sessions/<id>/` with canonical `events.jsonl`. Transcript projection rebuilds from events on resume. No `metadata.yaml`. Directory name is canonical; embedded IDs validated on read. Details: `docs/session-storage.md`.
 
 ## Architecture boundaries
 

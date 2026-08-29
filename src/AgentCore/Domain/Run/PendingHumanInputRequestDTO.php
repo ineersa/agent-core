@@ -106,6 +106,18 @@ final readonly class PendingHumanInputRequestDTO
     }
 
     /**
+     * Returns the bounded tool-call identity used by operational coordination.
+     */
+    public function toolCallId(): ?string
+    {
+        if (HumanInputContinuationKindEnum::ToolCall !== $this->continuationKind) {
+            return null;
+        }
+
+        return $this->continuationRef['tool_call_id'];
+    }
+
+    /**
      * Canonical waiting_human event payload for live emission and reducer reconstruction.
      *
      * For ToolCall, embeds continuation_kind + continuation_ref from the typed DTO properties

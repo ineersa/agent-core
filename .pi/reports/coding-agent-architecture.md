@@ -25,7 +25,7 @@
 | `ExtensionApi` | 8 | Public extension API: interfaces, DTOs, enums (stable boundary) |
 | `Extension/Builtin/SafeGuard` | 13 | SafeGuard extension: hooks, classifier, policy, config |
 | `Tool` | 16 | ToolRegistry, RegistryBackedToolbox, ToolRuntime, tool implementations |
-| `Session` | 5 | HatfieldSessionStore, SessionRunStore, SessionRunEventStore |
+| `Session` | 4 | HatfieldSessionStore, SessionRunEventStore, canonical replay |
 | `Skills` | 6 | Skill discovery, registry, context building, rendering |
 | `SystemPrompt` | 3 | System prompt builder, AGENTS.md context discovery/rendering |
 | `Logging` | 8 | Log reader, log parser, filter, context processor, Monolog handler |
@@ -286,7 +286,7 @@ Several areas deserve explicit recognition for good architecture:
 
 - **TranscriptProjector facade + subscribers**: The `TranscriptProjector` exposes a minimal interface (`accept(array)`, `blocks()`, `reset()`) and delegates to 5 family-specific projection subscribers via Symfony EventDispatcher. This is the same pattern as `RuntimeEventMapper` but is more justified because the projection is genuinely extensible (TUI extensions can add projection subscribers).
 
-- **Session store isolation**: `HatfieldSessionStore` owns the DB row + filesystem directory, but `SessionRunStore` and `SessionRunEventStore` handle in-process/JSONL event persistence. The lock-based concurrency control is explicit and well-documented.
+- **Session/event isolation**: `HatfieldSessionStore` owns the DB row + filesystem directory, `SessionRunEventStore` owns canonical JSONL events, and run-control owns the active process-local state plus payload-free operational projection. The lock-based event concurrency boundary is explicit and well-documented.
 
 - **AppConfig layering**: The three-layer overlay (defaults → home → project) with associative deep-merge and list-replacement semantics is well-documented, correctly handled, and independently tested in `AppConfigLoaderTest`.
 

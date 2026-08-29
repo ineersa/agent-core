@@ -33,7 +33,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * Unified agent command — interactive TUI by default, plus headless/controller modes.
  *
  * Public installs expose this as the default `hatfield` entrypoint. Session data
- * lives under .hatfield/sessions/<session-id>/ (state.json + events.jsonl).
+ * lives under .hatfield/sessions/<session-id>/events.jsonl.
  */
 #[AsCommand(
     name: 'agent',
@@ -170,7 +170,7 @@ final class AgentCommand
             // Run pending database migrations once on agent startup.
             // StartupDatabaseMigrator is idempotent per process lifetime and
             // safe for concurrent controller+consumer processes.
-            // Runs built-in doctrine:migrations:migrate via the MigrateCommand service.
+            // Applies explicit generated application then transport migration lists.
             // Running here ensures migrations complete before any
             // controller/TUI/headless path accesses the DB.
             if (null !== $this->startupDatabaseMigrator) {

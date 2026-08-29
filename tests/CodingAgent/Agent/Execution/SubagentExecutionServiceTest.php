@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -64,8 +64,6 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $directory = self::getContainer()->get(AgentChildRunDirectory::class);
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
 
-        $runStore = $this->createStub(RunStoreInterface::class);
-        $parentRunStore = $this->createStub(RunStoreInterface::class);
         $agentRunner = $this->createStub(AgentRunnerInterface::class);
 
         $eventStore = $this->createMock(EventStoreInterface::class);
@@ -105,8 +103,6 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
             'artifactRegistry' => $registry,
             'agentRunner' => $agentRunner,
-            'runStore' => $runStore,
-            'parentRunStore' => $parentRunStore,
             'eventStore' => $eventStore,
             'committedRunEventAppender' => self::getContainer()->get(SubagentProgressEventAppender::class),
             'metadataReader' => $metadataReader,
@@ -141,8 +137,6 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
             'artifactRegistry' => $registry,
             'agentRunner' => $this->createStub(AgentRunnerInterface::class),
-            'runStore' => $this->createStub(RunStoreInterface::class),
-            'parentRunStore' => $this->createStub(RunStoreInterface::class),
             'eventStore' => $eventStore,
             'committedRunEventAppender' => self::getContainer()->get(SubagentProgressEventAppender::class),
             'metadataReader' => new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
@@ -240,8 +234,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
             'artifactRegistry' => self::getContainer()->get(AgentArtifactRegistry::class),
             'agentRunner' => $this->createStub(AgentRunnerInterface::class),
-            'runStore' => $this->createStub(RunStoreInterface::class),
-            'parentRunStore' => $this->createStub(RunStoreInterface::class),
+            'runStateRebuilder' => self::getContainer()->get(RunStateRebuilderInterface::class),
             'eventStore' => $this->createStub(EventStoreInterface::class),
             'committedRunEventAppender' => self::getContainer()->get(SubagentProgressEventAppender::class),
             'metadataReader' => new SubagentRunMetadataReader($this->createStub(EventStoreInterface::class), AttributeSerializerValidatorTestFactory::denormalizer()),

@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
+use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
@@ -51,9 +51,8 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
         // Parent run identity must be a pure-digit hatfield_session id.
         // createSession() allocates a real DB PK so ParaTest workers cannot collide.
         $parentRunId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('launch child after context');
-        $parentRunStore = self::getContainer()->get(RunStoreInterface::class);
         $eventStore = self::getContainer()->get(EventStoreInterface::class);
-        $parentRunner = PipelineCapturingAgentRunner::create($parentRunStore, $eventStore);
+        $parentRunner = PipelineCapturingAgentRunner::create($eventStore);
         self::getContainer()->set(AgentRunnerInterface::class, $parentRunner);
 
         self::getContainer()->get(InProcessAgentSessionClient::class)->start(new StartRunRequest(
@@ -75,13 +74,12 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
         $parentCapture->captureForRun($parentRunId, $parentCanonical);
         PromptContractTestSupport::assertProviderUserMessagesContainSentinelOnce($parentCapture->capturedProviderMessages(), $sentinel);
 
-        $childRunStore = new InMemoryRunStore();
+        $parentState = $this->parentState($parentRunId, $parentCanonical);
         $childEventStore = new InMemoryEventStore();
-        $childRunner = PipelineCapturingAgentRunner::create($childRunStore, $childEventStore);
+        $childRunner = PipelineCapturingAgentRunner::create($childEventStore);
 
         $service = $this->buildSubagentService(
-            parentRunStore: $parentRunStore,
-            childRunStore: $childRunStore,
+            parentState: $parentState,
             childEventStore: $childEventStore,
             childRunner: $childRunner,
         );
@@ -125,8 +123,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
     }
 
     private function buildSubagentService(
-        RunStoreInterface $parentRunStore,
-        RunStoreInterface $childRunStore,
+        RunState $parentState,
         EventStoreInterface $childEventStore,
         PipelineCapturingAgentRunner $childRunner,
     ): SubagentExecutionService {
@@ -147,8 +144,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             'skillsContextBuilder' => self::getContainer()->get(\Ineersa\CodingAgent\Skills\SkillsContextBuilder::class),
             'artifactRegistry' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry::class),
             'agentRunner' => $childRunner,
-            'runStore' => $this->pollingChildRunStore($childRunStore),
-            'parentRunStore' => $parentRunStore,
+            'runStateRebuilder' => $this->rebuildParentState($parentState),
             'eventStore' => $childEventStore,
             'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
             'metadataReader' => new SubagentRunMetadataReader($childEventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
@@ -168,48 +164,33 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
         ]);
     }
 
-    private function pollingChildRunStore(RunStoreInterface $inner): RunStoreInterface
+    private function parentState(string $runId, array $messages): RunState
     {
-        return new class($inner) implements RunStoreInterface {
-            public function __construct(private RunStoreInterface $inner)
-            {
-            }
+        return new RunState(
+            runId: $runId,
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 0,
+            lastSeq: 1,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: $messages,
+            activeStepId: 'parent-step',
+            retryableFailure: false,
+            model: 'test-model',
+        );
+    }
 
-            public function get(string $runId): ?RunState
-            {
-                $state = $this->inner->get($runId);
-                if (null === $state) {
-                    return null;
-                }
+    private function rebuildParentState(RunState $parentState): RunStateRebuilderInterface
+    {
+        $rebuilder = $this->createStub(RunStateRebuilderInterface::class);
+        $rebuilder->method('rebuildIfStale')->willReturn(
+            RunStateReplayResult::rebuilt($parentState, $parentState->lastSeq, 1, true),
+        );
 
-                return new RunState(
-                    runId: $state->runId,
-                    status: RunStatus::Completed,
-                    version: max(1, $state->version),
-                    turnNo: $state->turnNo,
-                    lastSeq: $state->lastSeq,
-                    isStreaming: false,
-                    streamingMessage: null,
-                    pendingToolCalls: [],
-                    errorMessage: null,
-                    messages: $state->messages,
-                    activeStepId: $state->activeStepId,
-                    retryableFailure: false,
-                    pendingHumanInputRequests: $state->pendingHumanInputRequests,
-                    model: $state->model,
-                );
-            }
-
-            public function compareAndSwap(RunState $state, int $expectedVersion): bool
-            {
-                return $this->inner->compareAndSwap($state, $expectedVersion);
-            }
-
-            public function findRunningStaleBefore(\DateTimeImmutable $updatedBefore): array
-            {
-                return $this->inner->findRunningStaleBefore($updatedBefore);
-            }
-        };
+        return $rebuilder;
     }
 
     private function emptyMcpToolsResolver(): AgentMcpToolsResolver

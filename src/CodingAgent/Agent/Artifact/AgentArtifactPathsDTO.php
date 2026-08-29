@@ -24,7 +24,6 @@ final readonly class AgentArtifactPathsDTO
      * @param string $artifactDir  Relative: artifacts/agents/<artifact_id>/
      * @param string $metadataPath Relative: artifacts/agents/<artifact_id>/metadata.json
      * @param string $eventsPath   Relative: artifacts/agents/<artifact_id>/events.jsonl
-     * @param string $statePath    Relative: artifacts/agents/<artifact_id>/state.json
      */
     public function __construct(
         #[Assert\NotBlank(normalizer: 'trim', message: 'artifact_dir must not be blank')]
@@ -33,8 +32,6 @@ final readonly class AgentArtifactPathsDTO
         public string $metadataPath,
         #[Assert\NotBlank(normalizer: 'trim', message: 'events_path must not be blank')]
         public string $eventsPath,
-        #[Assert\NotBlank(normalizer: 'trim', message: 'state_path must not be blank')]
-        public string $statePath,
     ) {
     }
 
@@ -52,7 +49,6 @@ final readonly class AgentArtifactPathsDTO
             artifactDir: $dir,
             metadataPath: "{$dir}/metadata.json",
             eventsPath: "{$dir}/events.jsonl",
-            statePath: "{$dir}/state.json",
         );
     }
 }

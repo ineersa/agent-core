@@ -15,8 +15,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
  * For child agent run IDs, creates per-instance AgentChildRunEventStore
  * and delegates to it.
  *
- * Child run location uses the same AgentChildRunDirectory cache as
- * {@see ChildAwareRunStore}.
+ * Child run location uses AgentChildRunDirectory.
  */
 final class ChildAwareEventStore implements EventStoreInterface
 {

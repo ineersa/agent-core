@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Runtime\Controller\ConsumerSupervisor;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
 
@@ -26,95 +25,35 @@ final class ConsumerSupervisorTest extends TestCase
      */
     public function testShutdownSignalsAllTrackedConsumersBeforeSharedGraceWait(): void
     {
-        $dir = TestDirectoryIsolation::createProjectTempDir('consumer-shutdown-term');
-        $script = $dir.'/consumer.php';
-        $hangReady = $dir.'/hang.ready';
-        $exitReady = $dir.'/exit.ready';
-        $hangTerm = $dir.'/hang.term';
-        $exitTerm = $dir.'/exit.term';
+        $this->logger = new TestLogger();
+        $locator = $this->createStub(AppExecutableLocator::class);
+        $config = new RuntimeProcessConfig($locator, __DIR__);
+        $supervisor = new ConsumerSupervisor($this->logger, $config, shutdownGraceSeconds: 0);
+        $calls = new ShutdownProcessCallLog();
+        $hang = new RecordingShutdownProcess('hang', $calls, exitsOnTerm: false);
+        $exit = new RecordingShutdownProcess('exit', $calls, exitsOnTerm: true);
 
-        $scriptBody = <<<'PHP'
-<?php
-declare(strict_types=1);
-pcntl_async_signals(true);
-$dir = __DIR__;
-$role = \in_array('term_hang', $argv, true) ? 'hang' : 'exit';
-// Install handler before ready so phase-1 SIGTERM cannot race setup.
-pcntl_signal(\SIGTERM, static function () use ($role, $dir): void {
-    $path = $dir.'/'.$role.'.term';
-    // First TERM only — stop(0) may re-signal survivors and would overwrite timestamps.
-    if (!is_file($path)) {
-        file_put_contents($path, (string) microtime(true));
-    }
-    if ('exit' === $role) {
-        exit(0);
-    }
-    // hang role intentionally stays alive after TERM so stop(0) escalation runs.
-});
-file_put_contents($dir.'/'.$role.'.ready', (string) microtime(true), \LOCK_EX);
-while (true) {
-    usleep(50_000);
-}
-PHP;
-        file_put_contents($script, $scriptBody);
+        $ref = new \ReflectionClass($supervisor);
+        $consumers = $ref->getProperty('consumers');
+        $consumers->setValue($supervisor, [
+            'term_hang#0' => $hang,
+            'term_exit#0' => $exit,
+        ]);
 
-        $supervisor = null;
-        try {
-            $this->logger = new TestLogger();
-            $locator = $this->createStub(AppExecutableLocator::class);
-            $locator->method('path')->willReturn($script);
-            $locator->method('command')->willReturn([\PHP_BINARY, $script]);
-            $config = new RuntimeProcessConfig($locator, $dir);
-            // 1s shared grace: sequential stop would push second TERM >=1s later.
-            $supervisor = new ConsumerSupervisor($this->logger, $config, shutdownGraceSeconds: 1);
+        $supervisor->shutdown();
 
-            $supervisor->launch('term_hang', 0);
-            $supervisor->launch('term_exit', 0);
-
-            $this->waitForConsumerReadyMarkers(
-                $supervisor,
-                [
-                    'term_hang#0' => $hangReady,
-                    'term_exit#0' => $exitReady,
-                ],
-            );
-
-            $supervisor->shutdown();
-
-            $this->assertFileExists($hangTerm, 'hang consumer must observe SIGTERM');
-            $this->assertFileExists($exitTerm, 'exit consumer must observe SIGTERM');
-
-            $hangAt = (float) file_get_contents($hangTerm);
-            $exitAt = (float) file_get_contents($exitTerm);
-            $delta = abs($hangAt - $exitAt);
-            $this->assertLessThan(
-                0.5,
-                $delta,
-                \sprintf(
-                    'Both consumers must receive SIGTERM near-simultaneously under shared grace; delta=%.3fs (sequential stop delays second by full grace)',
-                    $delta,
-                ),
-            );
-
-            $running = $this->consumerKeysRunning($supervisor);
-            $this->assertSame([], $running, 'shutdown must clear tracked consumers');
-        } finally {
-            if (null !== $supervisor) {
-                // shutdown() already cleared map on success; force-clear survivors on failure.
-                $ref = new \ReflectionClass($supervisor);
-                $prop = $ref->getProperty('consumers');
-                /** @var array<string, Process> $consumers */
-                $consumers = $prop->getValue($supervisor);
-                foreach ($consumers as $process) {
-                    if ($process->isRunning()) {
-                        $process->stop(0);
-                    }
-                }
-                $prop->setValue($supervisor, []);
-            }
-
-            TestDirectoryIsolation::removeDirectory($dir);
-        }
+        $this->assertSame([
+            'running:hang',
+            'signal:hang:'.\SIGTERM,
+            'running:exit',
+            'signal:exit:'.\SIGTERM,
+            'running:hang',
+            'stop:hang:0',
+            'running:exit',
+        ], $calls->entries);
+        $this->assertFalse($hang->isMarkedRunning());
+        $this->assertFalse($exit->isMarkedRunning());
+        $this->assertSame([], $this->consumerKeysRunning($supervisor), 'shutdown must clear tracked consumers');
     }
 
     public function testLaunchUsesMemoryLimitNotTimeLimit(): void
@@ -302,56 +241,66 @@ PHP;
 
         return $consumers[$key];
     }
+}
 
-    /**
-     * Wait for child-owned ready markers using process liveness, not a fixed wall sleep.
-     *
-     * @param array<string, string> $readyByConsumerKey
-     */
-    private function waitForConsumerReadyMarkers(ConsumerSupervisor $supervisor, array $readyByConsumerKey): void
+final class ShutdownProcessCallLog
+{
+    /** @var list<string> */
+    public array $entries = [];
+}
+
+/** Deterministic process double for proving shutdown ordering without scheduler timing. */
+final class RecordingShutdownProcess extends Process
+{
+    private bool $initialized = false;
+    private bool $running = false;
+
+    public function __construct(
+        private readonly string $name,
+        private readonly ShutdownProcessCallLog $calls,
+        private readonly bool $exitsOnTerm,
+    ) {
+        parent::__construct([\PHP_BINARY, '-r', '']);
+        $this->running = true;
+        $this->initialized = true;
+    }
+
+    public function isRunning(): bool
     {
-        $deadline = microtime(true) + 5.0;
-        while (microtime(true) < $deadline) {
-            $missing = [];
-            foreach ($readyByConsumerKey as $key => $readyPath) {
-                if (is_file($readyPath)) {
-                    continue;
-                }
-
-                $process = $this->getConsumerProcess($supervisor, $key);
-                if (!$process->isRunning()) {
-                    $this->fail(\sprintf(
-                        'Consumer %s exited before ready marker %s (exit=%s stderr=%s stdout=%s)',
-                        $key,
-                        $readyPath,
-                        (string) $process->getExitCode(),
-                        trim($process->getErrorOutput()),
-                        trim($process->getOutput()),
-                    ));
-                }
-                $missing[] = $key;
-            }
-
-            if ([] === $missing) {
-                return;
-            }
-
-            usleep(5_000);
+        if (!$this->initialized) {
+            return false;
         }
 
-        $details = [];
-        foreach ($readyByConsumerKey as $key => $readyPath) {
-            $process = $this->getConsumerProcess($supervisor, $key);
-            $details[] = \sprintf(
-                '%s ready=%s running=%s exit=%s stderr=%s',
-                $key,
-                is_file($readyPath) ? 'yes' : 'no',
-                $process->isRunning() ? 'yes' : 'no',
-                (string) $process->getExitCode(),
-                trim($process->getErrorOutput()),
-            );
+        $this->calls->entries[] = 'running:'.$this->name;
+
+        return $this->running;
+    }
+
+    public function signal(int $signal): static
+    {
+        $this->calls->entries[] = \sprintf('signal:%s:%d', $this->name, $signal);
+        if ($this->exitsOnTerm && \SIGTERM === $signal) {
+            $this->running = false;
         }
 
-        $this->fail('Consumers failed to publish ready markers: '.implode('; ', $details));
+        return $this;
+    }
+
+    public function stop(float $timeout = 10, ?int $signal = null): int
+    {
+        $this->calls->entries[] = \sprintf('stop:%s:%g', $this->name, $timeout);
+        $this->running = false;
+
+        return 0;
+    }
+
+    public function getPid(): int
+    {
+        return 'hang' === $this->name ? 101 : 102;
+    }
+
+    public function isMarkedRunning(): bool
+    {
+        return $this->running;
     }
 }

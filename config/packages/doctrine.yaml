@@ -54,3 +54,6 @@ doctrine:
                         dir: '%kernel.project_dir%/src/CodingAgent/Entity'
                         prefix: 'Ineersa\CodingAgent\Entity'
                         type: attribute
+            messenger_transport:
+                connection: messenger_transport
+                mappings: { }

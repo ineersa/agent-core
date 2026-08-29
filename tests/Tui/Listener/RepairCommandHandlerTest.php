@@ -11,10 +11,10 @@ use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
@@ -125,16 +125,20 @@ final class RepairCommandHandlerTest extends TestCase
     {
         return new SessionRepairService(
             eventStore: new InMemoryEventStore(),
-            runStore: new InMemoryRunStore(),
-            runStateReducer: new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
+            activeRunContext: new TestActiveRunContext(),
+            runStateReducer: new RunStateReducer(
+                AttributeSerializerValidatorTestFactory::denormalizer(),
+                new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
+            ),
             replayEventPreparer: new ReplayEventPreparer(),
             eventFactory: new EventFactory(),
             toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
             lockManager: new RunLockManager(new LockFactory(new FlockStore(sys_get_temp_dir()))),
             logger: new NullLogger(),
-            stepDispatcher: new StepDispatcher(new TestMessageBus()),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             toolBatchStore: $this->createStub(ToolBatchStoreInterface::class),
             serializer: AttributeSerializerValidatorTestFactory::create()[0],
+            commandBus: new TestMessageBus(),
         );
     }
 }

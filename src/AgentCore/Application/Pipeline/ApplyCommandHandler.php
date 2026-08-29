@@ -16,8 +16,10 @@ use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
+use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
+use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
@@ -311,8 +313,10 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                         'isStreaming' => false,
                         'streamingMessage' => null,
                         'pendingToolCalls' => [],
+                        'currentToolCalls' => [],
                         'errorMessage' => $reason,
                         'activeStepId' => null,
+                        'currentOperation' => null,
                         'retryableFailure' => false,
                         'retryAttempts' => 0,
                     ]),
@@ -368,7 +372,9 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 'version' => $state->version + 1,
                 'lastSeq' => $state->lastSeq + \count($events),
                 'errorMessage' => $reason,
+                'currentToolCalls' => [],
                 'activeStepId' => null,
+                'currentOperation' => null,
                 'retryableFailure' => false,
                 'retryAttempts' => 0,
             ]);
@@ -393,6 +399,10 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             'version' => $state->version + 1,
             'lastSeq' => $state->lastSeq + \count($events),
             'errorMessage' => $reason,
+            'currentToolCalls' => array_map(
+                static fn (CurrentToolCallDTO $toolCall): CurrentToolCallDTO => $toolCall->withStatus(RunOperationalToolCallStatusEnum::Cancelled),
+                $state->currentToolCalls,
+            ),
             'retryableFailure' => false,
             'retryAttempts' => 0,
         ]);
@@ -723,6 +733,12 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             'errorMessage' => null,
             'retryableFailure' => false,
             'retryAttempts' => 0,
+            'currentToolCalls' => array_map(
+                static fn (CurrentToolCallDTO $toolCall): CurrentToolCallDTO => $toolCall->toolCallId === $toolCallId
+                    ? $toolCall->withStatus(RunOperationalToolCallStatusEnum::Running)
+                    : $toolCall,
+                $state->currentToolCalls,
+            ),
             'pendingHumanInputRequests' => $remainingRequests,
         ]);
 

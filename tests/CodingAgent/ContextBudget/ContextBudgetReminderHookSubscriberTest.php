@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\ContextBudget;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
@@ -24,6 +23,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\ContextBudget\ContextBudgetReminderHookSubscriber;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\Constraint\Callback;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -38,8 +38,6 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
 {
     /** @var EventStoreInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $eventStore;
-    /** @var RunStoreInterface&\PHPUnit\Framework\MockObject\MockObject */
-    private $runStore;
     /** @var AgentRunnerInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $agentRunner;
     private ContextBudgetReminderHookSubscriber $subscriber;
@@ -47,12 +45,10 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
     protected function setUp(): void
     {
         $this->eventStore = $this->createMock(EventStoreInterface::class);
-        $this->runStore = $this->createMock(RunStoreInterface::class);
         $this->agentRunner = $this->createMock(AgentRunnerInterface::class);
 
         $this->subscriber = new ContextBudgetReminderHookSubscriber(
             $this->eventStore,
-            $this->runStore,
             $this->agentRunner,
             new ContextBudgetReminderConfig(
                 earlyInputTokens: 200000,
@@ -67,13 +63,12 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         $this->mockEvents([
             $this->runStarted(1, 272000),
         ]);
-        $this->runStore->method('get')->willReturn($this->runState());
 
         $this->agentRunner->expects($this->once())
             ->method('appendMessage')
             ->with(
                 'run-1',
-                $this->callback(static function (AgentMessage $message): bool {
+                new Callback(static function (AgentMessage $message): bool {
                     return 'user' === $message->role
                         && true === ($message->metadata['system_reminder'] ?? null)
                         && ($message->content[0]['text'] ?? null) === ContextBudgetReminderHookSubscriber::wrapSystemReminder(
@@ -94,13 +89,12 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         $this->mockEvents([
             $this->runStarted(1, 272000),
         ]);
-        $this->runStore->method('get')->willReturn($this->runState());
 
         $this->agentRunner->expects($this->once())
             ->method('appendMessage')
             ->with(
                 'run-1',
-                $this->callback(static function (AgentMessage $message): bool {
+                new Callback(static function (AgentMessage $message): bool {
                     return true === ($message->metadata['system_reminder'] ?? null)
                         && ($message->content[0]['text'] ?? null) === ContextBudgetReminderHookSubscriber::wrapSystemReminder(
                             ContextBudgetReminderHookSubscriber::URGENT_TEXT,
@@ -126,13 +120,12 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             $this->runStarted(1, 272000),
             $this->commandQueued(3, $earlyWrapped),
         ]);
-        $this->runStore->method('get')->willReturn($this->runState());
 
         $this->agentRunner->expects($this->once())
             ->method('appendMessage')
             ->with(
                 'run-1',
-                $this->callback(static function (AgentMessage $message): bool {
+                new Callback(static function (AgentMessage $message): bool {
                     return true === ($message->metadata['system_reminder'] ?? null)
                         && ($message->content[0]['text'] ?? null) === ContextBudgetReminderHookSubscriber::wrapSystemReminder(
                             ContextBudgetReminderHookSubscriber::URGENT_TEXT,
@@ -162,13 +155,12 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             $this->commandApplied(2, $earlyWrapped),
             $this->event(3, RunEventTypeEnum::ContextCompacted->value, []),
         ]);
-        $this->runStore->method('get')->willReturn($this->runState());
 
         $this->agentRunner->expects($this->once())
             ->method('appendMessage')
             ->with(
                 'run-1',
-                $this->callback(static function (AgentMessage $message): bool {
+                new Callback(static function (AgentMessage $message): bool {
                     return true === ($message->metadata['system_reminder'] ?? null)
                         && ($message->content[0]['text'] ?? null) === ContextBudgetReminderHookSubscriber::wrapSystemReminder(
                             ContextBudgetReminderHookSubscriber::EARLY_TEXT,
@@ -201,23 +193,24 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         $this->mockEvents([
             $this->runStarted(1, null),
         ]);
-        $this->runStore->method('get')->willReturn($this->runState(model: null));
 
         $this->agentRunner->expects($this->never())->method('appendMessage');
 
         // No positive usage
+        $committedState = $this->runState(model: null);
+
         $this->subscriber->handleAfterTurnCommit($this->hookContext([
             $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, [
                 'usage' => ['input_tokens' => 0],
             ]),
-        ]));
+        ], $committedState));
 
         // Missing window (run_started has none, catalog empty for null model)
         $this->subscriber->handleAfterTurnCommit($this->hookContext([
             $this->summary(3, RunEventTypeEnum::LlmStepCompleted->value, [
                 'usage' => ['input_tokens' => 210000],
             ]),
-        ]));
+        ], $committedState));
     }
 
     public function testUnrelatedOrAbortedEventsDoNotQueue(): void
@@ -225,7 +218,6 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         $this->mockEvents([
             $this->runStarted(1, 272000),
         ]);
-        $this->runStore->method('get')->willReturn($this->runState());
         $this->agentRunner->expects($this->never())->method('appendMessage');
 
         $this->subscriber->handleAfterTurnCommit($this->hookContext([
@@ -239,6 +231,23 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         ]));
     }
 
+    public function testUsesCommittedContextModelWhenRunStartedHasNoWindow(): void
+    {
+        $this->mockEvents([
+            $this->runStarted(1, null),
+        ]);
+        $this->agentRunner->expects($this->once())->method('appendMessage');
+
+        $this->subscriber->handleAfterTurnCommit($this->hookContext(
+            [
+                $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, [
+                    'usage' => ['input_tokens' => 200000],
+                ]),
+            ],
+            $this->runState(),
+        ));
+    }
+
     public function testUrgentAlreadyQueuedSuppressesLaterReminders(): void
     {
         $urgentWrapped = ContextBudgetReminderHookSubscriber::wrapSystemReminder(
@@ -249,7 +258,6 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             $this->runStarted(1, 272000),
             $this->commandQueued(2, $urgentWrapped),
         ]);
-        $this->runStore->method('get')->willReturn($this->runState());
         $this->agentRunner->expects($this->never())->method('appendMessage');
 
         $this->subscriber->handleAfterTurnCommit($this->hookContext([
@@ -269,7 +277,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
     /**
      * @param list<AfterTurnCommitEventSummary> $events
      */
-    private function hookContext(array $events): AfterTurnCommitHookContext
+    private function hookContext(array $events, ?RunState $runState = null): AfterTurnCommitHookContext
     {
         return new AfterTurnCommitHookContext(
             runId: 'run-1',
@@ -277,6 +285,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             status: RunStatus::Running->value,
             events: $events,
             effectsCount: 0,
+            runState: $runState ?? $this->runState(),
         );
     }
 

@@ -37,7 +37,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testHandleWithToolCallsReturnsPostCommitBatchRegistrationCallback(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
 
         $commandStore = new InMemoryCommandStore();
         $handler = new LlmStepResultHandler(
@@ -60,14 +60,14 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 4,
             activeStepId: 'turn-1-step',
-            currentOperation: new CurrentOperationDTO(1, 'turn-1-step', 1, 'llm-idempotency-1'),
+            currentOperation: new CurrentOperationDTO(1, 'turn-1-step', 2, 'llm-idempotency-1'),
             model: 'test-model');
 
         $message = new LlmStepResult(
             runId: 'run-llm-handler-1',
             turnNo: 1,
             stepId: 'turn-1-step',
-            attempt: 1,
+            attempt: 2,
             idempotencyKey: 'llm-idempotency-1',
             assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([
                 [
@@ -101,6 +101,11 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertSame(4, $result->nextState->version);
         $this->assertSame(6, $result->nextState->lastSeq);
         $this->assertSame(['tool-call-1' => false], $result->nextState->pendingToolCalls);
+        $this->assertCount(1, $result->nextState->currentToolCalls);
+        $this->assertSame('tool-call-1', $result->nextState->currentToolCalls[0]->toolCallId);
+        $this->assertSame('running', $result->nextState->currentToolCalls[0]->status->value);
+        $this->assertSame(2, $result->nextState->currentToolCalls[0]->attempt);
+        $this->assertSame(2, $result->events[1]->payload['attempt'] ?? null);
 
         $this->assertCount(2, $result->events);
         $this->assertSame('llm_step_completed', $result->events[0]->type);
@@ -115,12 +120,13 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertCount(1, $executionBus->messages);
         $this->assertInstanceOf(ExecuteToolCall::class, $executionBus->messages[0]);
         $this->assertSame('tool-call-1', $executionBus->messages[0]->toolCallId);
+        $this->assertSame(2, $executionBus->messages[0]->attempt());
     }
 
     public function testAbortedDoesNotAppendAssistantMessageToState(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
 
         $commandStore = new InMemoryCommandStore();
         $handler = new LlmStepResultHandler(
@@ -174,6 +180,8 @@ final class LlmStepResultHandlerTest extends TestCase
         // State must transition to Cancelled
         $this->assertNotNull($result->nextState);
         $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->currentOperation);
 
         // The aborted assistant message must NOT be appended to messages
         $this->assertCount(
@@ -205,7 +213,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testAbortedWithOnlyTextDoesNotAppendMessage(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
 
         $commandStore = new InMemoryCommandStore();
         $handler = new LlmStepResultHandler(
@@ -282,7 +290,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testStopBoundaryMailboxEffectsContainPendingCompact(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
 
         $commandStore = new InMemoryCommandStore();
 
@@ -363,7 +371,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testErrorResultDoesNotAppendAssistantMessage(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
 
         $commandStore = new InMemoryCommandStore();
         $handler = new LlmStepResultHandler(
@@ -460,7 +468,7 @@ final class LlmStepResultHandlerTest extends TestCase
     {
         $executionBus = new TestMessageBus();
         $commandBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
         $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
         $logger = new TestLogger();
 
@@ -570,7 +578,7 @@ final class LlmStepResultHandlerTest extends TestCase
     {
         $executionBus = new TestMessageBus();
         $commandBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
         $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
         $logger = new TestLogger();
 
@@ -674,7 +682,7 @@ final class LlmStepResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
-            stepDispatcher: new StepDispatcher(new TestMessageBus()),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
@@ -722,7 +730,7 @@ final class LlmStepResultHandlerTest extends TestCase
     {
         $executionBus = new TestMessageBus();
         $commandBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
         $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
 
         $handler = new LlmStepResultHandler(
@@ -803,7 +811,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testParallelToolCallsCarryConfiguredMaxParallelism(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
 
         $toolSetResolver = new class implements ToolSetResolverInterface {
             public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
@@ -878,7 +886,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testExecuteToolCallHasNullTimeoutWithoutPerToolOverride(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher($executionBus);
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
         $handler = new LlmStepResultHandler(
             toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(

@@ -4,208 +4,161 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\InProcess;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
+use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
+use Ineersa\CodingAgent\Config\ModelResolver;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\History\HistoryProjector;
+use Ineersa\CodingAgent\Session\History\HistorySelectionService;
+use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
+use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
+use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
+use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\Test;
+use Psr\Log\NullLogger;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 
 /**
- * Thesis: In-process select_history_turn MUST emit RunHistoryPositionChanged into the transient sink,
- * because RuntimeEventTranslator drops history_position_set canonical events — without this
- * emission the TUI poller never sees the position change and the transcript is
- * never rebuilt.
- *
- * This test would have FAILED before FIX 1: the send() match arm called
- * historySelectionService->selectPrompt() directly and discarded the result, so the
- * RunHistoryPositionChanged emission in handleInProcessSelectHistoryTurn() was dead code.
- *
- * Container-based: anonymous-class stubs for EventStoreInterface and
- * RunStoreInterface are injected once in setUpBeforeClass(), then
- * the real InProcessAgentSessionClient is exercised. The shared
- * InMemoryRuntimeEventSink is drained to assert RunHistoryPositionChanged.
- *
- * @coversNothing — covers the wiring contract between send() match arm,
- * handleInProcessSelectHistoryTurn(), and InMemoryRuntimeEventSink::emit().
+ * Thesis: an in-process history selection emits the transient position event
+ * the runtime protocol needs, in addition to persisting canonical selection.
+ * RuntimeEventMapper intentionally drops history_position_set, so without this
+ * bridge the transcript cannot rebuild at the selected retained boundary.
  */
 #[CoversNothing]
 final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends IsolatedKernelTestCase
 {
     private const string RUN_ID = 'test-history-select-run';
 
-    public static function setUpBeforeClass(): void
-    {
-        parent::setUpBeforeClass();
-
-        $events = self::minimalSessionEvents();
-
-        // ── Anonymous stub for EventStoreInterface ───────────────
-        $eventStore = new class($events) implements EventStoreInterface {
-            /** @param list<RunEvent> $events */
-            public function __construct(private array $events)
-            {
-            }
-
-            public function latestSequenceFor(string $runId): ?int
-            {
-                $events = $this->allFor($runId);
-
-                return [] === $events ? null : $events[array_key_last($events)]->seq;
-            }
-
-            public function firstFor(string $runId): ?RunEvent
-            {
-                $events = $this->allFor($runId);
-
-                return $events[0] ?? null;
-            }
-
-            public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
-            {
-                foreach ($this->events as $event) {
-                    if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
-                        yield $event;
-                    }
-                }
-            }
-
-            public function reverseFor(string $runId): iterable
-            {
-                return [];
-            }
-
-            public function allFor(string $runId): array
-            {
-                return $this->events;
-            }
-
-            public function append(RunEvent $event): RunEvent
-            {
-                $max = 0;
-                foreach ($this->events as $existing) {
-                    if ($existing->runId === $event->runId && $existing->seq > $max) {
-                        $max = $existing->seq;
-                    }
-                }
-                $persisted = new RunEvent($event->runId, $max + 1, $event->turnNo, $event->type, $event->payload, $event->createdAt);
-                $this->events[] = $persisted;
-
-                return $persisted;
-            }
-
-            public function appendMany(array $events): array
-            {
-                $out = [];
-                foreach ($events as $event) {
-                    $out[] = $this->append($event);
-                }
-
-                return $out;
-            }
-        };
-        self::getContainer()->set(EventStoreInterface::class, $eventStore);
-
-        // ── Anonymous stub for RunStoreInterface ─────────────────
-        $runState = RunState::queued(self::RUN_ID);
-        $runStore = new class($runState) implements RunStoreInterface {
-            public function __construct(private RunState $state)
-            {
-            }
-
-            public function get(string $runId): ?RunState
-            {
-                return $this->state;
-            }
-
-            public function compareAndSwap(RunState $state, int $expectedVersion): bool
-            {
-                return true;
-            }
-
-            public function findRunningStaleBefore(\DateTimeImmutable $updatedBefore): array
-            {
-                return [];
-            }
-        };
-        self::getContainer()->set(RunStoreInterface::class, $runStore);
-    }
-
     #[Test]
-    public function sendSelectHistoryTurnEmitsRunHistoryPositionChangedIntoSink(): void
+    public function sendSelectHistoryTurnPersistsSelectionAndEmitsOneRuntimePositionEvent(): void
     {
-        /** @var InProcessAgentSessionClient $client */
-        $client = self::getContainer()->get(InProcessAgentSessionClient::class);
+        $eventStore = new InMemoryEventStore();
+        foreach ($this->sessionEvents() as $event) {
+            $eventStore->seed($event);
+        }
 
-        /** @var InMemoryRuntimeEventSink $sink */
-        $sink = self::getContainer()->get(InMemoryRuntimeEventSink::class);
+        $activeRunContext = new TestActiveRunContext();
+        $activeRunContext->remember(new RunState(
+            runId: self::RUN_ID,
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 1,
+            lastSeq: 3,
+            model: 'test-model',
+        ));
+        $rebuiltState = new RunState(
+            runId: self::RUN_ID,
+            status: RunStatus::Running,
+            version: 2,
+            turnNo: 0,
+            lastSeq: 4,
+            model: 'test-model',
+        );
+        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
+        $rebuilder->expects($this->once())
+            ->method('rebuildAtPosition')
+            ->with($this->isInstanceOf(RunState::class), self::RUN_ID, 0)
+            ->willReturn(RunStateReplayResult::rebuilt($rebuiltState, 4, 4, true));
 
-        // ── Exercise ─────────────────────────────────────────────
-        $client->send(self::RUN_ID, new UserCommand(
+        $historySelectionService = new HistorySelectionService(
+            eventStore: $eventStore,
+            runStateRebuilder: $rebuilder,
+            activeRunContext: $activeRunContext,
+            lockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
+            logger: new NullLogger(),
+            historyProjector: new HistoryProjector(),
+            replayEventPreparer: new ReplayEventPreparer(),
+            commandBus: new TestMessageBus(),
+        );
+        $sink = new InMemoryRuntimeEventSink();
+
+        $this->client($eventStore, $historySelectionService, $sink)->send(self::RUN_ID, new UserCommand(
             type: 'select_history_turn',
             payload: ['turn_no' => 1],
         ));
 
-        // ── Assert ───────────────────────────────────────────────
+        $canonical = $eventStore->allFor(self::RUN_ID);
+        $this->assertCount(4, $canonical);
+        $this->assertSame(RunEventTypeEnum::HistoryPositionSet->value, $canonical[3]->type);
+        $this->assertSame(0, $canonical[3]->payload['position_turn_no']);
+        $this->assertSame(1, $canonical[3]->payload['selected_prompt_turn_no']);
+
         /** @var list<RuntimeEvent> $events */
         $events = iterator_to_array($sink->drain(self::RUN_ID));
-
-        $this->assertCount(1, $events, 'Expected exactly one RunHistoryPositionChanged event in the transient sink');
-
+        $this->assertCount(1, $events);
         $event = $events[0];
         $this->assertSame(RuntimeEventTypeEnum::RunHistoryPositionChanged->value, $event->type);
         $this->assertSame(self::RUN_ID, $event->runId);
-        // Selecting user prompt turn 1 positions before it (retained boundary 0).
         $this->assertSame(0, $event->payload['position_turn_no'] ?? null);
         $this->assertSame(1, $event->payload['selected_prompt_turn_no'] ?? null);
-        $this->assertIsInt($event->payload['position_event_seq'] ?? null);
+        $this->assertSame(4, $event->seq);
     }
 
-    /**
-     * Minimal events forming a valid session with turns 0 and 1.
-     * Sequences must be contiguous without gaps.
-     *
-     * @return list<RunEvent>
-     */
-    private static function minimalSessionEvents(): array
+    /** @return list<RunEvent> */
+    private function sessionEvents(): array
     {
         return [
-            new RunEvent(
-                runId: self::RUN_ID,
-                seq: 1,
-                turnNo: 0,
-                type: RunEventTypeEnum::RunStarted->value,
-                payload: [
-                    'payload' => ['messages' => [[
-                        'role' => 'user',
-                        'content' => [['type' => 'text', 'text' => 'First prompt']],
-                    ]]],
-                ],
-                createdAt: new \DateTimeImmutable('2026-06-29T00:00:00Z'),
-            ),
-            new RunEvent(
-                runId: self::RUN_ID,
-                seq: 2,
-                turnNo: 1,
-                type: RunEventTypeEnum::TurnAdvanced->value,
-                payload: ['turn_no' => 1],
-                createdAt: new \DateTimeImmutable('2026-06-29T00:00:01Z'),
-            ),
-            new RunEvent(
-                runId: self::RUN_ID,
-                seq: 3,
-                turnNo: 1,
-                type: RunEventTypeEnum::HistoryPositionSet->value,
-                payload: ['position_turn_no' => 1, 'previous_position_turn_no' => 0, 'reason' => 'continue'],
-                createdAt: new \DateTimeImmutable('2026-06-29T00:00:02Z'),
-            ),
+            new RunEvent(self::RUN_ID, 1, 0, RunEventTypeEnum::RunStarted->value, [
+                'payload' => ['messages' => [[
+                    'role' => 'user',
+                    'content' => [['type' => 'text', 'text' => 'First prompt']],
+                ]]],
+            ]),
+            new RunEvent(self::RUN_ID, 2, 1, RunEventTypeEnum::TurnAdvanced->value, [
+                'turn_no' => 1,
+                'step_id' => 'follow_up-1',
+            ]),
+            new RunEvent(self::RUN_ID, 3, 1, RunEventTypeEnum::HistoryPositionSet->value, [
+                'position_turn_no' => 1,
+                'previous_position_turn_no' => 0,
+                'reason' => 'continue',
+            ]),
         ];
+    }
+
+    private function client(
+        InMemoryEventStore $eventStore,
+        HistorySelectionServiceInterface $historySelectionService,
+        InMemoryRuntimeEventSink $sink,
+    ): InProcessAgentSessionClient {
+        $container = self::getContainer();
+
+        return new InProcessAgentSessionClient(
+            runner: $this->createStub(AgentRunnerInterface::class),
+            eventStore: $eventStore,
+            mapper: $container->get(RuntimeEventMapper::class),
+            historySelectionService: $historySelectionService,
+            systemPromptBuilder: $container->get(SystemPromptBuilder::class),
+            agentsContextDiscovery: $container->get(AgentsContextDiscovery::class),
+            agentsContextRenderer: $container->get(AgentsContextRenderer::class),
+            skillsContextBuilder: $container->get(SkillsContextBuilder::class),
+            agentsContextBuilder: $container->get(AgentsContextBuilder::class),
+            promptTemplateService: $container->get(PromptTemplateService::class),
+            sessionMetaStore: $container->get(HatfieldSessionStore::class),
+            modelResolver: $container->get(ModelResolver::class),
+            transientSink: $sink,
+        );
     }
 }

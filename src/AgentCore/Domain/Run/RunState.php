@@ -15,6 +15,7 @@ final readonly class RunState
      * @param list<AgentMessage>                $messages
      * @param array<string, bool>               $pendingToolCalls
      * @param array<string, bool>               $pendingShellToolCalls     current direct-shell tool call ids only; removed when execution ends
+     * @param list<CurrentToolCallDTO>          $currentToolCalls          payload-free current tool coordination only
      * @param array<string, mixed>|null         $streamingMessage
      * @param list<PendingHumanInputRequestDTO> $pendingHumanInputRequests ordered FIFO of outstanding human-input requests
      */
@@ -29,6 +30,8 @@ final readonly class RunState
         public array $pendingToolCalls = [],
         /** @var array<string, bool> Current direct-shell tool call ids only; never a receipt history. */
         public array $pendingShellToolCalls = [],
+        /** @var list<CurrentToolCallDTO> Payload-free rows for the current tool batch only. */
+        public array $currentToolCalls = [],
         public ?string $errorMessage = null,
         public array $messages = [],
         public ?string $activeStepId = null,
@@ -83,6 +86,7 @@ final readonly class RunState
      *     streamingMessage?: array<string, mixed>|null,
      *     pendingToolCalls?: array<string, bool>,
      *     pendingShellToolCalls?: array<string, bool>,
+     *     currentToolCalls?: list<CurrentToolCallDTO>,
      *     errorMessage?: string|null,
      *     messages?: list<AgentMessage>,
      *     activeStepId?: string|null,
@@ -107,6 +111,7 @@ final readonly class RunState
             streamingMessage: \array_key_exists('streamingMessage', $overrides) ? $overrides['streamingMessage'] : $this->streamingMessage,
             pendingToolCalls: \array_key_exists('pendingToolCalls', $overrides) ? $overrides['pendingToolCalls'] : $this->pendingToolCalls,
             pendingShellToolCalls: \array_key_exists('pendingShellToolCalls', $overrides) ? $overrides['pendingShellToolCalls'] : $this->pendingShellToolCalls,
+            currentToolCalls: \array_key_exists('currentToolCalls', $overrides) ? $overrides['currentToolCalls'] : $this->currentToolCalls,
             errorMessage: \array_key_exists('errorMessage', $overrides) ? $overrides['errorMessage'] : $this->errorMessage,
             messages: \array_key_exists('messages', $overrides) ? $overrides['messages'] : $this->messages,
             activeStepId: \array_key_exists('activeStepId', $overrides) ? $overrides['activeStepId'] : $this->activeStepId,
