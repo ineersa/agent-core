@@ -15,7 +15,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Thesis set for Observer rewrite:
- * - 15k-token interaction under large context does not hard-fail at 12k; small envelope yields parts.
+ * - Large interaction under a large context does not hard-fail; a small envelope yields parts.
  * - multi-call accumulate + invalid citations do not mutate; no-call zero-obs is valid accumulation state.
  * - timestamp-last user message; changing only time leaves source digests/IDs unchanged.
  */
@@ -71,7 +71,7 @@ final class ObserverChunkAndToolTest extends TestCase
 
     public function testLargeInteractionPacksUnderEnvelopeInsteadOfHardFail(): void
     {
-        $big = str_repeat('word ', 4_000); // ~20k chars ~5k tokens
+        $big = str_repeat('word ', 4_000); // ~20k chars, ~6.2k estimated tokens
         $events = [
             new SessionEventDTO('run-1', 1, 1, 'agent_command_applied', ['text' => $big], '2026-07-26T10:00:00+00:00'),
             new SessionEventDTO('run-1', 2, 1, 'agent_end', ['reason' => 'completed'], '2026-07-26T10:01:00+00:00'),
