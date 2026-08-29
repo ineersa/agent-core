@@ -412,6 +412,7 @@ parameters:
       - TuiExport
       - AppExtensionApi
       - AppRuntimeContract
+      - AppSkills
       - AppRuntimeProjection
       - AppSession
       - AppConfig

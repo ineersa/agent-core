@@ -141,6 +141,7 @@ Phases: `task-explain` → `task-start` → `task-to-pr` → `task-done` (with `
 ## Docs map
 
 - `docs/agents.md` — agent definitions, discovery, catalog, settings
+- `docs/skills.md` — skill discovery, `/skill:`, on-demand-only (`disable-model-invocation`)
 - `docs/settings.md` — Hatfield settings (see also settings-models, settings-agents)
 - `docs/ai-catalog.md` — AI provider catalog, providers:update, settings overlay
 - `docs/compaction.md` — compaction, `/compact`, events, hooks
