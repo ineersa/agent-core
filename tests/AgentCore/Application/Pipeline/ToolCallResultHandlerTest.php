@@ -349,6 +349,8 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertSame(4, $result->nextState->version);
         $this->assertSame(7, $result->nextState->lastSeq);
         $this->assertSame([], $result->nextState->pendingToolCalls);
+        $this->assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->currentOperation);
 
         // Messages: original assistant + synthetic tool
         $this->assertCount(2, $result->nextState->messages);

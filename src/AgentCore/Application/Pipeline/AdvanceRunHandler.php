@@ -100,6 +100,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
                 'pendingShellToolCalls' => [],
+                'activeStepId' => null,
                 'currentOperation' => null,
                 'lastAppliedAdvanceKey' => $message->idempotencyKey(),
                 'retryableFailure' => false,

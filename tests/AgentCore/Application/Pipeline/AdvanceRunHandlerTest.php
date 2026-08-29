@@ -604,7 +604,16 @@ final class AdvanceRunHandlerTest extends TestCase
             ->withVersion(4)
             ->withTurnNo(1)
             ->withLastSeq(20)
-            ->build();
+            ->withActiveStepId('stale-cancel-step')
+            ->build()
+            ->with([
+                'currentOperation' => new \Ineersa\AgentCore\Domain\Run\CurrentOperationDTO(
+                    1,
+                    'stale-cancel-step',
+                    1,
+                    'advance-cancel-1',
+                ),
+            ]);
 
         $message = AdvanceRunMessageBuilder::create('run-cancel-append-advance')
             ->withTurnNo(1)
@@ -615,6 +624,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->currentOperation);
         $this->assertSame([], $result->nextState->messages, 'AppendMessage must not be applied before cancel terminalizes');
         $this->assertCount(1, $result->events);
         $this->assertSame('agent_end', $result->events[0]->type);

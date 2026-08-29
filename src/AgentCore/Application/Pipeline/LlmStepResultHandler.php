@@ -147,6 +147,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
                 'currentToolCalls' => [],
+                'activeStepId' => null,
                 'currentOperation' => null,
                 // Keep existing messages unchanged (no aborted assistant
                 // message appended).

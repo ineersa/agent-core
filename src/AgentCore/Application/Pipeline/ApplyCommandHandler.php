@@ -316,6 +316,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                         'currentToolCalls' => [],
                         'errorMessage' => $reason,
                         'activeStepId' => null,
+                        'currentOperation' => null,
                         'retryableFailure' => false,
                         'retryAttempts' => 0,
                     ]),
@@ -373,6 +374,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 'errorMessage' => $reason,
                 'currentToolCalls' => [],
                 'activeStepId' => null,
+                'currentOperation' => null,
                 'retryableFailure' => false,
                 'retryAttempts' => 0,
             ]);
