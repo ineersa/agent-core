@@ -5,18 +5,15 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Skills;
 
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
-use Ineersa\CodingAgent\Runtime\Contract\SkillCatalogInterface;
-use Ineersa\CodingAgent\Runtime\Contract\SkillCommand;
 use Psr\Log\LoggerInterface;
 
 /**
  * Orchestrates skill discovery, registry construction, and context rendering
  * for injection into the initial user-context message.
  *
- * Also expands `/skill:<name>` invocations and exposes skill slash commands to
- * the TUI through {@see SkillCatalogInterface}.
+ * Also expands `/skill:<name>` invocations.
  */
-final readonly class SkillsContextBuilder implements SkillCatalogInterface
+final readonly class SkillsContextBuilder
 {
     public function __construct(
         private readonly SkillDiscovery $discovery,
@@ -120,23 +117,6 @@ final readonly class SkillsContextBuilder implements SkillCatalogInterface
         }
 
         return implode("\n\n", $parts);
-    }
-
-    /**
-     * @return list<SkillCommand>
-     */
-    public function allSkillCommands(): array
-    {
-        $commands = [];
-        foreach ($this->discovery->discover() as $skill) {
-            $name = 'skill:'.strtolower($skill->name);
-            $commands[$name] ??= new SkillCommand(
-                name: $name,
-                description: $skill->description,
-            );
-        }
-
-        return array_values($commands);
     }
 
     /**

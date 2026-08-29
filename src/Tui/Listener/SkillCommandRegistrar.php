@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Runtime\Contract\SkillCatalogInterface;
+use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\SlashCommand;
@@ -23,7 +23,7 @@ use Ineersa\Tui\Command\SlashCommandHandler;
 final class SkillCommandRegistrar implements SlashCommandCatalogRegistrar
 {
     public function __construct(
-        private readonly SkillCatalogInterface $catalog,
+        private readonly SkillDiscovery $discovery,
     ) {
     }
 
@@ -41,17 +41,18 @@ final class SkillCommandRegistrar implements SlashCommandCatalogRegistrar
             }
         };
 
-        foreach ($this->catalog->allSkillCommands() as $skill) {
-            if ($commandCatalog->has($skill->name)) {
+        foreach ($this->discovery->discover() as $skill) {
+            $name = 'skill:'.strtolower($skill->name);
+            if ($commandCatalog->has($name)) {
                 continue;
             }
 
             $commandCatalog->register(
                 new CommandMetadata(
-                    name: $skill->name,
+                    name: $name,
                     aliases: [],
                     description: $skill->description,
-                    usage: '/'.$skill->name.' [args]',
+                    usage: '/'.$name.' [args]',
                     acceptsArguments: true,
                 ),
                 $handler,

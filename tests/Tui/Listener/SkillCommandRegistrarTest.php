@@ -4,8 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
-use Ineersa\CodingAgent\Runtime\Contract\SkillCatalogInterface;
-use Ineersa\CodingAgent\Runtime\Contract\SkillCommand;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\Skills\SkillDiscovery;
+use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\DispatchRuntime;
@@ -17,28 +24,32 @@ use Ineersa\Tui\Listener\SkillCommandRegistrar;
 use Ineersa\Tui\Listener\SlashCommandCatalogRegistrar;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
 
 final class SkillCommandRegistrarTest extends TestCase
 {
+    private string $tmpDir;
     private SlashCommandCatalog $commandCatalog;
-    private SkillCatalogInterface $catalog;
 
     protected function setUp(): void
     {
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('skill_command_registrar');
+        mkdir($this->tmpDir.'/home', 0777, true);
         $this->commandCatalog = new SlashCommandCatalog();
-        $this->catalog = $this->createStub(SkillCatalogInterface::class);
+    }
+
+    protected function tearDown(): void
+    {
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
     #[Test]
     public function registersCommandPerSkillIncludingOnDemandOnly(): void
     {
-        $this->catalog->method('allSkillCommands')->willReturn([
-            new SkillCommand(name: 'skill:visible', description: 'Visible skill'),
-            new SkillCommand(name: 'skill:hidden', description: 'On-demand only'),
-        ]);
+        $this->createSkill('skills/visible', 'visible', 'Visible skill');
+        $this->createSkill('skills/hidden', 'hidden', 'On-demand only', onDemandOnly: true);
 
-        $registrar = new SkillCommandRegistrar($this->catalog);
-        $registrar->registerCatalog($this->commandCatalog);
+        $this->createRegistrar()->registerCatalog($this->commandCatalog);
 
         $this->assertTrue($this->commandCatalog->has('skill:visible'));
         $this->assertTrue($this->commandCatalog->has('skill:hidden'));
@@ -53,12 +64,8 @@ final class SkillCommandRegistrarTest extends TestCase
     #[Test]
     public function handlerReturnsDispatchRuntimeWithOriginalText(): void
     {
-        $this->catalog->method('allSkillCommands')->willReturn([
-            new SkillCommand(name: 'skill:castor', description: 'Runs Castor'),
-        ]);
-
-        $registrar = new SkillCommandRegistrar($this->catalog);
-        $registrar->registerCatalog($this->commandCatalog);
+        $this->createSkill('skills/castor', 'castor', 'Runs Castor');
+        $this->createRegistrar()->registerCatalog($this->commandCatalog);
 
         $result = (new SlashCommandRegistry($this->commandCatalog))->execute(
             new SlashCommand('skill:castor', 'list tasks', '/skill:castor list tasks'),
@@ -70,12 +77,8 @@ final class SkillCommandRegistrarTest extends TestCase
     #[Test]
     public function mixedCaseInvocationDispatchesToLowercaseSkillCommand(): void
     {
-        $this->catalog->method('allSkillCommands')->willReturn([
-            new SkillCommand(name: 'skill:datadog-logs', description: 'Datadog logs'),
-        ]);
-
-        $registrar = new SkillCommandRegistrar($this->catalog);
-        $registrar->registerCatalog($this->commandCatalog);
+        $this->createSkill('skills/datadog', 'DataDog-Logs', 'Datadog logs');
+        $this->createRegistrar()->registerCatalog($this->commandCatalog);
 
         $command = (new CommandParser())->parse('/skill:DataDog-Logs focus on errors');
         $this->assertInstanceOf(SlashCommand::class, $command);
@@ -83,6 +86,19 @@ final class SkillCommandRegistrarTest extends TestCase
         $result = (new SlashCommandRegistry($this->commandCatalog))->execute($command);
         $this->assertInstanceOf(DispatchRuntime::class, $result);
         $this->assertSame('/skill:DataDog-Logs focus on errors', $result->payload);
+    }
+
+    #[Test]
+    public function caseFoldedCollisionKeepsFirstDiscoveredSkill(): void
+    {
+        $first = $this->createSkill('first', 'Foo', 'First skill');
+        $second = $this->createSkill('second', 'foo', 'Second skill');
+
+        $this->createRegistrar([$first, $second])->registerCatalog($this->commandCatalog);
+
+        $meta = $this->commandCatalog->getMetadata('skill:foo');
+        $this->assertNotNull($meta);
+        $this->assertSame('First skill', $meta->description);
     }
 
     #[Test]
@@ -104,12 +120,8 @@ final class SkillCommandRegistrarTest extends TestCase
             $realHandler,
         );
 
-        $this->catalog->method('allSkillCommands')->willReturn([
-            new SkillCommand(name: 'skill:castor', description: 'Discovered castor'),
-        ]);
-
-        $registrar = new SkillCommandRegistrar($this->catalog);
-        $registrar->registerCatalog($this->commandCatalog);
+        $this->createSkill('skills/castor', 'castor', 'Discovered castor');
+        $this->createRegistrar()->registerCatalog($this->commandCatalog);
 
         $result = (new SlashCommandRegistry($this->commandCatalog))->execute(
             new SlashCommand('skill:castor', '', '/skill:castor'),
@@ -125,8 +137,50 @@ final class SkillCommandRegistrarTest extends TestCase
     #[Test]
     public function implementsSlashCommandCatalogRegistrar(): void
     {
-        $registrar = new SkillCommandRegistrar($this->catalog);
+        $registrar = $this->createRegistrar();
         $this->assertInstanceOf(SlashCommandCatalogRegistrar::class, $registrar);
         $this->assertSame(-100, SkillCommandRegistrar::getPriority());
+    }
+
+    /**
+     * @param list<string>|null $skillsPaths
+     */
+    private function createRegistrar(?array $skillsPaths = null): SkillCommandRegistrar
+    {
+        $extractor = new MarkdownFrontmatterExtractor();
+        $discovery = new SkillDiscovery(
+            config: new SkillsConfig(
+                noSkills: true,
+                skillsPaths: $skillsPaths ?? [$this->tmpDir.'/skills'],
+            ),
+            pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir.'/home'),
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'test'),
+                logging: new LoggingConfig(),
+                cwd: $this->tmpDir,
+            ),
+            extractor: $extractor,
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
+        );
+
+        return new SkillCommandRegistrar($discovery);
+    }
+
+    private function createSkill(
+        string $relativeDirectory,
+        string $name,
+        string $description,
+        bool $onDemandOnly = false,
+    ): string {
+        $directory = $this->tmpDir.'/'.$relativeDirectory;
+        mkdir($directory, 0777, true);
+        $disabled = $onDemandOnly ? "disable-model-invocation: true\n" : '';
+        file_put_contents(
+            $directory.'/SKILL.md',
+            "---\nname: {$name}\ndescription: {$description}\n{$disabled}---\n\nBody",
+        );
+
+        return $directory;
     }
 }

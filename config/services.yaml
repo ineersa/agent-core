@@ -235,9 +235,6 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface:
     alias: Ineersa\CodingAgent\PromptTemplate\PromptTemplateService
 
-  Ineersa\CodingAgent\Runtime\Contract\SkillCatalogInterface:
-    alias: Ineersa\CodingAgent\Skills\SkillsContextBuilder
-
   # ─── Extension wiring ───
 
   Ineersa\Tui\Extension\TuiCommandRegistryAdapter:

@@ -412,6 +412,7 @@ parameters:
       - TuiExport
       - AppExtensionApi
       - AppRuntimeContract
+      - AppSkills
       - AppRuntimeProjection
       - AppSession
       - AppConfig
@@ -732,7 +733,6 @@ parameters:
     AppSkills:
       - AppConfig
       - AppMarkdown
-      - AppRuntimeContract
       - SymfonyYaml
 
     AppSystemPrompt:

@@ -211,16 +211,14 @@ ARCH_BODY_UNIQUE');
         file_put_contents($skillDir.'/SKILL.md', "---\nname: DataDog-Logs\ndescription: Hidden\ndisable-model-invocation: true\n---\n\nDATADOG_BODY");
 
         $builder = $this->createBuilder(cwd: $this->tmpDir);
-        $commands = $builder->allSkillCommands();
         $expanded = $builder->expandSkillCommand("/SKILL:datadog-logs\t focus on errors");
 
-        $this->assertSame('skill:datadog-logs', $commands[0]->name ?? null);
         $this->assertStringContainsString('<skill name="DataDog-Logs"', $expanded);
         $this->assertStringContainsString('DATADOG_BODY', $expanded);
         $this->assertStringContainsString("\n\nfocus on errors", $expanded);
     }
 
-    public function testCaseFoldedCommandCollisionKeepsFirstDiscoveredSkill(): void
+    public function testCaseInsensitiveExpansionKeepsFirstDiscoveredSkill(): void
     {
         $projectSkillDir = $this->tmpDir.'/.hatfield/skills/project-skill';
         mkdir($projectSkillDir, 0777, true);
@@ -231,12 +229,8 @@ ARCH_BODY_UNIQUE');
         file_put_contents($userSkillDir.'/SKILL.md', "---\nname: foo\ndescription: User skill\n---\n\nUSER_BODY");
 
         $builder = $this->createBuilder(cwd: $this->tmpDir);
-        $commands = $builder->allSkillCommands();
         $expanded = $builder->expandSkillCommand('/skill:foo');
 
-        $this->assertCount(1, $commands);
-        $this->assertSame('skill:foo', $commands[0]->name);
-        $this->assertSame('Project skill', $commands[0]->description);
         $this->assertStringContainsString('PROJECT_BODY', $expanded);
         $this->assertStringNotContainsString('USER_BODY', $expanded);
     }
@@ -247,29 +241,6 @@ ARCH_BODY_UNIQUE');
         $this->assertSame('/skill:missing args', $builder->expandSkillCommand('/skill:missing args'));
         $this->assertSame('hello', $builder->expandSkillCommand('hello'));
         $this->assertSame('/review foo', $builder->expandSkillCommand('/review foo'));
-    }
-
-    public function testAllSkillCommandsIncludeOnDemandOnly(): void
-    {
-        mkdir($this->tmpDir.'/.hatfield/skills/visible', 0777, true);
-        file_put_contents($this->tmpDir.'/.hatfield/skills/visible/SKILL.md', "---\nname: visible\ndescription: Visible skill\n---\n\nBody");
-
-        mkdir($this->tmpDir.'/.hatfield/skills/hidden', 0777, true);
-        file_put_contents($this->tmpDir.'/.hatfield/skills/hidden/SKILL.md', "---\nname: hidden\ndescription: Hidden skill\ndisable-model-invocation: true\n---\n\nBody");
-
-        $builder = $this->createBuilder(cwd: $this->tmpDir);
-        $commands = $builder->allSkillCommands();
-        $byName = [];
-        foreach ($commands as $command) {
-            $byName[$command->name] = $command->description;
-        }
-
-        $this->assertSame('Visible skill', $byName['skill:visible'] ?? null);
-        $this->assertSame('Hidden skill', $byName['skill:hidden'] ?? null);
-
-        $catalog = $builder->build();
-        $this->assertStringContainsString('<name>visible</name>', $catalog);
-        $this->assertStringNotContainsString('<name>hidden</name>', $catalog);
     }
 
     public function testBuildForReturnsEmptyForEmptyNames(): void
