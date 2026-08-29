@@ -561,8 +561,6 @@ final readonly class RunStateReducer
             'isStreaming' => false,
             'streamingMessage' => null,
             'pendingToolCalls' => [],
-            'pendingShellToolCalls' => [],
-            'currentToolCalls' => [],
             'activeStepId' => null,
             'currentOperation' => null,
             'retryableFailure' => false,

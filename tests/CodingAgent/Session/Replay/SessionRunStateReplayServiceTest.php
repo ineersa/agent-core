@@ -341,6 +341,57 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertSame('LLM result', $toolMessages[0]->content[0]['text']);
     }
 
+    public function testReplayStandaloneShellCompletionPreservesAttachedShellUntilItsResultArrives(): void
+    {
+        $standaloneKey = 'standalone-shell-a';
+        $attachedKey = 'attached-shell-b';
+        $standaloneId = 'sh_'.hash('sha256', $standaloneKey);
+        $attachedId = 'sh_'.hash('sha256', $attachedKey);
+
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 'shell-step',
+            'payload' => ['messages' => []],
+        ]);
+        $this->appendEvent(RunEventTypeEnum::AgentCommandApplied->value, 2, [
+            'kind' => 'shell_command',
+            'idempotency_key' => $standaloneKey,
+            'standalone' => true,
+            'current_operation' => [
+                'turn_no' => 0,
+                'step_id' => 'shell-step',
+                'attempt' => 1,
+                'idempotency_key' => $standaloneKey,
+            ],
+        ]);
+        $this->appendEvent(RunEventTypeEnum::AgentCommandApplied->value, 3, [
+            'kind' => 'shell_command',
+            'idempotency_key' => $attachedKey,
+            'standalone' => false,
+            'current_operation' => [
+                'turn_no' => 0,
+                'step_id' => 'shell-step',
+                'attempt' => 1,
+                'idempotency_key' => $attachedKey,
+            ],
+        ]);
+        $this->appendEvent(RunEventTypeEnum::ToolExecutionEnd->value, 4, $this->toolEndPayload($standaloneId, 'bash', 'A done'));
+        $this->appendEvent(RunEventTypeEnum::AgentEnd->value, 5, ['reason' => 'completed']);
+
+        $afterStandalone = $this->service->rebuildIfStale(RunState::queued($this->runId), $this->runId)->rebuiltState;
+
+        $this->assertNotNull($afterStandalone);
+        $this->assertSame(RunStatus::Completed, $afterStandalone->status);
+        $this->assertSame([$attachedId => true], $afterStandalone->pendingShellToolCalls);
+        $this->assertNull($afterStandalone->activeStepId);
+        $this->assertNull($afterStandalone->currentOperation);
+
+        $this->appendEvent(RunEventTypeEnum::ToolExecutionEnd->value, 6, $this->toolEndPayload($attachedId, 'bash', 'B done'));
+        $afterAttached = $this->service->rebuildIfStale(RunState::queued($this->runId), $this->runId)->rebuiltState;
+
+        $this->assertNotNull($afterAttached);
+        $this->assertSame([], $afterAttached->pendingShellToolCalls);
+    }
+
     public function testReplayAssistantTextWithTopLevelToolCallsPreservesMetadataForValidator(): void
     {
         $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [

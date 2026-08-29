@@ -60,7 +60,7 @@ final class ToolCallResultHandlerTest extends TestCase
         parent::tearDown();
     }
 
-    public function testStandaloneShellResultIsCommittedByRunControlAndDuplicateIsNoOp(): void
+    public function testStandaloneShellCompletionPreservesAttachedShellAndWakesMailbox(): void
     {
         $handler = new ToolCallResultHandler(
             toolBatchCollector: new ToolBatchCollector(),
@@ -76,43 +76,52 @@ final class ToolCallResultHandlerTest extends TestCase
             ->withActiveStepId('shell-step')
             ->build()
             ->with([
-                'pendingShellToolCalls' => ['shell-call' => true],
+                'pendingShellToolCalls' => ['shell-call-a' => true, 'shell-call-b' => true],
                 'currentOperation' => new CurrentOperationDTO(2, 'shell-step', 2, 'shell-operation'),
-                'currentToolCalls' => [new CurrentToolCallDTO(
-                    ToolBatchIdentity::fromTurnAndStep(2, 'shell-step'),
-                    'shell-call',
-                    0,
-                    RunOperationalToolCallStatusEnum::Running,
-                    2,
-                )],
+                'currentToolCalls' => [
+                    new CurrentToolCallDTO(
+                        ToolBatchIdentity::fromTurnAndStep(2, 'shell-step'),
+                        'shell-call-a',
+                        0,
+                        RunOperationalToolCallStatusEnum::Running,
+                        2,
+                    ),
+                    new CurrentToolCallDTO(
+                        ToolBatchIdentity::fromTurnAndStep(2, 'shell-step'),
+                        'shell-call-b',
+                        1,
+                        RunOperationalToolCallStatusEnum::Running,
+                        2,
+                    ),
+                ],
             ]);
-        $message = ToolCallResultBuilder::success('run-shell')
+        $standalone = ToolCallResultBuilder::success('run-shell')
             ->withTurnNo(2)
             ->withStepId('shell-step')
-            ->withIdempotencyKey('shell-result')
-            ->withToolCallId('shell-call')
+            ->withIdempotencyKey('shell-result-a')
+            ->withToolCallId('shell-call-a')
             ->withOrderIndex(0)
             ->withResult([
                 'tool_name' => 'bash',
-                'content' => [['type' => 'text', 'text' => 'done']],
-                'arguments' => ['command' => 'echo done'],
+                'content' => [['type' => 'text', 'text' => 'A done']],
+                'arguments' => ['command' => 'echo A'],
                 'standalone' => true,
             ])
             ->build();
 
-        $result = $handler->handle($message, $state);
+        $completedStandalone = $handler->handle($standalone, $state);
 
-        $this->assertSame(RunStatus::Completed, $result->nextState?->status);
-        $this->assertSame([], $result->nextState?->pendingToolCalls);
-        $this->assertSame([], $result->nextState?->pendingShellToolCalls);
-        $this->assertSame([], $result->nextState?->currentToolCalls);
-        $this->assertNull($result->nextState?->activeStepId);
-        $this->assertNull($result->nextState?->currentOperation);
+        $this->assertSame(RunStatus::Completed, $completedStandalone->nextState?->status);
+        $this->assertSame([], $completedStandalone->nextState?->pendingToolCalls);
+        $this->assertSame(['shell-call-b' => true], $completedStandalone->nextState?->pendingShellToolCalls);
+        $this->assertSame(['shell-call-b'], array_map(static fn (CurrentToolCallDTO $call): string => $call->toolCallId, $completedStandalone->nextState?->currentToolCalls ?? []));
+        $this->assertNull($completedStandalone->nextState?->activeStepId);
+        $this->assertNull($completedStandalone->nextState?->currentOperation);
         $this->assertSame(
             [RunEventTypeEnum::ToolExecutionEnd->value, RunEventTypeEnum::AgentEnd->value],
-            array_map(static fn ($event): string => $event->type, $result->events),
+            array_map(static fn ($event): string => $event->type, $completedStandalone->events),
         );
-        $this->assertSame([], $handler->handle($message, $result->nextState)->events);
+        $this->assertSame([], $handler->handle($standalone, $completedStandalone->nextState)->events);
 
         $commandStore = new InMemoryCommandStore();
         $commandStore->enqueue(new PendingCommand(
@@ -130,10 +139,32 @@ final class ToolCallResultHandlerTest extends TestCase
             ->withTurnNo(2)
             ->withStepId('shell-follow-up-step')
             ->withIdempotencyKey('shell-standalone-advance')
-            ->build(), $result->nextState);
+            ->build(), $completedStandalone->nextState);
 
         $this->assertNotNull($woken->nextState, 'Standalone shell wake must be accepted to drain a command queued during execution.');
         $this->assertCount(1, $woken->nextState->messages);
+
+        $attached = ToolCallResultBuilder::success('run-shell')
+            ->withTurnNo(2)
+            ->withStepId('shell-step')
+            ->withIdempotencyKey('shell-result-b')
+            ->withToolCallId('shell-call-b')
+            ->withOrderIndex(1)
+            ->withResult([
+                'tool_name' => 'bash',
+                'content' => [['type' => 'text', 'text' => 'B done']],
+                'arguments' => ['command' => 'echo B'],
+                'standalone' => false,
+            ])
+            ->build();
+        $completedAttached = $handler->handle($attached, $completedStandalone->nextState);
+
+        $this->assertSame([], $completedAttached->nextState?->pendingShellToolCalls);
+        $this->assertSame([], $completedAttached->nextState?->currentToolCalls);
+        $this->assertSame([RunEventTypeEnum::ToolExecutionEnd->value], array_map(static fn ($event): string => $event->type, $completedAttached->events));
+        $typedAttachedResult = (new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))
+            ->fromEventPayload($completedAttached->events[0]->payload);
+        $this->assertSame($attached->result, $typedAttachedResult->result);
     }
 
     public function testHandleAcceptedPendingResultReturnsPostCommitEffectsForNextToolCall(): void
