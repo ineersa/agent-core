@@ -69,7 +69,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
 
         $store = $this->makeStore(['run-xyz' => $catalog]);
         $registrar = new McpToolRegistrar($store, $registry, $this->makeHandlerFactory(), new TestLogger());
-        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, $this->metadataReader(), $store, new TestLogger());
+        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, $this->metadataReader('run-xyz'), $store, new TestLogger());
         $result = $wrapper->resolve('toolset:run:run-xyz:turn:1', turnNo: 1, runId: 'run-xyz');
 
         $this->assertContains('srv_calc', $result->toolNames, 'MCP tool should be in resolved toolNames');
@@ -110,7 +110,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
 
         $store = $this->makeStore([]);
         $registrar = new McpToolRegistrar($store, $registry, $this->makeHandlerFactory(), new TestLogger());
-        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, $this->metadataReader(), $store, new TestLogger());
+        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, $this->metadataReader('unused'), $store, new TestLogger());
         // null runId — registration should be skipped
         $result = $wrapper->resolve('toolset:run:unknown:turn:1');
 
@@ -139,7 +139,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         // Store has no catalog — read returns null
         $store = $this->makeStore([]);
         $registrar = new McpToolRegistrar($store, $registry, $this->makeHandlerFactory(), new TestLogger());
-        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, $this->metadataReader(), $store, new TestLogger());
+        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, $this->metadataReader('no-catalog'), $store, new TestLogger());
         $result = $wrapper->resolve('toolset:run:no-catalog:turn:1', turnNo: 1, runId: 'no-catalog');
 
         $this->assertSame([], $result->toolNames);
@@ -196,7 +196,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
 
         $logger = new TestLogger();
         $registrar = new McpToolRegistrar($failingStore, $registry, $this->makeHandlerFactory(), $logger);
-        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, $this->metadataReader(), $failingStore, $logger);
+        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, $this->metadataReader('run-fail'), $failingStore, $logger);
 
         // Must not throw — returns inner resolver result
         $result = $wrapper->resolve('toolset:failure:turn:1', turnNo: 1, runId: 'run-fail');
@@ -331,7 +331,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
 
         $store = $this->makeStore(['run-xyz' => $catalog]);
         $registrar = new McpToolRegistrar($store, $registry, $this->makeHandlerFactory(), new TestLogger());
-        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, $this->metadataReader(), $store, new TestLogger());
+        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, $this->metadataReader('run-xyz'), $store, new TestLogger());
 
         // Two LLM steps with an unchanged catalog: the resolver must not
         // churn the registered handler object.
@@ -389,10 +389,9 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         return new McpToolHandlerFactory($invoker);
     }
 
-    private function metadataReader(): RunRelationshipReaderInterface
+    private function metadataReader(string $runId): RunRelationshipReaderInterface
     {
-        // Unknown identity fails closed inside the resolver and keeps the caller's run id.
-        return StubRunRelationshipReader::empty();
+        return StubRunRelationshipReader::topLevel($runId);
     }
 
     private function makeStore(array $data): McpToolCatalogStoreInterface

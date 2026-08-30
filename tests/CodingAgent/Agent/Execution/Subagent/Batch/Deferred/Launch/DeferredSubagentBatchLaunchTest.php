@@ -554,14 +554,8 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         ?TestLogger $logger = null,
         ?AgentsConfig $agentsConfig = null,
         ?RunStateRebuilderInterface $runStateRebuilder = null,
-        ?string $parentRunId = null,
     ): DeferredSubagentBatchLaunchService {
         $logger ??= new TestLogger();
-        if (null !== $parentRunId) {
-            self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(
-                new RunState($parentRunId, RunStatus::Running),
-            );
-        }
         $artifactLifecycle = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService::class);
         $definitionPolicy = new \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentLaunchDefinitionPolicyService(
             new AgentDefinitionCatalog($definitions),
