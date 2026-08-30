@@ -40,7 +40,7 @@ Other notes:
 
 ## Boundaries
 
-- Product TUI code depends on runtime contracts, not AgentCore internals.
+- Product TUI may depend on CodingAgent services directly; session/runtime protocol still uses Runtime Contract/Protocol. TUI must not depend on AgentCore internals.
 - AgentCore must not depend on CodingAgent/TUI.
 - Extension feature UX stays in extension packages; runtime ports stay generic.
 

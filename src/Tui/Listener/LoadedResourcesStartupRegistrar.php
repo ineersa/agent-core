@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryProviderInterface;
+use Ineersa\CodingAgent\Runtime\LoadedResources\LoadedResourcesSummaryBuilder;
 use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Symfony\Component\Tui\Event\InputEvent;
@@ -18,7 +18,7 @@ use Symfony\Component\Tui\Event\TickEvent;
 final readonly class LoadedResourcesStartupRegistrar implements TuiListenerRegistrar
 {
     public function __construct(
-        private LoadedResourcesSummaryProviderInterface $loadedResourcesSummaryProvider,
+        private LoadedResourcesSummaryBuilder $loadedResourcesSummaryBuilder,
     ) {
     }
 
@@ -27,7 +27,7 @@ final readonly class LoadedResourcesStartupRegistrar implements TuiListenerRegis
         $screen = $context->screen;
         $tui = $context->tui;
         $state = $context->state;
-        $provider = $this->loadedResourcesSummaryProvider;
+        $provider = $this->loadedResourcesSummaryBuilder;
 
         $loaded = false;
 

@@ -64,10 +64,11 @@ services:
   Symfony\Contracts\HttpClient\HttpClientInterface:
     factory: ['Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplayHttpClientFactory', 'create']
 
-  # Deterministic /usage provider quota stub for APP_ENV=test (TUI E2E + unit).
-  # Lives in tests/ — never contacts real auth files or provider networks.
-  Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaProbeServiceInterface:
-    class: Ineersa\CodingAgent\Tests\Infrastructure\ProviderQuota\FakeProviderQuotaProbeService
+  # Deterministic /usage provider quota HTTP for APP_ENV=test (TUI E2E + unit).
+  # Keeps the real ProviderQuotaProbeService; MockHttpClient never contacts networks.
+  Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService.http_client:
+    class: Symfony\Contracts\HttpClient\HttpClientInterface
+    factory: ['Ineersa\CodingAgent\Tests\Infrastructure\ProviderQuota\FakeProviderQuotaHttpClientFactory', 'create']
 
   # TEST-ONLY OM SQLite factory wrapper. Production OmDatabaseFactory stays static;
   # this service calls the real factory so DB-touching OM tests boot through the

@@ -107,7 +107,7 @@ services:
     arguments:
       $captureErrors: '%app.capture_errors%'
 
-  # Provider quota probes for /usage — TUI depends on the contract only.
+  # Provider quota probes for /usage.
   # Dedicated bounded HttpClient (no LLM retry decorator) so 401/429 stay visible.
   # HttpClient::create() selects Curl/Amp/Native transport the same way app code does.
   Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService.http_client:
@@ -124,9 +124,6 @@ services:
       $appConfig: '@Ineersa\CodingAgent\Config\AppConfig'
       $httpClient: '@Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService.http_client'
       $logger: '@Psr\Log\LoggerInterface'
-
-  Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaProbeServiceInterface:
-    alias: Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService
 
   # ─── Hatfield config services ───
 
@@ -289,9 +286,6 @@ services:
   Ineersa\CodingAgent\Extension\ExtensionManager:
     arguments:
       $extensionApi: '@Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface'
-
-  Ineersa\CodingAgent\Runtime\Contract\TuiExtensionRegistryInterface:
-    alias: Ineersa\CodingAgent\Extension\ExtensionManager
 
   # LoggingConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\LoggingConfig:

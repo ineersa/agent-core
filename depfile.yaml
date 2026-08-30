@@ -411,6 +411,9 @@ parameters:
     TuiListener:
       - TuiExport
       - AppExtensionApi
+      - AppExtension
+      - AppLoadedResources
+      - AppProviderQuota
       - AppRuntimeContract
       - AppSkills
       - AppPromptTemplate
