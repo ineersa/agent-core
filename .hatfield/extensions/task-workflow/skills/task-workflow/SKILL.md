@@ -3,9 +3,9 @@ name: task-workflow
 description: "Routes task workflow phases to focused procedures. Load for task-explain, task-start, task-to-pr, task-review-iterate, task-done, implementation ownership, reviewer workflows, or compaction recovery."
 ---
 
-# Task Workflow Router
+# Task workflow router
 
-Read this router, then load **only** the reference for the active phase:
+Do not perform phase work from this router alone. Before starting a phase or calling `move_task`, main must read the exact phase procedure linked below. Read one phase procedure at a time.
 
 | Phase | Procedure |
 |---|---|
@@ -15,9 +15,9 @@ Read this router, then load **only** the reference for the active phase:
 | `task-review-iterate` | [references/task-review-iterate.md](references/task-review-iterate.md) |
 | `task-done` | [references/task-done.md](references/task-done.md) |
 
-Phase procedures link any additional reference required for that phase. Do not load unrelated phase references.
+The phase procedure links any other reference needed for that phase. Read those linked references before acting. Do not load unrelated phase files.
 
-When defining implementation ownership outside a phase, load [references/implementation-ownership.md](references/implementation-ownership.md). When reviewing outside a phase, also load [references/specification-fidelity.md](references/specification-fidelity.md).
+When deciding implementation ownership outside a phase, read [references/implementation-ownership.md](references/implementation-ownership.md). When reviewing outside a phase, also read [references/specification-fidelity.md](references/specification-fidelity.md).
 
 ## Task board
 
@@ -37,4 +37,4 @@ task-explain → task-start → task-to-pr → task-done
             task-review-iterate
 ```
 
-After compaction, run `task_list`, reload this router, then load only the current phase procedure.
+Read a new phase procedure whenever the phase changes. After compaction, run `task_list`, reload this router, and read the current phase procedure before continuing.

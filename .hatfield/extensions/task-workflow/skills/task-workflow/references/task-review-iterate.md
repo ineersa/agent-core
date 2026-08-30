@@ -1,11 +1,13 @@
-# task-review-iterate: Address PR Feedback
+# task-review-iterate: address PR feedback
+
+Main must read this procedure before doing phase work or calling `move_task`. The router alone is not enough.
 
 Read [implementation-ownership.md](implementation-ownership.md) and [specification-fidelity.md](specification-fidelity.md). For TUI changes, also read [tui-proof.md](tui-proof.md).
 
-1. Read the PR summary with `gh pr view` and inline comments with `gh api repos/<owner>/<repo>/pulls/<n>/comments`; classify blockers versus suggestions. In the same parent session, resume the prior reviewer with `agent_resume` plus the commit/diff and resolution delta when its recorded identity is eligible; otherwise launch a new reviewer.
-2. `move_task(to="IN-PROGRESS")` before implementation.
-3. Reapply specification fidelity, choose ownership before deep exploration, and append the assigned ownership record.
-4. Implement fixes sequentially, verify output, run focused Castor validation, and append the completed or blocked ownership record.
-5. Re-review by resuming the eligible prior reviewer with the new commit/diff, prior findings, and resolution delta; otherwise launch a new reviewer. Record the active role, artifact/run ID, target revision, and scope. Include specification fidelity. Repeat from step 3 if changes are requested.
-6. When approved, `move_task(to="CODE-REVIEW")` to push and create/update the PR.
-7. Record reviewer identity, revision, scope, decision, commit, validation, and unresolved blockers through `update_task`.
+1. Read the PR summary with `gh pr view` and inline comments with `gh api repos/<owner>/<repo>/pulls/<n>/comments`. Separate blockers from suggestions.
+2. Call `move_task(to="IN-PROGRESS")` before changing code.
+3. Perform a routing pass for the accepted fixes. Apply the ownership decision rules and record each assigned slice before detailed investigation.
+4. Implement fixes sequentially, verify the result, run focused Castor validation, and record each slice as completed or blocked.
+5. Re-review the new revision. Resume the eligible prior reviewer with `agent_resume` and provide the new commit or diff, prior findings, and resolution summary. Launch a new reviewer only when the prior reviewer cannot resume. Require a specification-fidelity review. Record the active role, artifact or run ID, target revision, and scope. If the reviewer requests changes, repeat from step 3.
+6. When the reviewer approves, call `move_task(to="CODE-REVIEW")` to push the branch and create or update the PR.
+7. Record the reviewer identity, revision, scope, decision, commit, validation, and unresolved blockers with `update_task`.

@@ -1,11 +1,11 @@
-# TUI Behavior Proof
+# TUI behavior proof
 
-Every touched user-visible TUI behavior requires automated proof at the lowest correct layer:
+Every changed user-visible TUI behavior needs automated proof at the lowest correct layer:
 
-- **Virtual/in-process** (`castor test`, `VirtualTuiHarness`): layout, widgets, editor input, slash commands, local routing/render.
-- **Controller replay** (`castor test:controller-replay`): runtime JSONL, sessions/events, shell/tool ordering.
-- **Minimal tmux** (`castor test:tui`, `#[Group('tui-e2e-replay')]`): terminal integration only when virtual/replay cannot prove the contract.
+- **Virtual or in-process** with `castor test` and `VirtualTuiHarness` for layout, widgets, editor input, slash commands, local routing, and rendering.
+- **Controller replay** with `castor test:controller-replay` for runtime JSONL, sessions, events, and shell or tool ordering.
+- **Minimal tmux** with `castor test:tui` and `#[Group('tui-e2e-replay')]` for terminal integration that virtual tests or controller replay cannot prove.
 
-Do not use mocks, service-only DTO tests, custom smoke scripts, or picker/footer visibility assertions as the sole proof. Do not demand tmux for purely virtual behavior. Delegated handoffs must name the layer, test thesis, and commands. Reviewers reject a missing or incorrectly elevated proof layer.
+Mocks, service-only DTO tests, custom smoke scripts, and picker or footer visibility assertions cannot be the only proof. Do not require tmux for behavior that virtual tests can prove. A delegated handoff must name the proof layer, what the test proves, and the commands to run. Reviewers reject missing proof and tests placed at a higher layer than needed.
 
-Load the `testing` skill before writing, running, or debugging this proof.
+Read the `testing` skill before writing, running, or debugging tests.
