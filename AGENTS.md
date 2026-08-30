@@ -1,6 +1,6 @@
-# Agent Core Monorepo
+# Agent Core monorepo
 
-Modular monolith, single Composer app. Layer rules live in `depfile.yaml` and are enforced by `castor deptrac`. Nested instructions (skills, `tests/AGENTS.md`, module `AGENTS.md`, prompts) may specialize procedure; they must not weaken root safety, Castor/QA, architecture, or task-workflow constraints—contexts concatenate.
+This is a modular monolith in one Composer app. Layer rules live in `depfile.yaml`; `castor deptrac` enforces them. Nested instructions include skills, `tests/AGENTS.md`, module `AGENTS.md` files, and prompts. They may add local procedure, but they must not weaken root safety, Castor/QA, architecture, or task-workflow rules. All applicable instructions apply together.
 
 ## Layout
 
@@ -36,9 +36,9 @@ Key commands: `castor check` (includes `docs:validate`), `castor test`, `castor 
 
 Timeouts, check lock, llama-proxy cache guard, ParaTest budgets, preflight, and worker diagnostics: load the `testing` skill (`.agents/skills/testing/SKILL.md`).
 
-## Testing (mandatory before QA or test work)
+## Testing prerequisites
 
-Before writing, editing, debugging, reviewing, or running tests—and before validating TUI/runtime/Messenger/DB work—every agent, fork, and scout MUST:
+Before writing, editing, debugging, reviewing, or running tests, every agent, fork, and scout MUST complete the steps below. The same rule applies before validating TUI, runtime, Messenger, or database work.
 
 1. Load the `testing` skill (`.agents/skills/testing/SKILL.md`).
 2. Read `tests/AGENTS.md` (helpers, isolation, E2E patterns, what not to test).
@@ -48,20 +48,20 @@ Do this before proposing a test strategy, adding tests, running Castor tests, or
 **Hard quality gate (authoritative detail: `tests/AGENTS.md`; procedure: testing skill):**
 
 - **Bad tests are worse than missing tests.** A flaky, timing-window, soft-assert, or duplicate-layer test MUST be deleted or demoted. Do not keep a test that cannot be made deterministic.
-- Individual cases MUST finish in **≤10s** under normal Castor load. A case that exceeds 10s solo **or under relevant concurrent lanes** is unacceptable: rewrite, demote, or delete. Rare exceptions MUST document the unique external/process contract in the test and why lower layers cannot prove it.
-- MUST NOT use arbitrary `sleep` / `usleep` / delayed fixtures, elapsed-time races, retry-until-green, or timeout increases as the fix for flakes or hangs.
-- Prove at the **lowest correct layer**. Live LLM / tmux ONLY for contracts unavailable below. One minimal terminal/live smoke beats repeated journeys.
-- Every spawned process/resource MUST have explicit ownership, isolation, and deterministic teardown. Leaks are product/harness bugs.
-- Solo green is **insufficient** for known parallel/contention flakes—validate under the relevant concurrent Castor lanes.
+- Individual cases MUST finish in **≤10s** under normal Castor load. A case that exceeds 10s alone or under relevant concurrent lanes is unacceptable. Rewrite, demote, or delete it. Rare exceptions MUST document the unique external or process contract in the test and why lower layers cannot prove it.
+- MUST NOT use arbitrary `sleep`, `usleep`, delayed fixtures, elapsed-time races, retry-until-green, or timeout increases to fix flakes or hangs.
+- Prove behavior at the **lowest correct layer**. Use a live LLM or tmux only for contracts unavailable below. One minimal terminal or live smoke is better than repeated journeys.
+- Every spawned process or resource MUST have explicit ownership, isolation, and deterministic teardown. Leaks are product or test helper bugs.
+- A solo green run is **insufficient** for known parallel or contention flakes. Validate under the relevant concurrent Castor lanes.
 
 **Lane / proof constraints (detail in testing skill + `tests/AGENTS.md`):**
 
 - Changes touching TUI runtime, `AgentSessionClient`, Messenger, `TranscriptProjector`, `RuntimeEventPoller`, or LLM-visible flow require `castor check`. Unit/container/mocked tests alone are not enough. If required tmux is unavailable, stay IN-PROGRESS with the blocker.
 - TUI proof at the **lowest correct layer**: virtual/`castor test` → controller-replay → minimal `castor test:tui`. Do not default every feature to tmux. Custom smoke scripts, service-only DTO tests, picker/footer-only checks, or manual fork reports are not sole proof.
 - Replay is a regression guard, not proof of live correctness. When a user-reported hang/freeze/stuck state survives replay, trust live reproduction (`#[Group('llm-real')]`, real controller subprocess) over more fixture-only proofs.
-- Focused `castor test:llm-real` is for provider/LLM-visible changes only (schemas, prompts, streaming, model routing)—not every task. `castor test:controller` stays opt-in live controller E2E.
-- Tests protect user-visible behavior, stable runtime/protocol contracts, safety boundaries, or known regressions. Prefer smallest failing repro for bugs; avoid implementation-mirroring/coverage-only tests; do not mix broad test refactors into implementation tasks.
-- Leaked `messenger:consume`, `agent --controller`, PHPUnit, or Castor children are lifecycle bugs—fix teardown at source. `castor check` does not auto-kill workers. Diagnostics: `castor clean:cleanup:workers:list`; last resort after recording the leak: `castor clean:cleanup:workers` (current-user orphans in this checkout only).
+- Focused `castor test:llm-real` is only for provider or LLM-visible changes such as schemas, prompts, streaming, or model routing. Do not run it for every task. `castor test:controller` stays opt-in live controller E2E.
+- Tests protect user-visible behavior, stable runtime or protocol contracts, safety boundaries, and known regressions. Prefer the smallest failing reproduction for bugs. Avoid tests that mirror implementation or exist only for coverage. Do not mix broad test refactors into implementation tasks.
+- Leaked `messenger:consume`, `agent --controller`, PHPUnit, or Castor children are lifecycle bugs. Fix teardown at the source. `castor check` does not auto-kill workers. Diagnose leaks with `castor clean:cleanup:workers:list`. Use `castor clean:cleanup:workers` only as a last resort after recording the leak, and only for current-user orphans in this checkout.
 - **Never signal, kill, restart, or otherwise touch root-owned workers**, or processes tagged with `HATFIELD_SESSION_ID`. If a root-owned process looks stale, report it and leave it alone.
 - DB-touching tests boot the Symfony kernel and use the test container (`IsolatedKernelTestCase` / skill docs).
 
@@ -73,15 +73,15 @@ When JetBrains IDE integration is available in the active coding agent/runtime, 
 
 - Implement only finalized task requirements. No new setting, API, storage field, command, or user-visible behavior unless explicitly requested.
 - Smallest solution using existing code/platform. No speculative config, compatibility shims, abstractions, or future-proofing. Architecture-required indirection stays minimal.
-- Ambiguity on behavior or public surface is a question, not implementation authority. Reviewers **REQUEST CHANGES** for unmapped surface or unnecessary complexity.
+- Ask the user when behavior or a public API is ambiguous. Reviewers **REQUEST CHANGES** for unsupported behavior, unsupported APIs, or unnecessary complexity.
 
 ## Development rules
 
 - Do not delete comments that explain non-obvious logic, invariants, concurrency, lifecycle, or rationale unless that logic is removed; update them when code changes. Drop only noise that restates the obvious.
-- **Never run `git reset --hard` or other destructive git (history rewrite, working-tree reset, forced push) without explicit user approval.** Inspect first (`git status`, `git log --oneline --decorate -5`, `git diff`). Prefer `git revert`, `git restore <file>`, `git merge --abort`. If you cannot name exactly what would be lost, do not proceed.
-- No backward-compatibility code during active development unless the user asks or the surface is a published API (e.g. `ExtensionApi`) with a documented deprecation window. Replace old behavior; update tests/docs.
+- **Never run `git reset --hard`, rewrite history, reset the working tree, or force-push without explicit user approval.** Inspect first with `git status`, `git log --oneline --decorate -5`, and `git diff`. Prefer `git revert`, `git restore <file>`, or `git merge --abort`. If you cannot name exactly what would be lost, do not proceed.
+- Do not add backward-compatibility code during active development unless the user asks or the code belongs to a published API such as `ExtensionApi` with a documented deprecation window. Replace old behavior and update its tests and docs.
 - Semantic type suffixes: `EventTypeEnum`, `UserEventService`, `RuntimeEventMapper`, `SettingsProvider`, `TranscriptProjector`, `Repository`, `Factory`, `DTO`, etc.
-- **MUST use existing project/framework facilities—including Symfony components, Doctrine ORM, Serializer, Validator, EventDispatcher, Messenger, Lock, and TUI abstractions—rather than custom or lower-level replacements unless the user explicitly approves an exception.**
+- **MUST use existing project and framework facilities instead of custom or lower-level replacements unless the user explicitly approves an exception.** This includes Symfony components, Doctrine ORM, Serializer, Validator, EventDispatcher, Messenger, Lock, and the project TUI abstractions.
 - No production APIs or paths solely for tests. No `ReflectionClass::newInstanceWithoutConstructor()`, `Closure::bind()`, or constructor bypass in production. Test helpers stay in tests.
 - Every caught exception must be rethrown/propagated or explicitly logged as intentional local degradation. Empty catch blocks are forbidden.
 - Runtime logs: structured event-style messages with correlation fields (`run_id`, `session_id`, `component`, `event_type`); do not log raw prompts, tool output, env values, API keys, or full session content by default. See `docs/datadog.md`.
@@ -99,13 +99,13 @@ When JetBrains IDE integration is available in the active coding agent/runtime, 
 Settings precedence: built-in defaults < `~/.hatfield/settings.yaml` < project `.hatfield/settings.yaml`.
 
 - `.hatfield/` is tracked; runtime dirs (`sessions/`, `tmp/`, `cache/`, `logs/`) are ignored.
-- Project `.hatfield/settings.yaml` is local config and example—keep in sync with `docs/settings.md` for new keys. Do not recreate `.hatfield.example/`.
+- Project `.hatfield/settings.yaml` is both local configuration and an example. Keep it in sync with `docs/settings.md` when adding keys. Do not recreate `.hatfield.example/`.
 - Theme selection/search paths use Hatfield settings, not container parameters.
 - `session_id === run_id`. Metadata in `hatfield_session` DB table. Session dir: `.hatfield/sessions/<id>/` with canonical `events.jsonl`. Transcript projection rebuilds from events on resume. No `metadata.yaml`. Directory name is canonical; embedded IDs validated on read. Details: `docs/session-storage.md`.
 
 ## Architecture boundaries
 
-**Authoritative rules: `depfile.yaml` + `castor deptrac`.** The table below is a high-level map only; selected Deptrac-approved seams exist (e.g. TUI application/runtime may use Runtime Contract/Protocol, session, and limited App surfaces; App uses Symfony CLI/HttpKernel infrastructure). Do not invent stricter blanket bans than Deptrac enforces.
+**`depfile.yaml` and `castor deptrac` are authoritative.** The table below is only a summary. Deptrac allows specific dependencies that the table does not list. For example, TUI application and runtime code may use Runtime Contract and Protocol code, session code, and limited App code. App code may use Symfony CLI and HttpKernel infrastructure. Do not invent stricter blanket bans than Deptrac enforces.
 
 | Area | Location | Owns | Core forbid |
 |---|---|---|---|
@@ -116,7 +116,7 @@ Settings precedence: built-in defaults < `~/.hatfield/settings.yaml` < project `
 | Extension API | `.hatfield/extensions/extension-api/` | Public extension contracts | Hatfield internals (see below) |
 
 - TUI↔runtime boundary for product code: `src/CodingAgent/Runtime/Contract`, `Runtime/Protocol`, and `AgentSessionClient` (plus Deptrac-approved projection/session edges where listed).
-- HTTP-less product: no web serving surface.
+- This is an HTTP-less product. Do not add web-serving code.
 
 Module-specific Runtime, TUI, and Extension API rules live in their nearest local `AGENTS.md`; the table above routes to them.
 
@@ -124,37 +124,59 @@ Module-specific Runtime, TUI, and Extension API rules live in their nearest loca
 
 External task board (not the code repo): `/home/ineersa/projects/agent-core-tasks` under `TODO/`, `IN-PROGRESS/`, `CODE-REVIEW/`, `DONE/`, `ARCHIVE/`, `CANCELLED/` (`.pi/settings.json` → `taskWorkflow.taskRoot`).
 
-Default `task_list` output lists TODO, IN-PROGRESS, CODE-REVIEW, and DONE only; CANCELLED and ARCHIVE are omitted by default — list them with `status=CANCELLED` or `include_archive=true`/`status=ARCHIVE`.
+By default, `task_list` lists TODO, IN-PROGRESS, CODE-REVIEW, and DONE. Use `status=CANCELLED` to list cancelled tasks. Use `include_archive=true` or `status=ARCHIVE` to list archived tasks.
 
 Task status/metadata moves do **not** commit to agent-core. Code branches, worktrees, PRs, merges do. Worktree creation updates parent IDEA module exclusions when present, creates minimal worktree-local `.idea` metadata from the integration primary module, and opens the exact worktree in JetBrains via MCP when available. DONE/CANCELLED cleanup closes that exact project before worktree removal.
 
-**Implementation ownership:** delegation is context management, not a prohibition on main-agent edits. After a shallow routing pass, choose main-owned versus fork-owned implementation **before** deep implementation exploration. If main already has the detailed implementation model, it retains the cohesive slice. Otherwise, the fork owns detailed exploration, implementation, and focused validation within its bounded scope; give it the goal, acceptance criteria, constraints, known entry points, ownership boundaries, and validation contract—not a parent-completed implementation design. Each bounded fork-owned implementation slice has exactly one fork owner. Scouts, researchers, and reviewers are read-only subagents. Delegate a fork only when transfer reduces total context/rereading (mechanical migrations, isolated modules, independently testable work, investigation+implementation, or context-heavy internals). Write-capable owners execute sequentially in one worktree, even for disjoint files: Git index/status, generated files, formatters, and test artifacts are shared. Parallel write-capable forks require separate branches/worktrees and an explicit integration order. Each new fork requires an explicit ownership handoff. Main may implement and validate; independent review remains required.
+### Implementation ownership
 
-**No dead code or uncited fallback paths:** delete code, branches, prompts, adapters, tests, and compatibility paths that are dead, unreachable, superseded, or have no supported caller in the same change. Do not retain them “just in case.” Do not add fallback behavior, compatibility shims, or preservation paths unless an explicit finalized requirement or published compatibility contract requires them. This does not prohibit required error handling or intentional local degradation that is explicitly documented by the requirement.
+Main owns the initial exploration. It reads the task, referenced documents, and applicable `AGENTS.md` files. It then inspects likely entry points, callers, tests, and module boundaries. This pass must identify cohesive slices, important unknowns, and required validation. Stop before working out exact edits for a slice that may go to a fork.
+
+Main owns implementation by default. Keep the work with main when it is one cohesive change, stays in one area or a small group of files, has clear entry points, and does not need broad discovery. Main should also keep work when focused validation can prove it without repeated live or process-test iteration, no useful independent slice exists, or explaining and reviewing a fork would cost about as much as implementing the change. File count is evidence, not a rule. If the choice is close, main owns it.
+
+Use a fork only when all of these statements are true:
+
+1. The slice has a clear boundary and acceptance criteria.
+2. The fork can explore, implement, and validate it without making product decisions.
+3. Main can review the diff and validation evidence without relearning the whole area.
+4. Delegation will save meaningful context or repeated investigation.
+
+Good reasons to use a fork include unfamiliar internals, mechanical changes across many files, an isolated module, an independently testable task item, substantial runtime or test iteration, and external research tied to implementation. Task size alone is not a reason. Main keeps tightly coupled work and asks the user about unresolved behavior instead of sending ambiguity to a fork.
+
+Give each fork the goal, acceptance criteria, constraints, known entry points, ownership boundary, and validation contract. Do not give it a line-by-line design. One fork owns each delegated slice. Scouts, researchers, and reviewers remain read-only. Write-capable owners work sequentially in one worktree because they share the Git index, generated files, formatters, and test artifacts. Parallel writers require separate branches or worktrees and an explicit integration order. Every ownership change needs an explicit handoff. Independent review remains required.
+
+### No dead code or unsupported fallback paths
+
+Delete code, branches, prompts, adapters, tests, and compatibility paths that are dead, unreachable, superseded, or have no supported caller. Do not retain them "just in case." Do not add fallback behavior, compatibility shims, or preservation paths unless a finalized requirement or published compatibility contract requires them. Required error handling and documented local degradation remain valid.
 
 ### Workflow instruction authority
 
-Root `AGENTS.md` owns global invariants and routing; nested `AGENTS.md` files own module-local invariants. The active runtime's task-workflow skill owns phase procedures; thin slash prompts only guard arguments and dispatch. `WorkflowPrompt` provides discoverability only. Task tool definitions own executable parameters, preconditions, side effects, and errors—not orchestration checklists.
+Root `AGENTS.md` owns global rules and routing. Nested `AGENTS.md` files own module rules. The active runtime's task-workflow skill owns phase procedures. Slash prompts only check arguments and dispatch to a phase. `WorkflowPrompt` only makes the workflow discoverable. Task tool definitions describe executable parameters, preconditions, side effects, and errors. They do not replace workflow procedure.
 
-Phases: `task-explain` → `task-start` → `task-to-pr` → `task-done` (with `task-review-iterate` as needed). Load the active runtime's `task-workflow` skill for every phase procedure, implementation ownership or delegated-fork handoffs, and compaction recovery. After compaction, use `task_list` plus that skill.
+The phases are `task-explain`, `task-start`, `task-to-pr`, and `task-done`. Use `task-review-iterate` when review requires another implementation pass.
+
+Before starting phase work or calling `move_task`, the main agent MUST read the active runtime's task-workflow `SKILL.md` and the exact phase procedure linked by its router. Reading only the slash prompt, router, previous phase, or a fork handoff is insufficient. Read the phase procedure again after every phase change and after compaction. The main agent checks phase preconditions and performs status transitions. Forks do not transition tasks.
+
+Load the task-workflow skill when deciding implementation ownership or preparing a fork handoff outside a phase. After compaction, run `task_list`, reload the skill router, and read the current phase procedure.
 
 ## Docs map
 
-- `docs/agents.md` — agent definitions, discovery, catalog, settings
-- `docs/settings.md` — Hatfield settings (see also settings-models, settings-agents)
-- `docs/ai-catalog.md` — AI provider catalog, providers:update, settings overlay
-- `docs/compaction.md` — compaction, `/compact`, events, hooks
-- `docs/session-storage.md` — sessions, replay, locking, resume/fork
-- `docs/tui-architecture.md` — layout, widgets, slots, themes
-- `docs/tui-testing.md` — tmux testing, snapshots, keybindings
-- `docs/distribution.md` — release artifacts, installer, publish
-- `docs/phar-packaging.md` — PHAR build/runtime/test
-- `docs/static-packaging.md` — native PHP-micro binaries
-- `docs/approvals.md / docs/human-input.md` — HITL, questions, extension approvals
-- `docs/datadog.md` — structured logs, privacy, local Datadog
-- `docs/llm-replay.md` — LLM fixture replay
-- `src/AgentCore/Domain/AGENTS.md` — domain/event docs
-- `src/AgentCore/Application/AGENTS.md` — command/handler topology
-- `.agents/skills/testing/SKILL.md` — QA/test command matrix and runbooks
-- Active runtime `task-workflow` skill — task phase procedures
-- `tests/AGENTS.md` — shared test infrastructure and standards
+- `docs/agents.md`: agent definitions, discovery, catalog, and settings
+- `docs/skills.md`: skill discovery, `/skill:`, and on-demand-only skills with `disable-model-invocation`
+- `docs/settings.md`: Hatfield settings, plus settings models and agents
+- `docs/ai-catalog.md`: AI provider catalog, `providers:update`, and settings overlay
+- `docs/compaction.md`: compaction, `/compact`, events, and hooks
+- `docs/session-storage.md`: sessions, replay, locking, resume, and fork
+- `docs/tui-architecture.md`: layout, widgets, slots, and themes
+- `docs/tui-testing.md`: tmux testing, snapshots, and keybindings
+- `docs/distribution.md`: release artifacts, installer, and publishing
+- `docs/phar-packaging.md`: PHAR build, runtime, and tests
+- `docs/static-packaging.md`: native PHP-micro binaries
+- `docs/approvals.md` and `docs/human-input.md`: HITL, questions, and extension approvals
+- `docs/datadog.md`: structured logs, privacy, and local Datadog
+- `docs/llm-replay.md`: LLM fixture replay
+- `src/AgentCore/Domain/AGENTS.md`: domain and event docs
+- `src/AgentCore/Application/AGENTS.md`: command and handler topology
+- `.agents/skills/testing/SKILL.md`: QA and test commands and runbooks
+- Active runtime `task-workflow` skill: task phase procedures
+- `tests/AGENTS.md`: shared test infrastructure and standards

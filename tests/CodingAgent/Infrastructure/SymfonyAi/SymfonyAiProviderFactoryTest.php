@@ -261,7 +261,7 @@ final class SymfonyAiProviderFactoryTest extends TestCase
 
     public function testDelegatesToFirstMatchingBuilder(): void
     {
-        $sentinel = new Provider('stub-builder', [], [], new ProjectedSymfonyModelCatalog(hatfieldModels: [], modelClass: CompletionsModel::class));
+        $sentinel = new Provider('stub-builder', [], [], new ProjectedSymfonyModelCatalog(hatfieldModels: [], modelClass: CompletionsModel::class, providerId: 'stub'));
 
         $stubBuilder = new class($sentinel) implements SymfonyAiProviderBuilderInterface {
             public function __construct(private readonly ProviderInterface $sentinel)

@@ -6,4 +6,5 @@ argument-hint: "<task>"
 Complete reviewed task: `$ARGUMENTS`
 
 If the task argument is empty or still the literal placeholder `<task>`, ask the user for the task slug instead of guessing.
-Load the `task-workflow` skill and follow the `task-done` phase.
+
+Read the `task-workflow` router and its linked `task-done` procedure now. The router alone is not the procedure. Do not call `move_task` or merge anything until you have read and applied the phase file.

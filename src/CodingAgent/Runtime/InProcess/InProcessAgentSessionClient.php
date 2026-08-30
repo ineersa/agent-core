@@ -125,9 +125,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             );
         }
 
-        // Expand prompt templates in the user input before passing to the model.
-        // Single-pass expansion: if a template body starts with "/other", it
-        // is NOT expanded again — the model receives the literal text.
         $prompt = $this->promptTemplateService->expandPromptTemplate($request->prompt);
 
         if ('' !== $prompt) {
@@ -219,9 +216,8 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     {
         $text = $command->text ?? '';
 
-        // Expand prompt templates for user-initiated interactive commands.
         // answer_human, answer_tool_question, and shell_command carry
-        // machine/payload answers — they are NOT expanded.
+        // machine/payload answers, so prompt templates do not expand them.
         if (\in_array($command->type, ['message', 'steer', 'follow_up'], true)) {
             $text = $this->promptTemplateService->expandPromptTemplate($text);
         }

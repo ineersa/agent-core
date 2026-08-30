@@ -112,7 +112,7 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
 
     public function testEmptyCatalog(): void
     {
-        $catalog = new ProjectedSymfonyModelCatalog([]);
+        $catalog = new ProjectedSymfonyModelCatalog([], providerId: 'llama_cpp');
 
         $this->assertSame([], $catalog->getModels());
 
@@ -128,7 +128,7 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
             reasoning: true,
         );
 
-        $catalog = new ProjectedSymfonyModelCatalog(['full-model' => $def]);
+        $catalog = new ProjectedSymfonyModelCatalog(['full-model' => $def], providerId: 'llama_cpp');
         $model = $catalog->getModel('full-model');
 
         $this->assertTrue($model->supports(Capability::INPUT_MESSAGES));
@@ -146,7 +146,7 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
             reasoning: false,
         );
 
-        $catalog = new ProjectedSymfonyModelCatalog(['minimal-model' => $def]);
+        $catalog = new ProjectedSymfonyModelCatalog(['minimal-model' => $def], providerId: 'llama_cpp');
         $model = $catalog->getModel('minimal-model');
 
         $this->assertTrue($model->supports(Capability::INPUT_MESSAGES));
@@ -177,21 +177,25 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
      */
     public function testProviderQualifiedModelNameIsResolvedToBareModel(): void
     {
-        $catalog = $this->createCatalog();
+        $catalog = $this->createCatalog('llama_cpp');
 
         $model = $catalog->getModel('llama_cpp/flash');
 
         $this->assertInstanceOf(CompletionsModel::class, $model);
-        // The resolved model should use the bare name after catalog lookup.
-        // AbstractModelCatalog::getModel() returns a model whose name
-        // comes from the original $modelName param, which might be
-        // "llama_cpp/flash".  The key assertion is: no exception.
         $this->assertNotEmpty($model->getName());
+    }
+
+    public function testCrossProviderQualifiedModelNameIsRejected(): void
+    {
+        $catalog = $this->createCatalog('llama_cpp');
+
+        $this->expectException(ModelNotFoundException::class);
+        $catalog->getModel('deepseek/flash');
     }
 
     public function testProviderQualifiedModelNameWithUnknownBareModelFails(): void
     {
-        $catalog = $this->createCatalog();
+        $catalog = $this->createCatalog('llama_cpp');
 
         $this->expectException(ModelNotFoundException::class);
         $catalog->getModel('llama_cpp/unknown-model');
@@ -200,8 +204,8 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
     public function testSizeVariantsWorkWithProviderPrefix(): void
     {
         // "deepseek/deepseek-v4-pro:23b" — the ":" size variant should
-        // still work when preceded by a provider prefix.
-        $catalog = $this->createCatalog();
+        // still work when preceded by a matching provider prefix.
+        $catalog = $this->createCatalog('deepseek');
 
         $model = $catalog->getModel('deepseek/deepseek-v4-pro:23b');
 
@@ -220,6 +224,7 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
         $catalog = new ProjectedSymfonyModelCatalog(
             ['gpt-5.5' => $def],
             CodexModel::class,
+            'openai-codex',
         );
 
         $model = $catalog->getModel('gpt-5.5');
@@ -232,7 +237,7 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
 
     // — helpers —
 
-    private function createCatalog(): ProjectedSymfonyModelCatalog
+    private function createCatalog(string $providerId = 'llama_cpp'): ProjectedSymfonyModelCatalog
     {
         return new ProjectedSymfonyModelCatalog([
             'deepseek-v4-pro' => new AiModelDefinition(
@@ -285,6 +290,6 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
                     'xhigh' => 'enabled',
                 ],
             ),
-        ]);
+        ], providerId: $providerId);
     }
 }

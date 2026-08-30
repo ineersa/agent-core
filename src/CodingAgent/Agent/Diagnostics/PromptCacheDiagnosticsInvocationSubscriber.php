@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Diagnostics;
 
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\PlatformInvocationMetadata;
-use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparedEvent;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Psr\Log\LoggerInterface;
-use Symfony\AI\Platform\Event\InvocationEvent;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\MessageBag;
@@ -21,112 +19,56 @@ use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
- * Observes final shaped Symfony AI InvocationEvent requests and appends privacy-safe
- * structural fingerprints to CodingAgent-owned diagnostics sidecars.
+ * Records privacy-safe fingerprints from Hatfield's final prepared request.
  *
- * Priority +100 captures PlatformInvocationMetadata correlation before AgentCore strips it.
- * Priority -100 observes final MessageBag/tools/options after AgentCore shaping and persists.
- * Never mutates the event. Disabled by default because it is append-only diagnostics,
- * not provider cache or replay state. Storage/normalization failures are logged and do not break invoke.
- *
- * Correlation uses WeakMap so an exception between the two priorities cannot leak entries
- * after the event object is released by the dispatcher.
+ * The typed event carries run correlation separately from provider options.
+ * Storage and normalization failures are logged and never break invocation.
  */
 final class PromptCacheDiagnosticsInvocationSubscriber implements EventSubscriberInterface
 {
-    /**
-     * Event → correlation for one dual-priority dispatch.
-     *
-     * WeakMap TValue is invariant in PHPStan, so the property uses array<string, mixed>
-     * (not a shape generic). Local @var restores the run_id/step_id shape at use sites.
-     * Entries GC when the InvocationEvent is released if recordDiagnostics never runs.
-     *
-     * @var \WeakMap<InvocationEvent, array<string, mixed>>
-     *
-     * @see https://phpstan.org/blog/whats-up-with-template-covariant
-     */
-    private \WeakMap $correlationByEvent;
-
     public function __construct(
         private readonly PromptCacheDiagnosticsStore $store,
         private readonly HatfieldModelCatalog $modelCatalog,
         private readonly LoggerInterface $logger,
         private readonly bool $writeDiagnostics,
     ) {
-        // Fresh map per subscriber instance; entries GC when InvocationEvent is released.
-        $this->correlationByEvent = new \WeakMap();
     }
 
     public static function getSubscribedEvents(): array
     {
-        return [
-            InvocationEvent::class => [
-                ['captureCorrelation', 100],
-                ['recordDiagnostics', -100],
-            ],
-        ];
+        return [ProviderRequestPreparedEvent::class => 'recordDiagnostics'];
     }
 
-    public function captureCorrelation(InvocationEvent $event): void
+    public function recordDiagnostics(ProviderRequestPreparedEvent $event): void
     {
         if (!$this->writeDiagnostics) {
             return;
         }
 
-        $metadata = PlatformInvocationMetadata::extract($event->getOptions());
-        if (null === $metadata) {
-            return;
-        }
-
-        $runId = $metadata->input->runId;
-        if (null === $runId || '' === $runId) {
-            return;
-        }
-
-        /** @var array{run_id: string, step_id: ?string} $correlation */
-        $correlation = [
-            'run_id' => $runId,
-            'step_id' => $metadata->input->stepId,
-        ];
-        $this->correlationByEvent[$event] = $correlation;
-    }
-
-    public function recordDiagnostics(InvocationEvent $event): void
-    {
-        if (!isset($this->correlationByEvent[$event])) {
-            return;
-        }
-
-        /** @var array{run_id: string, step_id: ?string} $correlation */
-        $correlation = $this->correlationByEvent[$event];
-        unset($this->correlationByEvent[$event]);
-
-        $input = $event->getInput();
-        if (!$input instanceof MessageBag) {
+        $runId = $event->invocationInput->runId;
+        if (null === $runId || '' === $runId || !$event->input instanceof MessageBag) {
             return;
         }
 
         try {
-            $options = $event->getOptions();
-            $modelName = $event->getModel()->getName();
-            $provider = $this->resolveProvider($modelName);
-            $hmacKeySource = $this->resolveHmacKeySource($options, $correlation['run_id']);
+            $provider = $event->resolvedModel->providerId;
+            $hmacKeySource = $this->resolveHmacKeySource($event->options, $runId);
 
-            $this->store->append($correlation['run_id'], [
-                'step_id' => $correlation['step_id'],
-                'model' => $modelName,
+            $this->store->append($runId, [
+                'step_id' => $event->invocationInput->stepId,
+                'model' => $event->model,
                 'provider' => $provider,
                 'transport' => $this->resolveTransport($provider),
                 'cache_family_fp' => $this->hmac($hmacKeySource, $hmacKeySource),
-                'components' => $this->buildComponents($input, $options, $hmacKeySource),
+                'components' => $this->buildComponents($event->input, $event->options, $hmacKeySource),
             ]);
         } catch (\Throwable $e) {
             // Diagnostics must never break provider invocation.
             $this->logger->warning('session.prompt_cache_diagnostics.record_failed', [
                 'component' => 'prompt_cache_diagnostics_subscriber',
                 'event_type' => 'session.prompt_cache_diagnostics.record_failed',
-                'run_id' => $correlation['run_id'],
-                'step_id' => $correlation['step_id'],
+                'run_id' => $runId,
+                'step_id' => $event->invocationInput->stepId,
                 'exception_class' => $e::class,
             ]);
         }
@@ -227,13 +169,6 @@ final class PromptCacheDiagnosticsInvocationSubscriber implements EventSubscribe
         ];
     }
 
-    private function resolveProvider(string $modelName): string
-    {
-        $ref = AiModelReference::tryParse($modelName);
-
-        return null !== $ref ? $ref->providerId : 'unknown';
-    }
-
     private function resolveTransport(string $providerId): string
     {
         if ('unknown' === $providerId) {
@@ -259,14 +194,9 @@ final class PromptCacheDiagnosticsInvocationSubscriber implements EventSubscribe
      */
     private function resolveHmacKeySource(array $options, string $runId): string
     {
-        foreach (['provider_cache_key', 'prompt_cache_key'] as $key) {
-            $value = $options[$key] ?? null;
-            if (\is_string($value) && '' !== $value) {
-                return $value;
-            }
-        }
+        $promptCacheKey = $options['prompt_cache_key'] ?? null;
 
-        return $runId;
+        return \is_string($promptCacheKey) && '' !== $promptCacheKey ? $promptCacheKey : $runId;
     }
 
     private function hmac(string $payload, string $keySource): string

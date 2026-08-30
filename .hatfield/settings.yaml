@@ -91,8 +91,8 @@ extensions:
             enabled: true
         observational_memory:
             storage: { database: .hatfield/extensions-data/observational-memory/om.sqlite }
-            model: llama_cpp/flash
-            observer: { context_window_ratio: 0.50 }
+            model: openai-codex/gpt-5.3-codex-spark
+            observer: { context_window_ratio: 0.60 }
             reflector: { reflect_after_observation_tokens: 40000 }
             pools: { observations_max_tokens: 30000 }
         safe_guard:

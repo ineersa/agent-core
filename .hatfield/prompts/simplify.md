@@ -1,124 +1,169 @@
 ---
-description: Simplify the requested code using three mandatory independent scouts, then apply the smallest safe cleanup
+description: Simplify scoped code using three fixed independent scout audits, then apply the worthwhile cleanup
 argument-hint: "[scope]"
 ---
 
 # Simplify
 
-Simplify the requested code without changing intended behavior or stable contracts.
+Simplify the requested code without changing intended behavior.
 
 Requested scope: `$ARGUMENTS`
 
-## Hard requirements
+## Mandatory workflow
 
-1. Always obtain exactly three successful independent read-only scout audits.
-2. Launch the three scout roles together in one parallel `subagent` call.
-3. Do not decide that scouts are unnecessary, even for a tiny change.
-4. Do not merge roles, substitute your own review for a scout, or treat earlier research as a completed scout audit.
-5. Do not edit files until all three scout results have returned.
-6. After verifying their findings, apply the safe simplifications. This is an implementation command, not a report-only review.
-7. A run that cannot truthfully finish with `Scouts: 3/3 completed` is incomplete.
+1. Resolve the target mechanically.
+2. Launch exactly three read-only scouts together in one parallel `subagent` call.
+3. Use the three scout prompts below exactly as written.
+4. Wait for all three scouts.
+5. Verify their findings against the code.
+6. Apply the worthwhile simplifications directly.
+7. Run the smallest relevant validation required by repository instructions.
 
-Repository and nested `AGENTS.md` instructions remain authoritative, but they never cancel the three required scouts.
+Do not replace a scout with your own review. Do not begin reviewing or editing code before the three scouts have been launched. Do not launch an implementation subagent.
 
-## 1. Resolve the target mechanically
+## Resolve the target
 
-Do not debate or broaden the scope.
+Read applicable repository instructions, but do not summarize or pass them to the scouts. The scouts can read repository instructions from their checkout.
 
-- Non-empty `$ARGUMENTS`: use exactly the named revision/range, files/directories, or the smallest reasonable file set matching the natural-language request.
-- Empty `$ARGUMENTS` with worktree changes: use all staged and unstaged tracked changes plus every untracked file.
-- Empty `$ARGUMENTS` with a clean worktree: use the latest commit.
+Resolve `$ARGUMENTS` as follows:
 
-Ask for clarification only when no reasonable target can be identified. Otherwise make the smallest reasonable assumption and proceed.
+- A commit, revision range, or PR: use that exact change.
+- Files or directories: use exactly those paths.
+- A natural-language scope: resolve it to the smallest matching file set.
+- Empty arguments with a dirty worktree: use all staged, unstaged, and untracked changes.
+- Empty arguments with a clean worktree: use the latest commit.
 
-Read applicable `AGENTS.md` files, then prepare one small scope packet for all scouts:
+Use Git metadata and filenames to resolve the target. Do not analyze the implementation before launching the scouts.
 
-- exact checkout/worktree path;
-- target files and Git baseline/range;
-- complete diff, or exact commands for inspecting the complete target;
-- relevant requirements and invariants.
-
-Do not perform the simplification review yourself before launching the scouts. Once the packet exists, immediately launch all three.
-
-## 2. Launch three scouts in parallel
-
-Each scout receives the same complete scope packet and independently inspects the whole target. Scouts may inspect surrounding callers, tests, configuration, and existing implementations as needed, but must not broaden the task.
-
-All scouts must:
-
-- make no file changes, commits, tasks, or persistent reports;
-- report only actionable, code-backed findings;
-- cite exact files and lines or symbols;
-- explain the concrete cost or risk;
-- propose the smallest safe fix;
-- state what behavior, contract, or invariant must remain unchanged;
-- avoid style-only preferences, speculative abstractions, broad redesigns, and unrelated pre-existing issues;
-- return `NO_FINDINGS` when nothing worthwhile exists.
-
-Use this format:
+Set each scout's `cwd` to the exact checkout through the subagent tool. Build one identical target block for all three scouts using only the applicable form:
 
 ```text
-[ID] <category> — <file:line or symbol>
-Problem: <specific issue>
-Evidence: <concrete code-backed reason>
-Minimal fix: <smallest safe change>
-Preserve: <behavior, contract, or invariant>
+Target: working tree changes
+Files:
+- <path>
+- <path>
 ```
 
-### Scout 1 — Reuse and architecture
+```text
+Target: commit <sha>
+Files:
+- <path>
+- <path>
+```
 
-Find duplicated project functionality, unnecessary custom infrastructure, misplaced responsibility, existing PHP/Symfony/Doctrine/dependency features that should be reused, needless wrappers or pass-through layers, and speculative interfaces/factories/configuration/extension points.
+```text
+Target: range <base>..<head>
+Files:
+- <path>
+- <path>
+```
 
-Recommend reuse only when semantics and ownership match.
+```text
+Target: PR <number or ref>
+Files:
+- <path>
+- <path>
+```
 
-### Scout 2 — Simplicity and code quality
+```text
+Target: current code in these paths
+Files:
+- <path>
+- <path>
+```
 
-Find redundant state, flags, branches, nullability, defensive checks, conversions, parameter plumbing, wrappers, methods, classes, indirection, copy-paste variants, swallowed exceptions, narration comments, and tests that protect no real contract or regression.
+The target block may contain only the target selector and file paths. Do not include the user request, task description, requirements, acceptance criteria, intended implementation, diff summary, suspected problems, priorities, invariants, architecture commentary, parent conclusions, or previous agent findings.
 
-Prefer deletion and direct clear code over clever compression or generic abstractions.
+## Exact scout launch contract
 
-### Scout 3 — Runtime and resource efficiency
+Launch the three scouts in one parallel call.
 
-Find repeated computation, parsing, serialization, I/O, process execution, network calls, database queries, Doctrine N+1s, unnecessary collection loads, hot-path work, no-op writes/events, race-prone pre-checks, unbounded retention, missing cleanup, leaked resources, and unnecessary large copies.
+For each scout, copy its corresponding prompt below verbatim and replace only `{{TARGET}}` with the identical target block. Add no prefix, suffix, title, greeting, explanation, handoff, context, or extra instruction. Do not paraphrase, summarize, expand, or “improve” the prompts.
 
-Do not propose caching, concurrency, batching, or lifecycle machinery unless the cost is concrete and the result remains simpler.
+Names or tool metadata may identify the scouts as `reuse`, `simplicity`, and `efficiency`, but that metadata must not be added to their task prompts.
 
-If one scout task fails, retry only that role. Do not continue until all three roles have successful results, and do not add a fourth role.
+### Scout 1 prompt — reuse
 
-## 3. Verify and apply
+```text
+You are a read-only code scout. Inspect the target only for concrete reuse opportunities.
 
-After all three return:
+Do not edit files. Treat existing behavior as fixed. Do not assess whether the code fulfills its original task, whether requirements are correct or complete, or how the feature should have been implemented. Do not infer or discuss the parent task. Ignore commit messages, branch names, PR titles/descriptions, issue text, and other task metadata. Do not review general correctness or report missing behavior. Do not propose new features, broad redesigns, or speculative abstractions.
 
-1. Read every result and deduplicate overlaps.
-2. Verify each finding against the actual code and repository rules.
-3. Reject subjective, speculative, out-of-scope, behavior-changing, or more-complex-than-the-problem suggestions.
-4. Apply every verified finding that clearly reduces duplication, complexity, risk, or meaningful runtime work.
+Search the repository and the APIs already available through PHP, Symfony, Doctrine, and installed dependencies for existing code that makes scoped code duplicate or unnecessary. Look for existing services, helpers, types, mappers, repositories, framework facilities, and adjacent implementations. Recommend reuse only when semantics and ownership match. Prefer deletion or direct reuse over introducing another abstraction.
 
-Do not stop at recommendations when a safe cleanup exists.
+Return only findings in this form:
 
-While editing:
+<file:line or symbol> — <specific reuse or deletion opportunity>
+Evidence: <the existing code or API, including its location>
+Change: <the smallest simplification>
 
-- preserve intended behavior and stable contracts;
-- stay inside the resolved target except for the smallest necessary supporting edit;
-- prefer deletion, reuse, and direct simplification;
-- do not move complexity elsewhere;
-- do not add speculative abstractions, compatibility shims, public APIs, configuration, caching, concurrency, or broad redesigns;
-- do not perform destructive Git operations.
+If there are no concrete findings, return exactly: NO_FINDINGS
 
-If no finding survives verification and no clear safe simplification exists, leave the code unchanged.
+{{TARGET}}
+```
 
-## 4. Verify the result
+### Scout 2 prompt — simplicity
 
-Inspect the final diff. Confirm every edit maps to a verified finding, no unrelated files changed, and the result is genuinely simpler rather than merely shorter or more abstract.
+```text
+You are a read-only code scout. Inspect the target only for avoidable code complexity.
 
-Run the smallest relevant validation through Castor, following repository instructions. Run broader checks only when required. If no code changed, do not run QA merely for ceremony.
+Do not edit files. Treat existing behavior as fixed. Do not assess whether the code fulfills its original task, whether requirements are correct or complete, or how the feature should have been implemented. Do not infer or discuss the parent task. Ignore commit messages, branch names, PR titles/descriptions, issue text, and other task metadata. Do not review general correctness or report missing behavior. Do not propose new features, broad redesigns, or speculative abstractions.
+
+Find code that can be made smaller and clearer without changing behavior: redundant state, fields, flags, branches, nullability, defensive checks, conversions, normalization, parameter plumbing, wrappers, pass-through methods, classes, indirection, copy-paste variants, swallowed exceptions, narration comments, and tests that duplicate the same contract without adding regression value. Do not replace straightforward code with clever compression or a generic abstraction.
+
+Return only findings in this form:
+
+<file:line or symbol> — <specific unnecessary complexity>
+Evidence: <why the code is redundant or needlessly indirect>
+Change: <the smallest simplification>
+
+If there are no concrete findings, return exactly: NO_FINDINGS
+
+{{TARGET}}
+```
+
+### Scout 3 prompt — efficiency
+
+```text
+You are a read-only code scout. Inspect the target only for unnecessary runtime or resource work that can be removed while simplifying the code.
+
+Do not edit files. Treat existing behavior as fixed. Do not assess whether the code fulfills its original task, whether requirements are correct or complete, or how the feature should have been implemented. Do not infer or discuss the parent task. Ignore commit messages, branch names, PR titles/descriptions, issue text, and other task metadata. Do not review general correctness or report missing behavior. Do not propose new features, broad redesigns, caching systems, concurrency, batching frameworks, or speculative performance machinery.
+
+Find concrete repeated or avoidable work: computation, parsing, normalization, serialization, file access, process execution, network calls, database queries, Doctrine N+1 queries, loading broader data than needed, hot-path work, no-op writes or events, redundant existence checks, retained resources, missing cleanup, and unnecessary copies of large values. Report only cases where the smallest fix both reduces work and keeps the implementation simple.
+
+Return only findings in this form:
+
+<file:line or symbol> — <specific avoidable work>
+Evidence: <where and why the work is unnecessary>
+Change: <the smallest simplification>
+
+If there are no concrete findings, return exactly: NO_FINDINGS
+
+{{TARGET}}
+```
+
+If a scout call fails, retry only that scout with the same exact prompt and target block. Do not alter the prompt and do not add a fourth scout.
+
+## Verify and simplify
+
+After all three scouts return:
+
+1. Inspect the scoped code and verify every finding.
+2. Deduplicate overlaps.
+3. Reject findings that are unsupported, subjective, speculative, outside the target, behavior-changing, or more complex than the code they replace.
+4. Apply every remaining worthwhile simplification directly.
+
+The scouts discover candidates; they do not decide task correctness or implementation direction. Do not expand the work into fixing missing requirements, redesigning the feature, or completing the original task.
+
+Keep edits within the target except for the smallest necessary direct reuse change. Prefer deletion, existing code, and straightforward control flow. Do not create compatibility layers, extension points, configuration, public APIs, or new abstractions without an immediate need demonstrated by the scoped code.
+
+Inspect the final diff and run the smallest relevant validation required by repository instructions. If no change survives verification, leave the code unchanged and do not run checks merely for ceremony.
 
 ## Final response
 
 ```text
 Scouts: 3/3 completed
-Scope: <reviewed target>
-Simplified: <changes made, or no worthwhile cleanup found>
-Validation: <commands and results>
-Rejected: <only materially important unsafe/out-of-scope suggestion, if any>
+Scope: <target>
+Simplified: <changes made, or no worthwhile simplification found>
+Validation: <commands and results, or not run because no code changed>
 ```

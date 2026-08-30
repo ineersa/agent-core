@@ -36,6 +36,7 @@ Related focused references:
 - AI catalog → [ai-catalog.md](ai-catalog.md)
 - Models and providers → [settings-models.md](settings-models.md)
 - Agents, prompts, skills, extensions → [settings-agents.md](settings-agents.md)
+- Skills behavior (`/skill:`, on-demand-only) → [skills.md](skills.md)
 - Sessions → [session-storage.md](session-storage.md)
 - Compaction → [compaction.md](compaction.md)
 - Approvals / SafeGuard → [approvals.md](approvals.md)

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Platform\Bridge\Grok;
 
-use Ineersa\Platform\Bridge\Generic\GenericProviderInternalOptionKeys;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\OpenResponses\ModelClient;
@@ -94,10 +93,6 @@ class GrokModelClient extends ModelClient
 
         $conversationId = $this->resolveConversationId($options, $payload);
 
-        foreach (GenericProviderInternalOptionKeys::ALL as $key) {
-            unset($options[$key]);
-        }
-
         $body = array_merge($options, ['model' => $model->getName()], $payload);
         $body['prompt_cache_key'] = $conversationId;
         $body = $this->sanitizeWireBody($body);
@@ -130,12 +125,7 @@ class GrokModelClient extends ModelClient
      */
     private function resolveConversationId(array $options, array $payload): string
     {
-        $runId = $options['run_id'] ?? null;
-        if (\is_string($runId) && '' !== $runId) {
-            return $runId;
-        }
-
-        $cacheKey = $payload['prompt_cache_key'] ?? null;
+        $cacheKey = $payload['prompt_cache_key'] ?? $options['prompt_cache_key'] ?? null;
         if (\is_string($cacheKey) && '' !== $cacheKey) {
             return $cacheKey;
         }

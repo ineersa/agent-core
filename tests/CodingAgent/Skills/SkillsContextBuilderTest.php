@@ -172,6 +172,23 @@ ARCH_BODY_UNIQUE');
         $this->assertStringNotContainsString('<available_skills>', $output);
     }
 
+    public function testBuildForLoadsOnDemandOnlySkill(): void
+    {
+        $skillDir = $this->tmpDir.'/.hatfield/skills/datadog-logs';
+        mkdir($skillDir, 0777, true);
+        file_put_contents($skillDir.'/SKILL.md', "---\nname: datadog-logs\ndescription: Datadog specialist\ndisable-model-invocation: true\n---\n\nDATADOG_BODY");
+
+        $builder = $this->createBuilder(cwd: $this->tmpDir);
+
+        $catalog = $builder->build();
+        $this->assertSame('', $catalog);
+
+        $attached = $builder->buildFor(['datadog-logs']);
+        $this->assertStringContainsString('<skill name="datadog-logs"', $attached);
+        $this->assertStringContainsString('DATADOG_BODY', $attached);
+        $this->assertStringNotContainsString('<available_skills>', $attached);
+    }
+
     public function testBuildForReturnsEmptyForEmptyNames(): void
     {
         $builder = $this->createBuilder(cwd: $this->tmpDir);

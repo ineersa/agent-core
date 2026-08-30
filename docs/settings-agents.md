@@ -67,6 +67,8 @@ Built-in skills ship under the install tree (`src/CodingAgent/Resources/skills`)
 `--no-skills` only disables auto-discovery scanning of project/user/extension skill dirs for the current run.
 CLI `--skills-path` entries are always scanned. Extensions may `registerSkill()` for package-local skills (lowest precedence when auto-discovery is on).
 
+Behavioral detail (discoverable vs on-demand-only, `/skill:<name>`, frontmatter): [skills.md](skills.md).
+
 ## Extensions (`extensions:`)
 
 | Key | Meaning |

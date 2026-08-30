@@ -43,10 +43,6 @@ final class GrokModelClientTest extends TestCase
                 self::assertSame('run-abc', $body['prompt_cache_key']);
                 self::assertSame('grok-composer-2.5-fast', $body['model']);
                 self::assertArrayNotHasKey('include', $body, 'include must not be set when reasoning is absent');
-                self::assertArrayNotHasKey('run_id', $body);
-                self::assertArrayNotHasKey('tools_ref', $body);
-                self::assertArrayNotHasKey('turn_no', $body);
-                self::assertArrayNotHasKey('provider_cache_key', $body);
 
                 return self::sseResponse();
             },
@@ -56,7 +52,7 @@ final class GrokModelClientTest extends TestCase
         $client->request(
             new ResponsesModel('grok-composer-2.5-fast'),
             ['input' => [['role' => 'user', 'content' => 'hi']]],
-            ['run_id' => 'run-abc', 'tools_ref' => 't1', 'turn_no' => 2, 'provider_cache_key' => 'pk'],
+            ['prompt_cache_key' => 'run-abc'],
         );
     }
 
@@ -200,7 +196,7 @@ final class GrokModelClientTest extends TestCase
         $result = $client->request(
             new ResponsesModel('grok-composer-2.5-fast'),
             ['input' => [['role' => 'user', 'content' => 'Hello']]],
-            ['run_id' => 'keep-me'],
+            ['prompt_cache_key' => 'keep-me'],
         );
 
         $this->assertSame(200, $result->getObject()->getStatusCode());
@@ -255,7 +251,7 @@ final class GrokModelClientTest extends TestCase
         $result = $client->request(
             new ResponsesModel('grok-composer-2.5-fast'),
             ['input' => [['role' => 'user', 'content' => 'hi']]],
-            ['run_id' => 'stream-run'],
+            ['prompt_cache_key' => 'stream-run'],
         );
 
         $events = iterator_to_array($result->getDataStream());

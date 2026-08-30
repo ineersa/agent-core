@@ -65,7 +65,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             connectionCache: new CodexWebSocketConnectionCache(),
         );
 
-        $options = ['provider_cache_key' => $cacheKey];
+        $options = ['prompt_cache_key' => $cacheKey];
         $firstPayload = ['input' => [['role' => 'user', 'content' => 'first']]];
         $first = $client->request(new CodexModel('gpt-5.6-luna'), $firstPayload, $options);
         $this->assertInstanceOf(RawWebSocketResult::class, $first);
@@ -164,7 +164,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             connectionCache: new CodexWebSocketConnectionCache(),
         );
 
-        $options = ['provider_cache_key' => $cacheKey];
+        $options = ['prompt_cache_key' => $cacheKey];
         $firstPayload = [
             'input' => [
                 ['role' => 'user', 'content' => 'read docs'],
@@ -290,7 +290,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             connectionCache: $cache,
         );
 
-        $options = ['provider_cache_key' => $cacheKey];
+        $options = ['prompt_cache_key' => $cacheKey];
         $first = $client->request(
             new CodexModel('gpt-5.6-luna'),
             ['input' => [['role' => 'user', 'content' => 'first']]],
@@ -402,7 +402,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             cacheSettings: $settings,
         );
 
-        $options = ['provider_cache_key' => $cacheKey];
+        $options = ['prompt_cache_key' => $cacheKey];
         $firstPayload = ['input' => [['role' => 'user', 'content' => 'first']]];
         $first = $client->request(new CodexModel('gpt-5.6-luna'), $firstPayload, $options);
         iterator_to_array($first->getDataStream());
@@ -486,7 +486,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             connectionCache: new CodexWebSocketConnectionCache(),
         );
 
-        $options = ['provider_cache_key' => $cacheKey];
+        $options = ['prompt_cache_key' => $cacheKey];
         $first = $client->request(new CodexModel('gpt-5.6-luna'), ['input' => [['role' => 'user', 'content' => 'first']]], $options);
 
         try {
