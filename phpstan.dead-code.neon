@@ -1,0 +1,83 @@
+includes:
+    - vendor/shipmonk/dead-code-detector/rules.neon
+    - phpstan.dead-code-baseline.neon
+
+services:
+    -
+        class: Ineersa\Tools\PHPStan\DeadCode\HatfieldDeadCodeUsageProvider
+        tags:
+            - shipmonk.deadCode.memberUsageProvider
+
+parameters:
+    # Dedicated dead-code lane: only ShipMonk dead-member rules.
+    customRulesetUsed: true
+    level: 0
+    treatPhpDocTypesAsCertain: false
+    reportUnmatchedIgnoredErrors: false
+    # Residual level-0 noise outside ShipMonk dead-member rules.
+    ignoreErrors:
+        -
+            identifier: arguments.count
+        -
+            identifier: new.noConstructor
+        -
+            identifier: attribute.notFound
+        -
+            identifier: array.duplicateKey
+        -
+            identifier: method.notFound
+        -
+            identifier: class.notFound
+    paths:
+        - src/
+        - tests/
+        - castor.php
+        - .castor/
+        - .hatfield/extensions/
+        - migrations/
+        - bin/console
+    scanFiles:
+        - .castor.stub.php
+        - .castor/helpers.php
+        - .castor/qa_tmux.php
+        - bin/console
+    tmpDir: var/phpstan-dead-code
+    excludePaths:
+        - .castor/vendor/*
+        - var/*
+        - vendor/*
+        - .hatfield/extensions/vendor/*
+        - .hatfield/extensions/task-workflow/tests/*
+        - .hatfield/extensions/castor-llm-mode/tests/*
+        - .hatfield/extensions/file-rewind/tests/*
+        - .hatfield/extensions/observational-memory/tests/*
+    parallel:
+        maximumNumberOfProcesses: 1
+    shipmonkDeadCode:
+        reportTransitivelyDeadMethodAsSeparateError: false
+        detect:
+            deadMethods: true
+            deadConstants: true
+            deadEnumCases: true
+            deadProperties:
+                neverRead: true
+                neverWritten: true
+        usageProviders:
+            symfony:
+                enabled: true
+                configDir: %currentWorkingDirectory%/config
+                containerXmlPaths:
+                    - %currentWorkingDirectory%/var/phpstan-dead-code/symfony-container.xml
+            doctrine:
+                enabled: true
+            phpunit:
+                enabled: true
+        usageExcluders:
+            tests:
+                enabled: true
+                devPaths:
+                    - %currentWorkingDirectory%/tests
+                    - %currentWorkingDirectory%/.hatfield/extensions/task-workflow/tests
+                    - %currentWorkingDirectory%/.hatfield/extensions/castor-llm-mode/tests
+                    - %currentWorkingDirectory%/.hatfield/extensions/file-rewind/tests
+                    - %currentWorkingDirectory%/.hatfield/extensions/observational-memory/tests

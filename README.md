@@ -123,6 +123,7 @@ castor test:controller-replay
 castor test:tui
 castor deptrac
 castor phpstan
+castor dead-code
 castor cs-check
 castor docs:validate         # built-in catalog, links, ≤25k chars
 castor phar:build

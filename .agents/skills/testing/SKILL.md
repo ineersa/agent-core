@@ -15,7 +15,7 @@ Not every Castor task adds those flags (for example `test:tui-update` runs a fix
 snapshot-update command without a Castor `--filter` option).
 
 ```bash
-castor check                # Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real smoke (ParaTest, port 9052 / llama-proxy), phpstan, cs-check, docs:validate; lanes parallel; logs under per-run `var/reports/qa-<id>/check-*.log`. Absolute 210s wall from task entry (lock wait + setup/preflight + lanes + finalizers). Deterministic mode: Symfony Lock across sibling worktrees (60s acquire timeout clamped by remaining wall, `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT`), cache-growth guard, post-run `HATFIELD_QA_RUN_ID` leak assertion (no auto-kill), lane log integrity. Stress overrides (`HATFIELD_CASTOR_CHECK_LOCK=0`, `HATFIELD_LLM_CACHE_GUARD=0`, concurrency envs) are investigation-only — not CODE-REVIEW evidence. Worker budgets under check: unit=4 (max 8, `HATFIELD_CHECK_UNIT_PARATEST_PROCESSES`), TUI=2 (max 4, `HATFIELD_CHECK_TUI_PARATEST_PROCESSES` / legacy `HATFIELD_TUI_PARATEST_PROCESSES`), llm-real=1 (max 4, `HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES`); controller-replay sequential. Warm proxy before gate: `castor test:llm-real`.
+castor check                # Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real smoke (ParaTest, port 9052 / llama-proxy), phpstan, dead-code, cs-check, docs:validate; lanes parallel; logs under per-run `var/reports/qa-<id>/check-*.log`. Absolute 210s wall from task entry (lock wait + setup/preflight + lanes + finalizers). Deterministic mode: Symfony Lock across sibling worktrees (60s acquire timeout clamped by remaining wall, `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT`), cache-growth guard, post-run `HATFIELD_QA_RUN_ID` leak assertion (no auto-kill), lane log integrity. Stress overrides (`HATFIELD_CASTOR_CHECK_LOCK=0`, `HATFIELD_LLM_CACHE_GUARD=0`, concurrency envs) are investigation-only — not CODE-REVIEW evidence. Worker budgets under check: unit=4 (max 8, `HATFIELD_CHECK_UNIT_PARATEST_PROCESSES`), TUI=2 (max 4, `HATFIELD_CHECK_TUI_PARATEST_PROCESSES` / legacy `HATFIELD_TUI_PARATEST_PROCESSES`), llm-real=1 (max 4, `HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES`); controller-replay sequential. Warm proxy before gate: `castor test:llm-real`.
 castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups; internal hard timeout ≤210s with process-tree reaping
 castor test --filter=X      # filter tests by name
 castor test --suite=X       # target a specific phpunit.xml test suite (ParaTest parallel)
@@ -29,6 +29,8 @@ castor llm:fixtures:info           # List available LLM replay fixtures
 castor deptrac              # architecture boundary validation
 castor phpstan [path]       # static analysis (optionally scoped to a path)
 castor phpstan:baseline     # regenerate phpstan baseline
+castor dead-code            # ShipMonk dead-code detector (dedicated phpstan.dead-code.neon)
+castor dead-code:baseline   # regenerate phpstan.dead-code-baseline.neon after reviewing findings
 castor cs-fix [path]        # auto-fix coding style
 castor cs-check             # check coding style (dry-run)
 castor docs:validate        # built-in docs catalog, package-safe links, ≤25k chars (also a castor check lane)
@@ -240,7 +242,7 @@ E2E, live-LLM, recording, and PHAR groups).
 
 | Command | What it tests | Requires |
 |---|---|---|
-| `castor check` | Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real (ParaTest, port 9052), phpstan, cs-check, docs:validate. No PHAR. | tmux, llama.cpp/proxy on 9052 |
+| `castor check` | Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real (ParaTest, port 9052), phpstan, dead-code, cs-check, docs:validate. No PHAR. | tmux, llama.cpp/proxy on 9052 |
 | `castor test` | Unit/integration tests (ParaTest parallel by default) | Nothing (pure PHP) |
 | `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` (excludes `recording` group). Run as focused opt-in validation when changes touch provider/LLM-visible code — NOT required for every normal task. | llama.cpp on port 9052 |
 | `castor test:controller-replay` | Controller replay E2E: spawns `--controller`, JSONL protocol, replay fixtures (no live LLM) | Nothing (pure PHP) |

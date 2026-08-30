@@ -13,8 +13,8 @@ declare(strict_types=1);
  *
  * Lanes (typical shell timeouts):
  *   deptrac (30s), test ParaTest (120s), test:controller-replay (150s),
- *   test:tui (210s), test:llm-real (210s), phpstan (90s), cs-check (30s),
- *   docs:validate (30s).
+ *   test:tui (210s), test:llm-real (210s), phpstan (90s), dead-code (90s),
+ *   cs-check (30s), docs:validate (30s).
  *   Absolute castor check wall clock: castor_test_runner_max_seconds() (210s)
  *   from check() entry — lock wait, QA init, preflight, lanes, and finalizers
  *   all consume the same budget. Per-lane Castor hard timeouts and preflight
@@ -225,6 +225,21 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
         'phpstan' => [
             'cmd' => timeout_check_command(
                 qa_check_run_env_command().' '.$phpBin.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
+                    .(is_llm_mode() ? ' --error-format=json --no-ansi' : ''),
+                90,
+            ),
+        ],
+        'dead-code' => [
+            'cmd' => timeout_check_command(
+                // Warm Symfony DIC XML into ignored var/, then run the dedicated
+                // ShipMonk dead-code config (does not alter normal phpstan.dist.neon).
+                qa_check_run_env_command()
+                    .' APP_ENV=dev APP_DEBUG=1 '.$phpBin.' bin/console about --no-ansi --no-interaction'
+                    .' >/dev/null'
+                    .' && mkdir -p var/phpstan-dead-code'
+                    .' && cp .hatfield/cache/dev/Ineersa_CodingAgent_KernelDevDebugContainer.xml'
+                    .' var/phpstan-dead-code/symfony-container.xml'
+                    .' && '.qa_check_run_env_command().' '.$phpBin.' vendor/bin/phpstan analyse -c phpstan.dead-code.neon --no-progress'
                     .(is_llm_mode() ? ' --error-format=json --no-ansi' : ''),
                 90,
             ),

@@ -72,7 +72,8 @@
         "phpunit/phpunit": "^13.2",
         "deptrac/deptrac": "^4.6",
         "dama/doctrine-test-bundle": "^8.6",
-        "brianium/paratest": "^7.23"
+        "brianium/paratest": "^7.23",
+        "shipmonk/dead-code-detector": "^1.4"
     },
     "autoload": {
         "psr-4": {
@@ -99,7 +100,8 @@
             "Ineersa\\HatfieldExt\\TaskWorkflow\\Tests\\": ".hatfield/extensions/task-workflow/tests/",
             "Ineersa\\HatfieldExt\\CastorLlmMode\\Tests\\": ".hatfield/extensions/castor-llm-mode/tests/",
             "Ineersa\\HatfieldExt\\FileRewind\\Tests\\": ".hatfield/extensions/file-rewind/tests/",
-            "Ineersa\\HatfieldExt\\ObservationalMemory\\Tests\\": ".hatfield/extensions/observational-memory/tests/"
+            "Ineersa\\HatfieldExt\\ObservationalMemory\\Tests\\": ".hatfield/extensions/observational-memory/tests/",
+            "Ineersa\\Tools\\PHPStan\\": "tools/phpstan/"
         }
     },
     "minimum-stability": "dev",

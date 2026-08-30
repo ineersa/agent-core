@@ -12,6 +12,8 @@ declare(strict_types=1);
 use Castor\Attribute\AsTask;
 
 use function CastorTasks\is_llm_mode;
+use function CastorTasks\project_root_dir;
+use function CastorTasks\run_quiet_command;
 use function CastorTasks\summarize_deptrac_json;
 use function CastorTasks\summarize_php_cs_fixer_json;
 use function CastorTasks\summarize_phpstan_json;
@@ -75,6 +77,77 @@ function phpstan_baseline(): void
     passthru(qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/phpstan analyse -c phpstan.dist.neon --generate-baseline phpstan-baseline.neon', $exitCode);
     if (0 !== $exitCode) {
         fail_quality(sprintf('PHPStan baseline generation failed with exit code %d', $exitCode));
+    }
+}
+
+/**
+ * Ensure Symfony DIC XML for ShipMonk dead-code Symfony usage provider.
+ *
+ * Generated under ignored var/phpstan-dead-code/, never committed.
+ */
+function ensure_dead_code_symfony_container_xml(): string
+{
+    $root = project_root_dir();
+    $dir = $root.'/var/phpstan-dead-code';
+    if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+        fail_quality(sprintf('Unable to create dead-code report directory: %s', $dir));
+    }
+
+    $target = $dir.'/symfony-container.xml';
+    $cmd = qa_observability_env_command()
+        .' APP_ENV=dev APP_DEBUG=1 '
+        .escapeshellarg(\PHP_BINARY).' '
+        .escapeshellarg($root.'/bin/console')
+        .' about --no-ansi --no-interaction';
+    $about = run_quiet_command($cmd);
+    if (0 !== $about->getExitCode()) {
+        fail_quality('Failed warming Symfony container for dead-code detection: '.$about->getErrorOutput());
+    }
+
+    $source = $root.'/.hatfield/cache/dev/Ineersa_CodingAgent_KernelDevDebugContainer.xml';
+    if (!is_file($source)) {
+        fail_quality(sprintf('Symfony container XML missing after warmup: %s', $source));
+    }
+
+    if (!copy($source, $target)) {
+        fail_quality(sprintf('Unable to copy Symfony container XML to %s', $target));
+    }
+
+    return $target;
+}
+
+#[AsTask(name: 'dead-code', description: 'Run ShipMonk dead-code detector')]
+function dead_code(): void
+{
+    ensure_dead_code_symfony_container_xml();
+    $cmd = qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/phpstan analyse -c phpstan.dead-code.neon --no-progress'
+        .(is_llm_mode() ? ' --error-format=json --no-ansi' : '');
+    $exitCode = 0;
+    $output = [];
+    exec($cmd, $output, $exitCode);
+    $output = implode("\n", $output);
+    echo $output.\PHP_EOL;
+    if (is_llm_mode()) {
+        $summary = summarize_phpstan_json($output);
+        if ('' !== $summary) {
+            echo $summary;
+        }
+    }
+    if (0 !== $exitCode) {
+        fail_quality(sprintf('Dead-code detector failed with exit code %d', $exitCode));
+    }
+}
+
+#[AsTask(name: 'dead-code:baseline', description: 'Regenerate ShipMonk dead-code baseline')]
+function dead_code_baseline(): void
+{
+    ensure_dead_code_symfony_container_xml();
+    passthru(
+        qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/phpstan analyse -c phpstan.dead-code.neon --generate-baseline phpstan.dead-code-baseline.neon',
+        $exitCode,
+    );
+    if (0 !== $exitCode) {
+        fail_quality(sprintf('Dead-code baseline generation failed with exit code %d', $exitCode));
     }
 }
 
