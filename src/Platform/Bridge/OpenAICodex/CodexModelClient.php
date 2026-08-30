@@ -111,12 +111,9 @@ class CodexModelClient implements ModelClientInterface
 
         $retryRequestId = $resolution->idFor401Retry();
         $retryInvocationOptions = $resolution->options;
-        if (CodexCorrelationProvenance::ExplicitRunId === $resolution->provenance || CodexCorrelationProvenance::Generated === $resolution->provenance) {
-            $retryInvocationOptions['run_id'] = $retryRequestId;
-        }
         $retryPayload = $payload;
         if (CodexCorrelationProvenance::Generated === $resolution->provenance) {
-            unset($retryPayload['prompt_cache_key']);
+            $retryInvocationOptions['prompt_cache_key'] = $retryRequestId;
         }
 
         $retryOptions = $requestOptions;

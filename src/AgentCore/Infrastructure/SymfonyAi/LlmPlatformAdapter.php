@@ -18,7 +18,6 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
-use Ineersa\AgentCore\Domain\Model\ProviderRequestOptionKeys;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\Platform\Result\CancellableRawResultInterface;
@@ -66,6 +65,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private LoggerInterface $logger,
         private DenormalizerInterface $denormalizer,
         private ?ModelResolverInterface $modelResolver = null,
+        private readonly ProviderRequestPreparer $providerRequestPreparer = new ProviderRequestPreparer(),
         private readonly LlmProviderErrorClassifier $errorClassifier = new LlmProviderErrorClassifier(),
         private readonly AgentMessageToolCallSequenceValidator $toolCallSequenceValidator = new AgentMessageToolCallSequenceValidator(),
     ) {
@@ -87,7 +87,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         // silent filtering.
         $this->toolCallSequenceValidator->validate($messages);
 
-        $baseOptions = $this->buildInputOptions($request);
+        $providerOptions = $this->buildProviderOptions($request);
 
         // Resolve ordinary turns from current session metadata at the provider
         // boundary. RunState is historical and must not be an execution override.
@@ -96,24 +96,14 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 defaultModel: $request->model,
                 messages: $this->messageConverter->toMessageBag($messages),
                 input: $request->input,
-                options: new ModelResolutionOptions($baseOptions),
+                options: new ModelResolutionOptions($request->options->extraOptions),
             )
             : new \Ineersa\AgentCore\Domain\Model\ResolvedModel($request->model);
-        $resolvedOptions = array_replace($baseOptions, $resolvedModel->options);
-        if ('' !== $resolvedModel->reasoning) {
-            $resolvedOptions[ProviderRequestOptionKeys::REASONING] = $resolvedModel->reasoning;
-        }
-        if ([] !== $resolvedModel->compatFeatures) {
-            $resolvedOptions[ProviderRequestOptionKeys::COMPAT_FEATURES] = $resolvedModel->compatFeatures;
-        }
-        if ([] !== $resolvedModel->reasoningOptions) {
-            $resolvedOptions[ProviderRequestOptionKeys::REASONING_OPTIONS] = $resolvedModel->reasoningOptions;
-        }
 
         $messageBag = $this->applyConvertHooks($messages, $cancelToken, $resolvedModel->model);
 
-        $input = new Input($resolvedModel->model, $messageBag, $resolvedOptions);
-        $this->toolDescriptionProcessor->processInput($input);
+        $input = new Input($resolvedModel->model, $messageBag, $providerOptions);
+        $this->toolDescriptionProcessor->processInput($input, $request->input);
 
         // Build a privacy-safe request summary for error diagnostics.
         // This is included in the error array when the request fails.
@@ -134,13 +124,17 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         // send_failure before asStream()). Classify here so bounded LLM retry sees
         // a retryable PlatformInvocationResult instead of a generic worker exception.
         try {
-            $deferredResult = $this->platform->invoke(
+            $platform = new PreparedInvocationPlatform(
+                $this->platform,
+                $this->providerRequestPreparer,
+                $resolvedModel,
+                $request->input,
+                $cancelToken,
+            );
+            $deferredResult = $platform->invoke(
                 $input->getModel(),
                 $input->getMessageBag(),
-                PlatformInvocationMetadata::inject(
-                    array_replace($inputOptions, ['stream' => true]),
-                    new PlatformInvocationMetadata($request->input, $cancelToken, $resolvedModel),
-                ),
+                array_replace($inputOptions, ['stream' => true]),
             );
         } catch (\Throwable $exception) {
             return $this->errorResult(
@@ -318,9 +312,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
-     * Build Input options, propagating toolsRef, turnNo, and runId for
-     * DynamicToolDescriptionProcessor / ToolSetResolver resolution, plus
-     * ModelInvocationOptions flags (toolsEnabled, extraOptions).
+     * Build only options that may cross the Symfony AI provider boundary.
+     * Tool resolver correlation remains on ModelInvocationInput.
      *
      * When toolsEnabled === false, injects tools:[] to force an empty
      * toolbox regardless of ToolSetResolver or toolbox configuration.
@@ -328,26 +321,11 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      *
      * @return array<string, mixed>
      */
-    private function buildInputOptions(ModelInvocationRequest $request): array
+    private function buildProviderOptions(ModelInvocationRequest $request): array
     {
-        $options = [];
-
-        if (null !== $request->input->toolsRef) {
-            $options['tools_ref'] = $request->input->toolsRef;
-        }
-        if (null !== $request->input->turnNo) {
-            $options['turn_no'] = $request->input->turnNo;
-        }
-        if (null !== $request->input->runId) {
-            $options['run_id'] = $request->input->runId;
-        }
-
-        // Generic model/platform options from ModelInvocationOptions —
-        // forwarded uninterpreted.  Core-controlled flags (toolsEnabled)
-        // are applied after this merge and always win.
-        foreach ($request->options->extraOptions as $key => $value) {
-            $options[$key] = $value;
-        }
+        // thinking_level is a Hatfield model-resolution input. Every other
+        // extra option is explicitly provider-facing.
+        $options = array_diff_key($request->options->extraOptions, ['thinking_level' => true]);
 
         // Explicit no-tools flag: short-circuit all tool resolution by
         // injecting an empty tool array after generic options are merged.

@@ -438,10 +438,6 @@ services:
     arguments:
       $featureShapers: !tagged_iterator agent_core.provider_compatibility_feature_shaper
 
-  Ineersa\AgentCore\Infrastructure\SymfonyAi\BeforeProviderRequestSubscriber:
-    arguments:
-      $hooks: !tagged_iterator agent_core.before_provider_request_hook
-
   Ineersa\Tui\Application\InteractiveMode:
     arguments:
       $listenerRegistrars: !tagged_iterator { tag: app.tui_listener, default_priority_method: getPriority }
@@ -994,14 +990,6 @@ services:
   Ineersa\AgentCore\Contract\Model\ModelResolverInterface:
     alias: Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver
 
-  Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface:
-    alias: Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderRegistry
-
-  Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber:
-    arguments:
-      $modelResolver: '@Ineersa\AgentCore\Contract\Model\ModelResolverInterface'
-      $providerRegistry: '@Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface'
-
   # ─── AgentCore pipeline wiring (services that need tagged iterators or scalar binding) ───
 
   Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor:
@@ -1024,6 +1012,10 @@ services:
   Ineersa\CodingAgent\Compaction\CompactionHookDispatcher:
     arguments:
       $hooks: !tagged_iterator coding_agent.before_compaction_hook
+
+  Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer:
+    arguments:
+      $hooks: !tagged_iterator agent_core.before_provider_request_hook
 
   # LlmPlatformAdapter hooks — ImageGatingConvertHook registers as a convert_to_llm hook.
   Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter:

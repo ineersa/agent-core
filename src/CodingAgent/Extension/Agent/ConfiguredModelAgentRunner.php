@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension\Agent;
 
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\PlatformInvocationMetadata;
+use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\PreparedInvocationPlatform;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
@@ -36,6 +39,8 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         private ?HatfieldModelCatalog $modelCatalog,
         private LoggerInterface $logger,
         private ToolCallArgumentResolverInterface $argumentResolver,
+        private ModelResolverInterface $modelResolver,
+        private ProviderRequestPreparer $providerRequestPreparer,
     ) {
     }
 
@@ -84,24 +89,34 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
             $outputProcessors[] = $processor;
         }
 
+        $invocationInput = new ModelInvocationInput(
+            runId: $request->sessionId,
+            stepId: $stepId,
+        );
+        $cancelToken = new NullCancellationToken();
+        $resolvedModel = $this->modelResolver->resolve(
+            $request->model,
+            $messages,
+            $invocationInput,
+            new ModelResolutionOptions(),
+        );
+        $platform = new PreparedInvocationPlatform(
+            $this->platform,
+            $this->providerRequestPreparer,
+            $resolvedModel,
+            $invocationInput,
+            $cancelToken,
+        );
+
         $agent = new Agent(
-            platform: $this->platform,
-            model: $request->model,
+            platform: $platform,
+            model: $resolvedModel->model,
             inputProcessors: $inputProcessors,
             outputProcessors: $outputProcessors,
             name: 'extension-agent',
         );
 
-        $options = PlatformInvocationMetadata::inject(
-            ['stream' => true],
-            new PlatformInvocationMetadata(
-                new ModelInvocationInput(
-                    runId: $request->sessionId,
-                    stepId: $stepId,
-                ),
-                new NullCancellationToken(),
-            ),
-        );
+        $options = ['stream' => true];
 
         $this->logger->info('extension.agent.run.started', [
             'component' => 'extension_agent_runner',
