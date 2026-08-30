@@ -169,7 +169,7 @@ final class CodexWebSocketModelClientTest extends TestCase
         $this->assertSame($connectCalls[1]['session-id'], $frame['prompt_cache_key']);
     }
 
-    public function testHandshake401RetryPreservesExplicitRunIdAcrossHandshakeAndFrame(): void
+    public function testHandshake401RetryPreservesExplicitPromptCacheKeyAcrossHandshakeAndFrame(): void
     {
         $sentFrame = '';
         $connection = $this->createMock(WebsocketConnection::class);
@@ -206,7 +206,7 @@ final class CodexWebSocketModelClientTest extends TestCase
         $client->request(
             new CodexModel('gpt-5.6-luna'),
             ['input' => [['role' => 'user', 'content' => 'hi']]],
-            ['run_id' => 'session-run-keep'],
+            ['prompt_cache_key' => 'session-run-keep'],
         );
 
         $this->assertSame('session-run-keep', $connectCalls[0]['session-id']);
@@ -276,7 +276,7 @@ final class CodexWebSocketModelClientTest extends TestCase
         );
     }
 
-    public function testProviderCacheKeyUsedForHandshakeAndFrameWhenRunIdIsNumeric(): void
+    public function testPromptCacheKeyUsedForHandshakeAndFrame(): void
     {
         $providerKey = '0194a000-0000-7000-8000-000000000088';
         $captured = new \stdClass();
@@ -312,14 +312,13 @@ final class CodexWebSocketModelClientTest extends TestCase
         $client->request(
             new CodexModel('gpt-5.6-luna'),
             ['input' => [['role' => 'user', 'content' => 'Hi']]],
-            ['run_id' => '1', 'provider_cache_key' => $providerKey],
+            ['prompt_cache_key' => $providerKey],
         );
 
         $this->assertSame($providerKey, $captured->headers['session-id']);
         $this->assertSame($providerKey, $captured->headers['x-client-request-id']);
         $frame = json_decode($captured->frame, true, flags: \JSON_THROW_ON_ERROR);
         $this->assertSame($providerKey, $frame['prompt_cache_key']);
-        $this->assertArrayNotHasKey('provider_cache_key', $frame);
     }
 
     private function websocketConnectException(int $status, string $secretMarker = ''): WebsocketConnectException

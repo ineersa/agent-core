@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber;
 use Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayModelClient;
 use Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayResultConverter;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
@@ -207,7 +206,6 @@ final class TraceReplayTest extends PerMethodIsolatedKernelTestCase
     private function adapter(FixtureReplayModelClient $modelClient, array $fixture, SessionAwareModelResolver $modelResolver): LlmPlatformAdapter
     {
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ModelResolverRoutingSubscriber($modelResolver));
         $platform = new Platform(
             providers: [new Provider(
                 name: 'replay',

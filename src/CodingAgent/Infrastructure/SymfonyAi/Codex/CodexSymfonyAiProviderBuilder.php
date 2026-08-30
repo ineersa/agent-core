@@ -43,6 +43,7 @@ final class CodexSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInt
         $projectedCatalog = new ProjectedSymfonyModelCatalog(
             hatfieldModels: $provider->models,
             modelClass: CodexModel::class,
+            providerId: $provider->id,
         );
 
         $authKey = $this->resolveCodexAuthKey($provider);

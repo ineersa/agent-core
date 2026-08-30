@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\CLI\Session;
 
-use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\PlatformInvocationMetadata;
+use Ineersa\AgentCore\Domain\Model\ResolvedModel;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparedEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
@@ -32,12 +32,10 @@ use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Test;
-use Symfony\AI\Platform\Event\InvocationEvent;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\SystemMessage;
 use Symfony\AI\Platform\Message\UserMessage;
-use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\Tool\ExecutionReference;
 use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\Console\Command\Command;
@@ -57,8 +55,8 @@ use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Validator\ValidatorBuilder;
 
 /**
- * Thesis A: opt-in dual-priority subscriber sees final shaped MessageBag/tools, writes parent/child
- * sidecars only when enabled, does not mutate InvocationEvent, and never serializes raw prompts/keys/secrets.
+ * Thesis A: opt-in diagnostics subscriber sees final prepared MessageBag/tools, writes parent/child
+ * sidecars only when enabled, and never serializes raw prompts/keys/secrets.
  * Thesis B: inspect joins diagnostics with usage, prevents multi-record double-count, reports
  * first prefix change, and gives one actionable warning for diagnostics-free historical usage.
  */
@@ -82,12 +80,12 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         $dispatcher = new EventDispatcher();
         $dispatcher->addSubscriber(static::getContainer()->get(PromptCacheDiagnosticsInvocationSubscriber::class));
 
-        $this->dispatchInvocation($dispatcher, $sessionId, 1, 'parent-step', 'openai-codex/gpt-5.6', 'system', 'secret', 'read', null);
+        $this->dispatchPreparedRequest($dispatcher, $sessionId, 1, 'parent-step', 'openai-codex/gpt-5.6', 'openai-codex', 'system', 'secret', 'read', null);
         $childRunId = '0194eeee-aaaa-7bbb-8ccc-dddddddddddd';
         $artifactId = 'disabled-child';
         $entry = $registry->create($sessionId, $artifactId, $childRunId, 'scout', AgentArtifactKindEnum::Subagent);
         $childDirectory->register($entry);
-        $this->dispatchInvocation($dispatcher, $childRunId, 1, 'child-step', 'deepseek/deepseek-v4-flash', 'system', 'secret', 'read', null);
+        $this->dispatchPreparedRequest($dispatcher, $childRunId, 1, 'child-step', 'deepseek/deepseek-v4-flash', 'deepseek', 'system', 'secret', 'read', null);
 
         $this->assertSame([], $diagStore->readForRun($sessionId));
         $this->assertSame([], $diagStore->readForRun($childRunId));
@@ -131,13 +129,13 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         $cacheKey = '0194eeee-bbbb-7ccc-8ddd-eeeeeeeeeeee';
         $secret = 'secret-prompt-SHOULD-NOT-PRINT';
 
-        $event1 = $this->dispatchInvocation($dispatcher, $sessionId, 1, 'parent-step-1', 'openai-codex/gpt-5.6', 'stable prologue', $secret, 'read', $cacheKey);
-        $this->assertSame('stable prologue', $event1->getInput() instanceof MessageBag
-            ? (string) ($event1->getInput()->getSystemMessage()?->getContent() ?? '')
+        $event1 = $this->dispatchPreparedRequest($dispatcher, $sessionId, 1, 'parent-step-1', 'openai-codex/gpt-5.6', 'openai-codex', 'stable prologue', $secret, 'read', $cacheKey);
+        $this->assertSame('stable prologue', $event1->input instanceof MessageBag
+            ? (string) ($event1->input->getSystemMessage()?->getContent() ?? '')
             : '');
-        $this->dispatchInvocation($dispatcher, $sessionId, 2, 'parent-step-2', 'openai-codex/gpt-5.6', 'stable prologue', $secret.' follow-up', 'bash', $cacheKey);
+        $this->dispatchPreparedRequest($dispatcher, $sessionId, 2, 'parent-step-2', 'openai-codex/gpt-5.6', 'openai-codex', 'stable prologue', $secret.' follow-up', 'bash', $cacheKey);
         // Thinking-only second invoke on same step: usage attaches only to last diagnostic.
-        $this->dispatchInvocation($dispatcher, $sessionId, 2, 'parent-step-2', 'openai-codex/gpt-5.6', 'stable prologue', $secret.' follow-up again', 'bash', $cacheKey);
+        $this->dispatchPreparedRequest($dispatcher, $sessionId, 2, 'parent-step-2', 'openai-codex/gpt-5.6', 'openai-codex', 'stable prologue', $secret.' follow-up again', 'bash', $cacheKey);
 
         $parentRecords = $diagStore->readForRun($sessionId);
         $this->assertCount(3, $parentRecords);
@@ -179,7 +177,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         $artifactId = 'scout-1';
         $entry = $registry->create($sessionId, $artifactId, $childRunId, 'scout', AgentArtifactKindEnum::Subagent);
         $childDirectory->register($entry);
-        $this->dispatchInvocation($dispatcher, $childRunId, 1, 'child-step-1', 'deepseek/deepseek-v4-flash', 'child system', 'child-secret-SHOULD-NOT-PRINT', 'read', null);
+        $this->dispatchPreparedRequest($dispatcher, $childRunId, 1, 'child-step-1', 'deepseek/deepseek-v4-flash', 'deepseek', 'child system', 'child-secret-SHOULD-NOT-PRINT', 'read', null);
         $childRecords = $diagStore->readForRun($childRunId);
         $this->assertCount(1, $childRecords);
         $this->assertStringNotContainsString('child-secret-SHOULD-NOT-PRINT', json_encode($childRecords, \JSON_THROW_ON_ERROR));
@@ -336,17 +334,18 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
     {
     }
 
-    private function dispatchInvocation(
+    private function dispatchPreparedRequest(
         EventDispatcher $dispatcher,
         string $runId,
         int $turnNo,
         string $stepId,
         string $model,
+        string $providerId,
         string $system,
         string $user,
         string $toolName,
-        ?string $providerCacheKey,
-    ): InvocationEvent {
+        ?string $promptCacheKey,
+    ): ProviderRequestPreparedEvent {
         $bag = new MessageBag(new SystemMessage($system), new UserMessage(new Text($user)));
         $tool = new Tool(
             new ExecutionReference(self::class, 'noop'),
@@ -355,26 +354,18 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
             ['type' => 'object', 'properties' => new \stdClass()],
         );
         $options = ['tools' => [$tool], 'stream' => true];
-        if (null !== $providerCacheKey) {
-            $options['provider_cache_key'] = $providerCacheKey;
+        if (null !== $promptCacheKey) {
+            $options['prompt_cache_key'] = $promptCacheKey;
         }
-        $options = PlatformInvocationMetadata::inject(
-            $options,
-            new PlatformInvocationMetadata(
-                new ModelInvocationInput(runId: $runId, turnNo: $turnNo, stepId: $stepId),
-                new NullCancellationToken(),
-            ),
-        );
 
-        $event = new InvocationEvent(new Model($model), $bag, $options);
-        $beforeOptions = $event->getOptions();
-        $beforeInput = $event->getInput();
-        $beforeModel = $event->getModel()->getName();
+        $event = new ProviderRequestPreparedEvent(
+            new ModelInvocationInput(runId: $runId, turnNo: $turnNo, stepId: $stepId),
+            new ResolvedModel(model: $model, providerId: $providerId, providerOptions: $options),
+            $model,
+            $bag,
+            $options,
+        );
         $dispatcher->dispatch($event);
-        // Subscriber must not mutate the InvocationEvent.
-        $this->assertSame($beforeOptions, $event->getOptions());
-        $this->assertSame($beforeInput, $event->getInput());
-        $this->assertSame($beforeModel, $event->getModel()->getName());
 
         return $event;
     }

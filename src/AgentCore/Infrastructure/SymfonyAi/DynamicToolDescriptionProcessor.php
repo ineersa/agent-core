@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Symfony\AI\Agent\Input;
 use Symfony\AI\Agent\InputProcessorInterface;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
@@ -18,14 +19,14 @@ final readonly class DynamicToolDescriptionProcessor implements InputProcessorIn
     ) {
     }
 
-    public function processInput(Input $input): void
+    public function processInput(Input $input, ?ModelInvocationInput $invocationInput = null): void
     {
         $options = $input->getOptions();
 
-        // Resolve active toolset via ToolSetResolver when a tools_ref is present.
-        // If the resolver short-circuits (empty active set), finalise options and return.
-        if (null !== $this->toolSetResolver && isset($options['tools_ref']) && \is_string($options['tools_ref'])) {
-            if ($this->resolveToolset($options, $input)) {
+        // Resolver correlation stays in typed Hatfield input and never enters
+        // the provider options array.
+        if (null !== $this->toolSetResolver && null !== $invocationInput?->toolsRef) {
+            if ($this->resolveToolset($options, $input, $invocationInput)) {
                 return;
             }
             // Fall through to existing tool filtering logic with the resolved names.
@@ -101,28 +102,20 @@ final readonly class DynamicToolDescriptionProcessor implements InputProcessorIn
      * When the set is empty, finalise options immediately (short-circuit)
      * and return true so the caller returns early, preventing fallback.
      *
-     * Always cleans up resolver-specific options to prevent leaking.
-     *
      * @param array<string, mixed> $options (by reference)
      *
      * @return bool true to short-circuit (no tools available); false to continue
      */
-    private function resolveToolset(array &$options, Input $input): bool
+    private function resolveToolset(array &$options, Input $input, ModelInvocationInput $invocationInput): bool
     {
         \assert(null !== $this->toolSetResolver);
+        \assert(null !== $invocationInput->toolsRef);
 
-        $toolsRef = $options['tools_ref'];
-        $turnNo = isset($options['turn_no']) && \is_int($options['turn_no']) ? $options['turn_no'] : null;
-        $runId = isset($options['run_id']) && \is_string($options['run_id']) ? $options['run_id'] : null;
-
-        $activeSet = $this->toolSetResolver->resolve($toolsRef, $turnNo, $runId);
-
-        // Clean up resolver-only options so they don't leak to the platform.
-        // run_id is consumed here for ToolSetResolver context but must remain in options
-        // for downstream provider correlation/cache context; provider-specific request
-        // mapping is responsible for consuming or sanitizing internal correlation fields
-        // before wire serialization.
-        unset($options['tools_ref'], $options['turn_no']);
+        $activeSet = $this->toolSetResolver->resolve(
+            $invocationInput->toolsRef,
+            $invocationInput->turnNo,
+            $invocationInput->runId,
+        );
 
         if ([] === $activeSet->toolNames) {
             // Empty active set: clear everything and short-circuit so

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
+use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningContentFeatureShaper;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Message\AssistantMessage;
@@ -47,7 +48,7 @@ final class ReasoningContentFeatureShaperTest extends TestCase
             'deepseek-v4-pro',
             ['something_else' => 'value'],
             [],
-            self::DEEPSEEK_FEATURES,
+            new ResolvedModel(model: 'deepseek-v4-pro', compatFeatures: self::DEEPSEEK_FEATURES),
         );
 
         $this->assertNull($result);
@@ -67,7 +68,7 @@ final class ReasoningContentFeatureShaperTest extends TestCase
             'deepseek-v4-pro',
             ['message_bag' => $bag],
             ['stream' => true, 'reasoning_effort' => 'high'],
-            self::DEEPSEEK_FEATURES,
+            new ResolvedModel(model: 'deepseek-v4-pro', compatFeatures: self::DEEPSEEK_FEATURES),
         );
 
         $this->assertNotNull($result);
@@ -103,7 +104,7 @@ final class ReasoningContentFeatureShaperTest extends TestCase
             'deepseek-v4-pro',
             ['message_bag' => $bag],
             [],
-            self::DEEPSEEK_FEATURES,
+            new ResolvedModel(model: 'deepseek-v4-pro', compatFeatures: self::DEEPSEEK_FEATURES),
         );
 
         $this->assertNull($result, 'Should return null when no assistant messages needed changing');
@@ -124,7 +125,7 @@ final class ReasoningContentFeatureShaperTest extends TestCase
             'deepseek-v4-pro',
             ['message_bag' => $bag],
             [],
-            self::DEEPSEEK_FEATURES,
+            new ResolvedModel(model: 'deepseek-v4-pro', compatFeatures: self::DEEPSEEK_FEATURES),
         );
 
         $this->assertNotNull($result);
@@ -175,7 +176,7 @@ final class ReasoningContentFeatureShaperTest extends TestCase
             'deepseek-v4-pro',
             ['message_bag' => $bag],
             [],
-            self::DEEPSEEK_FEATURES,
+            new ResolvedModel(model: 'deepseek-v4-pro', compatFeatures: self::DEEPSEEK_FEATURES),
         );
 
         $this->assertNotNull($result);
@@ -209,7 +210,7 @@ final class ReasoningContentFeatureShaperTest extends TestCase
             'deepseek-v4-pro',
             ['message_bag' => $bag],
             [],
-            self::DEEPSEEK_FEATURES,
+            new ResolvedModel(model: 'deepseek-v4-pro', compatFeatures: self::DEEPSEEK_FEATURES),
         );
 
         $this->assertNotNull($result);
@@ -246,7 +247,7 @@ final class ReasoningContentFeatureShaperTest extends TestCase
             'deepseek-v4-pro',
             ['message_bag' => $bag],
             [],
-            self::DEEPSEEK_FEATURES,
+            new ResolvedModel(model: 'deepseek-v4-pro', compatFeatures: self::DEEPSEEK_FEATURES),
         );
 
         $this->assertNotNull($result);

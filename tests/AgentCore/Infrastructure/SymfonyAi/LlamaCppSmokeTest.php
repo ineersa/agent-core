@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
-use Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber;
 use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
@@ -27,14 +25,12 @@ use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
-use Ineersa\Platform\Bridge\Generic\SanitizedGenericModelClient;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\Generic\Completions\ModelClient as GenericCompletionsModelClient;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\Provider;
-use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
@@ -156,40 +152,26 @@ final class LlamaCppSmokeTest extends KernelTestCase
         $this->assertNotNull($modelDefinition, 'Expected configured llama_cpp model in test AppConfig');
 
         // ── Build the real Platform with a live Provider ──
-        // Mirror production SymfonyAiProviderFactory: sanitize internal Hatfield options
-        // before generic completions wire JSON (run_id, provider_cache_key, etc.).
         $provider = new Provider(
             $llamaCppProviderKey,
             [
-                new SanitizedGenericModelClient(new GenericCompletionsModelClient(
+                new GenericCompletionsModelClient(
                     // Direct client bypasses services_test 5s override; 10s bounds a stalled stream under 15s ceiling.
                     HttpClient::create(['timeout' => 10.0]),
                     $baseUrl,
                     $apiKey,
                     $completionsPath,
-                )),
+                ),
             ],
             [new DurableResultConverter()],
-            new ProjectedSymfonyModelCatalog([$modelName => $modelDefinition], CompletionsModel::class),
+            new ProjectedSymfonyModelCatalog(
+                [$modelName => $modelDefinition],
+                CompletionsModel::class,
+                $llamaCppProviderKey,
+            ),
             null,
             $eventDispatcher,
         );
-
-        $eventDispatcher->addSubscriber(new ModelResolverRoutingSubscriber(
-            $modelResolver,
-            new class($llamaCppProviderKey, $provider) implements ProviderRegistryInterface {
-                public function __construct(
-                    private readonly string $providerKey,
-                    private readonly ProviderInterface $provider,
-                ) {
-                }
-
-                public function get(string $id): ?ProviderInterface
-                {
-                    return $this->providerKey === $id ? $this->provider : null;
-                }
-            },
-        ));
 
         $platform = new Platform(
             providers: [$provider],

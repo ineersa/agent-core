@@ -35,6 +35,7 @@ final class ProjectedSymfonyModelCatalog extends AbstractModelCatalog
     public function __construct(
         array $hatfieldModels,
         private readonly string $modelClass = CompletionsModel::class,
+        private readonly string $providerId = '',
     ) {
         $this->models = [];
 
@@ -62,7 +63,10 @@ final class ProjectedSymfonyModelCatalog extends AbstractModelCatalog
     {
         $stripped = $modelName;
         if (!isset($this->models[$stripped]) && str_contains($stripped, '/')) {
-            $bare = explode('/', $stripped, 2)[1] ?? '';
+            [$qualifiedProvider, $bare] = array_pad(explode('/', $stripped, 2), 2, '');
+            if ('' !== $this->providerId && $qualifiedProvider !== $this->providerId) {
+                return parent::parseModelName($modelName);
+            }
             if ('' !== $bare) {
                 // Accept "flash" directly, or "flash:23b" if the bare
                 // part after ":" maps to a known model.

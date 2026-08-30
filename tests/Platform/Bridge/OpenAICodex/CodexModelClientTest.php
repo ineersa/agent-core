@@ -140,44 +140,7 @@ final class CodexModelClientTest extends TestCase
         );
     }
 
-    public function testItStripsInternalHatfieldKeysFromBody(): void
-    {
-        $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
-            $body = json_decode($options['body'], true);
-            self::assertArrayNotHasKey('_agent_core_invocation', $body);
-            self::assertArrayNotHasKey('_hatfield_reasoning', $body);
-            // stream is NOT stripped — it is a valid Codex API field and is preserved
-            self::assertTrue($body['stream']);
-            self::assertArrayNotHasKey('tools_ref', $body);
-            self::assertArrayNotHasKey('turn_no', $body);
-            self::assertArrayNotHasKey('run_id', $body);
-            self::assertArrayNotHasKey('provider_cache_key', $body);
-
-            return new MockResponse();
-        };
-
-        $httpClient = new MockHttpClient([$resultCallback]);
-        $modelClient = new CodexModelClient($httpClient, 'https://chatgpt.com/backend-api', 'test-access-token', 'acct-123');
-
-        $options = [
-            '_agent_core_invocation' => ['some' => 'metadata'],
-            '_hatfield_reasoning' => 'medium',
-            'stream' => true,
-            'tools_ref' => 'toolset-1',
-            'turn_no' => 1,
-            'run_id' => 'run-abc',
-            'provider_cache_key' => '0194a000-0000-7000-8000-000000000001',
-            'temperature' => 0.7,
-        ];
-
-        $modelClient->request(
-            new CodexModel('gpt-5.5'),
-            ['input' => [['role' => 'user', 'content' => 'Hello']]],
-            $options,
-        );
-    }
-
-    public function testProviderCacheKeyDrivesHeadersAndPromptCacheKeyNotNumericRunId(): void
+    public function testPromptCacheKeyDrivesHeadersAndBody(): void
     {
         $providerKey = '0194a000-0000-7000-8000-000000000099';
         $httpClient = new MockHttpClient([
@@ -187,7 +150,8 @@ final class CodexModelClientTest extends TestCase
                 self::assertSame('session-id: '.$providerKey, $options['normalized_headers']['session-id'][0]);
                 $body = json_decode($options['body'], true);
                 self::assertSame($providerKey, $body['prompt_cache_key']);
-                self::assertArrayNotHasKey('provider_cache_key', $body);
+                self::assertTrue($body['stream']);
+                self::assertSame(0.7, $body['temperature']);
 
                 return new MockResponse('', ['http_code' => 200]);
             },
@@ -196,7 +160,7 @@ final class CodexModelClientTest extends TestCase
         $modelClient->request(
             new CodexModel('gpt-5.6-luna'),
             ['input' => [['role' => 'user', 'content' => 'Hello']]],
-            ['run_id' => '1', 'provider_cache_key' => $providerKey],
+            ['prompt_cache_key' => $providerKey, 'stream' => true, 'temperature' => 0.7],
         );
     }
 
@@ -234,15 +198,11 @@ final class CodexModelClientTest extends TestCase
         );
     }
 
-    public function testItStripsInternalKeysWhilePreservingPayloadAndModel(): void
+    public function testItPreservesPayloadAndModelWithProviderFacingOptions(): void
     {
         $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
             $body = json_decode($options['body'], true);
-            // Internal keys stripped (_hatfield_ prefix)
-            self::assertArrayNotHasKey('_hatfield_reasoning', $body);
-            // stream is preserved (valid Codex API field)
             self::assertTrue($body['stream']);
-            // Model and payload preserved
             self::assertSame('gpt-5.4-mini', $body['model']);
             self::assertSame('Hello world', $body['input'][0]['content']);
             self::assertSame('user', $body['input'][0]['role']);
@@ -256,7 +216,7 @@ final class CodexModelClientTest extends TestCase
         $modelClient->request(
             new CodexModel('gpt-5.4-mini'),
             ['input' => [['role' => 'user', 'content' => 'Hello world']]],
-            ['stream' => true, '_hatfield_reasoning' => 'medium'],
+            ['stream' => true],
         );
     }
 
@@ -272,14 +232,7 @@ final class CodexModelClientTest extends TestCase
             self::assertSame(['reasoning.encrypted_content'], $body['include']);
             self::assertSame('auto', $body['tool_choice']);
             self::assertTrue($body['parallel_tool_calls']);
-
-            // Internal keys stripped
-            self::assertArrayNotHasKey('_agent_core_invocation', $body);
-            self::assertArrayNotHasKey('_hatfield_reasoning', $body);
-            self::assertArrayNotHasKey('tools_ref', $body);
-            self::assertArrayNotHasKey('turn_no', $body);
-            self::assertArrayNotHasKey('run_id', $body);
-            self::assertArrayNotHasKey('provider_cache_key', $body);
+            self::assertSame(0.5, $body['temperature']);
 
             return new MockResponse();
         };
@@ -287,19 +240,10 @@ final class CodexModelClientTest extends TestCase
         $httpClient = new MockHttpClient([$resultCallback]);
         $modelClient = new CodexModelClient($httpClient, 'https://chatgpt.com/backend-api', 'test-access-token', 'acct-123');
 
-        $options = [
-            '_agent_core_invocation' => ['some' => 'data'],
-            '_hatfield_reasoning' => 'medium',
-            'tools_ref' => 'toolset-1',
-            'turn_no' => 1,
-            'run_id' => 'run-abc',
-            'temperature' => 0.5,
-        ];
-
         $modelClient->request(
             new CodexModel('gpt-5.5'),
             ['input' => [['role' => 'user', 'content' => 'test']]],
-            $options,
+            ['temperature' => 0.5],
         );
     }
 
@@ -407,36 +351,7 @@ final class CodexModelClientTest extends TestCase
     }
 
     /**
-     * When run_id is provided in options, prompt_cache_key must be set
-     * in the request body so Codex can cache the prompt across turns.
-     * Pi-mono: prompt_cache_key = sessionId.
-     */
-    public function testItSetsPromptCacheKeyFromRunId(): void
-    {
-        $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
-            $body = json_decode($options['body'], true, 512, \JSON_THROW_ON_ERROR);
-            self::assertArrayHasKey('prompt_cache_key', $body);
-            self::assertSame('session-abc-123', $body['prompt_cache_key']);
-
-            return new MockResponse();
-        };
-
-        $httpClient = new MockHttpClient([$resultCallback]);
-        $modelClient = new CodexModelClient(
-            $httpClient,
-            'https://chatgpt.com/backend-api',
-            'test-token',
-            'acct-123',
-        );
-        $modelClient->request(
-            new CodexModel('gpt-5.5'),
-            ['input' => [['role' => 'user', 'content' => 'Hello']]],
-            ['run_id' => 'session-abc-123'],
-        );
-    }
-
-    /**
-     * Without explicit run_id, Codex correlation uses a generated UUIDv7 for x-client-request-id and prompt_cache_key.
+     * Without explicit prompt_cache_key, Codex correlation uses a generated UUIDv7 for x-client-request-id and prompt_cache_key.
      */
     public function testItSetsPromptCacheKeyFromGeneratedCorrelationIdWithoutRunId(): void
     {
@@ -465,16 +380,12 @@ final class CodexModelClientTest extends TestCase
         );
     }
 
-    /**
-     * Explicit prompt_cache_key from payload must NOT be overridden by run_id.
-     * run_id uses ??= so an explicit value wins.
-     */
-    public function testExplicitPromptCacheKeyOverridesRunIdValue(): void
+    public function testExplicitPayloadPromptCacheKeyWinsOverOptions(): void
     {
         $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
             $body = json_decode($options['body'], true, 512, \JSON_THROW_ON_ERROR);
             self::assertArrayHasKey('prompt_cache_key', $body);
-            self::assertSame('explicit-key', $body['prompt_cache_key'], 'Explicit value must win over run_id');
+            self::assertSame('explicit-key', $body['prompt_cache_key']);
 
             return new MockResponse();
         };
@@ -489,7 +400,7 @@ final class CodexModelClientTest extends TestCase
         $modelClient->request(
             new CodexModel('gpt-5.5'),
             ['input' => [['role' => 'user', 'content' => 'Hello']], 'prompt_cache_key' => 'explicit-key'],
-            ['run_id' => 'session-abc-123'],
+            ['prompt_cache_key' => 'options-key'],
         );
     }
 
@@ -583,7 +494,7 @@ final class CodexModelClientTest extends TestCase
         $this->assertSame(1, $refreshCalls);
     }
 
-    public function test401RetryPreservesExplicitRunIdAcrossHeaderAndBody(): void
+    public function test401RetryPreservesExplicitPromptCacheKeyAcrossHeaderAndBody(): void
     {
         $refreshCalls = 0;
         $requestCount = 0;
@@ -626,7 +537,7 @@ final class CodexModelClientTest extends TestCase
         $result = $modelClient->request(
             new CodexModel('gpt-5.6-luna'),
             ['input' => [['role' => 'user', 'content' => 'Hello']]],
-            ['run_id' => 'session-run-keep'],
+            ['prompt_cache_key' => 'session-run-keep'],
         );
 
         $this->assertSame(200, $result->getObject()->getStatusCode());

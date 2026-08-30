@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension\Agent;
 
+use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Extension\Agent\ConfiguredModelAgentRunner;
@@ -24,7 +26,14 @@ final class ConfiguredModelAgentRunnerContextWindowTest extends TestCase
     public function returnsNullWhenCatalogUnavailable(): void
     {
         $platform = $this->createStub(PlatformInterface::class);
-        $runner = new ConfiguredModelAgentRunner($platform, null, new NullLogger(), $this->createStub(ToolCallArgumentResolverInterface::class));
+        $runner = new ConfiguredModelAgentRunner(
+            $platform,
+            null,
+            new NullLogger(),
+            $this->createStub(ToolCallArgumentResolverInterface::class),
+            $this->createStub(ModelResolverInterface::class),
+            new ProviderRequestPreparer(),
+        );
 
         $this->assertNull($runner->contextWindow('llama_cpp/flash'));
         $this->assertNull($runner->contextWindow('not-a-valid-ref'));
@@ -53,7 +62,14 @@ final class ConfiguredModelAgentRunnerContextWindowTest extends TestCase
         ]));
 
         $platform = $this->createStub(PlatformInterface::class);
-        $runner = new ConfiguredModelAgentRunner($platform, $catalog, new NullLogger(), $this->createStub(ToolCallArgumentResolverInterface::class));
+        $runner = new ConfiguredModelAgentRunner(
+            $platform,
+            $catalog,
+            new NullLogger(),
+            $this->createStub(ToolCallArgumentResolverInterface::class),
+            $this->createStub(ModelResolverInterface::class),
+            new ProviderRequestPreparer(),
+        );
 
         $this->assertSame(131072, $runner->contextWindow('llama_cpp/flash'));
         $this->assertNull($runner->contextWindow('llama_cpp/no_window'));

@@ -10,7 +10,7 @@ description: Session identity, storage layout, events, resume, locking, and hist
 ## Invariants
 
 - The TUI session and AgentCore run share one identity (DB-issued numeric string).
-- Each session row also stores immutable `provider_cache_key` (UUIDv7) for provider correlation where supported (for example Codex `prompt_cache_key`). Other providers may ignore it on the wire.
+- Each session row also stores immutable `provider_cache_key` (UUIDv7). Codex maps it to `prompt_cache_key`; generic providers omit Hatfield correlation fields, while Grok maps the session id to its `prompt_cache_key`.
 - Everything needed to resume lives under the session directory plus the `hatfield_session` DB row — there is no global `.hatfield/runs/` registry.
 - Canonical conversation source is append-only `events.jsonl`. Transcript projection rebuilds from events on resume.
 - There is **no** `metadata.yaml` in the session directory.

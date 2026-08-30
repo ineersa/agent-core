@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Contract\ProviderCompatibilityFeatureShaperInterface;
 use Ineersa\AgentCore\Domain\Model\ProviderRequest;
+use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Message\MessageBag;
@@ -30,7 +31,7 @@ final readonly class ReasoningContentFeatureShaper implements ProviderCompatibil
         string $model,
         array $input,
         array $options,
-        array $compatFeatures,
+        ResolvedModel $resolvedModel,
     ): ?ProviderRequest {
         if (!isset($input['message_bag'])) {
             return null;

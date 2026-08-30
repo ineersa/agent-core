@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Contract;
 
 use Ineersa\AgentCore\Domain\Model\ProviderRequest;
+use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 
 /**
  * A single provider-compatibility feature shaper, called during the
@@ -33,14 +34,13 @@ interface ProviderCompatibilityFeatureShaperInterface
      * Return a {@see ProviderRequest} with any changed model/input/options,
      * or null to leave everything unchanged.
      *
-     * @param array<string, mixed> $input          the current input array
-     * @param array<string, mixed> $options        the current options array (may contain internal keys)
-     * @param list<string>         $compatFeatures the active compat features from the model resolver
+     * @param array<string, mixed> $input   the current input array
+     * @param array<string, mixed> $options provider-facing options only
      */
     public function shape(
         string $model,
         array $input,
         array $options,
-        array $compatFeatures,
+        ResolvedModel $resolvedModel,
     ): ?ProviderRequest;
 }
