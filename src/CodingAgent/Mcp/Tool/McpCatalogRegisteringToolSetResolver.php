@@ -84,8 +84,9 @@ final readonly class McpCatalogRegisteringToolSetResolver implements ToolSetReso
         try {
             $parentRunId = $this->relationshipReader->readParentRunId($runId);
         } catch (\RuntimeException) {
-            // Unknown operational identity: keep the caller's run id and let
-            // optional MCP registration fail closed / no-op as before.
+            // Unknown operational identity cannot select a parent catalog.
+            // Registration remains optional; the inner availability resolver
+            // independently enforces fail-closed relationship policy.
             return $runId;
         }
 

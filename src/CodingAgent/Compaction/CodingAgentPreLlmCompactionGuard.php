@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 /**
  * CodingAgent implementation of the pre-LLM compaction guard.
@@ -43,7 +45,8 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
         private readonly CompactionConfig $compactionConfig,
         private readonly ProviderContextUsageResolver $providerUsageResolver,
         private readonly RunModelResolverInterface $modelResolver,
-        private readonly RunRelationshipReaderInterface $metadataReader,
+        private readonly RunRelationshipReaderInterface $relationshipReader,
+        private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -57,10 +60,19 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
         // Fork/subagent children never compact — do not schedule pre-LLM CompactRun.
         // Missing operational identity fails closed (do not schedule CompactRun).
         try {
-            if ($this->metadataReader->isAgentChild($runId)) {
+            if ($this->relationshipReader->isAgentChild($runId)) {
                 return false;
             }
-        } catch (\RuntimeException) {
+        } catch (\RuntimeException $e) {
+            $this->logger->warning('Pre-LLM compaction skipped because operational run relationship is unavailable.', [
+                'component' => 'compaction',
+                'event_type' => 'pre_llm_compaction.relationship_unavailable',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'error_class' => $e::class,
+                'error_message' => $e->getMessage(),
+            ]);
+
             return false;
         }
 

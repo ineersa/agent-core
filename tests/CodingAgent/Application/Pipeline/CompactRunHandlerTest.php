@@ -150,7 +150,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
-            $this->metadataReader(),
+            $this->metadataReader(runId: 'run-pre-llm-compact'),
             AttributeSerializerValidatorTestFactory::create()[0],
         );
         $started = $handler->handle($request, $advanceResult->nextState);

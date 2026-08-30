@@ -28,7 +28,7 @@ final class SubagentLaunchDefinitionPolicyService
         } catch (\RuntimeException $e) {
             throw new ToolCallException($e->getMessage(), retryable: false);
         }
-        $blockReason = $this->depthGuard->checkLaunchAllowed(false);
+        $blockReason = $this->depthGuard->checkLaunchAllowed();
         if (null !== $blockReason) {
             throw new ToolCallException($blockReason, retryable: false);
         }

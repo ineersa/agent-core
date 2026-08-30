@@ -17,18 +17,10 @@ final class AgentDepthGuardTest extends TestCase
         unset($_ENV['HATFIELD_AGENTS_DISABLED'], $_SERVER['HATFIELD_AGENTS_DISABLED']);
     }
 
-    public function testCheckLaunchAllowedWhenParentIsNotChild(): void
+    public function testCheckLaunchAllowedWhenEnabled(): void
     {
         $guard = new AgentDepthGuard();
-        $this->assertNull($guard->checkLaunchAllowed(parentIsAgentChild: false));
-    }
-
-    public function testCheckLaunchBlockedWhenParentIsAgentChild(): void
-    {
-        $guard = new AgentDepthGuard();
-        $result = $guard->checkLaunchAllowed(parentIsAgentChild: true);
-        $this->assertNotNull($result);
-        $this->assertStringContainsString('Nested subagent launches are not supported', $result);
+        $this->assertNull($guard->checkLaunchAllowed());
     }
 
     public function testCheckLaunchBlockedWhenGloballyDisabled(): void
@@ -38,7 +30,7 @@ final class AgentDepthGuardTest extends TestCase
         $_SERVER['HATFIELD_AGENTS_DISABLED'] = '1';
 
         $guard = new AgentDepthGuard();
-        $result = $guard->checkLaunchAllowed(parentIsAgentChild: false);
+        $result = $guard->checkLaunchAllowed();
         $this->assertNotNull($result);
         $this->assertStringContainsString('globally disabled', $result);
     }

@@ -12,6 +12,8 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -54,7 +56,8 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         private readonly RunModelResolverInterface $modelResolver,
         private readonly MessageBusInterface $commandBus,
         private readonly CompactionServiceInterface $compactionService,
-        private readonly RunRelationshipReaderInterface $metadataReader,
+        private readonly RunRelationshipReaderInterface $relationshipReader,
+        private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -66,10 +69,19 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // Parent-side fork snapshot compaction is separate and unchanged.
         // Missing operational identity fails closed (skip auto-compaction).
         try {
-            if ($this->metadataReader->isAgentChild($runId)) {
+            if ($this->relationshipReader->isAgentChild($runId)) {
                 return $context;
             }
-        } catch (\RuntimeException) {
+        } catch (\RuntimeException $e) {
+            $this->logger->warning('Auto-compaction skipped because operational run relationship is unavailable.', [
+                'component' => 'compaction',
+                'event_type' => 'auto_compaction.relationship_unavailable',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'error_class' => $e::class,
+                'error_message' => $e->getMessage(),
+            ]);
+
             return $context;
         }
 

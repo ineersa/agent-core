@@ -48,7 +48,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
         private EventFactory $eventFactory,
         private CompactionHookDispatcher $hookDispatcher,
         private ExtensionCompactionHookDispatcher $extensionHookDispatcher,
-        private RunRelationshipReaderInterface $metadataReader,
+        private RunRelationshipReaderInterface $relationshipReader,
         private NormalizerInterface $normalizer,
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -94,10 +94,19 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
         // Parent-side fork snapshot compaction does not use CompactRun.
         // Missing operational identity fails closed as a silent no-op.
         try {
-            if ($this->metadataReader->isAgentChild($runId)) {
+            if ($this->relationshipReader->isAgentChild($runId)) {
                 return new HandlerResult(nextState: $state, events: [], effects: []);
             }
-        } catch (\RuntimeException) {
+        } catch (\RuntimeException $e) {
+            $this->logger->warning('Compaction skipped because operational run relationship is unavailable.', [
+                'component' => 'compaction',
+                'event_type' => 'compaction.relationship_unavailable',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'error_class' => $e::class,
+                'error_message' => $e->getMessage(),
+            ]);
+
             return new HandlerResult(nextState: $state, events: [], effects: []);
         }
 

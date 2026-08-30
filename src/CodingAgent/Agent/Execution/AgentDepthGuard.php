@@ -4,32 +4,24 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution;
 
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
+
 /**
- * Defense-in-depth guard for v1 subagent launches.
+ * Honors HATFIELD_AGENTS_DISABLED=1 for global subagent disable.
  *
- * Product rule: only a normal (non-child) parent run may launch a foreground
- * subagent. Child runs (session kind agent_child) must not launch nested
- * subagents. Primary enforcement is excluding the subagent tool from child
- * toolsets; this guard blocks launch when parent metadata indicates a child run.
- *
- * Also honors HATFIELD_AGENTS_DISABLED=1 for global disable (subprocess/CLI).
+ * Nested-child launch enforcement belongs to
+ * RunRelationshipReaderInterface::requireKnownTopLevel().
  */
 final readonly class AgentDepthGuard
 {
     /**
      * Returns null when launch is allowed, or an error message when blocked.
      */
-    public function checkLaunchAllowed(bool $parentIsAgentChild): ?string
+    public function checkLaunchAllowed(): ?string
     {
-        if ($this->agentsGloballyDisabled()) {
-            return 'Agent subagent launches are globally disabled (HATFIELD_AGENTS_DISABLED=1).';
-        }
-
-        if ($parentIsAgentChild) {
-            return 'Nested subagent launches are not supported in v1. Subagents cannot launch subagents.';
-        }
-
-        return null;
+        return $this->agentsGloballyDisabled()
+            ? 'Agent subagent launches are globally disabled (HATFIELD_AGENTS_DISABLED=1).'
+            : null;
     }
 
     public function agentsGloballyDisabled(): bool

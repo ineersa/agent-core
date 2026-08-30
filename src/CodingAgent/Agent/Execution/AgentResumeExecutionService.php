@@ -62,7 +62,7 @@ final class AgentResumeExecutionService
         } catch (\RuntimeException $e) {
             throw new ToolCallException($e->getMessage(), retryable: false);
         }
-        $depthBlock = $this->depthGuard->checkLaunchAllowed(false);
+        $depthBlock = $this->depthGuard->checkLaunchAllowed();
         if (null !== $depthBlock) {
             throw new ToolCallException($depthBlock, retryable: false);
         }
