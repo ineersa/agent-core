@@ -42,6 +42,8 @@ Hotkey catalog: `/hotkeys` (display metadata; input routing is separate).
 
 TUI sends commands and consumes events through `AgentSessionClient` + runtime protocol DTOs. Do not reach into AgentCore stores from widgets.
 
+Dependency direction: TUI may depend on CodingAgent services and models directly when semantics match. CodingAgent must not depend on TUI. `Runtime/Contract` and `Runtime/Protocol` remain for session/runtime protocol surfaces, not as a workaround boundary for ordinary CodingAgent ownership.
+
 ## Extensions
 
 Generic TUI extension contracts live in `Ineersa\Hatfield\ExtensionApi\Tui\*` and may depend on **Symfony TUI** public widgets only. Feature UX belongs in extension packages.

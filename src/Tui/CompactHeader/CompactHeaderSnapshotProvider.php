@@ -9,13 +9,13 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Ineersa\CodingAgent\Mcp\Config\McpServerAvailabilityEnum;
-use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 
 final class CompactHeaderSnapshotProvider
 {
     public function __construct(
-        private readonly PromptTemplateCatalogInterface $promptTemplates,
+        private readonly PromptTemplateService $promptTemplates,
         private readonly SkillDiscovery $skillDiscovery,
         private readonly AgentDefinitionDiscovery $agentDefinitionDiscovery,
         private readonly McpToolCatalogStoreInterface $catalogStore,

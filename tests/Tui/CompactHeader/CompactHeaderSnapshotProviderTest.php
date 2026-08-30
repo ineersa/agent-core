@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\CompactHeader;
 
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiscovery;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
 use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser;
@@ -11,6 +12,7 @@ use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\PromptsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
@@ -19,8 +21,12 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
-use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface;
-use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCommand;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateArgumentParser;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateFrontmatterParser;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateSubstitutor;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
@@ -58,15 +64,9 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
     #[Test]
     public function aggregatesPromptsSkillsAgentsAndMcp(): void
     {
-        $promptCatalog = new class implements PromptTemplateCatalogInterface {
-            public function allPromptTemplateCommands(): array
-            {
-                return [
-                    new PromptTemplateCommand('review', 'Review'),
-                    new PromptTemplateCommand('plan', 'Plan'),
-                ];
-            }
-        };
+        $this->writePrompt('review', "---\ndescription: Review\n---\nBody\n");
+        $this->writePrompt('plan', "---\ndescription: Plan\n---\nBody\n");
+        $promptCatalog = $this->promptService();
 
         mkdir($this->tmpDir.'/.agents/skills/castor', 0777, true);
         file_put_contents(
@@ -121,12 +121,7 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
     #[Test]
     public function emptySessionIdSkipsMcpRead(): void
     {
-        $promptCatalog = new class implements PromptTemplateCatalogInterface {
-            public function allPromptTemplateCommands(): array
-            {
-                return [];
-            }
-        };
+        $promptCatalog = $this->promptService();
 
         $skillDiscovery = new SkillDiscovery(
             config: new SkillsConfig(noSkills: true),
@@ -161,12 +156,7 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
     #[Test]
     public function nonEmptySessionIdReadsMcpCatalog(): void
     {
-        $promptCatalog = new class implements PromptTemplateCatalogInterface {
-            public function allPromptTemplateCommands(): array
-            {
-                return [];
-            }
-        };
+        $promptCatalog = $this->promptService();
 
         $skillDiscovery = new SkillDiscovery(
             config: new SkillsConfig(noSkills: true),
@@ -194,12 +184,7 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
     #[Test]
     public function nullMcpCatalogOmitsServers(): void
     {
-        $promptCatalog = new class implements PromptTemplateCatalogInterface {
-            public function allPromptTemplateCommands(): array
-            {
-                return [];
-            }
-        };
+        $promptCatalog = $this->promptService();
 
         $skillDiscovery = new SkillDiscovery(
             config: new SkillsConfig(noSkills: true),
@@ -246,12 +231,7 @@ JSON;
         mkdir($this->tmpDir.'/.hatfield', 0777, true);
         file_put_contents($this->tmpDir.'/.hatfield/mcp.json', $json);
 
-        $promptCatalog = new class implements PromptTemplateCatalogInterface {
-            public function allPromptTemplateCommands(): array
-            {
-                return [];
-            }
-        };
+        $promptCatalog = $this->promptService();
 
         $skillDiscovery = new SkillDiscovery(
             config: new SkillsConfig(noSkills: true),
@@ -330,5 +310,32 @@ JSON;
             denormalizer: $serializer,
             validator: $validator,
         );
+    }
+
+    private function promptService(): PromptTemplateService
+    {
+        $loader = new PromptTemplateLoader(
+            promptsConfig: new PromptsConfig(),
+            runtimeConfig: new PromptTemplatesRuntimeConfig(),
+            pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
+            cwd: $this->tmpDir,
+            frontmatterParser: new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor()),
+            logger: new TestLogger(),
+        );
+
+        return new PromptTemplateService(
+            $loader,
+            new PromptTemplateArgumentParser(),
+            new PromptTemplateSubstitutor(),
+        );
+    }
+
+    private function writePrompt(string $name, string $contents): void
+    {
+        $directory = $this->tmpDir.'/.hatfield/prompts';
+        if (!is_dir($directory)) {
+            mkdir($directory, 0777, true);
+        }
+        file_put_contents($directory.'/'.$name.'.md', $contents);
     }
 }

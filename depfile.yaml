@@ -413,6 +413,7 @@ parameters:
       - AppExtensionApi
       - AppRuntimeContract
       - AppSkills
+      - AppPromptTemplate
       - AppRuntimeProjection
       - AppSession
       - AppConfig
@@ -547,6 +548,7 @@ parameters:
     TuiCompactHeader:
       - AppRuntimeContract
       - AppSkills
+      - AppPromptTemplate
       - AppAgent
       - AppMcpCatalog
       - AppMcpConfig
@@ -617,7 +619,6 @@ parameters:
 
     AppPromptTemplate:
       - AppConfig
-      - AppRuntimeContract
       - AppMarkdown
       - SymfonyYaml
 

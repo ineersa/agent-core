@@ -235,9 +235,6 @@ services:
       $runtimeConfig: '@Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig'
       $cwd: '%app.cwd%'
 
-  Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface:
-    alias: Ineersa\CodingAgent\PromptTemplate\PromptTemplateService
-
   # ─── Extension wiring ───
 
   Ineersa\Tui\Extension\TuiCommandRegistryAdapter:
