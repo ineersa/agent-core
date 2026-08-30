@@ -110,22 +110,55 @@ final class StartRunHandlerTest extends TestCase
         $this->assertSame([], $redelivery->events);
     }
 
-    public function testCommittedStartRedeliveryIsANoOp(): void
+    public function testCommittedStartRedeliveryRearmsInitialAdvanceWhenKickoffNeverRan(): void
     {
+        $commandBus = new TestMessageBus();
         $handler = new StartRunHandler(
             eventFactory: new EventFactory(),
             normalizer: TestSerializerFactory::normalizer(),
+            commandBus: $commandBus,
         );
         $message = StartRunMessageBuilder::create('run-start-duplicate')->build();
         $committed = $handler->handle($message, RunStateBuilder::queued('run-start-duplicate')->withModel(null)->build())->nextState;
 
         $this->assertNotNull($committed);
+        $this->assertNull($committed->lastAppliedAdvanceKey);
+        $this->assertNull($committed->currentOperation);
+
+        // Simulate Messenger retry after run_started was appended but before the
+        // original postCommit AdvanceRun executed (projection lock failure).
         $redelivery = $handler->handle($message, $committed);
 
         $this->assertNull($redelivery->nextState);
         $this->assertSame([], $redelivery->events);
         $this->assertSame([], $redelivery->effects);
+        $this->assertCount(1, $redelivery->postCommit);
+        ($redelivery->postCommit[0])();
+
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
+    }
+
+    public function testCommittedStartRedeliveryIsANoOpAfterAdvanceHasApplied(): void
+    {
+        $commandBus = new TestMessageBus();
+        $handler = new StartRunHandler(
+            eventFactory: new EventFactory(),
+            normalizer: TestSerializerFactory::normalizer(),
+            commandBus: $commandBus,
+        );
+        $message = StartRunMessageBuilder::create('run-start-duplicate-advanced')->build();
+        $committed = $handler->handle($message, RunStateBuilder::queued('run-start-duplicate-advanced')->withModel(null)->build())->nextState;
+        $this->assertNotNull($committed);
+
+        $advanced = $committed->with(['lastAppliedAdvanceKey' => 'advance-already-applied']);
+        $redelivery = $handler->handle($message, $advanced);
+
+        $this->assertNull($redelivery->nextState);
+        $this->assertSame([], $redelivery->events);
+        $this->assertSame([], $redelivery->effects);
         $this->assertSame([], $redelivery->postCommit);
+        $this->assertSame([], $commandBus->messages);
     }
 
     public function testHandleSchedulesInitialAdvanceAfterCommitWhenBusIsProvided(): void
