@@ -36,7 +36,7 @@ final class PromptTemplateCommandRegistrar implements SlashCommandCatalogRegistr
         return -100;
     }
 
-    public function registerCatalog(SlashCommandCatalog $commandCatalog): void
+    public function registerCatalog(SlashCommandCatalog $catalog): void
     {
         $handler = new class implements SlashCommandHandler {
             public function handle(SlashCommand $command): DispatchRuntime
@@ -47,11 +47,11 @@ final class PromptTemplateCommandRegistrar implements SlashCommandCatalogRegistr
 
         foreach ($this->promptTemplates->allPromptTemplateCommands() as $template) {
             // Real/built-in commands win — skip if already registered.
-            if ($commandCatalog->has($template->name)) {
+            if ($catalog->has($template->name)) {
                 continue;
             }
 
-            $commandCatalog->register(
+            $catalog->register(
                 new CommandMetadata(
                     name: $template->name,
                     aliases: [],
