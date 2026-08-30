@@ -25,6 +25,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredS
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
 
@@ -42,7 +43,8 @@ final class AgentResumeExecutionService
         private readonly DeferredSubagentBatchIdentityFactory $identityFactory,
         private readonly AgentRunnerInterface $agentRunner,
         private readonly RunStateRebuilderInterface $runStateRebuilder,
-        private readonly SubagentRunMetadataReader $metadataReader,
+        private readonly RunStartedMetadataReader $metadataReader,
+        private readonly RunRelationshipReaderInterface $relationshipReader,
         private readonly AgentDepthGuard $depthGuard,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly AgentsConfig $agentsConfig,
@@ -55,7 +57,12 @@ final class AgentResumeExecutionService
      */
     public function resume(string $parentRunId, array $tasks, ChildRunBatchExecutionModeEnum $executionMode): DeferredToolCompletionOutcome
     {
-        $depthBlock = $this->depthGuard->checkLaunchAllowed($this->metadataReader->isAgentChild($parentRunId));
+        try {
+            $this->relationshipReader->requireKnownTopLevel($parentRunId);
+        } catch (\RuntimeException $e) {
+            throw new ToolCallException($e->getMessage(), retryable: false);
+        }
+        $depthBlock = $this->depthGuard->checkLaunchAllowed(false);
         if (null !== $depthBlock) {
             throw new ToolCallException($depthBlock, retryable: false);
         }

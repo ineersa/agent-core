@@ -39,6 +39,7 @@ final class SubagentExecutionServiceFactory
             'agentRunner' => null,
             'runStateRebuilder' => null,
             'metadataReader' => null,
+            'relationshipReader' => null,
             'childRunDirectory' => null,
             'contextAccessor' => null,
             'logger' => null,
@@ -57,7 +58,7 @@ final class SubagentExecutionServiceFactory
 
         $args = array_merge($defaults, $overrides);
 
-        foreach (['policyResolver', 'promptBuilder', 'skillsContextBuilder', 'artifactRegistry', 'agentRunner', 'runStateRebuilder', 'metadataReader', 'childRunDirectory', 'contextAccessor', 'logger', 'appConfig', 'modelResolver', 'batchRepository', 'lifecycleListener', 'forkLaunchInputBuilder', 'forkToolPolicyResolver', 'childExtensionSelection', 'toolRegistry'] as $required) {
+        foreach (['policyResolver', 'promptBuilder', 'skillsContextBuilder', 'artifactRegistry', 'agentRunner', 'runStateRebuilder', 'metadataReader', 'relationshipReader', 'childRunDirectory', 'contextAccessor', 'logger', 'appConfig', 'modelResolver', 'batchRepository', 'lifecycleListener', 'forkLaunchInputBuilder', 'forkToolPolicyResolver', 'childExtensionSelection', 'toolRegistry'] as $required) {
             if (null === $args[$required]) {
                 throw new \InvalidArgumentException(\sprintf('SubagentExecutionServiceFactory requires override "%s".', $required));
             }
@@ -75,7 +76,7 @@ final class SubagentExecutionServiceFactory
 
         $artifactLifecycle = $args['artifactLifecycle'] ?? new ChildRunArtifactLifecycleService($args['artifactRegistry'], $args['childRunDirectory']);
 
-        $definitionPolicy = new SubagentLaunchDefinitionPolicyService($args['catalog'], $args['depthGuard'], $args['policyResolver'], $args['metadataReader']);
+        $definitionPolicy = new SubagentLaunchDefinitionPolicyService($args['catalog'], $args['depthGuard'], $args['policyResolver'], $args['relationshipReader']);
         $launchInputFactory = $args['launchInputFactory'] instanceof SubagentChildLaunchInputFactory
             ? $args['launchInputFactory']
             : new SubagentChildLaunchInputFactory(

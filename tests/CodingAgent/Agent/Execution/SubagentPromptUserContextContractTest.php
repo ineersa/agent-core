@@ -21,9 +21,9 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
+use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
@@ -224,7 +224,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
 
         $resolver = new SubagentToolSetResolver(
             $this->innerToolboxResolver($registry, ['read', 'browser__search', 'fork']),
-            new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
+            new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
             $registry,
         );
         $capture = ProviderBoundaryCaptureSupport::create(
@@ -323,7 +323,8 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             'runStateRebuilder' => $this->rebuildParentState($parentState),
             'eventStore' => $eventStore,
             'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
-            'metadataReader' => new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
+            'metadataReader' => new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
+            'relationshipReader' => \Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader::topLevel($parentState->runId),
             'childRunDirectory' => self::getContainer()->get(AgentChildRunDirectory::class),
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),

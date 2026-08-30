@@ -6,9 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Mcp\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
@@ -17,6 +15,8 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Tool\McpCatalogRegisteringToolSetResolver;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolHandlerFactory;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
+use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -375,36 +375,9 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         ];
     }
 
-    private function metadataReaderForChild(string $childRunId, string $parentRunId): SubagentRunMetadataReader
+    private function metadataReaderForChild(string $childRunId, string $parentRunId): RunRelationshipReaderInterface
     {
-        $event = new \Ineersa\AgentCore\Domain\Event\RunEvent(
-            runId: $childRunId,
-            seq: 1,
-            turnNo: 0,
-            type: \Ineersa\AgentCore\Domain\Event\RunEventTypeEnum::RunStarted->value,
-            payload: [
-                'payload' => [
-                    'metadata' => [
-                        'session' => [
-                            'kind' => 'agent_child',
-                            'parent_run_id' => $parentRunId,
-                            'agent_name' => 'scout',
-                            'artifact_id' => 'agent_child1',
-                        ],
-                        'model' => 'deepseek/deepseek-v4-flash',
-                        'reasoning' => 'medium',
-                        'tools_scope' => ['allowed_tools' => []],
-                    ],
-                ],
-            ],
-        );
-
-        $eventStore = $this->createStub(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
-        $eventStore->method('firstFor')->willReturnCallback(
-            static fn (string $runId): ?\Ineersa\AgentCore\Domain\Event\RunEvent => $childRunId === $runId ? $event : null,
-        );
-
-        return new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
+        return StubRunRelationshipReader::child($childRunId, $parentRunId);
     }
 
     private function makeHandlerFactory(): McpToolHandlerFactory
@@ -416,12 +389,9 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         return new McpToolHandlerFactory($invoker);
     }
 
-    private function metadataReader(): SubagentRunMetadataReader
+    private function metadataReader(): RunRelationshipReaderInterface
     {
-        $eventStore = $this->createStub(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
-        $eventStore->method('firstFor')->willReturn(null);
-
-        return new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
+        return StubRunRelationshipReader::empty();
     }
 
     private function makeStore(array $data): McpToolCatalogStoreInterface

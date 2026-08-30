@@ -6,8 +6,8 @@ namespace Ineersa\CodingAgent\Compaction;
 
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\CompactionConfig;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 
 /**
  * CodingAgent implementation of the pre-LLM compaction guard.
@@ -43,7 +43,7 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
         private readonly CompactionConfig $compactionConfig,
         private readonly ProviderContextUsageResolver $providerUsageResolver,
         private readonly RunModelResolverInterface $modelResolver,
-        private readonly SubagentRunMetadataReader $metadataReader,
+        private readonly RunRelationshipReaderInterface $metadataReader,
     ) {
     }
 

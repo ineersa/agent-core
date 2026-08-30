@@ -19,12 +19,12 @@ use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Compaction\CompactionHookContextDTO;
 use Ineersa\CodingAgent\Compaction\CompactionHookDispatcher;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\CompactionRuntimeSettingsDTO;
 use Ineersa\CodingAgent\Extension\ExtensionCompactionHookDispatcher;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -48,7 +48,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
         private EventFactory $eventFactory,
         private CompactionHookDispatcher $hookDispatcher,
         private ExtensionCompactionHookDispatcher $extensionHookDispatcher,
-        private SubagentRunMetadataReader $metadataReader,
+        private RunRelationshipReaderInterface $metadataReader,
         private NormalizerInterface $normalizer,
         private LoggerInterface $logger = new NullLogger(),
     ) {

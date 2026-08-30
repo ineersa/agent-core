@@ -8,8 +8,6 @@ use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
@@ -18,6 +16,7 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Tool\McpParentAvailabilityToolSetResolver;
 use Ineersa\CodingAgent\Mcp\Tool\McpServerToolAvailability;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
+use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -115,11 +114,13 @@ final class McpParentAvailabilityToolSetResolverTest extends TestCase
             $eventStore->method('allFor')->willReturn([]);
         }
 
-        $metadataReader = new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
+        $metadataReader = $isChild && null !== $childRunId
+            ? StubRunRelationshipReader::child($childRunId, $parentRunId)
+            : StubRunRelationshipReader::topLevel($parentRunId);
 
         return new McpParentAvailabilityToolSetResolver(
             inner: $inner,
-            metadataReader: $metadataReader,
+            relationshipReader: $metadataReader,
             catalogStore: $catalogStore,
             configLoader: TestMcpConfigLoaderFactory::smokeLoader(),
             availability: new McpServerToolAvailability(),

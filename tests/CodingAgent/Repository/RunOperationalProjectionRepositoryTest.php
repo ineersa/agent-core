@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Repository;
 
 use Doctrine\DBAL\Connection;
-use Doctrine\Persistence\ManagerRegistry;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
@@ -15,13 +12,9 @@ use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCase
 {
@@ -88,43 +81,13 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
         $this->assertSame(0, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM run_operational_tool_call'));
     }
 
-    public function testCanonicalRunStartedMetadataResolvesNestedOwnershipWithoutParentProjection(): void
+    public function testParentRunIdFromRunStateMapsOwnershipWithoutMetadataReader(): void
     {
-        $events = new InMemoryEventStore();
-        $events->seed($this->runStarted('parent', null));
-        $events->seed($this->runStarted('child', 'parent'));
-        $events->seed($this->runStarted('nested', 'child'));
-        $container = self::getContainer();
-        $repository = new RunOperationalProjectionRepository(
-            $container->get(ManagerRegistry::class),
-            $container->get(ValidatorInterface::class),
-            new SubagentRunMetadataReader($events, AttributeSerializerValidatorTestFactory::denormalizer()),
-        );
-
-        // The nested child resolves its owner through canonical parent metadata even before a parent row exists.
-        $repository->replace(new RunState('nested', RunStatus::Running));
-        $this->assertSame(['child', 'parent'], $this->connection->fetchNumeric('SELECT parent_run_id, owner_session_id FROM run_operational_state WHERE run_id = ?', ['nested']));
-        $repository->replace(new RunState('child', RunStatus::Running));
+        $this->repository->replace(new RunState('child', RunStatus::Running, parentRunId: 'parent'));
         $this->assertSame(['parent', 'parent'], $this->connection->fetchNumeric('SELECT parent_run_id, owner_session_id FROM run_operational_state WHERE run_id = ?', ['child']));
-        $repository->replace(new RunState('nested', RunStatus::Completed));
-        $this->assertSame(['child', 'parent'], $this->connection->fetchNumeric('SELECT parent_run_id, owner_session_id FROM run_operational_state WHERE run_id = ?', ['nested']));
-    }
 
-    public function testCanonicalOwnershipCycleIsRejected(): void
-    {
-        $events = new InMemoryEventStore();
-        $events->seed($this->runStarted('first', 'second'));
-        $events->seed($this->runStarted('second', 'first'));
-        $container = self::getContainer();
-        $repository = new RunOperationalProjectionRepository(
-            $container->get(ManagerRegistry::class),
-            $container->get(ValidatorInterface::class),
-            new SubagentRunMetadataReader($events, AttributeSerializerValidatorTestFactory::denormalizer()),
-        );
-
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('ownership cycle');
-        $repository->replace(new RunState('first', RunStatus::Running));
+        $this->repository->replace(new RunState('child', RunStatus::Completed, parentRunId: 'parent'));
+        $this->assertSame(['parent', 'parent'], $this->connection->fetchNumeric('SELECT parent_run_id, owner_session_id FROM run_operational_state WHERE run_id = ?', ['child']));
     }
 
     public function testValidationFailureDoesNotDirtyManagedProjection(): void
@@ -139,26 +102,6 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
             $this->repository->replace($this->state(RunStatus::Completed));
             $this->assertSame(RunStatus::Completed->value, $this->connection->fetchOne('SELECT status FROM run_operational_state WHERE run_id = ?', ['run-1']));
         }
-    }
-
-    private function runStarted(string $runId, ?string $parentRunId): RunEvent
-    {
-        $session = null === $parentRunId ? ['kind' => 'main'] : [
-            'kind' => 'agent_child',
-            'parent_run_id' => $parentRunId,
-            'agent_name' => 'scout',
-            'artifact_id' => 'artifact-'.$runId,
-            'interactive' => false,
-        ];
-
-        return new RunEvent($runId, 1, 0, RunEventTypeEnum::RunStarted->value, [
-            'payload' => ['metadata' => [
-                'session' => $session,
-                'model' => 'test',
-                'reasoning' => 'medium',
-                'tools_scope' => ['allowed_tools' => [], 'mcp' => ['mode' => 'none', 'tools' => []]],
-            ]],
-        ], new \DateTimeImmutable());
     }
 
     /** @param list<CurrentToolCallDTO> $toolCalls @param list<PendingHumanInputRequestDTO> $humanInputs */

@@ -8,7 +8,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
+use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
@@ -16,7 +16,7 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Thesis: Symfony Serializer denormalizes root RunEvent.payload into RunStartedMetadataDTO
- * via SerializedPath; SubagentRunMetadataReader exposes typed child launch fields without wrappers.
+ * via SerializedPath; RunStartedMetadataReader exposes typed child launch fields without wrappers.
  */
 final class RunStartedMetadataSerializerTest extends TestCase
 {
@@ -241,24 +241,22 @@ final class RunStartedMetadataSerializerTest extends TestCase
             createdAt: new \DateTimeImmutable(),
         ));
 
-        $reader = new SubagentRunMetadataReader($store, $this->denormalizer);
-        $this->assertTrue($reader->isAgentChild($runId));
-        $this->assertSame('parent-9', $reader->readParentRunId($runId));
+        $reader = new RunStartedMetadataReader($store, $this->denormalizer);
         $this->assertSame(['bash'], $reader->readAllowedTools($runId));
         $this->assertSame([], $reader->readAllowedExtensions($runId));
 
         $typed = $reader->readRunStartedMetadata($runId);
         $this->assertNotNull($typed);
+        $this->assertTrue($typed->isAgentChild());
+        $this->assertSame('parent-9', $typed->session->parentRunId);
         $this->assertSame('fork', $typed->session->childKind);
         $this->assertSame('m', $typed->model);
     }
 
-    public function testMissingRunStartedReturnsNullAndNotChild(): void
+    public function testMissingRunStartedReturnsNullLaunchMetadata(): void
     {
-        $reader = new SubagentRunMetadataReader(new InMemoryEventStore(), $this->denormalizer);
+        $reader = new RunStartedMetadataReader(new InMemoryEventStore(), $this->denormalizer);
         $this->assertNull($reader->readRunStartedMetadata('missing'));
-        $this->assertFalse($reader->isAgentChild('missing'));
-        $this->assertNull($reader->readParentRunId('missing'));
         $this->assertNull($reader->readAllowedTools('missing'));
         $this->assertNull($reader->readAllowedExtensions('missing'));
     }

@@ -53,6 +53,7 @@ final class RunStateModelIdentityTest extends TestCase
 
         $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued($runId), $events);
         $this->assertSame('deepseek/deepseek-v4-flash', $state->model, 'Historical model still replays for diagnostics.');
+        $this->assertNull($state->parentRunId);
 
         $commandStore = new InMemoryCommandStore();
         $handler = new AdvanceRunHandler(
@@ -76,6 +77,38 @@ final class RunStateModelIdentityTest extends TestCase
         $this->assertInstanceOf(ExecuteLlmStep::class, $step);
         $this->assertFalse(property_exists($step, 'model'), 'Scheduling must not snapshot RunState model.');
         $this->assertSame('deepseek/deepseek-v4-flash', $result->nextState?->model, 'Replay projection stays intact.');
+    }
+
+    public function testRunStartedChildParentRunIdReplaysIntoState(): void
+    {
+        $runId = 'child-model-1';
+        $events = [
+            new RunEvent(
+                runId: $runId,
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: [
+                    'step_id' => 'start',
+                    'payload' => [
+                        'messages' => [],
+                        'metadata' => [
+                            'model' => 'deepseek/deepseek-v4-flash',
+                            'session' => [
+                                'kind' => 'agent_child',
+                                'parent_run_id' => 'parent-9',
+                                'agent_name' => 'scout',
+                                'artifact_id' => 'agent_child1',
+                            ],
+                        ],
+                    ],
+                ],
+            ),
+        ];
+
+        $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued($runId), $events);
+        $this->assertSame('parent-9', $state->parentRunId);
+        $this->assertSame('deepseek/deepseek-v4-flash', $state->model);
     }
 
     public function testTurnAdvancedReplaysCommittedAdvanceToken(): void

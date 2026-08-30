@@ -12,7 +12,6 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
@@ -23,10 +22,10 @@ use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
+use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
@@ -42,6 +41,7 @@ use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\SubagentExecutionServiceFactory;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
+use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -66,34 +66,10 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
         $agentRunner = $this->createStub(AgentRunnerInterface::class);
 
+        // Depth gate is operational-relationship based; EventStore must not be consulted.
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects($this->once())
-            ->method('firstFor')
-            ->with('parent-child-run')
-            ->willReturn(new RunEvent(
-                runId: 'parent-child-run',
-                seq: 1,
-                turnNo: 0,
-                type: RunEventTypeEnum::RunStarted->value,
-                payload: [
-                    'step_id' => 's',
-                    'payload' => [
-                        'metadata' => [
-                            'session' => [
-                                'kind' => 'agent_child',
-                                'parent_run_id' => 'grandparent',
-                                'agent_name' => 'scout',
-                                'artifact_id' => 'agent_abc',
-                            ],
-                            'model' => 'deepseek/deepseek-v4-flash',
-                            'reasoning' => 'medium',
-                            'tools_scope' => ['allowed_tools' => []],
-                        ],
-                    ],
-                ],
-            ));
-
-        $metadataReader = new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
+        $eventStore->expects($this->never())->method('firstFor');
+        $metadataReader = new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
 
         $service = $this->makeService([
             'catalog' => $catalog,
@@ -106,6 +82,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'eventStore' => $eventStore,
             'committedRunEventAppender' => self::getContainer()->get(SubagentProgressEventAppender::class),
             'metadataReader' => $metadataReader,
+            'relationshipReader' => StubRunRelationshipReader::child('parent-child-run', 'grandparent'),
             'childRunDirectory' => $directory,
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),
@@ -117,7 +94,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         ]);
 
         $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('Nested subagent launches are not supported');
+        $this->expectExceptionMessage('is an agent child; nested launches are not supported');
 
         $this->withToolContext('parent-child-run', 'call-nested', static fn () => $service->execute('parent-child-run', 'nested', 'Go deeper'));
     }
@@ -139,7 +116,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'agentRunner' => $this->createStub(AgentRunnerInterface::class),
             'eventStore' => $eventStore,
             'committedRunEventAppender' => self::getContainer()->get(SubagentProgressEventAppender::class),
-            'metadataReader' => new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
+            'metadataReader' => new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
+            'relationshipReader' => StubRunRelationshipReader::topLevel('parent-4'),
             'childRunDirectory' => $directory,
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),
@@ -237,7 +215,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'runStateRebuilder' => self::getContainer()->get(RunStateRebuilderInterface::class),
             'eventStore' => $this->createStub(EventStoreInterface::class),
             'committedRunEventAppender' => self::getContainer()->get(SubagentProgressEventAppender::class),
-            'metadataReader' => new SubagentRunMetadataReader($this->createStub(EventStoreInterface::class), AttributeSerializerValidatorTestFactory::denormalizer()),
+            'metadataReader' => new RunStartedMetadataReader($this->createStub(EventStoreInterface::class), AttributeSerializerValidatorTestFactory::denormalizer()),
+            'relationshipReader' => StubRunRelationshipReader::empty(),
             'childRunDirectory' => self::getContainer()->get(AgentChildRunDirectory::class),
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),

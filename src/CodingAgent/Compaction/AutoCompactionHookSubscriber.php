@@ -10,8 +10,8 @@ use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\CompactionConfig;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -30,7 +30,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *
  * Guards:
  *  - Agent child runs (fork/subagent; session.kind=agent_child) via
- *    SubagentRunMetadataReader — children never auto-compact
+ *    RunRelationshipReader — children never auto-compact
  *  - Auto disabled via compaction.auto_enabled (per-provider/per-model overrides)
  *  - In-flight compaction (activeStepId starts with compact-)
  *  - Commit contains compaction lifecycle events (avoids loops)
@@ -54,7 +54,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         private readonly RunModelResolverInterface $modelResolver,
         private readonly MessageBusInterface $commandBus,
         private readonly CompactionServiceInterface $compactionService,
-        private readonly SubagentRunMetadataReader $metadataReader,
+        private readonly RunRelationshipReaderInterface $metadataReader,
     ) {
     }
 

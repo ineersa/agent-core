@@ -44,6 +44,7 @@ final readonly class RunStateReducer
             pendingHumanInputRequests: $existingState->pendingHumanInputRequests,
             currentToolCalls: [],
             model: $existingState->model,
+            parentRunId: $existingState->parentRunId,
         );
 
         // By-ref accumulators: reducers append to these arrays; intermediate
@@ -141,12 +142,22 @@ final readonly class RunStateReducer
         }
 
         $model = null;
+        $parentRunId = null;
         $rawMetadata = $innerPayload['metadata'] ?? null;
         if (\is_array($rawMetadata)) {
             $rawModel = $rawMetadata['model'] ?? null;
             if (\is_string($rawModel)) {
                 $rawModel = trim($rawModel);
                 $model = '' !== $rawModel ? $rawModel : null;
+            }
+
+            $session = $rawMetadata['session'] ?? null;
+            if (\is_array($session) && 'agent_child' === ($session['kind'] ?? null)) {
+                $rawParent = $session['parent_run_id'] ?? null;
+                if (\is_string($rawParent)) {
+                    $rawParent = trim($rawParent);
+                    $parentRunId = '' !== $rawParent ? $rawParent : null;
+                }
             }
         }
 
@@ -165,6 +176,7 @@ final readonly class RunStateReducer
             retryableFailure: false,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
             model: $model,
+            parentRunId: $parentRunId,
         );
     }
 

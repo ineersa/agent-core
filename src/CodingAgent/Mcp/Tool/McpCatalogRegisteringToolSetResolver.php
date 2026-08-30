@@ -6,8 +6,8 @@ namespace Ineersa\CodingAgent\Mcp\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -36,7 +36,7 @@ final readonly class McpCatalogRegisteringToolSetResolver implements ToolSetReso
     public function __construct(
         private ToolSetResolverInterface $inner,
         private McpToolRegistrar $mcpToolRegistrar,
-        private SubagentRunMetadataReader $metadataReader,
+        private RunRelationshipReaderInterface $relationshipReader,
         private McpToolCatalogStoreInterface $catalogStore,
         private LoggerInterface $logger,
     ) {
@@ -81,8 +81,8 @@ final readonly class McpCatalogRegisteringToolSetResolver implements ToolSetReso
 
     private function resolveCatalogRunId(string $runId): string
     {
-        if ($this->metadataReader->isAgentChild($runId)) {
-            $parentRunId = $this->metadataReader->readParentRunId($runId);
+        if ($this->relationshipReader->isAgentChild($runId)) {
+            $parentRunId = $this->relationshipReader->readParentRunId($runId);
             if (null !== $parentRunId) {
                 if (null !== $this->catalogStore->read($runId)) {
                     return $runId;

@@ -10,8 +10,8 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -275,7 +275,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             ],
             createdAt: new \DateTimeImmutable(),
         ));
-        $reader = new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
+        $reader = new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
 
         // Child runs keep their RunStarted definition model/reasoning instead
         // of the defaults (deepseek-v4-pro/medium) and have no session row, so
@@ -392,7 +392,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
     //  Helpers
     // ──────────────────────────────────────────────
 
-    private function createResolver(array $aiData, ?SubagentRunMetadataReader $childMetadataReader = null): SessionAwareModelResolver
+    private function createResolver(array $aiData, ?RunStartedMetadataReader $childMetadataReader = null): SessionAwareModelResolver
     {
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(

@@ -12,7 +12,7 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 
 /**
  * Thin fork adapter: snapshot/sanitize/sync-compact parent messages, then the
@@ -22,7 +22,7 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
 {
     public function __construct(
         private readonly DeferredSubagentBatchLaunchService $deferredBatchLaunch,
-        private readonly SubagentRunMetadataReader $metadataReader,
+        private readonly RunRelationshipReaderInterface $relationshipReader,
         private readonly RunStateRebuilderInterface $runStateRebuilder,
         private readonly ForkSnapshotSanitizer $snapshotSanitizer,
         private readonly CompactionServiceInterface $compactionService,
@@ -35,8 +35,10 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
         ?string $modelOverride = null,
         ?string $reasoningOverride = null,
     ): DeferredToolCompletionOutcome {
-        if ($this->metadataReader->isAgentChild($parentRunId)) {
-            throw new ToolCallException('Nested fork launches are not supported.', retryable: false);
+        try {
+            $this->relationshipReader->requireKnownTopLevel($parentRunId);
+        } catch (\RuntimeException $e) {
+            throw new ToolCallException($e->getMessage(), retryable: false);
         }
 
         // 1) Rebuild an immutable parent snapshot from canonical events. Fork

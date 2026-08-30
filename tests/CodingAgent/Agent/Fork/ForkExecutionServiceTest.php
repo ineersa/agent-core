@@ -12,9 +12,12 @@ use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionService;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -57,6 +60,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $container->set(CompactionServiceInterface::class, $compaction);
 
         $this->appendCanonicalParentRun($parentRunId, 'deepseek/deepseek-v4-flash', 2);
+        $container->get(RunOperationalProjectionRepository::class)->replace(new RunState($parentRunId, RunStatus::Running));
 
         $forkExecution = $container->get(ForkExecutionService::class);
 
@@ -91,7 +95,8 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             ));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('canonical parent run state', $e->getMessage());
+            // Missing operational relationship fails closed before canonical replay.
+            $this->assertStringContainsString('Operational relationship for run', $e->getMessage());
             $this->assertStringContainsString($parentRunId, $e->getMessage());
             $this->assertFalse($e->retryable());
         }
@@ -128,13 +133,17 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $compaction->method('compactMessages')->willThrowException(new \LogicException('compactMessages must not run for nested fork'));
         self::getContainer()->set(CompactionServiceInterface::class, $compaction);
 
+        self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(
+            new RunState($childRunId, RunStatus::Running, parentRunId: 'parent-1'),
+        );
+
         $forkExecution = self::getContainer()->get(ForkExecutionService::class);
 
         try {
             $this->withToolContext($childRunId, 'call-nested', static fn () => $forkExecution->execute($childRunId, 'nested'));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('Nested fork', $e->getMessage());
+            $this->assertStringContainsString('is an agent child; nested launches are not supported', $e->getMessage());
         }
     }
 
