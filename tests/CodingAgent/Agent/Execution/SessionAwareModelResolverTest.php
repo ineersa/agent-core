@@ -74,8 +74,53 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertSame('llama_cpp/flash', $result->model);
         $this->assertSame('llama_cpp', $result->providerId);
         $this->assertSame('medium', $result->reasoning);
-        $this->assertArrayHasKey('provider_cache_key', $result->options);
-        $this->assertInstanceOf(UuidV7::class, Uuid::fromString($result->options['provider_cache_key']));
+        $this->assertSame([], $result->providerOptions);
+    }
+
+    public function testCodexMapsStableSessionCacheIdentityToProviderPromptCacheKey(): void
+    {
+        $resolver = $this->createResolver($this->standardAiData());
+        $sessionId = $this->writeSessionMetadata('sess-codex', ['model' => 'openai-codex/gpt-test']);
+
+        $result = $resolver->resolve(
+            '',
+            new MessageBag(),
+            new ModelInvocationInput(runId: $sessionId),
+            new ModelResolutionOptions(),
+        );
+
+        $this->assertSame(['prompt_cache_key'], array_keys($result->providerOptions));
+        $this->assertInstanceOf(UuidV7::class, Uuid::fromString($result->providerOptions['prompt_cache_key']));
+    }
+
+    public function testGrokMapsSessionIdToProviderPromptCacheKey(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['providers']['xai'] = [
+            'type' => 'grok',
+            'enabled' => true,
+            'models' => [
+                'grok-composer' => [
+                    'id' => 'grok-composer',
+                    'name' => 'Grok Composer',
+                    'context_window' => 128000,
+                    'max_tokens' => 32768,
+                    'input' => ['text'],
+                    'reasoning' => false,
+                ],
+            ],
+        ];
+        $resolver = $this->createResolver($aiData);
+        $sessionId = $this->writeSessionMetadata('sess-grok', ['model' => 'xai/grok-composer']);
+
+        $result = $resolver->resolve(
+            '',
+            new MessageBag(),
+            new ModelInvocationInput(runId: $sessionId),
+            new ModelResolutionOptions(),
+        );
+
+        $this->assertSame(['prompt_cache_key' => $sessionId], $result->providerOptions);
     }
 
     public function testExplicitModelWinsOverSessionMetadata(): void
@@ -243,7 +288,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         );
 
         $this->assertSame('deepseek/deepseek-v4-pro', $result->model);
-        $this->assertSame([], $result->options);
+        $this->assertSame([], $result->providerOptions);
     }
 
     public function testChildRunStartedMetadataModelAndReasoningSelected(): void
@@ -291,7 +336,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertSame('llama_cpp/flash', $result->model);
         $this->assertSame('llama_cpp', $result->providerId);
         $this->assertSame('high', $result->reasoning);
-        $this->assertSame([], $result->options);
+        $this->assertSame([], $result->providerOptions);
     }
 
     public function testEphemeralHexRunWithoutSessionRowResolvesWithoutProviderCacheKey(): void
@@ -305,7 +350,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             new ModelResolutionOptions(),
         );
 
-        $this->assertSame([], $result->options);
+        $this->assertSame([], $result->providerOptions);
     }
 
     public function testMissingNumericSessionMetadataThrows(): void
@@ -326,7 +371,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
     public function testNumericSessionWithNullProviderCacheKeyInDatabaseThrowsExplicitRuntimeException(): void
     {
         $resolver = $this->createResolver($this->standardAiData());
-        $sessionId = $this->writeSessionMetadata('sess-null-key', ['model' => 'llama_cpp/flash']);
+        $sessionId = $this->writeSessionMetadata('sess-null-key', ['model' => 'openai-codex/gpt-test']);
 
         $this->entityManager->getConnection()->executeStatement(
             'UPDATE hatfield_session SET provider_cache_key = NULL WHERE id = ?',
@@ -493,6 +538,20 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
                             'max_tokens' => 131072,
                             'input' => ['text'],
                             'reasoning' => false,
+                        ],
+                    ],
+                ],
+                'openai-codex' => [
+                    'type' => 'codex',
+                    'enabled' => true,
+                    'models' => [
+                        'gpt-test' => [
+                            'id' => 'gpt-test',
+                            'name' => 'GPT Test',
+                            'context_window' => 128000,
+                            'max_tokens' => 32768,
+                            'input' => ['text'],
+                            'reasoning' => true,
                         ],
                     ],
                 ],

@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Input;
@@ -41,23 +42,22 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
             ));
 
         $processor = new DynamicToolDescriptionProcessor($this->toolbox, $resolver);
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
-            'tools_ref' => 'toolset:run:abc:turn:1',
-            'turn_no' => 1,
-            'run_id' => 'abc',
-        ]);
+        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag());
 
-        $processor->processInput($input);
+        $processor->processInput($input, new ModelInvocationInput(
+            runId: 'abc',
+            turnNo: 1,
+            toolsRef: 'toolset:run:abc:turn:1',
+        ));
 
         $options = $input->getOptions();
         $this->assertArrayHasKey('tools', $options);
         $tools = $options['tools'];
         $this->assertCount(1, $tools);
         $this->assertSame('read', $tools[0]->getName());
-        // Resolver-only options should be cleaned up; run_id stays for provider cache correlation
         $this->assertArrayNotHasKey('tools_ref', $options);
         $this->assertArrayNotHasKey('turn_no', $options);
-        $this->assertSame('abc', $options['run_id']);
+        $this->assertArrayNotHasKey('run_id', $options);
     }
 
     public function testResolverPathWithEmptyActiveSetResultsInNoTools(): void
@@ -68,19 +68,19 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
             ->willReturn(new ActiveToolSet(toolNames: [], allowListNames: []));
 
         $processor = new DynamicToolDescriptionProcessor($this->toolbox, $resolver);
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
-            'tools_ref' => 'toolset:run:abc:turn:1',
-            'run_id' => 'session-stable-uuid',
-        ]);
+        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag());
 
-        $processor->processInput($input);
+        $processor->processInput($input, new ModelInvocationInput(
+            runId: 'session-stable-uuid',
+            toolsRef: 'toolset:run:abc:turn:1',
+        ));
 
         $options = $input->getOptions();
         // Empty active set removes tools option, falling through to no-tools path
         $this->assertArrayNotHasKey('tools', $options);
         $this->assertArrayNotHasKey('tools_ref', $options);
         $this->assertArrayNotHasKey('turn_no', $options);
-        $this->assertSame('session-stable-uuid', $options['run_id']);
+        $this->assertArrayNotHasKey('run_id', $options);
     }
 
     public function testResolverPathPassesTurnNoAndRunIdToResolver(): void
@@ -92,32 +92,20 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
             ->willReturn(new ActiveToolSet(toolNames: ['bash'], allowListNames: ['bash']));
 
         $processor = new DynamicToolDescriptionProcessor($this->toolbox, $resolver);
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
-            'tools_ref' => 'toolset:run:x:turn:5',
-            'turn_no' => 5,
-            'run_id' => 'x',
-        ]);
+        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag());
 
-        $processor->processInput($input);
+        $processor->processInput($input, new ModelInvocationInput(
+            runId: 'x',
+            turnNo: 5,
+            toolsRef: 'toolset:run:x:turn:5',
+        ));
 
         $options = $input->getOptions();
         $this->assertCount(1, $options['tools']);
         $this->assertSame('bash', $options['tools'][0]->getName());
-        $this->assertSame('x', $options['run_id']);
+        $this->assertArrayNotHasKey('run_id', $options);
         $this->assertArrayNotHasKey('tools_ref', $options);
         $this->assertArrayNotHasKey('turn_no', $options);
-    }
-
-    public function testRunIdPreservedWhenToolsRefAbsent(): void
-    {
-        $processor = new DynamicToolDescriptionProcessor($this->toolbox);
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
-            'run_id' => 'hatfield-session-run',
-        ]);
-
-        $processor->processInput($input);
-
-        $this->assertSame('hatfield-session-run', $input->getOptions()['run_id']);
     }
 
     /* ───────── Fallback behavior unchanged ───────── */
@@ -180,12 +168,11 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
 
         $processor = new DynamicToolDescriptionProcessor($this->toolbox, $resolver);
         $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
-            'tools_ref' => 'ref',
             'tools' => ['all_tools_from_toolbox'], // overridden by resolver
             'tool_descriptions' => ['read' => 'Custom read description'],
         ]);
 
-        $processor->processInput($input);
+        $processor->processInput($input, new ModelInvocationInput(toolsRef: 'ref'));
 
         $options = $input->getOptions();
         $this->assertCount(2, $options['tools']);
@@ -213,11 +200,9 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
             ->willReturn(new ActiveToolSet(toolNames: ['read'], allowListNames: ['read']));
 
         $processor = new DynamicToolDescriptionProcessor(toolbox: null, toolSetResolver: $resolver);
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
-            'tools_ref' => 'ref',
-        ]);
+        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag());
 
-        $processor->processInput($input);
+        $processor->processInput($input, new ModelInvocationInput(toolsRef: 'ref'));
 
         $options = $input->getOptions();
         // Without a toolbox, the resolver's flat names are preserved
@@ -235,11 +220,9 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
             ->willReturn(new ActiveToolSet(toolNames: ['write', 'bash'], allowListNames: ['write', 'bash']));
 
         $processor = new DynamicToolDescriptionProcessor($this->toolbox, $resolver);
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
-            'tools_ref' => 'ref',
-        ]);
+        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag());
 
-        $processor->processInput($input);
+        $processor->processInput($input, new ModelInvocationInput(toolsRef: 'ref'));
 
         $options = $input->getOptions();
         $this->assertCount(2, $options['tools']);

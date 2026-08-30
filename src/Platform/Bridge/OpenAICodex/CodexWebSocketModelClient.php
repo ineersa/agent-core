@@ -227,13 +227,7 @@ final class CodexWebSocketModelClient implements ModelClientInterface
      */
     private function normalizeBodyInputs(array $payload, array $options, CodexCorrelationResolution $resolution): array
     {
-        $bodyOptions = $resolution->options;
-        $bodyPayload = $payload;
-        if (CodexCorrelationProvenance::Generated === $resolution->provenance) {
-            unset($bodyPayload['prompt_cache_key']);
-        }
-
-        return [$bodyPayload, $bodyOptions];
+        return [$payload, $resolution->options];
     }
 
     /**
@@ -249,8 +243,8 @@ final class CodexWebSocketModelClient implements ModelClientInterface
         string $correlationId,
         CodexCorrelationProvenance $provenance,
     ): array {
-        if (CodexCorrelationProvenance::ExplicitRunId === $provenance || CodexCorrelationProvenance::Generated === $provenance) {
-            $bodyOptions['run_id'] = $correlationId;
+        if (CodexCorrelationProvenance::Generated === $provenance) {
+            $bodyOptions['prompt_cache_key'] = $correlationId;
         }
 
         return $this->requestBodyFactory->build($model, $bodyPayload, $bodyOptions);

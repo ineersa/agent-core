@@ -40,6 +40,7 @@ final class GrokSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInte
         $projectedCatalog = new ProjectedSymfonyModelCatalog(
             hatfieldModels: $provider->models,
             modelClass: ResponsesModel::class,
+            providerId: $provider->id,
         );
 
         $authKey = $this->resolveAuthKey($provider);

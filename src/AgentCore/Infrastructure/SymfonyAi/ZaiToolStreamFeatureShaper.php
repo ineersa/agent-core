@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Contract\ProviderCompatibilityFeatureShaperInterface;
 use Ineersa\AgentCore\Domain\Model\ProviderRequest;
+use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 
 /**
  * Emits {@code tool_stream: true} into provider options for
@@ -26,7 +27,7 @@ final readonly class ZaiToolStreamFeatureShaper implements ProviderCompatibility
         string $model,
         array $input,
         array $options,
-        array $compatFeatures,
+        ResolvedModel $resolvedModel,
     ): ProviderRequest {
         return new ProviderRequest(options: array_merge($options, ['tool_stream' => true]));
     }

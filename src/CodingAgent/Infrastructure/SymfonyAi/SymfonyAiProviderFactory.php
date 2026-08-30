@@ -8,7 +8,6 @@ use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpRetryPolicy;
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
-use Ineersa\Platform\Bridge\Generic\SanitizedGenericModelClient;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\Generic\Completions\ModelClient as GenericCompletionsModelClient;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
@@ -137,6 +136,7 @@ class SymfonyAiProviderFactory
         $projectedCatalog = new ProjectedSymfonyModelCatalog(
             hatfieldModels: $provider->models,
             modelClass: CompletionsModel::class,
+            providerId: $provider->id,
         );
 
         $httpClient = $httpClient instanceof EventSourceHttpClient ? $httpClient : new EventSourceHttpClient($httpClient);
@@ -146,14 +146,12 @@ class SymfonyAiProviderFactory
 
         if ($provider->supportsCompletions) {
             $completionsPath = $provider->completionsPath ?? '/v1/chat/completions';
-            // Strip Hatfield-internal invocation metadata before the vendor client
-            // merges options into the OpenAI-compatible wire JSON (cache keys, 400s).
-            $modelClients[] = new SanitizedGenericModelClient(new GenericCompletionsModelClient(
+            $modelClients[] = new GenericCompletionsModelClient(
                 $httpClient,
                 $provider->baseUrl,
                 $this->resolveApiKey($provider->apiKey),
                 $completionsPath,
-            ));
+            );
             $resultConverters[] = new DurableResultConverter(
                 onStreamEvent: $this->buildCaptureListener($provider->id),
                 logger: $this->logger,
@@ -162,12 +160,12 @@ class SymfonyAiProviderFactory
 
         if ($provider->supportsEmbeddings) {
             $embeddingsPath = $provider->embeddingsPath ?? '/v1/embeddings';
-            $modelClients[] = new SanitizedGenericModelClient(new GenericEmbeddingsModelClient(
+            $modelClients[] = new GenericEmbeddingsModelClient(
                 $httpClient,
                 $provider->baseUrl,
                 $this->resolveApiKey($provider->apiKey),
                 $embeddingsPath,
-            ));
+            );
             $resultConverters[] = new GenericEmbeddingsResultConverter();
         }
 

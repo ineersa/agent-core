@@ -5,18 +5,16 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Model;
 
 /**
- * Resolved model identifier, optional provider ID, reasoning level, compat features,
- * pre-computed reasoning options, and invocation options.
+ * Final model identity and provider-facing options resolved for one invocation.
  *
- * Produced by {@see ModelResolverInterface::resolve()} and consumed by
- * {@see ModelResolverRoutingSubscriber} to set the model name, attach reasoning
- * and compat metadata for the final compat-normalization step, and optionally
- * select a specific provider via {@see ModelRoutingEvent::setProvider()}.
+ * Internal Hatfield control data never belongs in providerOptions. The resolver
+ * maps only values intentionally supported by the selected provider, such as a
+ * Codex prompt_cache_key.
  */
 final readonly class ResolvedModel
 {
     /**
-     * @param array<string, mixed> $options          invocation options merged into provider options
+     * @param array<string, mixed> $providerOptions  options intentionally passed to the provider
      * @param list<string>         $compatFeatures   provider compatibility features to activate:
      *                                               'zai_tool_stream', 'requires_reasoning_content_on_assistant',
      *                                               'reasoning'
@@ -27,7 +25,7 @@ final readonly class ResolvedModel
         public string $model,
         public string $providerId = '',
         public string $reasoning = '',
-        public array $options = [],
+        public array $providerOptions = [],
         public array $compatFeatures = [],
         public array $reasoningOptions = [],
     ) {

@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
-use Ineersa\AgentCore\Domain\Model\ModelInvocationOptions;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
@@ -29,33 +28,6 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  */
 final class LlmPlatformAdapterTest extends TestCase
 {
-    public function testExtraOptionsAreForwardedAndNoToolsFlagWins(): void
-    {
-        $options = $this->buildInputOptions(new ModelInvocationRequest(
-            model: 'test/provider',
-            input: new ModelInvocationInput(
-                runId: 'run-1',
-                turnNo: 7,
-                toolsRef: 'toolset:run-1:turn-7',
-            ),
-            options: new ModelInvocationOptions(
-                extraOptions: [
-                    'thinking_level' => 'low',
-                    'tools' => ['should-not-survive'],
-                    'temperature' => 0.2,
-                ],
-                toolsEnabled: false,
-            ),
-        ));
-
-        $this->assertSame('toolset:run-1:turn-7', $options['tools_ref']);
-        $this->assertSame(7, $options['turn_no']);
-        $this->assertSame('run-1', $options['run_id']);
-        $this->assertSame('low', $options['thinking_level']);
-        $this->assertSame(0.2, $options['temperature']);
-        $this->assertSame([], $options['tools'], 'toolsEnabled:false must override any tools key from generic extra options.');
-    }
-
     public function testSynchronousUnknownExceptionDoesNotBecomeRetryableFromMessageText(): void
     {
         $platform = $this->createStub(SymfonyPlatformInterface::class);
@@ -340,20 +312,5 @@ final class LlmPlatformAdapterTest extends TestCase
             logger: new NullLogger(),
             denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function buildInputOptions(ModelInvocationRequest $request): array
-    {
-        $reflection = new \ReflectionClass(LlmPlatformAdapter::class);
-        $adapter = $reflection->newInstanceWithoutConstructor();
-        $method = $reflection->getMethod('buildInputOptions');
-
-        /** @var array<string, mixed> $options */
-        $options = $method->invoke($adapter, $request);
-
-        return $options;
     }
 }

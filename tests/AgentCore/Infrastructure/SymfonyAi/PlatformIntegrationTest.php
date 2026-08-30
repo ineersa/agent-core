@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
-use Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface;
 use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -21,11 +20,9 @@ use Ineersa\AgentCore\Domain\Model\ProviderRequest;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\BeforeProviderRequestSubscriber;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\PlatformInvocationMetadata;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use PHPUnit\Framework\TestCase;
@@ -112,7 +109,7 @@ final class PlatformIntegrationTest extends TestCase
             ): ResolvedModel {
                 unset($messages, $input, $options);
 
-                return new ResolvedModel(model: $defaultModel.'-resolved', options: ['max_tokens' => 64]);
+                return new ResolvedModel(model: $defaultModel.'-resolved', providerOptions: ['max_tokens' => 64]);
             }
         };
 
@@ -146,8 +143,6 @@ final class PlatformIntegrationTest extends TestCase
                 new TextDelta('Hello'),
                 new TextDelta(' world'),
             ],
-            beforeProviderRequestHooks: [$beforeProviderHook],
-            modelResolver: $modelResolver,
         );
 
         $adapter = new LlmPlatformAdapter(
@@ -160,6 +155,7 @@ final class PlatformIntegrationTest extends TestCase
             streamObserver: null,
             costCalculator: null,
             modelResolver: $modelResolver,
+            providerRequestPreparer: new ProviderRequestPreparer([$beforeProviderHook]),
             logger: new NullLogger(),
             denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
@@ -169,11 +165,13 @@ final class PlatformIntegrationTest extends TestCase
             input: new ModelInvocationInput(
                 runId: 'run-stage-05',
                 turnNo: 2,
+                toolsRef: 'tools:run-stage-05:2',
                 stepId: 'turn-2-llm-1',
                 messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
             ),
             options: new ModelInvocationOptions(
                 extraOptions: [
+                    'thinking_level' => 'low',
                     'tool_descriptions' => [
                         'web_search' => 'Search docs for turn 2 (override)',
                     ],
@@ -187,7 +185,11 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame(64, $modelClient->capturedOptions['max_tokens']);
         $this->assertSame(0.2, $modelClient->capturedOptions['temperature']);
         $this->assertSame('Search docs for turn 2 (override)', $modelClient->capturedOptions['tools'][0]['function']['description']);
-        $this->assertArrayNotHasKey(PlatformInvocationMetadata::OPTION_KEY, $modelClient->capturedOptions);
+        $this->assertArrayNotHasKey('_agent_core_invocation', $modelClient->capturedOptions);
+        $this->assertArrayNotHasKey('thinking_level', $modelClient->capturedOptions);
+        $this->assertArrayNotHasKey('run_id', $modelClient->capturedOptions);
+        $this->assertArrayNotHasKey('turn_no', $modelClient->capturedOptions);
+        $this->assertArrayNotHasKey('tools_ref', $modelClient->capturedOptions);
 
         $this->assertSame('Hello world', $response->assistantMessage?->asText());
         $this->assertNull($response->stopReason);
@@ -206,103 +208,49 @@ final class PlatformIntegrationTest extends TestCase
         );
     }
 
-    /**
-     * Proves the model catalog handles provider-qualified model names.
-     *
-     * When the model resolver returns "llama_cpp/flash" and the subscriber
-     * sets an explicit provider, the full qualified name reaches the
-     * provider's own ProjectedSymfonyModelCatalog.  The catalog must
-     * accept "llama_cpp/flash" by looking up the bare name "flash".
-     */
-    public function testProviderQualifiedModelNameIsResolvedByCatalog(): void
+    public function testProviderQualifiedModelRoutesThroughOwningCatalogWithoutMetadata(): void
     {
-        $eventDispatcher = new EventDispatcher();
-
-        $modelResolver = new class implements ModelResolverInterface {
-            public function resolve(
-                string $defaultModel,
-                \Symfony\AI\Platform\Message\MessageBag $messages,
-                ModelInvocationInput $input,
-                ModelResolutionOptions $options,
-            ): ResolvedModel {
-                unset($messages, $input, $options);
-
-                return new ResolvedModel(
-                    model: 'llama_cpp/flash',
-                    providerId: 'llama_cpp',
-                );
-            }
-        };
-
         $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage());
-
-        // Use a real ProjectedSymfonyModelCatalog (with the new
-        // provider-prefix-aware parseModelName) instead of FallbackModelCatalog.
-        // The catalog is seeded with the bare model name "flash" —
-        // as production's SymfonyAiProviderFactory does.
+        $model = new AiModelDefinition(
+            id: 'flash',
+            name: 'flash',
+            contextWindow: 8000,
+            maxTokens: 4096,
+            input: ['text'],
+            toolCalling: false,
+            reasoning: false,
+        );
         $provider = new Provider(
             name: 'llama_cpp',
             modelClients: [$modelClient],
             resultConverters: [new FakeStreamResultConverter(
                 static fn (): iterable => [new TextDelta('response')],
             )],
-            modelCatalog: new ProjectedSymfonyModelCatalog([
-                'flash' => new AiModelDefinition(
-                    id: 'flash',
-                    name: 'flash',
-                    contextWindow: 8000,
-                    maxTokens: 4096,
-                    input: ['text'],
-                    toolCalling: false,
-                    reasoning: false,
-                ),
-            ]),
-            eventDispatcher: $eventDispatcher,
+            modelCatalog: new ProjectedSymfonyModelCatalog(
+                ['flash' => $model],
+                providerId: 'llama_cpp',
+            ),
         );
-
-        $providerRegistry = new class($provider) implements ProviderRegistryInterface {
-            public function __construct(private Provider $provider)
-            {
-            }
-
-            public function get(string $id): ?\Symfony\AI\Platform\ProviderInterface
-            {
-                return 'llama_cpp' === $id ? $this->provider : null;
-            }
-
-            public function all(): array
-            {
-                return ['llama_cpp' => $this->provider];
-            }
-        };
-
-        $eventDispatcher->addSubscriber(
-            new ModelResolverRoutingSubscriber($modelResolver, $providerRegistry),
+        $otherProvider = new Provider(
+            name: 'other',
+            modelClients: [$modelClient],
+            resultConverters: [new FakeStreamResultConverter(
+                static fn (): iterable => [new TextDelta('wrong provider')],
+            )],
+            modelCatalog: new ProjectedSymfonyModelCatalog(
+                ['flash' => $model],
+                providerId: 'other',
+            ),
         );
-
-        $platform = new Platform(
-            providers: [$provider],
-            eventDispatcher: $eventDispatcher,
-        );
-
-        $messageBag = new \Symfony\AI\Platform\Message\MessageBag(\Symfony\AI\Platform\Message\Message::ofUser('Hello'));
+        $platform = new Platform(providers: [$otherProvider, $provider]);
 
         $result = $platform->invoke(
-            model: 'llama_cpp/flash',
-            input: [
-                'message_bag' => $messageBag,
-            ],
-            options: PlatformInvocationMetadata::inject([], new PlatformInvocationMetadata(
-                input: new ModelInvocationInput(),
-                cancelToken: new ToggleCancellationToken(),
-            )),
+            'llama_cpp/flash',
+            new \Symfony\AI\Platform\Message\MessageBag(\Symfony\AI\Platform\Message\Message::ofUser('Hello')),
         );
 
-        // The key regression assertion: invoke() succeeded — no
-        // ModelNotFoundException from the catalog.  The
-        // ProjectedSymfonyModelCatalog's parseModelName override
-        // accepted "llama_cpp/flash" and resolved it to "flash".
         $this->assertNotNull($result);
+        $this->assertSame('flash', $modelClient->capturedModel);
     }
 
     /**
@@ -356,7 +304,6 @@ final class PlatformIntegrationTest extends TestCase
         $platform = $this->createSymfonyPlatform(
             modelClient: $modelClient,
             streamFactory: static fn (): iterable => [new TextDelta('response')],
-            modelResolver: $modelResolver,
         );
 
         $adapter = new LlmPlatformAdapter(
@@ -929,18 +876,13 @@ final class PlatformIntegrationTest extends TestCase
     }
 
     /**
-     * @param iterable<BeforeProviderRequestHookInterface> $beforeProviderRequestHooks
-     * @param \Closure(): iterable<mixed>                  $streamFactory
+     * @param \Closure(): iterable<mixed> $streamFactory
      */
     private function createSymfonyPlatform(
         FakeSymfonyModelClient $modelClient,
         \Closure $streamFactory,
-        iterable $beforeProviderRequestHooks = [],
-        ?ModelResolverInterface $modelResolver = null,
     ): SymfonyPlatformInterface {
         $eventDispatcher = new EventDispatcher();
-        $eventDispatcher->addSubscriber(new ModelResolverRoutingSubscriber($modelResolver));
-        $eventDispatcher->addSubscriber(new BeforeProviderRequestSubscriber($beforeProviderRequestHooks));
 
         return new Platform(
             providers: [new Provider(

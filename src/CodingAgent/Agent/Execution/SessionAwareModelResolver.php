@@ -25,13 +25,11 @@ use Symfony\Component\Uid\UuidV7;
  *
  * Uses {@see ModelSelectionService} to resolve the per-turn model and reasoning
  * level following the documented priority (explicit → session → default → first
- * available). Parses the resolved model reference to extract the provider ID so
- * that {@see ModelResolverRoutingSubscriber} can set an explicit provider on the
- * {@see ModelRoutingEvent}.
+ * available). The resolved provider-qualified model lets Symfony AI route through
+ * provider-aware projected catalogs without separate control metadata.
  *
- * Also resolves a simple compat-features list and pre-computed reasoning options
- * from the Hatfield model catalog, so AgentCore's compat shapers receive everything
- * they need without depending on CodingAgent internals.
+ * It also resolves compatibility data and the small set of provider-facing
+ * options that Hatfield intentionally maps for the selected provider.
  */
 final class SessionAwareModelResolver implements ModelResolverInterface
 {
@@ -108,7 +106,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
                 model: $modelRef->toString(),
                 providerId: $modelRef->providerId,
                 reasoning: $reasoning,
-                options: $this->resolveInvocationOptions($sessionId),
+                providerOptions: $this->resolveProviderOptions($modelRef, $sessionId),
                 compatFeatures: $compatFeatures,
                 reasoningOptions: $reasoningOptions,
             );
@@ -120,21 +118,23 @@ final class SessionAwareModelResolver implements ModelResolverInterface
     /**
      * @return array<string, mixed>
      */
-    private function resolveInvocationOptions(string $sessionId): array
+    private function resolveProviderOptions(AiModelReference $modelRef, string $sessionId): array
     {
-        if ('' === $sessionId) {
-            return [];
+        $provider = $this->catalog->getProvider($modelRef->providerId);
+        if (null === $provider) {
+            throw new \RuntimeException(\sprintf('Provider "%s" is not configured.', $modelRef->providerId));
         }
 
-        $session = $this->sessionMetadataStore->findSession($sessionId);
-        if (null === $session) {
-            // Persisted Hatfield sessions use numeric string ids. Missing metadata for those ids
-            // is a stale or corrupt session reference. Ephemeral child/controller runs use UUIDv7
-            // or other non-numeric run ids without a hatfield_session row.
-            if (ctype_digit($sessionId)) {
-                throw new \RuntimeException(\sprintf('Session "%s" has no metadata for model resolution.', $sessionId));
-            }
+        $session = '' !== $sessionId ? $this->sessionMetadataStore->findSession($sessionId) : null;
+        if (null === $session && ctype_digit($sessionId)) {
+            throw new \RuntimeException(\sprintf('Session "%s" has no metadata for model resolution.', $sessionId));
+        }
 
+        if ('grok' === $provider->type && '' !== $sessionId) {
+            return ['prompt_cache_key' => $sessionId];
+        }
+
+        if ('codex' !== $provider->type || null === $session) {
             return [];
         }
 
@@ -147,7 +147,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
             throw new \RuntimeException(\sprintf('Session "%s" has an invalid provider_cache_key.', $sessionId));
         }
 
-        return ['provider_cache_key' => $providerCacheKey];
+        return ['prompt_cache_key' => $providerCacheKey];
     }
 
     /**
