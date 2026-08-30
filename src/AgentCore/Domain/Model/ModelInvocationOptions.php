@@ -25,10 +25,9 @@ final readonly class ModelInvocationOptions
         public ?bool $toolsEnabled = null,
 
         /**
-         * Additional model/provider/platform options forwarded to the
-         * platform uninterpreted.  Keys like 'thinking_level',
-         * 'reasoning_effort', etc. are passed through without
-         * AgentCore knowledge of their semantics.
+         * Additional caller-supplied model/provider options. Resolution inputs
+         * such as 'thinking_level' are consumed before the remaining options
+         * cross the provider boundary.
          *
          * Core-controlled flags (toolsEnabled, streamObserverEnabled)
          * are NOT part of this bag — they are applied after extraOptions

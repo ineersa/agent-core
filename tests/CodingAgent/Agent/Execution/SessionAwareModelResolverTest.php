@@ -93,6 +93,21 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertInstanceOf(UuidV7::class, Uuid::fromString($result->providerOptions['prompt_cache_key']));
     }
 
+    public function testCodexMapsEphemeralUuidV7RunToProviderPromptCacheKey(): void
+    {
+        $resolver = $this->createResolver($this->standardAiData());
+        $runId = UuidV7::v7()->toRfc4122();
+
+        $result = $resolver->resolve(
+            'openai-codex/gpt-test',
+            new MessageBag(),
+            new ModelInvocationInput(runId: $runId),
+            new ModelResolutionOptions(),
+        );
+
+        $this->assertSame(['prompt_cache_key' => $runId], $result->providerOptions);
+    }
+
     public function testGrokMapsSessionIdToProviderPromptCacheKey(): void
     {
         $aiData = $this->standardAiData();

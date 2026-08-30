@@ -134,7 +134,15 @@ final class SessionAwareModelResolver implements ModelResolverInterface
             return ['prompt_cache_key' => $sessionId];
         }
 
-        if ('codex' !== $provider->type || null === $session) {
+        if ('codex' !== $provider->type) {
+            return [];
+        }
+
+        if (null === $session) {
+            if (Uuid::isValid($sessionId) && Uuid::fromString($sessionId) instanceof UuidV7) {
+                return ['prompt_cache_key' => $sessionId];
+            }
+
             return [];
         }
 

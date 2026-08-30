@@ -249,7 +249,15 @@ final class PlatformIntegrationTest extends TestCase
             new \Symfony\AI\Platform\Message\MessageBag(\Symfony\AI\Platform\Message\Message::ofUser('Hello')),
         );
 
-        $this->assertNotNull($result);
+        $stream = $result->getResult();
+        $this->assertInstanceOf(StreamResult::class, $stream);
+        $this->assertSame(
+            ['response'],
+            array_map(
+                static fn (TextDelta $delta): string => $delta->getText(),
+                iterator_to_array($stream->getContent()),
+            ),
+        );
         $this->assertSame('flash', $modelClient->capturedModel);
     }
 
