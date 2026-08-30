@@ -235,7 +235,7 @@ Without the lane segment, unit T1 and llm-real T1 share one file and can
 contend on SQLite writes under concurrent check lanes.
 
 - DB path: `HATFIELD_TEST_DATABASE_PATH` (defaults to `app_test.sqlite`).
-- ParaTest cache dir: `.hatfield/cache-<qa-run>-<lane>-T{token}` (or `.hatfield/cache-paraT{token}` standalone).
+- ParaTest cache dir: `.hatfield/cache-<qa-run>-<lane>-T{token}` under `castor check`, `.hatfield/cache-<lane>-T{token}` for standalone Castor lanes, or `.hatfield/cache-paraT{token}` only when ParaTest is invoked directly without Castor's lane env.
 - `doctrine:migrations:migrate` runs once before the suite.
 - If you must isolate a Castor PHPUnit failure with raw `vendor/bin/phpunit`, export `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite`. Normal workflow stays on Castor.
 - Filtered runs (`castor test --filter=...`) use sequential PHPUnit (shared single DB).
