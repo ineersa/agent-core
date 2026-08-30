@@ -35,18 +35,13 @@ final readonly class McpParentAvailabilityToolSetResolver implements ToolSetReso
             return $inner;
         }
 
-        try {
-            if ($this->relationshipReader->isAgentChild($runId)) {
-                return $inner;
-            }
-        } catch (\RuntimeException) {
-            // Unknown identity: do not apply parent-only MCP availability filtering.
+        $parentRunId = $this->relationshipReader->readParentRunId($runId);
+        if (null !== $parentRunId) {
             return $inner;
         }
 
-        $catalogRunId = $this->resolveCatalogRunId($runId);
         $config = $this->configLoader->load();
-        $catalog = $this->catalogStore->read($catalogRunId);
+        $catalog = $this->catalogStore->read($runId);
         $hidden = $this->availability->specificRuntimeToolNames($catalog, $config);
         if ([] === $hidden) {
             return $inner;
@@ -84,16 +79,5 @@ final readonly class McpParentAvailabilityToolSetResolver implements ToolSetReso
             executionModes: $executionModes,
             timeoutSeconds: $timeoutSeconds,
         );
-    }
-
-    private function resolveCatalogRunId(string $runId): string
-    {
-        try {
-            $parentRunId = $this->relationshipReader->readParentRunId($runId);
-        } catch (\RuntimeException) {
-            return $runId;
-        }
-
-        return $parentRunId ?? $runId;
     }
 }

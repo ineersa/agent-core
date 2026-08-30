@@ -154,10 +154,10 @@ final readonly class RunStateReducer
             $session = $rawMetadata['session'] ?? null;
             if (\is_array($session) && 'agent_child' === ($session['kind'] ?? null)) {
                 $rawParent = $session['parent_run_id'] ?? null;
-                if (\is_string($rawParent)) {
-                    $rawParent = trim($rawParent);
-                    $parentRunId = '' !== $rawParent ? $rawParent : null;
+                if (!\is_string($rawParent) || '' === trim($rawParent)) {
+                    throw new \RuntimeException(\sprintf('Cannot replay run_id=%s: agent_child session.parent_run_id is required and must be non-blank.', $state->runId));
                 }
+                $parentRunId = trim($rawParent);
             }
         }
 

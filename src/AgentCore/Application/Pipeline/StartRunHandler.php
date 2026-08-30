@@ -125,13 +125,11 @@ final readonly class StartRunHandler implements RunMessageHandler
         }
 
         $rawParent = $session['parent_run_id'] ?? null;
-        if (!\is_string($rawParent)) {
-            return null;
+        if (!\is_string($rawParent) || '' === trim($rawParent)) {
+            throw new \RuntimeException(\sprintf('Cannot start run_id=%s: agent_child session.parent_run_id is required and must be non-blank.', $message->runId()));
         }
 
-        $rawParent = trim($rawParent);
-
-        return '' !== $rawParent ? $rawParent : null;
+        return trim($rawParent);
     }
 
     /**

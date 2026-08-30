@@ -195,4 +195,23 @@ final class StartRunHandlerTest extends TestCase
             )->nextState?->parentRunId,
         );
     }
+
+    public function testLiveChildStartRejectsMissingParentRunId(): void
+    {
+        $handler = new StartRunHandler(
+            eventFactory: new EventFactory(),
+            normalizer: TestSerializerFactory::normalizer(),
+        );
+        $message = StartRunMessageBuilder::create('child-live-invalid')
+            ->withMetadata(new RunMetadata(
+                session: ['kind' => 'agent_child'],
+                model: 'deepseek/deepseek-v4-flash',
+            ))
+            ->build();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('agent_child session.parent_run_id is required and must be non-blank');
+
+        $handler->handle($message, RunStateBuilder::queued('child-live-invalid')->withModel(null)->build());
+    }
 }

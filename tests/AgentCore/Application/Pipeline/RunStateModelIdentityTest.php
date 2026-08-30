@@ -115,6 +115,35 @@ final class RunStateModelIdentityTest extends TestCase
         $this->assertSame('deepseek/deepseek-v4-flash', $state->model);
     }
 
+    public function testReplayRejectsChildWithoutParentRunId(): void
+    {
+        $event = new RunEvent(
+            runId: 'child-replay-invalid',
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'step_id' => 'start',
+                'payload' => [
+                    'messages' => [],
+                    'metadata' => [
+                        'model' => 'deepseek/deepseek-v4-flash',
+                        'session' => ['kind' => 'agent_child'],
+                    ],
+                ],
+            ],
+        );
+        $reducer = new RunStateReducer(
+            AttributeSerializerValidatorTestFactory::denormalizer(),
+            new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('agent_child session.parent_run_id is required and must be non-blank');
+
+        $reducer->replay(RunState::queued('child-replay-invalid'), [$event]);
+    }
+
     public function testLiveStartAndReplayAgreeOnChildParentRunId(): void
     {
         $handler = new StartRunHandler(

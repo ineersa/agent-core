@@ -6,8 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Mcp\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
@@ -30,7 +28,7 @@ final class McpParentAvailabilityToolSetResolverTest extends TestCase
     public function testParentRunHidesSpecificAvailabilityMcpTools(): void
     {
         $parentRunId = 'parent-run-1';
-        $resolver = $this->createResolver($parentRunId, isChild: false);
+        $resolver = $this->createResolver($parentRunId, StubRunRelationshipReader::topLevel($parentRunId));
 
         $result = $resolver->resolve('toolset:run:'.$parentRunId, runId: $parentRunId);
 
@@ -42,7 +40,7 @@ final class McpParentAvailabilityToolSetResolverTest extends TestCase
     {
         $parentRunId = 'parent-run-2';
         $childRunId = 'child-run-2';
-        $resolver = $this->createResolver($parentRunId, isChild: true, childRunId: $childRunId);
+        $resolver = $this->createResolver($parentRunId, StubRunRelationshipReader::child($childRunId, $parentRunId));
 
         $result = $resolver->resolve('toolset:run:'.$childRunId, runId: $childRunId);
 
@@ -50,7 +48,17 @@ final class McpParentAvailabilityToolSetResolverTest extends TestCase
         $this->assertContains('context7_resolve', $result->toolNames);
     }
 
-    private function createResolver(string $parentRunId, bool $isChild, ?string $childRunId = null): McpParentAvailabilityToolSetResolver
+    public function testUnknownRunFailsClosed(): void
+    {
+        $resolver = $this->createResolver('parent-run-3', StubRunRelationshipReader::empty());
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Operational relationship for run "unknown-run" is missing.');
+
+        $resolver->resolve('toolset:run:unknown-run', runId: 'unknown-run');
+    }
+
+    private function createResolver(string $parentRunId, StubRunRelationshipReader $relationshipReader): McpParentAvailabilityToolSetResolver
     {
         $inner = new class implements ToolSetResolverInterface {
             public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
@@ -82,45 +90,9 @@ final class McpParentAvailabilityToolSetResolverTest extends TestCase
             return $parentRunId === $runId ? $catalog : null;
         });
 
-        $eventStore = $this->createStub(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
-        if ($isChild && null !== $childRunId) {
-            $event = new RunEvent(
-                runId: $childRunId,
-                seq: 1,
-                turnNo: 0,
-                type: RunEventTypeEnum::RunStarted->value,
-                payload: [
-                    'payload' => [
-                        'metadata' => [
-                            'session' => [
-                                'kind' => 'agent_child',
-                                'parent_run_id' => $parentRunId,
-                                'agent_name' => 'scout',
-                                'artifact_id' => 'agent_child1',
-                            ],
-                            'model' => 'deepseek/deepseek-v4-flash',
-                            'reasoning' => 'medium',
-                            'tools_scope' => [
-                                'allowed_tools' => ['websearch_search'],
-                            ],
-                        ],
-                    ],
-                ],
-            );
-            $eventStore->method('allFor')->willReturnCallback(static function (string $runId) use ($childRunId, $event): array {
-                return $childRunId === $runId ? [$event] : [];
-            });
-        } else {
-            $eventStore->method('allFor')->willReturn([]);
-        }
-
-        $metadataReader = $isChild && null !== $childRunId
-            ? StubRunRelationshipReader::child($childRunId, $parentRunId)
-            : StubRunRelationshipReader::topLevel($parentRunId);
-
         return new McpParentAvailabilityToolSetResolver(
             inner: $inner,
-            relationshipReader: $metadataReader,
+            relationshipReader: $relationshipReader,
             catalogStore: $catalogStore,
             configLoader: TestMcpConfigLoaderFactory::smokeLoader(),
             availability: new McpServerToolAvailability(),
