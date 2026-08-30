@@ -8,13 +8,13 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\PromptsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\PromptTemplate\LoadedPromptTemplate;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateArgumentParser;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateFrontmatterParser;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateSubstitutor;
-use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCommand;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
@@ -81,9 +81,9 @@ final class PromptTemplateServiceTest extends TestCase
 
         $commands = $this->service->allPromptTemplateCommands();
         $this->assertCount(2, $commands);
-        $this->assertContainsOnlyInstancesOf(PromptTemplateCommand::class, $commands);
+        $this->assertContainsOnlyInstancesOf(LoadedPromptTemplate::class, $commands);
 
-        $names = array_map(static fn (PromptTemplateCommand $c): string => $c->name, $commands);
+        $names = array_map(static fn (LoadedPromptTemplate $c): string => $c->name, $commands);
         $this->assertSame(['review', 'summarize'], $names);
     }
 

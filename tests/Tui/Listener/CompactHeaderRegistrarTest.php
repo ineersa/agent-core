@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiscovery;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
 use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser;
@@ -11,12 +12,18 @@ use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\PromptsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
-use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateArgumentParser;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateFrontmatterParser;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateSubstitutor;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
@@ -139,14 +146,22 @@ final class CompactHeaderRegistrarTest extends TestCase
         $this->assertStringNotContainsString('reg-skill', $harness->plainScreenText());
     }
 
-    private function promptCatalog(): PromptTemplateCatalogInterface
+    private function promptCatalog(): PromptTemplateService
     {
-        return new class implements PromptTemplateCatalogInterface {
-            public function allPromptTemplateCommands(): array
-            {
-                return [];
-            }
-        };
+        $loader = new PromptTemplateLoader(
+            promptsConfig: new PromptsConfig(),
+            runtimeConfig: new PromptTemplatesRuntimeConfig(),
+            pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
+            cwd: $this->tmpDir,
+            frontmatterParser: new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor()),
+            logger: new TestLogger(),
+        );
+
+        return new PromptTemplateService(
+            $loader,
+            new PromptTemplateArgumentParser(),
+            new PromptTemplateSubstitutor(),
+        );
     }
 
     private function skillDiscovery(): SkillDiscovery

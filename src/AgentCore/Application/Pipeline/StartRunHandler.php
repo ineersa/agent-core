@@ -37,8 +37,23 @@ final readonly class StartRunHandler implements RunMessageHandler
         // The canonical model is committed only by RunStarted. A shell-only
         // lifecycle has no RunStarted event and therefore keeps model null even
         // after reaching Completed; it may still initialize exactly once.
+        //
+        // If RunStarted already committed but the initial AdvanceRun never left
+        // this process (for example projection persistence failed after the
+        // event append and Messenger retried StartRun), re-arm that kickoff.
+        // Once AdvanceRun has applied a token, stop — the run is past start.
         if (null !== $state->model) {
-            return new HandlerResult();
+            if (null !== $state->lastAppliedAdvanceKey || null !== $state->currentOperation) {
+                return new HandlerResult();
+            }
+
+            $postCommit = [];
+            $initialAdvance = $this->initialAdvanceCallback($message->runId(), $state->turnNo, 'start-follow-up');
+            if (null !== $initialAdvance) {
+                $postCommit[] = $initialAdvance;
+            }
+
+            return new HandlerResult(postCommit: $postCommit);
         }
 
         $messages = [] === $message->payload->messages ? $state->messages : $message->payload->messages;
