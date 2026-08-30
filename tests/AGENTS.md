@@ -139,7 +139,7 @@ Both handle CWD isolation, env vars, exception-handler balance, and directory cl
 
 Must boot the Symfony kernel via the bases above and use the test container. Do not hand-roll `ORMSetup`/`DriverManager`/`SchemaTool` factories. DAMA rolls back each method — no manual DB cleanup.
 
-ParaTest (`castor test` default) shares SQLite with DAMA transaction isolation; each worker gets its own compiled cache via `TEST_TOKEN` in `tests/paratest-bootstrap.php`. DB path: `HATFIELD_TEST_DATABASE_PATH` (default `app_test.sqlite`). Filtered/`--filter` runs are sequential. Detail: testing skill.
+ParaTest (`castor test` default) uses lane-and-worker-scoped SQLite and compiled caches via `HATFIELD_QA_LANE` + `TEST_TOKEN` in `tests/paratest-bootstrap.php`; tokens repeat across concurrent pools. DB path: `HATFIELD_TEST_DATABASE_PATH` (default `app_test.sqlite`). Filtered/`--filter` runs are sequential. Detail: testing skill.
 
 ## Castor (pointer only)
 

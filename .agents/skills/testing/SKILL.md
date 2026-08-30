@@ -220,18 +220,18 @@ All E2E tests must use `var/tmp/test-{uuid}` isolation. They must NOT read or wr
 
 ### Per-suite DB isolation
 
-`castor test` runs unit/integration tests with ParaTest by default (parallel
-workers share the SQLite test DB safely via DAMA/DoctrineTestBundle
-transaction isolation in WAL mode).  Each ParaTest worker gets its own
-compiled Symfony cache directory (via `TEST_TOKEN` in
-`tests/paratest-bootstrap.php`).  Filtered runs and non-ParaTest fallback
-use a single shared DB sequentially.
+`castor test` runs unit/integration tests with ParaTest by default. Each
+concurrent Castor lane and ParaTest worker gets its own SQLite database and
+compiled Symfony cache via `HATFIELD_QA_LANE` + `TEST_TOKEN` in
+`tests/paratest-bootstrap.php`; `TEST_TOKEN` alone is not unique across
+parallel ParaTest pools. Filtered runs and non-ParaTest fallback use a single
+shared DB sequentially.
 
 `castor check` uses ParaTest for the unit/integration lane (excludes
 E2E, live-LLM, recording, and PHAR groups).
 
 - DB path: `HATFIELD_TEST_DATABASE_PATH` (defaults to `app_test.sqlite`).
-- ParaTest cache dir: `HATFIELD_CACHE_DIR=.hatfield/cache-paraT{token}` (per-worker).
+- ParaTest cache dir: `HATFIELD_CACHE_DIR=.hatfield/cache-paraT{lane}-{token}` (per-lane, per-worker).
 - `doctrine:migrations:migrate` runs once before the suite.
 - If you must isolate a Castor PHPUnit failure with raw `vendor/bin/phpunit`, export `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite`. Normal workflow stays on Castor.
 - Filtered runs (`castor test --filter=...`) use sequential PHPUnit (shared single DB).

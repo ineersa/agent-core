@@ -168,7 +168,7 @@ function test(?string $filter = null, ?string $suite = null): void
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
     $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-parallel.junit.xml') : '';
 
-    $cmd = qa_observability_env_command().' APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/paratest'
+    $cmd = qa_check_run_env_command('unit').' APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/paratest'
         .' --configuration=phpunit.xml.dist'
         .' --bootstrap='.escapeshellarg($bootstrap)
         .$suiteFlag
@@ -212,7 +212,7 @@ function build_check_paratest_command(): string
 
     $processes = check_lane_paratest_processes('unit', 4, 8);
 
-    return qa_check_run_env_command().' APP_ENV=test '.$phpBin.' vendor/bin/paratest'
+    return qa_check_run_env_command('unit').' APP_ENV=test '.$phpBin.' vendor/bin/paratest'
         .' --processes='.$processes
         .' --configuration=phpunit.xml.dist'
         .' --bootstrap='.escapeshellarg($bootstrap)

@@ -1064,7 +1064,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             contextAccessor: $this->contextAccessor,
             toolRuntime: $this->toolRuntime,
             logger: $this->logger,
-            runMetadataReader: $runMetadataReader ?? $this->emptyMetadataReader(),
+            runMetadataReader: $runMetadataReader ?? StubRunRelationshipReader::topLevel(self::TEST_SESSION),
             config: $this->bashConfig,
             promptAdapter: $promptAdapter ?? new BashToolDeclineAdapter(),
         );
