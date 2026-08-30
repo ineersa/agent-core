@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\StartRunMessageBuilder;
@@ -159,5 +160,39 @@ final class StartRunHandlerTest extends TestCase
         $this->assertSame(0, $advance->turnNo());
         $this->assertStringStartsWith('start-follow-up-', $advance->stepId());
         $this->assertSame(hash('sha256', \sprintf('%s|%s', $advance->runId(), $advance->stepId())), $advance->idempotencyKey());
+    }
+
+    public function testLiveChildStartPopulatesParentRunIdMatchingReplay(): void
+    {
+        $handler = new StartRunHandler(
+            eventFactory: new EventFactory(),
+            normalizer: TestSerializerFactory::normalizer(),
+        );
+
+        $message = StartRunMessageBuilder::create('child-live-start-1')
+            ->withMetadata(new RunMetadata(
+                session: [
+                    'kind' => 'agent_child',
+                    'parent_run_id' => 'parent-live-9',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_child1',
+                ],
+                model: 'deepseek/deepseek-v4-flash',
+                reasoning: 'medium',
+                toolsScope: ['allowed_tools' => ['read']],
+            ))
+            ->build();
+
+        $result = $handler->handle($message, RunStateBuilder::queued('child-live-start-1')->withModel(null)->build());
+
+        $this->assertNotNull($result->nextState);
+        $this->assertSame('parent-live-9', $result->nextState->parentRunId);
+        $this->assertSame('deepseek/deepseek-v4-flash', $result->nextState->model);
+        $this->assertNull(
+            $handler->handle(
+                StartRunMessageBuilder::create('top-live-start-1')->build(),
+                RunStateBuilder::queued('top-live-start-1')->withModel(null)->build(),
+            )->nextState?->parentRunId,
+        );
     }
 }

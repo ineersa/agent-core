@@ -92,7 +92,12 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
         // (no lifecycle events, no preparation, no worker) so manual/API
         // CompactRun and any leak past scheduling paths produce no noise.
         // Parent-side fork snapshot compaction does not use CompactRun.
-        if ($this->metadataReader->isAgentChild($runId)) {
+        // Missing operational identity fails closed as a silent no-op.
+        try {
+            if ($this->metadataReader->isAgentChild($runId)) {
+                return new HandlerResult(nextState: $state, events: [], effects: []);
+            }
+        } catch (\RuntimeException) {
             return new HandlerResult(nextState: $state, events: [], effects: []);
         }
 

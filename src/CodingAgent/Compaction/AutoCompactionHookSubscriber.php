@@ -64,7 +64,12 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
 
         // Guard: fork/subagent child runs never compact (auto or manual).
         // Parent-side fork snapshot compaction is separate and unchanged.
-        if ($this->metadataReader->isAgentChild($runId)) {
+        // Missing operational identity fails closed (skip auto-compaction).
+        try {
+            if ($this->metadataReader->isAgentChild($runId)) {
+                return $context;
+            }
+        } catch (\RuntimeException) {
             return $context;
         }
 

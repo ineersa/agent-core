@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Repository\RunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 
@@ -88,6 +89,32 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
 
         $this->repository->replace(new RunState('child', RunStatus::Completed, parentRunId: 'parent'));
         $this->assertSame(['parent', 'parent'], $this->connection->fetchNumeric('SELECT parent_run_id, owner_session_id FROM run_operational_state WHERE run_id = ?', ['child']));
+    }
+
+    public function testLiveChildStartStateProjectsAsChildNotTopLevel(): void
+    {
+        // Mirrors StartRunHandler live parentRunId extraction so a newly launched
+        // child is never written as a top-level operational row before replay.
+        $liveChild = new RunState(
+            runId: 'child-live-proj',
+            status: RunStatus::Running,
+            model: 'deepseek/deepseek-v4-flash',
+            parentRunId: 'parent-live-proj',
+        );
+
+        $this->repository->replace($liveChild);
+
+        $this->assertSame(
+            ['parent-live-proj', 'parent-live-proj'],
+            $this->connection->fetchNumeric(
+                'SELECT parent_run_id, owner_session_id FROM run_operational_state WHERE run_id = ?',
+                ['child-live-proj'],
+            ),
+        );
+
+        $reader = new RunRelationshipReader($this->repository);
+        $this->assertTrue($reader->isAgentChild('child-live-proj'));
+        $this->assertSame('parent-live-proj', $reader->readParentRunId('child-live-proj'));
     }
 
     public function testValidationFailureDoesNotDirtyManagedProjection(): void

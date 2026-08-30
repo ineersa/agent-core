@@ -55,7 +55,12 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
         ?string $activeModel = null,
     ): bool {
         // Fork/subagent children never compact — do not schedule pre-LLM CompactRun.
-        if ($this->metadataReader->isAgentChild($runId)) {
+        // Missing operational identity fails closed (do not schedule CompactRun).
+        try {
+            if ($this->metadataReader->isAgentChild($runId)) {
+                return false;
+            }
+        } catch (\RuntimeException) {
             return false;
         }
 

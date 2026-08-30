@@ -35,7 +35,12 @@ final readonly class McpParentAvailabilityToolSetResolver implements ToolSetReso
             return $inner;
         }
 
-        if ($this->relationshipReader->isAgentChild($runId)) {
+        try {
+            if ($this->relationshipReader->isAgentChild($runId)) {
+                return $inner;
+            }
+        } catch (\RuntimeException) {
+            // Unknown identity: do not apply parent-only MCP availability filtering.
             return $inner;
         }
 
@@ -83,11 +88,12 @@ final readonly class McpParentAvailabilityToolSetResolver implements ToolSetReso
 
     private function resolveCatalogRunId(string $runId): string
     {
-        $parentRunId = $this->relationshipReader->readParentRunId($runId);
-        if (null !== $parentRunId) {
-            return $parentRunId;
+        try {
+            $parentRunId = $this->relationshipReader->readParentRunId($runId);
+        } catch (\RuntimeException) {
+            return $runId;
         }
 
-        return $runId;
+        return $parentRunId ?? $runId;
     }
 }

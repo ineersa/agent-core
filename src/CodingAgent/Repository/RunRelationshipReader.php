@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Repository;
 
-use Ineersa\CodingAgent\Dto\RunRelationshipDTO;
 use Ineersa\CodingAgent\Entity\RunOperationalState;
 
 /**
  * Hot-path child/parent classification from the existing operational projection.
  *
  * Never opens EventStore or session/artifact filesystem indexes.
+ * Missing projection rows fail closed so unknown identity cannot bypass
+ * child safety/policy as if it were a known top-level parent.
  */
 final class RunRelationshipReader implements RunRelationshipReaderInterface
 {
@@ -19,46 +20,31 @@ final class RunRelationshipReader implements RunRelationshipReaderInterface
     ) {
     }
 
-    public function find(string $runId): ?RunRelationshipDTO
-    {
-        $state = $this->projectionRepository->find($runId);
-        if (!$state instanceof RunOperationalState) {
-            return null;
-        }
-
-        return new RunRelationshipDTO($state->runId, $state->parentRunId, $state->ownerSessionId);
-    }
-
-    /**
-     * True when the operational row exists and carries a parent_run_id.
-     *
-     * Missing rows are treated as not-child for best-effort policy filters
-     * (compaction/MCP/bash). Launch/depth safety gates must call
-     * {@see requireKnownTopLevel()} instead of this method.
-     */
     public function isAgentChild(string $runId): bool
     {
-        $relationship = $this->find($runId);
-
-        return null !== $relationship && $relationship->isAgentChild();
+        return null !== $this->requireKnown($runId)->parentRunId;
     }
 
     public function readParentRunId(string $runId): ?string
     {
-        return $this->find($runId)?->parentRunId;
+        return $this->requireKnown($runId)->parentRunId;
     }
 
-    /**
-     * Fail closed for nested launch/depth gates: unknown rows and child rows both block.
-     */
     public function requireKnownTopLevel(string $runId): void
     {
-        $relationship = $this->find($runId);
-        if (null === $relationship) {
-            throw new \RuntimeException(\sprintf('Operational relationship for run "%s" is missing; nested launch is blocked.', $runId));
-        }
-        if ($relationship->isAgentChild()) {
+        $state = $this->requireKnown($runId);
+        if (null !== $state->parentRunId) {
             throw new \RuntimeException(\sprintf('Run "%s" is an agent child; nested launches are not supported.', $runId));
         }
+    }
+
+    private function requireKnown(string $runId): RunOperationalState
+    {
+        $state = $this->projectionRepository->find($runId);
+        if (!$state instanceof RunOperationalState) {
+            throw new \RuntimeException(\sprintf('Operational relationship for run "%s" is missing.', $runId));
+        }
+
+        return $state;
     }
 }

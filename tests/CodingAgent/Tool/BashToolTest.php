@@ -291,10 +291,10 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertCount(0, $failed);
     }
 
-    public function testMissingMetadataKeepsParentBackgroundPromptBehavior(): void
+    public function testMissingOperationalIdentityDisablesBackgroundPromptFailClosed(): void
     {
         $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
-        $promptAdapter->expects($this->once())->method('shouldBackground')->willReturn(true);
+        $promptAdapter->expects($this->never())->method('shouldBackground');
 
         $this->bashConfig = new BashToolConfig(
             defaultTimeoutSeconds: 5,
@@ -306,12 +306,20 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $result = $this->withContext('parent-missing-metadata', function () use ($promptAdapter): string {
             return ($this->makeBashTool($promptAdapter, $this->emptyMetadataReader()))(new BashArgumentsDTO(
-                command: 'sleep 2',
+                command: 'echo "missing-ok" && sleep 1 && echo "missing-done"',
                 timeout: 5,
             ));
         });
 
-        $this->assertStringContainsString('Command moved to background', $result);
+        $this->assertStringContainsString('missing-ok', $result);
+        $this->assertStringContainsString('missing-done', $result);
+        $this->assertStringNotContainsString('Command moved to background', $result);
+
+        $failed = array_values(array_filter(
+            $this->logger->records,
+            static fn (array $record): bool => 'bash_tool.background_policy_resolution_failed' === $record['message'],
+        ));
+        $this->assertCount(1, $failed);
     }
 
     public function testTimeoutReapsProcessGroupDescendants(): void

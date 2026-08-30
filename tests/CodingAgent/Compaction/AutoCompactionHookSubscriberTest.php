@@ -81,7 +81,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                 priorSummaryPresent: false,
             ));
         $this->commandBus = new TestMessageBus();
-        // Parent by default: empty event store so isAgentChild() is false.
+        // Parent by default: known top-level operational relationship.
         // Provider usage stays on the separate $this->eventStore mock.
         $this->metadataReader = StubRunRelationshipReader::topLevel('run-1');
 

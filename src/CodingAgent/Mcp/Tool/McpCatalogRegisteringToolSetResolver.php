@@ -81,17 +81,22 @@ final readonly class McpCatalogRegisteringToolSetResolver implements ToolSetReso
 
     private function resolveCatalogRunId(string $runId): string
     {
-        if ($this->relationshipReader->isAgentChild($runId)) {
+        try {
             $parentRunId = $this->relationshipReader->readParentRunId($runId);
-            if (null !== $parentRunId) {
-                if (null !== $this->catalogStore->read($runId)) {
-                    return $runId;
-                }
-
-                return $parentRunId;
-            }
+        } catch (\RuntimeException) {
+            // Unknown operational identity: keep the caller's run id and let
+            // optional MCP registration fail closed / no-op as before.
+            return $runId;
         }
 
-        return $runId;
+        if (null === $parentRunId) {
+            return $runId;
+        }
+
+        if (null !== $this->catalogStore->read($runId)) {
+            return $runId;
+        }
+
+        return $parentRunId;
     }
 }

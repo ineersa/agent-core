@@ -12,8 +12,8 @@ use Ineersa\CodingAgent\Repository\RunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 
 /**
- * Thesis: hot child/parent classification reads only operational projection rows
- * and never EventStore firstFor().
+ * Thesis: hot child/parent classification reads only operational projection rows,
+ * never EventStore firstFor(), and unknown identity fails closed.
  */
 final class RunRelationshipReaderTest extends IsolatedKernelTestCase
 {
@@ -35,8 +35,15 @@ final class RunRelationshipReaderTest extends IsolatedKernelTestCase
         $this->assertTrue($reader->isAgentChild('child'));
         $this->assertSame('parent', $reader->readParentRunId('child'));
         $this->assertNull($reader->readParentRunId('parent'));
-        $this->assertNull($reader->find('missing'));
-        $this->assertFalse($reader->isAgentChild('missing'));
+    }
+
+    public function testMissingOperationalIdentityFailsClosed(): void
+    {
+        $reader = new RunRelationshipReader(self::getContainer()->get(RunOperationalProjectionRepository::class));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Operational relationship for run "missing" is missing');
+        $reader->isAgentChild('missing');
     }
 
     public function testRequireKnownTopLevelFailsClosedForMissingAndChildRows(): void

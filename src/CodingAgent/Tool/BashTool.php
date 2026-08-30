@@ -293,9 +293,9 @@ final class BashTool implements HatfieldToolProviderInterface
     }
 
     /**
-     * Parent/missing/no-context runs keep normal background prompting.
-     * Canonical agent_child metadata disables it for this invocation.
-     * Lookup/malformed failures degrade locally by disabling the optional prompt.
+     * Known top-level / no-context runs keep normal background prompting.
+     * Known agent_child rows disable it for this invocation.
+     * Missing operational identity fails closed by disabling the optional prompt.
      */
     private function resolveBackgroundPromptAllowed(?string $sessionId): bool
     {

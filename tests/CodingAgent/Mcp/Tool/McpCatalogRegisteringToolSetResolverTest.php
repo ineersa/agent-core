@@ -391,6 +391,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
 
     private function metadataReader(): RunRelationshipReaderInterface
     {
+        // Unknown identity fails closed inside the resolver and keeps the caller's run id.
         return StubRunRelationshipReader::empty();
     }
 
