@@ -4,8 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
-use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface;
-use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCommand;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Config\PromptsConfig;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateArgumentParser;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateFrontmatterParser;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateSubstitutor;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandCatalog;
@@ -18,26 +27,33 @@ use PHPUnit\Framework\TestCase;
 
 final class PromptTemplateCommandRegistrarTest extends TestCase
 {
+    private string $tmpDir;
+    private string $homeDir;
+    private string $cwd;
     private SlashCommandCatalog $commandCatalog;
-    /** @var PromptTemplateCatalogInterface&object */
-    private PromptTemplateCatalogInterface $catalog;
 
     protected function setUp(): void
     {
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('prompt_template_command_registrar');
+        $this->homeDir = $this->tmpDir.'/home';
+        $this->cwd = $this->tmpDir.'/project';
+        mkdir($this->homeDir, 0777, true);
+        mkdir($this->cwd, 0777, true);
         $this->commandCatalog = new SlashCommandCatalog();
-        $this->catalog = $this->createStub(PromptTemplateCatalogInterface::class);
+    }
+
+    protected function tearDown(): void
+    {
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
     #[Test]
     public function registersCommandPerTemplate(): void
     {
-        $this->catalog->method('allPromptTemplateCommands')->willReturn([
-            new PromptTemplateCommand(name: 'review', description: 'Review code changes'),
-            new PromptTemplateCommand(name: 'summarize', description: 'Summarize conversation'),
-        ]);
+        $this->writeTemplate('review', "Review: test\n");
+        $this->writeTemplate('summarize', "Summarize: test\n");
 
-        $registrar = new PromptTemplateCommandRegistrar($this->catalog);
-        $registrar->registerCatalog($this->commandCatalog);
+        $this->createRegistrar()->registerCatalog($this->commandCatalog);
 
         $this->assertTrue($this->commandCatalog->has('review'));
         $this->assertTrue($this->commandCatalog->has('summarize'));
@@ -48,12 +64,9 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
     #[Test]
     public function metadataHasCorrectFields(): void
     {
-        $this->catalog->method('allPromptTemplateCommands')->willReturn([
-            new PromptTemplateCommand(name: 'review', description: 'Review code changes'),
-        ]);
+        $this->writeTemplate('review', "---\ndescription: Review code changes\n---\nBody\n");
 
-        $registrar = new PromptTemplateCommandRegistrar($this->catalog);
-        $registrar->registerCatalog($this->commandCatalog);
+        $this->createRegistrar()->registerCatalog($this->commandCatalog);
 
         $meta = $this->commandCatalog->getMetadata('review');
         $this->assertNotNull($meta);
@@ -63,7 +76,6 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
         $this->assertSame('/review <args>', $meta->usage);
         $this->assertSame([], $meta->aliases);
 
-        // Metadata appears in allMetadata()
         $all = $this->commandCatalog->allMetadata();
         $names = array_map(static fn ($m) => $m->name, $all);
         $this->assertContains('review', $names);
@@ -72,12 +84,9 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
     #[Test]
     public function handlerReturnsDispatchRuntimeWithOriginalText(): void
     {
-        $this->catalog->method('allPromptTemplateCommands')->willReturn([
-            new PromptTemplateCommand(name: 'review', description: 'Review code changes'),
-        ]);
+        $this->writeTemplate('review', "Review: test\n");
 
-        $registrar = new PromptTemplateCommandRegistrar($this->catalog);
-        $registrar->registerCatalog($this->commandCatalog);
+        $this->createRegistrar()->registerCatalog($this->commandCatalog);
 
         $result = (new SlashCommandRegistry($this->commandCatalog))->execute(new SlashCommand('review', 'foo bar', '/review foo bar'));
         $this->assertInstanceOf(DispatchRuntime::class, $result);
@@ -87,10 +96,6 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
     #[Test]
     public function skipsWhenRealCommandAlreadyRegistered(): void
     {
-        // Pre-register a real "review" command, then run the registrar with
-        // a template also named "review". The registrar must skip the template
-        // because the name is already taken — real command handler and metadata
-        // must remain untouched.
         $realHandler = new class implements SlashCommandHandler {
             public function handle(SlashCommand $command): DispatchRuntime
             {
@@ -108,12 +113,8 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
             $realHandler,
         );
 
-        $this->catalog->method('allPromptTemplateCommands')->willReturn([
-            new PromptTemplateCommand(name: 'review', description: 'Template review'),
-        ]);
-
-        $registrar = new PromptTemplateCommandRegistrar($this->catalog);
-        $registrar->registerCatalog($this->commandCatalog);
+        $this->writeTemplate('review', "---\ndescription: Template review\n---\nBody\n");
+        $this->createRegistrar()->registerCatalog($this->commandCatalog);
 
         $result = (new SlashCommandRegistry($this->commandCatalog))->execute(new SlashCommand('review', '', '/review'));
         $this->assertInstanceOf(DispatchRuntime::class, $result);
@@ -127,34 +128,23 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
     #[Test]
     public function skipsTemplateWhenNameCollidesWithBuiltinHelp(): void
     {
-        // The built-in registry already has /help. Try to register a template
-        // named "help". The registrar should skip it.
-        $this->catalog->method('allPromptTemplateCommands')->willReturn([
-            new PromptTemplateCommand(name: 'help', description: 'Template help override'),
-            new PromptTemplateCommand(name: 'review', description: 'Review'),
-        ]);
+        $this->writeTemplate('help', "---\ndescription: Template help override\n---\nBody\n");
+        $this->writeTemplate('review', "---\ndescription: Review\n---\nBody\n");
 
-        $registrar = new PromptTemplateCommandRegistrar($this->catalog);
-        $registrar->registerCatalog($this->commandCatalog);
+        $this->createRegistrar()->registerCatalog($this->commandCatalog);
 
-        // /help should still be the built-in help, not a DispatchRuntime
         $result = (new SlashCommandRegistry($this->commandCatalog))->execute(new SlashCommand('help', '', '/help'));
-        // Built-in help returns TranscriptMessage, not DispatchRuntime
         $this->assertInstanceOf(\Ineersa\Tui\Command\TranscriptMessage::class, $result);
 
-        // /review should be registered as a template command
         $this->assertTrue($this->commandCatalog->has('review'));
     }
 
     #[Test]
     public function hyphenatedNameRegisters(): void
     {
-        $this->catalog->method('allPromptTemplateCommands')->willReturn([
-            new PromptTemplateCommand(name: 'team-review', description: 'Team code review'),
-        ]);
+        $this->writeTemplate('team-review', "---\ndescription: Team code review\n---\nBody\n");
 
-        $registrar = new PromptTemplateCommandRegistrar($this->catalog);
-        $registrar->registerCatalog($this->commandCatalog);
+        $this->createRegistrar()->registerCatalog($this->commandCatalog);
 
         $this->assertTrue($this->commandCatalog->has('team-review'));
         $meta = $this->commandCatalog->getMetadata('team-review');
@@ -169,21 +159,17 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
     #[Test]
     public function noTemplatesProducesNoCommands(): void
     {
-        $this->catalog->method('allPromptTemplateCommands')->willReturn([]);
-
         $initialCount = \count($this->commandCatalog->allMetadata());
 
-        $registrar = new PromptTemplateCommandRegistrar($this->catalog);
-        $registrar->registerCatalog($this->commandCatalog);
+        $this->createRegistrar()->registerCatalog($this->commandCatalog);
 
-        // Only built-in commands should exist
         $this->assertSame($initialCount, \count($this->commandCatalog->allMetadata()));
     }
 
     #[Test]
     public function implementsSlashCommandCatalogRegistrar(): void
     {
-        $registrar = new PromptTemplateCommandRegistrar($this->catalog);
+        $registrar = $this->createRegistrar();
         $this->assertInstanceOf(SlashCommandCatalogRegistrar::class, $registrar);
     }
 
@@ -191,5 +177,34 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
     public function getPriorityReturnsNegative100(): void
     {
         $this->assertSame(-100, PromptTemplateCommandRegistrar::getPriority());
+    }
+
+    private function createRegistrar(): PromptTemplateCommandRegistrar
+    {
+        $loader = new PromptTemplateLoader(
+            promptsConfig: new PromptsConfig(),
+            runtimeConfig: new PromptTemplatesRuntimeConfig(),
+            pathResolver: new SettingsPathResolver('/app', $this->homeDir),
+            cwd: $this->cwd,
+            frontmatterParser: new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor()),
+            logger: new TestLogger(),
+        );
+
+        return new PromptTemplateCommandRegistrar(
+            new PromptTemplateService(
+                $loader,
+                new PromptTemplateArgumentParser(),
+                new PromptTemplateSubstitutor(),
+            ),
+        );
+    }
+
+    private function writeTemplate(string $name, string $contents): void
+    {
+        $directory = $this->homeDir.'/.hatfield/prompts';
+        if (!is_dir($directory)) {
+            mkdir($directory, 0777, true);
+        }
+        file_put_contents($directory.'/'.$name.'.md', $contents);
     }
 }

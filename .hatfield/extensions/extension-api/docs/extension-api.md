@@ -12,7 +12,10 @@ extensions compile against. Host Hatfield injects a concrete `ExtensionApiInterf
 
 Extensions **may** depend on this package and Symfony TUI public widgets (for TUI extensions).
 Extensions **must not** depend on CodingAgent internals, AgentCore, in-repo `Ineersa\Tui\*`,
-Symfony DI/AI, settings loaders, tool registry internals, or packaging code.
+Symfony DI/AI, settings loaders, tool registry internals, or packaging code. Host code implements
+and consumes these contracts but must not depend on concrete extension implementations.
+Host adapters intentionally map public DTOs and handlers into internal models; this small cost
+keeps the separately published API stable and is not an internal boundary workaround.
 
 ## Enablement
 

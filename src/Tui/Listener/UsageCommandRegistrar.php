@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaProbeServiceInterface;
+use Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -21,7 +21,7 @@ use Psr\Log\LoggerInterface;
 final class UsageCommandRegistrar implements TuiListenerRegistrar, SlashCommandCatalogRegistrar
 {
     public function __construct(
-        private readonly ProviderQuotaProbeServiceInterface $quotaProbe,
+        private readonly ProviderQuotaProbeService $quotaProbe,
         private readonly LoggerInterface $logger,
     ) {
     }

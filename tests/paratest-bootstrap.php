@@ -25,42 +25,31 @@ declare(strict_types=1);
  * ── Environment overrides ──
  *   TEST_TOKEN              — set by ParaTest (empty string for main)
  *   HATFIELD_QA_RUN_ID      — castor check run id (optional)
+ *   HATFIELD_QA_LANE        — castor check / test lane id (unit|tui|llm-real)
  *   HATFIELD_TEST_DATABASE_PATH — per-worker SQLite path
  *   HATFIELD_CACHE_DIR      — per-worker container cache
  *   HATFIELD_QA_TEST_HOME   — isolated HOME for bin/console migrations (from Castor parent)
  */
-$token = getenv('TEST_TOKEN') ?: '0';
+require_once __DIR__.'/CodingAgent/Support/ParaTestWorkerIsolation.php';
 
+use Ineersa\CodingAgent\Tests\Support\ParaTestWorkerIsolation;
+
+$token = getenv('TEST_TOKEN') ?: '0';
 $qaRunId = getenv('HATFIELD_QA_RUN_ID') ?: '';
-$qaRunSegment = '' !== $qaRunId
-    ? preg_replace('/[^a-zA-Z0-9._-]/', '', $qaRunId) ?? 'qa-run'
-    : '';
+$lane = getenv('HATFIELD_QA_LANE') ?: '';
 
 $root = dirname(__DIR__);
 
-// ── Per-worker DB path ──
-if ('' !== $qaRunSegment) {
-    $dbPath = 'app_test-'.$qaRunSegment.'-T'.$token.'.sqlite';
-} else {
-    $dbPath = 'app_test-T'.$token.'.sqlite';
-}
+// ── Per-worker (+ per-lane) DB / cache paths ──
+$dbPath = ParaTestWorkerIsolation::appDatabaseFilename($qaRunId, $lane, $token);
 putenv("HATFIELD_TEST_DATABASE_PATH={$dbPath}");
 $_ENV['HATFIELD_TEST_DATABASE_PATH'] = $dbPath;
 
-if ('' !== $qaRunSegment) {
-    $transportDbPath = 'messenger_transport_test-'.$qaRunSegment.'-T'.$token.'.sqlite';
-} else {
-    $transportDbPath = 'messenger_transport_test-T'.$token.'.sqlite';
-}
+$transportDbPath = ParaTestWorkerIsolation::messengerTransportDatabaseFilename($qaRunId, $lane, $token);
 putenv("HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH={$transportDbPath}");
 $_ENV['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] = $transportDbPath;
 
-// ── Per-worker cache dir ──
-if ('' !== $qaRunSegment) {
-    $cacheDir = '.hatfield/cache-'.$qaRunSegment.'-paraT'.$token;
-} else {
-    $cacheDir = '.hatfield/cache-paraT'.$token;
-}
+$cacheDir = ParaTestWorkerIsolation::cacheDirectory($qaRunId, $lane, $token);
 putenv("HATFIELD_CACHE_DIR={$cacheDir}");
 $_ENV['HATFIELD_CACHE_DIR'] = $cacheDir;
 

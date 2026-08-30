@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedExtensionItemDTO;
-use Ineersa\CodingAgent\Runtime\Contract\TuiExtensionRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
@@ -34,7 +33,7 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * This service is invoked once at the beginning of the agent command lifecycle,
  * before the interactive mode or controller loop starts.
  */
-final class ExtensionManager implements TuiExtensionRegistryInterface
+final class ExtensionManager
 {
     /** @var list<LoadedExtensionItemDTO> */
     private array $loadOutcomes = [];
