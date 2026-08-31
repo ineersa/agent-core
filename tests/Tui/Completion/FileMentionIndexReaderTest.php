@@ -116,29 +116,6 @@ final class FileMentionIndexReaderTest extends TestCase
     }
 
     #[Test]
-    public function providesChildrenByDirectory(): void
-    {
-        $path = $this->tmpDir.'/index.jsonl';
-        file_put_contents($path, implode("\n", [
-            '{"path":"src/Tui/Completion/Foo.php","dir":false}',
-            '{"path":"src/Tui/Completion/Bar.php","dir":false}',
-            '{"path":"src/Tui/Other.php","dir":false}',
-            '{"path":"tests/Test.php","dir":false}',
-        ]));
-
-        $reader = new FileMentionIndexReader($path);
-        $children = $reader->getChildren('src/Tui/Completion');
-
-        $this->assertCount(2, $children);
-        $names = array_map(static fn (FileMentionIndexEntryDTO $e) => $e->path, $children);
-        sort($names);
-        $this->assertSame(
-            ['src/Tui/Completion/Bar.php', 'src/Tui/Completion/Foo.php'],
-            $names,
-        );
-    }
-
-    #[Test]
     public function providesLowercasePathsAndBasenames(): void
     {
         $path = $this->tmpDir.'/index.jsonl';
@@ -153,32 +130,3 @@ final class FileMentionIndexReaderTest extends TestCase
     }
 
     #[Test]
-    public function tracksLoadedState(): void
-    {
-        $reader = new FileMentionIndexReader($this->tmpDir.'/nonexistent.jsonl');
-
-        $this->assertFalse($reader->isLoaded());
-        $this->assertSame(-1, $reader->loadedMtime());
-
-        // Trigger a load
-        $reader->getEntries();
-
-        $this->assertTrue($reader->isLoaded());
-    }
-
-    private function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $files = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($files as $fileinfo) {
-            $op = $fileinfo->isDir() ? 'rmdir' : 'unlink';
-            $op($fileinfo->getRealPath());
-        }
-        rmdir($dir);
-    }
-}

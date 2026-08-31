@@ -14,4 +14,38 @@ final readonly class PreparedAgentChildRunDTO
     ) {
     }
 
+    public function parentRunId(): string
+    {
+        return $this->identity->parentRunId;
+    }
+
+    public function childRunId(): string
+    {
+        return $this->identity->childRunId;
+    }
+
+    public function artifactId(): string
+    {
+        return $this->identity->artifactId;
+    }
+
+    public function displayName(): string
+    {
+        return $this->identity->displayName;
+    }
+
+    public function taskSummary(): string
+    {
+        return $this->identity->taskSummary;
+    }
+
+    public function launchModel(): string
+    {
+        return $this->identity->launchModel;
+    }
+
+    public function launchReasoning(): string
+    {
+        return $this->identity->launchReasoning;
+    }
 }

@@ -98,28 +98,6 @@ final class SlotBasedTuiExtensionContextTest extends TestCase
         $this->assertSame(InputPriority::MODEL_CONTROL, $handlers[0]['priority']);
     }
 
-    public function testStatusClosureRoutesThroughScreenAndSyncsNativeWidget(): void
-    {
-        $editor = new PromptEditor();
-        $theme = new DefaultTheme(new ThemePalette('default'));
-        $screen = new ChatScreen($theme, 'test-session', $editor);
-        $tui = new Tui();
-        $screen->mount($tui);
-
-        $screen->extensionContext()->setStatus('session', 'No sessions found');
-        $screen->extensionContext()->setStatus('history', 'Session has no user prompts yet');
-
-        // Screen state is kept in sync through the ChatScreen closure.
-        $this->assertSame(
-            ['session' => 'No sessions found', 'history' => 'Session has no user prompts yet'],
-            $screen->statusEntries(),
-        );
-
-        // Removal through the same routed path.
-        $screen->extensionContext()->setStatus('session', null);
-        $this->assertSame(['history' => 'Session has no user prompts yet'], $screen->statusEntries());
-    }
-
     public function testSlotHandlersInterleaveByNativePriorityAndCanStopPropagation(): void
     {
         $editor = new PromptEditor();

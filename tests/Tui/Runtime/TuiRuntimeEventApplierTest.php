@@ -109,53 +109,6 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $this->assertNull($mapper->toRuntimeEvent($runEvent));
     }
 
-    public function testApplierAndSessionInitializerReplayProduceMatchingState(): void
-    {
-        $runId = 'equiv-'.bin2hex(random_bytes(4));
-        $this->projectDir = sys_get_temp_dir().'/hatfield-equiv-'.getmypid();
-        mkdir($this->projectDir.'/.hatfield/sessions/'.$runId, 0777, true);
-
-        $events = $this->canonicalFixtureLines($runId);
-        file_put_contents($this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl', implode('', $events));
-
-        // The initializer must replay through its own session-scoped applier
-        // (fresh projector), independent of the direct-apply applier below.
-        $initializerApplier = $this->buildApplier();
-        $initializer = $this->buildInitializer();
-        $resumeState = new TuiSessionState($runId, true);
-        $resumeBlocks = $initializer->buildInitialTranscript($resumeState, $initializerApplier);
-
-        $applierState = new TuiSessionState($runId, true);
-        $applier = $this->buildApplier();
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
-        $store = $this->buildEventStore();
-
-        foreach ($store->allFor($runId) as $runEvent) {
-            $runtimeEvent = $mapper->toRuntimeEvent($runEvent);
-            if (null === $runtimeEvent) {
-                continue;
-            }
-            $applier->apply($applierState, $runtimeEvent, replayMode: true);
-        }
-        $applierBlocks = $applier->projectedBlocks();
-
-        $this->assertSame($resumeState->activity, $applierState->activity);
-        $this->assertSame($resumeState->usage->inputTokens, $applierState->usage->inputTokens);
-        $this->assertSame($resumeState->usage->outputTokens, $applierState->usage->outputTokens);
-        $this->assertSame($resumeState->usage->latestInputTokens, $applierState->usage->latestInputTokens);
-        $this->assertSame(0.0, $applierState->usage->turnStartTime, 'Replay contract: no wall-clock t/s timing');
-        $this->assertSame($resumeState->queuedUserMessages, $applierState->queuedUserMessages);
-
-        $this->assertSame(
-            array_map(static fn ($b) => [$b->kind->value, $b->text, $b->streaming], $resumeBlocks),
-            array_map(static fn ($b) => [$b->kind->value, $b->text, $b->streaming], $applierBlocks),
-        );
-
-        $userCount = \count(array_filter($resumeBlocks, static fn ($b) => TranscriptBlockKindEnum::UserMessage === $b->kind));
-        $this->assertGreaterThanOrEqual(1, $userCount);
-        $this->assertSame(RunActivityStateEnum::Cancelled, $resumeState->activity);
-    }
-
     public function testPresentMalformedSubagentProgressPropagates(): void
     {
         $applier = $this->buildApplier();

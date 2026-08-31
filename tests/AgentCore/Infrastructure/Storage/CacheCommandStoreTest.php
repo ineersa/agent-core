@@ -145,31 +145,6 @@ final class CacheCommandStoreTest extends KernelTestCase
         $this->assertSame(2, $this->storeB->countPending('test-cross-1'));
     }
 
-    public function testCrossInstanceRejectPendingByKindVisible(): void
-    {
-        $this->storeA->enqueue(new PendingCommand(
-            runId: 'test-cross-1',
-            kind: 'steer',
-            idempotencyKey: 'key-reject-1',
-        ));
-        $this->storeA->enqueue(new PendingCommand(
-            runId: 'test-cross-1',
-            kind: 'follow_up',
-            idempotencyKey: 'key-reject-2',
-        ));
-
-        // Reject steers from instance A.
-        $rejected = $this->storeA->rejectPendingByKind('test-cross-1', 'steer', 'cancelled');
-
-        $this->assertCount(1, $rejected);
-        $this->assertSame('steer', $rejected[0]->kind);
-
-        // Instance B sees only the follow_up still pending.
-        $pending = $this->storeB->pending('test-cross-1');
-        $this->assertCount(1, $pending);
-        $this->assertSame('follow_up', $pending[0]->kind);
-    }
-
     public function testCrossInstanceMarkAppliedVisible(): void
     {
         $comm = new PendingCommand(

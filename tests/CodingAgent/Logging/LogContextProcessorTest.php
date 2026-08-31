@@ -16,13 +16,13 @@ final class LogContextProcessorTest extends TestCase
 
     protected function setUp(): void
     {
-        RunLogContext::reset();
+        
         $this->processor = new LogContextProcessor();
     }
 
     protected function tearDown(): void
     {
-        RunLogContext::reset();
+        
     }
 
     public function testEmptyContextInjectsProcessMemoryAndOnlyOptionalDdTraceIds(): void

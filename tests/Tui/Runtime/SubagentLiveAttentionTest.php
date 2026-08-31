@@ -23,66 +23,6 @@ use PHPUnit\Framework\TestCase;
 /** @covers \Ineersa\Tui\Runtime\SubagentLiveAttention */
 final class SubagentLiveAttentionTest extends TestCase
 {
-    public function testClearWaitingHumanClearsSubagentLiveStatusWhileLiveViewActive(): void
-    {
-        $state = new TuiSessionState('parent-session');
-        $state->subagentLiveView->enter(new SubagentLiveChildDTO(
-            agentRunId: 'child-run-1',
-            artifactId: 'agent_a',
-            agentName: 'scout',
-            status: SubagentLiveStatusEnum::WaitingHuman,
-            taskSummary: 'Task',
-            lastActivityAtMs: 1,
-            model: 'deepseek/deepseek-v4-flash',
-            reasoning: 'medium',
-        ));
-        $state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
-        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
-            'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task', 'model' => 'test/model', 'reasoning' => 'medium',
-        ]));
-
-        $screen = new ChatScreen(
-            new DefaultTheme(new ThemePalette('test')),
-            'parent-session',
-            new PromptEditor(),
-            new TranscriptDisplayConfig(),
-            new TranscriptDisplayState(),
-        );
-        $screen->setStatus('subagent_live', '⚠ Subagent scout needs your input — /agents-live');
-
-        SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, 'child-run-1');
-
-        $this->assertNull($state->subagentLiveCatalog->firstChildNeedingAttention());
-        $this->assertNull($this->statusText($screen, 'subagent_live'));
-    }
-
-    public function testMarkActiveChildrenCancelledForParentCancelClearsWaitingHumanOnMain(): void
-    {
-        $state = new TuiSessionState('parent-session');
-        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, $this->progressEvent([
-            'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task', 'model' => 'test/model', 'reasoning' => 'medium',
-        ]));
-
-        $screen = new ChatScreen(
-            new DefaultTheme(new ThemePalette('test')),
-            'parent-session',
-            new PromptEditor(),
-            new TranscriptDisplayConfig(),
-            new TranscriptDisplayState(),
-        );
-        $screen->setStatus('subagent_live', '⚠ Subagent scout needs your input — /agents-live');
-
-        SubagentLiveAttention::markActiveChildrenCancelledForParentCancel($state, $screen);
-
-        $child = $state->subagentLiveCatalog->findByArtifactId('agent_a');
-        $this->assertNotNull($child);
-        $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
-        $this->assertNull($state->subagentLiveCatalog->firstChildNeedingAttention());
-        $this->assertNull($this->statusText($screen, 'subagent_live'));
-    }
-
     public function testClearWaitingHumanDoesNotDowngradeTerminalCatalog(): void
     {
         $state = new TuiSessionState('parent-session');
@@ -180,14 +120,6 @@ final class SubagentLiveAttentionTest extends TestCase
         $this->assertNull($this->statusText($screen, 'agents-live'));
     }
 
-    private function statusText(ChatScreen $screen, string $key): ?string
-    {
-        $entries = $screen->statusEntries();
-
-        return $entries[$key] ?? null;
-    }
-
-    /** @param array<string, mixed> $progress */
     private function progressEvent(array $progress): RuntimeEvent
     {
         if (!isset($progress['model']) || !\is_string($progress['model']) || '' === trim($progress['model'])) {

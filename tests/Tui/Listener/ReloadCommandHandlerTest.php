@@ -290,11 +290,6 @@ final class ReloadCommandHandlerTest extends TestCase
             public function selectHistoryTurn(int $targetTurnNo): void
             {
             }
-
-            public function hasPendingSwitch(): bool
-            {
-                return false;
-            }
         };
     }
 

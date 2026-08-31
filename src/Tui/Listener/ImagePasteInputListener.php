@@ -154,8 +154,6 @@ final class ImagePasteInputListener implements TuiListenerRegistrar
             }
 
             $state->pastedImagePendingByIndex[$index] = new PastedImagePendingDTO(
-                index: $index,
-                placeholder: $placeholder,
                 stagedPath: $tempPath,
             );
 

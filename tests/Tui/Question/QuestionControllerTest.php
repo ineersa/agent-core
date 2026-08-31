@@ -223,41 +223,6 @@ class QuestionControllerTest extends TestCase
     }
 
     #[Test]
-    public function testTextOverlayMountClearsActionStatusInsteadOfQuestionPending(): void
-    {
-        $request = new QuestionRequest(
-            requestId: 'text-status',
-            source: QuestionSource::AgentCore,
-            kind: QuestionKind::Text,
-            prompt: 'Which docs file?',
-        );
-
-        $tui = new Tui();
-        $palette = new ThemePalette(
-            name: 'test',
-            colors: [
-                ThemeColorEnum::Accent->value => 'cyan',
-                ThemeColorEnum::Muted->value => 'gray',
-            ],
-        );
-        $screen = new ChatScreen(new DefaultTheme($palette), 'text-status-session', new PromptEditor());
-        $screen->mount($tui);
-        $screen->setStatus('action', 'Type your answer and press Enter');
-
-        // The controller is constructor-bound to its screen; use a controller
-        // bound to the mounted screen under test.
-        $controller = new QuestionController($this->coordinator, $screen);
-        $controller->open($request);
-
-        $entries = $screen->statusEntries();
-        $this->assertArrayNotHasKey('action', $entries);
-        $this->assertTrue($controller->isOpen());
-    }
-
-    /**
-     * Build items for a Confirm question.
-     */
-    #[Test]
     public function testConfirmItemsDefault(): void
     {
         $request = new QuestionRequest(
@@ -612,7 +577,7 @@ class QuestionControllerTest extends TestCase
         $this->coordinator->cancel();
 
         $this->assertFalse($this->coordinator->actionRequired());
-        $this->assertNull($this->coordinator->activeStatus(), 'After cancel with empty queue, status should be null');
+        $this->assertNull($this->coordinator->activeRequest(), 'After cancel with empty queue, no active request');
     }
 
     #[Test]

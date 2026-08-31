@@ -142,11 +142,6 @@ final class SessionPickerControllerTest extends TestCase
             public function requestReload(string $sessionId): void
             {
             }
-
-            public function hasPendingSwitch(): bool
-            {
-                return false;
-            }
         };
 
         $em = $this->createStub(EntityManagerInterface::class);
@@ -181,45 +176,6 @@ final class SessionPickerControllerTest extends TestCase
     }
 
     #[Test]
-    public function testOpenForRenameCommandDoesNotMutateSwitch(): void
-    {
-        $switch = $this->createMock(TuiSessionSwitchServiceInterface::class);
-        $switch->expects($this->never())->method('requestResume');
-        $switch->expects($this->never())->method('requestNewDraft');
-
-        $query = $this->createStub(\Doctrine\ORM\Query::class);
-        $query->method('getResult')->willReturn([]);
-        $qb = $this->createStub(\Doctrine\ORM\QueryBuilder::class);
-        $qb->method('select')->willReturnSelf();
-        $qb->method('from')->willReturnSelf();
-        $qb->method('orderBy')->willReturnSelf();
-        $qb->method('getQuery')->willReturn($query);
-        $em = $this->createStub(EntityManagerInterface::class);
-        $em->method('createQueryBuilder')->willReturn($qb);
-        $em->method('getClassMetadata')->willReturn(
-            new \Doctrine\ORM\Mapping\ClassMetadata(\Ineersa\CodingAgent\Entity\HatfieldSession::class),
-        );
-        $registry = $this->createStub(\Doctrine\Persistence\ManagerRegistry::class);
-        $registry->method('getManagerForClass')->willReturn($em);
-        $em->method('getRepository')->willReturn(new \Ineersa\CodingAgent\Entity\HatfieldSessionRepository($registry));
-        $sessionStore = new HatfieldSessionStore(
-            new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
-            $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
-        $screen = $this->screen();
-        $controller = new SessionPickerController($this->tui(), $screen, $sessionStore, $switch);
-
-        // openForRenameCommand must never call the switch service (unlike
-        // open() which calls applySelectEffect -> requestResume).  With an
-        // empty session store the picker reports the empty state instead of
-        // mounting an overlay.
-        $controller->openForRenameCommand();
-
-        $this->assertFalse($controller->isOpen());
-        $this->assertSame('No sessions found', $screen->statusEntries()['session'] ?? null);
-    }
-
     private function createTheme(): DefaultTheme
     {
         return new DefaultTheme(new ThemePalette('test'));

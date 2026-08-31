@@ -25,7 +25,7 @@ final class SessionSwitchServiceTest extends TestCase
     {
         $service = $this->createService();
 
-        $this->assertFalse($service->hasPendingSwitch());
+        $this->assertNull($service->consumePendingSwitch());
     }
 
     public function testConsumePendingSwitchReturnsNullWhenNothingPending(): void
@@ -41,7 +41,6 @@ final class SessionSwitchServiceTest extends TestCase
 
         $service->requestResume('42');
 
-        $this->assertTrue($service->hasPendingSwitch());
 
         $target = $service->consumePendingSwitch();
         $this->assertNotNull($target);
@@ -50,7 +49,7 @@ final class SessionSwitchServiceTest extends TestCase
         $this->assertNull($target->request);
 
         // After consume, nothing pending
-        $this->assertFalse($service->hasPendingSwitch());
+        $this->assertNull($service->consumePendingSwitch());
         $this->assertNull($service->consumePendingSwitch());
     }
 
@@ -60,7 +59,6 @@ final class SessionSwitchServiceTest extends TestCase
 
         $service->requestNewDraft();
 
-        $this->assertTrue($service->hasPendingSwitch());
 
         $target = $service->consumePendingSwitch();
         $this->assertNotNull($target);
@@ -68,7 +66,7 @@ final class SessionSwitchServiceTest extends TestCase
         $this->assertNull($target->sessionId);
         $this->assertNull($target->request);
 
-        $this->assertFalse($service->hasPendingSwitch());
+        $this->assertNull($service->consumePendingSwitch());
     }
 
     public function testRequestNewDraftWithRequestPassesThrough(): void
@@ -95,8 +93,7 @@ final class SessionSwitchServiceTest extends TestCase
 
         $serviceA->requestResume('42');
 
-        $this->assertTrue($serviceA->hasPendingSwitch());
-        $this->assertFalse($serviceB->hasPendingSwitch());
+        $this->assertNull($serviceB->consumePendingSwitch());
         $this->assertNull($serviceB->consumePendingSwitch());
 
         $target = $serviceA->consumePendingSwitch();
@@ -132,7 +129,6 @@ final class SessionSwitchServiceTest extends TestCase
 
         // Should not throw
         $service->requestResume('42');
-        $this->assertTrue($service->hasPendingSwitch());
     }
 
     /**
@@ -168,7 +164,6 @@ final class SessionSwitchServiceTest extends TestCase
 
         $service->requestResume('42');
 
-        $this->assertTrue($service->hasPendingSwitch());
         $target = $service->consumePendingSwitch();
         $this->assertNotNull($target);
         $this->assertSame('42', $target->sessionId);
@@ -189,7 +184,6 @@ final class SessionSwitchServiceTest extends TestCase
 
         $service->requestNewDraft();
 
-        $this->assertTrue($service->hasPendingSwitch());
         $target = $service->consumePendingSwitch();
         $this->assertNotNull($target);
         $this->assertTrue($target->isDraft);
@@ -221,7 +215,6 @@ final class SessionSwitchServiceTest extends TestCase
 
         // Should not throw — switch must proceed
         $service->requestResume('42');
-        $this->assertTrue($service->hasPendingSwitch());
 
         $target = $service->consumePendingSwitch();
         $this->assertNotNull($target);
@@ -287,7 +280,7 @@ final class SessionSwitchServiceTest extends TestCase
 
         // A reload is NOT a session switch — no switch target, no pending flag.
         $this->assertNull($service->consumePendingSwitch());
-        $this->assertFalse($service->hasPendingSwitch());
+        $this->assertNull($service->consumePendingSwitch());
         $this->assertNull($service->consumePendingReload());
     }
 
@@ -324,7 +317,6 @@ final class SessionSwitchServiceTest extends TestCase
         $intent = $service->consumePendingReload();
         $this->assertNotNull($intent);
         $this->assertSame('43', $intent->sessionId);
-        $this->assertTrue($service->hasPendingSwitch());
     }
 
     private function createService(

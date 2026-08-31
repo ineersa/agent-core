@@ -191,7 +191,6 @@ final class WorktreeManager
         return new WorktreeCreateResult(
             branch: $branch,
             worktree: $worktree,
-            output: trim('' !== $result->stdout ? $result->stdout : $result->stderr),
             veraCopied: $veraCopied,
             vendorCopied: $vendorCopied,
             extensionsVendorInstalled: $extensionsVendorInstalled,

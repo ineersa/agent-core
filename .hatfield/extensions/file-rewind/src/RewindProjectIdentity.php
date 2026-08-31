@@ -10,7 +10,6 @@ namespace Ineersa\HatfieldExt\FileRewind;
 final readonly class RewindProjectIdentity
 {
     public function __construct(
-        public string $projectRoot,
         public string $projectHash,
     ) {
     }
@@ -21,7 +20,6 @@ final readonly class RewindProjectIdentity
         $normalized = str_replace('\\', '/', false !== $real ? $real : $projectRoot);
 
         return new self(
-            projectRoot: $normalized,
             projectHash: hash('sha256', $normalized),
         );
     }

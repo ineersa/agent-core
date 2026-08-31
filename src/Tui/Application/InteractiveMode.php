@@ -191,7 +191,6 @@ final readonly class InteractiveMode
             // The immutable config is mapped once above.  Each session
             // (draft/resume/fresh) gets its own mutable display state
             // initialized from the config's previewsExpandedByDefault.
-            $state->transcriptDisplayConfig = $displayConfig;
             $state->transcriptDisplayState = new TranscriptDisplayState(
                 previewableBlocksExpanded: $displayConfig->previewsExpandedByDefault,
             );

@@ -43,12 +43,12 @@ final class ThemeRegistry implements ThemeLoadedResourcesProviderInterface
         // Load user-configured theme paths first (higher priority — they
         // override built-in themes with the same name).
         foreach ($tuiConfig->themePaths as $path) {
-            $this->ingestDirectory($path, userSource: true);
+            $this->ingestDirectory($path);
         }
 
         // Load built-in themes second (lower priority — only fills gaps).
         $builtinPath = $resources->getBuiltinThemesPath();
-        $this->ingestDirectory($builtinPath, userSource: false);
+        $this->ingestDirectory($builtinPath);
     }
 
     /**
@@ -150,7 +150,7 @@ final class ThemeRegistry implements ThemeLoadedResourcesProviderInterface
         return isset($this->themes[$name]);
     }
 
-    private function ingestDirectory(string $dir, bool $userSource): void
+    private function ingestDirectory(string $dir): void
     {
         if (!is_dir($dir)) {
             return;
@@ -185,11 +185,11 @@ final class ThemeRegistry implements ThemeLoadedResourcesProviderInterface
                 continue;
             }
 
-            $this->registerPalette($palette, $file, $userSource);
+            $this->registerPalette($palette, $file);
         }
     }
 
-    private function registerPalette(ThemePalette $palette, string $sourcePath, bool $userSource): void
+    private function registerPalette(ThemePalette $palette, string $sourcePath): void
     {
         $name = $palette->name;
         if (isset($this->themes[$name])) {
@@ -208,7 +208,7 @@ final class ThemeRegistry implements ThemeLoadedResourcesProviderInterface
         }
 
         $this->themes[$name] = $palette;
-        $this->loadedByName[$name] = new ThemeLoadedEntryDTO($name, $sourcePath, $userSource);
+        $this->loadedByName[$name] = new ThemeLoadedEntryDTO($name, $sourcePath);
     }
 
     /**

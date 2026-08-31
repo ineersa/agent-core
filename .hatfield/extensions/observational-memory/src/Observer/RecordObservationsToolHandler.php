@@ -28,10 +28,6 @@ final class RecordObservationsToolHandler implements ExtensionToolHandlerInterfa
      */
     private array $accepted = [];
 
-    private int $totalRejected = 0;
-
-    private int $totalDuplicates = 0;
-
     /**
      * @param list<array{run_id: string, seq: int}> $allowedSourceRefs
      */
@@ -46,7 +42,6 @@ final class RecordObservationsToolHandler implements ExtensionToolHandlerInterfa
     {
         $observations = $arguments['observations'] ?? null;
         if (!\is_array($observations)) {
-            ++$this->totalRejected;
 
             return $this->receipt(
                 added: 0,
@@ -132,9 +127,6 @@ final class RecordObservationsToolHandler implements ExtensionToolHandlerInterfa
             ];
             ++$added;
         }
-
-        $this->totalRejected += $rejected;
-        $this->totalDuplicates += $duplicates;
 
         $error = null;
         $status = 'accepted';

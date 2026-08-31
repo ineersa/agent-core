@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session\Replay;
 
+use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
@@ -846,7 +847,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
             $this->fail('Expected RunStateReplayException');
         } catch (RunStateReplayException $exception) {
             $this->assertStringContainsString('duplicate sequence', $exception->getMessage());
-            $this->assertTrue($exception->isDuplicateSequences());
+            $this->assertInstanceOf(RunStateDuplicateSequenceReplayException::class, $exception);
         }
     }
 

@@ -834,7 +834,6 @@ final class TickPollListenerTest extends TestCase
         ($handlers[0])();
 
         $this->assertTrue($questionController->isOpen(), 'Tick must open the text question overlay');
-        $this->assertArrayNotHasKey('action', $this->statusEntries($screen));
         $this->assertFalse($this->isWorkingVisible($screen));
         $this->assertNotSame('Working...', $this->workingMessage($screen));
     }
@@ -987,11 +986,6 @@ final class TickPollListenerTest extends TestCase
     }
 
     /** @return array<string, string> */
-    private function statusEntries(ChatScreen $screen): array
-    {
-        return $screen->statusEntries();
-    }
-
     private function workingMessage(ChatScreen $screen): string
     {
         return $screen->workingMessage();

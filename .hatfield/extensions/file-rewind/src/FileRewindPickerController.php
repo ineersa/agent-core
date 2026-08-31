@@ -79,10 +79,6 @@ final class FileRewindPickerController
         $this->tui?->setStatus('rewind', null);
     }
 
-    public function isOpen(): bool
-    {
-        return $this->overlay?->isOpen() ?? false;
-    }
 
     /**
      * @param list<array{turnNo:int,title:string,displayRole:string}> $targets

@@ -590,7 +590,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->assertNotFalse($png);
         $staged = $this->tempCwd.'/staged-paste-1.png';
         file_put_contents($staged, $png);
-        $this->state->pastedImagePendingByIndex[1] = new \Ineersa\Tui\ImagePaste\PastedImagePendingDTO(1, '[Image #1]', $staged);
+        $this->state->pastedImagePendingByIndex[1] = new \Ineersa\Tui\ImagePaste\PastedImagePendingDTO($staged);
 
         $this->client->expects($this->once())
             ->method('start')

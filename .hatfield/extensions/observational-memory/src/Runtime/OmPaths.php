@@ -11,7 +11,6 @@ final readonly class OmPaths
 {
     public function __construct(
         public string $databasePath,
-        public string $dataDirectory,
     ) {
     }
 
@@ -24,7 +23,6 @@ final readonly class OmPaths
 
         return new self(
             databasePath: $path,
-            dataDirectory: \dirname($path),
         );
     }
 }

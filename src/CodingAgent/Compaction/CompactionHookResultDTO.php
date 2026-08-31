@@ -34,9 +34,37 @@ final class CompactionHookResultDTO
     ) {
     }
 
-    
-    
-    
+    /**
+     * Convenience: identity result (no-op).
+     */
+    public static function continue(): self
+    {
+        return new self();
+    }
+
+    /**
+     * Convenience: cancel compaction with the given reason.
+     *
+     * The reason appears in the context_compaction_failed event payload
+     * as $payload['reason'] prefixed with 'hook_cancelled:' for traceability.
+     *
+     * @param string $reason Human-readable cancel reason (e.g. "SafeGuard: user is blocked")
+     */
+    public static function cancel(string $reason): self
+    {
+        return new self(cancelReason: $reason);
+    }
+
+    /**
+     * Convenience: skip the LLM call and use the given text as the summary.
+     *
+     * @param string $summaryText Replacement summary text (must be non-empty after trim)
+     */
+    public static function replaceSummary(string $summaryText): self
+    {
+        return new self(replacementSummary: $summaryText);
+    }
+
     /**
      * Does this result cancel compaction?
      */

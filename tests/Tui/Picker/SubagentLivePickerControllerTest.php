@@ -99,40 +99,6 @@ final class SubagentLivePickerControllerTest extends TestCase
     }
 
     #[Test]
-    public function dismissKeyRemovesCompletedChild(): void
-    {
-        $harness = new VirtualTuiHarness(sessionId: 'picker-dismiss-done');
-        $state = new TuiSessionState('picker-dismiss-done');
-        $this->seedCatalogChild($state, 'agent_done', 'child-run-done', 'completed');
-
-        $picker = $this->picker($harness, $state);
-        $this->invokeDismissSelected($picker, $harness->screen(), $state);
-
-        $this->assertCount(0, $state->subagentLiveCatalog->all());
-        $msg = $this->workingMessage($harness->screen());
-        // Last child dismissed: no working flash, status cleared
-        $this->assertSame('', $msg);
-        $entries = $this->statusEntries($harness->screen());
-        $this->assertArrayNotHasKey('agents-live', $entries, 'agents-live status should be cleared after last dismiss');
-    }
-
-    #[Test]
-    public function testEmptyOpenClearsWorkingMessageAndStatus(): void
-    {
-        $harness = new VirtualTuiHarness(sessionId: 'picker-empty-open');
-        $state = new TuiSessionState('picker-empty-open');
-
-        $picker = $this->picker($harness, $state);
-        $picker->open();
-
-        $this->assertFalse($picker->isOpen(), 'Picker should not open when catalog is empty');
-        $msg = $this->workingMessage($harness->screen());
-        $this->assertSame('', $msg, 'Working message should be empty');
-        $entries = $this->statusEntries($harness->screen());
-        $this->assertArrayNotHasKey('agents-live', $entries, 'agents-live status should be absent/cleared');
-    }
-
-    #[Test]
     public function exportKeyWritesSelectedChildHtmlWithChildOnlyContent(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'parent-session-export');
@@ -339,92 +305,6 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->assertStringContainsString('Fork tool interactive test. Your task, in ord...', $items[0]['label']);
         $this->assertStringContainsString('Inspect docs with tabs and spaces', $items[1]['label']);
         $this->assertStringNotContainsString('Your task, in order', $items[0]['label'], 'Sanitized summary must truncate after whitespace collapse');
-    }
-
-    #[Test]
-    public function testArrowNavigationMovesSingleNativeHighlight(): void
-    {
-        $palette = VirtualTuiHarness::defaultVirtualPalette()->withOverrides([
-            ThemeColorEnum::Accent->value => 'magenta',
-        ]);
-        $harness = new VirtualTuiHarness(
-            sessionId: 'picker-native-highlight',
-            palette: $palette,
-            columns: 140,
-            rows: 40,
-        );
-        $state = new TuiSessionState('picker-native-highlight');
-        $this->seedCatalogChild($state, 'agent_alpha', 'child-run-alpha', 'completed', agentName: 'alpha', task: 'Alpha unique task');
-        $this->seedCatalogChild($state, 'agent_bravo', 'child-run-bravo', 'completed', agentName: 'bravo', task: 'Bravo unique task');
-        $this->seedCatalogChild($state, 'agent_charlie', 'child-run-charlie', 'completed', agentName: 'charlie', task: 'Charlie unique task');
-
-        $picker = $this->picker($harness, $state);
-        $picker->open();
-        $this->assertTrue($picker->isOpen());
-
-        $overlayRef = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');
-        $overlay = $overlayRef->getValue($picker);
-        $this->assertInstanceOf(PickerOverlay::class, $overlay);
-        $list = $overlay->listWidget();
-        $this->assertInstanceOf(SelectListWidget::class, $list);
-        $this->assertSame(0, $this->selectedIndex($list));
-
-        $itemsProp = new \ReflectionProperty(SelectListWidget::class, 'items');
-        $items = $itemsProp->getValue($list);
-        $this->assertCount(3, $items);
-        foreach ($items as $item) {
-            $this->assertStringNotContainsString("\x1b[", $item['label'], 'Labels must stay plain; native widget owns highlight');
-        }
-
-        $accentProbe = $harness->screen()->theme()->color(ThemeColorEnum::Accent, 'PROBE');
-        $this->assertStringContainsString("\x1b[35m", $accentProbe, 'Visible Accent palette required so pre-fix dual-highlight would fail');
-
-        $harness->startInputLoop();
-        try {
-            $harness->tui()->setFocus($list);
-            $harness->render();
-
-            $initial = $this->pickerRowStyles($harness, ['agent_alpha', 'agent_bravo', 'agent_charlie']);
-            $this->assertTrue($initial['agent_alpha']['native'], 'Row 1 must start as the single native selection');
-            $this->assertFalse($initial['agent_bravo']['native']);
-            $this->assertFalse($initial['agent_charlie']['native']);
-            $this->assertFalse($initial['agent_alpha']['accent'], 'Row 1 must not also carry manual Accent');
-            $this->assertFalse($initial['agent_bravo']['accent']);
-            $this->assertFalse($initial['agent_charlie']['accent']);
-            $this->assertSame(1, $this->countNativeRows($initial));
-
-            $harness->sendInput("\x1b[B"); // Down
-            $this->assertSame(1, $this->selectedIndex($list));
-
-            $afterDown = $this->pickerRowStyles($harness, ['agent_alpha', 'agent_bravo', 'agent_charlie']);
-            $this->assertFalse($afterDown['agent_alpha']['native'], 'Row 1 must lose native selection after Down');
-            $this->assertTrue($afterDown['agent_bravo']['native'], 'Row 2 must become the single native selection');
-            $this->assertFalse($afterDown['agent_charlie']['native']);
-            $this->assertFalse($afterDown['agent_alpha']['accent'], 'Row 1 must not retain manual Accent after Down');
-            $this->assertFalse($afterDown['agent_bravo']['accent']);
-            $this->assertFalse($afterDown['agent_charlie']['accent']);
-            $this->assertSame(1, $this->countNativeRows($afterDown));
-            $this->assertCount(3, $itemsProp->getValue($list));
-
-            $harness->sendInput('d');
-            $this->assertTrue($picker->isOpen(), 'Dismiss of one completed child must keep picker open');
-            $this->assertNull($state->subagentLiveCatalog->findByArtifactId('agent_bravo'));
-            $this->assertCount(2, $state->subagentLiveCatalog->all());
-            $this->assertSame(0, $this->selectedIndex($list));
-            $this->assertCount(2, $itemsProp->getValue($list));
-            foreach ($itemsProp->getValue($list) as $item) {
-                $this->assertStringNotContainsString("\x1b[", $item['label']);
-            }
-
-            $afterDismiss = $this->pickerRowStyles($harness, ['agent_alpha', 'agent_charlie']);
-            $this->assertTrue($afterDismiss['agent_alpha']['native']);
-            $this->assertFalse($afterDismiss['agent_charlie']['native']);
-            $this->assertFalse($afterDismiss['agent_alpha']['accent']);
-            $this->assertFalse($afterDismiss['agent_charlie']['accent']);
-            $this->assertSame(1, $this->countNativeRows($afterDismiss));
-        } finally {
-            $harness->stopInputLoop();
-        }
     }
 
     #[Test]
@@ -805,8 +685,3 @@ final class SubagentLivePickerControllerTest extends TestCase
     /**
      * @return array<string, string>
      */
-    private function statusEntries(ChatScreen $screen): array
-    {
-        return $screen->statusEntries();
-    }
-}

@@ -338,14 +338,6 @@ final class SubagentLiveScenarioHarness
         ($listeners[0])(new CancelEvent(new TextWidget()));
     }
 
-    public function statusText(string $key): ?string
-    {
-        $entries = $this->screen->statusEntries();
-
-        return $entries[$key] ?? null;
-    }
-
-    /** @return list<string> */
     public function pickerLabels(): array
     {
         $children = $this->state->subagentLiveCatalog->all();

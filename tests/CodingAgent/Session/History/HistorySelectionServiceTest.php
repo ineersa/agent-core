@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session\History;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
@@ -478,7 +479,7 @@ final class HistorySelectionServiceTest extends TestCase
             $service->selectPrompt($runId, 1);
             $this->fail('Expected RunStateReplayException');
         } catch (RunStateReplayException $exception) {
-            $this->assertTrue($exception->isDuplicateSequences());
+            $this->assertInstanceOf(RunStateDuplicateSequenceReplayException::class, $exception);
         }
     }
 }

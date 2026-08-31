@@ -16,20 +16,6 @@ final class GitExecutor
     ) {
     }
 
-    public function repoRoot(string $cwd): string
-    {
-        $result = $this->git(['rev-parse', '--show-toplevel'], $cwd, 120.0);
-        if ($result->cancelled || $result->timedOut || 0 !== $result->exitCode) {
-            return $cwd;
-        }
-        $trimmed = trim($result->stdout);
-
-        return '' !== $trimmed ? $trimmed : $cwd;
-    }
-
-    /**
-     * @param list<string> $args
-     */
     public function git(
         array $args,
         string $cwd,

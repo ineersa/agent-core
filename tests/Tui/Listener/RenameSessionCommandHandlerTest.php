@@ -28,26 +28,6 @@ use PHPUnit\Framework\TestCase;
 final class RenameSessionCommandHandlerTest extends TestCase
 {
     #[Test]
-    public function testHandleWithNoArgsReturnsNoOpWithoutOpeningPicker(): void
-    {
-        $sessionStore = $this->createEmptySessionStore();
-        $switch = $this->createSwitchStub();
-        $screen = $this->pickerScreen();
-        $pickerController = new SessionPickerController($this->pickerTui(), $screen, $sessionStore, $switch);
-
-        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('rename', '', '/rename'));
-
-        $this->assertInstanceOf(NoOp::class, $result);
-        // No sessions in the store: the picker reports the empty state
-        // instead of mounting an overlay (real behavior, constructor-valid
-        // controller) and the switch service is never consulted.
-        $this->assertFalse($pickerController->isOpen());
-        $this->assertSame('No sessions found', $screen->statusEntries()['session'] ?? null);
-    }
-
-    #[Test]
     public function testHandleWithValidSessionAndNameReturnsSuccess(): void
     {
         $sessionStore = $this->createSessionStoreWithSession(42, 'Original Name');

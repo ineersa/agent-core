@@ -28,27 +28,6 @@ use PHPUnit\Framework\TestCase;
 final class ResumeSessionCommandHandlerTest extends TestCase
 {
     #[Test]
-    public function testHandleWithNoArgsReturnsNoOpWithoutConsultingSwitch(): void
-    {
-        $switch = $this->createSwitchSpy();
-        $sessionStore = $this->createEmptySessionStore();
-        $screen = $this->pickerScreen();
-        $pickerController = new SessionPickerController($this->pickerTui(), $screen, $sessionStore, $switch);
-
-        $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('resume', '', '/resume'));
-
-        $this->assertInstanceOf(NoOp::class, $result);
-        $this->assertNull($switch->resumedSessionId, 'Switch should NOT be called when no args given');
-        // No sessions in the store: the picker reports the empty state
-        // instead of mounting an overlay (real behavior, constructor-valid
-        // controller).
-        $this->assertFalse($pickerController->isOpen());
-        $this->assertSame('No sessions found', $screen->statusEntries()['session'] ?? null);
-    }
-
-    #[Test]
     public function testHandleWithValidSessionIdCallsSwitchAndReturnsNoOp(): void
     {
         $switch = $this->createSwitchSpy();
@@ -192,11 +171,6 @@ final class ResumeSessionCommandHandlerTest extends TestCase
 
             public function requestReload(string $sessionId): void
             {
-            }
-
-            public function hasPendingSwitch(): bool
-            {
-                return false;
             }
         };
     }
