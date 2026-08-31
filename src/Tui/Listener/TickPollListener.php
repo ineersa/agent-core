@@ -234,7 +234,7 @@ final class TickPollListener implements TuiListenerRegistrar
             }
 
             if ($subagentLivePickerController->isOpen()) {
-                $subagentLivePickerController->refreshIfOpen();
+                $subagentLivePickerController->refreshPickerFeedbackIfOpen();
 
                 SubagentLiveAttention::syncMainAttention($state, $screen);
 

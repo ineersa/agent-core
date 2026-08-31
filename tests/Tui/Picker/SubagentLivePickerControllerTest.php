@@ -88,7 +88,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->assertStringContainsString('[running]', $harness->plainScreenText());
 
         $state->subagentLiveCatalog->applyChildStatus('agent_running', SubagentLiveStatusEnum::Completed);
-        $picker->refreshIfOpen();
+        $picker->refreshPickerFeedbackIfOpen();
         $this->assertStringContainsString('[running]', $harness->plainScreenText());
 
         $picker->closePicker();

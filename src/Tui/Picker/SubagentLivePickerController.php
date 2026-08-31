@@ -32,6 +32,9 @@ final class SubagentLivePickerController
     private ?PickerOverlay $overlay = null;
     private ?TextWidget $headerWidget = null;
 
+    /** @var list<array{value: string, label: string}> */
+    private array $openItems = [];
+
     /**
      * Invoked with the previous child run id when leaving/switching away from it.
      * Listener layer wires question cleanup here (Deptrac: picker must not import TuiQuestion).
@@ -93,7 +96,7 @@ final class SubagentLivePickerController
         return $this->overlay?->isOpen() ?? false;
     }
 
-    public function refreshIfOpen(): void
+    public function refreshPickerFeedbackIfOpen(): void
     {
         if (!$this->isOpen()) {
             return;
@@ -119,6 +122,7 @@ final class SubagentLivePickerController
         $this->overlay?->close($requestRender);
         $this->overlay = null;
         $this->headerWidget = null;
+        $this->openItems = [];
     }
 
     /**
@@ -181,7 +185,9 @@ final class SubagentLivePickerController
 
         $kb = SelectListKeybindings::standard();
 
+        // Picker rows are an open-time snapshot. Catalog updates appear after reopening.
         $items = self::buildItems($children);
+        $this->openItems = $items;
         $listWidget = new SelectListWidget(
             items: $items,
             maxVisible: SelectListKeybindings::MAX_VISIBLE,
@@ -379,8 +385,12 @@ final class SubagentLivePickerController
             return;
         }
 
-        // Selected artifact was just removed; previous dead search always resolved to 0.
-        $listWidget->setItems(self::buildItems($children));
+        // Remove only the dismissed snapshot row; do not import other catalog updates mid-open.
+        $this->openItems = array_values(array_filter(
+            $this->openItems,
+            static fn (array $item): bool => $item['value'] !== $artifactId,
+        ));
+        $listWidget->setItems($this->openItems);
         $listWidget->setSelectedIndex(0);
 
         $this->showPickerFeedback(\sprintf('Removed %s from /agents-live.', $removed->agentName));
