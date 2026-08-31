@@ -31,7 +31,13 @@ runs:
           Darwin)
             # Homebrew equivalents; flex is keg-only and must be on PATH for SPC.
             brew update
-            brew install cmake pkg-config autoconf automake libtool re2c flex gperf bison
+            brew install cmake pkg-config autoconf automake libtool flex gperf bison
+            if [[ "$(uname -m)" == "x86_64" ]]; then
+              # Homebrew no longer publishes an Intel macOS bottle for re2c.
+              brew install --build-from-source re2c
+            else
+              brew install re2c
+            fi
             FLEX_PREFIX="$(brew --prefix flex)"
             echo "${FLEX_PREFIX}/bin" >> "${GITHUB_PATH}"
             export PATH="${FLEX_PREFIX}/bin:${PATH}"
