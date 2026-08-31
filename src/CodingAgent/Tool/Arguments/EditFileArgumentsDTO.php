@@ -22,7 +22,7 @@ final class EditFileArgumentsDTO
         #[Schema(description: 'File path to edit (absolute, or relative to the working directory)')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'The "path" argument is required and must be a non-empty string.')]
         public readonly string $path = '',
-        #[Schema(description: 'Codex-style hunk body beginning with `@@`; prefix each body line with a space for unchanged context, `-` for removal, or `+` for addition. Multiple sequential, non-overlapping hunks are allowed.')]
+        #[Schema(description: 'Hunk body beginning with `@@`; prefix each body line with a space for unchanged context, `-` for removal, or `+` for addition. Multiple sequential, non-overlapping hunks are allowed. End after the final hunk; do not append `*** End Patch`.')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'The "patch" argument is required and must be a non-empty string.')]
         public readonly string $patch = '',
     ) {

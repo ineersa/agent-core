@@ -19,6 +19,53 @@ final class EditPatchParserTest extends TestCase
         $this->parser = new EditPatchParser();
     }
 
+    public function testSingleTrailingEndPatchMarkerIsTolerated(): void
+    {
+        $patch = <<<'PATCH'
+@@
+ old line
+-old line
++new line
+*** End Patch
+PATCH;
+
+        $chunks = $this->parser->parse($patch);
+        $this->assertCount(1, $chunks);
+        $this->assertSame(['old line', 'old line'], $chunks[0]->oldLines);
+        $this->assertSame(['old line', 'new line'], $chunks[0]->newLines);
+    }
+
+    public function testFullPatchEnvelopeRemainsRejected(): void
+    {
+        $patch = <<<'PATCH'
+*** Begin Patch
+*** Update File: example.txt
+@@
+-old line
++new line
+*** End Patch
+PATCH;
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('The *** Begin Patch envelope is not supported');
+        $this->parser->parse($patch);
+    }
+
+    public function testRepeatedTrailingEndPatchMarkerRemainsRejected(): void
+    {
+        $patch = <<<'PATCH'
+@@
+-old line
++new line
+*** End Patch
+*** End Patch
+PATCH;
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('Invalid hunk body line: "*** End Patch"');
+        $this->parser->parse($patch);
+    }
+
     /**
      * Regression: a removal line `--- comment` is `-` + `-- comment`, not a legacy `---` header.
      */
