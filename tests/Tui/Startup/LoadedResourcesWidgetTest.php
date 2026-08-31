@@ -25,7 +25,6 @@ final class LoadedResourcesWidgetTest extends TestCase
     {
         $summary = new LoadedResourcesSummaryDTO([
             new LoadedResourceSectionDTO(
-                key: 'skills',
                 label: 'Skills',
                 items: [
                     new LoadedResourceItemDTO('alpha', '/a/SKILL.md'),
@@ -55,7 +54,6 @@ final class LoadedResourcesWidgetTest extends TestCase
     {
         $summary = new LoadedResourcesSummaryDTO([
             new LoadedResourceSectionDTO(
-                key: 'prompts',
                 label: 'Prompts',
                 items: [],
                 conflicts: [
@@ -82,7 +80,6 @@ final class LoadedResourcesWidgetTest extends TestCase
     {
         $summary = new LoadedResourcesSummaryDTO([
             new LoadedResourceSectionDTO(
-                key: 'extensions',
                 label: 'Extensions',
                 items: [],
                 conflicts: [
@@ -111,7 +108,6 @@ final class LoadedResourcesWidgetTest extends TestCase
     {
         $summary = new LoadedResourcesSummaryDTO([
             new LoadedResourceSectionDTO(
-                key: 'prompts',
                 label: 'Prompts',
                 items: [new LoadedResourceItemDTO('fix-bug', '/prompts/fix-bug.md')],
             ),
@@ -132,7 +128,6 @@ final class LoadedResourcesWidgetTest extends TestCase
     {
         $summary = new LoadedResourcesSummaryDTO([
             new LoadedResourceSectionDTO(
-                key: 'skills',
                 label: 'Skills',
                 items: [
                     new LoadedResourceItemDTO('very-long-skill-name-one', '/a/SKILL.md'),

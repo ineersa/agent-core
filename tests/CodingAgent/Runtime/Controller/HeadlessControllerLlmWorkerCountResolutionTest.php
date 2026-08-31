@@ -60,7 +60,7 @@ final class HeadlessControllerLlmWorkerCountResolutionTest extends TestCase
         $config = new RuntimeProcessConfig($locator, sys_get_temp_dir());
         $supervisor = new ConsumerSupervisor($logger, $config);
         $boundary = new RuntimeExceptionBoundary(new EventDispatcher());
-        $emitter = new RuntimeEventEmitter(null, $boundary, $logger);
+        $emitter = new RuntimeEventEmitter($logger);
 
         return new HeadlessController(
             consumerSupervisor: $supervisor,

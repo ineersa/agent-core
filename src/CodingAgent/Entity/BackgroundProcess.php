@@ -153,16 +153,4 @@ class BackgroundProcess
     {
         $this->completionNotifiedAt = $now;
     }
-
-    /**
-     * Whether this process should notify on completion.
-     *
-     * Only processes explicitly backgrounded by the user and not already
-     * notified qualify.
-     */
-    public function shouldNotifyOnCompletion(): bool
-    {
-        return null !== $this->backgroundedAt
-            && null === $this->completionNotifiedAt;
-    }
 }

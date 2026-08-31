@@ -106,7 +106,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
             ->method('events')
             ->with(self::CHILD_RUN_ID, 1)
             ->willReturn([
-                new RuntimeEvent(RuntimeEventTypeEnum::ProgressUpdated->value, self::CHILD_RUN_ID, 2, ['text' => 'live only']),
+                new RuntimeEvent(RuntimeEventTypeEnum::StatusUpdated->value, self::CHILD_RUN_ID, 2, ['text' => 'live only']),
             ]);
 
         $live->childLastPoll = 0.0;

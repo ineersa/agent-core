@@ -67,7 +67,6 @@ final readonly class LoadedResourcesSummaryBuilder
         // Message-only conflict branch in LoadedResourcesWidget::formatConflict
         // (empty winnerPath + message) → "⚠ AI Catalog: update available — …"
         return new LoadedResourceSectionDTO(
-            key: 'ai-catalog',
             label: 'AI Catalog',
             items: [],
             conflicts: [
@@ -95,7 +94,6 @@ final readonly class LoadedResourcesSummaryBuilder
         // Message-only conflict branch → "⚠ <stale>: unavailable — using <effective>"
         // ('Default model' is the section label, not part of the ⚠ line.)
         return new LoadedResourceSectionDTO(
-            key: 'default-model',
             label: 'Default model',
             items: [],
             conflicts: [
@@ -121,7 +119,6 @@ final readonly class LoadedResourcesSummaryBuilder
         }
 
         return new LoadedResourceSectionDTO(
-            key: 'context',
             label: 'Context',
             items: $items,
         );
@@ -147,7 +144,6 @@ final readonly class LoadedResourcesSummaryBuilder
         }
 
         return new LoadedResourceSectionDTO(
-            key: 'skills',
             label: 'Skills',
             items: $items,
             conflicts: $conflicts,
@@ -179,7 +175,6 @@ final readonly class LoadedResourcesSummaryBuilder
         }
 
         return new LoadedResourceSectionDTO(
-            key: 'prompts',
             label: 'Prompts',
             items: $items,
             conflicts: $conflicts,
@@ -189,7 +184,6 @@ final readonly class LoadedResourcesSummaryBuilder
     private function buildThemesSection(): LoadedResourceSectionDTO
     {
         return new LoadedResourceSectionDTO(
-            key: 'themes',
             label: 'Themes',
             items: $this->themeLoadedResourcesProvider->getLoadedThemeResourceItems(),
             conflicts: $this->themeLoadedResourcesProvider->getThemeResourceConflicts(),
@@ -221,7 +215,6 @@ final readonly class LoadedResourcesSummaryBuilder
         }
 
         return new LoadedResourceSectionDTO(
-            key: 'agents',
             label: 'Agents',
             items: $items,
             conflicts: $conflicts,
@@ -249,7 +242,6 @@ final readonly class LoadedResourcesSummaryBuilder
         }
 
         return new LoadedResourceSectionDTO(
-            key: 'extensions',
             label: 'Extensions',
             items: $items,
             conflicts: $conflicts,

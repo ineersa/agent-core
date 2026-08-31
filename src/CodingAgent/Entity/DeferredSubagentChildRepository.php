@@ -142,32 +142,6 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         }
     }
 
-    public function markChildLaunched(string $batchLifecycleId, int $batchIndex, \DateTimeImmutable $startedAt): void
-    {
-        $row = $this->requireChild($batchLifecycleId, $batchIndex);
-        if (DeferredSubagentChildLaunchStatusEnum::Launched === $row->launchStatus) {
-            return;
-        }
-        if (DeferredSubagentChildLaunchStatusEnum::Failed === $row->launchStatus) {
-            return;
-        }
-
-        $row->launchStatus = DeferredSubagentChildLaunchStatusEnum::Launched;
-        $row->startedAt = $row->startedAt ?? $startedAt;
-        $this->getEntityManager()->flush();
-    }
-
-    public function markChildFailed(string $batchLifecycleId, int $batchIndex): void
-    {
-        $row = $this->requireChild($batchLifecycleId, $batchIndex);
-        if (DeferredSubagentChildLaunchStatusEnum::Launched === $row->launchStatus) {
-            return;
-        }
-
-        $row->launchStatus = DeferredSubagentChildLaunchStatusEnum::Failed;
-        $this->getEntityManager()->flush();
-    }
-
     public function findEntityByChildRunId(string $childRunId): ?DeferredSubagentChild
     {
         $row = $this->findOneBy(['childRunId' => $childRunId]);
@@ -292,20 +266,6 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         }
 
         return $projection;
-    }
-
-    private function requireChild(string $batchLifecycleId, int $batchIndex): DeferredSubagentChild
-    {
-        $row = $this->findOneBy([
-            'batchLifecycleId' => $batchLifecycleId,
-            'batchIndex' => $batchIndex,
-        ]);
-
-        if (!$row instanceof DeferredSubagentChild) {
-            throw new \RuntimeException(\sprintf('Deferred subagent child missing for batch "%s" index %d.', $batchLifecycleId, $batchIndex));
-        }
-
-        return $row;
     }
 
     private function toDto(DeferredSubagentChild $row): DeferredSubagentChildProjectionDTO

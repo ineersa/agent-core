@@ -15,7 +15,6 @@ final class RuntimeStreamLifecycleEvent
     public function __construct(
         public readonly string $runId,
         public readonly ?string $stepId,
-        public readonly ?\Throwable $error = null,
     ) {
     }
 }

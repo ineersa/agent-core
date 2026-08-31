@@ -570,10 +570,6 @@ services:
       $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink'
       $streamCommittedEventsToStdout: '%env(bool:HATFIELD_CONSUMER_STDOUT_EVENTS)%'
 
-  Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter:
-    arguments:
-      $eventClient: '@Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient'
-
   # Dedicated FlockStore for controller single-owner locks. Default FrameworkBundle
   # flock is partitioned by kernel.project_dir and would diverge across installs.
   hatfield.controller.session_owner.lock_store:

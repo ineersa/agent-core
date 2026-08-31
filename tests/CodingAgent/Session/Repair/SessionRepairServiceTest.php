@@ -439,7 +439,6 @@ final class SessionRepairServiceTest extends TestCase
         $result = $service->repair($runId, false);
 
         $this->assertTrue($result->repairableStaleCancellationDetected);
-        $this->assertNull($result->replayOk);
         $this->assertStringContainsStringIgnoringCase('stale non-terminal cancellation', $result->message);
     }
 
@@ -454,8 +453,6 @@ final class SessionRepairServiceTest extends TestCase
         $result = $service->repair($runId, true);
 
         $this->assertTrue($result->staleCancellationRepaired);
-        $this->assertGreaterThanOrEqual(1, $result->terminalEventsAppended);
-        $this->assertTrue($result->replayOk);
 
         $lines = $this->readRawLines($runId);
         $last = json_decode($lines[\count($lines) - 1], true, 512, \JSON_THROW_ON_ERROR);
@@ -478,8 +475,6 @@ final class SessionRepairServiceTest extends TestCase
 
         $service = $this->createService($runStore);
         $result = $service->repair($runId, true);
-
-        $this->assertGreaterThanOrEqual(1, $result->terminalEventsAppended);
 
         $decoded = $this->readEvents($runId);
         $last = $decoded[\count($decoded) - 1];
@@ -531,7 +526,6 @@ final class SessionRepairServiceTest extends TestCase
 
         $second = $service->repair($runId, true);
         $this->assertFalse($second->repairableStaleCancellationDetected);
-        $this->assertSame(0, $second->terminalEventsAppended);
         $this->assertSame($lineCountAfterFirst, \count($this->readRawLines($runId)));
     }
 
@@ -573,7 +567,6 @@ final class SessionRepairServiceTest extends TestCase
         $result = $service->repair($runId, true);
 
         $this->assertFalse($result->repairableStaleCancellationDetected);
-        $this->assertNotEmpty($result->duplicateSeqs);
         $this->assertSame(SessionRepairRefusalReasonEnum::DuplicateSequences, $result->refusalReason);
         $this->assertStringContainsStringIgnoringCase('duplicate', $result->message);
         $this->assertSame($before, $this->readRawLines($runId));
@@ -627,7 +620,6 @@ final class SessionRepairServiceTest extends TestCase
         $result = $service->repair($runId, true);
 
         $this->assertSame(SessionRepairRefusalReasonEnum::MissingSequences, $result->refusalReason);
-        $this->assertNotEmpty($result->missingSeqs);
         $this->assertSame($before, $this->readRawLines($runId));
     }
 

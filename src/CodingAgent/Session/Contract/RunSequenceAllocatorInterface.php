@@ -13,11 +13,6 @@ interface RunSequenceAllocatorInterface
 {
     /**
      * @param callable(): int|null $bootstrapMaxSeq invoked when counter file missing
-     */
-    public function allocateNext(string $counterPath, ?callable $bootstrapMaxSeq = null): int;
-
-    /**
-     * @param callable(): int|null $bootstrapMaxSeq invoked when counter file missing
      *
      * @return list<int>
      */

@@ -147,7 +147,7 @@ final class SubagentProgressEventsFixture
 
         file_put_contents($sessionDir.'/events.jsonl', $jsonl);
         // Live sessions already have a sequence.cursor from the bootstrap turn.
-        // Overwriting events.jsonl without advancing the cursor leaves allocateNext()
+        // Overwriting events.jsonl without advancing the cursor leaves allocateBlock()
         // free to reissue fixture seqs (commonly 5/6) and poison resume replay.
         file_put_contents($sessionDir.'/sequence.cursor', "12\n");
 

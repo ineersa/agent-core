@@ -26,7 +26,6 @@ final class TuiLoadedResourcesVirtualRenderTest extends TestCase
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
         $summary = new LoadedResourcesSummaryDTO([
             new LoadedResourceSectionDTO(
-                key: 'skills',
                 label: 'Skills',
                 items: [new LoadedResourceItemDTO('testing', '/skills/testing/SKILL.md')],
                 conflicts: [

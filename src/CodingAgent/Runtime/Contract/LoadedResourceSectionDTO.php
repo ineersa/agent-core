@@ -14,7 +14,6 @@ final readonly class LoadedResourceSectionDTO
      * @param list<LoadedResourceConflictDTO> $conflicts
      */
     public function __construct(
-        public string $key,
         public string $label,
         public array $items,
         public array $conflicts = [],

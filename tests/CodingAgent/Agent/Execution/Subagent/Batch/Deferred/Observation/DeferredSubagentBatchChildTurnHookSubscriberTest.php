@@ -65,7 +65,7 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
                     ['batchIndex' => 1, 'childRunId' => $onlyFailed['childRunId'], 'artifactId' => $onlyFailed['artifactId'], 'agentName' => 'worker', 'task' => 'T2', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
                 ],
             );
-            $childRepo->markChildFailed($lifecycle, 1);
+            $batchRepo->applyLaunchFailurePreparation($parent, $tool, $lifecycle);
             $failed = $onlyFailed;
         } elseif ($reserveTrackedLaunched) {
             $batchRepo->reserveBatch(

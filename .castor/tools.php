@@ -115,10 +115,12 @@ function dead_code_baseline(): void
         fail_quality($e->getMessage());
     }
 
-    passthru(
-        qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/phpstan analyse -c phpstan.dead-code.neon --generate-baseline phpstan.dead-code-baseline.neon',
-        $exitCode,
-    );
+    // Always suppress PHPStan progress. Baseline generation cannot use
+    // --error-format=json (it would conflict with --generate-baseline), but
+    // LLM_MODE still needs quiet, non-TTY output.
+    $cmd = qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/phpstan analyse -c phpstan.dead-code.neon --no-progress --generate-baseline phpstan.dead-code-baseline.neon'
+        .(is_llm_mode() ? ' --no-ansi' : '');
+    passthru($cmd, $exitCode);
     if (0 !== $exitCode) {
         fail_quality(sprintf('Dead-code baseline generation failed with exit code %d', $exitCode));
     }
