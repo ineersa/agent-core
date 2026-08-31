@@ -69,6 +69,8 @@ final class AgentCommand
     }
 
     /**
+     * @param list<string> $skillsPath
+     * @param list<string> $skills
      * @param list<string> $promptTemplate
      */
     public function __invoke(

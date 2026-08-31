@@ -12,17 +12,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\ToolExecutionConfig;
 use Ineersa\CodingAgent\Config\ToolsConfig;
-use PhpParser\Node;
-use PHPStan\Analyser\Scope;
-use PHPStan\Node\InClassNode;
-use ShipMonk\PHPStan\DeadCode\Enum\AccessType;
-use ShipMonk\PHPStan\DeadCode\Graph\ClassMemberUsage;
-use ShipMonk\PHPStan\DeadCode\Graph\ClassMethodRef;
-use ShipMonk\PHPStan\DeadCode\Graph\ClassMethodUsage;
-use ShipMonk\PHPStan\DeadCode\Graph\ClassPropertyRef;
-use ShipMonk\PHPStan\DeadCode\Graph\ClassPropertyUsage;
-use ShipMonk\PHPStan\DeadCode\Graph\UsageOrigin;
-use ShipMonk\PHPStan\DeadCode\Provider\MemberUsageProvider;
+use ShipMonk\PHPStan\DeadCode\Provider\ReflectionBasedMemberUsageProvider;
 use ShipMonk\PHPStan\DeadCode\Provider\VirtualUsageData;
 
 /**
@@ -34,7 +24,7 @@ use ShipMonk\PHPStan\DeadCode\Provider\VirtualUsageData;
  * This provider parses those expressions and maps known Hatfield config-graph
  * chains onto exact owning classes (no namespace blankets).
  */
-final class SymfonyExpressionServiceCallUsageProvider implements MemberUsageProvider
+final class SymfonyExpressionServiceCallUsageProvider extends ReflectionBasedMemberUsageProvider
 {
     private const string CONTAINER_XML = __DIR__.'/../../../var/phpstan-dead-code/symfony-container.xml';
 
@@ -73,78 +63,58 @@ final class SymfonyExpressionServiceCallUsageProvider implements MemberUsageProv
         ],
     ];
 
-    /** @var list<ClassMemberUsage>|null */
-    private ?array $usages = null;
+    /** @var array<string, VirtualUsageData>|null */
+    private ?array $memberIndex = null;
 
-    /**
-     * @return list<ClassMemberUsage>
-     */
-    public function getUsages(Node $node, Scope $scope): array
+    protected function shouldMarkMethodAsUsed(\ReflectionMethod $method): ?VirtualUsageData
     {
-        if (!$node instanceof InClassNode) { // @phpstan-ignore phpstanApi.instanceofAssumption
-            return [];
-        }
+        $className = $method->getDeclaringClass()->getName();
+        $member = $method->getName();
 
-        $className = $node->getClassReflection()->getName();
-        $matched = [];
-        foreach ($this->allUsages() as $usage) {
-            if ($usage->getMemberRef()->getClassName() === $className) {
-                $matched[] = $usage;
-            }
-        }
+        return $this->memberIndex()[$className.'::'.$member.'()'] ?? null;
+    }
 
-        return $matched;
+    protected function shouldMarkPropertyAsRead(\ReflectionProperty $property): ?VirtualUsageData
+    {
+        $className = $property->getDeclaringClass()->getName();
+        $member = $property->getName();
+
+        return $this->memberIndex()[$className.'::'.$member] ?? null;
     }
 
     /**
-     * @return list<ClassMemberUsage>
+     * @return array<string, VirtualUsageData>
      */
-    private function allUsages(): array
+    private function memberIndex(): array
     {
-        if (null !== $this->usages) {
-            return $this->usages;
+        if (null !== $this->memberIndex) {
+            return $this->memberIndex;
         }
 
-        $this->usages = [];
+        $this->memberIndex = [];
         if (!is_file(self::CONTAINER_XML)) {
-            return $this->usages;
+            return $this->memberIndex;
         }
 
         $xml = file_get_contents(self::CONTAINER_XML);
         if (false === $xml) {
-            return $this->usages;
+            return $this->memberIndex;
         }
 
         if (!preg_match_all('/<argument type="expression">(.*?)<\\/argument>/s', $xml, $matches)) {
-            return $this->usages;
+            return $this->memberIndex;
         }
 
-        $origin = UsageOrigin::createVirtual(
-            $this,
-            VirtualUsageData::withNote('Referenced from Symfony DIC ExpressionLanguage argument'),
-        );
-
-        $seen = [];
+        $note = VirtualUsageData::withNote('Referenced from Symfony DIC ExpressionLanguage argument');
         foreach ($matches[1] as $expression) {
             $expression = html_entity_decode($expression, \ENT_QUOTES | \ENT_XML1);
             foreach ($this->extractMembers($expression) as [$class, $member, $isMethod]) {
                 $key = $class.'::'.$member.($isMethod ? '()' : '');
-                if (isset($seen[$key])) {
-                    continue;
-                }
-                $seen[$key] = true;
-
-                $this->usages[] = $isMethod
-                    ? new ClassMethodUsage($origin, new ClassMethodRef($class, $member, possibleDescendant: false))
-                    : new ClassPropertyUsage(
-                        $origin,
-                        new ClassPropertyRef($class, $member, possibleDescendant: false),
-                        AccessType::READ,
-                    );
+                $this->memberIndex[$key] = $note;
             }
         }
 
-        return $this->usages;
+        return $this->memberIndex;
     }
 
     /**

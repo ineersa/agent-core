@@ -517,9 +517,13 @@ PHP
         $manager = new ExtensionManager($config, $bridge, $logger, $dispatcher);
         $manager->loadExtensions();
 
-        $this->assertSame($logger, \HatfieldExtTest\SubscriberAwareExtension::$injectedLogger);
+        // Autoload the generated fixture class before asserting on its static state.
+        $extensionClass = 'HatfieldExtTest\SubscriberAwareExtension';
+        $this->assertTrue(class_exists($extensionClass));
+        $extensionReflection = new \ReflectionClass($extensionClass);
+        $this->assertSame($logger, $extensionReflection->getStaticPropertyValue('injectedLogger'));
         $dispatcher->dispatch(new \stdClass(), 'om.test.event');
-        $this->assertSame(1, \HatfieldExtTest\SubscriberAwareExtension::$subscriberCalls);
+        $this->assertSame(1, $extensionReflection->getStaticPropertyValue('subscriberCalls'));
     }
 
     // ── Helpers ──

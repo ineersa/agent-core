@@ -57,7 +57,7 @@ final class McpSdkClientAdapter implements McpClientInterface
     }
 
     /**
-     * @return list<array{name: string, description?: string|null, inputSchema: array}>
+     * @return list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}>
      */
     public function listTools(): array
     {

@@ -326,17 +326,14 @@ final class SubmitListener implements TuiListenerRegistrar
                 // Merge any pre-configured draft request (e.g. from /new --model)
                 // with the submitted text so model/reasoning metadata carries
                 // forward and the run starts with the user-typed prompt.
+                $draftRequest = $state->request;
                 $mergedRequest = new StartRunRequest(
                     prompt: $text,
                     runId: $state->sessionId,
-                    // $state->request is nullable; nullsafe is required
-                    // to avoid a property-access error on null during
-                    // draft promotion from a plain /new without --model.
-                    // Suppressed in phpstan.dist.neon (nullsafe.neverNull).
-                    cwd: $state->request?->cwd ?? '',
-                    options: $state->request?->options ?? [],
-                    model: $state->request?->model,
-                    reasoning: $state->request?->reasoning,
+                    cwd: null !== $draftRequest ? $draftRequest->cwd : '',
+                    options: null !== $draftRequest ? $draftRequest->options : [],
+                    model: null !== $draftRequest ? $draftRequest->model : null,
+                    reasoning: null !== $draftRequest ? $draftRequest->reasoning : null,
                 );
                 $state->request = $mergedRequest;
                 $state->handle = $client->start($state->request);

@@ -865,7 +865,7 @@ final class CompactRunHandlerTest extends TestCase
 
         $receivedInstructions = null;
 
-        $fakeService = new class($receivedInstructions) implements CompactionServiceInterface {
+        $fakeService = new class implements CompactionServiceInterface {
             public ?string $receivedInstructions = null;
 
             public function prepare(array $messages): CompactionPrepareResult

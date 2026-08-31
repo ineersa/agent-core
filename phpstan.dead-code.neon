@@ -17,43 +17,8 @@ parameters:
     customRulesetUsed: true
     level: 0
     treatPhpDocTypesAsCertain: false
-    # Keep global unmatched reporting on so stale baseline entries fail loudly.
-    # Residual level-0 noise ignores below opt out per entry.
+    # Keep unmatched reporting on so stale baseline entries fail loudly.
     reportUnmatchedIgnoredErrors: true
-    # Residual level-0 noise outside ShipMonk dead-member rules.
-    # reportUnmatched: false because these identifiers are capacity valves for
-    # the customRulesetUsed=true lane, not a reviewed baseline.
-    # Main-lane source suppressions live in phpstan.dist.neon so this lane never
-    # sees unmatched inline ignores; stale baseline entries still fail because
-    # reportUnmatchedIgnoredErrors stays true.
-    ignoreErrors:
-        -
-            identifier: arguments.count
-            reportUnmatched: false
-        -
-            identifier: new.noConstructor
-            reportUnmatched: false
-        -
-            identifier: attribute.notFound
-            reportUnmatched: false
-        -
-            identifier: array.duplicateKey
-            reportUnmatched: false
-        -
-            identifier: method.notFound
-            reportUnmatched: false
-        -
-            identifier: method.abstract
-            reportUnmatched: false
-        -
-            identifier: class.notFound
-            reportUnmatched: false
-        -
-            identifier: property.notFound
-            reportUnmatched: false
-        -
-            identifier: staticMethod.notFound
-            reportUnmatched: false
     paths:
         - src/
         - tests/
