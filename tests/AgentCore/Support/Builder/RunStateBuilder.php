@@ -51,6 +51,8 @@ final class RunStateBuilder
 
     private ?string $model = 'test-model';
 
+    private ?string $parentRunId = null;
+
     private function __construct(string $runId, RunStatus $status)
     {
         $this->runId = $runId;
@@ -205,6 +207,13 @@ final class RunStateBuilder
         return $this;
     }
 
+    public function withParentRunId(?string $parentRunId): self
+    {
+        $this->parentRunId = $parentRunId;
+
+        return $this;
+    }
+
     public function build(): RunState
     {
         return new RunState(
@@ -223,6 +232,7 @@ final class RunStateBuilder
             retryAttempts: $this->retryAttempts,
             pendingHumanInputRequests: $this->pendingHumanInputRequests,
             model: $this->model,
+            parentRunId: $this->parentRunId,
         );
     }
 }

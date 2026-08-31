@@ -77,6 +77,59 @@ final class SubagentLivePickerControllerTest extends TestCase
     }
 
     #[Test]
+    public function testOpenPickerKeepsSnapshotUntilReopened(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'picker-status-snapshot');
+        $state = new TuiSessionState('picker-status-snapshot');
+        $this->seedCatalogChild($state, 'agent_running', 'child-run-running', 'running');
+
+        $picker = $this->picker($harness, $state);
+        $picker->open();
+        $this->assertStringContainsString('[running]', $harness->plainScreenText());
+
+        $state->subagentLiveCatalog->applyChildStatus('agent_running', SubagentLiveStatusEnum::Completed);
+        $picker->refreshPickerFeedbackIfOpen();
+        $this->assertStringContainsString('[running]', $harness->plainScreenText());
+
+        $picker->closePicker();
+        $picker->open();
+        $screen = $harness->plainScreenText();
+        $this->assertStringNotContainsString('[running]', $screen);
+        $this->assertStringContainsString('[completed]', $screen);
+    }
+
+    #[Test]
+    public function testDismissLastSnapshotRowDoesNotImportChildAddedAfterOpen(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'picker-dismiss-snapshot');
+        $state = new TuiSessionState('picker-dismiss-snapshot');
+        $this->seedCatalogChild($state, 'agent_snapshot', 'child-run-snapshot', 'completed');
+
+        $picker = $this->picker($harness, $state);
+        $picker->open();
+
+        $overlayProperty = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');
+        $overlay = $overlayProperty->getValue($picker);
+        $this->assertInstanceOf(PickerOverlay::class, $overlay);
+        $listWidget = $overlay->listWidget();
+        $this->assertInstanceOf(SelectListWidget::class, $listWidget);
+
+        $this->seedCatalogChild($state, 'agent_after_open', 'child-run-after-open', 'completed');
+
+        $harness->startInputLoop();
+        try {
+            $harness->tui()->setFocus($listWidget);
+            $harness->sendInput('d');
+        } finally {
+            $harness->stopInputLoop();
+        }
+
+        $this->assertFalse($picker->isOpen());
+        $this->assertNull($state->subagentLiveCatalog->findByArtifactId('agent_snapshot'));
+        $this->assertNotNull($state->subagentLiveCatalog->findByArtifactId('agent_after_open'));
+    }
+
+    #[Test]
     public function dismissKeyDoesNotRemoveRunningChild(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-dismiss');
@@ -442,9 +495,10 @@ final class SubagentLivePickerControllerTest extends TestCase
                     'agent_name' => 'scout',
                     'artifact_id' => 'agent_scout',
                     'agent_run_id' => 'scout-run',
-                    'task_summary' => 'list docs', 'model' => 'test/model', 'reasoning' => 'medium',
+                    'task_summary' => 'list docs',
                     'model' => 'deepseek/deepseek-v4-flash',
-                    'reasoning' => 'medium', ],
+                    'reasoning' => 'medium',
+                ],
             ],
         );
 
@@ -629,8 +683,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         $listWidget->setSelectedIndex(0);
 
         $method = new \ReflectionMethod(SubagentLivePickerController::class, 'dismissSelected');
-        $children = $state->subagentLiveCatalog->all();
-        $method->invokeArgs($picker, [&$listWidget, &$children, $screen, $state]);
+        $method->invoke($picker, $listWidget, $screen, $state);
     }
 
     private function seedCatalogChild(

@@ -14,7 +14,6 @@ use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -28,8 +27,6 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler;
 use Ineersa\CodingAgent\Compaction\BeforeCompactionHookInterface;
 use Ineersa\CodingAgent\Compaction\CompactionBoundarySelector;
@@ -52,6 +49,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionCompactionHookDispatcher;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -152,7 +150,7 @@ final class CompactRunHandlerTest extends TestCase
             new EventFactory(),
             $this->hooks([]),
             $this->extensionHooks([]),
-            $this->metadataReader(),
+            $this->metadataReader(runId: 'run-pre-llm-compact'),
             AttributeSerializerValidatorTestFactory::create()[0],
         );
         $started = $handler->handle($request, $advanceResult->nextState);
@@ -1610,37 +1608,13 @@ final class CompactRunHandlerTest extends TestCase
         return new CompactionHookDispatcher($hooks);
     }
 
-    private function metadataReader(bool $isChild = false, string $runId = 'child-run'): SubagentRunMetadataReader
+    private function metadataReader(bool $isChild = false, string $runId = 'child-run'): StubRunRelationshipReader
     {
-        $eventStore = new InMemoryEventStore();
         if ($isChild) {
-            $eventStore->seed(new RunEvent(
-                runId: $runId,
-                seq: 1,
-                turnNo: 0,
-                type: RunEventTypeEnum::RunStarted->value,
-                payload: [
-                    'step_id' => 'start-1',
-                    'payload' => [
-                        'system_prompt' => 'child',
-                        'messages' => [],
-                        'metadata' => [
-                            'session' => [
-                                'kind' => 'agent_child',
-                                'parent_run_id' => 'parent-1',
-                                'agent_name' => 'scout',
-                                'artifact_id' => 'agent_child1',
-                            ],
-                            'model' => 'deepseek/deepseek-v4-flash',
-                            'reasoning' => 'medium',
-                            'tools_scope' => ['allowed_tools' => []],
-                        ],
-                    ],
-                ],
-            ));
+            return StubRunRelationshipReader::child($runId, 'parent-run');
         }
 
-        return new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
+        return StubRunRelationshipReader::topLevel('child-run' === $runId ? 'run-1' : $runId);
     }
 
     /**

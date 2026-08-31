@@ -7,17 +7,14 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
+use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
@@ -263,7 +260,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertLessThan(3500, $elapsedMs, 'Child bash timeout must fire near the requested bound, not Castor/HITL');
     }
 
-    public function testMalformedChildMetadataDisablesPromptAndContinues(): void
+    public function testChildRelationshipDisablesBackgroundPromptWithoutEventLookup(): void
     {
         $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
         $promptAdapter->expects($this->never())->method('shouldBackground');
@@ -276,49 +273,28 @@ final class BashToolTest extends IsolatedKernelTestCase
         );
         $this->createManager();
 
-        $runId = 'malformed-child-bash';
-        $store = new InMemoryEventStore();
-        $store->seed(new RunEvent(
-            runId: $runId,
-            seq: 1,
-            turnNo: 0,
-            type: RunEventTypeEnum::RunStarted->value,
-            payload: [
-                'payload' => [
-                    'metadata' => [
-                        'session' => [
-                            'kind' => 'agent_child',
-                        ],
-                        'model' => 'm',
-                        'reasoning' => 'medium',
-                        'tools_scope' => ['allowed_tools' => ['bash']],
-                    ],
-                ],
-            ],
-            createdAt: new \DateTimeImmutable(),
-        ));
-        $reader = new SubagentRunMetadataReader($store, AttributeSerializerValidatorTestFactory::denormalizer());
+        $runId = 'child-bash-no-prompt';
+        $reader = StubRunRelationshipReader::child($runId, 'parent-1');
 
         $result = $this->withContext($runId, function () use ($promptAdapter, $reader): string {
             return ($this->makeBashTool($promptAdapter, $reader))(new BashArgumentsDTO(
-                command: 'echo "malformed-ok"',
+                command: 'echo "child-ok"',
                 timeout: 5,
             ));
         });
 
-        $this->assertStringContainsString('malformed-ok', $result);
+        $this->assertStringContainsString('child-ok', $result);
         $failed = array_values(array_filter(
             $this->logger->records,
             static fn (array $record): bool => 'bash_tool.background_policy_resolution_failed' === $record['message'],
         ));
-        $this->assertCount(1, $failed);
-        $this->assertSame($runId, $failed[0]['context']['run_id'] ?? null);
+        $this->assertCount(0, $failed);
     }
 
-    public function testMissingMetadataKeepsParentBackgroundPromptBehavior(): void
+    public function testMissingOperationalIdentityDisablesBackgroundPromptFailClosed(): void
     {
         $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
-        $promptAdapter->expects($this->once())->method('shouldBackground')->willReturn(true);
+        $promptAdapter->expects($this->never())->method('shouldBackground');
 
         $this->bashConfig = new BashToolConfig(
             defaultTimeoutSeconds: 5,
@@ -330,12 +306,20 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $result = $this->withContext('parent-missing-metadata', function () use ($promptAdapter): string {
             return ($this->makeBashTool($promptAdapter, $this->emptyMetadataReader()))(new BashArgumentsDTO(
-                command: 'sleep 2',
+                command: 'echo "missing-ok" && sleep 1 && echo "missing-done"',
                 timeout: 5,
             ));
         });
 
-        $this->assertStringContainsString('Command moved to background', $result);
+        $this->assertStringContainsString('missing-ok', $result);
+        $this->assertStringContainsString('missing-done', $result);
+        $this->assertStringNotContainsString('Command moved to background', $result);
+
+        $failed = array_values(array_filter(
+            $this->logger->records,
+            static fn (array $record): bool => 'bash_tool.background_policy_resolution_failed' === $record['message'],
+        ));
+        $this->assertCount(1, $failed);
     }
 
     public function testTimeoutReapsProcessGroupDescendants(): void
@@ -1073,61 +1057,27 @@ final class BashToolTest extends IsolatedKernelTestCase
      */
     private function makeBashTool(
         ?BashBackgroundPromptAdapterInterface $promptAdapter = null,
-        ?SubagentRunMetadataReader $runMetadataReader = null,
+        ?RunRelationshipReaderInterface $runMetadataReader = null,
     ): BashTool {
         return new BashTool(
             manager: $this->manager,
             contextAccessor: $this->contextAccessor,
             toolRuntime: $this->toolRuntime,
             logger: $this->logger,
-            runMetadataReader: $runMetadataReader ?? $this->emptyMetadataReader(),
+            runMetadataReader: $runMetadataReader ?? StubRunRelationshipReader::topLevel(self::TEST_SESSION),
             config: $this->bashConfig,
             promptAdapter: $promptAdapter ?? new BashToolDeclineAdapter(),
         );
     }
 
-    private function emptyMetadataReader(): SubagentRunMetadataReader
+    private function emptyMetadataReader(): RunRelationshipReaderInterface
     {
-        return new SubagentRunMetadataReader(new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::denormalizer());
+        return StubRunRelationshipReader::empty();
     }
 
-    private function metadataReaderWithChild(string $runId): SubagentRunMetadataReader
+    private function metadataReaderWithChild(string $runId): RunRelationshipReaderInterface
     {
-        $store = new InMemoryEventStore();
-        $store->seed(new RunEvent(
-            runId: $runId,
-            seq: 1,
-            turnNo: 0,
-            type: RunEventTypeEnum::RunStarted->value,
-            payload: [
-                'step_id' => 'start-1',
-                'payload' => [
-                    'system_prompt' => 'You are a scout.',
-                    'messages' => [],
-                    'metadata' => [
-                        'session' => [
-                            'kind' => 'agent_child',
-                            'parent_run_id' => 'parent-1',
-                            'agent_name' => 'scout',
-                            'artifact_id' => 'agent_abc123',
-                            'interactive' => false,
-                        ],
-                        'model' => 'deepseek/deepseek-v4-flash',
-                        'reasoning' => 'medium',
-                        'tools_scope' => [
-                            'allowed_tools' => ['bash'],
-                            'mcp' => [
-                                'mode' => 'none',
-                                'tools' => [],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-            createdAt: new \DateTimeImmutable(),
-        ));
-
-        return new SubagentRunMetadataReader($store, AttributeSerializerValidatorTestFactory::denormalizer());
+        return StubRunRelationshipReader::child($runId, 'parent-1');
     }
 
     /**

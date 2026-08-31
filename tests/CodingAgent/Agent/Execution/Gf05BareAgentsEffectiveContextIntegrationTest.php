@@ -20,9 +20,9 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
+use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
@@ -147,7 +147,8 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             'runStateRebuilder' => $this->rebuildParentState($parentState),
             'eventStore' => $childEventStore,
             'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
-            'metadataReader' => new SubagentRunMetadataReader($childEventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
+            'metadataReader' => new RunStartedMetadataReader($childEventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
+            'relationshipReader' => \Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader::topLevel($parentState->runId),
             'childRunDirectory' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),
